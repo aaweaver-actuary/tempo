@@ -12,6 +12,8 @@ from pathlib import Path
 
 import chess
 
+from tempo_a_bridge.graph_fen_compatibility import recorded_graph_starting_fen
+
 
 def canonical(document):
     return json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
@@ -100,7 +102,7 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
     graph_parent_references = frozenset(step.get('parent_card_id') for step in graphs if step.get('parent_card_id') is not None)
     split_references = frozenset(row[field] for row in tables.get('prefix_splits',[])
         for field in ('source_card_id','shortened_card_id','continuation_card_id') if row.get(field) is not None)
-    fresh_exceptions = {}
+    fresh_exceptions, generated_resets, definition_fens = {}, {}, {}
     deleted = {row['card_id'] for row in tables.get('deleted_cards',[])}
     publications = {row['repertoire_id']:row for row in tables.get('opening_graph_publications',[])}
     occurrences, excluded, exercises, bindings = [], [], {}, []
@@ -135,11 +137,22 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
         moves = json.loads(step['moves_json'])
         if not moves or len(moves) > 40:
             raise ValueError('graph_only_segment_executable_outside_contract')
+        authored_archive = False
+        generated_reset = None
+        recorded_start_fen = definition_fens.get((step['repertoire_id'],step['card_id']),step['starting_fen'])
         if card is not None:
-            if (card.get('archived',0) or card.get('pending_validation',0)
-                    or card.get('content_type','opening') != 'opening'):
+            generated = type(card.get('canonical_route_source')) is int and card['canonical_route_source']==0
+            authored_archive = type(card.get('canonical_route_source')) is int and card['canonical_route_source']==1 and bool(card.get('archived'))
+            if (card.get('content_type','opening')!='opening'
+                    or (not generated and (card.get('pending_validation',0)
+                        or (card.get('archived',0) and not authored_archive)
+                        or (card.get('superseded_by') and not authored_archive)))):
                 raise ValueError('graph_only_graph_card_availability_disagrees')
-            if card.get('superseded_by'):
+            if generated and any(card.get(field) for field in ('archived','pending_validation','superseded_by')):
+                if publication is None or publication['state']!='ready' or publication['generation']!=step['generation']:
+                    raise ValueError('graph_only_generated_reset_requires_ready_publication')
+                generated_reset={field:card.get(field) for field in ('canonical_route_source','archived','pending_validation','superseded_by')}
+            if card.get('superseded_by') and reviewed_lineage is not None and reviewed_lineage['source_card_id']==card['id']:
                 target=card['superseded_by']
                 if (reviewed_lineage is None or reviewed_lineage['source_card_id']!=card['id']
                         or reviewed_lineage['missing_target_card_id']!=target
@@ -157,9 +170,15 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
                     'source_record_sha256':reviewed_lineage['source_record_sha256'],
                     'capture_sha256':fresh_dangling_lineage['capture_sha256'],
                     'full_cards_absence_proof':dict(fresh_dangling_lineage['full_cards_absence_proof'])}
-            if (step['starting_fen'] != card['start_fen'] or moves != json.loads(card['moves_json'])
+            if (moves != json.loads(card['moves_json'])
                     or (card['trained_color'] is not None and step['trained_color'] != card['trained_color'])):
                 raise ValueError('graph_only_graph_card_definition_disagrees')
+            try:
+                recorded_start_fen=recorded_graph_starting_fen(card['start_fen'],step['starting_fen'])
+            except ValueError:
+                raise ValueError('graph_only_graph_card_definition_disagrees') from None
+        else:
+            recorded_start_fen=recorded_graph_starting_fen(recorded_start_fen,step['starting_fen'])
         board = chess.Board(line['start_fen'])
         if not board.is_valid():
             raise ValueError('invalid_authored_start')
@@ -184,19 +203,31 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
         if json.loads(step['decision_fen_keys_json']) != keys or step['decision_fen_key'] != keys[-1]:
             raise ValueError('graph_only_graph_decision_keys_disagree')
         start_ply = candidates[0]
-        start = chess.Board(step['starting_fen'])
+        key = 'graph:' + fingerprint([step['repertoire_id'],step['card_id']])
+        if authored_archive:
+            excluded.append({**occurrence,'reason':'explicit_authored_archive','fresh_exercise_key':key,
+                'excluded_learner_plies':covered,'raw_source_flags':{field:card.get(field) for field in
+                    ('canonical_route_source','archived','pending_validation','superseded_by')}})
+            continue
+        definition_fens[(step['repertoire_id'],step['card_id'])]=recorded_start_fen
+        if generated_reset is not None:
+            reset=generated_resets.setdefault(key,{'source_card_id':card['id'],'fresh_exercise_key':key,
+                'reason':'new_graph_definition_does_not_adopt_generated_availability','raw_source_flags':generated_reset,
+                'affected_graph_occurrences':0})
+            reset['affected_graph_occurrences']+=1
+        start = chess.Board(recorded_start_fen)
         if not start.is_valid():
             raise ValueError('graph_only_invalid_graph_start')
         accepted = list(moves)
         prelude = None
         if start.turn != (color == 'white'):
-            prelude = {'starting_fen':step['starting_fen'],'moves':[accepted[0]]}
+            prelude = {'starting_fen':recorded_start_fen,'moves':[accepted[0]]}
             start.push_uci(accepted.pop(0))
             if not accepted:
                 raise ValueError('graph_only_segment_has_no_learner_response')
         key = 'graph:' + fingerprint([step['repertoire_id'],step['card_id']])
         exercise = {'key':key,'decision_key':key,'policy_key':step['repertoire_id'],
-            'starting_fen':start.fen(en_passant='fen') if prelude else step['starting_fen'],
+            'starting_fen':start.fen(en_passant='fen') if prelude else recorded_start_fen,
             'prompt':'Play your authored repertoire continuation',
             'specification':{'type':'move_line','mode':'single' if len(accepted)==1 else 'stepwise_line',
                 'grading_policy':'reference','accepted_lines':[accepted]}}
@@ -217,7 +248,10 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
             bound_positions.add(position)
             bindings.append(binding)
             projected.append({'ply':ply,'exercise_ply':offset})
-        occurrences.append({**occurrence,'exercise_key':key,'learner_bindings':projected})
+        projection={**occurrence,'exercise_key':key,'learner_bindings':projected}
+        if step['starting_fen']!=recorded_start_fen:
+            projection.update(raw_graph_starting_fen=step['starting_fen'],recorded_definition_starting_fen=recorded_start_fen)
+        occurrences.append(projection)
 
     # Canonical cards can also be authored sources. Every effective source needs
     # an explicit accepted occurrence; no line association is guessed from FEN.
@@ -243,7 +277,7 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
         raise ValueError('graph_only_no_serving_graph_decision')
     if reviewed_lineage and reviewed_lineage['source_card_id'] not in fresh_exceptions:
         raise ValueError('graph_only_lineage_fact_unused')
-    return selected_lines, retained, exercises, bindings, occurrences, excluded, list(fresh_exceptions.values())
+    return selected_lines, retained, exercises, bindings, occurrences, excluded, list(fresh_exceptions.values()), list(generated_resets.values())
 
 
 def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False, graph_only=False, fresh_dangling_lineage=None):
@@ -268,9 +302,9 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
     if len(selected) != len(repertoire_ids) or set(repertoires) != selected:
         raise ValueError('explicit_unique_existing_repertoires_required')
     lines = {row['id']:row for row in tables['repertoire_lines'] if row['repertoire_id'] in selected}
-    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions = [], {}, [], [], [], []
+    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets = [], {}, [], [], [], [], []
     if graph_only:
-        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions = _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage)
+        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets = _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage)
     cards = {} if graph_only else {row['id']:row for row in tables['cards']}
     links = set() if graph_only else {(row['repertoire_id'],row['card_id']) for row in tables['repertoire_cards']}
     diagnostics, routes, memberships, bindings, exercises, aliases = [], [], [], [], {}, {}
@@ -447,7 +481,14 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
             serving_routes=sorted({row['line_id'] for row in graph_occurrences}),
             source_graph_bindings=sorted(graph_occurrences,key=canonical),
             excluded_graph_occurrences=sorted(excluded_graph,key=canonical),
-            fresh_policy_exceptions=sorted(fresh_exceptions,key=canonical))
+            fresh_policy_exceptions=sorted(fresh_exceptions,key=canonical),
+            generated_availability_resets=sorted(generated_resets,key=canonical),
+            authored_archive_excluded_definition_count=len({row['fresh_exercise_key'] for row in excluded_graph if row['reason']=='explicit_authored_archive'}),
+            authored_archive_excluded_occurrence_count=sum(row['reason']=='explicit_authored_archive' for row in excluded_graph),
+            authored_archive_excluded_binding_count=len({(row['repertoire_id'],row['line_id'],ply) for row in excluded_graph
+                if row['reason']=='explicit_authored_archive' for ply in row['excluded_learner_plies']}))
+        if generated_resets:
+            manifest['provenance']['description']+=' Legacy generated availability remains raw evidence and is not adopted by these new graph definitions.'
         if fresh_exceptions:
             manifest['provenance']['description']+=' One reviewed generated dangling-lineage marker was rebuilt under explicit fresh policy; raw lineage remains retained.'
             manifest['provenance']['evidence_refs'].append('fresh-lineage-facts:'+fingerprint(fresh_dangling_lineage))

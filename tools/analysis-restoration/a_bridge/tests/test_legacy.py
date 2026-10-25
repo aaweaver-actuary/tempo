@@ -468,7 +468,8 @@ def test_graph_only_does_not_reinterpret_changed_published_scope(fault,reason):
 def test_graph_only_source_availability_disagreement_is_not_a_schedule_reset(field,value):
     tables,steps=canonical_graph_capture()
     tables['cards'][0][field]=value
-    with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
+    error='no_serving_graph_decision' if field=='archived' else 'graph_card_availability_disagrees'
+    with pytest.raises(ValueError,match=error):
         graph_only(tables,steps)
 
 
@@ -540,8 +541,9 @@ def reviewed_dangling_fact(card):
 def test_graph_only_dangling_generated_lineage_rebuilt_requires_exact_reviewed_fact_and_preserves_raw_marker():
     tables,steps=generated_dangling_capture()
     before=deepcopy(tables);fact=reviewed_dangling_fact(tables['cards'][0]);fact_before=deepcopy(fact)
-    with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
-        graph_only(tables,steps)
+    initial_raw,initial_manifest,initial_report=graph_only(tables,steps)
+    assert initial_manifest['legacy_aliases']=={}
+    assert initial_report['generated_availability_resets'][0]['raw_source_flags']['superseded_by']=='synthetic-absent-successor'
     raw,manifest,report=translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],
         source_key='fresh-graph',graph_only=True,fresh_dangling_lineage=fact)
     source=json.loads(raw)
@@ -628,3 +630,86 @@ def test_graph_only_reviewed_lineage_case_cannot_expand_beyond_one_unparented_un
     with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
         translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',
             graph_only=True,fresh_dangling_lineage=fact)
+
+
+@pytest.mark.parametrize('flags',[
+    {'archived':1,'superseded_by':None},
+    {'pending_validation':1,'superseded_by':None},
+    {'superseded_by':'synthetic-known-successor'},
+    {'archived':1,'pending_validation':1,'superseded_by':'synthetic-known-successor'},
+])
+def test_new_graph_definitions_report_but_do_not_adopt_legacy_generated_availability(flags):
+    tables,steps=generated_dangling_capture();tables['cards'][0].update(flags)
+    if tables['cards'][0]['superseded_by']=='synthetic-known-successor':
+        tables['cards'].append({'id':'synthetic-known-successor'})
+    before=deepcopy(tables)
+    raw,manifest,report=graph_only(tables,steps)
+    assert len(json.loads(raw)['exercises'])==1 and len(json.loads(raw)['bindings'])==5
+    assert manifest['legacy_aliases']=={} and report['fresh_policy_exceptions']==[]
+    reset=report['generated_availability_resets'][0]
+    assert reset['raw_source_flags']=={field:tables['cards'][0].get(field) for field in
+        ('canonical_route_source','archived','pending_validation','superseded_by')}
+    assert reset['affected_graph_occurrences']==1
+    assert tables==before
+
+
+def test_new_generated_availability_policy_still_requires_captured_ready_publication():
+    tables,steps=generated_dangling_capture();tables.pop('opening_graph_publications')
+    with pytest.raises(ValueError,match='generated_reset_requires_ready_publication'):
+        graph_only(tables,steps)
+
+
+def test_graph_only_excludes_explicit_authored_archive_definitions_and_exact_learner_ranges_without_dropping_routes():
+    tables=captured()
+    long_moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1']
+    short_moves=['d2d4','d7d5','c2c4','e7e6','b1c3']
+    active_moves=['g1f3']
+    template=tables['repertoire_lines'][0]
+    tables['repertoire_lines']=[{**template,'id':name,'moves_json':json.dumps(sequence)} for name,sequence in
+        [('arch-a-1',long_moves),('arch-a-2',long_moves),('arch-a-3',long_moves),('arch-b',short_moves),('active',active_moves)]]
+    card_template={**tables['cards'][0],'kind':'prefix','content_type':'opening','canonical_route_source':1,'pending_validation':0}
+    tables['cards']=[{**card_template,'id':'arch-a','moves_json':json.dumps(long_moves),'archived':1,'superseded_by':'active'},
+        {**card_template,'id':'arch-b','moves_json':json.dumps(short_moves),'archived':1,'superseded_by':None},
+        {**card_template,'id':'active','moves_json':json.dumps(active_moves),'archived':0,'superseded_by':None}]
+    tables['repertoire_cards']=[{'repertoire_id':'italian','card_id':row['id'],'canonical_route_source':1} for row in tables['cards']]
+    tables['opening_graph_publications']=[{'repertoire_id':'italian','generation':1,'state':'ready'}]
+    steps=published_graphs(tables)
+    for step in steps:
+        step['card_id']='arch-a' if step['line_id'].startswith('arch-a') else step['line_id']
+    before=deepcopy(tables)
+    raw,manifest,report=graph_only(tables,steps);source=json.loads(raw)
+    assert len(source['routes'])==5 and len(source['exercises'])==1 and len(source['bindings'])==1
+    assert report['authored_archive_excluded_definition_count']==2
+    assert report['authored_archive_excluded_occurrence_count']==4
+    assert report['authored_archive_excluded_binding_count']==18
+    assert {row['reason'] for row in report['excluded_graph_occurrences']}=={'explicit_authored_archive'}
+    assert all(row['route_key']=='active' for row in source['bindings'])
+    assert manifest['legacy_aliases']=={} and tables==before
+
+
+def test_graph_only_reused_recorded_node_keeps_source_fen_and_all_raw_clock_occurrences():
+    tables,steps=canonical_graph_capture()
+    source_fen=chess.STARTING_FEN.rsplit(' ',2)[0]+' 9 23'
+    tables['cards'][0]['start_fen']=source_fen
+    tables['repertoire_lines'].append({**tables['repertoire_lines'][0],'id':'second-line'})
+    steps.append({**steps[0],'line_id':'second-line','starting_fen':chess.STARTING_FEN.rsplit(' ',2)[0]+' 3 7'})
+    original_tables=deepcopy(tables);original_steps=deepcopy(steps)
+    raw,manifest,report=graph_only(tables,steps);source=json.loads(raw)
+    assert len(source['exercises'])==1 and len(source['bindings'])==4
+    assert source['exercises'][0]['starting_fen']==source_fen
+    assert len({binding['exercise_key'] for binding in source['bindings']})==1
+    assert {row['raw_graph_starting_fen'] for row in report['source_graph_bindings']}=={step['starting_fen'] for step in steps}
+    assert all(row['recorded_definition_starting_fen']==source_fen for row in report['source_graph_bindings'])
+    assert manifest['legacy_aliases']=={} and tables==original_tables and steps==original_steps
+
+
+@pytest.mark.parametrize('fault',['turn','castling','ep','moves','color'])
+def test_generated_availability_reset_cannot_hide_executable_or_position_conflicts(fault):
+    tables,steps=generated_dangling_capture();card=tables['cards'][0];card['archived']=1
+    if fault=='turn': card['start_fen']=card['start_fen'].replace(' w ',' b ')
+    if fault=='castling': card['start_fen']=card['start_fen'].replace(' KQkq ',' - ')
+    if fault=='ep': card['start_fen']=card['start_fen'].replace(' - 0 1',' e3 0 1')
+    if fault=='moves': card['moves_json']='["d2d4"]'
+    if fault=='color': card['trained_color']='black'
+    with pytest.raises(ValueError,match='graph_card_definition_disagrees'):
+        graph_only(tables,steps)
