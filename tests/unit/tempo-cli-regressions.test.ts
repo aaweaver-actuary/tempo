@@ -45,3 +45,19 @@ it("Study-only CLI routing regressions run in the regular suite", () => {
   expect(result.stdout).toMatch(/# cancelled 0\b/);
   expect(result.stdout).toMatch(/# skipped 0\b/);
 }, 60_000);
+
+it.each([
+  "tempo-study-admission",
+  "tempo-study-assembly",
+  "tempo-study-authority",
+  "tempo-study-configuration",
+  "tempo-study-runtime",
+])("Installed Study provider regressions run in the regular suite: %s", name => {
+  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", `tests/runner/${name}.test.mjs`], { encoding: "utf8" });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout, "Each provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
+  expect(result.stdout).toMatch(/# fail 0\b/);
+  expect(result.stdout).toMatch(/# cancelled 0\b/);
+  expect(result.stdout).toMatch(/# skipped 0\b/);
+  expect(result.stdout).toMatch(/# todo 0\b/);
+}, 60_000);
