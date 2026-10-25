@@ -1905,6 +1905,12 @@
           "source": "incoming_enqueuers; repertoire_opportunities.py:536-554"
         },
         {
+          "existing_state": "Retained priority calculation/publication or game-priority handoff still in recovery",
+          "current_truth": "Four shared callback edges can still enqueue opportunity refresh. Native priority recovery can enqueue a fresh priority generation on source/scoring/preparation or legacy-cursor mismatch; source does not prove a finite drain.",
+          "required_after_producer_cessation": "Keep all four callbacks and compatibility bindings until separate priority-owner/parent disposition. No no-new-refresh or bounded-quiescence claim while these tails can restart; authority must observe settlement or explicitly select a held disposition. No no-op wrapper, implicit cancellation or second owner is introduced.",
+          "source": "backend/app/services/postgres_priority.py:92-145,157-164,189-190; introduction_priorities.py:809,898; postgres_game_priorities.py:38"
+        },
+        {
           "existing_state": "New explicit HTTP refresh request after separately approved ingress removal",
           "current_truth": "Today POST dispatches opportunities.refresh or legacy enqueue and returns queued/202.",
           "required_after_producer_cessation": "Then normal missing-route rejection; never return queued without work. Until client/authority evidence permits removal, retain current route. This is a proposed unsupported-route decision, not implemented policy.",
@@ -2098,7 +2104,7 @@
         },
         {
           "kind": "separate-owners",
-          "detail": "PR #423 at fb63771d475d608fc65f998d53a2d879f5c71d36 prepared the guided-review candidate and is now merged in the rebased main; its complete entry and FEATURES row are preserved unchanged, with no duplicate candidate. Four opportunity callback edges in three priority-owner files are read-only handoff blockers; this packet does not implement adaptive calculation/publication/fallback changes."
+          "detail": "PR #423 at fb63771d475d608fc65f998d53a2d879f5c71d36 prepared the guided-review candidate and is now merged in the rebased main; its complete entry and FEATURES row are preserved unchanged, with no duplicate candidate. Four opportunity callback edges in three priority-owner files are read-only handoff blockers; this packet does not implement adaptive calculation/publication/fallback changes. Coordination with task 01a173c5-d428-72c1-a828-f6f7bcbec0ee (adaptive-priority follow-on to #427) confirms it will preserve these callbacks, shared identity/completion bindings and our candidate/row. Issued priority recovery can create new generations on source/scoring/legacy-cursor mismatch, so no finite drain can be promised; opportunity cessation remains contingent on observed tail/downstream settlement or an explicit parent-selected held disposition."
         }
       ],
       "data_disposition": {
@@ -2109,7 +2115,7 @@
       },
       "reviewer": {
         "status": "Independent source review accepted for candidate preparation only; no remaining P1/P2. Not deletion approval.",
-        "scope": "All incoming edges, 40 protected hashes, 22 transition rows, prior-cohort preservation and source/test-selector correspondence checked independently. Corrected initial P2: task settlement atomicity is PostgreSQL-specific; legacy coordinator settlement and readmission remain distinct. Actual authority/deployment intentionally unverified.",
+        "scope": "All incoming edges, 40 protected hashes, 23 transition rows, prior-cohort preservation and source/test-selector correspondence checked independently. Corrected initial P2: task settlement atomicity is PostgreSQL-specific; legacy coordinator settlement and readmission remain distinct. Actual authority/deployment intentionally unverified.",
         "evidence": "Task-owned sanitized review: /Users/andy/Documents/Codex/2026-10-25/task-15/evidence/independent-review.md. No unit/runtime tests run; no application or actual-data action."
       }
     }
