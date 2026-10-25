@@ -1,34 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { BrowserHistoryError, convertBrowserIntents, planOriginalAuthorityReplay } from './browser-intents.mjs';
 
 const workspace = 'https://source.example.invalid:study:original-workspace';
 const coordinate = (...parts) => JSON.stringify(parts);
 function source() {
-  return {
-    schema_version: 1, unresolved: [],
-    authority: { sourceFingerprint: 'synthetic-only', origin: 'https://source.example.invalid' },
-    storageWorkspace: workspace,
-    recordKeys: {
-      [coordinate('browser-authority', workspace)]: 'approved-device',
-      [coordinate('indexeddb', 'tempo-study-intents', 'intents', workspace, 'review:original')]: 'approved-review-envelope',
-      [coordinate('indexeddb', 'tempo-study-intents', 'metadata', workspace, 'legacy-import')]: 'approved-checkpoint',
-      [coordinate('indexeddb', 'tempo-study-intents', 'teaching', workspace, 'first-clean:card')]: 'approved-browser-fact',
-      [coordinate('localStorage', workspace, 'tempo-learning-authorities-v1')]: 'approved-registry',
-      [coordinate('localStorage', workspace, 'tempo-study-intents-cutover-v1')]: 'approved-cutover-observation',
-      [coordinate('localStorage', workspace, 'tempo-pending-training-reviews-v1')]: 'approved-cold-legacy',
-    },
-    intentDatabase: { name: 'tempo-study-intents', version: 1,
-      intents: [{ workspace, key: 'review:original', kind: 'review', attemptId: 'original', requestId: 'review-attempt:original', endpoint: '/api/cards/card/review', revision: 3, createdAt: '2030-01-01T12:00:00Z', payload: { attemptId: 'original', outcome: 'again', expectedRevision: 3, completedAt: '2030-01-01T12:00:00Z' }, sequence: 7, state: 'pending', version: 4, data: { deliveryStarted: true }, claim: { owner: 'original-tab', token: 'old-claim', expiresAt: 123 }, futureField: { remains: [null, false, 7] } }],
-      metadata: [{ workspace, key: 'legacy-import', value: { complete: true, sourcesRetained: true } }],
-      teaching: [{ workspace, key: 'first-clean:card', cardId: 'card', revision: 3, kind: 'first-clean' }],
-    },
-    localStorage: [
-      { key: 'tempo-learning-authorities-v1', value: '{"original":"registry bytes"}' },
-      { key: 'tempo-study-intents-cutover-v1', value: null },
-      { key: 'tempo-pending-training-reviews-v1', value: '{malformed but retained' },
-    ], offlineDatabases: [],
-  };
+  return JSON.parse(readFileSync(new URL('./fixtures/browser-source-synthetic.json', import.meta.url), 'utf8'));
 }
 const approved = { approval: () => true };
 const intent = packet => packet.intentDatabase.intents[0];
@@ -188,4 +166,9 @@ test('sparse arrays and symbol-valued fields cannot be silently changed by JSON 
 test('dynamic getters and malformed offline attempts cannot change facts after validation', () => {
   const dynamic = source(); Object.defineProperty(intent(dynamic).payload, 'dynamic', { enumerable: true, get: () => 'changing' }); fail(dynamic);
   const malformed = withOffline(); malformed.offlineDatabases[0].training[0].value.attempts = [null]; fail(malformed);
+});
+
+test('published synthetic source and expected group stay byte-meaning consistent through the public API', () => {
+  const expected = JSON.parse(readFileSync(new URL('./fixtures/browser-expected-synthetic.json', import.meta.url), 'utf8'));
+  assert.deepEqual(convertBrowserIntents(source(), approved), expected);
 });

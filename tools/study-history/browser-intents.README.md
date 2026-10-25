@@ -113,3 +113,11 @@ claim installed-version mapping approval, a real snapshot, import idempotency,
 real browser replay or final acceptance. No dependencies or build artifacts are
 needed. Heavy execution on the shared Mac must hold the existing advisory
 `/tmp/tempo-mac-validation-20261025.lock`, opened without truncating or unlinking.
+
+The retained [synthetic source](fixtures/browser-source-synthetic.json) and
+[expected group](fixtures/browser-expected-synthetic.json) are local preparation
+fixtures consumed by the owning test and the disposable synthetic composition.
+They contain invented `.invalid` authority/identities only. The expected group
+records this converter's supplied-fact output; it is **not** an independently
+approved #389 actual-history golden, complete browser inventory, or a release
+receipt. The source fixture remains pending at its original authority.

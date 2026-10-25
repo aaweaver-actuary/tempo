@@ -1,0 +1,129 @@
+{
+  "browser_intents": [
+    {
+      "key": "approved-browser-fact",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "teaching": {
+          "workspace": "https://source.example.invalid:study:original-workspace",
+          "key": "first-clean:card",
+          "cardId": "card",
+          "revision": 3,
+          "kind": "first-clean"
+        }
+      }
+    },
+    {
+      "key": "approved-checkpoint",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "metadata": {
+          "workspace": "https://source.example.invalid:study:original-workspace",
+          "key": "legacy-import",
+          "value": {
+            "complete": true,
+            "sourcesRetained": true
+          }
+        }
+      }
+    },
+    {
+      "key": "approved-cold-legacy",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "cold": {
+          "key": "tempo-pending-training-reviews-v1",
+          "value": "{malformed but retained"
+        }
+      }
+    },
+    {
+      "key": "approved-cutover-observation",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "cold": {
+          "key": "tempo-study-intents-cutover-v1",
+          "value": null
+        }
+      }
+    },
+    {
+      "key": "approved-device",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "storageWorkspace": "https://source.example.invalid:study:original-workspace"
+      }
+    },
+    {
+      "key": "approved-registry",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "cold": {
+          "key": "tempo-learning-authorities-v1",
+          "value": "{\"original\":\"registry bytes\"}"
+        }
+      }
+    },
+    {
+      "key": "approved-review-envelope",
+      "data": {
+        "authority": {
+          "sourceFingerprint": "synthetic-only",
+          "origin": "https://source.example.invalid"
+        },
+        "intent": {
+          "workspace": "https://source.example.invalid:study:original-workspace",
+          "key": "review:original",
+          "kind": "review",
+          "attemptId": "original",
+          "requestId": "review-attempt:original",
+          "endpoint": "/api/cards/card/review",
+          "revision": 3,
+          "createdAt": "2030-01-01T12:00:00Z",
+          "payload": {
+            "attemptId": "original",
+            "outcome": "again",
+            "expectedRevision": 3,
+            "completedAt": "2030-01-01T12:00:00Z"
+          },
+          "sequence": 7,
+          "state": "pending",
+          "version": 4,
+          "data": {
+            "deliveryStarted": true
+          },
+          "claim": {
+            "owner": "original-tab",
+            "token": "old-claim",
+            "expiresAt": 123
+          },
+          "futureField": {
+            "remains": [
+              null,
+              false,
+              7
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

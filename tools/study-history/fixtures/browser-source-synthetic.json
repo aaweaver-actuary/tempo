@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "unresolved": [],
+  "authority": {
+    "sourceFingerprint": "synthetic-only",
+    "origin": "https://source.example.invalid"
+  },
+  "storageWorkspace": "https://source.example.invalid:study:original-workspace",
+  "recordKeys": {
+    "[\"browser-authority\",\"https://source.example.invalid:study:original-workspace\"]": "approved-device",
+    "[\"indexeddb\",\"tempo-study-intents\",\"intents\",\"https://source.example.invalid:study:original-workspace\",\"review:original\"]": "approved-review-envelope",
+    "[\"indexeddb\",\"tempo-study-intents\",\"metadata\",\"https://source.example.invalid:study:original-workspace\",\"legacy-import\"]": "approved-checkpoint",
+    "[\"indexeddb\",\"tempo-study-intents\",\"teaching\",\"https://source.example.invalid:study:original-workspace\",\"first-clean:card\"]": "approved-browser-fact",
+    "[\"localStorage\",\"https://source.example.invalid:study:original-workspace\",\"tempo-learning-authorities-v1\"]": "approved-registry",
+    "[\"localStorage\",\"https://source.example.invalid:study:original-workspace\",\"tempo-study-intents-cutover-v1\"]": "approved-cutover-observation",
+    "[\"localStorage\",\"https://source.example.invalid:study:original-workspace\",\"tempo-pending-training-reviews-v1\"]": "approved-cold-legacy"
+  },
+  "intentDatabase": {
+    "name": "tempo-study-intents",
+    "version": 1,
+    "intents": [
+      {
+        "workspace": "https://source.example.invalid:study:original-workspace",
+        "key": "review:original",
+        "kind": "review",
+        "attemptId": "original",
+        "requestId": "review-attempt:original",
+        "endpoint": "/api/cards/card/review",
+        "revision": 3,
+        "createdAt": "2030-01-01T12:00:00Z",
+        "payload": {
+          "attemptId": "original",
+          "outcome": "again",
+          "expectedRevision": 3,
+          "completedAt": "2030-01-01T12:00:00Z"
+        },
+        "sequence": 7,
+        "state": "pending",
+        "version": 4,
+        "data": {
+          "deliveryStarted": true
+        },
+        "claim": {
+          "owner": "original-tab",
+          "token": "old-claim",
+          "expiresAt": 123
+        },
+        "futureField": {
+          "remains": [
+            null,
+            false,
+            7
+          ]
+        }
+      }
+    ],
+    "metadata": [
+      {
+        "workspace": "https://source.example.invalid:study:original-workspace",
+        "key": "legacy-import",
+        "value": {
+          "complete": true,
+          "sourcesRetained": true
+        }
+      }
+    ],
+    "teaching": [
+      {
+        "workspace": "https://source.example.invalid:study:original-workspace",
+        "key": "first-clean:card",
+        "cardId": "card",
+        "revision": 3,
+        "kind": "first-clean"
+      }
+    ]
+  },
+  "localStorage": [
+    {
+      "key": "tempo-learning-authorities-v1",
+      "value": "{\"original\":\"registry bytes\"}"
+    },
+    {
+      "key": "tempo-study-intents-cutover-v1",
+      "value": null
+    },
+    {
+      "key": "tempo-pending-training-reviews-v1",
+      "value": "{malformed but retained"
+    }
+  ],
+  "offlineDatabases": []
+}
