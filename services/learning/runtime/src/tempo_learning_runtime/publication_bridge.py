@@ -152,7 +152,8 @@ class PublicationBundleV2(PublicationBundle):
                     if identity in decision_projections and decision_projections[identity]!=projection:
                         raise ValueError('Decision identity has ambiguous projections')
                     decision_projections[identity]=projection
-                    if board.turn != (route.learner_color == "white") or board.fen() != chess.Board(projected_fen).fen():
+                    if (board.turn != (route.learner_color == "white") or
+                            board.fen().split()[:4] != chess.Board(projected_fen).fen().split()[:4]):
                         raise ValueError("Binding position/color mismatch")
                     if ply == len(route.moves) or route.moves[ply] not in accepted_moves:
                         raise ValueError("Route conflicts with accepted alternatives")

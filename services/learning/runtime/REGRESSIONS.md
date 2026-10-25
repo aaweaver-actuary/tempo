@@ -1,5 +1,13 @@
 # Learning runtime regression ownership
 
+`tests/test_decision_projection.py::test_known_projected_binding_accepts_counter_only_fen_variants_without_rewriting_raw_facts`
+requires the same explicitly identified exercise/binding to accept normalized
+legal-position equality despite different FEN clocks. Raw full route/definition
+FEN strings and immutable digests remain distinct; input is not rewritten.
+The adjacent position/path/color/unknown-card and legal-en-passant controls keep
+piece placement, turn, castling, current legal-EP normalization, legal moves and
+explicit binding identity strict. Equal FEN alone never establishes identity.
+
 ## Balanced daily presentation
 
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`

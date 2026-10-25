@@ -258,6 +258,14 @@ Publication JSON includes the existing Content `Publication` plus versioned Lear
 
 Memberships must be unique. Opening route orders must be unique within each repertoire, and every accepted opening line must finish on the trained learner's move. Activation verifies the exact graph steps and executable payloads for every accepted membership. Activation and retirement serialize repertoire ownership with sorted transaction advisory locks, including removed memberships, before acquiring sorted card locks and applying queue effects. A competing owner is a terminal conflict. Malformed previously staged bundles are revalidated and produce terminal operation receipts; transient database contention retains retryable intent.
 
+An explicitly identified V2 route binding must match its accepted exercise's
+legal position: piece placement, turn, castling and the existing normalized
+legal-en-passant field. Halfmove/fullmove clocks may differ between the recorded
+route occurrence and definition. This comparison never establishes card identity
+from FEN; explicit card/decision/path/color checks remain required. Full supplied
+FEN strings are retained unchanged, and immutable bundle/route digests still bind
+those raw strings, including clocks.
+
 One opening repertoire has one active publication owner. V1 retains its
 128-definition limit. The Content bridge v2 accepts at most 8,192 definitions in
 one complete 12 MiB bundle; independently active chunks cannot replace it. A
