@@ -359,7 +359,14 @@ The new image contains **745** files, including nginx's `50x.html`; asset manife
 SHA256 is `9a2b81f1741d638af98b72b6cbc273dbb14f5e807d9738fbab175d22439d1351`.
 Against the native owner's earlier 744-file build, all paths are present but
 `study-composition.json` changed after #419; the old manifest is not relabelled as
-identical. Exact commands, image/source hashes, installed-file and asset maps,
+identical. Its final current 744-file build is now byte-identical to the browser
+image apart from nginx's added `50x.html`; native manifest SHA256 is
+`0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e`.
+The separate [PR #422](https://github.com/aaweaver-actuary/tempo/pull/422) receipt
+records **10/10 native cases plus 2 supporting cases**, no skips, on assembly
+`a534aeb0e2f96c8adecaaffc855fdd62abc1898e`, consuming this exact browser script.
+Those tests were not repeated by the browser owner. Exact commands,
+image/source hashes, installed-file and asset maps,
 raw sanitized browser/SQL logs and cleanup evidence are retained at
 `/tmp/tempo-382-browser-repair-evidence-20261025`. The aggregate
 `composed-acceptance.json` SHA256 is
@@ -414,14 +421,23 @@ identity/body retention and rejected false receipt/ingress evidence are covered.
 Pure contracts used official `node:22-slim` image
 `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`.
 The registered lane initially stopped before collection because main #419 left
-five deleted Games unit files in the frontend inventory. That unchanged baseline
-failure is retained in `lane-baseline-mismatch.json`; its dedicated owner handles
-repair. The direct focused pass is not called a registered-lane pass.
+five deleted Games unit files in the frontend inventory. That baseline failure
+is retained in `lane-baseline-mismatch.json`. The owner's exact
+[PR #425](https://github.com/aaweaver-actuary/tempo/pull/425) repair
+`3f17d26e564f9edad59cc60c14792e212256346c` was consumed without duplicating its
+change, preserving this new runner registration. The newly unblocked command
+`node tools/component-build/test-lane.mjs runners study-learning-proof` then
+executed **10/10 passed, 0 failed/skipped** on validation assembly
+`5e9e29b4ead71b7c9cbfc7ac2c1419739f019e51`; discovery found 160 unit files and
+10 runner files. This repeats the same ten contracts through registered dispatch,
+not ten additional cases. Only documentation and that inventory dependency
+changed after the actual browser run; no browser/database/build rerun was needed.
 
 Independent source/evidence review found no blocking findings. Builds and browser
 execution held `/tmp/tempo-mac-validation-20261025.lock`, opened without truncation
 and preserved. Both projects' exact containers, two volumes and network, all six
 task image tags and private inputs were removed. Project-label inventories were
 empty; a separate **20-target** exact absence audit passed. Shared images/caches,
-live Study/data and other tasks were preserved. Physical-phone/live-data and
-native ten-case qualification remain separate and **UNVERIFIED by this receipt**.
+live Study/data and other tasks were preserved. Physical-phone/live-data,
+deployment and full CI remain **UNVERIFIED**. Native qualification is separately
+reported in PR #422 and is not included in this receipt's browser count.
