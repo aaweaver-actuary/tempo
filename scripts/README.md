@@ -23,13 +23,15 @@ flowchart TD
   CLI["tempo backup: existing target lock and deployment receipt"] --> Snapshot["Read originally running services"]
   Snapshot --> Gate{"postgres-backup running?"}
   Gate -->|yes| Refuse["Refuse before lifecycle effects; preserve prior evidence"]
-  Gate -->|no| Prepare["Existing image, dependency and schema checks"]
+  Gate -->|no| Images["Existing image and dependency-identity preflight"]
+  Images -->|failure| PreflightFailure["Fail before application shutdown"]
+  Images --> Prepare["Ensure dependencies and check schema"]
   Prepare --> Stop["Stop applications; leave backup daemon untouched"]
   Stop --> Helpers["Existing explicit one-shot dump / restore / compare helpers"]
   Helpers -->|success or caught error| Recover["Restore originally running services; stop newly started dependencies"]
   Prepare -->|caught error| Recover
   Stop -->|caught error| Recover
-  Recover --> Ready["Readiness requires the original running set"]
+  Recover --> Ready["If web was running: readiness requires the original running set"]
   Ready --> Report["Report verified backup or failure; recovery remains best effort"]
 ```
 
