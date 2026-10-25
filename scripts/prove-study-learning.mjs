@@ -1,10 +1,115 @@
 import { observePreparedAcknowledgementsDuringBootstrap, readStudyIntentRecords, denyStudyIntentStorage, seedLegacyStudyIntent, failReviewIntentStorage, seedIncompatibleStudyIntentStorage, readPreparedCardCount, readPreparedAttemptCounts, readFirstPreparedAttempt } from "../database/tests/browser/study-learning-storage.mjs";
-import { chromium, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
-import { Chess } from 'chess.js';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// Only the two composed acceptance scenarios opt out of the native fault proxy.
+export function proofTarget(input) {
+  const mode = input.mode ?? 'native';
+  assert.ok(['native', 'composed-ingress'].includes(mode), 'Unknown proof mode');
+  if (mode === 'native') return { mode, workspace: 'workspace-a' };
+  assert.ok(['normal', 'lost-response'].includes(input.scenario), 'Unsupported composed scenario');
+  const origins = [input.frontend, input.learning].map(value => {
+    const url = new URL(value);
+    assert.ok(url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port &&
+      !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash,
+      'Use the exact disposable loopback web origin');
+    return url.origin;
+  });
+  assert.equal(origins[0], origins[1], 'Composed frontend and Learning must use the same ingress origin');
+  assert.ok(typeof input.workspace === 'string' && input.workspace.trim() === input.workspace &&
+    input.workspace.length > 0 && input.workspace.length <= 200 && !/[\r\n\x00-\x1f\x7f]/.test(input.workspace),
+    'Supply the configured disposable workspace');
+  return { mode, origin: origins[0], workspace: input.workspace };
+}
+
+export async function proofEndpoint(target, forward) {
+  if (target.mode === 'composed-ingress') return { endpoint: target.origin };
+  const proxy = createServer(forward);
+  await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
+  return { proxy, endpoint: `http://127.0.0.1:${proxy.address().port}` };
+}
+
+export async function observeComposedIngress(context, target, scenario, traffic) {
+  const evidence = { origin: target.origin, browser_requests: [], fault: null, fault_dropped: false, failure: null,
+    database_verification: 'required-external' };
+  context.on('request', request => {
+    const url = new URL(request.url());
+    evidence.browser_requests.push({ origin: url.origin, method: request.method(), path: url.pathname });
+    if (!url.pathname.startsWith('/api/')) return;
+    if (url.origin !== target.origin) evidence.failure = 'Browser API request escaped ingress';
+    traffic.push({ origin: url.origin, method: request.method(), path: url.pathname,
+      key: request.headers()['idempotency-key'], body: request.postData() ? JSON.parse(request.postData()) : null });
+  });
+  if (scenario === 'lost-response') await context.route('**/api/**', async route => {
+    const request = route.request();
+    if (request.method() !== 'POST' || !/\/cards\/[^/]+\/review$/.test(new URL(request.url()).pathname) || evidence.fault)
+      return route.continue();
+    try {
+      assert.equal(new URL(request.url()).origin, target.origin, 'Review must target ingress');
+      const response = await route.fetch({ maxRedirects: 0 });
+      assert.ok(response.ok(), 'Only a successful real ingress response may be lost');
+      const bytes = await response.body();
+      assert.ok(bytes.length > 1, 'Expected a real review response body');
+      evidence.fault = { location: 'browser-route-after-ingress', upstream_status: response.status(),
+        upstream_bytes: bytes.length, operation_id: request.headers()['idempotency-key'] };
+    } catch {
+      evidence.failure = 'Real ingress review response was not successfully read';
+    }
+    // No synthesized HTTP success. The server has already handled the original
+    // request; losing its reply leaves the browser to recover its saved command.
+    await route.abort('failed');
+    evidence.fault_dropped = Boolean(evidence.fault);
+  });
+  return evidence;
+}
+
+export async function confirmComposedReview(target, scenario, evidence, traffic, retained, read = fetch) {
+  assert.equal(evidence.failure, null, 'Composed transport observation failed');
+  assert.equal(evidence.origin, target.origin);
+  assert.ok(evidence.browser_requests.length > 0, 'Missing actual browser request inventory');
+  assert.ok(evidence.browser_requests.every(item => item.origin === target.origin), 'Browser escaped ingress');
+  for (const path of ['/api/study/bootstrap', '/api/queue/window'])
+    assert.ok(evidence.browser_requests.some(item => item.method === 'GET' && item.path === path), 'Missing browser Study read');
+  const posts = traffic.filter(item => item.method === 'POST' && /\/cards\/[^/]+\/review$/.test(item.path));
+  assert.equal(posts.length, 1, 'Expected one original browser review POST');
+  const original = posts[0];
+  assert.equal(original.origin, target.origin);
+  assert.equal(evidence.browser_requests.filter(item => item.method === 'POST' && item.path === original.path).length, 1,
+    'Review must appear in actual browser traffic');
+  assert.ok(typeof original.key === 'string' && original.key.length > 0);
+  assert.ok(typeof original.body?.attempt_id === 'string' && original.body.attempt_id.length > 0);
+  const review = retained.find(item => item.kind === 'review' && item.requestId === original.key);
+  assert.equal(review?.state, 'committed', 'Original review must be retained and confirmed');
+  assert.equal(review.attemptId, original.body.attempt_id);
+  assert.equal(review.workspace, `${target.origin}:study:${encodeURIComponent(target.workspace)}`);
+  assert.equal(new URL(review.endpoint, target.origin).href, new URL(original.path, target.origin).href);
+  const delivery = retained.find(item => item.kind === 'review-delivery' && item.requestId === original.key);
+  assert.deepEqual(delivery?.payload?.body, original.body, 'Original delivery body changed');
+  if (scenario === 'lost-response') {
+    assert.equal(evidence.fault_dropped, true);
+    assert.equal(evidence.fault?.operation_id, original.key, 'Fault must belong to the original operation');
+    assert.equal(evidence.fault.location, 'browser-route-after-ingress');
+    assert.ok(evidence.fault.upstream_status >= 200 && evidence.fault.upstream_status < 300 && evidence.fault.upstream_bytes > 1);
+  } else assert.equal(evidence.fault, null);
+  const response = await read(`${target.origin}/api/operations/${encodeURIComponent(original.key)}`, { redirect: 'error' });
+  assert.equal(response.status, 200, 'Original operation receipt must be readable through ingress');
+  const receipt = await response.json();
+  assert.equal(receipt.operation_id, original.key);
+  assert.equal(receipt.state, 'complete');
+  assert.equal(receipt.response?.persisted, true);
+  assert.ok(Number.isInteger(receipt.response.review_id) && receipt.response.review_id > 0);
+  return receipt;
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const { chromium, expect } = await import('@playwright/test');
+const { Chess } = await import('chess.js');
 let input = ''; for await (const chunk of process.stdin) input += chunk;
-const { frontend, learning, credential, replacement_credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
+const parsedInput = JSON.parse(input);
+const target = proofTarget(parsedInput);
+const { frontend, learning, credential, replacement_credential, scenario, operation, mate, fixture_key } = parsedInput;
 const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [], queueResponses=[];
 let evidenceDelivered=false, priorityHead=false, learningUnavailable=false, originalOfflineAttempt;
 let interruptBootstrapBody=false, pendingBootstrapFault;
@@ -79,12 +184,11 @@ const forward = async (request, response, authorityOrigin = endpoint) => {
     response.end(bytes);
   } catch { request.socket.destroy(); }
 };
-const proxy = createServer(forward);
-await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
-const endpoint = `http://127.0.0.1:${proxy.address().port}`;
+const { proxy, endpoint } = await proofEndpoint(target, forward);
 let replacementProxy, replacementEndpoint;
 const browser = await chromium.launch({headless:true});
 const context = await browser.newContext({ serviceWorkers: offlineScenario ? 'allow' : 'block' });
+const ingress = target.mode === 'composed-ingress' ? await observeComposedIngress(context, target, scenario, traffic) : undefined;
 context.on('request', request => {
   const url = new URL(request.url());
   applicationRequests.add(`${request.method()} ${url.origin === endpoint ? 'Learning' : url.origin === new URL(frontend).origin ? 'Study' : url.origin}${url.pathname}`);
@@ -93,7 +197,7 @@ context.on('request', request => {
 async function connect(page, origin = endpoint) {
   await page.goto(frontend);
   await page.getByLabel('Learning origin').fill(origin);
-  await page.getByLabel('Workspace', {exact:true}).fill(scenario === 'wrong-workspace' ? 'other-workspace' : 'workspace-a');
+  await page.getByLabel('Workspace', {exact:true}).fill(scenario === 'wrong-workspace' ? 'other-workspace' : target.workspace);
   await page.getByLabel('Study credential').fill(scenario === 'wrong-credential' ? 'wrong-study-credential-' + 'x'.repeat(32) : credential);
   await page.getByRole('button', {name:'Connect to Learning', exact:true}).click();
 }
@@ -357,8 +461,8 @@ try {
     }
     if (second) await move(second);
     if (['lost-response','before-commit','service-restart'].includes(scenario)) {
-      await expect.poll(()=>dropped).toBe(true);
-      loss=false;
+      await expect.poll(()=>dropped || Boolean(ingress?.fault_dropped)).toBe(true);
+      dropped=true; loss=false;
       await page.reload();
     }
     if (offlineScenario) {
@@ -411,15 +515,18 @@ try {
     }
   }
   assert.deepEqual(unexpected,[]);
-  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
+  if (ingress) confirmedReceipts.push(await confirmComposedReview(target, scenario, ingress, traffic, await records(page),
+    (url, options) => fetch(url, { ...options, headers: { Authorization: `Bearer ${credential}`, 'X-Tempo-Workspace': target.workspace } })));
+  console.log(JSON.stringify({complete:true,scenario,...(ingress ? {mode:target.mode,ingress} : {}),unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
   console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]").replaceAll(replacement_credential??'unused-replacement-secret',"[redacted]"));
   console.error((await page?.locator("body").innerText().catch(()=>"") ?? "").slice(0,3000).replaceAll(credential,"[redacted]"));
   console.error(JSON.stringify(traffic)); process.exitCode=1;
-  console.error(JSON.stringify({bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements}));
+  console.error(JSON.stringify({bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements,...(ingress ? {ingress} : {})}));
 } finally {
   releaseDelayedQueue();
   if(replacementProxy) {replacementProxy.closeAllConnections();await new Promise(resolve=>replacementProxy.close(resolve));}
-  await context.close();await browser.close();proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));
+  await context.close();await browser.close();if(proxy) {proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));}
+}
 }

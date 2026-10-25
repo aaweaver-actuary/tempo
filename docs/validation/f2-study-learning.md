@@ -331,6 +331,10 @@ whole-product gate or merge claim.
 
 ## #382 browser composition preparation — October 25, 2026
 
+This source-only checkpoint predates the separately authorized harness repair
+recorded in the following subsection. Its original source findings remain valid
+for the pinned revision, rather than describing the repaired script.
+
 **BLOCKED before execution; source inspection only.** Inspected main
 `311a712581deb95bf9035b2a3b934c03335a1cd5` after PR #410. The native ten-case
 qualification and #378/#380 resource/isolation receipt have separate owners.
@@ -408,3 +412,71 @@ composed-browser and physical-phone/live-data qualification distinct, with the
 last **UNVERIFIED**. Heavy execution must hold the existing advisory
 `/tmp/tempo-mac-validation-20261025.lock`, opened without truncation and never
 unlinked. No final composed receipt is claimed by this preparation.
+
+## #382 composed-ingress harness repair — October 25, 2026
+
+The parent subsequently authorized the bounded Node-file repair. The existing
+`scripts/prove-study-learning.mjs` now accepts the opt-in stdin input
+`mode: "composed-ingress"`, only for `normal` and `lost-response`. Both existing
+`frontend` and `learning` inputs must name the same exact disposable
+`http://127.0.0.1:<port>` web origin; paths, credentials, query strings, remote
+hosts and competing Learning origins are rejected. Supply the configured
+`workspace` explicitly. Omitting `mode` preserves the original native proxy and
+`workspace-a` behavior. The production application/configuration is unchanged.
+
+Composed normal uses the browser network directly. Both composed scenarios
+retain actual browser URL origin/method/path inventory and require bootstrap,
+queue and original-review requests on ingress. For lost-response, Playwright
+forwards the original request to real ingress with redirects disabled, consumes
+and records a successful response's body/status, then aborts delivery at the
+browser route boundary. It does not manufacture an HTTP success or add an
+ingress fault switch. The existing reload/one-POST assertions remain. This is
+an injected browser-transport loss after ingress responded; it does not claim
+that nginx caused a response loss.
+
+Before successful composed output, the harness checks the original committed
+review's operation/attempt/authority/endpoint and retained immutable delivery
+body. It independently reads the original operation receipt through ingress
+using the Study credential/workspace, rejects redirects and requires the same
+ID, complete state, persisted result and positive integer review ID. Output
+labels PostgreSQL verification `required-external`: the independent one-review,
+one-attempt-receipt SQL checks described above remain mandatory. The supported
+stdin invocation is sufficient; no Python operator or new fixture endpoint was
+added. Keep the private JSON input outside the checkout and invoke:
+
+```sh
+node scripts/prove-study-learning.mjs < "$PRIVATE_INPUT_JSON"
+```
+
+The new `tests/runner/study-learning-proof.test.mjs` is registered in the existing
+runner inventory. Ten focused cases cover native defaults/actual random proxy,
+explicit ingress/no proxy, invalid bindings, passive normal observation, fault
+forward/read/abort ordering, failed/redirected/empty/off-origin responses,
+independent original receipt checks, original envelope changes and lost-response
+identity. These are harness contracts, not real Learning/Compose acceptance.
+All **10 passed**, **0 failed/skipped**, using cached official `node:22-slim`
+image `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`
+and the existing Node result-accounting runner.
+A separate real Chromium **153.0.8010.12** / Playwright **1.63.0** transport
+check also passed both normal/lost-response paths against an explicitly synthetic
+loopback HTTP fixture while holding the shared lock. It verified one upstream
+POST, direct browser origins and real `route.fetch()` body read before abort,
+followed by reload/receipt-read without resending. It claims no Learning/database
+or Compose qualification. Copied locked JS packages and existing read-only
+Chromium were used without host software installation.
+
+The registered lane command stopped before collection with
+`Missing/duplicate test ownership; update test-inventory.json`: main #419 removed
+five optional Games unit files while leaving their frontend inventory entries.
+Source comparison reproduces the same five-entry mismatch on main and this
+branch; it is not repaired here. The direct focused owner run passes without
+claiming the registered lane passed. Independent source review found no findings.
+
+The parent has now accepted PR #420's recorded #380 evidence at
+`20be190eec5ed28ce149344767e8f9edb4f648ab`; this does not assert a merge. Its
+outage routes returned explicit 504 at the existing nginx connection timeout,
+and same-artifact recovery passed. Recorded images precede #419's changed Study
+build inputs. Final browser/Compose execution still requires pinned-source build
+correspondence, task-owned recreation, accepted fixture setup, the shared lock,
+and the independent database checks. No final composed acceptance is claimed
+by the harness-unit results above.
