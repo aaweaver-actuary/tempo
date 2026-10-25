@@ -56,7 +56,7 @@ All **437 baseline-to-current changed paths** are covered once: 37 historical le
 | Build/package/lock configuration | 3,034 | 2,800 | −234 |
 | Browser runtime outside the historical audit scope | 20,425 | 9,383 | −11,042 |
 
-The new 95-line Content runtime module is the remaining supplemental kind and is already included in broad production. None of the nonproduction reductions above contributes to either production target. [binary-fixtures.tsv](./binary-fixtures.tsv) records **19 removed screenshot fixtures / 2,109,457 bytes**; binary files have no invented physical-line counts and are intentionally omitted from source_delta.py's text manifest.
+The new 95-line Content runtime module is the remaining supplemental kind and is already included in broad production. None of these excluded-source reductions contributes to either audited production target. [binary-fixtures.tsv](./binary-fixtures.tsv) records **19 removed screenshot fixtures / 2,109,457 bytes**; binary files have no invented physical-line counts and are intentionally omitted from source_delta.py's text manifest.
 
 ## Moves and limits
 
