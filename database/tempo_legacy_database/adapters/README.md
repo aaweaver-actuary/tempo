@@ -59,13 +59,13 @@
 [Bounded prefix reads](prefix_reads/README.md) contains existing diagnostic graph/evidence projections and the complete native-typed transition state capture, preserving one read-only MVCC scope, query/size/payload order and resource/stale-link guards. Algorithms, typed responses and existing planning authority remain unchanged outside database.
 
 
-[Introduction-priority storage](introduction_priorities/README.md) holds complete coverage/personal-evidence/card/settings projections, priority job claims and generation publication operations. Scoring, bounded read/page/chunk loops, clocks, foreground yielding, stale-generation decisions and callbacks remain in the existing application owner.
+
 
 
 [HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; all203 original direct/alias query sites, builders and selectors are now root-owned. Backend application responsibility organization remains a separate next phase.
 
 
-[Priority preparation and retention](priority_lifecycle/README.md) contains existing source-epoch locks, preparation/staging/publication queries and native/SQLite retention statements. Application generation/lease/freshness checks, row budgets, clocks, slice progression and durable callbacks remain outside; complete operations reuse exact introduction-priority queries.
+
 
 
 [Queue refresh persistence](queue_refresh/README.md) starts with existing tactical/unseen/due/Study admission statements and eligibility constants. Eligibility/quota/selection/locks/callback composition stays with the caller; the remaining direct/bounded projections and SQL builder/reader bridges are unfinished extraction work.
@@ -133,3 +133,5 @@ Technical wiring remains explicit unfinished work for the backend phase: connect
 [Existing threat pipeline storage](threats/README.md) owns original candidate/request/report/fingerprint/lease/claim queries and fixed SQL preparation. Detection,source ranking/validation,seed/admission,engine fairness,clock and task/card/queue decisions stay outside; existing legacy shared coupling is retained and disclosed.
 
 The exclusive opening-ranking capture adapter and its canonical capture-flow drawing are retired with the legacy CLI. [History and retained pure evaluation](../../../docs/opening-shadow-ranking.md) record the source recovery point. Production candidate/admission storage, connection admission and pool-timeout behavior remain unchanged.
+
+Adaptive-priority input/job/publication and preparation/retention implementation adapters retire with their optional producer. Saved-score/frozen queue readers and source-epoch invalidation remain in their existing owners; [physical priority schema](../schema/discovery-priority/README.md) is unchanged. The [lifecycle adapter](lifecycle/README.md) retains its essential daily queue readiness projection. No live schema retirement is implied.

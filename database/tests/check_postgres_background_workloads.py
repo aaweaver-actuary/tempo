@@ -80,26 +80,7 @@ def seed(database) -> None:
         "VALUES(%s,%s,%s,'e2e4')",
         [(GAME_ID, number, f"synthetic-position-{number:04d}") for number in range(864)],
     )
-    database.execute(
-        "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) "
-        "VALUES(%s,1,%s)", (REPERTOIRE_ID, NOW),
-    )
-    database.execute(
-        "INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,next_attempt_at,updated_at) "
-        "VALUES(%s,2,'running',%s,%s)", (REPERTOIRE_ID, NOW, NOW),
-    )
-    database.cursor().executemany(
-        "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) "
-        "VALUES(%s,%s,'prefix',%s,'[]','2026-09-29')",
-        [(f"incident-benchmark-card-{number:02d}", REPERTOIRE_ID,
-          "8/8/8/8/8/8/8/8 w - - 0 1") for number in range(48)],
-    )
-    database.cursor().executemany(
-        "INSERT INTO repertoire_card_priority_generations(repertoire_id,generation,card_id,"
-        "scoring_version,updated_at) VALUES(%s,%s,%s,2,%s)",
-        [(REPERTOIRE_ID, generation, f"incident-benchmark-card-{number:02d}", NOW)
-         for generation in (1, 2, 3) for number in range(48)],
-    )
+
 
 
 def threat_request_state() -> dict:

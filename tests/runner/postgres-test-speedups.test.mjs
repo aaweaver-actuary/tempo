@@ -298,7 +298,7 @@ test("durability mode and legacy skip-browser retain ordinary recovery without d
 });
 
 test("retired adaptive priority benchmark mode is rejected before setup", () => {
-  assert.throws(() => parse(["--mode"]), /--mode must be/);
+  assert.throws(() => parse(["--mode", "priority-benchmark"]), /--mode must be/);
 });
 
 test("standalone lifecycle mode requires the complete rehearsal without parent startup or browser work", () => {

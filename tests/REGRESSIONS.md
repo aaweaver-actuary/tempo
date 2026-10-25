@@ -5212,3 +5212,39 @@ and only the opportunity-effect expectations retire; PR454's immutable receipt i
 not relabelled as evidence for this changed selection. Native proof source cleanup
 retires producer/state-action cases while retaining other owners' checks; no native
 pass follows from editing or parsing those scripts.
+
+
+## Adaptive-priority producer retirement
+
+Fresh-start source retirement supersedes the historical producer-only entries
+above: adaptive scoring/job/generation/retention/coalescing suites, native
+priority recovery/benchmark/refresh-input proofs and the reclamation CLI are
+retired with their capability. These historical cases are not passing current
+acceptance and no old-job drain is required. SQL/schema, saved score reads,
+source epochs and ordinary Study remain in scope.
+
+- `backend/tests/test_adaptive_priority_retirement.py`: physical producer absence,
+  unsupported control rejection before storage, and the actual repertoire
+  definition response without unused optional priority metadata.
+- `tests/unit/validated-data-regressions.test.ts`: retained definition/graph schema
+  parsing after removal of the optional response field.
+- `backend/tests/test_introduction_priorities.py::test_next_day_admits_from_last_published_scores_without_delaying_due_review`:
+  the retained queue reader uses directly seeded saved scores without a producer.
+- `backend/tests/test_frozen_opening_order.py` and the two canonical saved-score
+  invalidation cases retain frozen/origin/fallback and real source-staleness checks.
+- The retained `test_real_game_feedback.py`, native game completion fakes,
+  real local six-stage `test_game_sync.py` regression and Maia/Explorer primary
+  effects remain with their existing owners. Calculator-only bonus assertions
+  retire; actual reviews, FSRS, graph positions, leases, publication and terminal
+  completion assertions remain.
+- `backend/tests/test_storage_reclaim.py` checks the unchanged ordered queue
+  checksum and rejects the retired CLI before opening a database.
+- `backend/tests/test_legacy_lifecycle_database_split.py` retains SQL/DDL guards
+  for queue origins, metrics and rollover, and verifies the essential projection
+  still comes from its existing database adapter.
+- Selected PostgreSQL runner plan/list tests check retired mode rejection and
+  retained scenario composition without running Docker, native proofs or browsers.
+
+Python SQLite/fake, selected schema and runner source checks establish their
+stated boundaries only. Native fixture edits have no native execution receipt;
+installed artifacts, deployment and full-system qualification remain unverified.

@@ -1,4 +1,4 @@
-"""Measure four incident workloads on an explicitly isolated PostgreSQL restore."""
+"""Measure the retained threat-claim incident workload on an explicitly isolated PostgreSQL restore."""
 
 from __future__ import annotations
 
@@ -111,18 +111,11 @@ def main() -> None:
         version = database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0]
         if version != 20:
             raise RuntimeError(f"Restore schema must be 20 for candidate measurements; found {version}")
-        recurring = database.execute(
-            "SELECT repertoire_id,card_id,COUNT(*) FROM repertoire_decision_events "
-            "WHERE card_id IS NOT NULL GROUP BY repertoire_id,card_id "
-            "ORDER BY COUNT(*) DESC LIMIT 1"
-        ).fetchone()
         queued_threats = database.execute(
             "SELECT COUNT(*) FROM threat_analysis_requests WHERE state='queued'"
         ).fetchone()[0]
     print({"source": "verified backup restored into isolated PostgreSQL",
-           "queued_threats": queued_threats,
-           "recurring_events_for_top_card": recurring[2] if recurring else 0,
-           }, flush=True)
+           "queued_threats": queued_threats}, flush=True)
 
     def threat_claim():
         with postgres_store.connection(background=True) as database:
@@ -132,7 +125,6 @@ def main() -> None:
 
     failures = [measure_section("defensive_threat_claim", threat_claim, options.dsn,
                                 explain_plan=options.explain)]
-
 
     postgres_store.close_pools()
     if any(failures):
