@@ -25,6 +25,8 @@ Options: --plan previews maintenance without changing services or source;
          --verbose shows technical evidence and underlying command output;
          --no-wait assesses release checks once without waiting;
          --no-ci updates to current main without GitHub CI evidence;
+         --leave-backups-paused is backup-only: suspend automatic backups and
+         leave them paused afterward, including on failure; no automatic resume;
          --no-open avoids opening the browser; --retry explicitly retries interrupted
          or failed maintenance after inspection; --config FILE selects a registration.
 
@@ -45,9 +47,10 @@ export function parseArguments(argumentsList) {
   if (["--help", "-h", "help"].includes(command)) return { command: "help", configPath, flags, services };
   if (!["install", "start", "restart", "stop", "status", "doctor", "logs", "backup", "migrate"].includes(command))
     throw new Error(`Unknown Tempo command: ${command}. Run tempo help.`);
-  if ([...flags].some(flag => !["--plan", "--no-open", "--follow", "--retry", "--verbose", "--no-wait", "--no-ci"].includes(flag))
+  if ([...flags].some(flag => !["--plan", "--no-open", "--follow", "--retry", "--verbose", "--no-wait", "--no-ci", "--leave-backups-paused"].includes(flag))
     || (command !== "logs" && services.length) || services.length > 1
     || (flags.has("--follow") && command !== "logs")
+    || (flags.has("--leave-backups-paused") && command !== "backup")
     || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))
     || (flags.has("--no-ci") && !["start", "restart"].includes(command))) throw new Error("Invalid options. Run tempo help.");
   return { command, configPath, flags, services };
@@ -223,6 +226,12 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
     }
     detail("API readiness describes the running API's schema and basic worker/queue checks; it does not prove all background work has completed.");
   }
+  // The durable hold outranks startup advice from unrelated diagnostics.
+  try { runtime.checkBackupDaemonHold(); }
+  catch (error) {
+    if (!(error instanceof TempoProblem)) throw error;
+    assessment = error;
+  }
   detail(`Update eligibility: ${assessment.code === "eligible" ? ancestry === "unknown" ? "unknown — ancestry must be checked by the updater" : "eligible (deployment readiness still checked by tempo start)" : assessment.code.startsWith("verification_") ? verification.status : `blocked — ${assessment.message}`}`);
   const emit = message => log(redact(message, secrets));
   if (options.command === "doctor") emit(apiResponding
@@ -262,9 +271,23 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   const stateDirectory = join(stateRoot, targetKey(target));
   const initialInstallationState = !readOnly && ["start", "restart", "migrate"].includes(options.command)
     ? installationFingerprint(stateDirectory, options.configPath) : null;
-  await ensureDocker(target, run, !readOnly && ["start", "restart", "migrate"].includes(options.command), log);
   const previous = readJson(join(stateDirectory, "deployment.json"));
   let runtime = createRuntime(target, { run, stateDirectory, previous, revision: previous?.revision ?? "unrecorded", fallback: Boolean(previous), log });
+  if (["status", "doctor"].includes(options.command)) {
+    try {
+      const hold = runtime.readBackupDaemonHold();
+      if (hold) log(redact(`Recorded automatic backups hold: ${hold.state}; daemon container ${hold.container_id}; original service restoration ${hold.service_restoration}. Tempo does not automatically resume backups. Preserve backup-daemon.json; resumption requires a separate authorized recovery. Current daemon state has not been revalidated.`, secrets));
+    } catch (error) {
+      if (!(error instanceof TempoProblem)) throw error;
+      log("Automatic backups hold cannot be validated. Preserve backup-daemon.json; daemon state is unconfirmed and automatic resumption is forbidden.");
+      throw error;
+    }
+  }
+  if (!readOnly) runtime.readBackupDaemonHold();
+  // A persisted daemon hold must block automatic startup before Docker launch
+  // or source selection can begin, even when Study otherwise appears healthy.
+  if (!readOnly && ["start", "restart", "migrate"].includes(options.command)) runtime.checkBackupDaemonHold();
+  await ensureDocker(target, run, !readOnly && ["start", "restart", "migrate"].includes(options.command), log);
   try { await runtime.inspectTarget(); }
   catch (error) {
     error.action ??= `Next: correct the named installation/credential conflict in ${options.configPath}${target.envFile ? ` or ${target.envFile}` : ""}. Preserve all study volumes; storage recovery is documented in ${join(target.root, "docs/POSTGRES-MAINTENANCE.md")}.`;
@@ -282,7 +305,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     try {
       if (options.command === "stop") { await runtime.stopAll(); log("Tempo stopped. Study data is retained."); return 0; }
       if (!previous) throw new TempoProblem("no_receipt", "A verified deployment must be recorded before tempo backup.", { action: "Run: tempo start" });
-      await runtime.backupOnly(); return 0;
+      await runtime.backupOnly({ leaveBackupsPaused: options.flags.has("--leave-backups-paused") }); return 0;
     } finally { release(); }
   }
 

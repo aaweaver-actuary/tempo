@@ -62,6 +62,8 @@ export function assessMigrationRecovery({ guard, operation, target, configuratio
 }
 
 export async function executeLifecycle(plan, actions) {
+  // An operator's persistent backup suspension must never be resumed by startup.
+  actions.checkBackupDaemonHold?.();
   // Authorization/guard failures must not replace the previous operation's
   // evidence, especially an older failed attempt without a durable guard.
   const migrationVerificationRequired = await actions.checkMigrationRetry?.();
@@ -121,6 +123,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let stoppedServices = [];
   const secretValues = [];
   const journalPath = join(stateDirectory, "operation.json");
+  const backupDaemonPath = join(stateDirectory, "backup-daemon.json");
   const guardPath = join(stateDirectory, "migration-guard.json");
   let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
   let originalHistoryVerified = false;
@@ -441,11 +444,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return rows.filter(row => row.State === "running").map(row => row.Service);
   }
 
-  async function stopApplications({ preservePhase = false, includeBackup = true } = {}) {
+  async function stopApplications({ preservePhase = false, includeBackup = !existsSync(backupDaemonPath), services = applicationServices } = {}) {
     if (!preservePhase) stage("stopping_application_services");
     if (!stoppedServices.length) stoppedServices = await runningServices();
-    const services = [...applicationServices, ...(includeBackup ? ["postgres-backup"] : [])].filter(name => configuration.services[name]);
-    await compose(["stop", "--timeout", "60", ...services], { echo: true });
+    const selected = [...services, ...(includeBackup ? ["postgres-backup"] : [])].filter(name => configuration.services[name]);
+    if (selected.length) await compose(["stop", "--timeout", "60", ...selected], { echo: true });
   }
 
   async function backup() {
@@ -591,12 +594,53 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.phase = "stopped"; atomicJson(journalPath, operation);
   }
 
-  async function backupOnly() {
+  function readBackupDaemonHold() {
+    if (!existsSync(backupDaemonPath)) return null;
+    let hold;
+    try { hold = JSON.parse(readFileSync(backupDaemonPath, "utf8")); } catch { /* Preserve unreadable evidence. */ }
+    if (hold?.version !== 1 || hold.target !== targetKey(target) || hold.policy !== "leave-paused"
+      || typeof hold.container_id !== "string" || !hold.container_id || typeof hold.image_id !== "string" || !hold.image_id
+      || !["pause_pending", "paused", "unknown"].includes(hold.state)
+      || !["pending", "restored", "failed"].includes(hold.service_restoration)
+      || !Array.isArray(hold.original_running_services)
+      || hold.original_running_services.some(name => ![...applicationServices, "postgres", "redis"].includes(name)))
+      throw new TempoProblem("backup_hold_invalid", `Automatic-backup suspension record cannot be verified: ${backupDaemonPath}.`,
+        { action: "Next: preserve the suspension record and inspect the exact daemon and original service recovery obligation before any maintenance. Do not resume automatic backups." });
+    return hold;
+  }
+
+  function checkBackupDaemonHold() {
+    const hold = readBackupDaemonHold();
+    if (hold) throw new TempoProblem("backup_hold_active", `Automatic backups have an intentional suspension hold (${hold.state}); ordinary startup must not resume the pruning daemon.`,
+      { action: `Next: preserve ${backupDaemonPath}, inspect its service recovery status (${hold.service_restoration}), and explicitly resolve automatic-backup resumption separately.` });
+  }
+
+  async function inspectBackupDaemon(containerId, requirePaused, imageId = images["postgres-backup"]) {
+    const ids = (await compose(["ps", "-aq", "postgres-backup"])).stdout.trim().split(/\s+/).filter(Boolean);
+    if (ids.length !== 1 || (containerId && ids[0] !== containerId)) throw new Error("Backup daemon identity changed; suspension cannot be confirmed.");
+    const inspected = JSON.parse((await docker(["inspect", ids[0]])).stdout);
+    const daemon = inspected.length === 1 && inspected[0];
+    if (daemon?.Id !== ids[0] || daemon.Image !== imageId || daemon.Image !== images["postgres-backup"]
+      || daemon.Config?.Labels?.["com.docker.compose.project"] !== target.project
+      || daemon.Config?.Labels?.["com.docker.compose.service"] !== "postgres-backup"
+      || !daemon.State?.Running || (requirePaused && !daemon.State.Paused))
+      throw new Error("Original backup daemon is not in the required running/paused state; do not capture or automatically resume it.");
+    return daemon;
+  }
+
+  async function backupOnly({ leaveBackupsPaused = false } = {}) {
     if (checkMigrationRetry()) throw new Error("Original migration verification is unresolved. Inspect tempo doctor, then run tempo migrate --retry before taking another backup.");
+    let hold = readBackupDaemonHold();
+    if (hold && (!leaveBackupsPaused || hold.state !== "paused" || hold.service_restoration !== "restored"))
+      throw new TempoProblem("backup_hold_unresolved", `Previous backup suspension requires inspection; saved original services: ${hold.original_running_services.join(", ")}.`,
+        { action: `Next: preserve ${backupDaemonPath} and complete its saved service recovery obligation before another backup. Do not replace it with the currently running subset.` });
     const originallyRunning = await runningServices();
+    const restorable = [...applicationServices, "postgres", "redis"];
+    if (originallyRunning.some(name => ![...restorable, "postgres-backup"].includes(name)))
+      throw new Error("Unexpected running maintenance service; inspect it before a one-shot backup. No service changes were made.");
     // Restarting the recurring backup service invokes its pruning entrypoint.
     // Refuse before lifecycle changes or journal replacement; never stop it here.
-    if (originallyRunning.includes("postgres-backup"))
+    if (originallyRunning.includes("postgres-backup") && !leaveBackupsPaused)
       throw new TempoProblem("backup_pruning_conflict", "One-shot backup cannot preserve the running postgres-backup service without restarting its pruning entrypoint. Backup was refused before changing services.",
         { action: "Next: preserve current services and backups; resolve the one-shot no-pruning lifecycle policy before retrying." });
     const imagePreparation = await ensureImages();
@@ -605,25 +649,74 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await recordFailure(error);
       throw error;
     }
+    const restoreServices = originallyRunning.filter(name => restorable.includes(name));
+    const originalApplications = applicationServices.filter(name => restoreServices.includes(name));
+    operation.original_running_services = restoreServices;
+    operation.service_restoration = "pending";
+    const saveHold = () => {
+      hold.updated_at = new Date().toISOString();
+      atomicJson(backupDaemonPath, hold);
+      operation.automatic_backups = hold;
+    };
     let failure, failedPhase;
     try {
+      if (hold) await inspectBackupDaemon(hold.container_id, true, hold.image_id);
       await ensureDatabase(); await checkSchema();
-      await stopApplications({ includeBackup: false });
+      if (leaveBackupsPaused && (hold || originallyRunning.includes("postgres-backup"))) {
+        const daemon = await inspectBackupDaemon(hold?.container_id, false, hold?.image_id);
+        hold = { version: 1, target: targetKey(target), policy: "leave-paused", container_id: daemon.Id,
+          image_id: daemon.Image, state: "pause_pending", service_restoration: "pending",
+          operation_id: operation.id, original_running_services: restoreServices };
+        // Commit the recovery obligation before any daemon or writer is changed.
+        saveHold();
+        stage("pausing_backup_daemon");
+        try {
+          if (!daemon.State.Paused) await docker(["pause", daemon.Id], { echo: true });
+          await inspectBackupDaemon(daemon.Id, true);
+          hold.state = "paused"; saveHold();
+          log(`Automatic backups intentionally paused: ${daemon.Id}. They will remain paused after this attempt; resumption requires a separate explicit action.`);
+        } catch (error) {
+          hold.state = "unknown"; saveHold();
+          throw error;
+        }
+      }
+      await stopApplications({ includeBackup: false, services: originalApplications });
+      if (hold) await inspectBackupDaemon(hold.container_id, true, hold.image_id);
       await backup();
     } catch (error) { failure = error; failedPhase = operation.phase; }
     try {
-      if (originallyRunning.length) await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", ...originallyRunning], { echo: true });
+      if (restoreServices.length) await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", ...restoreServices], { echo: true });
       const newlyStarted = ["redis", "postgres"].filter(name => !originallyRunning.includes(name));
       if (newlyStarted.length) await compose(["stop", "--timeout", "60", ...newlyStarted], { echo: true });
-      if (originallyRunning.includes("web")) await verifyReady({ requiredServices: originallyRunning });
-    } catch (error) { failure = failure ? new AggregateError([failure, error], "Backup and service restoration failed") : error; }
+      const running = await runningServices();
+      if (restoreServices.some(name => !running.includes(name)) || newlyStarted.some(name => running.includes(name)))
+        throw new Error("Original running/stopped dependency service state was not restored.");
+      if (originallyRunning.includes("web")) await verifyReady({ requiredServices: restoreServices });
+      operation.service_restoration = "restored";
+    } catch (error) {
+      operation.service_restoration = "failed";
+      failure = failure ? new AggregateError([failure, error], `Backup and service restoration failed: ${failure.message}; restoration: ${error.message}`) : error;
+    }
+    if (hold) {
+      hold.service_restoration = operation.service_restoration;
+      try {
+        await inspectBackupDaemon(hold.container_id, true, hold.image_id);
+        hold.state = "paused";
+      } catch (error) {
+        hold.state = "unknown";
+        failure = failure ? new AggregateError([failure, error], `${failure.message}; automatic-backup suspension cannot be confirmed: ${error.message}`) : error;
+      }
+      saveHold();
+      log(`Automatic backups: ${hold.state}; container ${hold.container_id}; original services ${hold.service_restoration}. Hold: ${backupDaemonPath}. No automatic resumption.`);
+      if (failure) failure.action = `Next: preserve ${backupDaemonPath} and the backup evidence. Inspect original service restoration (${hold.service_restoration}) and daemon state (${hold.state}); do not resume pruning automatically.`;
+    }
     if (failure) { if (failedPhase) operation.phase = failedPhase; await recordFailure(failure); throw failure; }
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
   return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase,
     checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
-    recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
+    recordFailure, stopAll, backupOnly, readBackupDaemonHold, checkBackupDaemonHold, secretValues, get configuration() { return configuration; } };
 }
 
 async function verifyPostgresImageMajor(docker, image, registeredMajor) {

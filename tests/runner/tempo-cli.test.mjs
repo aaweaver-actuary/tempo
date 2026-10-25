@@ -941,6 +941,173 @@ test("actual CLI backup restores stopped state when database validation fails be
   assert(!fixture.calls().some(call => call.args.some(argument => argument.includes("pg_dump"))));
 });
 
+test("CLI backup pause opt-in is backup-only and describes the persistent outcome", () => {
+  assert(parseArguments(["backup", "--leave-backups-paused"]).flags.has("--leave-backups-paused"));
+  for (const command of ["start", "restart", "stop", "status", "doctor", "migrate"])
+    assert.throws(() => parseArguments([command, "--leave-backups-paused"]), /Invalid options/);
+});
+
+function assertNoDaemonResumption(fixture) {
+  const calls = fixture.calls();
+  assert(!calls.some(call => ["up", "stop", "unpause", "start", "restart"].some(verb => call.args.includes(verb))
+    && (call.args.includes("postgres-backup") || call.args.includes("container-postgres-backup"))));
+  assert(calls.filter(call => call.args.includes("run") && call.args.includes("postgres-backup"))
+    .every(call => call.args.includes("--entrypoint") && call.args.includes("-ec")));
+}
+
+for (const failure of [null, "backup-fail", "backup-interrupted", "restore", "verify"]) test(`actual CLI backup pause run leaves the daemon suspended and restores original writers after ${failure ?? "success"}`, t => {
+  const fixture = commandFixture(t, failure?.startsWith("backup-") ? failure : "compatible");
+  editFixtureJson(fixture, "machine.json", machine => {
+    machine.running = ["postgres", "redis", "api", "foreground-worker", "web", "postgres-backup"];
+    machine.paused = ["background-worker"];
+    if (["restore", "verify"].includes(failure)) machine.backupStageFailure = failure;
+  });
+  const before = readFixtureJson(fixture, "machine.json");
+  const result = fixture.command("backup", "--leave-backups-paused");
+  assert.equal(result.status, failure ? 1 : 0, result.stdout + result.stderr);
+  const after = readFixtureJson(fixture, "machine.json");
+  assert.deepEqual(after.running.sort(), before.running.filter(name => name !== "postgres-backup").sort());
+  assert.deepEqual(after.paused.sort(), ["background-worker", "postgres-backup"].sort());
+  assert.deepEqual(after.containers, before.containers);
+  assert.equal(after.pauseIntentAtCommand.state, "pause_pending", "durable intent exists before pause is issued");
+  assert.equal(after.pauseIntentAtCommand.service_restoration, "pending");
+  const hold = readFixtureJson(fixture, "backup-daemon.json", true);
+  assert.equal(hold.state, "paused"); assert.equal(hold.service_restoration, "restored");
+  assert.equal(hold.container_id, "container-postgres-backup");
+  assert.deepEqual(hold.original_running_services.sort(), after.running.sort());
+  const operation = readFixtureJson(fixture, "operation.json", true);
+  assert.equal(operation.service_restoration, "restored");
+  assert.equal(operation.phase, failure ? "failed" : "backup_verified");
+  assert.match(result.stdout, /Automatic backups: paused.*original services restored/);
+  assertNoDaemonResumption(fixture);
+  const calls = fixture.calls();
+  assert.equal(calls.filter(call => call.args.includes("pause")).length, 1);
+  const pause = calls.findIndex(call => call.args.includes("pause"));
+  const stop = calls.findIndex(call => call.args.includes("stop") && call.args.includes("web"));
+  assert(pause >= 0 && stop > pause);
+  assert(!calls.find(call => call.args.includes("stop") && call.args.includes("web")).args.includes("background-worker"), "originally paused writer is untouched");
+  if (["restore", "verify"].includes(failure)) {
+    assert(operation.backup.restore_created && !operation.backup.restore_removed);
+    assert(!calls.some(call => call.args.some(arg => arg.includes("dropdb"))), "existing failed-restore cleanup limitation remains explicit");
+  }
+});
+
+for (const pauseOutcome of ["rejected", "no-effect", "lost-ack", "identity-change"]) test(`actual CLI backup pause recovery handles ${pauseOutcome} without capture or writer shutdown`, t => {
+  const fixture = commandFixture(t, "compatible");
+  editFixtureJson(fixture, "machine.json", machine => { machine.pauseOutcome = pauseOutcome; });
+  const result = fixture.command("backup", "--leave-backups-paused");
+  assert.notEqual(result.status, 0);
+  const hold = readFixtureJson(fixture, "backup-daemon.json", true);
+  assert.equal(hold.state, pauseOutcome === "lost-ack" ? "paused" : "unknown");
+  assert.equal(hold.service_restoration, "restored");
+  assert(!fixture.calls().some(call => call.args.includes("stop") || call.args.some(arg => arg.includes("pg_dump"))));
+  assertNoDaemonResumption(fixture);
+});
+
+test("actual CLI backup pause recovery persists restoration failure without resuming the daemon", t => {
+  const fixture = commandFixture(t, "backup-fail");
+  editFixtureJson(fixture, "machine.json", machine => { machine.failBackupRestoration = true; });
+  const result = fixture.command("backup", "--leave-backups-paused");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Backup and service restoration failed/);
+  assert.match(result.stderr, /backup failed.*restoration:.*restoration failed/s);
+  const hold = readFixtureJson(fixture, "backup-daemon.json", true);
+  assert.equal(hold.state, "paused"); assert.equal(hold.service_restoration, "failed");
+  assert(hold.original_running_services.includes("web"));
+  assert.equal(readFixtureJson(fixture, "operation.json", true).service_restoration, "failed");
+  assert.match(result.stdout, /original services failed/);
+  const before = readFileSync(join(fixture.stateDirectory, "backup-daemon.json"), "utf8");
+  const retry = fixture.command("backup", "--leave-backups-paused");
+  assert.notEqual(retry.status, 0); assert.match(retry.stderr, /saved original services/);
+  assert.equal(readFileSync(join(fixture.stateDirectory, "backup-daemon.json"), "utf8"), before);
+  assertNoDaemonResumption(fixture);
+});
+
+test("actual CLI backup pause recovery hold is visible and survives ordinary lifecycle attempts", t => {
+  const fixture = commandFixture(t, "compatible");
+  assert.equal(fixture.command("backup", "--leave-backups-paused").status, 0);
+  const holdBefore = readFileSync(join(fixture.stateDirectory, "backup-daemon.json"), "utf8");
+  const callsBefore = fixture.calls().length;
+  for (const command of ["start", "restart", "migrate"]) {
+    const result = fixture.command(command, "--no-open");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /intentional suspension hold/);
+  }
+  assert.equal(fixture.calls().length, callsBefore, "startup hold fails before Docker or Git subprocesses");
+  assert.notEqual(fixture.command("backup").status, 0, "reusing a persistent hold still requires explicit opt-in");
+  for (const command of ["status", "doctor"]) {
+    const result = fixture.command(command);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Recorded automatic backups hold: paused.*original service restoration restored/);
+    assert(!result.stdout.includes("Run: tempo start"));
+  }
+  editFixtureJson(fixture, "machine.json", machine => { machine.inventoryInspectionError = "fixture inspection unavailable"; });
+  const unavailable = fixture.command("doctor");
+  assert.notEqual(unavailable.status, 0);
+  assert.match(unavailable.stdout, /Recorded automatic backups hold: paused/);
+  editFixtureJson(fixture, "machine.json", machine => { delete machine.inventoryInspectionError; });
+  assert.equal(fixture.command("stop").status, 0);
+  assert(readFixtureJson(fixture, "machine.json").paused.includes("postgres-backup"));
+  assert.equal(readFileSync(join(fixture.stateDirectory, "backup-daemon.json"), "utf8"), holdBefore);
+  assertNoDaemonResumption(fixture);
+});
+
+test("actual CLI backup pause recovery can reuse a confirmed restored hold without another pause", t => {
+  const fixture = commandFixture(t, "compatible");
+  assert.equal(fixture.command("backup", "--leave-backups-paused").status, 0);
+  assert.equal(fixture.command("backup", "--leave-backups-paused").status, 0);
+  assert.equal(fixture.calls().filter(call => call.args.includes("pause")).length, 1);
+  assertNoDaemonResumption(fixture);
+});
+
+test("actual CLI backup pause recovery preserves malformed and interrupted holds before any effects", t => {
+  const fixture = commandFixture(t, "compatible");
+  assert.equal(fixture.command("backup", "--leave-backups-paused").status, 0);
+  const holdPath = join(fixture.stateDirectory, "backup-daemon.json");
+  const valid = readFixtureJson(fixture, "backup-daemon.json", true);
+  for (const value of ["malformed", JSON.stringify({ ...valid, service_restoration: "pending" }), JSON.stringify({ ...valid, state: "unknown" })]) {
+    writeFileSync(holdPath, value);
+    const callsBefore = fixture.calls().length;
+    const result = fixture.command("backup", "--leave-backups-paused");
+    assert.notEqual(result.status, 0);
+    assert.equal(readFileSync(holdPath, "utf8"), value);
+    assert(!fixture.calls().slice(callsBefore).some(call => call.args.includes("up") || call.args.includes("pause") || call.args.includes("stop") || call.args.includes("run")));
+  }
+});
+
+test("actual CLI backup pause recovery rejects a running maintenance helper without adopting or starting it", t => {
+  const fixture = commandFixture(t, "compatible");
+  editFixtureJson(fixture, "machine.json", machine => { machine.running.push("migration"); });
+  const result = fixture.command("backup", "--leave-backups-paused");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unexpected running maintenance service/);
+  assert(!existsSync(join(fixture.stateDirectory, "backup-daemon.json")));
+  assert(!fixture.calls().some(call => ["up", "stop", "pause", "run"].some(verb => call.args.includes(verb))));
+});
+
+test("actual CLI backup pause recovery reports invocation-started dependencies that failed to stop", t => {
+  const fixture = commandFixture(t, "compatible");
+  editFixtureJson(fixture, "machine.json", machine => {
+    machine.running = ["postgres-backup"];
+    machine.dependencyStopNoEffect = true;
+  });
+  const result = fixture.command("backup", "--leave-backups-paused");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /dependency service state was not restored/);
+  const hold = readFixtureJson(fixture, "backup-daemon.json", true);
+  assert.equal(hold.service_restoration, "failed"); assert.equal(hold.state, "paused");
+  assertNoDaemonResumption(fixture);
+});
+
+test("CLI backup pause hold blocks direct lifecycle before preparation or migration classification", async t => {
+  const fixture = commandFixture(t, "compatible");
+  assert.equal(fixture.command("backup", "--leave-backups-paused").status, 0);
+  const previous = readFixtureJson(fixture, "deployment.json", true);
+  const runtime = createRuntime(fixture.target, { stateDirectory: fixture.stateDirectory, previous,
+    revision: previous.revision, run: () => assert.fail("held direct lifecycle cannot issue commands") });
+  await assert.rejects(executeLifecycle({}, runtime), /intentional suspension hold/);
+});
+
 test("actual CLI detects checkout edits during image preparation before touching the running application", t => {
   const fixture = commandFixture(t, "edited-during-build");
   const result = fixture.command("start", "--no-open");

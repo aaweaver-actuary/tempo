@@ -198,7 +198,24 @@ async function fakeCommand() {
     if (machine.inventoryInspectionError) { console.error(machine.inventoryInspectionError); process.exit(1); }
     if (machine.inventoryMalformed) { output({}); process.exit(0); }
     output(machine.containers.filter(container => args.includes(container.Id)).map(container => ({ ...container,
-      State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
+      State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"])
+        || (machine.paused ?? []).includes(container.Config.Labels["com.docker.compose.service"]),
+        Paused: (machine.paused ?? []).includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
+  }
+  if (args.includes("pause")) {
+    const stateDirectory = path.join(directory, "state", fs.readdirSync(path.join(directory, "state"))[0]);
+    machine.pauseIntentAtCommand = JSON.parse(fs.readFileSync(path.join(stateDirectory, "backup-daemon.json"), "utf8"));
+    save();
+    const daemon = machine.containers.find(container => container.Id === args.at(-1));
+    if (!daemon || machine.pauseOutcome === "rejected") { console.error("fixture pause rejected"); process.exit(18); }
+    const service = daemon.Config.Labels["com.docker.compose.service"];
+    if (machine.pauseOutcome !== "no-effect") {
+      machine.running = machine.running.filter(name => name !== service);
+      machine.paused = [...new Set([...(machine.paused ?? []), service])]; save();
+    }
+    if (machine.pauseOutcome === "identity-change") { daemon.Id = "replacement-backup-daemon"; save(); }
+    if (machine.pauseOutcome === "lost-ack") { console.error("fixture pause reply lost"); process.exit(18); }
+    process.exit(0);
   }
   if (args.includes("image") && args.includes("inspect")) {
     if (machine.imageInspectionUnavailable) process.exit(17);
@@ -234,6 +251,7 @@ async function fakeCommand() {
     process.exit(0);
   }
   if (args.includes("stop")) {
+    if (machine.dependencyStopNoEffect && args.includes("postgres") && args.includes("redis")) process.exit(0);
     machine.running = machine.running.filter(name => !args.includes(name));
     if (machine.paused) machine.paused = machine.paused.filter(name => !args.includes(name));
     save(); process.exit(0);
@@ -286,6 +304,10 @@ async function fakeCommand() {
       console.error("Schema upgrade changed review, queue, or operation receipt history; keep writers stopped"); process.exit(19);
     }
     output(actual); process.exit(0);
+  }
+  if ((machine.backupStageFailure === "restore" && args.some(argument => argument.includes("--single-transaction")))
+    || (machine.backupStageFailure === "verify" && args.includes("database/tooling/verify_postgres_backup.py"))) {
+    console.error(`fixture ${machine.backupStageFailure} failed`); process.exit(19);
   }
   if (args.some(argument => argument.includes("pg_dump"))) {
     machine.backupAttempted = true; save();

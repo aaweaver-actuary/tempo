@@ -2077,6 +2077,26 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 `tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
 `tests/runner/tempo-cli.test.mjs` through the regular suite:
 
+- `CLI backup pause opt-in is backup-only and describes the persistent outcome`
+  registers the explicit persistent policy without weakening default refusal.
+  `CLI backup pause hold blocks direct lifecycle before preparation or migration classification`
+  protects the runtime public lifecycle as well as CLI startup.
+- The `actual CLI backup pause run leaves the daemon suspended and restores original writers after ...`
+  matrix covers success, dump failure, interrupted fake dump child, restore error
+  and comparison error. The fake pause boundary observes durable `pause_pending`
+  intent before the effect. Exact daemon/container identity is retained,
+  originally paused applications stay paused, and all helper entrypoints remain
+  explicit one-shot overrides.
+- `actual CLI backup pause recovery ...` covers rejected/no-effect/lost-ack pause
+  and daemon identity replacement, durable writer restoration failure without
+  retry-set loss, public status/doctor and startup/stop behavior, safe reuse of a
+  confirmed restored hold, malformed/interrupted hold preservation, rejection of
+  a concurrent migration helper, and an invocation-started dependency that did
+  not stop. The two named `backup pause run` / `backup pause recovery` groups and
+  existing CLI contract group run these cases in the regular wrapper. Fake child
+  interruption does not prove real container/server cancellation or coordinator
+  signal recovery; failed restore/compare may still leave the owned temporary DB.
+
 - `actual CLI backup rejects an active pruning daemon before any lifecycle or database work`
   refuses before dependency/application/backup effects and preserves the prior
   machine state, journal and deployment receipt. It failed before the guard:

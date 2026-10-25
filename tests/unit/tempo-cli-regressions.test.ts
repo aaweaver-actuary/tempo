@@ -12,7 +12,7 @@ const regressionGroups = [
     "migration diagnostics applying", "migration diagnostics failed", "migration diagnostics invalid", "migration diagnostics verified",
     "migration diagnostics pending", "migration diagnostics retry", "migration diagnostics normal",
     "upgrades", "dependency startup", "falls back", "read-only", "failed migration", "failed builds",
-    "backup restores the prior", "blocked update", "backup restores stopped", "detects", "fallback corrects",
+    "backup restores the prior", "blocked update", "backup restores stopped", "backup pause run", "backup pause recovery", "detects", "fallback corrects",
     "compatible fallback", "interrupted fallback stops uncommitted", "interrupted fallback quiesces",
     "interrupted fallback stops mixed", "interrupted fallback rejects application", "interrupted fallback rejects incompatible",
     "concurrent", "backup rejects", "source inspection fallback", "source inspection no-receipt", "source inspection migrate", "source inspection safety",
