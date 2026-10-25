@@ -5,7 +5,7 @@ KINDS = frozenset((
     "defensive_threat_validate", "next_opponent_profile", "game_sync_record",
     "game_derivation_positions", "game_derivation_compare", "game_derivation_findings",
     "game_derivation_misses", "game_derivation_events", "game_derivation_features",
-    "game_derivation_priorities", "daily_statistics", "game_sync_window",
+    "game_derivation_priorities", "game_sync_window",
     "opening_graph_rebuild", "prefix_transition_application", "integrity_scan", "opening_segmentation",
     "discovery_recommendation", "discovery_admission", "canonical_prefix_preview", "coverage_seed", "coverage_explorer",
     "game_analysis_publish", "game_analysis_followup", "engine_game", "engine_defense", "other",

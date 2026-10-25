@@ -25,7 +25,7 @@ from app.games.ingestion.serialization import serialize_job
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node
-from .statistics import claim_daily_snapshot, execute_daily_snapshot, refresh_game_features
+from .statistics import refresh_game_features
 from .repertoire_integrity import (
     claim_integrity_slice,
     execute_integrity_slice,
@@ -339,7 +339,6 @@ class GameSyncCoordinator:
             "derivation",
             "coverage",
             "integrity",
-            "statistics",
         )
         while True:
             worked = False
@@ -357,8 +356,6 @@ class GameSyncCoordinator:
                         item = await asyncio.to_thread(claim_coverage_node)
                     elif source == "integrity":
                         item = await asyncio.to_thread(claim_integrity_slice)
-                    elif source == "statistics":
-                        item = await asyncio.to_thread(claim_daily_snapshot)
                 except sqlite3.OperationalError:
                     await asyncio.sleep(0.25)
                     continue
@@ -420,8 +417,6 @@ class GameSyncCoordinator:
                         await asyncio.to_thread(execute_coverage_node, item)
                     elif source == "integrity":
                         await asyncio.to_thread(execute_integrity_slice, item)
-                    elif source == "statistics":
-                        await asyncio.to_thread(execute_daily_snapshot, item)
                 except sqlite3.OperationalError as error:
                     if source == "integrity":
                         await asyncio.to_thread(requeue_integrity_slice, item, error)

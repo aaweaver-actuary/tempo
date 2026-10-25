@@ -59,8 +59,6 @@ def persist_game_record_in_transaction(
              "cursor": 0},
             priority=125,
         )
-        storage.invalidate_day_snapshot(database, record.played_at[:10])
-        storage.invalidate_day_insights(database, record.played_at[:10])
     return outcome, game_id
 
 
