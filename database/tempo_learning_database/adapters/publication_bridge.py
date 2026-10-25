@@ -44,8 +44,15 @@ def accepted_aliases(database, content_ids, learning_ids):
     return database.execute('SELECT content_card_id,learning_card_id,publication_id,binding_digest FROM content_card_aliases WHERE content_card_id=ANY(?) OR learning_card_id=ANY(?)', (content_ids, learning_ids)).fetchall()
 
 
-def insert_repertoires(database, created_at, repertoire_ids):
+def insert_repertoires(database, created_at, repertoire_ids, titles=None):
     database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) SELECT value,value,'Accepted Content publication',%s FROM unnest(%s::text[]) value ON CONFLICT DO NOTHING", (created_at, repertoire_ids))
+    if titles:
+        allowed = set(repertoire_ids)
+        rows = [{"repertoire_id": identifier, "title": title} for identifier, title in sorted(titles.items())
+                if identifier in allowed]
+        database.execute_native("""UPDATE repertoires SET name=title.title
+            FROM jsonb_to_recordset(%s) AS title(repertoire_id text,title text)
+            WHERE repertoires.id=title.repertoire_id AND repertoires.id=ANY(%s::text[])""", (Jsonb(rows), repertoire_ids))
 
 
 def insert_aliases(database, aliases):
