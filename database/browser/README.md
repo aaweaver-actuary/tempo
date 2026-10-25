@@ -8,7 +8,6 @@ Current source definitions; existing browser data/version state was not inspecte
 | [offline-training-storage.ts](offline-training-storage.ts) | `tempo-offline-training` or the workspace-specific name from `study-connection`; version 2; prepared queue and incremental opening journal stores. |
 | [prepared-training-storage.ts](prepared-training-storage.ts) | Existing complete prepared-queue read and atomic update operations; the application callback retains replay/grading decisions. |
 | [opening-evidence-journal-storage.ts](opening-evidence-journal-storage.ts) | Existing twelve complete journal transactions and two retained-review/completion-signal Web Storage operations; capture, recovery, leases and transport remain outside. |
-| [maia-worker-cache.js](maia-worker-cache.js) | Optional legacy classic Maia worker's `MaiaModels`, version 1; cached model Blob with URL/version identity, not Study state. |
 | [study-intent-storage.ts](study-intent-storage.ts) | Browser intent package adapter and legacy localStorage cutover/checkpoints; uses the existing [intent package](../browser-intents/README.md). |
 | [study-connection-storage.ts](study-connection-storage.ts) | Existing read-only retained-store inspection, tab connection session and persistent authority-registry reads/writes; connection/transport decisions stay in the Study application. |
 | [sqlite-migration.ts](sqlite-migration.ts) | Existing HTTP snapshot-to-IndexedDB import; `tempo-sqlite-migration` localStorage completion marker. |
@@ -115,40 +114,16 @@ owners. A browser storage API call alone is not evidence for another database
 adapter. No preference framework, generic validation wrapper or consolidation
 is introduced by this organization.
 
-## Optional legacy Maia worker model cache
+## Retired classic Maia model cache
 
-The [classic worker](../../public/maia-worker.js) retains ONNX setup, download,
-inference and message policy. Its existing complete cache block now lives once
-in [maia-worker-cache.js](maia-worker-cache.js). The fixed
-[build asset reference](../../scripts/maia-cache-asset.ts) emits those exact bytes
-as `maia-worker-cache.js` beside the public worker and serves that URL in Vite
-development; `importScripts('./maia-worker-cache.js')` keeps root/Pages resolution
-relative to the existing worker URL. Build output is a distribution artifact,
-not another maintained source implementation. Controlled and Vinext builds retain
-the fixed asset; the `TEMPO_TARGET=study` static build omits it because that
-target does not import the classic Maia worker path. No generic asset framework
-is added.
+The classic public Maia worker, which has no current static source caller,
+its IndexedDB cache adapter and its build-asset plugin have been retired. Builds no longer publish the classic
+`maia-worker.js` or `maia-worker-cache.js` URLs. Existing browser `MaiaModels`
+version 1 caches are not deleted or migrated; they contain rebuildable model
+Blobs, not Study state, and no current adapter opens them.
 
-```mermaid
-erDiagram
-  MaiaModels_models {
-    string id PK
-    string url
-    string version
-    Blob data
-    number timestamp
-    number size
-  }
-```
-
-| Database / store | Stored fields and keys | Ownership / relationship |
-| --- | --- | --- |
-| `MaiaModels` version 1, `models` | Enforced key path `id`, fixed record `maia-rapid-model`; `url: string`, `version: string`, `data: Blob`, `timestamp: number` (epoch milliseconds), `size: number` (byte length). No extra index. | Optional model-cache owner. URL/version mismatch deletes the existing entry exactly as before. No foreign key, Study identity, queue data or relationship to the prepared-training stores. |
-
-The classic worker has no current static caller in the source scan; that does
-not establish that its public URL is unused. Both the URL and behavior are
-preserved. In-memory IndexedDB and small asset-build checks establish the moved
-cache's source/discovery behavior, not actual browser/ONNX/provider or failure
-isolation qualification.
+This retirement does not remove the bundled models, Maia3 assets, inference
+scripts or the independent [Maia worker package](../../workers/maia/README.md).
+Study worker validation remains in its existing regression suite.
 
 Return to the [database index](../README.md).
