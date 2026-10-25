@@ -10,14 +10,6 @@ import {
 } from "../shared";
 import type { CandidateMove, ExplorerMove } from "../analysis";
 
-export type RawExplorerMove = {
-  uci: string;
-  san?: string;
-  white: number;
-  draws: number;
-  black: number;
-};
-
 function legalMove(startingFen: string, rawUci: string) {
   const board = new Chess(asFenString(startingFen));
   const uci = asUciMove(rawUci);
