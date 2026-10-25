@@ -113,8 +113,27 @@ test("missing completed-admission destination blocks before any installed owner 
   await rejectsCode(executeFreshStartTransition(f.plan, { state, effects: f.effects() }), "installed_admission_destination_pending");
   assert.equal(state.readJournal(), null); assert.deepEqual(f.events, []);
 });
-test("admission output cannot overlap registration before any installed owner operation", async t => {
+test("a private but unpinned completed-admission destination is rejected before effects", async t => {
   const f = fixture(t), state = createCutoverState({ stateDirectory: f.directory, registrationPath: f.registrationPath,
+    receiptPath: f.receiptPath, lockIdentity: f.plan.lockIdentity, admissionPath: join(f.directory, "different-admission.json") });
+  await rejectsCode(executeFreshStartTransition(f.plan, { state, effects: f.effects() }), "installed_admission_carrier_mismatch");
+  assert.equal(state.readJournal(), null); assert.deepEqual(f.events, []);
+});
+test("original metadata cannot point to the registration that publication will rewrite", async t => {
+  const f = fixture(t); f.plan.registration.installedStudy.originalRegistrationPath = f.registrationPath;
+  await rejectsCode(run(f), "installed_original_metadata_invalid"); assert.equal(f.state.readJournal(), null);
+});
+test("missing preserved original metadata is an explicit pre-effect blocker", async t => {
+  const f = fixture(t); f.plan.registration.installedStudy.originalRegistrationPath = join(f.directory, "not-preserved.json");
+  await rejectsCode(run(f), "installed_original_metadata_invalid"); assert.equal(f.state.readJournal(), null);
+});
+test("mismatched preserved original metadata cannot qualify the pinned original authority", async t => {
+  const f = fixture(t); writeFileSync(f.originalRegistrationPath, JSON.stringify({ version: 1, project: "wrong-source" }), { mode: 0o600 });
+  await rejectsCode(run(f), "installed_original_metadata_mismatch"); assert.equal(f.state.readJournal(), null);
+});
+test("admission output cannot overlap registration before any installed owner operation", async t => {
+  const f = fixture(t); f.plan.registration.installedStudy.admissionPath = f.registrationPath;
+  const state = createCutoverState({ stateDirectory: f.directory, registrationPath: f.registrationPath,
     receiptPath: f.receiptPath, lockIdentity: f.plan.lockIdentity, admissionPath: f.registrationPath });
   await rejectsCode(executeFreshStartTransition(f.plan, { state, effects: f.effects() }), "installed_admission_destination_invalid");
   assert.equal(state.readJournal(), null); assert.deepEqual(f.events, []);
@@ -127,6 +146,7 @@ test("admission output inside the selected checkout is refused before installed 
 test("a dot-prefixed child directory cannot bypass the protected checkout boundary", async t => {
   const f = fixture(t), parent = join(f.directory, "..private-admission"); mkdirSync(parent, { mode: 0o700 });
   f.plan.registration.root = f.directory;
+  f.plan.registration.installedStudy.admissionPath = join(parent, "admission.json");
   const state = createCutoverState({ stateDirectory: f.directory, registrationPath: f.registrationPath,
     receiptPath: f.receiptPath, lockIdentity: f.plan.lockIdentity, admissionPath: join(parent, "admission.json") });
   await rejectsCode(executeFreshStartTransition(f.plan, { state, effects: f.effects() }), "installed_admission_destination_invalid");

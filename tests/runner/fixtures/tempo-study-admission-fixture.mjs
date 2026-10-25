@@ -7,20 +7,25 @@ import { join } from "node:path";
 import { planLauncherFreshStart } from "../../../scripts/tempo-cutover-plan.mjs";
 import { evaluateInstalledFreshStartReadiness, readinessBinding } from "../../../scripts/tempo-cutover-readiness.mjs";
 import { createCutoverState, createInstalledFreshStartEffects } from "../../../scripts/tempo-cutover-transition.mjs";
+import { targetKey } from "../../../scripts/tempo-deployment.mjs";
 const cloned = value => structuredClone(value);
 export function createAdmissionProtocolFixture(t, { configureInput } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "tempo-installed-admission-protocol-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const registrationPath = join(directory, "registration.json"), receiptPath = join(directory, "receipt.json");
   const admissionPath = join(directory, "installed-admission.json");
+  const originalRegistrationPath = join(directory, "original-registration.json");
   const input = JSON.parse(readFileSync(new URL("../../../scripts/tests/fixtures/tempo-cutover-plan/publication-input.json", import.meta.url)));
   input.current.registration.disposable = false;
   input.proposed.registration.disposable = false;
-  if (configureInput) configureInput(input, { directory, registrationPath, receiptPath, admissionPath });
+  input.proposed.registration.installedStudy = { version: 1, originalRegistrationPath, stateDirectory: directory,
+    lockIdentity: targetKey(input.current.registration), receiptPath, admissionPath };
+  if (configureInput) configureInput(input, { directory, registrationPath, receiptPath, admissionPath, originalRegistrationPath });
   const result = planLauncherFreshStart(input); assert.equal(result.status, "planned");
   const plan = cloned(result.plan);
   writeFileSync(registrationPath, JSON.stringify(plan.original.registration), { mode: 0o600 });
   writeFileSync(receiptPath, JSON.stringify(plan.original.receipt), { mode: 0o600 });
+  writeFileSync(originalRegistrationPath, JSON.stringify(plan.original.registration), { mode: 0o600 });
   const state = createCutoverState({ stateDirectory: directory, registrationPath, receiptPath, lockIdentity: plan.lockIdentity, admissionPath });
   const events = [], infra = { originalWriter: true, targetWriter: false };
   const observed = (args, extra = {}) => ({ scope: "observed", verified: true, evidenceId: "protocol-fixture-only",
@@ -70,5 +75,5 @@ export function createAdmissionProtocolFixture(t, { configureInput } = {}) {
   const config = { operations, readReleaseEvidence: evidence,
     assessReadiness: args => evaluateInstalledFreshStartReadiness(args, adapters) };
   const effects = () => createInstalledFreshStartEffects(config);
-  return { plan, state, events, infra, operations, config, effects, adapters, directory, registrationPath, receiptPath, admissionPath };
+  return { plan, state, events, infra, operations, config, effects, adapters, directory, registrationPath, receiptPath, admissionPath, originalRegistrationPath };
 }

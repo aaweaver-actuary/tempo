@@ -107,6 +107,12 @@ export function createCutoverState({ stateDirectory, registrationPath, receiptPa
       if (!text(admissionPath) || !isAbsolute(admissionPath))
         blocked("installed_admission_destination_pending", "Supply the explicit private completed-admission destination before installed effects.");
       const destination = resolve(admissionPath), parent = dirname(destination);
+      const carrier = plan.registration?.installedStudy;
+      if (carrier?.version !== 1 || !text(carrier.admissionPath) || !isAbsolute(carrier.admissionPath)
+        || !text(carrier.originalRegistrationPath) || !isAbsolute(carrier.originalRegistrationPath)
+        || !text(carrier.stateDirectory) || !isAbsolute(carrier.stateDirectory)
+        || !text(carrier.receiptPath) || !isAbsolute(carrier.receiptPath) || carrier.lockIdentity !== plan.lockIdentity)
+        blocked("installed_admission_carrier_pending", "Pin the explicit original metadata, original lock/state, receipt and admission paths in the initial selected registration.");
       let parentStat;
       try { parentStat = lstatSync(parent); }
       catch { blocked("installed_admission_destination_invalid", "The explicit private admission parent directory must already exist."); }
@@ -115,6 +121,26 @@ export function createCutoverState({ stateDirectory, registrationPath, receiptPa
         blocked("installed_admission_destination_invalid", "Completed admission requires an owned private directory without symlink rebinding.");
       const canonical = path => existsSync(path) ? realpathSync(path) : resolve(path);
       const resolvedDestination = join(realpathSync(parent), relative(parent, destination));
+      const canonicalFile = path => {
+        try { const absolute = resolve(path); return join(realpathSync(dirname(absolute)), relative(dirname(absolute), absolute)); }
+        catch { blocked("installed_admission_carrier_pending", "Every explicit installed carrier parent directory must exist before effects."); }
+      };
+      if (canonicalFile(carrier.admissionPath) !== resolvedDestination || canonical(carrier.stateDirectory) !== canonical(stateDirectory)
+        || canonicalFile(carrier.receiptPath) !== canonicalFile(receiptPath))
+        blocked("installed_admission_carrier_mismatch", "The completed packet publisher and original lock/receipt must match the initially pinned installed carrier exactly.");
+      const originalMetadataPath = canonicalFile(carrier.originalRegistrationPath);
+      if ([registrationPath, receiptPath, journalPath, join(stateDirectory, "maintenance.lock"), admissionPath]
+        .some(path => canonicalFile(path) === originalMetadataPath))
+        blocked("installed_original_metadata_invalid", "Original metadata must remain separate from every rewritten publication and state/output file.");
+      let originalStat, originalMetadata;
+      try {
+        originalStat = lstatSync(carrier.originalRegistrationPath);
+        if (!originalStat.isFile() || originalStat.isSymbolicLink() || originalStat.mode & 0o077 || originalStat.nlink !== 1
+          || originalStat.size > 1024 * 1024 || (typeof process.getuid === "function" && originalStat.uid !== process.getuid())) throw Error("private original metadata required");
+        originalMetadata = JSON.parse(readFileSync(carrier.originalRegistrationPath, "utf8"));
+      } catch { blocked("installed_original_metadata_invalid", "Supply independently preserved owned private original registration metadata; the producer never invents it."); }
+      if (originalMetadata?.version !== 1 || !isDeepStrictEqual(originalMetadata, plan.original.registration))
+        blocked("installed_original_metadata_mismatch", "Preserved original registration metadata must exactly match the selected original authority.");
       for (const path of [registrationPath, receiptPath, journalPath, join(stateDirectory, "maintenance.lock")]) {
         let protectedParent;
         try { protectedParent = realpathSync(dirname(resolve(path))); }

@@ -170,7 +170,14 @@ the one-time transition implicitly. Consumers must independently reobserve the
 current daemon, source writer fence, physical target and runtime lineage.
 
 Installed execution requires an explicit `admissionPath` on `createCutoverState`
-before any owner operation. Its parent must be owned and private, the destination
+before any owner operation, canonically equal to the `installedStudy.admissionPath`
+already pinned in the selected registration. The carrier's original lock/state
+and receipt paths must match the owning state capability too. The separate
+`installedStudy.originalRegistrationPath` must already contain private preserved
+v1 metadata exactly equal to the planned original registration; it cannot point
+to the configuration that publication will rewrite. Missing or mismatched input
+blocks execution; the producer never fabricates that preservation evidence.
+The admission parent must be owned and private, the destination
 must be outside the source/target/executing checkouts, and it cannot alias a
 publication, journal or lock. Links and unrelated existing outputs are refused.
 `writeCompletedAdmission(plan)` derives its packet from that owner's completed
