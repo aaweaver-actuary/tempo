@@ -136,6 +136,30 @@ def test_alias_activation_keeps_physical_identity_and_publishes_before_followup(
     assert old['revision']==2 and current.publication.definitions[0].card_id=='authored'
 
 
+def test_title_projection_uses_existing_locked_activation_writer(v2_activation):
+    current,_old,events=v2_activation
+    current.routes[0].repertoire_title='Original repertoire title'
+    bridge.activate(None,activation_payload())
+    projected=next(event for event in events if isinstance(event,tuple) and event[0]=='insert_repertoires')
+    assert projected[1][1:]==(['rep'],{'rep':'Original repertoire title'})
+    assert events.index(projected)>events.index(('card locks',['authored','physical','removed']))
+    assert events[-2][0]=='insert_activation_receipt' and events[-1][0]=='enqueue'
+
+
+def test_status_title_metadata_keeps_existing_public_graph_routes_digest(monkeypatch):
+    current=bundle()
+    prior=current.model_dump(mode='json')
+    current.routes[0].repertoire_title='Readable repertoire title'
+    document=current.model_dump(mode='json')
+    bundle_digest=bridge.digest(document)
+    assert bundle_digest!=bridge.digest(prior)  # immutable acceptance binds names
+    monkeypatch.setattr(bridge.storage,'serving_status',lambda *_: (2,1,'active',bundle_digest))
+    monkeypatch.setattr(bridge.storage,'accepted_payload',lambda *_: (bundle_digest,json.dumps(document)))
+    result=bridge.status(None,'pub','workspace',generation=2)
+    assert result['accepted']['routes_digest']==bridge.digest(prior['routes'])
+    assert result['accepted']['bundle_digest']==result['bundle_digest']==bundle_digest
+
+
 def test_retirement_revision_fence_precedes_repertoire_or_card_effects(monkeypatch):
     monkeypatch.setattr(publications.storage,'lock_publication',lambda *_: None)
     monkeypatch.setattr(publications.storage,'serving_for_update',lambda *_: (2,3))

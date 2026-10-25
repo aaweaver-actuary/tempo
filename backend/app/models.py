@@ -105,9 +105,6 @@ from .contracts.transport.games import (
 from .contracts.transport.authored_import import (
     ImportResult,
 )
-from .contracts.transport.guided_review import (
-    GuidedReviewAttemptRequest,
-)
 
 __all__ = [
     'Settings',
@@ -170,7 +167,6 @@ __all__ = [
     'GamesSummaryResponse',
     'GameSummaryRecord',
     'ImportResult',
-    'GuidedReviewAttemptRequest',
     'GameProvider',
     'ProviderSyncState',
     'GameSyncJobState',
