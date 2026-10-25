@@ -18,7 +18,7 @@ from uuid import uuid4
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, required=True, help="Task-owned disposable checkout; Linux dependencies are written here")
+    parser.add_argument("--source", type=Path, required=True, help="Clean task-owned checkout; only its recorded tracked revision is staged")
     parser.add_argument("--evidence", type=Path, required=True, help="New persistent evidence directory outside the checkout")
     options = parser.parse_args()
     source, evidence = options.source.resolve(), options.evidence.resolve()
@@ -44,19 +44,25 @@ def main():
     def save():
         (evidence / "container-qualification.json").write_text(json.dumps(report, indent=2) + "\n")
 
-    def command(label, arguments, timeout=60, expected=0, cleanup=False):
+    def command(label, arguments, timeout=60, expected=0, cleanup=False, output_path=None):
         remaining = (cleanup_deadline if cleanup else deadline) - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Qualification watchdog/cleanup budget expired")
         record = {"label": label, "command": arguments, "started_utc": datetime.now(timezone.utc).isoformat()}
         report["commands"].append(record)
         save()
-        result = subprocess.run(arguments, capture_output=True, text=True, timeout=min(timeout, remaining))
-        record.update(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr,
+        if output_path:
+            with output_path.open("wb") as output:
+                result = subprocess.run(arguments, stdout=output, stderr=subprocess.PIPE, timeout=min(timeout, remaining))
+            stdout, stderr = "Written to " + str(output_path), result.stderr.decode()
+        else:
+            result = subprocess.run(arguments, capture_output=True, text=True, timeout=min(timeout, remaining))
+            stdout, stderr = result.stdout, result.stderr
+        record.update(exit_code=result.returncode, stdout=stdout, stderr=stderr,
                       finished_utc=datetime.now(timezone.utc).isoformat())
         save()
         if expected is not None and result.returncode != expected:
-            raise RuntimeError(label + " failed: " + result.stderr + result.stdout)
+            raise RuntimeError(label + " failed: " + stderr + stdout)
         return result
 
     def inspect_container(cleanup=False):
@@ -76,6 +82,7 @@ def main():
     for number in (signal.SIGTERM, signal.SIGINT):
         signal.signal(number, interrupted)
     cache = None
+    snapshot = None
     attempted = False
     cleanup_deadline = deadline
     lock = open("/tmp/tempo-mac-validation-20261025.lock", "a")
@@ -86,6 +93,14 @@ def main():
         report["source_tree"] = command("source tree", ["git", "-C", str(source), "rev-parse", "HEAD^{tree}"]).stdout.strip()
         if command("source status", ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=all"]).stdout.strip():
             raise RuntimeError("Use a clean disposable checkout")
+        snapshot = Path(tempfile.mkdtemp(prefix="tempo-maia-source-", dir=evidence.parent))
+        staged_source = snapshot / "source"
+        staged_source.mkdir()
+        archive = snapshot / "source.tar"
+        command("archive recorded tracked revision", ["git", "-C", str(source), "archive", "--format=tar", report["source_revision"]], output_path=archive)
+        command("extract tracked snapshot", ["tar", "-xf", str(archive), "-C", str(staged_source)])
+        archive.unlink()
+        report["source_mount"] = "Fresh git archive of source_revision; no .git, ignored files or caller working-tree files"
         daemon = json.loads(command("daemon capacity", ["docker", "info", "--format", "{{json .}}"] ).stdout)
         report["daemon"] = {key: daemon.get(key) for key in ("NCPU", "MemTotal", "OSType", "Architecture", "ServerVersion")}
         if daemon["OSType"] != "linux" or daemon["NCPU"] < 2 or daemon["MemTotal"] < 2 * 1024**3:
@@ -103,6 +118,9 @@ def main():
         report["observed_other_usage"] = {"memory_bytes": used_memory, "cpu_percent": used_cpu}
         if used_memory + 2 * 1024**3 > daemon["MemTotal"] or used_cpu + 200 > daemon["NCPU"] * 100:
             raise RuntimeError("Insufficient observed headroom; limits will not be expanded")
+        remaining_containers = command("prior recipe containers", ["docker", "ps", "-aq", "--filter", "label=tempo.test-suite=maia"]).stdout.strip()
+        if remaining_containers:
+            raise RuntimeError("Prior Maia recipe containers require ownership reconciliation before another run: " + remaining_containers)
         command("pull pinned official image", ["docker", "pull", "--platform", "linux/arm64", image], timeout=900)
         installed = json.loads(command("image identity", ["docker", "image", "inspect", image]).stdout)[0]
         report["image"] = {key: installed[key] for key in ("Id", "RepoDigests", "Os", "Architecture")}
@@ -111,19 +129,19 @@ def main():
         cache = Path(tempfile.mkdtemp(prefix="tempo-maia-npm-cache-", dir=evidence.parent))
         (evidence / "container-entry.sh").write_bytes(Path(__file__).with_suffix(".sh").read_bytes())
         arguments = ["docker", "create", "--name", name, "--platform", "linux/arm64", "--init",
-                     "--label", "tempo.resource-owner=" + owner, "--label", "tempo.disposable=true",
+                     "--label", "tempo.resource-owner=" + owner, "--label", "tempo.disposable=true", "--label", "tempo.test-suite=maia",
                      "--cpus", "2", "--memory", "2g", "--memory-swap", "2g", "--pids-limit", "256",
                      "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                      "--user", str(os.getuid()) + ":" + str(os.getgid()),
                      "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m", "--network", "bridge",
-                     "--mount", "type=bind,src=" + str(source) + ",dst=/source",
+                     "--mount", "type=bind,src=" + str(staged_source) + ",dst=/source",
                      "--mount", "type=bind,src=" + str(evidence) + ",dst=/evidence",
                      "--mount", "type=bind,src=" + str(cache) + ",dst=/cache",
                      "--workdir", "/source/workers/maia", "--env", "EXPECTED_NODE=" + version,
                      "--env", "npm_config_cache=/cache", "--env", "npm_config_userconfig=/dev/null",
                      "--env", "npm_config_audit=false", "--env", "npm_config_fund=false",
                      "--env", "npm_config_update_notifier=false", installed["Id"],
-                     "sh", "/evidence/container-entry.sh"]
+                     "timeout", "--signal=TERM", "--kill-after=10s", "30m", "sh", "/evidence/container-entry.sh"]
         attempted = True
         command("create bounded container", arguments)
         state = inspect_container()
@@ -179,10 +197,13 @@ def main():
             if cache:
                 shutil.rmtree(cache)
             report["temporary_cache_removed"] = cache is None or not cache.exists()
+            if snapshot:
+                shutil.rmtree(snapshot)
+            report["temporary_snapshot_removed"] = snapshot is None or not snapshot.exists()
             report["complete"] = bool(report.get("checks_passed"))
         except BaseException as error:
             report["cleanup_error"] = str(error)
-        report["image_retained"] = True
+        report["image_retained"] = bool(report.get("image"))
         report["finished_utc"] = datetime.now(timezone.utc).isoformat()
         save()
         lock.close()
