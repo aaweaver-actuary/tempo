@@ -416,6 +416,11 @@ input changed with that script dependency; exact assets were reused without an
 unnecessary rebuild. The build had already been refreshed for #419's changed
 consumed composition manifest: all 744 old/new paths agree, and only
 `study-composition.json` differs from the original preparation assets.
+Read-only comparison with the browser owner's subsequent 745-file web-image
+manifest finds all **744 current native asset paths byte-identical**; its only
+extra path is nginx's `50x.html`. The original pre-#419 manifest still differs at
+`study-composition.json`. `final-native/browser-asset-correspondence.json` records
+both comparisons without relabeling old assets or combining acceptance categories.
 
 | Source/build/receipt identity | Exact value |
 | --- | --- |
