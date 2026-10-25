@@ -1,0 +1,124 @@
+--- a/backend/app/canonical_prefix_api.py
++++ b/backend/app/canonical_prefix_api.py
+@@ -59,12 +59,10 @@
+         storage.fail_active_local_coverage(database, repertoire_id)
+     if storage.postgres_is_configured():
+         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
+-        from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
+         storage.advance_priority_source_epoch(database, repertoire_id)
+         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
+         storage.delete_priority_publication(database, repertoire_id)
+         storage.delete_introduction_priorities(database, repertoire_id)
+-        enqueue_priority_refresh_in_transaction(database, repertoire_id)
+     return prefix_projection(moves, revision)
+
+
+--- a/backend/app/coverage_maia_commands.py
++++ b/backend/app/coverage_maia_commands.py
+@@ -16,7 +16,6 @@
+ from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+ from .services.canonical_prefix import read_prefix
+ from .services.canonical_scope_freshness import coverage_run_is_current
+-from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
+
+
+ def _now() -> str:
+@@ -97,7 +96,6 @@
+     recalculate_coverage_node(database, row["id"], settings, int(row["explorer_games"]))
+     storage.mark_complete(database, _now(), row["id"])
+     storage.record_progress(database, row["run_id"], row["run_id"], _now(), row["run_id"])
+-    enqueue_priority_refresh_in_transaction(database, row["repertoire_id"])
+     enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
+     return {"status": "complete"}
+
+--- a/backend/app/services/postgres_coverage_explorer.py
++++ b/backend/app/services/postgres_coverage_explorer.py
+@@ -16,7 +16,6 @@
+     lock_current_slice,
+ )
+ from .postgres_coverage_candidates import recalculate_coverage_node
+-from .introduction_priorities import enqueue_priority_refresh_in_transaction
+ from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+ from .repertoire_coverage import (
+     ExplorerAuthenticationError, _cached_explorer_payload, _fetch_explorer,
+@@ -117,7 +116,6 @@
+     maia_done = storage.maia_completed_count(database, (node["run_id"],))
+     storage.publish_progress(database, (node["run_id"], node["run_id"], progress["completed_nodes"] + maia_done,
+          progress["total_nodes"] * 2, _now()))
+-    enqueue_priority_refresh_in_transaction(database, node["repertoire_id"])
+     enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
+     return advance_task_slice_in_transaction(
+         database, task, next_phase="explorer",
+--- a/backend/app/services/postgres_game_priorities.py
++++ b/backend/app/services/postgres_game_priorities.py
+@@ -12,7 +12,6 @@
+     complete_task_slice_in_transaction,
+     lock_current_slice,
+ )
+-from .introduction_priorities import enqueue_priority_refresh_in_transaction
+ from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+
+
+@@ -34,7 +33,6 @@
+             return complete_task_slice_in_transaction(database, task)
+         if repertoire is not None:
+             repertoire_id = repertoire["repertoire_id"]
+-            enqueue_priority_refresh_in_transaction(database, repertoire_id)
+             enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
+             return advance_task_slice_in_transaction(
+                 database, task, next_phase="enqueueing_priorities",
+--- a/backend/app/services/game_sync_coordinator.py
++++ b/backend/app/services/game_sync_coordinator.py
+@@ -28,7 +28,6 @@
+ from .introduction_priorities import (
+     calculate_priority_records,
+     claim_priority_refresh,
+-    enqueue_priority_refreshes_for_game,
+     execute_priority_refresh,
+     load_priority_calculation_input,
+     publish_priority_records,
+@@ -143,7 +142,6 @@
+
+
+ def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
+-    enqueue_priority_refreshes_for_game(game_id, background=True)
+     with connection(background=True) as database:
+         repertoire_ids = storage.matching_repertoire_ids(database, game_id)
+     for repertoire_id in repertoire_ids:
+--- a/backend/app/services/repertoire_coverage.py
++++ b/backend/app/services/repertoire_coverage.py
+@@ -547,9 +547,6 @@
+             progress_counts = storage.explorer_progress_counts(database, (node["run_id"],))
+             from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+             enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
+-        from .introduction_priorities import enqueue_priority_refresh
+-
+-        enqueue_priority_refresh(node["repertoire_id"], background=True)
+         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
+                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
+                         progress_counts["total"] * 2)
+@@ -702,7 +699,3 @@
+     emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
+                     (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
+                     progress_counts["total"] * 2)
+-    if repertoire_id:
+-        from .introduction_priorities import enqueue_priority_refresh
+-
+-        enqueue_priority_refresh(repertoire_id, background=True)
+--- a/backend/app/services/learning_review_adapter.py
++++ b/backend/app/services/learning_review_adapter.py
+@@ -202,12 +202,8 @@
+                 coordinator.wake()
+
+     def refresh_priority(self, repertoire_id, *, transactional_only=False):
+-        from .introduction_priorities import enqueue_priority_refresh_in_transaction, enqueue_priority_refresh
+-        if storage.configured():
+-            enqueue_priority_refresh_in_transaction(self.database, repertoire_id)
+-        elif not transactional_only:
+-            # Ordinary SQLite follow-ups run after its owned connection exits.
+-            self.deferred_effects.append(lambda: enqueue_priority_refresh(repertoire_id))
++        # Retired legacy advisory effect; the shared review port returns no receipt.
++        return None
+
+     def refresh_maturity(self, context):
+         from .durable_tasks import enqueue_task_in_transaction

@@ -16,6 +16,12 @@ future adaptive ranking while preserving current scheduling, eligibility, quota,
 history and pending recovery. It does not establish that existing scores, ranks,
 jobs or refresh intents are empty.
 
+The [exact follow-on withdrawal candidate](STOP-NEW-RECOMPUTATION.md) now supplies
+seven mechanical callback edits, registration/schedule locations, an issued-work
+disposition table and an unexecuted read-only authority checklist. Its candidate
+entry is appended to the existing retirement manifest. D1/D2/D3 remain explicit
+policy/authority gates; no production behavior is changed.
+
 | Core path | Lines | Current responsibility |
 | --- | ---: | --- |
 | [introduction_priorities.py][calculator] | 933 | Evidence selection, calculation, enqueue/claim/retry, legacy and staged publication, evidence readback |

@@ -1362,6 +1362,474 @@
         "decision": "independent candidate correspondence review complete; remains candidate, no deletion approval",
         "rationale": "Read-only reviewer /root/review_guided_candidate found no unresolved P1/P2. Independently verified 7 prior batches/top fields preserved, the one existing FEATURES row, 8 delete plus 15 edit paths without prior-cohort overlap, 399 deletion plus 65 edit-source lines (464 bounded source lines, not net reduction), 10 exclusive tests/258 lines, 29 protected file hashes and 3 complete decorated route-region hashes. Active routes, side-effect/dynamic receipt recovery, shared CF-9, inventories, broad build and retained SQL/export/schema consumers match source. No runtime suite, source-removed artifact, actual-data, launcher, migration or cutover acceptance is granted."
       }
+    },
+    {
+      "id": "adaptive-priority-stop-new-01",
+      "status": "candidate",
+      "source_commit": "ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f",
+      "purpose": "Exact first-stage external priority-request withdrawal candidate, preserving saved readers and issued-work recovery. Documentation only: no source diff applied, no data/runtime/CI/host/deployment/merge changes and no retirement approval.",
+      "delete_paths": [],
+      "edit_paths": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "sha256": "a36a71e687a0d9e7299ea07de02564ee72b2bee2f4eb5f93c1ea76ae2458fa1c",
+          "proposed_sha256": "4c0f064664208bbcbcac479beb799a19aed8f880dc840edfbc47db13035e5e7e",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in save_prefix; retain source-epoch advance, canonical invalidation, coverage/opportunity effects, original command and transaction."
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "sha256": "d38c1de908c06b295b47969dc24b3d7f5228567fe9390a0fbcde0187e361e64e",
+          "proposed_sha256": "87d9a4a4873560012084b1ceae514e11074f7fc8320ea26c94832c36b7195eac",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in submit_maia_node; keep lease/scope checks, coverage completion, original receipt and opportunity callback."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "sha256": "04791f50588b7caa1c6ee16de18d2aa7fda418160de13aca4491408293697ea9",
+          "proposed_sha256": "c2684b9cdad04cfcf1966a7a7908e73c185654702213070406a488b41c1ed22f",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in _publish_node; keep source/task/node fences, source publication, cursor and opportunity callback."
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "295555d13146eb1ce9189266b3df9f55d017c56fc8c287b0d01aec2cbd9720c3",
+          "proposed_sha256": "785b3ee52a20cad3843de76a25d007f8784af10b15a7966034051d451e46e003",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in execute_game_priority_handoff_slice; retain the opportunity call, per-repertoire cursor, phase/lease fences and final derivation completion."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec",
+          "proposed_sha256": "dd506eeabb1c669b18741996b87d4c18ea883465601313f4a4e6aab387210f4f",
+          "required_edit": "Remove only enqueue_priority_refreshes_for_game import and its _enqueue_game_repertoire_refreshes call; retain claim/load/compute/publish and restart paths for existing priority jobs, and all game/opportunity effects."
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "sha256": "a05fffc8762ad19e4c618f7de4df0667e21bc8a3615828d19b252386e3694bdd",
+          "proposed_sha256": "9f6c9e20cf6208070ec447621ff69a7cd01437629bf38348b728fe4e63af44cf",
+          "required_edit": "Remove only priority imports/calls after execute_coverage_node and submit_maia_coverage, plus the resulting empty if repertoire_id branch; keep coverage completion/progress/error and opportunity effects."
+        },
+        {
+          "path": "backend/app/services/learning_review_adapter.py",
+          "sha256": "00f5148e7c29950ac4b6031610141b5cacbfb76e12896d7f727dba1fb1e852ca",
+          "proposed_sha256": "1c675d92d33fea81c1fd258149761d6878aa8b8b57603c749b58ec68b1ca06b8",
+          "required_edit": "Retire only LearningReviewAdapter.refresh_priority optional legacy enqueue effect as the explicit void-return hunk. Preserve shared review signature/application, primary review/history/receipt/queue effects and independent Learning notification. D2 approval required for old source operations not yet applied; no fake enqueue receipt/generation."
+        }
+      ],
+      "candidate_patch": {
+        "path": "docs/architecture/study-first-reduction-2026-10-21/adaptive-priority-2026-10-25/WITHDRAWAL.patch.txt",
+        "sha256": "e0fb71cf6fc8f17d3414771048e654e511bce09355eef6cc82d5ea2cfbbbdde8",
+        "status": "Review text only; git apply --check passed, never applied to tracked production sources",
+        "added_lines": 2,
+        "removed_lines": 23,
+        "net_lines": -21,
+        "production_path_count": 7,
+        "core_lines_retained": 1407,
+        "claim": "Withdraws immediate external callbacks only, not internal recovery re-enqueue or all future calculation. No implemented narrow-source credit."
+      },
+      "detail": "docs/architecture/study-first-reduction-2026-10-21/adaptive-priority-2026-10-25/STOP-NEW-RECOMPUTATION.md",
+      "implemented_production_edit_paths": [],
+      "keep_paths": [
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "sha256": "5a7c18d20ebb2d31566bc86735de4192bce7ddb0d4971bf0f287824847e05435",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_priority.py",
+          "sha256": "4e6820145db66699a996354020e5b000ba1723ff4925cae4b63fc18cd6c20c22",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py",
+          "sha256": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py",
+          "sha256": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py",
+          "sha256": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/publications.py",
+          "sha256": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/refresh_requests.py",
+          "sha256": "9ddbdba6fb33034c6e24669d3bff030ca1b2d73c30199236d22e2df7617aa3f4",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/durable_tasks.py",
+          "sha256": "ab270699a8795d3db6bb1d2c14c962f7539712b3135fcb667133217021d6ecaf",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py",
+          "sha256": "8d0180c43da220a20916f3c2a2c157feb7d2d48f05b11813c7ba2d536d6d0130",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py",
+          "sha256": "86e11ada77697677075cda8e8555dc154e5efc76bba6e6bb3a2b5423a5ebdbd9",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/priority_retention.py",
+          "sha256": "a2945290ee6156612d9f617ffa5fb1358e291211afea4cbceede29f1640ae5a2",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/study/openings/capacity_frontier.py",
+          "sha256": "48245e8f889b03536db8e76e586b2877e120164cf1e79a5190bdc5829ff15691",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/study/frozen_order/policy.py",
+          "sha256": "95fa59bfe5fc43410d24fb84ad3dbddea25e8a656dbddcf080532093631770d9",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/queue_admission.py",
+          "sha256": "497b2e180033e4417af40b6b8124048ae0c2b51241bb44fb3dc1173137c4609a",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/queue_admission_adapter.py",
+          "sha256": "54d0e1690473066507eab3b2f21cf41ea440d99d6a5d7ae9f1aab421e1a2b44f",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/queue_application.py",
+          "sha256": "370515db61d20eca3373f876e42fdacf7ddd6f96f2c12215619a2c1dc1931cb9",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_queue_refresh.py",
+          "sha256": "1fdba0c2b7dbad27ba5a850e73ec37e06b7c6f522a43a9705165031941ba976f",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/reads.py",
+          "sha256": "2d058d0c7c0f56493385f81113b75a3c5575f13b9b6803314b42cd27d243def3",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/main.py",
+          "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "sha256": "a36a71e687a0d9e7299ea07de02564ee72b2bee2f4eb5f93c1ea76ae2458fa1c",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "sha256": "d38c1de908c06b295b47969dc24b3d7f5228567fe9390a0fbcde0187e361e64e",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "sha256": "a05fffc8762ad19e4c618f7de4df0667e21bc8a3615828d19b252386e3694bdd",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "sha256": "04791f50588b7caa1c6ee16de18d2aa7fda418160de13aca4491408293697ea9",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "295555d13146eb1ce9189266b3df9f55d017c56fc8c287b0d01aec2cbd9720c3",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/learning_review_adapter.py",
+          "sha256": "00f5148e7c29950ac4b6031610141b5cacbfb76e12896d7f727dba1fb1e852ca",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "services/learning/application/src/tempo_learning_review/application.py",
+          "sha256": "14f5f50c93619f31c90fb50a9e94cd47e49dd6a19ac120877159e6b948a4d57e",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "services/learning/runtime/src/tempo_learning_runtime/review_adapter.py",
+          "sha256": "5b3ec6d0a9c53ed92d3fb20bcd43a9b02283db47f069c550cdba5d20878aff44",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_learning_database/adapters/review_adapter.py",
+          "sha256": "fea81ed0edb46094c8c7ef7bea7712c5e9c6c38f1d24eaecad4dc20d640b910b",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/policy.py",
+          "sha256": "a2c1b11ad41fea53a465594bca6879dfb521a64232fe749f921d7527ccfe6747",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_learning_database/adapters/queue_application.py",
+          "sha256": "d875bad80a9495f786997bf4f8f83c072128afa8452c1acf388d204998c281d0",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_learning_database/adapters/admission.py",
+          "sha256": "91c7f6557c4a08de947b595e088a974a9c47845d90e3f044339ea4bf592aadff",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/canonical_scope_schema.py",
+          "sha256": "b3b0229d33fe3e7ad3b6c9efa918d9c40f878852d39c838eef09a6aea5ec9a6f",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tooling/frozen-maia-order.py",
+          "sha256": "1967f2375250a2f6a5ab4a8c252bdfe4ee70ba8a0ff0fddca8d59a63a11dab05",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tooling/reclaim_priority_storage.py",
+          "sha256": "466766615b833e4f43d49c75c4bda33201822027d3d0da123a9fe69eef4cd5f4",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+          "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/coordinator/storage.py",
+          "sha256": "9ff46be2e83e39bcf9f0ff04db2d8405826ee7bb4837d100426717e1e0d70792",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/durable_scheduling.py",
+          "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/background_metric_kinds.py",
+          "sha256": "05239413c7ef9ff77d9d443d3b9c6623a400b1c44fd027f6d573410611170e56",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/background_diagnostics.py",
+          "sha256": "2f62e6203ec94e86f8f533273b45eca852ab5c6c3453edf3dc25626b7cdc1cb7",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "app/domain/schemas/background-diagnostics.ts",
+          "sha256": "f6659cfa6b86b2671503e994681c1a964694204fb1947976e68741dd5ea955ba",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "app/domain/schemas/index.ts",
+          "sha256": "bee9a6b4bc4a94261a22a2a1ee5f1c67ebd6a776e1e1233f7581913459886a55",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/celery_app.py",
+          "sha256": "9d013c0877ebf99aebb022eda77e1c6a0fddc01d374807d509d81bb12090ae42",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/activity_commands.py",
+          "sha256": "44b80d9f7e3b12ec75e52ea75299485a92d84b3261906fd54ec141d54878c093",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/background_activity.py",
+          "sha256": "e4987e56b050e1fff404ba3cec5d0592ed8b8154bf172449d6f1ed65fb2929be",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/study_mode.py",
+          "sha256": "6d7d449726dfb619c275e87b4fe060955108b8271baa45af944aed917ccbce66",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/command_gateway.py",
+          "sha256": "bbbf97ed281eac329c28a60df6c01374db30651ba4093ec397ae0840ff0173aa",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/coverage_commands.py",
+          "sha256": "450426b5f7d1f619cf9b1e411335e168d805b7f77191dc5dd83e0794d08db524",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/review_commands.py",
+          "sha256": "fbc2fd8bab0560a4c7bba03e0923098fc65ff83abb950e665c9e6de1be323e87",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/game_commands.py",
+          "sha256": "9d5858eaa63ebacadd25a06c037e0c27c6585d5e218f71fd6075b9dfeb24d9f5",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/game_sync_commands.py",
+          "sha256": "326a7c0b572a0ff53494dd832f88ae3e07ffbf630ff829ec02d62e0609e63616",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_game_features.py",
+          "sha256": "19024124c422b56819e5d56ec32a448bc1c2a6292b2c078aa9fef9c084a0bbea",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_game_sync.py",
+          "sha256": "27f15c50bf0aa3a73ed10abcb9a5bee87548bd661e9449bd87be1f9abc502d91",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_seed.py",
+          "sha256": "432b7b33e620ffdd49d43f618de2325d12ae5a3537871ff11ff7328ebe5551b7",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_recovery.py",
+          "sha256": "40f4e4a5b397c65ed7f8301c385aab33e5fb66d763aebd8e6d26006832cddb77",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "services/learning/application/src/tempo_learning_review/commands.py",
+          "sha256": "7b88c05473a8ffc31e2d53899df073798ece5a46986ea79d24d981528fa7599b",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "services/learning/application/src/tempo_learning_review/ports.py",
+          "sha256": "3e2d38cc1583d212e80a83fdf610ee9f49b36058f490d6d2e1c90c814c23c74e",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/durable_tasks/storage.py",
+          "sha256": "f2489631c9a29f2f3c4d403ed277c7ffac5884f07669408b23734caa90659b25",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/controls/claim_sql.py",
+          "sha256": "f3a29afa4044a888af019b932abac55846bba1a95699e41243459411fedb5570",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/commands/activity.py",
+          "sha256": "f2e35f9a0a7e2524de1bd2c12cf89f7d480510464889e55f8f990db287f054b6",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/commands/receipts/storage.py",
+          "sha256": "8161f58b91c2419a6aebcea56bed0ec9b24d0d252280383c930b7bdb56bcfcd5",
+          "reason": "Retain current source, reader/recovery/registration or source-command semantics in this documentation packet. Future withdrawal permits only the seven exact patch hunks named in edit_paths; all other code remains."
+        }
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_introduction_priorities.py::test_next_day_admits_from_last_published_scores_without_delaying_due_review",
+        "backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains",
+        "backend/tests/test_priority_jobs.py::test_interrupted_priority_refresh_replays_once_after_restart",
+        "backend/tests/test_refresh_input_coalescing.py::test_stale_opportunity_completion_cannot_satisfy_replacement_refresh",
+        "backend/tests/test_priority_lifecycle_database_split.py::test_priority_lease_keeps_source_job_and_task_lock_order",
+        "backend/tests/test_postgres_priority_preparation.py::test_priority_source_change_withholds_publication_and_requests_followup",
+        "backend/tests/test_new_cards_per_repertoire.py",
+        "backend/tests/test_real_game_feedback.py",
+        "backend/tests/test_postgres_priority_retention.py",
+        "backend/tests/test_priority_storage.py",
+        "services/learning/runtime/tests/test_frozen_import_contract.py"
+      ],
+      "test_commands": [
+        "npm run check:conflicts",
+        "git diff --check",
+        "git apply --check docs/architecture/study-first-reduction-2026-10-21/adaptive-priority-2026-10-25/WITHDRAWAL.patch.txt"
+      ],
+      "future_execution_checks": "NOT RUN. After approval select exact affected legacy review/coverage/prefix/game handoff checks plus retained saved-reader/frozen/limits/recovery and native transaction/publication checks from adaptive-priority-2026-10-25/CHECKS.md. Existing test expectations for the explicitly retired optional callbacks must be reconciled without deleting retained primary review/queue/receipt proofs. No broad runtime suite for these docs.",
+      "issued_work_disposition": {
+        "source_commands": "D2 unresolved: the seven callback sites cannot distinguish older saved operations from new commands; patch withholds optional priority effects for both, preserving primary command/receipt semantics. If original priority effects are mandatory for old unexecuted operations, settle/hold that tail before applying these hunks; no new issuance-cutoff mechanism is proposed.",
+        "legacy_priority_jobs": "Queued claims/published-generation fences and startup running requeue retained. Current coordinator exceptions can leave running work without per-loop requeue; compatibility execute_priority_refresh has a separate retry/fail path. Failed status is held, not fabricated complete; no direct legacy-priority retry control found.",
+        "native_priority_tasks": "Queued/retrying/leased/failed/complete, prepared/staged cursor and leases retained with original generic claims/deferrals/retries and source/job/task publication fences. Internal source/scoring/ordering/legacy-cursor recovery can enqueue replacement generations; no finite drain deadline.",
+        "refresh_intents": "Preserve input_version/published_input_version/pending_since. Claims clearing pending_since are not accepted publication; missing task/complete task alone does not satisfy intent. No independent periodic priority-intent repair scan identified.",
+        "retention": "Keep bounded 16-row cleanup, published/active generation and queued/running preparation protection; Study-only also holds retention.",
+        "controls": "Existing Study-only exclusion/per-row pause holds later optional claims. Legacy source priority pause and durable task pause are different keys. Pause is not an in-flight publication fence; do not enable optional execution to force a drain.",
+        "opportunity": "D3 coordinated with #429; four priority-owner callbacks remain, along with both scoring constants, neutral source epoch binding and opportunity source-lock/generation/lease/accepted-publication contract. Tail settlement/hold remains necessary for opportunity cessation.",
+        "broker_browser_history": "Retain original identity and replay/reconciliation; no purge, new-ID reissue, fake completion, storage/table/schema/history/rank deletion or migration."
+      },
+      "acceptance_dependencies": [
+        {
+          "gate": "D1 issued-tail drain versus hold",
+          "state": "PENDING POLICY AND ACTUAL OBSERVATION",
+          "required_evidence": "Select existing admitted recovery or explicit hold without affecting essential Study. Actual Study-only authority stays held unless separately authorized otherwise. No cancellation or bounded drain follows from source."
+        },
+        {
+          "gate": "D2 source-command optional effect boundary",
+          "state": "PENDING EXPLICIT APPROVAL",
+          "required_evidence": "Accept withdrawal of optional priority effects for not-yet-applied/replayed legacy source operations, including the explicit void review hook and canonical invalidation without replacement scores, or require old source tails settled/held before these hunks. No issuance-version discriminator exists."
+        },
+        {
+          "gate": "D3 opportunity overlap",
+          "state": "SOURCE CONTRACT COORDINATED; ACTUAL TAIL UNKNOWN",
+          "required_evidence": "Keep execute_priority_refresh:809, publish_priority_records:898, postgres_priority:190 and postgres_game_priorities:38; opportunity owner #429 confirmed source contracts and no finite drain claim. Observe tail/downstream settlement or approve held disposition."
+        },
+        {
+          "gate": "#390 and actual-authority/history/launcher/cutover gates",
+          "state": "NOT SETTLED BY THIS PACKET",
+          "required_evidence": "Use the unexecuted read-only checklist in STOP-NEW-RECOMPUTATION.md for actual authority, saved facts, paired ledgers/intents/preparations, broker/browser/source operations and downstream tail. Separately match required #382/#386/#359/#267/#369 evidence before any deletion/cutover; no live observation executed here."
+        }
+      ],
+      "coordination_receipt": {
+        "owner_thread": "01a173c5-ad62-73bd-acc4-13d72eb2b0e3",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/429",
+        "communicated_head": "26544be0a8e3adf18701996efc9649ffd146288d",
+        "base_commit": "ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f",
+        "agreement": "All four callbacks, source epoch/scoring and opportunity complete_task contracts retained. No finite drain/quiescence promise. Opportunity owner edits only opportunity-feed-refresh-01 and Discovery FEATURES row; integration preserves both entries and eight prior cohorts/top metadata."
+      },
+      "data_disposition": "No actual state read or changed. Preserve saved published/current legacy priorities, frozen rank/activation, source epoch rows, all job/task/preparation/intent/broker/browser receipt/review/history facts and schema/export sources. Existing source invalidation semantics stay unchanged. Held is not terminally complete. No table DROP, data migration or priority model redesign.",
+      "dependency_receipts": [
+        "Source read against main ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f; all prior 48 pinned source receipts remain identical. Existing eight cohorts/top-level retirement metadata preserved exactly.",
+        "Exact external-callback patch checks source bytes and parses the in-memory proposed functions, without applying it. Registration/schedule/shared poll and command paths, both ledgers, internal recovery replacement and lifecycle bindings enumerated in linked detail. No runtime tests, app imports, database/broker/browser-state observation or operator action performed."
+      ],
+      "reviewer": {
+        "decision": "candidate only; independent source review receipt is recorded in draft PR427 for its exact final head",
+        "initial_contract_review": "/root/independent_priority_review accepted a6c51b5732a87f1cd7f7a0dfdad3166b89efe352, tree 6f0e9fcbe7f839ea916beede5ca32b0a9dea4772; follow-on changes require fresh source review, not deletion approval."
+      }
     }
   ]
 }
