@@ -21,7 +21,7 @@ COPY database/browser-intents/src/ ./database/browser-intents/src/
 COPY database/browser-intents/tsconfig.json ./database/browser-intents/tsconfig.json
 COPY packages/study-session/src/ ./packages/study-session/src/
 COPY packages/study-session/tsconfig.json ./packages/study-session/tsconfig.json
-COPY scripts/study-composition.ts scripts/offline-shell-assets.ts scripts/maia-cache-asset.ts ./scripts/
+COPY scripts/study-composition.ts scripts/offline-shell-assets.ts ./scripts/
 COPY public/ ./public/
 
 ARG TEMPO_WORKBENCH_URL=""

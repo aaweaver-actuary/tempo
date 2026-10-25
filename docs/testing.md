@@ -913,14 +913,14 @@ queue-only owned receipt fails the audit before deletion. See
 
 ## M02 package-local transition
 
-Maia's independently packaged worker is registered as `maia`. Install only
+Maia's retained inference core is registered as `maia`. Install only
 `workers/maia` dependencies, then run `node tools/component-build/test-lane.mjs
---component maia --list` for its owning suites. The worker's
-[local instructions](../workers/maia/README.md) describe installed-contract setup,
-restricted artifacts, real offline model/cancellation proofs and the separate
-serial benchmark. Its local regression inventory owns discovery; legacy adapter
-parity remains in the already registered root tests. Component checks do not
-establish the whole-product or hosted merge gates.
+--component maia --list` for its owning suites. The
+[local instructions](../workers/maia/README.md) describe pure/model, immutable
+artifact and shared schema-acceptance checks. The unused standalone supervisor's
+protocol/resource/container and benchmark suites are retired with that API.
+Legacy frozen-helper and coverage-client cases retain their root registration.
+Component checks do not establish whole-product or hosted merge gates.
 
 Implemented package declarations are in `components.json`; planned targets are not
 independently buildable claims. See [component build/discovery commands](../tools/component-build/README.md)
@@ -958,16 +958,12 @@ no essential API response is fabricated. See the source-bound
 [F2 acceptance map](validation/f2-study-learning.md) for exact results and limits.
 
 
-## Independent Stockfish execution worker (#43, workstream B)
+## Retired standalone Stockfish worker
 
-Stockfish is registered as `stockfish`. Install only `workers/stockfish` and the
-installed Python client/shared contracts environment described in its
-[README](../workers/stockfish/README.md). `node tools/component-build/test-lane.mjs
---component stockfish --list` lists owning pure, protocol, Python client/contract,
-and real installed-container suites. Container qualification requires Docker and
-runs only labeled task-owned offline, read-only, hard-capped containers. It does
-not access Study, providers or domain databases. The separate serial benchmark is
-not an SLO or C's durable scheduler acceptance. See the local regression inventory
-for all 25 B8 regression identities and actual versus fake-engine proof owners.
+The independent `workers/stockfish` runtime, Python client, qualification suites
+and `stockfish` component selection are retired. Their last maintained source and
+B8 regression inventory remain in [the pre-removal snapshot](https://github.com/aaweaver-actuary/tempo/tree/cb0ed5910e6bd05894919fd8d49f5dc7bc236975/workers/stockfish).
+This does not retire the native engine smoke above, browser engine assets, Maia,
+or the Intelligence dispatcher and shared analysis-job contracts.
 
 The native `test_postgres_daily_queue_large_graph_unlock_meets_transaction_budget` fixture includes publication readiness and expects 6,251 bounded pages across its unchanged 100,000 locked cards and 900,021 graph steps. This replaces the retired sparse selector's three-page assumption; the exact 21 unlocked cards and 250 ms per-transaction limit remain asserted.

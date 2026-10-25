@@ -3298,6 +3298,13 @@ planning work for the full-size snapshot without changing its read budget.
 
 Stalemate Swindles (October 5, 2026):
 
+Candidate source retirement (2026-10-25): the offline `scripts/stalemate_swindles.py`
+CLI and its exclusive command/archive-process tests are retired. CLI/archive
+entries below are historical evidence at `cb0ed591`, not current test commands.
+Shared miner/service, checked-in corpus, Study grading/import and PostgreSQL
+review-history proofs remain current; see `docs/STALEMATE-SWINDLES.md` and the
+exact candidate manifest in `docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json`.
+
 - `test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder` proves original White/Black puzzles start two plies before termination, train the eventual stalemated defender, and preserve both historical moves.
 - `test_stalemate_swindle_rejects_non_stalemate_draws`, `test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits`, `test_stalemate_swindle_configurable_filters_allow_bots_bullet_and_rating_changes`, and `test_stalemate_swindle_excludes_positions_with_only_one_legal_defender_move` protect eligibility and explicit overrides.
 - `test_stalemate_swindle_classifies_immediate_forced_stalemate_separately_from_historical_trap` enumerates one versus every legal immediate-stalemating reply; `test_stalemate_swindle_identity_ignores_fen_clocks_and_features_describe_material` protects position identity and honest motif wording.
@@ -3318,7 +3325,7 @@ Stalemate Swindles (October 5, 2026):
 - `Study White board underpromotion survives offline journal and exact UCI replay` and its Black mirror use real drags and rendered-piece assertions before proving the original five-character UCI survives the offline journal and replay. `Study board promotion places the selected knight across browser engines` exercises Chromium/Firefox/WebKit.
 - CI follow-up: `poisoned online A becomes inspectable while B and C save and conflict retry survives reload` now seeds its outbox after the fixture's initial shell navigation and before the intentional reload. The failed CI trace showed the initial page's B transport interrupted by reload, followed by a legitimate same-identity resend; the test now installs all review handlers before starting that replay and retains its exact B/C and conflict-retry assertions.
 
-## PR #91 archive pipeline lifecycle
+## Historical PR #91 archive pipeline lifecycle (offline CLI retired)
 
 - `test_stalemate_archive_decompressor_failure_terminates_upstream_producer_under_backpressure` uses owned real processes and a 32 MiB producer, covering downstream failure, premature successful exit, closed input with a live consumer, and kill fallback for an uncooperative consumer. The original implementation deadlocked on the bounded deadline; failures now reap both PIDs and publish neither candidates nor metadata.
 - `test_stalemate_archive_downloader_failure_terminates_blocked_decompressor` uses a FIFO readiness handshake and a consumer that refuses input; upstream failure cancels both processes without relying on downstream EOF.
@@ -3336,7 +3343,7 @@ Stalemate Swindles (October 5, 2026):
 - `test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances` protects successful teardown and the disposable-instance boundary.
 - `test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content` now runs first in the regular durability runner's fresh schema process, without synthetic-proof setup. Each bundle scopes its own URLs and pools; the synthetic proof subsequently starts independently after restoration. Persisted trees, reversed-row idempotence, changed-content rejection, draft status, and zero enrollment assertions remain intact.
 
-## PR #91 external archive cancellation — October 8, 2026
+## Historical PR #91 external archive cancellation — October 8, 2026 (offline CLI retired)
 
 - `test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children` proves both TERM-resistant stages receive one shared termination deadline and both are killed before either is reaped. PR #172 current-base CI `38097726441` exceeded the existing 20-second cancellation deadline; unchanged local reproduction passed in 16.21 seconds, and captured thread state confirmed sequential shutdown waits. The deterministic regression failed before the repair (second kill at ten seconds rather than five). Real pipe, owned-PID, output-certification and signal-status assertions remain required. Failure-only thread dumps now preserve the original shutdown boundary; exact historical CI signal timing remains unavailable.
 
@@ -4214,7 +4221,7 @@ Reconciliation against main `e9788df8`: PR #154 added bounded waits around recei
 
 - `PD-82 foreground deferral followed by database refusal still requires explicit retry` deterministically injects one foreground deferral then one database refusal. It fails with the original driver's early break (the database refusal has not even been observed), then requires automatic foreground continuation and an explicit database retry within the unchanged five-second inspection budget. The local desktop trace also reproduced three foreground deferrals followed by a database refusal that the old driver missed. The driver now observes that next response instead of exiting its loop; production behavior is unchanged.
 
-## PR #148 complete qualification — archive startup cancellation ownership
+## Historical PR #148 complete qualification — archive startup cancellation ownership (offline CLI retired)
 
 - Complete CI `38092998305` failed existing `test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-ctrl_c]` with an owned child retaining pipe backpressure beyond the original 20-second deadline. The focused unchanged case passed locally (17.11s pytest); no blind CI retry or deadline increase was used.
 - `test_stalemate_archive_cancellation_during_process_registration_reaps_both_children` deterministically delivers SIGINT after a real second child is created but before its Popen handle is assigned. It failed on the original source (1.04s pytest): the spawned decompressor remained alive and unowned. Cancellation now records the signal without throwing during the two ownership assignments, then raises immediately after registration so existing cleanup reaps both children. Child signal masks, grace periods, process ownership, output certification and regular cancellation semantics stay intact. The exact historical CI timing was not instrumented; the new test directly proves and closes this real startup window.
@@ -4779,17 +4786,14 @@ regression in `unit/storage-probes.test.ts`: reading before lazy application
 startup aborts an absent database open rather than creating an empty incompatible
 schema. The existing two native legacy receipt/reimport scenarios retain their
 original assertions against that non-mutating inspector.
-## Independent Maia worker (#110)
+## Retained Maia inference core (#110)
 
 [`workers/maia/REGRESSIONS.md`](../workers/maia/REGRESSIONS.md) owns the registered
-pure, protocol/resource, installed-contract and actual-model regressions. Named
-cases protect phantom castling, king coherence, en-passant legality, exact requested
-move support, generation/replay identity and truthful termination. Shared qualifier
-routing, containment, failure propagation and zero-case proofs remain in
-`tools/component-build/tests/workers.test.mjs`. Existing frozen-helper and
-browser/Node parity cases retain their root registration and now exercise the
-shared computation owner. These proofs do not establish Intelligence persistence,
-Learning behavior, or full-system qualification.
+pure, installed-artifact, shared-contract and real-model regressions. Position
+legality, exact requested moves, vocabulary and descriptor/provenance checks stay.
+Only standalone supervisor/CLI/resource/container-exclusive tests are retired.
+Frozen-helper and coverage-client cases retain root registration. These proofs do
+not establish Intelligence persistence, Learning behavior or full-system gates.
 
 ## PR #291 independent Study review repairs
 
