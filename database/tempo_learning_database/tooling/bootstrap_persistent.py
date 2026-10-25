@@ -353,8 +353,10 @@ def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory,
                 save()
             except Exception:
                 pass
-            if isinstance(error, (KeyboardInterrupt, SystemExit)):
-                raise
+            if isinstance(error, KeyboardInterrupt):
+                raise KeyboardInterrupt() from None
+            if isinstance(error, SystemExit):
+                raise PersistentBootstrapError("persistent_bootstrap_interrupted", phase) from None
             raise PersistentBootstrapError("persistent_bootstrap_stopped", phase) from None
 
 def check_quarantine_receipt(receipt_file, expected_intent_sha256, expected_resource_sha256):
@@ -459,6 +461,9 @@ def main(argv=None):
                 protected_checkout_root=args.protected_checkout_root)
             print("Persistent target initialized; graph import and runtime/admission verification remain required.")
         return 0
+    except KeyboardInterrupt:
+        print("Persistent target interrupted; inspect preserved private state before retry.", file=sys.stderr)
+        return 130
     except Exception as error:
         code = error.code if isinstance(error, PersistentBootstrapError) else "persistent_operation_failed"
         print("Persistent target refused or stopped: " + code, file=sys.stderr)

@@ -219,6 +219,19 @@ class PersistentEffectTests(unittest.TestCase):
                 self.assertTrue((directory / "runtime.pgpass").exists())
                 self.assertFalse(any(e[0] in {"drop", "start", "activate", "publish"} for e in self.owner.events))
 
+    def test_interrupt_payload_is_sanitized_and_partial_state_retained(self):
+        def interrupted(*args, **kwargs):
+            raise KeyboardInterrupt("synthetic-admin-secret must not escape")
+        self.owner.provision_persistent = interrupted
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            self.execute()
+        self.assertEqual(str(caught.exception), "")
+        directory = self.root / "new-runtime"
+        state = json.loads((directory / "provisioning-state.json").read_text())
+        self.assertEqual(state["phase"], "interrupted-or-failed")
+        self.assertEqual(state["failed_during"], "provision")
+        self.assertFalse((directory / "persistent-target.json").exists())
+
     def test_schema_readback_mismatch_refuses_receipt(self):
         def inconsistent(*args, **kwargs):
             return {"expected_migrations": {"a": "a" * 64}, "applied_migrations": {"a": "b" * 64},
