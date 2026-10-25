@@ -1141,13 +1141,6 @@
     "state": "staged"
   },
   {
-    "method": "POST",
-    "path": "/api/statistics/daily/{local_day}/refresh",
-    "handler": "refresh_chess_statistics_day",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
     "method": "GET",
     "path": "/api/repertoires/{identifier}/segmentation",
     "handler": "segmentation_list",

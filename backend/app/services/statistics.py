@@ -1,10 +1,9 @@
-"""Reproducible chess-performance features and denominator-transparent KPIs."""
+"""Retained per-game chess-performance feature calculation."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
-import hashlib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import chess
@@ -113,86 +112,3 @@ def refresh_game_features(
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
         storage.write_feature_values(database, feature_values)
-
-
-def refresh_daily_snapshot(local_day: str, *, background: bool = False) -> dict:
-    """Materialize a day only after provider watermarks and analyses are settled."""
-    datetime.fromisoformat(local_day)
-    next_day = (datetime.fromisoformat(local_day).date() + timedelta(days=1)).isoformat()
-    with connection(background=background) as database:
-        configured_providers = storage.provider_rows(database)
-        missing_watermarks = []
-        for provider in configured_providers:
-            state = storage.provider_watermark(database, provider["provider"])
-            if not state or not state["last_success_at"] or state["last_success_at"][:10] < next_day:
-                missing_watermarks.append(provider["provider"])
-        eligible_games = storage.eligible_daily_games(database, local_day)
-        blocked_games = [
-            row["id"] for row in eligible_games
-            if not row["adaptive_excluded"]
-            and row["analysis_state"] not in {"failed"}
-            and row["feature_game_id"] is None
-        ]
-        now = datetime.now(timezone.utc).isoformat()
-        if missing_watermarks or blocked_games:
-            status = "waiting-sync" if missing_watermarks else "waiting-analysis"
-            payload = {
-                "local_day": local_day, "status": status,
-                "missing_provider_watermarks": missing_watermarks,
-                "blocked_game_ids": blocked_games,
-            }
-            storage.store_waiting_snapshot(database, local_day, json.dumps(payload), status, now)
-            return payload
-        features = storage.daily_feature_rows(database, local_day)
-        games = len(features)
-        score_points = sum(row["outcome_score"] for row in features)
-        opportunities = sum(row["tactical_opportunities"] for row in features)
-        found = sum(row["tactical_found"] for row in features)
-        payload = {
-            "local_day": local_day, "status": "complete", "games": games,
-            "score": score_points / games if games else None,
-            "tactical_found": found, "tactical_opportunities": opportunities,
-        }
-        storage.store_complete_snapshot(database, local_day, json.dumps(payload), now)
-        if games >= 20:
-            insight_id = hashlib.sha256(f"{local_day}\0outcome-trend\01".encode()).hexdigest()
-            storage.insert_outcome_insight(database, insight_id, local_day, json.dumps(payload), now)
-        missed = opportunities - found
-        if opportunities >= 10 and missed >= 3:
-            insight_id = hashlib.sha256(f"{local_day}\0tactical-focus\01".encode()).hexdigest()
-            storage.insert_tactical_insight(database, insight_id, local_day, json.dumps(payload), now)
-        return payload
-
-
-def enqueue_daily_snapshot(local_day: str) -> str:
-    """Persist a statistics materialization request for the background coordinator."""
-
-    now = datetime.now(timezone.utc).isoformat()
-    with connection() as database:
-        storage.enqueue_daily_job(database, local_day, now)
-    return local_day
-
-
-def claim_daily_snapshot() -> str | None:
-    with connection(background=True) as database:
-        storage.begin_daily_claim(database)
-        row = storage.pending_daily_job(database)
-        if not row:
-            return None
-        if not storage.mark_daily_running(database, datetime.now(timezone.utc).isoformat(), row[0]):
-            return None
-        return row[0]
-
-
-def execute_daily_snapshot(local_day: str) -> None:
-    from .background_activity import emit_progress
-    try:
-        with activity_gate.background_job("daily_statistics", local_day):
-            emit_progress("statistics", local_day, local_day, "Calculating daily insights")
-            refresh_daily_snapshot(local_day, background=True)
-            with connection(background=True) as database:
-                storage.mark_daily_complete(database, datetime.now(timezone.utc).isoformat(), local_day)
-            emit_progress("statistics", local_day, local_day, "Finished")
-    except Exception as error:
-        with connection(background=True) as database:
-            storage.mark_daily_failed(database, str(error), datetime.now(timezone.utc).isoformat(), local_day)

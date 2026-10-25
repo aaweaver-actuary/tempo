@@ -1,3 +1,24 @@
+## Daily statistics producer retirement
+
+`backend/tests/test_statistics.py::test_daily_statistics_refresh_is_retired_without_admission`
+requires the old refresh URL to reject requests without dispatching or enqueuing
+work in either database mode, and verifies command/task registration is absent.
+`test_game_arrival_and_features_do_not_access_retired_daily_materialization`
+keeps real task-SQLite insert/duplicate/update ingestion and feature publication usable
+when daily invalidation helpers are unavailable. Existing timezone/player
+perspective, canonical feature publication/phase 6 and graph/repertoire owners
+remain. `test_activity_projection_lists_every_background_source_and_pages_without_losing_counts`
+now excludes the retired statistics source and rejects its control request while
+retaining the other source counts and pagination assertions.
+`test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically`
+retains import/analysis/derivation admission and rejects retired daily writes.
+
+Daily readiness, outcome/tactical insight thresholds, day-job claims and native
+daily lease-publication tests are retired with the unsupported producer; the
+[last implementation](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf)
+records that purpose. These source checks do not imply native PostgreSQL,
+browser, deployment or live data cleanup.
+
 ## Immediate adaptive-priority callback cessation
 
 `backend/tests/test_priority_callback_retirement.py` owns
@@ -1198,7 +1219,7 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - GitHub issue #30: retention reclaims abandoned prepared rows while preserving the active generation: `test_priority_retention_reclaims_abandoned_preparations_but_keeps_active`.
 - Every PostgreSQL priority request admits a Celery task for the same generation, including coverage and game handoffs: `test_postgres_priority_request_admits_matching_celery_generation`, `test_postgres_maia_submit_publishes_candidates_in_bounded_sets`.
 - PostgreSQL discovery admission creates its graph rebuild under the active lease and admits a published card exactly once: `test_postgres_discovery_branch_rebuild_is_admitted_once_under_lease`, `test_postgres_discovery_admission_completes_published_card_without_replay`.
-- PostgreSQL daily statistics refresh uses a foreground receipt and a leased background publication, so stale delivery cannot publish a second snapshot: `test_postgres_daily_statistics_request_admits_same_day_task`, `test_postgres_daily_statistics_publishes_only_under_current_lease`.
+- Daily statistics refresh admission/publication tests retired with the unsupported producer; its purpose and last implementation remain in [the owner disposition](../database/tempo_legacy_database/adapters/statistics/README.md).
 - PostgreSQL defensive audit and historical backfill commands return the durable task ID through their foreground receipt: `test_postgres_defensive_admin_receipt_matches_durable_task`.
 - PostgreSQL defensive candidate dismiss, approve, train-now, pause, and resume decisions share one foreground receipt; approval refreshes the queue and resume admits defensive work in that transaction: `test_postgres_defense_candidate_action_uses_one_receipt_and_followup`.
 - PostgreSQL defensive engine claims reclaim one stale lease, report callbacks validate evidence and lease before queuing candidates, and failure/release/retry preserve their HTTP contracts: `test_postgres_threat_claim_reclaims_one_lease_and_returns_claimed_request`, `test_postgres_threat_report_validates_lease_and_queues_candidates_atomically`, `test_postgres_threat_failure_release_retry_preserve_http_contract`, `test_postgres_threat_routes_reuse_engine_operation_id`.
@@ -5074,12 +5095,12 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 
 ## Legacy derived-publication storage
 
-`backend/tests/test_legacy_derived_publication_database_split.py` guards direct storage operations and preserves profile account/clock order, daily missing-watermark early return and insight/publication fences through fixed fake capabilities. Existing next-opponent and daily-statistics cases retain their assertions; native PostgreSQL/deployment remains unverified.
+`backend/tests/test_legacy_derived_publication_database_split.py` retains the next-opponent direct-SQL boundary. Its daily readiness cases retired with daily materialization; original extraction evidence remains dated source history. Native PostgreSQL/deployment remains unverified.
 
 
 ## Legacy statistics persistence
 
-`backend/tests/test_legacy_statistics_database_split.py` guards direct operations and preserves dimension rejection, one-time projection capture before clock/connection, current-comparison filtering and daily job claims. Existing statistics cases retain metric/date/math assertions. These selected fakes/task-SQLite checks do not establish native PostgreSQL or deployed isolation.
+`backend/tests/test_legacy_statistics_database_split.py` retains the game-feature direct-SQL boundary. Daily job-claim tests retired with daily materialization; timezone/DST and player-perspective feature proofs remain. These selected fakes/task-SQLite checks do not establish native PostgreSQL or deployed isolation.
 
 
 ## Introduction-priority database extraction
