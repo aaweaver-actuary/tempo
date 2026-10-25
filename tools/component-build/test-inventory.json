@@ -183,7 +183,8 @@
       "tests/runner/merge-conflict-guard.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs",
       "tests/runner/study-learning-proof.test.mjs",
-      "tests/runner/tempo-cli.test.mjs"
+      "tests/runner/tempo-cli.test.mjs",
+      "tests/runner/tempo-study-authority.test.mjs"
     ],
     "integration": [
       "tests/unit/domain-boundary-regressions.test.tsx"
