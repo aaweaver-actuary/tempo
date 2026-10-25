@@ -107,6 +107,7 @@ function composeConfig(fixture: ConfigFixture, overrides: Record<string, string 
     cwd: fixture.directory,
     encoding: "utf8",
     env: {
+      NODE_ENV: "test",
       HOME: homedir(),
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
       TMPDIR: fixture.directory,

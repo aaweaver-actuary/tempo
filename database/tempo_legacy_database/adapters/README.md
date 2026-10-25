@@ -132,4 +132,4 @@ Technical wiring remains explicit unfinished work for the backend phase: connect
 
 [Existing threat pipeline storage](threats/README.md) owns original candidate/request/report/fingerprint/lease/claim queries and fixed SQL preparation. Detection,source ranking/validation,seed/admission,engine fairness,clock and task/card/queue decisions stay outside; existing legacy shared coupling is retained and disclosed.
 
-[Opening ranking snapshot persistence](opening_ranking/README.md) owns original candidate builders,five captured query specifications and bounded native cursor reads. Day/policy/deadline/byte-budget/error/group/projection decisions remain outside. Existing query-shaped `_raw_rows` compatibility is retained and disclosed,not certified as a new semantic port.
+The exclusive opening-ranking capture adapter and its canonical capture-flow drawing are retired with the legacy CLI. [History and retained pure evaluation](../../../docs/opening-shadow-ranking.md) record the source recovery point. Production candidate/admission storage, connection admission and pool-timeout behavior remain unchanged.

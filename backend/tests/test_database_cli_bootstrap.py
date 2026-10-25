@@ -10,9 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINTS = (
     "database/tempo_legacy_database/tooling/benchmark_storage_reads.py",
     "scripts/recover-opening-publication.py",
-    "scripts/evaluate_opening_rankings.py",
     "scripts/show_opening_frontier.py",
-    "scripts/stalemate_swindles.py",
     "database/tests/redis/check_redis_background_wakes.py",
     "database/tests/redis/check_redis_socket_deadlines.py",
 )

@@ -63,7 +63,7 @@ def run(profile: str = "full"):
              [ROOT / "app", ROOT / "static", ROOT / "vite.static.config.ts",
               ROOT / "package.json", ROOT / "package-lock.json", ROOT / "module-resolution.ts",
               ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts",
-              ROOT / "scripts/maia-cache-asset.ts", ROOT / "database/browser",
+              ROOT / "database/browser",
               ROOT / "database/browser-intents", ROOT / "database/tests/browser", ROOT / "public"],
              **runner_options)
     finally:

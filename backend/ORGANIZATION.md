@@ -9,7 +9,8 @@ The finite scope is **202 original `backend/app` Python modules**, locked at PR3
 | Cohesive module moved | 29 | One implementation at the logical owner; old source path removed. |
 | Transport definitions split | 1 | All 62 former `models.py` classes now live in 17 explicit owner contract modules; `models.py` only exports the same objects for compatibility. |
 | Partial shared declaration extraction | 3 | Position identity, graph-step facts and response timing were separated; the original mixed workflows remain unfinished. |
-| Reviewed, owner closure pending | 169 | May need a move, function split, dependency wiring or explicit retain decision. This count does not imply 169 files need arbitrary edits. |
+| Reviewed, owner closure pending | 168 | May need a move, function split, dependency wiring or explicit retain decision. This count does not imply 168 files need arbitrary edits. |
+| Retired source | 1 | Exclusive opening-ranking capture removed after consumer audit; [pure evaluator and history remain](../docs/opening-shadow-ranking.md). |
 | **Original total** | **202** | No original module silently omitted or counted twice. |
 
 ## First implementation stage

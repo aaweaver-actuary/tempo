@@ -54,15 +54,16 @@ describe("held input and authoritative position", () => {
     ["free mode", { mode: "free" }], ["select mode", { mode: "select" }],
     ["lock", { locked: true }], ["read-only", { readOnly: true }],
     ["orientation", { orientation: "black" }], ["turn", { turn: "black" }],
-    ["changed destinations", { destinations: new Map([["e2", ["e3"]]]) }],
+    ["changed destinations", { destinations: new Map([["e2" as const, ["e3"] as const]]) }],
     ["drawing lock", { drawingEnabled: false }],
   ] as const)("BUI-03 %s cancels input, restores FEN, and fences stale move/select/drawing callbacks", (_name, patch) => {
     const handler = vi.fn();
     const props: BoardProps = { ...base, onMove: handler, onSelect: handler, onDrawingChange: handler };
     const { controller, api, initial } = setup(props);
-    controller.update({ ...props, ...patch } as BoardProps);
+    const replacement: BoardProps = { ...props, ...patch };
+    controller.update(replacement);
     expect(api.cancelMove).toHaveBeenCalledOnce();
-    expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ fen: patch.fen ?? base.fen }));
+    expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ fen: replacement.fen }));
     move(initial); draw(initial); initial.events!.select!("a1");
     expect(handler).not.toHaveBeenCalled();
   });

@@ -172,6 +172,7 @@
       "tests/unit/performance-report-regressions.test.ts",
       "tests/unit/postgres-test-speedups-regressions.test.ts",
       "tests/unit/queue-readiness-diagnostics-regressions.test.ts",
+      "tests/unit/study-compose-contract.test.ts",
       "tests/unit/tempo-cli-regressions.test.ts",
       "tests/unit/test-plan-regressions.test.ts",
       "tests/unit/visual-runner-regressions.test.ts",

@@ -1,0 +1,687 @@
+{
+  "schema_version": 1,
+  "source_commit": "cb0ed5910e6bd05894919fd8d49f5dc7bc236975",
+  "scope": "Source-only retirement of five independently bounded exact-path cohorts, accepted by independent source review under the #361 conclusive-isolation route and recorded affected-boundary qualification. This does not approve legacy-01 execution, deployment, table drops, actual-data migration, launcher/cutover or #390/#391 completion. Source qualification and programme/deployment acceptance are separate claims; confirmed baseline failures and unexecuted checks remain explicit.",
+  "remaining_gates": [
+    "Source merge: owner acceptance of this metadata reconciliation and explicit merge authorization; no merge or deployment has occurred. Exact runtime/source evidence remains tied to 8c0b3b5a22fd357607497ac4e50ad9804884c12c, tree ac4811566806528210cf8ba8e53d4d9c5fee0e0c; this reconciliation changes metadata only.",
+    "Deferred programme/execution: legacy-01 authorization and #390/#391 completion remain open; source retirement acceptance does not satisfy them.",
+    "Deferred programme/execution: #382/#386 retained Study/import native qualification and actual-data/history preservation acceptance remain open for their execution scope; persistence inputs are unchanged by these removals.",
+    "Deferred programme/deployment: #359/#267/#369 launcher, cutover and actual-data migration gates remain open. No live deployment, table drop or migration is authorized.",
+    "Deferred deployment: native PostgreSQL/real-browser/host acceptance and deployed-client/cache absence are not established. Classic optional Maia URLs are unsupported after source retirement; unknown external consumers and deployed caches are not claimed absent."
+  ],
+  "batches": [
+    {
+      "id": "ranking-evaluation-01",
+      "status": "candidate",
+      "delete_paths": [
+        "tools/ranking-evaluation/.gitignore",
+        "tools/ranking-evaluation/README.md",
+        "tools/ranking-evaluation/REGRESSIONS.md",
+        "tools/ranking-evaluation/docs/contracts.md",
+        "tools/ranking-evaluation/docs/donor-map.md",
+        "tools/ranking-evaluation/pyproject.toml",
+        "tools/ranking-evaluation/qualification/config.json",
+        "tools/ranking-evaluation/qualification/guarded_pytest.py",
+        "tools/ranking-evaluation/qualify.py",
+        "tools/ranking-evaluation/requirements-dev.in",
+        "tools/ranking-evaluation/requirements-dev.lock",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/__init__.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/budgets.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/cli.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/content.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/cohorts-uncertainty.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/cumulative-history.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/italian-common.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/manifest.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/rare-deviations.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/ruy-common.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/corpus/shared-prefixes.json",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/harness.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/ranking.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/replay.py",
+        "tools/ranking-evaluation/src/tempo_ranking_evaluation/resources.py",
+        "tools/ranking-evaluation/tests/__init__.py",
+        "tools/ranking-evaluation/tests/fixtures/opening-ranking-comparison.json",
+        "tools/ranking-evaluation/tests/fixtures/opening-ranking-snapshot.json",
+        "tools/ranking-evaluation/tests/fixtures/valuation-v2.json",
+        "tools/ranking-evaluation/tests/isolated_python.py",
+        "tools/ranking-evaluation/tests/shadow.py",
+        "tools/ranking-evaluation/tests/test_boundaries.py",
+        "tools/ranking-evaluation/tests/test_cli.py",
+        "tools/ranking-evaluation/tests/test_harness.py",
+        "tools/ranking-evaluation/tests/test_qualify.py",
+        "tools/ranking-evaluation/tests/test_ranking.py"
+      ],
+      "edit_paths": [
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/BACKEND-DOMAINS.md",
+          "required_edit": "Mark only offline evaluator inventory and consumer retired."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Record candidate scope, recovery baseline and unsupported entrypoints; no merge authorization."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Record exact candidate paths, preservation and qualification limits."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "packages/evidence-math/src/tempo_evidence_math/__init__.py",
+          "reason": "Packaged math is not part of this retirement."
+        },
+        {
+          "path": "packages/evidence-math/qualify.py",
+          "reason": "Dormant ranking compatibility branch remains; configured namespace is evidence math."
+        },
+        {
+          "path": "packages/evidence-math/qualification/guarded_pytest.py",
+          "reason": "Same dormant compatibility branch, not an executable evaluator consumer."
+        },
+        {
+          "path": "backend/app/services/opening_ranking_evaluation.py",
+          "reason": "Live legacy ranking retained."
+        },
+        {
+          "path": "scripts/evaluate_opening_rankings.py",
+          "reason": "Live ranking operator retained."
+        }
+      ],
+      "preserved_test_names": [
+        "test_valuation_real_reach_readiness_kernel_multi_decision_hand_calculation",
+        "test_shadow_evaluation_performs_no_writes_and_preserves_immutable_inputs"
+      ],
+      "test_commands": [
+        "git diff --check",
+        "node tools/component-build/check-components.mjs --list"
+      ],
+      "dependency_receipts": [
+        "No incoming source/config consumer outside the two dormant evidence-math qualification branches; documentation inventory updated.",
+        "37 total paths include only 8 production modules / 772 lines. Remaining 11074 deleted lines are exclusive fixtures, corpus, tests and metadata, not live code.",
+        "Exact-head independent source review accepts offline-only consumer isolation; retained ranking operators and evidence-math paths remain. No execution or data-migration acceptance is inferred."
+      ],
+      "data_disposition": "Only packaged synthetic/replay corpus fixtures removed. No user data, frozen ordering, schema, migrations or live state touched.",
+      "reviewer": {
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Single offline capability, 8 production paths; no size exception required for production scope. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      }
+    },
+    {
+      "id": "classic-maia-assets-01",
+      "status": "candidate",
+      "delete_paths": [
+        "database/browser/maia-worker-cache.js",
+        "public/maia-worker.js",
+        "scripts/maia-cache-asset.ts"
+      ],
+      "edit_paths": [
+        {
+          "path": "Dockerfile.study-web",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "Dockerfile.study-web.dockerignore",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "database/INVENTORY.md",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "database/browser/README.md",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "eslint.config.mjs",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "services/learning/runtime/integration/run_study.py",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "tests/unit/offline-shell-build-regressions.test.ts",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "tests/unit/study-build-closure-regressions.test.ts",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "vite.config.ts",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "vite.controlled.config.ts",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "vite.static.config.ts",
+          "required_edit": "Remove only classic Maia worker/cache asset wiring or its exclusive test/documentation."
+        },
+        {
+          "path": "components.json",
+          "required_edit": "Remove only scripts/maia-cache-asset.ts from learning-full-study inputs."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Record candidate scope, recovery baseline and unsupported entrypoints; no merge authorization."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Record exact candidate paths, preservation and qualification limits."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "scripts/frozen-maia-inference.mjs",
+          "reason": "Frozen ordering inference remains."
+        },
+        {
+          "path": "scripts/maia-inference.mjs",
+          "reason": "Script-side inference remains."
+        },
+        {
+          "path": "public/maia3/parts/part-00",
+          "reason": "All Maia3 parts/model assets remain unchanged."
+        },
+        {
+          "path": "workers/maia/README.md",
+          "reason": "Inference package retained; separate maia-supervisor-01 updates its documentation and retires only the unused supervisor."
+        },
+        {
+          "path": "app/lib/study.worker.ts",
+          "reason": "Retained Study execution."
+        },
+        {
+          "path": "app/lib/workbench-navigation.ts",
+          "reason": "Retained Workbench URL helper."
+        }
+      ],
+      "preserved_test_names": [
+        "offline build inventories generated workers and shared imports for root and Pages shells",
+        "Study reduced-source build succeeds without optional implementations and fails on reintroduced optional dependency",
+        "controlled worker messages reject malformed FEN, null UCI and unexpected structural fields"
+      ],
+      "test_commands": [
+        "npm run test:unit -- tests/unit/offline-shell-build-regressions.test.ts tests/unit/study-build-closure-regressions.test.ts tests/unit/maia-worker-regressions.test.ts",
+        "npm run build:study",
+        "npm run build:local",
+        "node tools/component-build/check-components.mjs --list --suite learning-full-study"
+      ],
+      "dependency_receipts": [
+        "Classic public worker has no current static caller after browser engine retirement; exact build/config references removed.",
+        "Actual aggregate Study/local builds and 3 unit files / 4 tests pass; outputs omit both retired classic assets.",
+        "Unknown external public-URL consumers and deployed caches are not verified absent.",
+        "Exact-head Mac verification: Study and local builds passed; the five retained offline/build/classic-worker/frozen/coverage files executed 12 passing tests. Reduced-source Study regression remains passing. Docker COPY/source isolation is the bounded #361 proof; a Docker Study image build and actual browser/deployment were not run.",
+        "Classic optional Maia worker/cache URLs are unsupported after source retirement. External public-URL users and deployed caches remain unknown; existing browser cache data is untouched."
+      ],
+      "data_disposition": "Existing MaiaModels browser caches are untouched; no model assets, persisted Study state, tables or migrations removed.",
+      "reviewer": {
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      }
+    },
+    {
+      "id": "stalemate-offline-cli-01",
+      "status": "candidate",
+      "delete_paths": [
+        "scripts/stalemate_swindles.py"
+      ],
+      "edit_paths": [
+        {
+          "path": "backend/tests/test_stalemate_swindles.py",
+          "required_edit": "Remove only exclusive CLI/archive-process tests and helpers; preserve all retained service/corpus/import tests unchanged."
+        },
+        {
+          "path": "backend/tests/test_database_cli_bootstrap.py",
+          "required_edit": "Remove only retired CLI from ENTRYPOINTS."
+        },
+        {
+          "path": "docs/STALEMATE-SWINDLES.md",
+          "required_edit": "Replace unsupported mining command instructions with historical source and retained corpus/import guidance."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Mark CLI/archive-process references historical; preserve current service/corpus/import/history inventory."
+        },
+        {
+          "path": "docs/training-critical-path.md",
+          "required_edit": "Remove two now-retired archive cancellation commands; retain service and Study/browser commands."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Record candidate scope, recovery baseline and unsupported entrypoints; no merge authorization."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Record exact candidate paths, preservation and qualification limits."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "backend/app/services/stalemate_swindles.py",
+          "reason": "Shared backend miner, bundle generation and corpus validation retained."
+        },
+        {
+          "path": "database/tests/check_postgres_stalemate_swindles.py",
+          "reason": "Native import/reimport and nonempty review-history preservation proofs retained."
+        },
+        {
+          "path": "backend/tests/test_study_contract_identity.py",
+          "reason": "Saved corpus execution/model identity retained."
+        },
+        {
+          "path": "public/data/studies/stalemate-swindles-2026-09-v1.manifest.json",
+          "reason": "Saved corpus provenance preserved."
+        },
+        {
+          "path": "public/data/studies/stalemate-swindles-2026-09-v1.tempo-study.json",
+          "reason": "Saved Study exercises preserved."
+        }
+      ],
+      "preserved_test_names": [
+        "test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder",
+        "test_stalemate_swindle_rejects_non_stalemate_draws",
+        "test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits",
+        "test_stalemate_swindle_configurable_filters_allow_bots_bullet_and_rating_changes",
+        "test_stalemate_swindle_excludes_positions_with_only_one_legal_defender_move",
+        "test_stalemate_swindle_classifies_immediate_forced_stalemate_separately_from_historical_trap",
+        "test_stalemate_swindle_deduplication_is_deterministic_and_not_input_order_dependent",
+        "test_stalemate_swindle_selection_balances_motifs_and_preserves_cap_during_shortfall",
+        "test_stalemate_swindle_identity_ignores_fen_clocks_and_features_describe_material",
+        "test_stalemate_study_bundle_is_byte_stable_for_identical_candidates",
+        "test_stalemate_study_bundle_imports_through_existing_study_contract",
+        "test_stalemate_swindle_uses_existing_open_judgment_grading",
+        "test_stalemate_miner_prefilters_non_draws_before_chess_parsing",
+        "test_stalemate_miner_malformed_records_continue_or_fail_strictly_and_resynchronize",
+        "test_stalemate_miner_preserves_multiline_comments_crlf_and_final_record_without_blank_line",
+        "test_stalemate_postgres_proofs_configure_and_restore_database_environment",
+        "test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances",
+        "test_stalemate_build_rejects_chess_metadata_drift",
+        "test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verified_terminal_sources",
+        "test_postgres_stalemate_import_reimport_preserves_existing_review_history"
+      ],
+      "test_commands": [
+        "python -m pytest backend/tests/test_stalemate_swindles.py -q",
+        "python -m pytest backend/tests/test_database_cli_bootstrap.py -q",
+        "git diff --check"
+      ],
+      "dependency_receipts": [
+        "CLI callers were confined to exclusive regression/bootstrap cases and retired operator documentation.",
+        "All 19 retained test function bodies are unchanged; native PostgreSQL proof is unchanged and not executed by this candidate batch.",
+        "Exact-head Mac verification: retained synthetic/in-memory/corpus suite 30 passed and direct CLI bootstrap 8 passed with already-installed Celery. Unchanged base bootstrap 9 passed, including the extra retired-CLI case. Native import/reimport/history execution remains unrun and separately gated."
+      ],
+      "data_disposition": "No corpus, stored Study history, imported exercises, schema or migration changes. CLI retirement does not retire the shared backend service.",
+      "reviewer": {
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      }
+    },
+    {
+      "id": "stockfish-worker-01",
+      "status": "candidate",
+      "delete_paths": [
+        "workers/stockfish/.gitignore",
+        "workers/stockfish/Dockerfile",
+        "workers/stockfish/README.md",
+        "workers/stockfish/REGRESSIONS.md",
+        "workers/stockfish/VALIDATION.md",
+        "workers/stockfish/backlog_driver.py",
+        "workers/stockfish/build-inputs.json",
+        "workers/stockfish/build.mjs",
+        "workers/stockfish/child.mjs",
+        "workers/stockfish/cli.mjs",
+        "workers/stockfish/core.mjs",
+        "workers/stockfish/engine-descriptor.json",
+        "workers/stockfish/engine.mjs",
+        "workers/stockfish/fixtures/backlog.json",
+        "workers/stockfish/fixtures/digest-vectors.json",
+        "workers/stockfish/fixtures/observed/exchange.json",
+        "workers/stockfish/fixtures/observed/provenance.json",
+        "workers/stockfish/fixtures/qualified/exchange.json",
+        "workers/stockfish/fixtures/qualified/provenance.json",
+        "workers/stockfish/fixtures/repaired/exchange.json",
+        "workers/stockfish/fixtures/repaired/provenance.json",
+        "workers/stockfish/fixtures/repaired/rejections.json",
+        "workers/stockfish/fixtures/synthetic/README.md",
+        "workers/stockfish/fixtures/synthetic/cancel-request.json",
+        "workers/stockfish/fixtures/synthetic/cancel-requested.json",
+        "workers/stockfish/fixtures/synthetic/cancel-terminated.json",
+        "workers/stockfish/fixtures/synthetic/job.json",
+        "workers/stockfish/fixtures/synthetic/result.json",
+        "workers/stockfish/fixtures/synthetic/status-completed.json",
+        "workers/stockfish/fixtures/synthetic/status-failed.json",
+        "workers/stockfish/fixtures/synthetic/status-running.json",
+        "workers/stockfish/index.d.ts",
+        "workers/stockfish/index.mjs",
+        "workers/stockfish/licenses/THIRD-PARTY.md",
+        "workers/stockfish/licenses/stockfish-web-LICENSE.txt",
+        "workers/stockfish/package-lock.json",
+        "workers/stockfish/package.json",
+        "workers/stockfish/python/pyproject.toml",
+        "workers/stockfish/python/src/tempo_stockfish_client/__init__.py",
+        "workers/stockfish/qualification/benchmark-final.json",
+        "workers/stockfish/qualification/boundary-final.json",
+        "workers/stockfish/qualification/container-final.json",
+        "workers/stockfish/qualification/discovery-final.json",
+        "workers/stockfish/qualification/docker-host.json",
+        "workers/stockfish/qualification/pr293-repair/benchmark-summary.json",
+        "workers/stockfish/qualification/pr293-repair/benchmark.json",
+        "workers/stockfish/qualification/pr293-repair/checks.json",
+        "workers/stockfish/qualification/pr293-repair/container.json",
+        "workers/stockfish/qualification/pr293-repair/host.json",
+        "workers/stockfish/qualification/pr293-repair/protocol.json",
+        "workers/stockfish/qualification/pr293-repair/pure.json",
+        "workers/stockfish/qualification/pr293-repair/qualified-inputs.json",
+        "workers/stockfish/qualification/pr293-repair/red.json",
+        "workers/stockfish/qualification/pr293-repair/restricted.json",
+        "workers/stockfish/qualification/pr293-repair/self-review.json",
+        "workers/stockfish/qualification/pr293-repair/summary.json",
+        "workers/stockfish/qualification/pr293-repair/worker-hooks.json",
+        "workers/stockfish/qualification/protocol-final.json",
+        "workers/stockfish/qualification/pure-final.json",
+        "workers/stockfish/qualification/restricted-final.json",
+        "workers/stockfish/qualification/shared-contract-final.xml",
+        "workers/stockfish/qualification/tooling-worker-final.json",
+        "workers/stockfish/qualify.mjs",
+        "workers/stockfish/qualify_container.py",
+        "workers/stockfish/resources.mjs",
+        "workers/stockfish/test.mjs",
+        "workers/stockfish/tests/artifact.test.mjs",
+        "workers/stockfish/tests/contracts/consume_observed.py",
+        "workers/stockfish/tests/contracts/rejection_server.mjs",
+        "workers/stockfish/tests/contracts/test_exchange.py",
+        "workers/stockfish/tests/core.test.mjs",
+        "workers/stockfish/tests/fixtures/fake-child.mjs",
+        "workers/stockfish/tests/fixtures/installed-lifecycle.mjs",
+        "workers/stockfish/tests/helpers.mjs",
+        "workers/stockfish/tests/protocol.test.mjs",
+        "workers/stockfish/tests/reporter.mjs",
+        "workers/stockfish/tests/resources.test.mjs",
+        "workers/stockfish/wire.mjs",
+        "workers/stockfish/worker.mjs"
+      ],
+      "edit_paths": [
+        {
+          "path": "components.json",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/architecture/diagrams/README.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/architecture/diagrams/system.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/testing.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        }
+      ],
+      "production_scope": {
+        "paths": [
+          "workers/stockfish/backlog_driver.py",
+          "workers/stockfish/build.mjs",
+          "workers/stockfish/child.mjs",
+          "workers/stockfish/cli.mjs",
+          "workers/stockfish/core.mjs",
+          "workers/stockfish/engine.mjs",
+          "workers/stockfish/index.d.ts",
+          "workers/stockfish/index.mjs",
+          "workers/stockfish/python/src/tempo_stockfish_client/__init__.py",
+          "workers/stockfish/qualify.mjs",
+          "workers/stockfish/qualify_container.py",
+          "workers/stockfish/resources.mjs",
+          "workers/stockfish/test.mjs",
+          "workers/stockfish/wire.mjs",
+          "workers/stockfish/worker.mjs"
+        ],
+        "path_count": 15,
+        "deleted_lines": 1909,
+        "limit_paths": 25,
+        "limit_lines": 3000
+      },
+      "keep_paths": [
+        {
+          "path": "Dockerfile.engine",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "public/stockfish-worker.js",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "services/intelligence/src/tempo_intelligence/analysis/worker.py",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        }
+      ],
+      "test_commands": [
+        "node --test tools/component-build/tests/workers.test.mjs tools/component-build/tests/boundaries.test.mjs",
+        "python -m pytest services/intelligence/tests/test_analysis_engine_work.py -q"
+      ],
+      "data_disposition": "No user data, Study history, schema or migrations changed.",
+      "reviewer": {
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Not legacy-01 approval or release/cutover qualification. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      },
+      "dependency_receipts": [
+        "Exact-head Mac verification: focused Intelligence engine/Maia/validation suites 58 passed. Retained native/browser engine sources/assets are unchanged. Worker/boundary aggregate is 67/68 on both head and base; the retained engine selection is 8/9 on both, with the same 15-second smoke timeout. These baseline failures are not passing gates or introduced regressions."
+      ]
+    },
+    {
+      "id": "maia-supervisor-01",
+      "status": "candidate",
+      "delete_paths": [
+        "workers/maia/.dockerignore",
+        "workers/maia/Dockerfile",
+        "workers/maia/benchmark.mjs",
+        "workers/maia/child.mjs",
+        "workers/maia/cli.mjs",
+        "workers/maia/resources.mjs",
+        "workers/maia/tests/contracts/consume_observed.py",
+        "workers/maia/tests/fixtures/fake-child.mjs",
+        "workers/maia/tests/protocol.test.mjs",
+        "workers/maia/tests/resources.test.mjs",
+        "workers/maia/wire.mjs",
+        "workers/maia/worker.mjs"
+      ],
+      "edit_paths": [
+        {
+          "path": "workers/maia/README.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/REGRESSIONS.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/build.mjs",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/index.mjs",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/package-lock.json",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/package.json",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/qualify.mjs",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "workers/maia/test.mjs",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "components.json",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/architecture/diagrams/README.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/architecture/diagrams/system.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "docs/testing.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Retire only the named standalone API, registration and exclusive tooling; preserve retained inference/native/browser paths."
+        }
+      ],
+      "production_scope": {
+        "paths": [
+          "workers/maia/.dockerignore",
+          "workers/maia/Dockerfile",
+          "workers/maia/benchmark.mjs",
+          "workers/maia/build.mjs",
+          "workers/maia/child.mjs",
+          "workers/maia/cli.mjs",
+          "workers/maia/index.mjs",
+          "workers/maia/package-lock.json",
+          "workers/maia/package.json",
+          "workers/maia/qualify.mjs",
+          "workers/maia/resources.mjs",
+          "workers/maia/wire.mjs",
+          "workers/maia/worker.mjs"
+        ],
+        "path_count": 13,
+        "deleted_lines": 986,
+        "limit_paths": 25,
+        "limit_lines": 3000
+      },
+      "keep_paths": [
+        {
+          "path": "workers/maia/core.mjs",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "workers/maia/model.mjs",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "workers/maia/errors.mjs",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "workers/maia/model-descriptor.json",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "Dockerfile.maia",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        },
+        {
+          "path": "scripts/maia-inference.mjs",
+          "reason": "Retained runtime or pure inference boundary; byte-identical to source baseline."
+        }
+      ],
+      "test_commands": [
+        "node workers/maia/test.mjs pure",
+        "node workers/maia/test.mjs model",
+        "node tools/component-build/test-lane.mjs --component maia --list"
+      ],
+      "data_disposition": "No user data, Study history, schema or migrations changed.",
+      "reviewer": {
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Not legacy-01 approval or release/cutover qualification. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      },
+      "dependency_receipts": [
+        "Exact runtime Docker verification at 2026-10-25T12:35:37Z through 12:35:54Z: source 8c0b3b5a22fd357607497ac4e50ad9804884c12c, tree ac4811566806528210cf8ba8e53d4d9c5fee0e0c; Node v26.10.0, npm 11.19.1, linux/arm64; 47 pure, 1 real-model and 3 installed-artifact cases passed, with no failed/skipped owning cases.",
+        "Official image reused from Dockerfile.maia: node:26.10.0-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3. Observed limits: 2 CPUs, 2147483648 bytes memory and equal memory+swap, 256 PIDs. Network was disconnected before tests; the existing restricted qualifier ran offline with its ordinary temporary npm ci and immutable model/vocabulary/schema checks.",
+        "Installed artifact tempo-maia-worker-1.0.0.tgz SHA-256 0a33c9d9a08e2fe6bcc58e185436b8e3cb10501090715dcd1a2c6066afb272e5. Existing qualifier temporary workspace, owned container and task npm cache were removed; official image retained. No host Node download, Python installation, live-container alteration, live database, deployment or settings change.",
+        "The slim image has no git binary, so the unmodified installed qualifier records null source_revision/source_dirty; the outer host receipt attests exact source SHA/tree and clean tracked inputs. This is not an installed-source provenance claim from the inner report.",
+        "Root TypeScript checking produced identical 124 diagnostics on head and base. The unchanged registered Python installed-contract consumer was not executed; these receipts do not claim every registered/full-system suite passed.",
+        "Read-only GitHub state at 2026-10-25 12:19 UTC: main unprotected, no effective branch rules/rulesets or PR required checks; repository-wide Actions disabled despite active workflow definitions. Sourcery skipped and supplied no approval. No setting changed."
+      ]
+    },
+    {
+      "id": "repertoire-statistics-visual-fixtures-01",
+      "status": "candidate",
+      "source_commit": "bdb7f6379b1e3e8bcbc5e598cc8f022ac6d71d02",
+      "delete_paths": [
+        "tests/browser/visual-baselines/repertoire-statistics-1280.png",
+        "tests/browser/visual-baselines/repertoire-statistics-390.png"
+      ],
+      "edit_paths": [
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Record this fixture-only cohort without changing previous cohort evidence."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Record obsolete statistics screenshot disposition and recovery source."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "tests/browser/visual.spec.ts",
+          "reason": "All retained visual assertions remain byte-identical, including both prefix-comparison viewport cases.",
+          "sha256": "8486ad1a927bac3f4fb3c386aad48d8f8085320a74cb6cd0a6c4cf908a352039"
+        },
+        {
+          "path": "tests/browser/prefix-comparison.spec.ts",
+          "reason": "Retain browser import, queue immutability and comparison assertions.",
+          "sha256": "17724782a0a8cccd9e202f120a6599e107d3c526f4f7a52dc2779df2d78c4b58"
+        },
+        {
+          "path": "tests/fixtures/prefix-comparison/structural.json",
+          "reason": "Current visual and unit comparison consumer fixture remains unchanged.",
+          "sha256": "ed808e6d111f1d494e833d9f53ca14ba5f06e8db2ef63ee3434a2b5ce469451f"
+        },
+        {
+          "path": "tests/unit/prefix-comparison-regressions.test.tsx",
+          "reason": "Retained comparison behavior assertions.",
+          "sha256": "d58f10aa5778b96a855ce05bd476a163c3a515f194caf2f25200683848ec7cac"
+        }
+      ],
+      "preserved_test_names": [
+        "Prefix comparison 390",
+        "Prefix comparison 1280",
+        "issue78_phone_and_desktop_comparison_remain_usable 390",
+        "issue78_phone_and_desktop_comparison_remain_usable 1280"
+      ],
+      "test_commands": [
+        "node scripts/check-merge-conflicts.mjs",
+        "git diff --check"
+      ],
+      "dependency_receipts": [
+        "Commit 4a5a722593fe2d45cff2d01572e3eaa86dcca48b, integrated by PR #407, removed the only repertoire-statistics screenshot loop while leaving these two PNG files.",
+        "Current tracked source/config has no repertoire-statistics screenshot-name consumer. playwright.visual.config.ts selects baselines by explicit screenshot argument, not PNG directory discovery. Historical documentation remains unchanged.",
+        "These test-only PNGs have no outbound dependencies or serving/data role. No runtime source, test assertion, dependency, build registration, user data or schema is removed.",
+        "Local source checks passed: node scripts/check-merge-conflicts.mjs; git diff --check; exact four-path allowlist, two-path absence, fixture byte total and all declared protected SHA-256 checks. Host Node v26.12.0; no runtime suites or builds required for unreferenced PNG deletion.",
+        "PR #416 mechanically rebased onto bdb7f6379b1e3e8bcbc5e598cc8f022ac6d71d02: preserved the merged tactics/shadow feature appendix and all prior manifest cohorts; original two PNGs and protected screenshot/reference inputs remain identical. Only append-only FEATURES.md conflict resolution was needed."
+      ],
+      "reduction": {
+        "narrow_production_lines": 0,
+        "broader_production_lines": 0,
+        "textual_test_lines": 0,
+        "fixture_bytes": 378527
+      },
+      "data_disposition": "Two synthetic screenshot baselines only; no user or persisted application data. Recovery is available in the source_commit tree.",
+      "reviewer": {
+        "decision": "independent source review accepted for this fixture-only cohort",
+        "reviewer": "backend_optional independent audit agent",
+        "scope": "Only the exact two PNG deletions and their disposition records; no legacy-01, migration, table, launcher or deployment approval.",
+        "evidence": "Independent review at base 1e7ffb049b9c5489cd0fa4c145d81ba1771813cb confirmed retired screenshot history, explicit filename resolution, no directory-discovery consumer, protected source/config/prefix PNG equality and prior manifest preservation. No actionable P1/P2 finding; no runtime tests or builds run."
+      }
+    }
+  ]
+}

@@ -3298,6 +3298,13 @@ planning work for the full-size snapshot without changing its read budget.
 
 Stalemate Swindles (October 5, 2026):
 
+Candidate source retirement (2026-10-25): the offline `scripts/stalemate_swindles.py`
+CLI and its exclusive command/archive-process tests are retired. CLI/archive
+entries below are historical evidence at `cb0ed591`, not current test commands.
+Shared miner/service, checked-in corpus, Study grading/import and PostgreSQL
+review-history proofs remain current; see `docs/STALEMATE-SWINDLES.md` and the
+exact candidate manifest in `docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json`.
+
 - `test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder` proves original White/Black puzzles start two plies before termination, train the eventual stalemated defender, and preserve both historical moves.
 - `test_stalemate_swindle_rejects_non_stalemate_draws`, `test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits`, `test_stalemate_swindle_configurable_filters_allow_bots_bullet_and_rating_changes`, and `test_stalemate_swindle_excludes_positions_with_only_one_legal_defender_move` protect eligibility and explicit overrides.
 - `test_stalemate_swindle_classifies_immediate_forced_stalemate_separately_from_historical_trap` enumerates one versus every legal immediate-stalemating reply; `test_stalemate_swindle_identity_ignores_fen_clocks_and_features_describe_material` protects position identity and honest motif wording.
@@ -3318,7 +3325,7 @@ Stalemate Swindles (October 5, 2026):
 - `Study White board underpromotion survives offline journal and exact UCI replay` and its Black mirror use real drags and rendered-piece assertions before proving the original five-character UCI survives the offline journal and replay. `Study board promotion places the selected knight across browser engines` exercises Chromium/Firefox/WebKit.
 - CI follow-up: `poisoned online A becomes inspectable while B and C save and conflict retry survives reload` now seeds its outbox after the fixture's initial shell navigation and before the intentional reload. The failed CI trace showed the initial page's B transport interrupted by reload, followed by a legitimate same-identity resend; the test now installs all review handlers before starting that replay and retains its exact B/C and conflict-retry assertions.
 
-## PR #91 archive pipeline lifecycle
+## Historical PR #91 archive pipeline lifecycle (offline CLI retired)
 
 - `test_stalemate_archive_decompressor_failure_terminates_upstream_producer_under_backpressure` uses owned real processes and a 32 MiB producer, covering downstream failure, premature successful exit, closed input with a live consumer, and kill fallback for an uncooperative consumer. The original implementation deadlocked on the bounded deadline; failures now reap both PIDs and publish neither candidates nor metadata.
 - `test_stalemate_archive_downloader_failure_terminates_blocked_decompressor` uses a FIFO readiness handshake and a consumer that refuses input; upstream failure cancels both processes without relying on downstream EOF.
@@ -3336,7 +3343,7 @@ Stalemate Swindles (October 5, 2026):
 - `test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances` protects successful teardown and the disposable-instance boundary.
 - `test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content` now runs first in the regular durability runner's fresh schema process, without synthetic-proof setup. Each bundle scopes its own URLs and pools; the synthetic proof subsequently starts independently after restoration. Persisted trees, reversed-row idempotence, changed-content rejection, draft status, and zero enrollment assertions remain intact.
 
-## PR #91 external archive cancellation — October 8, 2026
+## Historical PR #91 external archive cancellation — October 8, 2026 (offline CLI retired)
 
 - `test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children` proves both TERM-resistant stages receive one shared termination deadline and both are killed before either is reaped. PR #172 current-base CI `38097726441` exceeded the existing 20-second cancellation deadline; unchanged local reproduction passed in 16.21 seconds, and captured thread state confirmed sequential shutdown waits. The deterministic regression failed before the repair (second kill at ten seconds rather than five). Real pipe, owned-PID, output-certification and signal-status assertions remain required. Failure-only thread dumps now preserve the original shutdown boundary; exact historical CI signal timing remains unavailable.
 
@@ -4163,37 +4170,31 @@ Issue #161 publication lifecycle follow-up (October 10, 2026):
 - `acknowledged publication %s stops observation without replaying import` covers invalid JSON, invalid schema and transport/storage failure. Existing graph/integrity/queue/HTTP error regressions preserve actionable errors and read-only explicit rechecking.
 - `acknowledged publication retries only explicit foreground waits within its read deadline` preserves the existing narrow admission contract; `publication preserves readiness when queue has %s` covers stale timestamps and pending refresh. `acknowledged import needing integrity repair preserves its existing zero-admission outcome` retains the existing repair event and avoids queue polling. All are regular dialog-unit-suite cases; receipt/replay/discard semantics are unchanged.
 
-## Opening-card shadow ranking infrastructure (partial #113)
+## Opening-card pure ranking evaluation (partial #113 / #156)
 
-- `backend/tests/test_opening_ranking_evaluation.py`: `test_shadow_evaluation_performs_no_writes_and_preserves_immutable_inputs`, `test_shadow_ranking_is_deterministic_with_stable_ties_and_input_permutations`, `test_shadow_shared_card_identity_and_fractional_concentration_are_preserved`, and `test_shadow_production_order_baseline_yields_identity_comparison` protect purity, identity and deterministic baselines.
-- `test_shadow_top_k_spearman_and_rank_displacement_match_hand_calculation`, `test_shadow_missing_and_invalid_scores_remain_visible`, `test_shadow_empty_singleton_and_unknown_metadata_are_explicit`, and `test_shadow_all_unscorable_and_scorer_failures_are_not_false_success` cover descriptive metrics, coverage and missing evidence.
-- `test_shadow_invalid_candidate_identity_or_incomplete_order_is_rejected`, `test_shadow_invalid_top_k_is_rejected`, `test_shadow_duplicate_scorers_unknown_results_and_context_mismatch_are_rejected`, `test_shadow_snapshot_roundtrip_replay_is_deterministic_and_digest_bound`, and `test_shadow_shorter_card_scorer_is_explicit_example_with_missing_evidence` protect public contracts.
-- PR #155 semantic review: `test_shadow_compare_rejects_external_ranks_that_contradict_scores` and `test_shadow_compare_rejects_external_tied_scores_out_of_production_order` reject finite, identity-preserving external rankings with unique consecutive ranks that contradict the shared descending-score/production-rank/card-ID order. Both failed against `5e87662c` before the repair. `test_shadow_scored_order_uses_card_id_after_equal_score_and_production_rank` covers the final helper tie break without weakening unique production-rank validation.
-- `test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closure`, `test_shadow_capture_defers_foreground_work_without_database_access`, `test_shadow_capture_exceeds_budget_without_decoding_or_partial_export`, and `test_shadow_cli_replay_is_offline_deterministic_across_hash_seeds_and_protects_evidence` protect the opt-in source and replay boundary.
-- PR #155 database-clock review: `test_shadow_capture_rejects_malformed_study_day_before_sql` requires a canonical valid ISO date with `invalid_study_day`; its eleven cases failed before the repair. `test_shadow_capture_accepts_database_day_when_application_clock_disagrees` first failed for application clocks before and after the fixed PostgreSQL boundary, and now proves matching explicit requests use the database `as_of` and production day without reading the application clock. `test_shadow_capture_rejects_noncurrent_database_day_after_boundary_read` preserves earlier/later-day rejection with `historical_capture_unavailable`, no candidate reads, closed connections and released background reservations. The former combined backdating/foreground test is split so backdating is validated at the authoritative SQL boundary while foreground denial still opens no SQL.
-- `database/tests/check_postgres_priority_recovery.py::test_postgres_shadow_opening_ranking_is_read_only` runs in the existing regular PostgreSQL priority-recovery scenario. It forces PostgreSQL read-only write rejection, compares every public domain table before/after, denies capture under real foreground admission before opening SQL, checks repeatable-read isolation and connection closure before planning/scoring, and proves offline idempotent replay.
-- This is independent infrastructure only: no probability fetches, relaxed frontier, queue admission, FSRS or UI changes. #113 remains open for its broader probability/held-out-game evaluation.
+Regular `backend/tests/test_opening_ranking_evaluation.py` retains purity and
+immutable-input checks, deterministic score/production-rank/card-ID ordering,
+identity and malformed-input rejection, hand-calculated overlap/Spearman/
+displacement/concentration, missing-score reporting, 10,000-card coverage,
+snapshot roundtrip/digest checks and legacy-schema compatibility.
 
-- Additional contract coverage: `test_shadow_documented_example_matches_cli_and_hand_calculated_metrics`, `test_shadow_missing_priority_and_route_evidence_remain_unavailable`, `test_shadow_external_results_with_inconsistent_score_and_rank_are_rejected`, `test_shadow_large_fixture_retains_every_physical_card_without_probability_inputs`, `test_shadow_incomplete_membership_metadata_uses_unknown_bucket`, `test_shadow_invalid_metadata_shape_and_naive_as_of_are_rejected`, `test_shadow_pool_timeout_is_opt_in_and_preserves_existing_connection_defaults`, and `test_shadow_capture_pool_failure_is_actionable_and_releases_background_reservation`.
+Selected-policy regressions retain foreign-candidate rejection before scoring,
+Italian/Ruy independence when the other repertoire is added/expanded/removed,
+opponent-deviation probabilities, policy validation for empty inputs, and fenced
+ranking/comparison/serialization. `test_shadow_pool_timeout_is_opt_in_and_preserves_existing_connection_defaults`
+continues to protect the shared PostgreSQL connection adapter's default acquisition,
+optional timeout and read-only/repeatable-read statements.
 
-- Diagnostic boundary corrections: `test_shadow_capture_as_of_boundary_uses_deployment_timezone_not_cli_date` and `test_shadow_external_unscorable_result_without_reason_is_rejected` both failed on PR #155's initial candidate before repair. Capture now uses transaction time in the declared deployment timezone, independent of a UTC CLI's date; supplied alternative projections require explicit missing-score reasons. `test_shadow_invalid_deployment_timezone_is_rejected_before_sql` rejects invalid configuration before storage. The regular real PostgreSQL proof also verifies a +14-hour timezone day boundary against its captured UTC timestamp.
+The exclusive legacy capture/CLI tests and
+`database/tests/check_postgres_priority_recovery.py::test_postgres_shadow_opening_ranking_is_read_only`
+retire with `scripts/evaluate_opening_rankings.py`, its snapshot composition and
+exclusive storage adapter. Their Redis-configuration helper and its exclusive
+unit regression retire too. All other priority recovery assertions, queue
+extraction/frontier/valuation tests and production admission code remain.
+[History and source recovery](../docs/opening-shadow-ranking.md) identify the
+last-good implementation; saved JSON examples remain. This retirement does not
+complete #113, change policy math or qualify native recovery execution.
 
-- `test_shadow_capture_requires_shared_foreground_admission_before_sql` failed before the capture boundary rejected missing Redis admission configuration: a standalone CLI could otherwise open PostgreSQL while its local-only gate knew nothing about deployed study activity. Missing configuration now reports `admission_unavailable` before SQL. The regular real PostgreSQL no-write proof also removes/restores admission configuration and asserts zero capture connections before proceeding to genuine foreground contention and normal capture.
-
-- `test_priority_recovery_shadow_proof_scopes_real_redis_configuration` covers configured/default runner-owned Redis and success/failure restoration. CI run 38053945450 exposed the priority scenario's schema container lacking Redis configuration; the new proof alone now binds the existing disposable Redis service, preserving the earlier priority phases' admission environment. The framework still refuses missing production admission configuration.
-
-## PR #155 explicit shadow policy context — Issue #156
-
-Regular `backend/tests/test_opening_ranking_evaluation.py` coverage:
-
-- `test_shadow_selected_policy_rejects_foreign_candidates_before_scoring` failed on original head `9f737a63` because selected-policy context was unsupported.
-- `test_shadow_selected_policy_ranking_is_unchanged_when_other_repertoire_is_added` covers Italian/Ruy in both directions, adding/expanding/removing the other policy with shared physical card IDs and shared canonical prefixes; asserts exact scoring inputs, conditioned reach, preparedness, marginal values, ordering and comparison equality.
-- `test_shadow_selected_policy_preserves_opponent_deviation_probability` preserves e5=0.42, Nc6=0.5 and later a6=0.25 through caller-supplied reach and shadow marginal scoring.
-- `test_shadow_policy_context_validation_applies_to_empty_evaluations`, `test_shadow_missing_or_foreign_policy_cannot_be_ranked_or_serialized`, and `test_shadow_policy_snapshot_replay_and_comparison_retain_and_fence_identity` cover explicit identity, empty replay, foreign contexts, global/policy separation and digest binding.
-- `test_shadow_legacy_snapshot_is_only_global_diagnostic`, `test_shadow_selected_capture_filters_shared_card_memberships_before_planning`, and `test_shadow_selected_capture_rejects_conflicting_selection_before_sql` preserve replay compatibility and selected capture isolation.
-- `test_shadow_selected_capture_binds_policy_to_sql_and_offline_cli` verifies the selected repertoire SQL filter and CLI replay provenance.
-
-Current-main requalification omits PR #155's checkpoint/admission fixture replacements. Main's bounded shared recovery, #168 owned restart namespace propagation and replay regressions, and next-opponent proof ownership remain unchanged. The shadow-specific PostgreSQL proof remains in priority recovery; no production admission behavior is changed.
 ## PR #146 independent checkpoint qualification blocker — admission ownership
 
 - `test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground` in `backend/tests/test_admission_proof_ownership.py` first fails at the actual `record_operation_attempt(..., background=True)` admission boundary with persistent independent foreground activity. Completion and failure cases prove prerequisites precede owned contention, denied setup opens no writer, queued/retrying receipt setup preserves the source payload, parent leases survive, and proof keys are removed/restored.
@@ -4214,7 +4215,7 @@ Reconciliation against main `e9788df8`: PR #154 added bounded waits around recei
 
 - `PD-82 foreground deferral followed by database refusal still requires explicit retry` deterministically injects one foreground deferral then one database refusal. It fails with the original driver's early break (the database refusal has not even been observed), then requires automatic foreground continuation and an explicit database retry within the unchanged five-second inspection budget. The local desktop trace also reproduced three foreground deferrals followed by a database refusal that the old driver missed. The driver now observes that next response instead of exiting its loop; production behavior is unchanged.
 
-## PR #148 complete qualification — archive startup cancellation ownership
+## Historical PR #148 complete qualification — archive startup cancellation ownership (offline CLI retired)
 
 - Complete CI `38092998305` failed existing `test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-ctrl_c]` with an owned child retaining pipe backpressure beyond the original 20-second deadline. The focused unchanged case passed locally (17.11s pytest); no blind CI retry or deadline increase was used.
 - `test_stalemate_archive_cancellation_during_process_registration_reaps_both_children` deterministically delivers SIGINT after a real second child is created but before its Popen handle is assigned. It failed on the original source (1.04s pytest): the spawned decompressor remained alive and unowned. Cancellation now records the signal without throwing during the two ownership assignments, then raises immediately after registration so existing cleanup reaps both children. Child signal masks, grace periods, process ownership, output certification and regular cancellation semantics stay intact. The exact historical CI timing was not instrumented; the new test directly proves and closes this real startup window.
@@ -4546,7 +4547,7 @@ Audit CI readiness evidence (existing named browser cases):
 - `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
 - `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.
 
-- #220 native `test_postgres_shadow_opening_ranking_is_read_only` patches the frontier owner and asserts both planning calls after each capture, preventing a stale compatibility seam from silently bypassing its connection-closure proof.
+- The #220 shadow-capture connection-closure proof is retired with the exclusive legacy capture path; the retained queue native proof and every other priority-recovery assertion remain unchanged. See [retirement history](../docs/opening-shadow-ranking.md).
 ### PR #229 Redis fixture database isolation
 
 Regular PostgreSQL durability runs `database/tests/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. The native PostgreSQL cases below exercise fixture state and recovery. `backend/tests/test_redis_admission_fixture.py` provides focused fixture lifecycle checks; `tests/unit/redis-admission-cleanup-regressions.test.ts` checks the generic teardown callbacks and failure preservation, not native seed-output recovery. The coverage boundaries are detailed in the PR #229 cleanup reliability entry above.
@@ -4779,17 +4780,14 @@ regression in `unit/storage-probes.test.ts`: reading before lazy application
 startup aborts an absent database open rather than creating an empty incompatible
 schema. The existing two native legacy receipt/reimport scenarios retain their
 original assertions against that non-mutating inspector.
-## Independent Maia worker (#110)
+## Retained Maia inference core (#110)
 
 [`workers/maia/REGRESSIONS.md`](../workers/maia/REGRESSIONS.md) owns the registered
-pure, protocol/resource, installed-contract and actual-model regressions. Named
-cases protect phantom castling, king coherence, en-passant legality, exact requested
-move support, generation/replay identity and truthful termination. Shared qualifier
-routing, containment, failure propagation and zero-case proofs remain in
-`tools/component-build/tests/workers.test.mjs`. Existing frozen-helper and
-browser/Node parity cases retain their root registration and now exercise the
-shared computation owner. These proofs do not establish Intelligence persistence,
-Learning behavior, or full-system qualification.
+pure, installed-artifact, shared-contract and real-model regressions. Position
+legality, exact requested moves, vocabulary and descriptor/provenance checks stay.
+Only standalone supervisor/CLI/resource/container-exclusive tests are retired.
+Frozen-helper and coverage-client cases retain root registration. These proofs do
+not establish Intelligence persistence, Learning behavior or full-system gates.
 
 ## PR #291 independent Study review repairs
 
