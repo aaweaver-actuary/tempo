@@ -184,6 +184,92 @@ def test_A_activation_response_loss_replays_original_operator_receipt(case):
     assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
 
 
+def test_fresh_opening_activation_preserves_repertoire_title_and_receipt_replay(case):
+    payload=content_bundle(2)
+    for route in payload['routes']:route['repertoire_title']="Répertoire: King's Indian"
+    assert stage_v2(case,payload).status_code==200
+    assert case.query('SELECT count(*) FROM learning.repertoires')[0][0]==0
+    request=request_for(payload)
+    acknowledgement=activate_v2(case,payload,request=request)
+    assert case.query('SELECT id,name FROM learning.repertoires')==[('repertoire-a',"Répertoire: King's Indian")]
+    operator={'Authorization':'Bearer '+case.configuration.operator_token}
+    status=case.client.get('/internal/publications/publication-a/status?generation=1',headers=operator).json()
+    from tempo_learning_runtime.publication_bridge import digest
+    snapshot_routes=[{key:value for key,value in route.items() if key!='repertoire_title'} for route in payload['routes']]
+    assert status['accepted']['routes_digest']==digest(snapshot_routes)
+    replay=case.client.post('/internal/publications/v2/activate',json=request,headers=operator)
+    assert replay.status_code==200 and replay.json()==acknowledgement
+    assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0]==1
+    assert case.query('SELECT count(*) FROM learning.cards')[0][0]==2
+    assert case.query('SELECT name FROM learning.repertoires')[0][0]=="Répertoire: King's Indian"
+    tampered=deepcopy(payload)
+    for route in tampered['routes']:route['repertoire_title']='Same-generation tampered title'
+    assert stage_v2(case,tampered).status_code==409
+    assert case.query('SELECT name FROM learning.repertoires')[0][0]=="Répertoire: King's Indian"
+    successor=deepcopy(payload)
+    successor['publication'].update(publication_generation=2,source_revision=2)
+    for definition in successor['publication']['definitions']:
+        definition.update(publication_generation=2,source_revision=2)
+    for route in successor['routes']:route['repertoire_title']='Updated accepted title'
+    activate_v2(case,successor,expected=1)
+    # An old completed operation is a no-op even after a newer name is active.
+    assert case.client.post('/internal/publications/v2/activate',json=request,headers=operator).json()==acknowledgement
+    assert case.query('SELECT name FROM learning.repertoires')[0][0]=='Updated accepted title'
+
+
+def test_title_absent_activation_preserves_existing_repertoire_metadata(case):
+    case.query("INSERT INTO learning.repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)",
+               ('repertoire-a','Existing title','Existing source','2020-01-01T00:00:00Z'))
+    activate_v2(case,content_bundle())
+    assert case.query('SELECT name,source_name,created_at FROM learning.repertoires')==[
+        ('Existing title','Existing source','2020-01-01T00:00:00Z')]
+
+
+def test_conflicting_repertoire_titles_fail_before_staging_or_writes(case):
+    payload=content_bundle(2)
+    payload['routes'][0]['repertoire_title']='First title'
+    payload['routes'][1]['repertoire_title']='Conflicting title'
+    response=stage_v2(case,payload)
+    assert response.status_code==422
+    assert case.query('SELECT count(*) FROM learning.accepted_publications')[0][0]==0
+    assert case.query('SELECT count(*) FROM learning.repertoires')[0][0]==0
+
+
+def test_repertoire_title_update_rolls_back_with_activation_failure(case,monkeypatch):
+    from fastapi import HTTPException
+    from tempo_learning_runtime import publication_bridge
+    payload=content_bundle()
+    payload['routes'][0]['repertoire_title']='Original title'
+    activate_v2(case,payload)
+    successor=deepcopy(payload)
+    successor['publication'].update(publication_generation=2,source_revision=2)
+    for definition in successor['publication']['definitions']:
+        definition.update(publication_generation=2,source_revision=2)
+    successor['routes'][0]['repertoire_title']='Replacement title'
+    assert stage_v2(case,successor).status_code==200
+    def reject_graph_write(*arguments):
+        raise HTTPException(409,'Synthetic post-title activation failure')
+    monkeypatch.setattr(publication_bridge.storage,'insert_opening_steps',reject_graph_write)
+    request=request_for(successor,1)
+    response=case.client.post('/internal/publications/v2/activate',json=request,
+        headers={'Authorization':'Bearer '+case.configuration.operator_token})
+    assert response.status_code==409
+    assert case.query('SELECT name FROM learning.repertoires')[0][0]=='Original title'
+    assert case.query('SELECT generation,activation_revision FROM learning.serving_publications')==[(1,1)]
+    assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0]==1
+
+
+def test_repertoire_title_storage_cannot_update_outside_declared_memberships(case):
+    from tempo_learning_database.adapters import publication_bridge
+    case.query("INSERT INTO learning.repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)",
+               ('foreign','Foreign title','Foreign source','2020-01-01T00:00:00Z'))
+    with case.database.scope(),case.database.transaction() as database:
+        publication_bridge.insert_repertoires(database,'2030-01-01T00:00:00Z',['owned'],
+            {'owned':'Owned title','foreign':'Unauthorized replacement'})
+    assert case.query('SELECT id,name FROM learning.repertoires ORDER BY id')==[
+        ('foreign','Foreign title'),('owned','Owned title')]
+
+
 def test_A_pending_publication_is_reconciled_by_operator_without_essential_dispatch(case):
     from tempo_learning_runtime import gateway
     from tempo_learning_runtime.maintenance import run_once
