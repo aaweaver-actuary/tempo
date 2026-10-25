@@ -171,11 +171,19 @@ Architecture: the owning [browser dictionary](../../../database/browser/adapters
 now names the four surviving adapters and explicitly records cold optional keys.
 Its generic application → named adapter → Web Storage/receipt flow remains accurate
 for those survivors; no Study-to-Games edge, transaction or process lifecycle is
-introduced. Physical source-absence builds and live/native/browser qualification
-remain pending; this is not `legacy-01` approval or #390/#391 completion.
+introduced. Prior Study/local source-absence builds are retained for unchanged
+frontend runtime inputs; live/native/browser qualification remains pending. This
+is not `legacy-01` approval or #390/#391 completion.
 
 Focused source-removed candidate evidence: eight installed-tool Vitest files passed
 163 tests on host Node 26.12.0, including unchanged sync/status, retained practice,
 pending-discovery, PGN pending handling and the Study composition guard. Independent
 source review found no unresolved P1/P2 and verified the exact allowlist and 20
-protected hashes. This does not replace the pending build/native/browser gates.
+protected hashes. Current-main integration preserves the merged tactics/shadow
+and statistics-fixture cohorts. The eight-suite and Study/local build receipts
+are reused because their relevant executable, dependency, fixture and emission
+inputs are unchanged. The changed root TypeScript configuration is checked
+separately: strict `npm run typecheck` passed in the official digest-pinned Node
+26.10.0 Linux arm64 container, including its normal three-package declaration
+build. No units or Study/local builds were repeated for documentation conflicts.
+Native/browser/deployment qualification remains unrun.
