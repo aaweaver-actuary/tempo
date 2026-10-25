@@ -63,7 +63,7 @@ def execution_bundle(export, due_date):
         facts.append({"card_id": definition["card_id"], "content_type": "opening",
             "memberships": sorted({route["repertoire_id"] for route in routes}),
             "trained_color": routes[0]["learner_color"], "due_date": due_date, "route_order": index})
-    routes = [{key: value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key","repertoire_title")} for route in export["routes"]]
+    routes = [{key: value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key")} for route in export["routes"]]
     return {"schema_version": 2, "publication": export["publication"], "source_digest": export["source"]["source_digest"],
         "facts": facts, "routes": routes, "legacy_aliases": export["legacy_aliases"]}
 

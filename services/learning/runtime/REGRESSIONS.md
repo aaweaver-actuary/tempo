@@ -1,5 +1,28 @@
 # Learning runtime regression ownership
 
+## Accepted repertoire display titles
+
+`tests/test_decision_projection.py::test_optional_repertoire_title_absent_preserves_prior_route_bytes`
+retains the pre-extension complete normalized-bundle digest. The adjacent bounded
+nonblank/consistent-title cases and
+`test_titled_unbound_foreign_route_cannot_escape_membership_ownership_locks`
+require every explicit name write to belong to accepted fact memberships while
+retaining old untitled extra-route behavior.
+`tests/test_publication_storage_separation.py::test_title_projection_uses_existing_locked_activation_writer`
+retains the existing lock/transaction writer; the adjacent public graph-digest
+case keeps display titles out of routing identity while full acceptance binds them.
+
+The owning real PostgreSQL `tests/test_content_bridge.py` cases are
+`test_fresh_opening_activation_preserves_repertoire_title_and_receipt_replay`,
+`test_title_absent_activation_preserves_existing_repertoire_metadata`,
+`test_conflicting_repertoire_titles_fail_before_staging_or_writes`,
+`test_repertoire_title_update_rolls_back_with_activation_failure`, and
+`test_repertoire_title_storage_cannot_update_outside_declared_memberships`.
+They cover exact new names, immutable staging conflicts, old receipt no-ops after
+a newer title, legacy metadata preservation, rejected inconsistent titles,
+same-transaction rollback and defensive writer scope. Pure tests alone do not
+qualify these storage effects or live activation.
+
 ## Balanced daily presentation
 
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`

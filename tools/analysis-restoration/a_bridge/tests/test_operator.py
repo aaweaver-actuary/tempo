@@ -44,6 +44,25 @@ def test_execution_mapping_retains_identity_memberships_and_every_alternative():
     assert bundle['routes'][0]['bindings']==route['bindings']
 
 
+def test_execution_mapping_preserves_optional_repertoire_title_without_changing_old_routes():
+    from copy import deepcopy
+    definition={'card_id':'content-card','specification':{'type':'move_line','accepted_lines':[['e2e4']]}}
+    route={'repertoire_id':'white','route_id':'e4','policy_id':'main','route_key':'e4',
+        'policy_key':'main','repertoire_key':'white','learner_color':'white',
+        'starting_fen':'explicit-fen','moves':['e2e4'],'bindings':[{'ply':0,'card_id':'content-card','reentry':False}]}
+    export={'publication':{'definitions':[definition]},'source':{'source_digest':'a'*64},
+        'routes':[route],'legacy_aliases':{}}
+    prior=execution_bundle(export,'2026-10-16')
+    assert prior['routes']==[{key:value for key,value in route.items()
+                             if key not in ('route_key','policy_key','repertoire_key')}]
+    export['routes'][0]['repertoire_title']="Répertoire: King's Indian"
+    original=deepcopy(export)
+    current=execution_bundle(export,'2026-10-16')
+    assert current['routes'][0].pop('repertoire_title')=="Répertoire: King's Indian"
+    assert current==prior
+    assert export==original
+
+
 class SnapshotOperator(Operator):
     def __init__(self):
         self.endpoint = "http://127.0.0.1:8001"
