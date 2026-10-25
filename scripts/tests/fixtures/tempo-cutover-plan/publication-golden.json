@@ -76,7 +76,7 @@
             "127.0.0.1:3000"
           ]
         },
-        "schema": 1,
+        "schema": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
         "mode": "graph-preserving-fresh-start",
         "graphSourceReference": "fixture-graph-source-001",
         "graphReceipt": "fixture-graph-receipt-001",
@@ -86,7 +86,7 @@
     "receipt": {
       "version": 2,
       "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "schema": 1,
+      "schema": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
       "images": {
         "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
         "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
@@ -133,7 +133,7 @@
             "127.0.0.1:3000"
           ]
         },
-        "schema": 1,
+        "schema": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
         "mode": "graph-preserving-fresh-start",
         "graphSourceReference": "fixture-graph-source-001",
         "graphReceipt": "fixture-graph-receipt-001",

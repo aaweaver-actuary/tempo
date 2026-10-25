@@ -235,6 +235,30 @@ test("legacy source and backup volumes cannot be rebound even with matching cand
   assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["preserved_volume_rebinding"]);
 });
 
+test("v2 schema identity rejects numeric counts, receipt versions and malformed digest strings", () => {
+  for (const schema of [1, 110, null, "", "7".repeat(64), "sha256:" + "7".repeat(63),
+    "sha256:" + "7".repeat(65), "sha256:" + "A".repeat(64), "sha256:" + "g".repeat(64)]) {
+    const supplied = input();
+    both(supplied, identity => { identity.schema = schema; });
+    supplied.proposed.receipt.schema = schema;
+    assert(codes(planLauncherFreshStart(supplied)).includes("authority_identity_missing"));
+  }
+});
+
+test("v2 schema digest is one unchanged string across records while original v1 numeric schema remains preserved", () => {
+  const supplied = input();
+  const schema = "sha256:" + "7".repeat(64); // Synthetic identity, never an actual migration-map claim.
+  const result = planLauncherFreshStart(supplied);
+  assert.equal(result.status, "planned");
+  assert.equal(result.plan.registration.cutover.schema, schema);
+  assert.equal(result.plan.receipt.cutover.schema, schema);
+  assert.equal(result.plan.receipt.schema, schema);
+  assert.equal(result.plan.original.receipt.schema, 110);
+  assert.equal(supplied.current.receipt.schema, 110);
+  supplied.proposed.receipt.schema = "sha256:" + "8".repeat(64);
+  assert(codes(planLauncherFreshStart(supplied)).includes("receipt_identity_mismatch"));
+});
+
 test("property order does not create a false disagreement between equivalent publication identities", () => {
   const supplied = input();
   supplied.proposed.receipt.cutover = Object.fromEntries(Object.entries(supplied.proposed.receipt.cutover).reverse());

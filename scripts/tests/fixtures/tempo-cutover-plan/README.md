@@ -62,7 +62,17 @@ actual image/major compatibility and graph initialization remain fresh-init
 provider checks, not claims made by the structural planner.
 
 The common candidate `.cutover` identity retains pinned revision/images,
-database/workspace, Compose/volumes, ingress and schema. It now requires
+database/workspace, Compose/volumes, ingress and schema identity. For v2,
+`cutover.schema` and top-level `receipt.schema` are the same plain string matching
+`sha256:` followed by 64 lowercase hexadecimal digits. The database owner derives
+that identity from the exact migration-ID-to-checksum map using sorted keys,
+compact JSON and UTF-8; it is neither a migration count nor a receipt version.
+The database owner must first verify expected and actual maps agree. This planner
+consumes only the resulting public identity, with no DDL/internal imports or new
+schema wrapper. Original v1 numeric schema values remain unchanged. The fixture
+`sha256:` plus 64 sevens is synthetic and makes no actual-schema claim.
+
+The fresh-start identity also requires
 `mode: 'graph-preserving-fresh-start'`, pinned `graphSourceReference`, and final
 opaque `graphReceipt` and `freshInitReceipt` references. There is no history
 transfer receipt or invented authority epoch. Explicit new workspace/origin/token

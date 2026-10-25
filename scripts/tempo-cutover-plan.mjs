@@ -19,7 +19,7 @@ const studyServices = ["study-web", "learning", "postgres"];
  * @property {string[]} composeFiles Explicit retained composition paths.
  * @property {Record<string,{name:string,external:boolean}>} volumes
  * @property {{origin:string,hosts:string[]}} ingress Browser authority identity.
- * @property {number} schema Explicit Learning schema identity.
+ * @property {string} schema Immutable identity of the exact Learning migration ID/checksum map.
  * @property {'graph-preserving-fresh-start'} mode Explicit operator-selected workflow.
  * @property {string} graphSourceReference Pinned public graph/repertoire source identity.
  * @property {string} graphReceipt Opaque final public graph verification reference.
@@ -104,7 +104,7 @@ export function planLauncherFreshStart(input = {}) {
       .some(service => Object.hasOwn(identity.images ?? {}, service)))
       block("legacy_service_mixture", "Study publication must not retain legacy application or optional worker service dependencies.");
     if (!text(identity.workspace) || !record(identity.database) || !text(identity.database.name) || !text(identity.database.volume)
-      || !Number.isInteger(identity.schema) || identity.schema < 1)
+      || !schemaIdentity(identity.schema))
       block("authority_identity_missing", "Supply explicit new database, workspace and schema identities.");
     if (!paths(identity.composeFiles) || !volumeMap(identity.volumes) || !ingressShape(identity.ingress))
       block("composition_identity_missing", "Supply explicit Compose, volume, ingress origin and allowed host identities.");
@@ -165,6 +165,7 @@ export function readFreshInitializationVerification(input) {
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = value => typeof value === "string" && value.trim().length > 0;
 const paths = value => Array.isArray(value) && value.length > 0 && value.every(path => text(path) && isAbsolute(path));
+const schemaIdentity = value => typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
 const immutableImage = value => typeof value === "string" && /^(?:sha256:[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/.test(value);
 const volumeMap = value => record(value) && Object.keys(value).length > 0
   && Object.values(value).every(volume => record(volume) && text(volume.name) && typeof volume.external === "boolean")
