@@ -20,7 +20,7 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
-from app.services import introduction_priorities, priority_retention, repertoire_opportunities
+from app.services import introduction_priorities, priority_retention
 from app.threat_analysis_commands import claim_threat_analysis
 
 
@@ -142,15 +142,6 @@ def main() -> None:
 
     failures = [measure_section("defensive_threat_claim", threat_claim, options.dsn,
                                 explain_plan=options.explain)]
-
-    if recurring:
-        def recurring_read():
-            with postgres_store.connection(read_only=True, background=True) as database:
-                return len(repertoire_opportunities._load_recurring_decisions(
-                    database, recurring[0], recurring[1]
-                ))
-        failures.append(measure_section("recurring_decision_evidence", recurring_read,
-                                        options.dsn, explain_plan=options.explain))
 
     if retention:
         original_lock = priority_retention.lock_current_slice

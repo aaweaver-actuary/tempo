@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import chess
 
-from app.services import introduction_priorities, postgres_priority, priority_retention, repertoire_opportunities
+from app.services import introduction_priorities, postgres_priority, priority_retention
 
 
 def test_priority_miss_source_triggers_target_tables_and_publication():
@@ -222,8 +222,6 @@ def _harness(monkeypatch, record_count):
     monkeypatch.setattr(postgres_priority, "enqueue_priority_refresh_in_transaction",
                         lambda *_args: queued.append(True))
     monkeypatch.setattr(postgres_priority, "enqueue_compact_postgres_task_in_transaction",
-                        lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(repertoire_opportunities, "enqueue_opportunity_refresh_in_transaction",
                         lambda *_args, **_kwargs: None)
     task = {
         "id": "task", "generation": 1, "lease_token": "lease",

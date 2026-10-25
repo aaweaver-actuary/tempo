@@ -10,7 +10,7 @@ from app import tasks
 from tempo_legacy_database.adapters import postgres_store
 from app.services import (
     postgres_game_events, postgres_game_features, postgres_game_priorities,
-    postgres_priority, introduction_priorities, durable_tasks, refresh_requests, repertoire_opportunities,
+    postgres_priority, introduction_priorities, durable_tasks, refresh_requests,
 )
 
 
@@ -195,9 +195,6 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
 
     monkeypatch.setattr(postgres_game_priorities, "enqueue_priority_refresh_in_transaction",
                         unavailable_priority, raising=False)
-    monkeypatch.setattr(postgres_game_priorities,
-                        "enqueue_opportunity_refresh_in_transaction",
-                        lambda _database, key: queued.append(('repertoire_opportunity', key, {'repertoire_id': key})))
     monkeypatch.setattr(postgres_game_priorities, "advance_task_slice_in_transaction",
                         lambda _database, _task, *, next_phase, next_payload:
                         advanced.append(next_payload) or True)
@@ -208,7 +205,7 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
             "payload": {"game_id": "game-one", "derivation_version": 7,
                         "after_repertoire_id": ""}}
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
-    assert queued == [("repertoire_opportunity", "repertoire-one", {"repertoire_id": "repertoire-one"})]
+    assert queued == []
     assert advanced == [{"game_id": "game-one", "derivation_version": 7,
                          "after_repertoire_id": "repertoire-one"}]
     task["payload"] = advanced[0]
@@ -271,8 +268,6 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
                         queued.append((kind, key, payload, priority)))
     monkeypatch.setattr(postgres_priority, "complete_task_slice_in_transaction",
                         lambda _database, _task: lease_current)
-    monkeypatch.setattr(repertoire_opportunities, 'enqueue_opportunity_refresh_in_transaction',
-                        lambda _database, key: queued.append(('repertoire_opportunity', key, {'repertoire_id': key}, 130)))
 
     task = {"id": "priority", "generation": 1, "lease_token": "live",
             "payload": {"repertoire_id": "repertoire-one", "generation": 4, "cursor": 0}}
@@ -284,6 +279,4 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
     lease_current = True
     task["payload"] = advanced[0]
     assert postgres_priority.execute_repertoire_priority_slice(task)
-    assert queued == [("priority_retention", "repertoire-one",
-                       {"repertoire_id": "repertoire-one"}, 200),
-                      ('repertoire_opportunity', 'repertoire-one', {'repertoire_id': 'repertoire-one'}, 130)]
+    assert queued == [('priority_retention', 'repertoire-one', {'repertoire_id': 'repertoire-one'}, 200)]

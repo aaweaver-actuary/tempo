@@ -106,7 +106,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed repertoire-scope storage split: [backend/app/services/repertoire_game_refresh.py](tempo_legacy_database/adapters/repertoire_scope/README.md).
 - Completed integrity scan/repair storage split: [backend/app/services/repertoire_integrity.py](tempo_legacy_database/adapters/authored_repertoires/integrity/README.md).
 - Completed repertoire-scope storage split: [backend/app/services/repertoire_move_verification.py](tempo_legacy_database/adapters/repertoire_scope/README.md).
-- Completed repertoire opportunity storage split: [backend/app/services/repertoire_opportunities.py](tempo_legacy_database/adapters/authored_repertoires/opportunities/README.md).
+- Repertoire opportunity storage extraction was completed and is now source-retired with the optional producer/feed/state/train capability. [Last-good implementation](https://github.com/aaweaver-actuary/tempo/tree/66d98610924971ea4cce3603c76cd4c330b50ae1/database/tempo_legacy_database/adapters/authored_repertoires/opportunities); retained ordinary Study queue SQL and stored schema are unchanged.
 - Completed legacy read/publication projection split: [backend/app/services/repertoire_statistics.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed borrowed Study review storage split: [backend/app/services/review_service.py](tempo_legacy_database/adapters/study/review/README.md).
 - Completed legacy statistics storage split: [backend/app/services/statistics.py](tempo_legacy_database/adapters/statistics/README.md).

@@ -20,7 +20,7 @@ defines no classes and is not a new shared domain implementation.
 | Games engine evidence contracts | [`game_analysis.py`](game_analysis.py) | `GameAnalysisCandidate`, `GameAnalysisEvaluation`, `GameAnalysisRequest`, `GameAnalysisFailureRequest`, `GameAnalysisPositionClaimRequest`, `GameAnalysisLeaseRequest` |
 | Shared engine attempt diagnostic contract | [`engine.py`](engine.py) | `EngineAttemptDiagnostics` |
 | Defense analysis/practice contracts | [`defense.py`](defense.py) | `ThreatAnalysisSubmission`, `ThreatAnalysisFailureRequest`, `DefenseAttemptRequest`, `DefenseRecognitionRequest` |
-| Authored discovery contracts | [`discovery.py`](discovery.py) | `DiscoveryTrainingRequest`, `DiscoveryAcceptanceRequest` |
+| Authored discovery contracts | [`discovery.py`](discovery.py) | `DiscoveryAcceptanceRequest` (optional direct-training DTO retired) |
 | Games finding/adaptation contracts | [`game_findings.py`](game_findings.py) | `GameFindingDecisionRequest`, `GameExclusionRequest`, `GameFindingCardRequest`, `GameFindingCurationRequest` |
 | Games provider/sync contracts | [`game_sync.py`](game_sync.py) | `AccountSettings`, `GameSyncRequest`, `ProviderSyncResult`, `ProviderSyncStatus`, `CompletedProviderSyncResult`, `CompletedGameSyncResult`, `GameSyncJob`, `GameSyncEnqueueResponse`, `ActiveGameFilters`, `GameSyncStatusResponse` |
 | Games read contracts | [`games.py`](games.py) | `GameTimelineEvent`, `GamePublicRecord`, `GamesSummaryResponse`, `GameSummaryRecord` |
