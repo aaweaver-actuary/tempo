@@ -20,29 +20,36 @@ const studyServices = ["study-web", "learning", "postgres"];
  * @property {Record<string,{name:string,external:boolean}>} volumes
  * @property {{origin:string,hosts:string[]}} ingress Browser authority identity.
  * @property {number} schema Explicit Learning schema identity.
- * @property {string} transferReceipt Opaque public transfer receipt reference.
+ * @property {'graph-preserving-fresh-start'} mode Explicit operator-selected workflow.
+ * @property {string} graphSourceReference Pinned public graph/repertoire source identity.
+ * @property {string} graphReceipt Opaque final public graph verification reference.
+ * @property {string} freshInitReceipt Opaque final clean-Learning verification reference.
  */
 
 /**
- * Plan final publication after the fenced import, never a fresh install or the
- * initial pre-fence lifecycle intent. Missing final evidence blocks this stage.
+ * Plan final graph-preserving fresh-start publication after graph import and
+ * clean-Learning initialization, never the initial lifecycle intent. The original
+ * database remains untouched. No old history or pending-work transfer is needed.
  *
  * `proposed` contains explicit candidate v2 registration and deployment records;
  * this function does not infer actual target values from an opt-in test stack.
  * Both records carry the same CutoverIdentity in `cutover`, extending existing
  * registration/deployment fields without changing the current launcher reader.
- * `transferAcceptance` is an opaque public-evidence input, NOT interpreted as
- * proof by this structural planner. The release-gate owner must authenticate its
- * accepted/latest-state/authority meaning and bind it to cutover.transferReceipt.
+ * Graph and fresh-initialization public inputs remain opaque. Structural
+ * correspondence does not establish graph closure, clean initialization or new
+ * browser authority isolation. Actual public readers below fail closed until
+ * their provider contracts are available; real cutover still needs confirmation.
  *
- * @param {{transitionId:string,current:{registration:object,receipt:object},
- *   proposed:{registration:object,receipt:object},transferAcceptance:object}} input
+ * @param {{transitionId:string,freshStartChoice:'graph-preserving-fresh-start',
+ *   current:{registration:object,receipt:object|null}, proposed:{registration:object,receipt:object},
+ *   graphSource:object,graphVerification:object,freshInitialization:object}} input
  * @returns {{status:'blocked'|'planned',blockers:{code:string,message:string}[],
  *   plan:null|{version:1,transitionId:string,revision:string,sourceIdentity:string,
  *     targetIdentity:string,lockIdentity:string,registration:object,receipt:object,
- *     original:{registration:object,receipt:object},transferAcceptance:object}}}
+ *     original:{registration:object,receipt:object|null},freshStartChoice:string,
+ *     graphSource:object,graphVerification:object,freshInitialization:object}}}
  */
-export function planLauncherTransition(input = {}) {
+export function planLauncherFreshStart(input = {}) {
   const blockers = [];
   const block = (code, message) => blockers.push({ code, message });
   let supplied;
@@ -55,7 +62,7 @@ export function planLauncherTransition(input = {}) {
   } catch {
     return freeze({ status: "blocked", blockers: [{ code: "invalid_input", message: "Supply finite JSON records and explicit transition inputs." }], plan: null });
   }
-  const { transitionId, current, proposed, transferAcceptance } = supplied;
+  const { transitionId, current, proposed, freshStartChoice, graphSource, graphVerification, freshInitialization } = supplied;
   const original = current?.registration;
   const priorReceipt = current?.receipt;
   const registration = proposed?.registration;
@@ -63,19 +70,28 @@ export function planLauncherTransition(input = {}) {
   const identity = registration?.cutover;
 
   if (!text(transitionId)) block("transition_identity_missing", "Supply the pinned transition identity.");
-  if (!record(original) || original.version !== 1 || !record(priorReceipt) || priorReceipt.version !== 1)
-    block("existing_v1_required", "Supply the original v1 registration and deployment receipt; fresh install is a separate workflow.");
+  if (!record(original) || original.version !== 1)
+    block("existing_v1_required", "Supply the original v1 registration identity; unregistered install is a separate workflow.");
+  if (!record(current) || !Object.hasOwn(current, "receipt"))
+    block("prior_publication_unknown", "Supply the prior receipt record or explicit null for known absence; unknown publication state cannot be inferred.");
+  else if (priorReceipt !== null && (!record(priorReceipt) || priorReceipt.version !== 1))
+    block("original_receipt_invalid", "The explicit prior receipt must be a v1 record or null for known absence.");
   if (!targetShape(original)) block("source_identity_missing", "Supply the complete original registration identity.");
   if (!record(registration) || registration.version !== 2 || !record(receipt) || receipt.version !== 2)
     block("candidate_v2_required", "Supply explicit proposed v2 registration and deployment receipt records.");
   if (!targetShape(registration)) block("target_identity_missing", "Supply explicit target context, daemon, paths, ports and volume identities.");
   if (!record(identity) || !record(receipt?.cutover) || !isDeepStrictEqual(identity, receipt.cutover))
     block("publication_identity_mismatch", "Proposed registration and receipt must contain one identical cutover identity.");
-  if (!record(transferAcceptance) || !Object.keys(transferAcceptance).length)
-    block("accepted-transfer-contract-pending", "The real accepted-transfer contract/validator is pending; supply the history owner's public acceptance evidence when available.");
+  if (freshStartChoice !== "graph-preserving-fresh-start")
+    block("fresh_start_choice_required", "Explicitly select the graph-preserving fresh-start workflow.");
+  if (!record(graphSource) || !Object.keys(graphSource).length || !record(graphVerification) || !Object.keys(graphVerification).length
+    || !text(identity?.graphSourceReference) || !text(identity?.graphReceipt))
+    block("graph-contract-pending", "Supply explicit graph/repertoire source and final public graph verification inputs; the actual provider contract is pending.");
+  if (!record(freshInitialization) || !Object.keys(freshInitialization).length || !text(identity?.freshInitReceipt))
+    block("fresh-initialization-contract-pending", "Supply final clean-Learning initialization verification; the actual provider contract is pending.");
 
   if (record(identity)) {
-    if (identity.transitionId !== transitionId || identity.phase !== "quarantined")
+    if (identity.transitionId !== transitionId || identity.phase !== "quarantined" || identity.mode !== "graph-preserving-fresh-start")
       block("publication_phase_invalid", "Pin the same transition in quarantined phase before any activation.");
     if (!/^[a-f0-9]{40}$/.test(identity.revision ?? ""))
       block("revision_unpinned", "Supply one exact approved full Git revision.");
@@ -88,8 +104,8 @@ export function planLauncherTransition(input = {}) {
       .some(service => Object.hasOwn(identity.images ?? {}, service)))
       block("legacy_service_mixture", "Study publication must not retain legacy application or optional worker service dependencies.");
     if (!text(identity.workspace) || !record(identity.database) || !text(identity.database.name) || !text(identity.database.volume)
-      || !Number.isInteger(identity.schema) || identity.schema < 1 || !text(identity.transferReceipt))
-      block("authority_identity_missing", "Supply explicit database, workspace, schema and public history receipt identities.");
+      || !Number.isInteger(identity.schema) || identity.schema < 1)
+      block("authority_identity_missing", "Supply explicit new database, workspace and schema identities.");
     if (!paths(identity.composeFiles) || !volumeMap(identity.volumes) || !ingressShape(identity.ingress))
       block("composition_identity_missing", "Supply explicit Compose, volume, ingress origin and allowed host identities.");
     if (!isDeepStrictEqual(identity.composeFiles, registration?.composeFiles)
@@ -131,7 +147,21 @@ export function planLauncherTransition(input = {}) {
   const sourceIdentity = targetKey(original);
   return freeze({ status: "planned", blockers, plan: { version: 1, transitionId, revision: identity.revision,
     sourceIdentity, targetIdentity: targetKey(registration), lockIdentity: sourceIdentity,
-    registration, receipt, original: current, transferAcceptance } });
+    registration, receipt, original: current, freshStartChoice, graphSource, graphVerification, freshInitialization } });
+}
+
+/** Fail closed: no actual public graph verification schema/reader is accepted yet. */
+export function readGraphTransferVerification(input) {
+  void input; // No graph fields, aliases or acceptance semantics are guessed.
+  return freeze({ status: "blocked", verification: null, blockers: [{ code: "graph-contract-pending",
+    message: "The public graph/repertoire closure and verification reader are pending; opaque or synthetic packets cannot qualify an actual graph." }] });
+}
+
+/** Fail closed: clean-state and new-authority isolation need their public owner. */
+export function readFreshInitializationVerification(input) {
+  void input;
+  return freeze({ status: "blocked", verification: null, blockers: [{ code: "fresh-initialization-contract-pending",
+    message: "The public clean-Learning initialization and new-authority isolation reader are pending; structural target identities cannot establish them." }] });
 }
 
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value);

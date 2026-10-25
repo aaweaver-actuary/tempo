@@ -126,7 +126,10 @@
           ]
         },
         "schema": 1,
-        "transferReceipt": "fixture-transfer-001"
+        "mode": "graph-preserving-fresh-start",
+        "graphSourceReference": "fixture-graph-source-001",
+        "graphReceipt": "fixture-graph-receipt-001",
+        "freshInitReceipt": "fixture-fresh-init-001"
       }
     },
     "receipt": {
@@ -180,12 +183,24 @@
           ]
         },
         "schema": 1,
-        "transferReceipt": "fixture-transfer-001"
+        "mode": "graph-preserving-fresh-start",
+        "graphSourceReference": "fixture-graph-source-001",
+        "graphReceipt": "fixture-graph-receipt-001",
+        "freshInitReceipt": "fixture-fresh-init-001"
       }
     }
   },
-  "transferAcceptance": {
+  "freshStartChoice": "graph-preserving-fresh-start",
+  "graphSource": {
     "fixtureOnly": true,
-    "reference": "fixture-transfer-001"
+    "sourcePacket": "opaque-graph-repertoire-packet"
+  },
+  "graphVerification": {
+    "fixtureOnly": true,
+    "reference": "fixture-graph-receipt-001"
+  },
+  "freshInitialization": {
+    "fixtureOnly": true,
+    "reference": "fixture-fresh-init-001"
   }
 }

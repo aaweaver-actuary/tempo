@@ -1,92 +1,103 @@
-# Launcher publication planner fixtures
+# Graph-preserving fresh-start planner fixtures
 
-These are synthetic, credential-free examples for
-[`planLauncherTransition`](../../../tempo-cutover-plan.mjs), not observed
-installation identities, a history acceptance receipt schema, or permission to
-publish or activate a target. The source contract implements only final
-registration/deployment correspondence from the accepted
-[launcher specification](../../../../docs/architecture/study-first-reduction-2026-10-21/LAUNCHER-CUTOVER.md)
-§§2–4. No current launcher command imports this planner. The existing
-[`tempo-cli.mjs`](../../../tempo-cli.mjs) still requires version 1 registration
-and retains the legacy default composition; this PR does not make it adopt v2.
+These synthetic, credential-free examples qualify only the pure
+[`planLauncherFreshStart`](../../../tempo-cutover-plan.mjs) source contract.
+The operator must explicitly select `graph-preserving-fresh-start`: preserve the
+opening graph/repertoires while initializing an independent clean Learning
+target. Old reviews, schedules, background/server/browser pending work and old
+backups are not prerequisites for this workflow. The original live database is
+untouched until graph/new-target verification and separate cutover confirmation.
 
-Run the focused independent source proof with Node 22.13 or newer:
+This replaces the previous preparation in these same files. The old preservation
+planner remains retained on branch `codex/359-launcher-plan-prep`, PR #443, commit
+`60bca3b84e934ac0ffb9ab6edb6f2edaf9f6bfd1`; it is not the fresh-start contract.
+There is one planner implementation on this branch, and no new launcher.
+Current [`tempo-cli.mjs`](../../../tempo-cli.mjs) still requires registration v1
+and uses the legacy default composition. No command imports the new planner.
+
+Run the narrow source proof with Node 22.13 or newer:
 
 ```sh
 node --test scripts/tests/tempo-cutover-plan.test.mjs
 ```
 
-`publication-input.json` supplies an original v1 pair and explicit candidate v2
-pair. `publication-golden.json` fixes the complete structural result, including
-the distinct source/target state identities and the original lock identity. The
-test inventory covers exact correspondence, unchanged originals, immutable
-output, mismatches, absent acceptance, mutable/missing required artifacts,
-wrong ingress service/ports, legacy service/volume mixture, unqualified identity
-changes, secret material and malformed records.
-These tests need no Docker, dependency install, database, browser or broad suite.
+`publication-input.json` supplies original v1 identities, explicit candidate v2
+records, the fresh-start operator choice and opaque graph/fresh-init inputs.
+`publication-golden.json` fixes the complete structural result. Tests cover exact
+correspondence, immutable output, source lock ownership, required artifacts,
+ingress, independent volumes, explicit graph/fresh-init inputs and fail-closed
+actual readers. No Docker, dependencies, database, browser or broad suite is used.
 
 ## Implemented source boundary
 
 ```mermaid
 flowchart LR
-    Current[Original v1 registration and receipt] --> Planner[Pure final publication planner]
-    Proposed[Explicit v2 registration and receipt] --> Planner
-    Evidence[Opaque public transfer acceptance input] --> Planner
-    Planner --> Result[Immutable structural plan or explicit blockers]
-    Result -. future composition only .-> Gate[Release gate authenticates actual evidence]
-    Gate -. separately authorized future effect .-> Publish[Existing lifecycle publication owner]
+    Current[Original installation identity] --> Planner[Pure fresh-start publication planner]
+    Proposed[Explicit clean target and pinned artifacts] --> Planner
+    Choice[Explicit fresh-start operator choice] --> Planner
+    Graph[Opaque graph/source and verification inputs] --> Planner
+    Init[Opaque clean-Learning initialization input] --> Planner
+    Planner --> Candidate[Immutable structural candidate or blockers]
+    Graph --> Readers[Actual public readers remain blocked]
+    Init --> Readers
+    Candidate -. future composition .-> Gate[Graph and new-authority readiness]
+    Readers --> Gate
+    Gate -. separate cutover confirmation .-> Publish[Existing lifecycle publication owner]
 ```
 
-The planner reuses the existing public `targetKey` from
-[`tempo-deployment.mjs`](../../../tempo-deployment.mjs). It does not import
-converter, history, Learning, Content or optional plugin implementation modules.
-It owns no lock, files, target, credentials or application lifecycle. All effect
-ownership remains outside this pure module. The new shared `cutover` identity
-is a launcher input contract; actual field values are mandatory caller inputs.
-It records the approved revision/image IDs, database/workspace, Compose/volumes,
-ingress, schema and opaque transfer receipt reference in both candidate records.
-Matching candidates remain quarantined and confer no traffic authority.
+The planner reuses public `targetKey` from
+[`tempo-deployment.mjs`](../../../tempo-deployment.mjs). It owns no files,
+credentials, locks, database, graph import or service lifecycle, and imports no
+converter/domain internals. Composition wires public capabilities one way.
+Required artifacts reuse the existing [opt-in composition](../../../../docker-compose.study.yml)
+service names `study-web`, `learning` and `postgres`; all need immutable images.
+PostgreSQL registration matches its own artifact, and the selected Study web
+port matches the browser authority through its existing port-80 listener.
+These public service names do not adopt disposable Compose settings or volumes
+for a real installation. Actual target values are mandatory inputs.
 
-The required artifact service keys `study-web`, `learning` and `postgres` reuse
-the exact existing [opt-in composition](../../../../docker-compose.study.yml)
-public interface. All three need pinned images; PostgreSQL's registration image
-must match its own service artifact. The selected `study-web` must publish the
-registered browser authority through its existing port-80 ingress interface,
-and any additional published port must belong to a selected artifact service.
-The fixture's proposed image and port keys use these public names; original v1
-`web` identity stays preserved. This source correspondence does not adopt the
-disposable Compose settings/volumes for the real installation or establish
-actual artifact provenance, which remains a release-gate evidence input.
+The common candidate `.cutover` identity retains pinned revision/images,
+database/workspace, Compose/volumes, ingress and schema. It now requires
+`mode: 'graph-preserving-fresh-start'`, pinned `graphSourceReference`, and final
+opaque `graphReceipt` and `freshInitReceipt` references. There is no history
+transfer receipt or invented authority epoch. Explicit new workspace/origin/token
+authority must be verified through the public fresh-init/isolation provider so
+old cached work cannot replay into the clean target. Matching strings alone do
+not prove this server/browser behavior; no pending-work preservation is required.
 
-## Required integration contracts
+## Actual contracts remain blocked
 
-The initial lifecycle intent pins artifacts and original publication bytes
-**before** fencing. The final accepted transfer cannot exist at that point.
-After the final fenced snapshot/import, a composition adapter may call this
-planner through the lifecycle's final-publication capability. It must pass the
-history owner's accepted public receipt one way; no converter internals or
-parallel migration authority belong here.
+Public source preservation uses `tempo_content.SourceSnapshot` v1 and its
+existing authored source/repertoire fields. The installed
+`tempo-content publication export <publication_id> --generation <n>` command
+publishes a `content_bridge_export` envelope, and `tempo-a-bridge ... apply
+<operation_id>` is the public serialized delivery boundary to Learning's
+publication stage/activate endpoints. The Node planner imports none of those
+implementations and does not guess actual graph field/identity mappings.
+Exact installed graph closure and public copy/import/fresh-init helpers are
+being prepared by their owners. Reduced Learning graph rows alone cannot
+preserve complete authored sources/names; the immutable graph/source bundle
+needs a separately verified recovery copy, without a full-history backup gate.
 
-There is currently **no accepted real transfer receipt contract/validator**.
-Absent input returns `accepted-transfer-contract-pending`. A nonempty opaque
-input only permits structural planning: the planner deliberately does not
-interpret its fields as historical acceptance. A release adapter must still
-authenticate the real public evidence, bind its reference and original/target
-identities, verify latest fenced state and pending original-authority work, and
-check host, quarantine, restore-verified target backup and user cutover approval.
-The fixture acceptance object cannot satisfy those gates. The original Study
-and all real history/pending work remain outside this source proof.
+`graphSource`, `graphVerification` and `freshInitialization` remain opaque
+inputs until their actual public provider schemas are accepted. Missing inputs
+or final references block structural publication with `graph-contract-pending`
+or `fresh-initialization-contract-pending`. The exported
+`readGraphTransferVerification` and `readFreshInitializationVerification` always
+fail closed with those codes for now, even when an arbitrary packet claims
+acceptance. The positive golden establishes plumbing only, never actual graph
+preservation, clean initialization or readiness.
 
-`sourceIdentity` and `targetIdentity` use the existing daemon/volume target key.
-New target volumes can produce a different state directory.
-`lockIdentity === sourceIdentity` retains the original maintenance authority
-throughout transition; the planner never selects a new lock or state directory.
-Actual publication destinations and any state relocation are required future
-composition inputs and remain blocked until real identities are established.
-
-`plan.original` is a copied JSON identity record. The lifecycle must capture and
-retain the exact original registration/receipt bytes under its existing lock;
-reserializing this JSON does not provide exact prior-state restoration. Recovery
-must follow the accepted interruption matrix: no automatic legacy fallback at
-or after activation-started, uncertain acceptance or target-only effects.
-Neither this planner nor its fixtures implement recovery or rollback effects.
+The initial lifecycle intent pins source/target/artifacts before future graph
+import and may leave final receipt references null. This publication-stage
+planner requires final explicit references after graph and clean-target checks.
+`lockIdentity === sourceIdentity` keeps the original maintenance authority when
+new independent volumes yield a different target/state key. Publication
+locations remain explicit composition inputs. `plan.original` preserves copied
+JSON identities; the lifecycle captures exact original registration/receipt
+bytes or known file absence for restoration. A prior v1 receipt or explicit
+`current.receipt: null` is accepted; a missing property remains unknown and
+blocks instead of silently assuming absence. Neither historical receipt
+verification nor an old/target backup is required by this structural planner.
+No real capture, reset, deletion, service operation,
+credential change, cutover or old-authority mutation is performed here.

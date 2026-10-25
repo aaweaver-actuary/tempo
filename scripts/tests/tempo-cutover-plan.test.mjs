@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { planLauncherTransition } from "../tempo-cutover-plan.mjs";
+import { planLauncherFreshStart, readGraphTransferVerification, readFreshInitializationVerification } from "../tempo-cutover-plan.mjs";
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/tempo-cutover-plan/${name}.json`, import.meta.url), "utf8"));
 const input = () => fixture("publication-input");
@@ -11,7 +11,7 @@ const both = (value, change) => { change(value.proposed.registration.cutover); c
 test("synthetic publication golden preserves originals and keeps the original maintenance lock identity", () => {
   const supplied = input();
   const before = structuredClone(supplied);
-  const result = planLauncherTransition(supplied);
+  const result = planLauncherFreshStart(supplied);
   assert.deepEqual(result, fixture("publication-golden"));
   assert.deepEqual(supplied, before);
   assert.notEqual(result.plan.sourceIdentity, result.plan.targetIdentity);
@@ -23,31 +23,90 @@ test("synthetic publication golden preserves originals and keeps the original ma
   assert(!Object.hasOwn(result.plan, "activationAllowed"));
 });
 
-test("missing accepted-transfer contract blocks final publication without inventing acceptance", () => {
+test("missing graph verification blocks fresh-start publication without inventing graph acceptance", () => {
   const supplied = input();
-  delete supplied.transferAcceptance;
-  const result = planLauncherTransition(supplied);
+  delete supplied.graphVerification;
+  const result = planLauncherFreshStart(supplied);
   assert.equal(result.status, "blocked");
   assert.equal(result.plan, null);
-  assert.deepEqual(codes(result), ["accepted-transfer-contract-pending"]);
+  assert.deepEqual(codes(result), ["graph-contract-pending"]);
 });
 
-test("an opaque fixture acceptance object is copied without being interpreted as real-history proof", () => {
+test("fresh start requires explicit operator choice and public graph/source input", () => {
   const supplied = input();
-  supplied.transferAcceptance = { sourcePacket: "comparison-only-fixture", accepted: false };
-  const result = planLauncherTransition(supplied);
+  delete supplied.freshStartChoice;
+  delete supplied.graphSource;
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["fresh_start_choice_required", "graph-contract-pending"]);
+});
+
+test("fresh start requires explicit final clean-Learning initialization input", () => {
+  const supplied = input();
+  delete supplied.freshInitialization;
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["fresh-initialization-contract-pending"]);
+});
+
+test("initial null receipt placeholders cannot reach final publication planning", () => {
+  const supplied = input();
+  both(supplied, identity => { identity.graphReceipt = null; identity.freshInitReceipt = null; });
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["graph-contract-pending", "fresh-initialization-contract-pending"]);
+});
+
+test("fresh-start structural planning has no old-history, background, pending-work or backup preconditions", () => {
+  const supplied = input();
+  delete supplied.current.receipt.backup;
+  delete supplied.proposed.registration.volumes["learning-backups"];
+  both(supplied, identity => { delete identity.volumes["learning-backups"]; });
+  const result = planLauncherFreshStart(supplied);
   assert.equal(result.status, "planned");
-  assert.deepEqual(result.plan.transferAcceptance, supplied.transferAcceptance);
+  assert.equal(result.plan.freshStartChoice, "graph-preserving-fresh-start");
+  assert(!Object.hasOwn(result.plan, "transferAcceptance"));
+  assert(!Object.hasOwn(result.plan.registration.cutover, "transferReceipt"));
+  assert(!Object.hasOwn(result.plan.registration.cutover, "authorityEpoch"));
+});
+
+test("known prior deployment receipt absence is preserved without requiring historical evidence", () => {
+  const supplied = input();
+  supplied.current.receipt = null;
+  const result = planLauncherFreshStart(supplied);
+  assert.equal(result.status, "planned");
+  assert.equal(result.plan.original.receipt, null);
+  assert(Object.hasOwn(result.plan.original, "receipt"));
+});
+
+test("missing prior receipt property remains unknown rather than silently becoming absent", () => {
+  const supplied = input();
+  delete supplied.current.receipt;
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["prior_publication_unknown"]);
+});
+
+test("actual graph and fresh-init readers fail closed even for truthy packets claiming acceptance", () => {
+  const packet = { accepted: true, fixtureOnly: false, reference: "unverified-claim" };
+  const graph = readGraphTransferVerification(packet);
+  const fresh = readFreshInitializationVerification(packet);
+  assert.equal(graph.status, "blocked");
+  assert.equal(fresh.status, "blocked");
+  assert.equal(graph.verification, null);
+  assert.equal(fresh.verification, null);
+  assert.deepEqual(codes(graph), ["graph-contract-pending"]);
+  assert.deepEqual(codes(fresh), ["fresh-initialization-contract-pending"]);
+});
+
+test("opaque graph evidence is copied without interpreting it as actual graph proof", () => {
+  const supplied = input();
+  supplied.graphVerification = { sourcePacket: "comparison-only-fixture", accepted: false };
+  const result = planLauncherFreshStart(supplied);
+  assert.equal(result.status, "planned");
+  assert.deepEqual(result.plan.graphVerification, supplied.graphVerification);
   // The separate release gate MUST reject this evidence. Planning establishes
   // correspondence only, so no readiness/approval fields can be minted here.
-  assert.equal(result.plan.transferAcceptance.accepted, false);
+  assert.equal(result.plan.graphVerification.accepted, false);
   assert(!Object.hasOwn(result.plan, "ready"));
 });
 
 test("registration-only publication mismatch blocks rather than choosing an authoritative record", () => {
   const supplied = input();
   supplied.proposed.receipt.cutover.workspace = "different-fixture-workspace";
-  assert.deepEqual(codes(planLauncherTransition(supplied)), ["publication_identity_mismatch"]);
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["publication_identity_mismatch"]);
 });
 
 for (const [name, mutate, expected] of [
@@ -72,7 +131,7 @@ for (const [name, mutate, expected] of [
   test(`publication rejects ${name}`, () => {
     const supplied = input();
     mutate(supplied);
-    const result = planLauncherTransition(supplied);
+    const result = planLauncherFreshStart(supplied);
     assert.equal(result.status, "blocked");
     assert.equal(result.plan, null);
     assert(codes(result).includes(expected), JSON.stringify(codes(result)));
@@ -85,7 +144,7 @@ for (const service of ["study-web", "learning", "postgres"]) {
     const supplied = input();
     both(supplied, identity => { delete identity.images[service]; });
     delete supplied.proposed.receipt.images[service];
-    assert(codes(planLauncherTransition(supplied)).includes("required_artifact_missing"));
+    assert(codes(planLauncherFreshStart(supplied)).includes("required_artifact_missing"));
   });
 }
 
@@ -94,7 +153,7 @@ test("PostgreSQL alone cannot satisfy the Study publication artifact contract", 
   both(supplied, identity => { delete identity.images["study-web"]; delete identity.images.learning; });
   delete supplied.proposed.receipt.images["study-web"];
   delete supplied.proposed.receipt.images.learning;
-  const result = planLauncherTransition(supplied);
+  const result = planLauncherFreshStart(supplied);
   assert.equal(result.status, "blocked");
   assert(codes(result).includes("required_artifact_missing"));
 });
@@ -105,7 +164,7 @@ test("legacy web service aliases cannot substitute for the existing study-web in
   supplied.proposed.receipt.images.web = supplied.proposed.receipt.images["study-web"];
   delete supplied.proposed.receipt.images["study-web"];
   supplied.proposed.registration.ports[0].service = "web";
-  const result = planLauncherTransition(supplied);
+  const result = planLauncherFreshStart(supplied);
   assert(codes(result).includes("required_artifact_missing"));
   assert(codes(result).includes("ingress_service_mismatch"));
 });
@@ -113,20 +172,20 @@ test("legacy web service aliases cannot substitute for the existing study-web in
 test("a selected Learning artifact cannot impersonate the Study ingress port service", () => {
   const supplied = input();
   supplied.proposed.registration.ports[0].service = "learning";
-  assert.deepEqual(codes(planLauncherTransition(supplied)), ["ingress_service_mismatch"]);
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["ingress_service_mismatch"]);
 });
 
 test("published ports must name selected artifact services", () => {
   const supplied = input();
   supplied.proposed.registration.ports.push({ service: "unselected-fixture", host: "127.0.0.1", port: "3001", target: 80 });
-  assert.deepEqual(codes(planLauncherTransition(supplied)), ["port_service_unselected"]);
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["port_service_unselected"]);
 });
 
 test("Study ingress port must match both browser authority and the existing ingress listener", () => {
   for (const change of [{ host: "0.0.0.0" }, { port: "3001" }, { target: 8001 }]) {
     const supplied = input();
     Object.assign(supplied.proposed.registration.ports[0], change);
-    assert.deepEqual(codes(planLauncherTransition(supplied)), ["ingress_service_mismatch"]);
+    assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["ingress_service_mismatch"]);
   }
 });
 
@@ -135,7 +194,7 @@ test("PostgreSQL identity is matched to its own service rather than any artifact
   const change = images => { images["study-web"] = supplied.proposed.registration.postgresImage; images.postgres = "sha256:" + "6".repeat(64); };
   both(supplied, identity => change(identity.images));
   change(supplied.proposed.receipt.images);
-  assert.deepEqual(codes(planLauncherTransition(supplied)), ["postgres_image_mismatch"]);
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["postgres_image_mismatch"]);
 });
 
 test("legacy source and backup volumes cannot be rebound even with matching candidate records", () => {
@@ -146,28 +205,28 @@ test("legacy source and backup volumes cannot be rebound even with matching cand
     identity.volumes[registration.postgresVolumeKey].name = "fixture-legacy-data";
     identity.database.volume = "fixture-legacy-data";
   });
-  assert.deepEqual(codes(planLauncherTransition(supplied)), ["preserved_volume_rebinding"]);
+  assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["preserved_volume_rebinding"]);
 });
 
 test("property order does not create a false disagreement between equivalent publication identities", () => {
   const supplied = input();
   supplied.proposed.receipt.cutover = Object.fromEntries(Object.entries(supplied.proposed.receipt.cutover).reverse());
-  assert.equal(planLauncherTransition(supplied).status, "planned");
+  assert.equal(planLauncherFreshStart(supplied).status, "planned");
 });
 
 test("several independently missing inputs remain explicit blockers", () => {
-  assert.deepEqual(codes(planLauncherTransition({})), ["transition_identity_missing", "existing_v1_required", "source_identity_missing",
-    "candidate_v2_required", "target_identity_missing", "publication_identity_mismatch", "accepted-transfer-contract-pending"]);
+  assert.deepEqual(codes(planLauncherFreshStart({})), ["transition_identity_missing", "existing_v1_required", "prior_publication_unknown", "source_identity_missing",
+    "candidate_v2_required", "target_identity_missing", "publication_identity_mismatch", "fresh_start_choice_required", "graph-contract-pending", "fresh-initialization-contract-pending"]);
 });
 
 test("non-JSON input cannot silently alter the preserved prior records", () => {
   for (const value of [null, [], { value: undefined }, { value: Infinity }, { value: () => 1 }, { value: new Date() }]) {
-    assert.deepEqual(codes(planLauncherTransition(value)), ["invalid_input"]);
+    assert.deepEqual(codes(planLauncherFreshStart(value)), ["invalid_input"]);
   }
   const cyclic = input();
   cyclic.current.receipt.cycle = cyclic;
-  assert.deepEqual(codes(planLauncherTransition(cyclic)), ["invalid_input"]);
-  assert.deepEqual(codes(planLauncherTransition({ value: Array(1) })), ["invalid_input"]);
+  assert.deepEqual(codes(planLauncherFreshStart(cyclic)), ["invalid_input"]);
+  assert.deepEqual(codes(planLauncherFreshStart({ value: Array(1) })), ["invalid_input"]);
   const getter = { get value() { throw new Error("Getter must not execute"); } };
-  assert.deepEqual(codes(planLauncherTransition(getter)), ["invalid_input"]);
+  assert.deepEqual(codes(planLauncherFreshStart(getter)), ["invalid_input"]);
 });
