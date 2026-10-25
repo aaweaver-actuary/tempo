@@ -441,10 +441,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return rows.filter(row => row.State === "running").map(row => row.Service);
   }
 
-  async function stopApplications({ preservePhase = false } = {}) {
+  async function stopApplications({ preservePhase = false, includeBackup = true } = {}) {
     if (!preservePhase) stage("stopping_application_services");
     if (!stoppedServices.length) stoppedServices = await runningServices();
-    const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
+    const services = [...applicationServices, ...(includeBackup ? ["postgres-backup"] : [])].filter(name => configuration.services[name]);
     await compose(["stop", "--timeout", "60", ...services], { echo: true });
   }
 
@@ -524,7 +524,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...consumers], { echo: true });
   }
 
-  async function verifyReady() {
+  async function verifyReady({ requiredServices = [...applicationServices, "postgres", "redis", "postgres-backup"] } = {}) {
     stage("checking_readiness");
     const deadline = Date.now() + readinessMilliseconds;
     let reason = "Services have not answered yet.";
@@ -541,7 +541,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         const web = await fetcher(target.webUrl, { signal: AbortSignal.timeout(5000) });
         if (!web.ok) throw new Error(`Web HTTP ${web.status}`);
         const running = await runningServices();
-        const required = [...applicationServices, "postgres", "redis", "postgres-backup"].filter(name => configuration.services[name]);
+        const required = requiredServices.filter(name => configuration.services[name]);
         if (required.some(name => !running.includes(name))) throw new Error(`Required services unavailable: ${required.filter(name => !running.includes(name)).join(", ")}`);
         return;
       } catch (error) {
@@ -594,6 +594,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function backupOnly() {
     if (checkMigrationRetry()) throw new Error("Original migration verification is unresolved. Inspect tempo doctor, then run tempo migrate --retry before taking another backup.");
     const originallyRunning = await runningServices();
+    // Restarting the recurring backup service invokes its pruning entrypoint.
+    // Refuse before lifecycle changes or journal replacement; never stop it here.
+    if (originallyRunning.includes("postgres-backup"))
+      throw new TempoProblem("backup_pruning_conflict", "One-shot backup cannot preserve the running postgres-backup service without restarting its pruning entrypoint. Backup was refused before changing services.",
+        { action: "Next: preserve current services and backups; resolve the one-shot no-pruning lifecycle policy before retrying." });
     const imagePreparation = await ensureImages();
     if (imagePreparation.dependenciesMayChange) {
       const error = new Error("Live PostgreSQL/Redis differ from the recorded deployment. Run tempo start to safely reconcile dependencies before taking a backup.");
@@ -603,14 +608,14 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     let failure, failedPhase;
     try {
       await ensureDatabase(); await checkSchema();
-      await stopApplications();
+      await stopApplications({ includeBackup: false });
       await backup();
     } catch (error) { failure = error; failedPhase = operation.phase; }
     try {
       if (originallyRunning.length) await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", ...originallyRunning], { echo: true });
       const newlyStarted = ["redis", "postgres"].filter(name => !originallyRunning.includes(name));
       if (newlyStarted.length) await compose(["stop", "--timeout", "60", ...newlyStarted], { echo: true });
-      if (originallyRunning.includes("web")) await verifyReady();
+      if (originallyRunning.includes("web")) await verifyReady({ requiredServices: originallyRunning });
     } catch (error) { failure = failure ? new AggregateError([failure, error], "Backup and service restoration failed") : error; }
     if (failure) { if (failedPhase) operation.phase = failedPhase; await recordFailure(failure); throw failure; }
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);

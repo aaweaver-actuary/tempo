@@ -228,9 +228,18 @@ async function fakeCommand() {
   if (args.includes('build') && args.includes('--print')) {
     output({group:{default:{targets:['application']}},target:{application:{context:fixture.root,tags:['fixture:build']}}}); process.exit(0);
   }
-  if (args.includes("ps")) { for (const Service of machine.running) output({ Service, State: "running" }); process.exit(0); }
-  if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }
+  if (args.includes("ps")) {
+    for (const Service of machine.running) output({ Service, State: "running" });
+    for (const Service of machine.paused ?? []) output({ Service, State: "paused" });
+    process.exit(0);
+  }
+  if (args.includes("stop")) {
+    machine.running = machine.running.filter(name => !args.includes(name));
+    if (machine.paused) machine.paused = machine.paused.filter(name => !args.includes(name));
+    save(); process.exit(0);
+  }
   if (args.includes("up")) {
+    if (machine.failBackupRestoration && machine.backupAttempted && args.includes("web")) { console.error("fixture restoration failed"); process.exit(18); }
     if (fixture.mode === "dependency-fail" && args.includes("postgres")) { console.error("dependency startup failed"); process.exit(18); }
     for (const name of fixture.names.filter(name => args.includes(name))) {
       let container = machine.containers.find(container => container.Config.Labels["com.docker.compose.service"] === name);
@@ -278,6 +287,10 @@ async function fakeCommand() {
     }
     output(actual); process.exit(0);
   }
-  if (fixture.mode === "backup-fail" && args.some(argument => argument.includes("pg_dump"))) { console.error("canary-private-password backup failed"); process.exit(14); }
+  if (args.some(argument => argument.includes("pg_dump"))) {
+    machine.backupAttempted = true; save();
+    if (fixture.mode === "backup-fail") { console.error("canary-private-password backup failed"); process.exit(14); }
+    if (fixture.mode === "backup-interrupted") { process.kill(process.pid, "SIGTERM"); return; }
+  }
   process.exit(0);
 }
