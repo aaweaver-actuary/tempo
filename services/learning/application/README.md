@@ -17,7 +17,7 @@ connection ownership and framework translation stay in the legacy adapter.
 | `review_commands.submit_review`; evidence validation/completion, successor decisions | `application.submit_review` | Same borrowed transaction; native evidence/issuance/rollback cases |
 | Card-before-queue locks, SQL, required gameplay clearing, scheduling/history/maturity and chronological rebuild | Legacy `LearningReviewAdapter`, existing scheduling store/wrapper and reconciliation helper | Existing scheduler signature/fields unchanged; legacy characterization and native failure/concurrency cases |
 | `reconcile_review` handled conflict | Legacy command adapter | Roll back its savepoint before returning; native injected conflict after writes |
-| Progression invalidation, maturity queue work and priority refresh | Explicit adapter capabilities | PG durable effects share transaction; SQLite ordinary effects retain post-context timing; replay stays quiet |
+| Progression invalidation, maturity queue work and advisory priority hook | Explicit adapter capabilities | Legacy progression/maturity effects retain their existing transaction/timing; its priority hook is retired with an explicit void return. Independent Learning retains its local advisory notification; the shared interface and replay sequencing remain intact. |
 | Frozen-order constraints | Existing queue admission/readers | Native active/inactive fixtures; no ranking or private activation changes |
 
 The application never opens, commits, rolls back or closes a transaction. The

@@ -1,3 +1,15 @@
+## Legacy review without adaptive recomputation
+
+`backend/tests/test_legacy_review_storage_separation.py` owns
+`test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer`
+and `test_late_opening_reconciliation_preserves_both_reviews_and_original_receipt_without_priority_producer`.
+Six SQLite/borrowed-transaction-facade cases keep fresh and late original reviews,
+chronological history/scheduling, receipt replay and ordinary queue refresh while
+both adaptive enqueue functions are unavailable. Nonempty saved priorities,
+failed priority work and its pause remain unchanged. Native PostgreSQL locking,
+actual held work and deployment are separate; no optional work is retried or
+canceled by this source change.
+
 ## Combined feedback / queue / Discovery boundary
 
 `backend/tests/test_feedback_boundary_integration.py` owns the real composition
