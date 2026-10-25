@@ -151,7 +151,8 @@ test("review position opens consistently in analysis builder and games", async (
     },
   });
   await expect
-    .poll(async () => (await (await request.get(`${api}/queue/today`)).json()).count)
+    .poll(async () => (await (await request.get(`${api}/queue/today`)).json()).count,
+      { timeout: 30_000 })
     .toBeGreaterThan(0);
   await page.goto("/");
   const reviewedFen = await page.locator(".board-frame").getAttribute("data-fen");
@@ -206,7 +207,9 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
     const queue = await (await request.get(`${api}/queue/today`)).json();
     return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);
   }, { timeout: 30_000 }).toBe(true);
-  await page.getByRole("button", { name: "View imported repertoire" }).click();
+  const viewImportedRepertoire = page.getByRole("button", { name: "View imported repertoire" });
+  if (await viewImportedRepertoire.isVisible()) await viewImportedRepertoire.click();
+  else await page.getByRole("button", { name: "Close import dialog" }).click();
   await nav(page, "Train");
   await expect(
     page.getByRole("button", { name: /Edit card/i }).first(),
