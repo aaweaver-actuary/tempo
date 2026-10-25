@@ -48,6 +48,44 @@ schema, current checkpoint/nonce and, where finalized, the applicable receipt
 reference. Missing, failing, asynchronous or mismatched ports block their gate.
 Actual provider scopes are rejected; no actual adapter exists in this packet.
 
+### Stable public fresh-initialization helper
+
+The reviewed public interface is
+[`opening_graph_fresh_learning.py` at `dd906511`](https://github.com/aaweaver-actuary/tempo/blob/dd906511835a4542779bef51ae09125f8f6dca49/database/tooling/opening_graph_fresh_learning.py)
+in [PR #452](https://github.com/aaweaver-actuary/tempo/pull/452):
+
+- `prepare_fresh_learning(export, *, target, operation_id, content_cli,
+  learning_origin, operator_token_file, initial_status, verify_export)` produces
+  a plan for the existing `tempo-a-bridge ... apply <operation_id>` public CLI.
+  It does not execute that CLI or build a private serialized bundle.
+- `verify_fresh_learning(plan, *, operator_result, receipt, status,
+  verify_fresh_effects)` owns Content completion, the exact Learning activation
+  operation receipt, active source/publication identity, and independently read
+  complete graph/default-state verification. Node must not duplicate these checks.
+
+Successful verification returns the authoritative activation response with exactly
+`contract_version`, `workspace_id`, `activation_id`, `publication_id`,
+`publication_generation`, `activation_revision`, `status: 'activated'` and `reason`.
+It is not the Node gate verdict `{status: 'verified', binding}`. A future outer
+capability may pass this response opaquely through `plan.freshInitialization` and
+`facts.freshInitialization.freshInitReceipt`, then issue a gate verdict only after
+binding the verified result to this exact launcher plan and current checkpoint.
+Passing the raw response directly as that verdict is rejected.
+
+The launcher's opaque `freshInitReceipt` reference remains explicit outer input;
+do not derive or assume it equals `activation_id`. The helper response does not
+contain the launcher `targetKey`, pinned schema or browser ingress identity. Its
+target observation and Learning origin must be bound by the composition owner to
+the selected target and actual ingress wiring. It also supplies no proof that old
+cached credentials/authority cannot replay into the new target; independent
+isolation remains required, without old-envelope inspection or draining.
+
+The fixture now uses this exact public response shape behind a separately supplied
+synthetic capability. It demonstrates opaque plumbing, not Python semantic
+verification or a production adapter. Actual capsule/copy verification, target IDs,
+independent effect/authority observations and final cutover confirmation remain
+pending. No evaluator source or production permission changed in this reconciliation.
+
 ## Checkpoints
 
 | Checkpoint | Required boundary |

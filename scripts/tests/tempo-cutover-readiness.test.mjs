@@ -4,6 +4,11 @@ import test from "node:test";
 import { evaluateFreshStartReadiness, readFreshStartReadinessFixture, readinessBinding } from "../tempo-cutover-readiness.mjs";
 
 const serialized = readFileSync(new URL("./fixtures/tempo-cutover-readiness/synthetic-fresh-start.json", import.meta.url), "utf8");
+// Simulates an independently supplied, already verified public Python result.
+// The opaque launcher reference is supplied separately, never derived from the
+// response's activation_id. This is a test capability, not a production mapper.
+const publicActivationResponse = JSON.parse(serialized).plan.freshInitialization;
+const boundFixtureReceiptReference = "synthetic-fresh-init";
 const graphAdapter = { scope: "synthetic-fixture", validate(input, binding) {
   const exactSource = input.graphSource?.title === "Synthetic authored opening"
     && input.graphSource?.repertoires?.[0]?.title === "Synthetic repertoire name"
@@ -13,10 +18,13 @@ const graphAdapter = { scope: "synthetic-fixture", validate(input, binding) {
   return { status: exactSource && exactImport ? "verified" : "rejected", binding };
 } };
 const freshInitializationAdapter = { scope: "synthetic-fixture", validate(input, binding) {
-  return { status: !binding.freshInitReceipt || (input.freshInitialization?.receiptRef === binding.freshInitReceipt
-    && input.verification?.freshInitReceipt?.id === binding.freshInitReceipt
-    && input.freshInitialization?.workspace === binding.workspace
-    && input.freshInitialization?.ingressOrigin === binding.ingressOrigin) ? "verified" : "rejected", binding };
+  if (binding.freshInitReceipt) {
+    assert.equal(binding.freshInitReceipt, boundFixtureReceiptReference);
+    assert.deepEqual(input.freshInitialization, publicActivationResponse);
+    assert.deepEqual(input.verification?.freshInitReceipt, publicActivationResponse);
+    assert.equal(publicActivationResponse.workspace_id, binding.workspace);
+  }
+  return { status: "verified", binding };
 } };
 function fixture(checkpoint = "before-preparation") {
   const input = readFreshStartReadinessFixture(serialized);
@@ -45,6 +53,40 @@ test("exact graph-preserving fresh-switch and admission fixtures remain producti
     assert.equal(evaluate(input).production.status, "blocked");
     assert.deepEqual(input, before);
   }
+});
+
+test("verified public activation response stays opaque behind a separately bound fixture capability", () => {
+  const input = fixture("before-authority-switch");
+  assert.deepEqual(Object.keys(input.plan.freshInitialization).sort(), ["activation_id", "activation_revision",
+    "contract_version", "publication_generation", "publication_id", "reason", "status", "workspace_id"]);
+  assert.equal(input.plan.freshInitialization.status, "activated");
+  assert.notEqual(input.plan.freshInitialization.activation_id, input.plan.receipt.cutover.freshInitReceipt);
+  assert.equal(evaluate(input).status, "ready");
+  assert.equal(evaluate(input).liveExecutionAllowed, false);
+});
+
+test("raw public helper activation response is not a Node readiness gate verdict", () => {
+  const result = evaluateFreshStartReadiness(fixture("before-authority-switch"), {
+    graphAdapter, freshInitializationAdapter: { scope: "synthetic-fixture", validate: input => input.freshInitialization },
+  });
+  assert.ok(codes(result).includes("fresh-initialization-rejected"));
+});
+
+test("public activation response alone supplies no target schema ingress or cached-authority isolation proof", () => {
+  const input = fixture("before-authority-switch");
+  for (const key of ["targetIdentity", "schema", "ingressOrigin"]) assert.equal(Object.hasOwn(input.plan.freshInitialization, key), false);
+  delete input.evidence.authorityIsolation;
+  delete input.facts.targetProvisioning;
+  const result = evaluate(input);
+  assert.ok(codes(result).includes("new-authority-isolation-unverified"));
+  assert.ok(codes(result).includes("clean-target-unverified"));
+});
+
+test("public activation response cannot be rebound to another explicit launcher receipt reference", () => {
+  const input = fixture("before-authority-switch");
+  for (const record of [input.plan.registration, input.plan.receipt]) record.cutover.freshInitReceipt = "another-explicit-reference";
+  input.evidence.binding = readinessBinding(input.plan, input.checkpoint, input.gateContext);
+  assert.ok(codes(evaluate(input)).includes("fresh-initialization-rejected"));
 });
 
 test("missing public graph and fresh-init adapters are explicit provider blockers", () => {

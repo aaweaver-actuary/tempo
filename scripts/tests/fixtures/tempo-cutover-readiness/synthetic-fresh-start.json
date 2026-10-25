@@ -133,10 +133,14 @@
       "receiptRef": "synthetic-graph-import"
     },
     "freshInitialization": {
-      "fixtureOnly": true,
-      "receiptRef": "synthetic-fresh-init",
-      "workspace": "synthetic-new-workspace",
-      "ingressOrigin": "https://synthetic-new.invalid"
+      "contract_version": 1,
+      "workspace_id": "synthetic-new-workspace",
+      "activation_id": "synthetic-bridge-operation:activate",
+      "publication_id": "synthetic-publication",
+      "publication_generation": 1,
+      "activation_revision": 1,
+      "status": "activated",
+      "reason": null
     }
   },
   "checkpoint": "before-preparation",
@@ -148,7 +152,7 @@
       "version": 1,
       "checkpoint": "before-preparation",
       "gateContext": "synthetic-original-lock-invocation",
-      "planSha256": "840eed8ea0ca8d61d96c6981fc4f535ff2c03efdd01a88c340fe439d0c2b1111"
+      "planSha256": "0818dc66d71504b17e0a8a83c4ce9bdfc52d9fd69014e3854f6a2cba9cf5fceb"
     },
     "authorityIsolation": {
       "evidenceId": "synthetic-isolation",
@@ -216,8 +220,14 @@
       "targetIdentity": "synthetic-independent-target",
       "workspace": "synthetic-new-workspace",
       "freshInitReceipt": {
-        "fixtureOnly": true,
-        "id": "synthetic-fresh-init"
+        "contract_version": 1,
+        "workspace_id": "synthetic-new-workspace",
+        "activation_id": "synthetic-bridge-operation:activate",
+        "publication_id": "synthetic-publication",
+        "publication_generation": 1,
+        "activation_revision": 1,
+        "status": "activated",
+        "reason": null
       },
       "ingressOrigin": "https://synthetic-new.invalid"
     },
