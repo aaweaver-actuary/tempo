@@ -57,6 +57,17 @@ SQL, sibling plugin implementation or optional service is imported here.
 through the existing public Learning migration contract before graph import;
 the installed public graph bridge cannot import into an uninitialized schema.
 Provisioning and quarantine evidence must report that exact pinned schema.
+For v2, `registration.cutover.schema`, `receipt.cutover.schema` and
+`receipt.schema` are one identical `sha256:` plus 64 lowercase hexadecimal
+characters. This identity is supplied by the database owner's public
+`schema_identity` contract: SHA-256 of its canonical sorted, compact UTF-8
+migration-ID-to-checksum map, issued only when the actual map equals the
+expected map. The outer adapter maps the public provisioning
+`receipt.schema.identity` scalar into `fact.schema`; provisioning and quarantine
+must match the pinned scalar exactly. `migration_count` is informational and
+never substitutes for schema identity. The lifecycle does not import owner
+internals or recompute migration semantics. Original v1 publication records
+retain their numeric schema fields without conversion.
 The later fresh-initialization port verifies fresh Learning state and authority
 isolation after import; it does not guess or implicitly initialize a schema.
 
@@ -127,6 +138,11 @@ temporary directories, and covers full-copy/closure guards, independent clean
 target, explicit fresh choice, known-null receipt, graph/init identity binding,
 separate confirmations, interruption reconciliation, split publication,
 durability and preservation of newly accepted effects during forward repair.
+
+The schema-identity repair was authored through GitHub while the Mac execution
+environment was unavailable. Its added owning regressions are not executed
+evidence; the earlier 32-case pass applies only to head `84447fd13c67e093d8702fe10f798527dcee0009`.
+Run the owning command above when execution is available.
 
 No old artifact suites, real database/browser/service work, snapshots,
 deletion/reset, migration, deployment or cutover are run. Actual installed graph
