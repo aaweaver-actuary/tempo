@@ -1,0 +1,615 @@
+{
+  "status": "candidate documentation only; active code; no deletion authorized or implemented",
+  "inspected_main": "ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f",
+  "initial_inspected_main": "82233e69eb4ce964d0a20bf60a40f1827730e75a",
+  "starting_map_main": "782bf5374b87f223a023568305056415d5b63cea",
+  "starting_map_pr": 426,
+  "starting_map_pr_head": "37e9687c487304ecf0bd6bce0f22b1c225eaafba",
+  "pr426_publication_checkpoint": {
+    "merged": true,
+    "integrated_head": "2e1549f890d41a9fbdf585d8503cc7065ab5a62b",
+    "merge_commit": "ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f"
+  },
+  "starting_map_files": [
+    {
+      "name": "NARROW-NEXT.md",
+      "sha256": "b2f7d09ab6e62675379c5e2e4bd206b6547034f9893cef5e30d5809af35ce800",
+      "matches_published_pr426": true
+    },
+    {
+      "name": "NARROW-NEXT.json",
+      "sha256": "49ef4e9dbd52a16c77b0dc9b977123a20397362086f69454eae5a76b5e71bba9",
+      "matches_published_pr426": true
+    }
+  ],
+  "whole_file_footprint": 166,
+  "whole_files": [
+    {
+      "path": "backend/app/services/postgres_daily_statistics.py",
+      "physical_lines": 69,
+      "sha256": "c85affbafa0c43b5421e1b78ec2a00856a49d5b223b2a1a62d43eff7b21dfe8a"
+    },
+    {
+      "path": "backend/app/statistics_commands.py",
+      "physical_lines": 32,
+      "sha256": "a3ec16008ad7b196e03dbe5f5c8c626e6e31bf8d5a685e860ac5bf8dec95ccc1"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py",
+      "physical_lines": 55,
+      "sha256": "8b1025067981c07687d70fb55b25a1e3f301e833dd5615d215b0b2bd6edcb2e1"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/commands/statistics.py",
+      "physical_lines": 10,
+      "sha256": "f02afaf33c0e100e4d89778d4ce07e00a2e0f6981c0d9ad38583092a4339a6fc"
+    }
+  ],
+  "mixed_function_footprint": 151,
+  "mixed_file_function_spans": [
+    {
+      "path": "backend/app/services/statistics.py",
+      "function": "refresh_daily_snapshot",
+      "start_line": 118,
+      "end_line": 164,
+      "physical_span_lines": 47,
+      "starting_map_start_line": 118,
+      "starting_map_end_line": 164,
+      "sha256": "fd5159c69942b4e8d41587186b64812deb64ad15e696d5f6affc2dc1bdecef48"
+    },
+    {
+      "path": "backend/app/services/statistics.py",
+      "function": "enqueue_daily_snapshot",
+      "start_line": 167,
+      "end_line": 173,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 167,
+      "starting_map_end_line": 173,
+      "sha256": "d91caa221ad3bab9590c6d9600bc9e3c8d612710a9ca1e0b6d2db899724ec328"
+    },
+    {
+      "path": "backend/app/services/statistics.py",
+      "function": "claim_daily_snapshot",
+      "start_line": 176,
+      "end_line": 184,
+      "physical_span_lines": 9,
+      "starting_map_start_line": 176,
+      "starting_map_end_line": 184,
+      "sha256": "396fa33a4f5385c3dc5d073fd2dd7b3cde54858b065d16a8739748a950c05635"
+    },
+    {
+      "path": "backend/app/services/statistics.py",
+      "function": "execute_daily_snapshot",
+      "start_line": 187,
+      "end_line": 198,
+      "physical_span_lines": 12,
+      "starting_map_start_line": 187,
+      "starting_map_end_line": 198,
+      "sha256": "1b53aa97ad5e180324b60cf485ef21c3e4458a858d3815052ab011a437d42c05"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "provider_rows",
+      "start_line": 34,
+      "end_line": 37,
+      "physical_span_lines": 4,
+      "starting_map_start_line": 44,
+      "starting_map_end_line": 47,
+      "sha256": "22fb3d905da048e3b99a324aa044d94b9373b19e262fbac7424ab3943a5f0359"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "provider_watermark",
+      "start_line": 40,
+      "end_line": 44,
+      "physical_span_lines": 5,
+      "starting_map_start_line": 50,
+      "starting_map_end_line": 54,
+      "sha256": "869b3155b0045d0f341a46e7a2f3153f3327914539202ba5b0f3a7fa11773cbd"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "eligible_daily_games",
+      "start_line": 47,
+      "end_line": 53,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 57,
+      "starting_map_end_line": 63,
+      "sha256": "712880333004df8a2f1f48d03c63ce512bff4fd91984265cb6ede5fe18d77313"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "store_waiting_snapshot",
+      "start_line": 56,
+      "end_line": 62,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 66,
+      "starting_map_end_line": 72,
+      "sha256": "8d05ef7460b9c70fe9af72f2bf554f546aca76d06836f655f7513af54f2939a2"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "daily_feature_rows",
+      "start_line": 65,
+      "end_line": 68,
+      "physical_span_lines": 4,
+      "starting_map_start_line": 75,
+      "starting_map_end_line": 78,
+      "sha256": "2ac09e4693fb94a9564ba3c3ed9ffb626f91f10992efa9f67909ae1e981b83df"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "store_complete_snapshot",
+      "start_line": 71,
+      "end_line": 77,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 81,
+      "starting_map_end_line": 87,
+      "sha256": "e66b201e597036b4af7cffebac0a2aeaba32c94f99ac737a111ccfd419882f15"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "insert_outcome_insight",
+      "start_line": 80,
+      "end_line": 86,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 90,
+      "starting_map_end_line": 96,
+      "sha256": "d49649167086da09b966e792da6bb25f08c3c9106c3d0b7a8001a7cc401345e0"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "insert_tactical_insight",
+      "start_line": 89,
+      "end_line": 95,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 99,
+      "starting_map_end_line": 105,
+      "sha256": "b7ae58706ab3a2e1d9b566d38b2460878eda99ac7fbb5291b040197620f1386e"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "enqueue_daily_job",
+      "start_line": 98,
+      "end_line": 104,
+      "physical_span_lines": 7,
+      "starting_map_start_line": 108,
+      "starting_map_end_line": 114,
+      "sha256": "6fa59106766d63fc419b9f7556daa10332b57a23b22d12b59f167f6baa7e4e0a"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "begin_daily_claim",
+      "start_line": 107,
+      "end_line": 108,
+      "physical_span_lines": 2,
+      "starting_map_start_line": 117,
+      "starting_map_end_line": 118,
+      "sha256": "661d15600ce31f8dde7b652f643a7c82d3075acd69870231403a7e69dd5fc57f"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "pending_daily_job",
+      "start_line": 111,
+      "end_line": 114,
+      "physical_span_lines": 4,
+      "starting_map_start_line": 121,
+      "starting_map_end_line": 124,
+      "sha256": "f88ea4505c25af9d5a78f01a8370ebac43d6714a09233bc1c72f4f4b87e09b9e"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "mark_daily_running",
+      "start_line": 117,
+      "end_line": 121,
+      "physical_span_lines": 5,
+      "starting_map_start_line": 127,
+      "starting_map_end_line": 131,
+      "sha256": "869b384bfc1737f34ad377ab3e4770b4ac6625b231c1ef720ce794414bc9c1e1"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "mark_daily_complete",
+      "start_line": 124,
+      "end_line": 128,
+      "physical_span_lines": 5,
+      "starting_map_start_line": 134,
+      "starting_map_end_line": 138,
+      "sha256": "fffcaacb241d95fadcf86e98e395ffaa792b7b6e7f31e1d83e936c7166c8eb8f"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "mark_daily_failed",
+      "start_line": 131,
+      "end_line": 135,
+      "physical_span_lines": 5,
+      "starting_map_start_line": 141,
+      "starting_map_end_line": 145,
+      "sha256": "d68aafe022dbd8618e2b776cb9b207834338046e6978e0f12e3497e676510934"
+    }
+  ],
+  "whole_plus_function_footprint": 317,
+  "approved_savings": null,
+  "implemented_source_delta": 0,
+  "proven_additional_unused_subset": [],
+  "pr426_owned_exclusions": [
+    {
+      "path": "database/tempo_legacy_database/adapters/http_composition/statistics.py",
+      "function": "daily_insights"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "function": "overview_rows"
+    }
+  ],
+  "protected_current_source_hashes": [
+    {
+      "path": "backend/app/services/statistics.py",
+      "sha256": "338d9f49b08a2974b448fbd1c8fa219086b0979309fa773086cc7a01be3fc84e"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+      "sha256": "3faa4d6428ff3d1b9d939cf25c59e43dc55fe489e48c89896aaa23d55943d5ab"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/statistics/__init__.py",
+      "sha256": "14d5ce131aede4b294858ff2a79d4696d394f0c6748a15bfcd26339f18be6690"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/derived_publications/__init__.py",
+      "sha256": "d3d7fccd03f0613303fed7775b86e3e533dae3f8de0cab9b1fd99ef7591e1d8b"
+    },
+    {
+      "path": "backend/app/services/postgres_game_features.py",
+      "sha256": "19024124c422b56819e5d56ec32a448bc1c2a6292b2c078aa9fef9c084a0bbea"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/games/derivation/features.py",
+      "sha256": "a64d3e7115ad21710f48d5b1baa82675ae33a2cf482f9c13bfec3b0decdf89d3"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/games/derivation/jobs.py",
+      "sha256": "71b85d996b095490c7ad2e4c0414dbc559c96960c12e9c7feb13fbb7a1007ee0"
+    },
+    {
+      "path": "backend/app/services/game_sync_coordinator.py",
+      "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec"
+    },
+    {
+      "path": "backend/app/main.py",
+      "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1"
+    },
+    {
+      "path": "backend/app/tasks.py",
+      "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7"
+    },
+    {
+      "path": "backend/app/command_dispatch.py",
+      "sha256": "c4fccd8d511548f3c2c59d8ce3f864fe1dd290e5f26cba42adb21e4f2de61afa"
+    },
+    {
+      "path": "backend/app/command_gateway.py",
+      "sha256": "bbbf97ed281eac329c28a60df6c01374db30651ba4093ec397ae0840ff0173aa"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/commands/receipts/storage.py",
+      "sha256": "8161f58b91c2419a6aebcea56bed0ec9b24d0d252280383c930b7bdb56bcfcd5"
+    },
+    {
+      "path": "backend/app/services/durable_tasks.py",
+      "sha256": "ab270699a8795d3db6bb1d2c14c962f7539712b3135fcb667133217021d6ecaf"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/durable_tasks/storage.py",
+      "sha256": "f2489631c9a29f2f3c4d403ed277c7ffac5884f07669408b23734caa90659b25"
+    },
+    {
+      "path": "backend/app/services/durable_scheduling.py",
+      "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321"
+    },
+    {
+      "path": "backend/app/celery_app.py",
+      "sha256": "9d013c0877ebf99aebb022eda77e1c6a0fddc01d374807d509d81bb12090ae42"
+    },
+    {
+      "path": "backend/app/services/background_activity.py",
+      "sha256": "e4987e56b050e1fff404ba3cec5d0592ed8b8154bf172449d6f1ed65fb2929be"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+      "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/controls/claim_sql.py",
+      "sha256": "f3a29afa4044a888af019b932abac55846bba1a95699e41243459411fedb5570"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+      "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb"
+    },
+    {
+      "path": "backend/app/services/game_sync.py",
+      "sha256": "487ec8a88b931e5990fbdbcdd79612802d3b9c2b91070e4cf0fdaafb49991649"
+    },
+    {
+      "path": "backend/app/services/postgres_game_sync.py",
+      "sha256": "27f15c50bf0aa3a73ed10abcb9a5bee87548bd661e9449bd87be1f9abc502d91"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/games/sync/records.py",
+      "sha256": "f69fc86309785de06395aafc52ddb9f0367ac18bcc84e7e4cf629787bc93a02e"
+    },
+    {
+      "path": "database/tempo_legacy_database/connections.py",
+      "sha256": "4b3733dc312679f3ed38491fe5ba4f4954087bb18a8598222cca2e1b9c80a554"
+    },
+    {
+      "path": "backend/app/services/background_metric_kinds.py",
+      "sha256": "05239413c7ef9ff77d9d443d3b9c6623a400b1c44fd027f6d573410611170e56"
+    },
+    {
+      "path": "app/domain/schemas/background-diagnostics.ts",
+      "sha256": "f6659cfa6b86b2671503e994681c1a964694204fb1947976e68741dd5ea955ba"
+    }
+  ],
+  "incoming_runtime_and_retained_history_references": [
+    {
+      "path": "backend/app/main.py",
+      "references": [
+        {
+          "line": 118,
+          "source": "from .services.statistics import enqueue_daily_snapshot"
+        },
+        {
+          "line": 4427,
+          "source": "@app.post(\"/api/statistics/daily/{local_day}/refresh\")"
+        },
+        {
+          "line": 4438,
+          "source": "\"statistics.daily.refresh\", {\"local_day\": local_day},"
+        },
+        {
+          "line": 4441,
+          "source": "enqueue_daily_snapshot(local_day)"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/tasks.py",
+      "references": [
+        {
+          "line": 54,
+          "source": "from . import statistics_commands  # noqa: F401 - registers foreground statistics refresh"
+        },
+        {
+          "line": 95,
+          "source": "from .services.postgres_daily_statistics import execute_postgres_daily_statistics_slice"
+        },
+        {
+          "line": 144,
+          "source": "\"daily_statistics\","
+        },
+        {
+          "line": 391,
+          "source": "\"daily_statistics\": execute_postgres_daily_statistics_slice,"
+        },
+        {
+          "line": 429,
+          "source": "\"daily_statistics\","
+        }
+      ]
+    },
+    {
+      "path": "backend/app/statistics_commands.py",
+      "references": [
+        {
+          "line": 16,
+          "source": "def request_daily_statistics_refresh("
+        },
+        {
+          "line": 25,
+          "source": "storage.queue_daily_statistics(database, local_day, now)"
+        },
+        {
+          "line": 27,
+          "source": "database, \"daily_statistics\", local_day, {\"local_day\": local_day}, priority=120,"
+        },
+        {
+          "line": 32,
+          "source": "register_command(\"statistics.daily.refresh\", request_daily_statistics_refresh)"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/game_sync_coordinator.py",
+      "references": [
+        {
+          "line": 36,
+          "source": "from .statistics import claim_daily_snapshot, execute_daily_snapshot, refresh_game_features"
+        },
+        {
+          "line": 256,
+          "source": "lambda: refresh_game_features(game_id, background=True),"
+        },
+        {
+          "line": 365,
+          "source": "\"statistics\","
+        },
+        {
+          "line": 384,
+          "source": "elif source == \"statistics\":"
+        },
+        {
+          "line": 385,
+          "source": "item = await asyncio.to_thread(claim_daily_snapshot)"
+        },
+        {
+          "line": 449,
+          "source": "elif source == \"statistics\":"
+        },
+        {
+          "line": 450,
+          "source": "await asyncio.to_thread(execute_daily_snapshot, item)"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/postgres_game_features.py",
+      "references": [
+        {
+          "line": 14,
+          "source": "from .statistics import refresh_game_features"
+        },
+        {
+          "line": 21,
+          "source": "feature_values = refresh_game_features(game_id, background=True, prepare_only=True)"
+        },
+        {
+          "line": 32,
+          "source": "storage.write_feature_values(database, feature_values)"
+        },
+        {
+          "line": 33,
+          "source": "storage.advance_feature_phase(database, game_id, version)"
+        },
+        {
+          "line": 35,
+          "source": "database, \"game_derivation_priorities\", game_id,"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/durable_scheduling.py",
+      "references": [
+        {
+          "line": 18,
+          "source": "'priority_retention', 'daily_statistics', 'discovery_recommendation'),"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/background_activity.py",
+      "references": [
+        {
+          "line": 152,
+          "source": "for row in storage.statistics_activity(database, (cutoff,)):"
+        },
+        {
+          "line": 153,
+          "source": "items.append(_base_item(\"statistics\", row[\"local_day\"], f\"Daily insights {row['local_day']}\", row[\"status\"], row[\"updated_at\"], row[\"local_day\"], error=row[\"last_error\"]))"
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+      "references": [
+        {
+          "line": 13,
+          "source": "\"statistics\": (\"daily_statistics_jobs\", \"local_day\"),"
+        },
+        {
+          "line": 189,
+          "source": "def statistics_activity(database, values):"
+        },
+        {
+          "line": 191,
+          "source": "\"SELECT * FROM daily_statistics_jobs WHERE status!='complete' OR updated_at>=?\","
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/game_sync.py",
+      "references": [
+        {
+          "line": 110,
+          "source": "sync_storage.invalidate_day_snapshot(database, record.played_at[:10])"
+        },
+        {
+          "line": 111,
+          "source": "sync_storage.invalidate_day_insights(database, record.played_at[:10])"
+        },
+        {
+          "line": 121,
+          "source": "sync_storage.invalidate_day_snapshot(database, record.played_at[:10])"
+        },
+        {
+          "line": 122,
+          "source": "sync_storage.invalidate_day_insights(database, record.played_at[:10])"
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/postgres_game_sync.py",
+      "references": [
+        {
+          "line": 62,
+          "source": "storage.invalidate_day_snapshot(database, record.played_at[:10])"
+        },
+        {
+          "line": 63,
+          "source": "storage.invalidate_day_insights(database, record.played_at[:10])"
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/games/sync/records.py",
+      "references": [
+        {
+          "line": 59,
+          "source": "def invalidate_day_snapshot(database, local_day):"
+        },
+        {
+          "line": 61,
+          "source": "\"DELETE FROM daily_chess_snapshots WHERE local_day=?\","
+        },
+        {
+          "line": 66,
+          "source": "def invalidate_day_insights(database, local_day):"
+        },
+        {
+          "line": 68,
+          "source": "\"DELETE FROM daily_chess_insights WHERE local_day=?\","
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+      "references": [
+        {
+          "line": 63,
+          "source": "\"game_feature_rows\","
+        },
+        {
+          "line": 64,
+          "source": "\"daily_chess_snapshots\","
+        },
+        {
+          "line": 65,
+          "source": "\"daily_chess_insights\","
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/background_metric_kinds.py",
+      "references": [
+        {
+          "line": 8,
+          "source": "\"game_derivation_priorities\", \"repertoire_priority\", \"daily_statistics\", \"game_sync_window\","
+        }
+      ]
+    },
+    {
+      "path": "app/domain/schemas/background-diagnostics.ts",
+      "references": [
+        {
+          "line": 3,
+          "source": "export const backgroundKindSchema = z.enum([\"canonical_prefix_preview\", \"coverage_explorer\", \"coverage_seed\", \"daily_queue\", \"daily_statistics\", \"defensive_admission\", \"defensive_rubric_audit\", \"defensive_threat_backfill\", \"defensive_threat_report_audit\", \"defensive_threat_scan\", \"defensive_threat_validate\", \"discovery_admission\", \"discovery_recommendation\", \"engine_defense\", \"engine_game\", \"game_analysis_followup\", \"game_analysis_publish\", \"game_derivation_compare\", \"game_derivation_events\", \"game_derivation_features\", \"game_derivation_findings\", \"game_derivation_misses\", \"game_derivation_positions\", \"game_derivation_priorities\", \"game_sync_record\", \"game_sync_window\", \"integrity_scan\", \"next_opponent_profile\", \"opening_graph_rebuild\", \"opening_segmentation\", \"other\", \"prefix_transition_application\", \"priority_retention\", \"repertoire_game_refresh\", \"repertoire_opportunity\", \"repertoire_priority\"]);"
+        }
+      ]
+    }
+  ],
+  "pending_work_observed": false,
+  "live_database_services_secrets_accessed": false,
+  "runtime_or_unit_suites_run": false,
+  "retirement_acceptance": "blocked: owner-reviewed closure identity, accepted envelope/receipt/task/job/control settlement, coordinated daily invalidation cessation and frozen history, then exact reviewed deletion manifest and focused owning proofs"
+}
