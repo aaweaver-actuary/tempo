@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "source_commit": "cb0ed5910e6bd05894919fd8d49f5dc7bc236975",
-  "scope": "Historical integrated source retirement covers five independently bounded exact-path cohorts under #361. Current graph-preserving fresh-start source cuts are recorded separately: six-file optional priority callbacks are actually integrated by #454; old Games guided quiz server deletion is explicitly user-approved and published/reviewed in #458. Other candidate entries are not approved merely by inclusion. Source approval, actual main integration and live/deployment state are distinct, with exact receipts below; prior full-history/old-work drain gates are superseded.",
+  "scope": "Historical integrated source retirement covers five independently bounded exact-path cohorts under #361. Current graph-preserving fresh-start receipts separately record merged six-file optional priority callbacks (#454), explicitly user-approved old Games guided server source (#458), daily statistics materialization (#461), opportunity production/APIs (#464) and adaptive-priority producer (#467 stacked on464). Published feature-source cuts are not credited as main integration or live retirement. Other candidates remain unapproved merely by inclusion; prior full-history/old-work drain gates are superseded.",
   "remaining_gates": [
     "Graph/repertoire preservation: freeze exact owned graph/definition/source-reference closure and review each physical target before any live reset/deletion; no blanket shared table removal.",
-    "Source integration: independent review of exact callback diff, preserved graph/repertoire/current Study/opportunity effects, owning regressions and source correspondence. Feature branch preparation is authorized now; no merge/deploy authorized.",
+    "Source integration: independent review of exact capability closure, preserved graph/repertoire/current Study and retained primary effects, owning regressions and source correspondence. Feature source preparation is authorized now; no merge/deploy by this task.",
     "Normal launcher: source removals must not break current start/restart/update. No launcher-dependent backend/root runtime/Compose deletion before separately accepted replacement. This is a current-source gate, not an old-history transfer/drain gate.",
     "Current artifact/source-absence qualification remains per affected executable inputs. Historical #382/#386 receipts remain evidence; changed Study artifact inputs require bounded reconciliation, not a new full historical-state migration.",
     "Live action remains unexecuted: exact graph-separated disposable targets and verified graph recovery-copy handling precede final confirmation for an irreversible reset/cutover. Old backups/background state are not indefinite preservation gates."
@@ -2294,6 +2294,1437 @@
         "reviewer": "/root/retirement_390",
         "review_sha256": "ce90e479a17c97c50f184bf286e849dce1b979f6c5f11873a2ab73f2383f3821",
         "rationale": "No new imports/owners/private cross-domain dependency. Removes only optional materialization decisions/effects; per-game canonical writer, phase6, transactions and graph/Study interfaces remain. Native/host/live results are not inferred from task-owned SQLite/fakes."
+      }
+    },
+    {
+      "id": "opportunity-producer-fresh-start-01",
+      "status": "candidate",
+      "source_commit": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+      "purpose": "Remove optional opportunity scoring/refresh production and exclusive feed/state/train APIs, commands and SQL after actual consumers are closed. Keep ordinary Study queue eligibility from saved graph facts, graph/repertoire definitions and current primary publication/completion. Reviewed source is published in draft #464; no main integration or live retirement is claimed.",
+      "production_scope": {
+        "capability": "Opportunity production plus its exclusive optional feed/state/train callers",
+        "runtime_python_paths": 28,
+        "runtime_python_added": 25,
+        "runtime_python_removed": 2059,
+        "runtime_python_net": -2034,
+        "rationale": "One traced capability closure: five exclusive runtime modules plus23 mixed source edits. Exceeds the usual 25-path guideline by3 while remaining below3000 production lines; incoming callbacks, route/command/worker registration and one real retained query are resolved together. Tests/docs/tooling are separately classified. No unrelated refactor or source move receives deletion credit.",
+        "measurement_tool_net": -9,
+        "measurement_tool_scope": "Separate exact tool cleanup; not part of runtime Python count or frozen programme aggregate."
+      },
+      "delete_paths": [
+        "backend/app/opportunity_commands.py",
+        "backend/app/services/repertoire_opportunities.py",
+        "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/README.md",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+        "database/tests/check_postgres_opportunity_freshness.py"
+      ],
+      "deleted_path_sha256": {
+        "backend/app/opportunity_commands.py": "b081f2f64cbc9e07aa1be2eb453547d840fd5026cf9d4a4bfaa71fcdddea9744",
+        "backend/app/services/repertoire_opportunities.py": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568",
+        "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py": "51b1d1b25974f5835b2e4bcf81dd99a4bb7ed59933126ecb87fcd725237ecb7b",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/README.md": "03c958b15f61be7065d0bdf6627396427291cc9b5a730edb37622e71ac5e9b00",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72",
+        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d",
+        "database/tests/check_postgres_opportunity_freshness.py": "397a881c9aafb7d2f47748240827651df9f77f54a3264f59ad9e020146277d7a"
+      },
+      "edit_paths": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "sha256": "4c0f064664208bbcbcac479beb799a19aed8f880dc840edfbc47db13035e5e7e",
+          "proposed_sha256": "65ef30a694b22b01c13570156b1308bf7ff569761845128c9c4e8b63ff8ba8b6",
+          "required_edit": "Remove only optional opportunity refresh import/callback after canonical publication; preserve source fencing and canonical response."
+        },
+        {
+          "path": "backend/app/contracts/transport/discovery.py",
+          "sha256": "277648974ace79b316e9caf4e065c189fe50b268d16ba004b7903110f6374769",
+          "proposed_sha256": "228203c9c8e9655ed4bd91234fb9131db65dfba40d8f77c44d0bd6eab7651c27",
+          "required_edit": "Remove only retired opportunity eligibility/request response types; keep retained discovery admission/recommendation transport contracts."
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "sha256": "87d9a4a4873560012084b1ceae514e11074f7fc8320ea26c94832c36b7195eac",
+          "proposed_sha256": "537c2519acd34d335299e240fb8e7136f83d24ebdf732241761af3c1529894ab",
+          "required_edit": "Remove only optional opportunity refresh calls; preserve claim/failure/partial-submit/source and coverage effects."
+        },
+        {
+          "path": "backend/app/game_analysis_publication.py",
+          "sha256": "9b520d43eecabdf9625bec3220b0f22d5ce687d00d753ee3ff0d9bc229d32824",
+          "proposed_sha256": "1af2159cf942df9083a32296a4e2a20dcf7da5d92193ccebc22aa288b24b31f8",
+          "required_edit": "Remove only optional opportunity refresh after analysis publication; retain analysis transaction and source publication."
+        },
+        {
+          "path": "backend/app/game_commands.py",
+          "sha256": "9d5858eaa63ebacadd25a06c037e0c27c6585d5e218f71fd6075b9dfeb24d9f5",
+          "proposed_sha256": "a84213316d05770a206112775304f5303f0b13621ec1c1caa7d1a8e86d914629",
+          "required_edit": "Remove only optional opportunity refresh calls after exclusion/invalidation; retain current primary command transaction."
+        },
+        {
+          "path": "backend/app/main.py",
+          "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1",
+          "proposed_sha256": "1b981065e837ad58758e67f0e2709363e4380f8f8ca6e05d5d80d1dd70cddd6f",
+          "required_edit": "Remove exact eight opportunity feed/state/train/refresh handlers and their exclusive imports/command guard; remove only optional calls from five retained functions. Keep generic composition and unrelated routes."
+        },
+        {
+          "path": "backend/app/models.py",
+          "sha256": "ab8c1d9c41970df286382af8a198803641674723463dfb765db266ba786ad1c5",
+          "proposed_sha256": "a109876d20fcf5f7b8faa650478a31d1f5d58a33d0c2123d6e1e98b3aefdca7e",
+          "required_edit": "Remove only retired opportunity transport re-exports."
+        },
+        {
+          "path": "backend/app/services/background_metric_kinds.py",
+          "sha256": "05239413c7ef9ff77d9d443d3b9c6623a400b1c44fd027f6d573410611170e56",
+          "proposed_sha256": "1f179f0dbfe83426edd7a5a450daf402439a30ec4f01128b65550d3694dfc860",
+          "required_edit": "Remove only repertoire_opportunity kind from known background metrics."
+        },
+        {
+          "path": "backend/app/services/durable_scheduling.py",
+          "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321",
+          "proposed_sha256": "8bb101c74d40a4feb2ccab30a925233d48ecf2ba169644af48d31279dd473501",
+          "required_edit": "Remove only repertoire_opportunity scheduling entry; preserve unrelated fairness and essential queue scheduling."
+        },
+        {
+          "path": "backend/app/services/durable_tasks.py",
+          "sha256": "ab270699a8795d3db6bb1d2c14c962f7539712b3135fcb667133217021d6ecaf",
+          "proposed_sha256": "d8dab16fd4b37253b31e5f9a66f7bbc6c90e2bb5aca8e54b7119ab9044570a37",
+          "required_edit": "Remove only repertoire_opportunity handler/task registration."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "dd506eeabb1c669b18741996b87d4c18ea883465601313f4a4e6aab387210f4f",
+          "proposed_sha256": "b08ee843dcf32e150ccf0dbf7a20b0cd010dd71aff5336516e20328c3a7c1374",
+          "required_edit": "Remove opportunity refresh import/helper and native callback. Remove obsolete optional local enqueueing_priorities phase from both phase tuples and execution; finish six actual local primary stages at 6/6 through unchanged terminal storage. Keep native seven-stage protocol."
+        },
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "sha256": "5a7c18d20ebb2d31566bc86735de4192bce7ddb0d4971bf0f287824847e05435",
+          "proposed_sha256": "b23ad6cb94cae0a11072f7fc2dc41a3c400129160991ae8e9a09d27770aa9f66",
+          "required_edit": "Remove only optional opportunity import/callbacks after priority publication; remaining producer is separately owned, with no shutdown credit here."
+        },
+        {
+          "path": "backend/app/services/opening_graph.py",
+          "sha256": "55770df52302b1588ec3faa3e5910c6766d4969144ccce5020f63edea96885e2",
+          "proposed_sha256": "8563c7f6c0ca26b8f1307f84b0f623cb045d64d1b67dccb0a614586295bd859d",
+          "required_edit": "Remove only two final optional opportunity statements from publish_opening_graph_rebuild. Preserve every graph input/build/publication primary statement and other definition."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "sha256": "c2684b9cdad04cfcf1966a7a7908e73c185654702213070406a488b41c1ed22f",
+          "proposed_sha256": "a71f9eb118507d498578bbdb9d339533850d4b8863189ba9fef4f678c87a94b9",
+          "required_edit": "Remove only optional opportunity import/callback; preserve cursor/progress/completion/coverage publication."
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "785b3ee52a20cad3843de76a25d007f8784af10b15a7966034051d451e46e003",
+          "proposed_sha256": "4e36f8841ddcc73eb50cbdeaa72f6c479f1b46489f5a8fa174c0b1224430103f",
+          "required_edit": "Remove only optional opportunity import/callback; preserve native feature-to-handoff and cursor completion protocol."
+        },
+        {
+          "path": "backend/app/services/postgres_priority.py",
+          "sha256": "4e6820145db66699a996354020e5b000ba1723ff4925cae4b63fc18cd6c20c22",
+          "proposed_sha256": "0118e2546f6aec09f64c8219c53e27f6d31265f08c8ecc933885fcd0d6a94301",
+          "required_edit": "Remove only optional opportunity import/callback; remaining priority producer is separately owned."
+        },
+        {
+          "path": "backend/app/services/refresh_requests.py",
+          "sha256": "9ddbdba6fb33034c6e24669d3bff030ca1b2d73c30199236d22e2df7617aa3f4",
+          "proposed_sha256": "75560909ab116b34e7cbdbd27daa156d36207518957388f1c68c03a31478dc69",
+          "required_edit": "Remove only opportunity refresh coalescing branch; remaining priority refresh branch is separate work."
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "sha256": "9f6c9e20cf6208070ec447621ff69a7cd01437629bf38348b728fe4e63af44cf",
+          "proposed_sha256": "c6bfae06c5c711885efaafc9f9939fbc5611c2afdc7760159e28d5716a63b5e5",
+          "required_edit": "Remove only optional opportunity refresh imports/calls; preserve coverage candidates/gaps/claim/progress/failure/source behavior."
+        },
+        {
+          "path": "backend/app/services/threat_pipeline.py",
+          "sha256": "2da3a99621f80da34d65480fe2e55757c53971d433804e3aae64350cd1032666",
+          "proposed_sha256": "c883c3d7e5b9da11f0ab513706b24c322689c872f4f15af9756a19cc5e05562e",
+          "required_edit": "Remove only optional opportunity refresh import/callback; preserve threat/finding primary publication."
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7",
+          "proposed_sha256": "81591e714dba8df74bac9dcacec6595b92e5a5b67dfcc7a60ddae64af66f01ec",
+          "required_edit": "Remove opportunity command side-effect import, task supported-kind/handler and settlement-exclusion wiring only."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py",
+          "sha256": "ae4d1cfaa046616324b126de65f4d5e8f497ba64483ab6f4d21b978d3f6ec36d",
+          "proposed_sha256": "4469f7dfebc88d320152d38f6a629ffdfb5f1e11c98508994eb70ac0612e4200",
+          "required_edit": "Move exact existing repertoire existence query into its actual segmentation adapter, with same caller connection/bound parameters/result and AST-identical body; no helper deletion credit."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/discovery.py",
+          "sha256": "c0d41cccda80994a96b4e7011257fe728859d37fef0bb1ac57785ef1f41b2198",
+          "proposed_sha256": "e6df36012fa3d6ae495652f0f5338372e0d3f8a8136cd5e7581f68233d11e7e6",
+          "required_edit": "Remove only retired opportunity feed/eligibility HTTP read projections; retained separate discovery acceptance/recommendation remains outside this cut."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473",
+          "proposed_sha256": "fb12f9827eff29dd75c1e7016d23d63f3a50226feb45c0cb0b49e69ddfc2bd46",
+          "required_edit": "Remove only opportunity refresh request SQL; remaining daily_queue_projection/priority work remains with current owner."
+        }
+      ],
+      "supporting_edit_paths": [
+        {
+          "path": "backend/app/contracts/transport/README.md",
+          "sha256": "61924fc1b6e5fd1a479e8ac9f432855dace162cbe295e7abc359074b0ab85e63",
+          "proposed_sha256": "726d28d22062b3105ddf61dadd72dc2fe58c757cae79fac4cef3af8a176dd90f",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "backend/app/services/README.md",
+          "sha256": "b670548bd36f054f5a0119bb7dc7a0e83787dad74daa6aa35e2b39ca1d62f033",
+          "proposed_sha256": "475cdbaacd85c223dc7778e184474dbac6bac114dbe6aa0d0a250be05669aca3",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "backend/organization-inventory.json",
+          "sha256": "b9ac0c0539aed2b92bc032d5d607d5844cd597be7ead4e374f14974a9f021e3e",
+          "proposed_sha256": "e7a292a91f5c09f997ee336d0cbc5a9518d04966d48cc33a235087913abb93d4",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "backend/tests/test_canonical_repertoire_prefix.py",
+          "sha256": "06bf5c876ecfe8044b973556cf6990b049def2c719c9b9893de4b4ddeada2cd2",
+          "proposed_sha256": "3294195b6de02f771c7747480d0f8b00ad033f39fce9914a2de45457b2f2f2fd",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_game_sync.py",
+          "sha256": "cae33e9f165d0d4dd73ebc88bac21d0e54fa15ef6be738614a599e5e965edfde",
+          "proposed_sha256": "9ab3cbe6bb260cfd12c18149a5ddbd035f810f3c460d7cce8eab4721b12ee9f0",
+          "required_edit": "Add real six-stage local derivation regression reproducing removed-helper NameError before repair and proving persisted features/status/count/Finished6/6 after repair; retain other cases."
+        },
+        {
+          "path": "backend/tests/test_opportunity_retirement.py",
+          "sha256": null,
+          "proposed_sha256": "7edacba0270a88a7e31815192ee5ef9a4d2c877016a5ab6a1794b913e10ed16b",
+          "required_edit": "Add physical producer/route/command absence plus actual ordinary Study graph-card introduction and saved-row eligibility checks, using task-owned SQLite.",
+          "change": "add"
+        },
+        {
+          "path": "backend/tests/test_postgres_cutover.py",
+          "sha256": "31823532267e8f04ad3052556b2794fc7e5c93ae0191a756d4fd53806d4bd56b",
+          "proposed_sha256": "5687bf2cbeb69a27d482eba24f063565aa1027a8cd648316e2f72f4f191868ac",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_postgres_game_completion.py",
+          "sha256": "53322263658a5bef86ad669e0d0c2723ac1c78f5e5fd2e09dab0e8c954152247",
+          "proposed_sha256": "64fe4556ccd24b8ce0cfe34f9a45aab38da60bedca6ab450a38498da9c856e76",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_postgres_priority_preparation.py",
+          "sha256": "c8ba30f1910b29413cfe3a9c741eabbcc93188118f50ee5beae472ee9382f41d",
+          "proposed_sha256": "3bdf0350401e8a7bbddfae49fd67260a9abe22030ae04669048610297e5ed125",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_priority_callback_retirement.py",
+          "sha256": "ee923653842a8d56707823eed3839d7ad04da9f1d0890126d06c511b2f0409df",
+          "proposed_sha256": "7bae4e110a49b1d3e74430cefcb27b12fd0ea168c4c9dba7d39f90c711e4a4a5",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_refresh_input_coalescing.py",
+          "sha256": "466a7fce727aec18eb797f2ca7391248c5d66b57f11c669066cb193d9c6a285f",
+          "proposed_sha256": "6bbbf3a21ed000b6ff062b276c81a38437b3cb31c98e690bd5502c70550dbf5e",
+          "required_edit": "Remove only retired opportunity import/callback/fixture expectations; retain owning primary behavior assertions. Exact current selectors and moved tests are recorded below."
+        },
+        {
+          "path": "backend/tests/test_repertoire_coverage.py",
+          "sha256": "5317b87e06ba5b113b4a8833aeafa291a61f04c0024e1322868236a72b370960",
+          "proposed_sha256": "e5f38c72631c6b4e788ec51d40c7b88a160def24a319823d0e822c121b30832d",
+          "required_edit": "Receive three existing primary Maia/coverage regressions per retained_test_mapping; one body AST-identical, two retain primary assertions and replace only retired optional-effect assertions with coverage facts."
+        },
+        {
+          "path": "backend/tests/test_repertoire_opportunities.py",
+          "sha256": "2a8126d6eb95b4de17708469e12f8fa3e18a58416bfb6669b3e01e8a48c63f95",
+          "proposed_sha256": "101e398af79a54a7953441412e7a4525c10bee9e15de0ef66716c4e336328e82",
+          "required_edit": "Keep five actual admission/cache cases AST-identical, move three Maia/coverage cases to their owning suite per exact mapping, and retire only producer/feed/state/train workflow cases."
+        },
+        {
+          "path": "database/INVENTORY.md",
+          "sha256": "359e9c31b1adb0fab4f193a54e39c7c7ca23401115c1e589377f55f4de23c3ad",
+          "proposed_sha256": "f9bea7c5864e2fb0e143d1c8f8950d1fbacc11311d35d163875b08dd27bd5b18",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "database/SIMPLIFICATION.md",
+          "sha256": "c425e051ca5f55178a5e5af7b789bde2e3df261af05585bed429c25fc8aec755",
+          "proposed_sha256": "13c4672e11f0f7a2b570df31701159be2cd2669e8f1fe25232599fd9e58b39f9",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/README.md",
+          "sha256": "379f969a598f3295f21041fa4592a6a55cf5d905fb4aad2329f71e7375c6eb6d",
+          "proposed_sha256": "102fb9dd213a47edb0e80a67686b4b1adf6397c0d538c33b7480569c972ef277",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/README.md",
+          "sha256": "c61d15d155fa789add2d68b023fdc85699d4cd8e655dfee1414807cb0e5a389e",
+          "proposed_sha256": "33256f4febf6da0faa0b768010b40d1d9dafdefc60a2114492df28647afd9bcb",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "database/tests/check_postgres_background_workloads.py",
+          "sha256": "9c19dd59cb801fa12ec04c42a3f0cf47f41f2c5ddafd8a900746cba6fbdaebc5",
+          "proposed_sha256": "2e84f24c304b439bdce20bd3c96f575f8a212333ea832286a83d1005628840f4",
+          "required_edit": "Remove retired producer/API consumers from native proof script while retaining current queue/canonical/upgrade assertions; syntax/consumer inspection only, native execution unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_canonical_freshness.py",
+          "sha256": "c860078e718c648b3961ea01731731ece62106a8da6f9b23c70c7f000e0c05aa",
+          "proposed_sha256": "1ecb5b985dd4a7444d2aa6c01074b5bf81f00406d26aedd403994d9aa7f5d00c",
+          "required_edit": "Remove retired producer/API consumers from native proof script while retaining current queue/canonical/upgrade assertions; syntax/consumer inspection only, native execution unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_refresh_inputs.py",
+          "sha256": "ec8d389deb722063b7f9822173a73a8d4253df52f32e4e5d91570a82ca775b4c",
+          "proposed_sha256": "6cc021db1f5422286611e59be07cd55a5dc644e946a35b0f866e8faf271326c6",
+          "required_edit": "Remove retired producer/API consumers from native proof script while retaining current queue/canonical/upgrade assertions; syntax/consumer inspection only, native execution unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_upgrade.py",
+          "sha256": "a52cee3ff7bba4e21adba0959883764219e978c734218720509755e8498e5fde",
+          "proposed_sha256": "3f71760ae062603cff13370a9e9cd7d2e80d3485e63c0513bd878e8b321430c1",
+          "required_edit": "Remove retired producer/API consumers from native proof script while retaining current queue/canonical/upgrade assertions; syntax/consumer inspection only, native execution unrun."
+        },
+        {
+          "path": "database/tooling/measure_postgres_incident_workloads.py",
+          "sha256": "c571070016ea45bab94b9002665a66ee9cc7e052242c5af755b0058650a6f800",
+          "proposed_sha256": "ebaddd5e5f97853c9b5ce74a3ab8fd8e33268e0f2808555ab8d0cec68369f463",
+          "required_edit": "Remove only retired opportunity measurement workload/import (net9 lines); no native benchmark execution or aggregate production-baseline credit."
+        },
+        {
+          "path": "docs/postgres-route-contract.json",
+          "sha256": "8fa13135d7da7c3f60122034df1ee6b9117dc3c6e5ae995a95a979cf021fa768",
+          "proposed_sha256": "7db092e0272d5ad438600bb7e28cc6ea84dcd7539126ee640b84a3a0e8dd5930",
+          "required_edit": "Remove exact eight opportunity route objects; add only three previously omitted retained GameEvidence objects after same-baseline failure proof, identical to root-approved guided repair. Preserve all other objects/order."
+        },
+        {
+          "path": "scripts/ci-verification-inventory.json",
+          "sha256": "5621b4e41e7c95229f24e298aa8b10ce0d2768285a5f0b0481fedb401cf4ca07",
+          "proposed_sha256": "7dc5fa14aa2dbe540c5566892af75b7c283cec89261613e6a0ec3d51568aefd8",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "sha256": "a22e09c9c649b6d39843669146f05a841a6d91dbd77c4137e15c03bf9dc19388",
+          "proposed_sha256": "9d74f384eff4f81dc66d0c6b0a8b5a0f6cf181bcbbb36d95740cddbcf89a62b5",
+          "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
+          "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
+          "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
+          "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+          "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
+        }
+      ],
+      "graph_contract_ref": {
+        "cohort": "adaptive-priority-callbacks-fresh-start-01",
+        "source_receipt_sha256": "dc73aa3ff613196a8c36a27e1c13a7910bbb0307fe728e1dabde46eccffee33a",
+        "unchanged_keep_paths": 20,
+        "semantic_exception": {
+          "path": "backend/app/services/opening_graph.py",
+          "symbol": "publish_opening_graph_rebuild",
+          "change": "Only final optional opportunity import and enqueue statements removed. All remaining function AST statements and every other graph definition, including GraphInput/build_graph, are identical."
+        },
+        "physical_schema": "Canonical source epochs/triggers and graph/repertoire/storage relations unchanged. Old rows need no drain; no live DROP approval."
+      },
+      "retained_consumer_frontier": [
+        {
+          "consumer": "Ordinary Study native opening route projection",
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "symbols": [
+            "_STUDY_OPENING_ROUTES",
+            "_PRIORITY_OPENING_PAGE_SQL",
+            "current_opportunity"
+          ],
+          "relations": [
+            "current_repertoire_opportunities",
+            "opening_graph_steps",
+            "opening_graph_publications",
+            "cards",
+            "repertoires",
+            "repertoire_lines",
+            "repertoire_cards",
+            "deleted_cards"
+          ],
+          "opportunity_fields": [
+            "id",
+            "repertoire_id",
+            "card_id",
+            "kind=weak_known_decision",
+            "status=active",
+            "evidence_json.analysis_based is NULL",
+            "evidence_json.encounter_count",
+            "evidence_json.miss_count"
+          ]
+        },
+        {
+          "consumer": "Ordinary queue admission and resolution owner",
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "symbols": [
+            "_PRIORITY_OPENING_CANDIDATE_BODY"
+          ],
+          "relations": [
+            "current_repertoire_opportunities",
+            "repertoire_opportunities"
+          ],
+          "facts": "Saved rows participate in existing eligibility; existing queue writer resolves them. No optional producer import/call."
+        },
+        {
+          "consumer": "Capacity priority read",
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "symbols": [
+            "current_capacity_priority"
+          ],
+          "fields": [
+            "card_id",
+            "repertoire_id",
+            "kind",
+            "status",
+            "evidence_json.analysis_based"
+          ]
+        },
+        {
+          "consumer": "Retained segmentation state projection",
+          "path": "backend/app/opening_segmentation_api.py",
+          "symbols": [
+            "state_projection"
+          ],
+          "projection": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py::repertoire",
+          "facts": "Exact existing bound SELECT1, caller connection and fetchone/errors; no optional module import."
+        }
+      ],
+      "moved_projection": {
+        "from": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
+        "to": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py",
+        "symbol": "repertoire",
+        "old_AST_sha256": "c129bf3c6cec4d54b87bc8b4e1d3ac90357feaf59d3beb323dafd729d4f1bd7b",
+        "new_AST_sha256": "c129bf3c6cec4d54b87bc8b4e1d3ac90357feaf59d3beb323dafd729d4f1bd7b",
+        "credit": "zero net helper deletion"
+      },
+      "preserved_test_names": [
+        "backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh",
+        "backend/tests/test_opportunity_retirement.py",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version",
+        "backend/tests/test_repertoire_coverage.py::test_issue8_independent_claim_skips_superseded_failed_attempt",
+        "backend/tests/test_repertoire_coverage.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure",
+        "backend/tests/test_repertoire_coverage.py::test_issue8_partial_maia_failure_checkpoints_coverage_without_optional_refresh",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_branch_materialization_keeps_foreground_free_and_replays_once",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_familiar_default_prefers_quality_within_one_hundred_cp",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_recommendation_cache_rebuilds_after_line_change",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_same_move_recognizes_comparable_repertoire_position"
+      ],
+      "retained_test_mapping": [
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure",
+          "new_nodeid": "backend/tests/test_repertoire_coverage.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure",
+          "old_AST_sha256": "40a81e6afea37813de86299d21dd237a306efdcedbdcbeee29777f43097136a5",
+          "new_AST_sha256": "ae169e8abf1a638bd951df058b82194ed32d5842feac6add72dc7785448e35a7",
+          "retained_assertions": "Primary claim/submit/failure and stale-lease assertions retained; retired opportunity effects replaced by owning coverage state/absence only."
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_issue8_partial_maia_failure_checkpoints_refresh",
+          "new_nodeid": "backend/tests/test_repertoire_coverage.py::test_issue8_partial_maia_failure_checkpoints_coverage_without_optional_refresh",
+          "old_AST_sha256": "40b1ef48944895571edc03fd5a62ff802c0ec4041a0674a7686dea0aee17de9d",
+          "new_AST_sha256": "3351d5bae2a1d690f18330211b62405c7ed9dd0fd2350559fb2adacc398d3679",
+          "retained_assertions": "Primary claim/submit/failure and stale-lease assertions retained; retired opportunity effects replaced by owning coverage state/absence only."
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_issue8_independent_claim_skips_superseded_failed_attempt",
+          "new_nodeid": "backend/tests/test_repertoire_coverage.py::test_issue8_independent_claim_skips_superseded_failed_attempt",
+          "old_AST_sha256": "e0dbfd95db7c29013621eeb17ed9bb5c92bc7d6863621e3c226eddbbed054252",
+          "new_AST_sha256": "e0dbfd95db7c29013621eeb17ed9bb5c92bc7d6863621e3c226eddbbed054252",
+          "retained_assertions": "Primary claim/submit/failure and stale-lease assertions retained; retired opportunity effects replaced by owning coverage state/absence only."
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh",
+          "new_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh",
+          "old_AST_sha256": "5d1250f280313c2bbada2e98b5415982a0afd24b65e4278f145e5204be2e206e",
+          "new_AST_sha256": "5d1250f280313c2bbada2e98b5415982a0afd24b65e4278f145e5204be2e206e"
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_branch_materialization_keeps_foreground_free_and_replays_once",
+          "new_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_branch_materialization_keeps_foreground_free_and_replays_once",
+          "old_AST_sha256": "3a0a3acbf0b3cf5a24bf434900e4fadd133710a4c3f687f3a5c3a6bc03e4d139",
+          "new_AST_sha256": "3a0a3acbf0b3cf5a24bf434900e4fadd133710a4c3f687f3a5c3a6bc03e4d139"
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_familiar_default_prefers_quality_within_one_hundred_cp",
+          "new_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_familiar_default_prefers_quality_within_one_hundred_cp",
+          "old_AST_sha256": "c5e54c7bd7472dced41310d2c6c59260d5b673bad9d3e00cdc547923597b01c3",
+          "new_AST_sha256": "c5e54c7bd7472dced41310d2c6c59260d5b673bad9d3e00cdc547923597b01c3"
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_recommendation_cache_rebuilds_after_line_change",
+          "new_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_recommendation_cache_rebuilds_after_line_change",
+          "old_AST_sha256": "89418c887a0a19e763f0c5126047e8ea209bf8a5e584b0b3f2897589c21b411f",
+          "new_AST_sha256": "89418c887a0a19e763f0c5126047e8ea209bf8a5e584b0b3f2897589c21b411f"
+        },
+        {
+          "old_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_same_move_recognizes_comparable_repertoire_position",
+          "new_nodeid": "backend/tests/test_repertoire_opportunities.py::test_discovery_same_move_recognizes_comparable_repertoire_position",
+          "old_AST_sha256": "ad9313b9d34d6834badef51dbfb7012ff906048205ff474858977b4f3dd42ada",
+          "new_AST_sha256": "ad9313b9d34d6834badef51dbfb7012ff906048205ff474858977b4f3dd42ada"
+        }
+      ],
+      "test_commands": [
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_opportunity_retirement.py backend/tests/test_priority_callback_retirement.py backend/tests/test_repertoire_opportunities.py backend/tests/test_refresh_input_coalescing.py backend/tests/test_repertoire_coverage.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure backend/tests/test_repertoire_coverage.py::test_issue8_partial_maia_failure_checkpoints_coverage_without_optional_refresh backend/tests/test_repertoire_coverage.py::test_issue8_independent_claim_skips_superseded_failed_attempt backend/tests/test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete backend/tests/test_postgres_opening_graph.py::test_postgres_graph_publication_rejects_missing_links_and_checks_generation backend/tests/test_postgres_opening_graph.py::test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships backend/tests/test_opening_graph.py::test_manual_prefix_split_survives_graph_rebuild -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-initial",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_postgres_route_contract.py backend/tests/test_opportunity_retirement.py::test_retired_opportunity_routes_reject_requests_without_queueing_work backend/tests/test_postgres_cutover.py::test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets backend/tests/test_postgres_cutover.py::test_postgres_explorer_missing_token_fails_run_with_actionable_error backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire backend/tests/test_postgres_game_completion.py::test_postgres_priority_generation_stages_and_publishes_after_replay backend/tests/test_postgres_priority_preparation.py::test_priority_1000_records_calculate_once_across_resumable_slices backend/tests/test_canonical_repertoire_prefix.py::test_canonical_prefix_stale_recommendation_worker_cannot_publish backend/tests/test_canonical_repertoire_prefix.py::test_canonical_prefix_discovery_admits_verified_new_gap_routes_and_rejects_stale_queued_work backend/tests/test_canonical_repertoire_prefix.py::test_canonical_prefix_admission_rechecks_source_version_before_inserting backend/tests/test_canonical_repertoire_prefix.py::test_canonical_foreground_discovery_admission_rejects_stale_saved_source backend/tests/test_canonical_repertoire_prefix.py::test_canonical_scope_lifecycle_hides_stale_publications_rejects_actions_and_recovers backend/tests/test_canonical_repertoire_prefix.py::test_canonical_publication_identities_advance_independently_through_product_commands -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-support",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_postgres_cutover.py::test_postgres_explorer_missing_token_fails_run_with_actionable_error -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-repair",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_postgres_route_contract.py -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-route",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-local-derivation-before",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-local-derivation-after",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-local-derivation-fixed",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire -q --rootdir=. -p no:cacheprovider --basetemp=/tmp/tempo-opportunity-source-evidence-20261025/pytest-native-handoff-fixtures"
+      ],
+      "test_command_receipts": [
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/initial-command.json",
+          "sha256": "aca819e5d531ec8526b7822f186d7de5a73f4a6e43660355f91b1e49e9e199c2",
+          "exit_code": 1,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/support-command.json",
+          "sha256": "579602cade873b12c697273d5b64d007f6c7a9363b64d31b79be46962709bf3b",
+          "exit_code": 1,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/repair-command.json",
+          "sha256": "57ea750b35696e96531a3c497afb44751369487e24bde66a3cc9bca2cee8ceb1",
+          "exit_code": 0,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/route-command.json",
+          "sha256": "30f39c902ffdec409dc3d4c3f954161eaacb0248341242aa43abe113ad56bdf6",
+          "exit_code": 0,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/local-derivation-before-command.json",
+          "sha256": "e54b2e088c8f4a4a3557f66e0cf3a7cc1acf7c878eccd8da9ed1a420d8750675",
+          "exit_code": 1,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/local-derivation-after-command.json",
+          "sha256": "b469a0932007faa8778808c2e32a8a3232d8bdd78932abfde99016109915d467",
+          "exit_code": 1,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/local-derivation-fixed-command.json",
+          "sha256": "fabcc3917df30b4ea75593c2f3469fd2be04298f7939a18da10f016f8fca3e13",
+          "exit_code": 0,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-opportunity-source-evidence-20261025/native-handoff-fixtures-command.json",
+          "sha256": "f0494444b78daafc3d0f486a0a9620343f7a7e7d114907775d4d8ab14a345065",
+          "exit_code": 0,
+          "meaning": "Historical exact source-owner selection. Initial fixture/baseline inventory failures and real P1 red are retained; final qualification resolves them. These receipts do not request documentation-only reruns."
+        }
+      ],
+      "test_environment": "Source-owner selections use task-owned SQLite and semantic/native-SQL fakes with empty PostgreSQL/Redis URLs. Native proof scripts are syntax/consumer inspected only, not executed. Historical commands/fixtures do not establish installed-version, deployment or real-data acceptance.",
+      "implementation_receipt": {
+        "owner": "/root/retained_artifact_correspondence",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/464",
+        "published_source_commit": "8bcd897d16bb46fa89fef684842bea1559907074",
+        "published_tree": "afc0e60e775b15be96662478463b0f1a29021308",
+        "published_base": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+        "initial_production_commit": "eadf8e2de7678dbc1e3b435db8f6e8f46ce12eea",
+        "prior_support_commit": "5a7f987e7673fd19428d7cdfdfe7f87b3e1dceee",
+        "source_contract_sha256": "1923805ed6d8a32acf39f56c5fc0bb4d388c29b9e81aedafc1a94a61d3e89399",
+        "source_state": "API verified open/draft/unmerged/mergeable at 8bcd897d. Actual code reviewed and published; no main integration, deployment or live removal credited.",
+        "exact_scope": "55 actual paths: 7 deletions (5 runtime Python modules,1 owning drawing,1 exclusive native proof),23 runtime Python edits,25 support/tool/test edits or additions. Unchanged reserved scripts/ci-fast-lane-inventory.json is excluded from actual scope.",
+        "results": "47 distinct current focused checks pass:50 passed records minus 3 duplicate cases; no remaining selected failure. Prior45 proof reused with causal repair plus real local SQLite completion and one new native-handoff fixture case; second native fixture was already counted.",
+        "qualification_sha256": "f7a4f57014eab1d69e1c5b434b21eec1a5687d3f299a4ab1676b219c05676387",
+        "source_checks_sha256": "1b072f4d2fc5afe81e47a044c7722f5e4765fbe4c02e77829edf4f9660e65c80",
+        "retained_test_mapping_sha256": "132d49d19843416e2303c94d683788887a03f0ad8517283625b3c9a5dae85941",
+        "P1_repair": {
+          "source_path": "backend/app/services/game_sync_coordinator.py",
+          "removed_helper_call_absent": true,
+          "actual_local_phases": 6,
+          "terminal_progress": [
+            6,
+            6
+          ],
+          "storage_changed": false,
+          "native_seven_phase_protocol_changed": false,
+          "regression": "backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh",
+          "before": "local-derivation-before.log: failed after feature publication with NameError for deleted helper",
+          "after": "local-derivation-fixed.log:1pass",
+          "fixture_correction": "After source repair, corrected regression query to actual game_position_occurrences relation; no product assertion removed."
+        },
+        "initial_failure_provenance": "Retain initial SQLite fixture receipt-table error, same-baseline missing3retained GameEvidence inventory rows, stale fixture monkeypatch and new regression table-name correction; all resolved by named final receipts without weakening product assertions. The real deleted-helper NameError caused review withdrawal until8bcd causal repair and owning regression passed.",
+        "qualification_limit": "No native PostgreSQL scripts, full suite, browser, actual-host/version mapping, deployment/resource isolation, data/file/schema reset or live acceptance."
+      },
+      "dependency_receipts": [
+        "Reuses exact #429 consumer packet26544be0a8e3adf18701996efc9649ffd146288d; old issued-work/history/background drain policy is superseded by current fresh start.",
+        "All 25optional refresh calls, eight routes, five opportunity commands and task/kind registration are absent. No remaining deleted producer/helper executable import/call. Actual segmentation query consumer is retained at its owning adapter with identical AST; no compatibility shim.",
+        "Root accepted final8bcd after causal P1 repair; #390 independently verified4queue SQL/DDL hashes,20graph fullfile keeps plus exact two-statement exception, moved query, current test mapping, local six-stage completion, native protocol and final published source correspondence without runtime reruns.",
+        "Native seven-stage handoff/completion remains actual protocol, distinct from six local primary stages; existing terminal storage writer is unchanged. Saved-row queue facts remain read by existing SQL/view/table interfaces, with no producer lifecycle coupling."
+      ],
+      "data_disposition": "No DDL/table/row/file/browser/backup mutation. Opportunity background jobs/receipts/old learning state require no drain. Current saved facts and structural tables remain where actual Study/graph code consumes them; no claim every persistence table is cold. Graph-separated live disposal needs exact targets and final execution confirmation; no target table count.",
+      "reviewer": {
+        "reviewer": "/root/retirement_390",
+        "decision": "Independent final source review accepted, P1 resolved and remote head correspondence confirmed. Candidate records reviewed feature code; inclusion alone is not main integration or live authority.",
+        "review_sha256": "e5628a4577b9d754894c353e9b7528223301efe6198e70c41fb4fb31e50793ff",
+        "rationale": "Deletes optional decision/effect/lifecycle owners; no new private cross-domain import or cycle. Current queue writer, transactions, graph source/publication and primary game/coverage effects stay with their existing owners. Exact query moves to its real owner with no deletion credit."
+      }
+    },
+    {
+      "id": "adaptive-priority-producer-fresh-start-02",
+      "status": "candidate",
+      "source_commit": "8bcd897d16bb46fa89fef684842bea1559907074",
+      "purpose": "Remove adaptive introduction-priority evidence scoring/calculation, coalesced refresh admission, preparation/jobs, generation publication/recovery/retention and its unused status field. Keep actual saved-score/no-score/frozen Study consumers, graph/repertoire source/epoch invalidation and essential queue readiness. Reviewed source is published in stacked draft #467; no main integration, native or live retirement claimed.",
+      "production_scope": {
+        "runtime_python_paths": 22,
+        "runtime_python_deleted": 11,
+        "runtime_python_added": 8,
+        "runtime_python_removed": 1901,
+        "runtime_python_net": -1893,
+        "additional_paths": [
+          "app/domain/schemas/index.ts",
+          "app/domain/schemas/background-diagnostics.ts",
+          "database/tooling/reclaim_priority_storage.py",
+          "database/tooling/measure_postgres_incident_workloads.py"
+        ],
+        "rationale": "One concrete optional producer with closed incoming calculation/admission/status/worker/control/tool consumers.22 runtime Python paths are within the usual 25-path guideline; including two exact type and two tool edits gives26 production-related paths, below 3,000 runtime lines. The 79-path total also contains retired exclusive test/native-proof files, finite mixed assertions, runner consumers and owning docs. No generic reorganization, new framework or duplicate454/opportunity credit.",
+        "counting_limit": "1,893 net applies only to runtime Python against 8bcd; tool/type/harness/docs/test deltas are separate. No whole-programme reduction or deployed shutdown claim."
+      },
+      "delete_paths": [
+        "backend/app/services/introduction_priorities.py",
+        "backend/app/services/postgres_priority.py",
+        "backend/app/services/priority_retention.py",
+        "backend/app/services/refresh_requests.py",
+        "backend/tests/test_introduction_priority_database_split.py",
+        "backend/tests/test_postgres_priority_preparation.py",
+        "backend/tests/test_postgres_priority_retention.py",
+        "backend/tests/test_priority_jobs.py",
+        "backend/tests/test_priority_lifecycle_database_split.py",
+        "backend/tests/test_priority_storage.py",
+        "backend/tests/test_refresh_input_coalescing.py",
+        "database/tempo_legacy_database/adapters/introduction_priorities/README.md",
+        "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py",
+        "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py",
+        "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py",
+        "database/tempo_legacy_database/adapters/introduction_priorities/publications.py",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/README.md",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/__init__.py",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py",
+        "database/tests/benchmark_postgres_priority.py",
+        "database/tests/check_postgres_priority_recovery.py",
+        "database/tests/check_postgres_refresh_inputs.py",
+        "database/tests/priority_baseline_postgres.py"
+      ],
+      "deleted_path_sha256": {
+        "backend/app/services/introduction_priorities.py": "b23ad6cb94cae0a11072f7fc2dc41a3c400129160991ae8e9a09d27770aa9f66",
+        "backend/app/services/postgres_priority.py": "0118e2546f6aec09f64c8219c53e27f6d31265f08c8ecc933885fcd0d6a94301",
+        "backend/app/services/priority_retention.py": "a2945290ee6156612d9f617ffa5fb1358e291211afea4cbceede29f1640ae5a2",
+        "backend/app/services/refresh_requests.py": "75560909ab116b34e7cbdbd27daa156d36207518957388f1c68c03a31478dc69",
+        "backend/tests/test_introduction_priority_database_split.py": "173c7b531e88870edce4bdb8a2578205d1ad04484248963536d4bc1bc8aeb204",
+        "backend/tests/test_postgres_priority_preparation.py": "3bdf0350401e8a7bbddfae49fd67260a9abe22030ae04669048610297e5ed125",
+        "backend/tests/test_postgres_priority_retention.py": "6b2fed0989aa86e020a3680c638c05e5696b0c96b1c7cfa02b53e631171cacbf",
+        "backend/tests/test_priority_jobs.py": "e478d673128f6bf4bd7fe9289d4b004f7f770430b2982859cf3b00c7d8c6fc76",
+        "backend/tests/test_priority_lifecycle_database_split.py": "8a7ea7c14c34d567609fcd07c2f144011ba9d7caf5e1acfc45fe95a18ba5c4b7",
+        "backend/tests/test_priority_storage.py": "781788c49b455c85668b028c6218e413a44a1bc230cc05d2916e40ca32e14647",
+        "backend/tests/test_refresh_input_coalescing.py": "6bbbf3a21ed000b6ff062b276c81a38437b3cb31c98e690bd5502c70550dbf5e",
+        "database/tempo_legacy_database/adapters/introduction_priorities/README.md": "647670ec7409d7f87308f7184658022fd6efdd07e64e885eff993b94ecd9a10f",
+        "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf",
+        "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812",
+        "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3",
+        "database/tempo_legacy_database/adapters/introduction_priorities/publications.py": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/README.md": "f4b775b2cd79700bfebfdead1c72ea6dc44461af35e1a4a066460cb710f4a586",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/__init__.py": "0371f5acd034259c1fc0d40217de6e5f7bd2996ea65d5c67cae88849739a50f0",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py": "8d0180c43da220a20916f3c2a2c157feb7d2d48f05b11813c7ba2d536d6d0130",
+        "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py": "86e11ada77697677075cda8e8555dc154e5efc76bba6e6bb3a2b5423a5ebdbd9",
+        "database/tests/benchmark_postgres_priority.py": "8a5e36f7d9d46ec4755d68f0d8ef2aa21da4a7f8f9a3696985305fff7f79cc4f",
+        "database/tests/check_postgres_priority_recovery.py": "c278362481c3baa54b9e2e072ef4368d674182c15e5a59b1907b493ba3dbcee7",
+        "database/tests/check_postgres_refresh_inputs.py": "6cc021db1f5422286611e59be07cd55a5dc644e946a35b0f866e8faf271326c6",
+        "database/tests/priority_baseline_postgres.py": "42e8f2315104ca029d888138b4241a5c134faf4b610549c6604b0fcfd8a5f059"
+      },
+      "edit_paths": [
+        {
+          "path": "backend/app/main.py",
+          "sha256": "1b981065e837ad58758e67f0e2709363e4380f8f8ca6e05d5d80d1dd70cddd6f",
+          "proposed_sha256": "7bd78014ea99b6f473ef00b582d5221a6d2985379c51f25bcf960c5daa29bd75",
+          "required_edit": "Remove exclusive producer/retention imports and handler registration and the introduction_priority response field/priority_status call from list_repertoires; retain all actual repertoire definitions/current routes."
+        },
+        {
+          "path": "backend/app/services/background_activity.py",
+          "sha256": "e4987e56b050e1fff404ba3cec5d0592ed8b8154bf172449d6f1ed65fb2929be",
+          "proposed_sha256": "3af026ef213f555a7de7e6c5c451702898271bf8abf82d2af8021fdf63aff724",
+          "required_edit": "Remove priority_activity projection only; other activity/current control sources remain."
+        },
+        {
+          "path": "backend/app/services/background_diagnostics.py",
+          "sha256": "2f62e6203ec94e86f8f533273b45eca852ab5c6c3453edf3dc25626b7cdc1cb7",
+          "proposed_sha256": "8b0e35daa89f57551cd2791796cf4e22c08590d089cb490a24a91fe1ee10556a",
+          "required_edit": "Remove only retired priority published-generation completion metric mapping."
+        },
+        {
+          "path": "backend/app/services/background_metric_kinds.py",
+          "sha256": "1f179f0dbfe83426edd7a5a450daf402439a30ec4f01128b65550d3694dfc860",
+          "proposed_sha256": "26db855e7aaecc2c98bf1ce9af60b28276b99b1a32b163a1cff0af5f1e1316da",
+          "required_edit": "Remove only repertoire_priority and priority_retention kinds; retain actual native game_derivation_priorities kind."
+        },
+        {
+          "path": "backend/app/services/durable_scheduling.py",
+          "sha256": "8bb101c74d40a4feb2ccab30a925233d48ecf2ba169644af48d31279dd473501",
+          "proposed_sha256": "ba05a28a76bc6a3023aff27371a312706cdf2a1bea8dce3b1d7d7137318e608a",
+          "required_edit": "Remove retired repertoire_priority/priority_retention scheduling entries; retain exact other classes/weights, including discovery_recommendation as real priority-class fixture representative."
+        },
+        {
+          "path": "backend/app/services/durable_tasks.py",
+          "sha256": "d8dab16fd4b37253b31e5f9a66f7bbc6c90e2bb5aca8e54b7119ab9044570a37",
+          "proposed_sha256": "fb208c8a2ebfafebde236785345dabe38dff80fa3abb400b456bbd4fd7fea119",
+          "required_edit": "Remove only obsolete repertoire_priority pending-refresh clear branch after claim; retain current task claiming/events/scheduling."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "b08ee843dcf32e150ccf0dbf7a20b0cd010dd71aff5336516e20328c3a7c1374",
+          "proposed_sha256": "fe70b7f0f78dc1b156a88e402651dad4049e7114aa2093b06958c9a5887d659e",
+          "required_edit": "Remove exclusive priority imports, round-robin claim/calculation/publication branch and interrupted-priority requeue. Retain every actual six-stage local derivation function byte-identically to repaired 8bcd and all other current sources."
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "sha256": "81591e714dba8df74bac9dcacec6595b92e5a5b67dfcc7a60ddae64af66f01ec",
+          "proposed_sha256": "6ffff43ab48f53f7556112de99ad252802e701bbfb11d7f719e74658fcd8c0c8",
+          "required_edit": "Remove only producer/retention imports, supported-kind/handler and settlement/timeout registrations; retain essential daily_queue projection/public import and native game_derivation_priorities cursor protocol."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+          "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
+          "proposed_sha256": "7e0a69668feace56f634dba9cc1b86039b2aa127fb91400da26700c34f268eab",
+          "required_edit": "Remove only priority source/generation map entry and priority_activity SQL; other source/control queries remain."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/coordinator/storage.py",
+          "sha256": "9ff46be2e83e39bcf9f0ff04db2d8405826ee7bb4837d100426717e1e0d70792",
+          "proposed_sha256": "21d93fcbff4267ddad8fb691cb9ff2d6ff7ec0f2f05a89e3ce42b1e3f9911be2",
+          "required_edit": "Remove only requeue_interrupted_priorities SQL helper; all current primary terminal state storage remains."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "sha256": "fb12f9827eff29dd75c1e7016d23d63f3a50226feb45c0cb0b49e69ddfc2bd46",
+          "proposed_sha256": "cffee557a8ba8e09ed53ffdc90d531ee316772d03a7676e08a9fd3c5384a4c5a",
+          "required_edit": "Remove obsolete coalesced priority refresh admission/publication SQL, retaining only daily_queue_projection with exact public import, signature, function source, bound query and result."
+        },
+        {
+          "path": "app/domain/schemas/background-diagnostics.ts",
+          "sha256": "f6659cfa6b86b2671503e994681c1a964694204fb1947976e68741dd5ea955ba",
+          "proposed_sha256": "b6e9a12a1ac4ac41b91d33f0c952fcfc5faf1d0f8134ba8a7ba0d51a2c041e86",
+          "required_edit": "Remove repertoire_priority and priority_retention public kind values; remove one retired repertoire_opportunity value as explicitly authorized dependency parity repair. Keep game_derivation_priorities for actual native handoff; no duplicate opportunity deletion credit."
+        },
+        {
+          "path": "app/domain/schemas/index.ts",
+          "sha256": "bee9a6b4bc4a94261a22a2a1ee5f1c67ebd6a776e1e1233f7581913459886a55",
+          "proposed_sha256": "7ec1d74c479d362b89d7ab196743677b2340c4a2c10e0dd2f635c3321372888a",
+          "required_edit": "Remove only the unused introduction_priority metadata field from repertoire definition response schema; retain canonical/graph/source fields and definition validation."
+        },
+        {
+          "path": "database/tooling/measure_postgres_incident_workloads.py",
+          "sha256": "ebaddd5e5f97853c9b5ce74a3ab8fd8e33268e0f2808555ab8d0cec68369f463",
+          "proposed_sha256": "75d56163190d09e558ea7f0d9d7a63e149754484a006229d912b09965bd9c5cf",
+          "required_edit": "Remove only retired priority workload/producer calls and obsolete import; retain other real incident workloads. Tool delta is separate from runtime Python 1,893-line count."
+        },
+        {
+          "path": "database/tooling/reclaim_priority_storage.py",
+          "sha256": "466766615b833e4f43d49c75c4bda33201822027d3d0da123a9fe69eef4cd5f4",
+          "proposed_sha256": "05d234c930c210fab5cee52387eb568963331450520dd0afa8ee0535a59650af",
+          "required_edit": "Retire cleanup/compaction/fingerprint CLI and exclusive helpers. Retain _encoded_row and queue_order_checksum source exactly for unchanged create_sqlite_cutover_snapshot reader; direct CLI rejects before opening database. No snapshot/maintenance execution."
+        }
+      ],
+      "supporting_edit_paths": [
+        {
+          "path": "backend/app/services/README.md",
+          "sha256": "475cdbaacd85c223dc7778e184474dbac6bac114dbe6aa0d0a250be05669aca3",
+          "proposed_sha256": "38c01935ae6d18f66b8273a3643c28b9589f299120c51d8da3ac1738bacde492",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "backend/organization-inventory.json",
+          "sha256": "e7a292a91f5c09f997ee336d0cbc5a9518d04966d48cc33a235087913abb93d4",
+          "proposed_sha256": "04a55713ce82f981756bb2d766165047d75858bd0970179f5eba77d2a80724f0",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "backend/tests/test_adaptive_priority_retirement.py",
+          "sha256": null,
+          "proposed_sha256": "95cde0ece0d5c2db05fbf77a729c7da0b593551170677917d948924cb02e9b55",
+          "required_edit": "Add current application composition/module absence, retained graph/queue/native registration, repertoire-definition response and retired control rejection before storage checks.",
+          "change": "add"
+        },
+        {
+          "path": "backend/tests/test_background_activity.py",
+          "sha256": "174650e6a13eab2ccf1dbf88c4d0dbea43ebaa1ea37677801cadc0d528608d71",
+          "proposed_sha256": "2af365574b6a535ff10a12ced9f4320411e66b5a1d4ea810beb91031a6bf51c6",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_background_diagnostics.py",
+          "sha256": "e83865edb2c27e0f21de91de06258d19bc9182f2282290ea74bfc05787b895f5",
+          "proposed_sha256": "25955e19ac4adb43bc607c454230c5d67a826e4804c3738a17f3385449ca722f",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_canonical_repertoire_prefix.py",
+          "sha256": "3294195b6de02f771c7747480d0f8b00ad033f39fce9914a2de45457b2f2f2fd",
+          "proposed_sha256": "eb3e04775204fc0f86a4e15510b157c3d0bc6ed425bc682fb74ad17deac7d13b",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_game_adaptation.py",
+          "sha256": "8ab807b2bfdb3d247fd9f3b71d12881c7d43a50cf5634ba5b87c32f04ea7b25a",
+          "proposed_sha256": "056300a00d5a895a19969cd6d0225ac9ab586490c68da0b548f3749dad27850f",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_graph_rehearsal_admission.py",
+          "sha256": "f5af4fe2da314034da57350d41be16c129d218bc0611e8f71d433bfecd9e8192",
+          "proposed_sha256": "ee6c720cc6ef5ba4432e45af88dc48dd166176da273fd509512968f2b8e53509",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_introduction_priorities.py",
+          "sha256": "76db1c86440f7496776fa21c1c28a60eb6b2152473b442596ab6f3dd2acfa332",
+          "proposed_sha256": "c855b71dccaafc83f6ec2b559cf3df2f9ae34fb81f39642fb0502a8f01a26a7f",
+          "required_edit": "Retire producer-only calculator/jobs assertions; keep actual saved-score queue admission test using directly seeded saved facts, including next-day score refresh and due review precedence."
+        },
+        {
+          "path": "backend/tests/test_legacy_lifecycle_database_split.py",
+          "sha256": "50b2c369f52c8e0b85aac5fc88cdaf7b4968a41afce48a72b565ceaef5a631b6",
+          "proposed_sha256": "f2f6339d530e2413269e61363bb69d55862a166d8fad1cd65a22efeb8552df55",
+          "required_edit": "Remove nonexistent retired application refresh module from boundary guard; retain queue origins/tasks/metrics no-SQL checks and assert essential daily_queue_projection stays with its existing database owner."
+        },
+        {
+          "path": "backend/tests/test_legacy_review_storage_separation.py",
+          "sha256": "5ff5f452f41eafad6e2caf5f76bd05ec52b76e90573395c4b45a39900d24f5da",
+          "proposed_sha256": "0c22dfbd51b2200dacbb979b834da41689d7ee505a8443f8db071d004735a1e3",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_postgres_background_timeouts.py",
+          "sha256": "1738374fb48051b86db5e8a75ffe938daa03df1715b6d404d8b728223534ad7a",
+          "proposed_sha256": "982eef75c77bf214f8ad8b486744dd53061445a9746c0b922870b36f0f6b973e",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_postgres_cutover.py",
+          "sha256": "5687bf2cbeb69a27d482eba24f063565aa1027a8cd648316e2f72f4f191868ac",
+          "proposed_sha256": "b9a90875ff0ff03594e63964952b4bb3c051a529cd20ce268408af86f88a9bda",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_postgres_game_completion.py",
+          "sha256": "64fe4556ccd24b8ce0cfe34f9a45aab38da60bedca6ab450a38498da9c856e76",
+          "proposed_sha256": "a892797b5e87867a34ff15613a6766eded5a3601e4c8e8c0633b648a643bfb9f",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_priority_callback_retirement.py",
+          "sha256": "7bae4e110a49b1d3e74430cefcb27b12fd0ea168c4c9dba7d39f90c711e4a4a5",
+          "proposed_sha256": "7fc3257428062230fe86e3cfec0384502d4f8b102decccdfec0179aa298b250c",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_real_game_feedback.py",
+          "sha256": "69d20fe2400424bdd2225a119aae86b61d4a6f9522585374a13ce44cd41d6036",
+          "proposed_sha256": "d2f76571779d569a33719895fbd4f08120d54d7570e146cb4e09debd69e963eb",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_repertoire_coverage.py",
+          "sha256": "e5f38c72631c6b4e788ec51d40c7b88a160def24a319823d0e822c121b30832d",
+          "proposed_sha256": "b2c8bb19322bbf9570ae579b2094e30d7f9a896de25bfdf4d0028f344dc4ac0a",
+          "required_edit": "Retire only exclusive producer calls/expectations while preserving actual primary review/queue/FSRS/game/coverage/source invalidation/frozen/graph/native handoff assertions; exact current 83-case union and owning selections are recorded below."
+        },
+        {
+          "path": "backend/tests/test_scheduling_turns.py",
+          "sha256": "c05f104ccf564729456ba64bbb1a9213681b6a18d64b1cf93d95ea6f91052b9e",
+          "proposed_sha256": "32b91692e92573d72005cab7378c12fe372ca934f887f897d3256adfcdf48f6a",
+          "required_edit": "Replace retired producer fixture representative with actual discovery_recommendation in identical scheduling class/weight; preserve original fairness sequence proof. Native script source prepared only."
+        },
+        {
+          "path": "backend/tests/test_storage_reclaim.py",
+          "sha256": "4d480aee45adc1afa4c77c521c5ed017d7cfb029e1dcf9ce0550cd7e032962ff",
+          "proposed_sha256": "9b07fa0b350a4b8d2315d685557f947a1c8dbbdacdb897a29033be554e5bebdf",
+          "required_edit": "Retire mutation/compaction assertions with removed CLI; retain real SQLite exact visible queue checksum invariance and explicit CLI rejection before any database access."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/README.md",
+          "sha256": "ecea27a98e1a42d9ac8389361fefa0d56efb09e9467f88b7ef9b4a6338f6c046",
+          "proposed_sha256": "6842ecbf8f0fce0021e54fec4dead6832865315f2c756f86c06ca40a9880373b",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/README.md",
+          "sha256": "a80ecd1a1b18ed1806924586f634d0ee0539e98ad950df1fe1606fa8a9987cc4",
+          "proposed_sha256": "0954a07c87295701373e6aba8c992b34b9a62e089ed58dc517c4f9276afb158b",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "database/tests/README.md",
+          "sha256": "440293ccf51e1484ca30ea6d479608379c7513713553c04e3e7c75af740549a2",
+          "proposed_sha256": "05540b575a78b980ee3db7a15ad253a3400a9431d9cd28b71e247f391810bcfa",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_background_workloads.py",
+          "sha256": "2e84f24c304b439bdce20bd3c96f575f8a212333ea832286a83d1005628840f4",
+          "proposed_sha256": "93e2a65dfbc2aafd23f04c03cda31c3ddc8f79c902aa837fce2ad777cfec710d",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_canonical_freshness.py",
+          "sha256": "1ecb5b985dd4a7444d2aa6c01074b5bf81f00406d26aedd403994d9aa7f5d00c",
+          "proposed_sha256": "d3188bb026f918b26fb454122266fd2b1151d9c201beccc40c25ba1313f226e1",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_daily_study_dispatch.py",
+          "sha256": "a98dde957ba52a9b7fefe5c7b9071e03804c3ed6edeec06743f02ebdd66c8317",
+          "proposed_sha256": "3210b1c40c1102e1cbb178b362655a05a1a12b10713b9966096fc59e4a8b6d1e",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_graph_retention.py",
+          "sha256": "f730b124bd956da3ce3cdb2298893f8bffed58216bb08173f983a95f0623e108",
+          "proposed_sha256": "e4fa7c57aa80f79fb0553d916335df742f7269427db69c7e77add32e6d3bd873",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/check_postgres_scheduling_turns.py",
+          "sha256": "00ccaa495ee1d5a575e1cb6d93da509b91617db2d947f0bc6f149df082f2e45b",
+          "proposed_sha256": "c68e6f99acc64add70cbc9bbe074b0d1984bfc463f239c51e2593ed71e119e2e",
+          "required_edit": "Replace retired producer fixture representative with actual discovery_recommendation in identical scheduling class/weight; preserve original fairness sequence proof. Native script source prepared only."
+        },
+        {
+          "path": "database/tests/postgres-test-options.mjs",
+          "sha256": "bc51cb208ad53538e2c80f2236250d1af519fdf50b44200f63da78428a6453a0",
+          "proposed_sha256": "6d3d153382effdb06e2ccccdc067d42ca9885a078c1733d2ef41e8d69a71bc91",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/postgres-test-plan.mjs",
+          "sha256": "12058529110196e20074a14bff2906c7b0d25d13081a0eae72f39d59c44d068c",
+          "proposed_sha256": "55f6659d532ad16339812ddc3ef4a18d031f71a95ec9f16680937a3ee613b561",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tests/test-postgres-docker.mjs",
+          "sha256": "4b98d92bc7193fd833af3e2fcb25a76a3be2aa76cb72ad31af08a07a0d5dcb83",
+          "proposed_sha256": "19c616e705143b48c0700d1d1ec6e12156db6e126bdd4cff0d5d9c3f5e4c7f78",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "database/tooling/README.md",
+          "sha256": "48cd301e18fc4cef349abf1271a1a7fa5823470d86d8a48499fcb20b8abf85c2",
+          "proposed_sha256": "e1573e8ab02ee6555f005df29bd2df1313c65ef27944207aa1da5f8f703d369d",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "docs/background-diagnostics-example.json",
+          "sha256": "4d49c14caa632cd83fb39e7746c75e02e6f449ab5736e5c88cf1062e244fe4f5",
+          "proposed_sha256": "e9d88b4ed4beeab06f069b6757636906d5c7f443b4411aa3d0107bd04a9cb6d5",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "scripts/ci-fast-lane-inventory.json",
+          "sha256": "785761b1604893a2427fd560bc631b74497da15186ca9f12b6497da18a821cea",
+          "proposed_sha256": "bde50aa179a74974529dc94195748edcf3889fd46521d1c291a7936da27dd2f7",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "scripts/ci-verification-inventory.json",
+          "sha256": "7dc5fa14aa2dbe540c5566892af75b7c283cec89261613e6a0ec3d51568aefd8",
+          "proposed_sha256": "08ca4eedd58417e3b1741eb4785ff2a5e227c2135d9f963a76bde88747612340",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "sha256": "9d74f384eff4f81dc66d0c6b0a8b5a0f6cf181bcbbb36d95740cddbcf89a62b5",
+          "proposed_sha256": "7dae3667e3cfc3fd2fce4ea1b10102fba0cfeb6c7283349b95b50d98eeecfcc8",
+          "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
+        },
+        {
+          "path": "tests/browser/recovery.spec.ts",
+          "sha256": "37f1c33e92df41679b6496c94a3e93b74e12739a5e2009f563ed99343488f132",
+          "proposed_sha256": "7d72eb798decc33ba1e48e6baed78841da3db8fc7a883a1ccc62095f8e9a9d63",
+          "required_edit": "Remove only unused retired introduction_priority fixture fields and retired-kind background diagnostic counters; browser case not run and no old-envelope preservation requirement."
+        },
+        {
+          "path": "tests/fixtures/controlled-browser/startup.json",
+          "sha256": "78a6131cc70174ee3add64fecf2cbee6bff6f0013d5b7d5b6e22e22b7973edab",
+          "proposed_sha256": "841d1480f3d8bf1a226f8fc45ad5c3a28157b5c49d4693bf7a0f2f34018e0283",
+          "required_edit": "Remove only unused retired introduction_priority fixture fields and retired-kind background diagnostic counters; browser case not run and no old-envelope preservation requirement."
+        },
+        {
+          "path": "tests/runner/ci-reliability.test.mjs",
+          "sha256": "425d3bdc83ea4ed8bf7f316449c8c3016a42d4669150083b3a05a00104306d8f",
+          "proposed_sha256": "cc89da9ce8477cadb1c9675f0a99e4abf319af938012decf887f0a7eabcc8b56",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "tests/runner/postgres-test-speedups.test.mjs",
+          "sha256": "d1cc513ce9ea1bebafd62473a8e8f6f31b1ad4a3534ae61987d72ff2723e1ddf",
+          "proposed_sha256": "0fb9377bcc1edc6833566f7d2c86bef8acd6965279f700888ca97da6f8d8d5f4",
+          "required_edit": "Remove retired producer/benchmark/recovery consumers and runner mode/stage registration only; retain actual Study/graph/lifecycle/queue/native handoff proof sources.12 selected Node plan/list/fake checks pass; native fixture execution remains unrun."
+        },
+        {
+          "path": "tests/unit/validated-data-regressions.test.ts",
+          "sha256": "9abd78c033d52837fb327e900d09a39c599920335905483fc1c29ecd45188dff",
+          "proposed_sha256": "7b373f141f75e7e4df13b0b4fca9af572922a6725d32530f5fcc42c3a10c72de",
+          "required_edit": "Replace producer-only optional metadata validation cases with current repertoire definitions/canonical graph validation; unrelated schema cases unchanged."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "backend/app/contracts/opening_graph.py",
+          "sha256": "e86f943e3c6f9415df31a868d414be3e1a38d6f81ecf95a613ac630f738ea61c",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/chess/cards.py",
+          "sha256": "90dac196ea8991303b03c525aa8c7c8ec81694af66f4f96844d82f54e77de3b3",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/card_deletion.py",
+          "sha256": "2d722c0f9811e901609715a6df1b6b595536e904686f8409ee91f5173a0b3ad8",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/services/opening_graph.py",
+          "sha256": "8563c7f6c0ca26b8f1307f84b0f623cb045d64d1b67dccb0a614586295bd859d",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/services/postgres_opening_graph.py",
+          "sha256": "ff3b6f2bf172bdd72b8f87018f64e99169eebb4d3daaea3a7c79fe65f04a1093",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/services/canonical_prefix.py",
+          "sha256": "518ecedbe745ddf737b62a4b9fff9167c6febbe13e2c133a9893f6fa5ecc5740",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/services/canonical_prefix_preview.py",
+          "sha256": "14470b1e6ad5136d1da42fa9fd5e4ed58e43ec40a79a76f64170afc92f8893f2",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/opening_graph/worker.py",
+          "sha256": "f2ed8a1e4463b61e3492920833cbd2ae5e8f102252011db307c6949f4e18afe4",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/opening_graph/compatibility.py",
+          "sha256": "66fc1acbce0e2e0af91d5a70da845cf8b6c91f1f12ce89cac893626438286bbf",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/scope.py",
+          "sha256": "ecc4651bf7e5f8e4130d90bf5fc4548fdef7df5d0cd986d14b6f81d92fc44dc2",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/preview.py",
+          "sha256": "55326486b997af5c829718600dbc3ee0b110713132d8ffccc0809661b36f2938",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/card_deletion/storage.py",
+          "sha256": "16d3da891d78debbe4cf55d029fb0b8d0a0332f7a3e3c43e26a59e3b7fbdf9db",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/021_priority_preparations.sql",
+          "sha256": "6b98247e09ba7bb23d6aff38afea49b02765fd7c13d61c77d5e984bea3f3c7e6",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/033_canonical_prefix.sql",
+          "sha256": "5691e6d59c0b96246caf78990a28962b4efed333424c200382b527bb373607e0",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/034_current_canonical_routes.sql",
+          "sha256": "45fa3b7333e9ed23aeaed176d1b4a6bcc3929778fb0593edea2be3ef94e04793",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/037_card_deletion.sql",
+          "sha256": "6d0c5e2ea1210e0d672c48bad02db1b74c751667f0e596f7b40f57686ede068d",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/038_prefix_transition_application.sql",
+          "sha256": "76f00efcd3eb86fd968abca69052c0086061eac856bd20ebdd0c3c2d229b9f87",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "4e36f8841ddcc73eb50cbdeaa72f6c479f1b46489f5a8fa174c0b1224430103f",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/derivation/priorities.py",
+          "sha256": "f349feb8d1232f6e3907ba02a5bda76af1b4142ded089bb4f9b477a213d385a3",
+          "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
+        }
+      ],
+      "additional_wholefile_contracts": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "sha256": "65ef30a694b22b01c13570156b1308bf7ff569761845128c9c4e8b63ff8ba8b6",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "backend/app/services/postgres_game_features.py",
+          "sha256": "19024124c422b56819e5d56ec32a448bc1c2a6292b2c078aa9fef9c084a0bbea",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "4e36f8841ddcc73eb50cbdeaa72f6c479f1b46489f5a8fa174c0b1224430103f",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/derivation/priorities.py",
+          "sha256": "f349feb8d1232f6e3907ba02a5bda76af1b4142ded089bb4f9b477a213d385a3",
+          "comparison": "byte-identical to dependency source baseline"
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+          "comparison": "byte-identical to dependency source baseline"
+        }
+      ],
+      "preserved_function_sources": [
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "symbol": "daily_queue_projection",
+          "source_sha256": "3572709abcb8df2664e3e8f229e489fbef0b9756fd7ba9d512bc403052c07f93",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        },
+        {
+          "path": "database/tooling/reclaim_priority_storage.py",
+          "symbol": "_encoded_row",
+          "source_sha256": "311fc16db31527d087a30aa04681b38f72cb75c51046708bb0fae4e71b2252e5",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        },
+        {
+          "path": "database/tooling/reclaim_priority_storage.py",
+          "symbol": "queue_order_checksum",
+          "source_sha256": "d4e6d12067b9c2ce53725321d1d8383080da000825d614320bd45e10bcba2e6d",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "symbol": "_set_derivation_phase",
+          "source_sha256": "af01b955aa867a9b072e929e7c986b98c8a980736034fe9083047161c9a11007",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "symbol": "_run_derivation_phase",
+          "source_sha256": "bfb11edb8e3f35ff221c0696e699543d312fcaf0a5d415af660ba4bfddaa2c15",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "symbol": "_execute_derivation",
+          "source_sha256": "90eb4e90e70cc201cb53e1c56746a6a7cef55d1d024d96c05830785ee1fde7b1",
+          "comparison": "function body/source byte-identical to dependency baseline"
+        }
+      ],
+      "protected_public_contracts": [
+        "tempo_legacy_database.adapters.lifecycle.refresh_requests.daily_queue_projection: exact queue_date argument, caller connection, bound SELECT and returned row used by essential daily rollover.",
+        "database.tooling.reclaim_priority_storage.queue_order_checksum plus _encoded_row: source-identical read-only SQL-backed visible queue checksum for unchanged existing snapshot reader; cleanup CLI rejects before database open.",
+        "Existing queue_refresh saved-score/current view and frozen/no-score selectors, canonical prefix invalidation and physical priority epochs/triggers remain. Source producer removal is not blanket table/source-dependency retirement.",
+        "Local derivation has six real primary stages and Finished6/6; native game_derivation_priorities remains cursor/terminal completion protocol at stage 7. Both remain exactly repaired dependency source, with no producer callback."
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_adaptive_priority_retirement.py::test_adaptive_priority_source_absence_keeps_primary_runtime_registration",
+        "backend/tests/test_adaptive_priority_retirement.py::test_repertoire_definition_response_omits_retired_adaptive_metadata",
+        "backend/tests/test_adaptive_priority_retirement.py::test_retired_priority_manual_control_cannot_open_storage",
+        "backend/tests/test_background_activity.py::test_activity_projection_lists_every_background_source_and_pages_without_losing_counts",
+        "backend/tests/test_background_diagnostics.py::test_background_runbook_snapshots_validate_without_private_fields",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_prefix_anchored_continuation_retains_downstream_routes_and_absolute_horizon",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_published_introduction_priorities_hide_after_source_edit",
+        "backend/tests/test_frozen_opening_order.py::test_frozen_ranks_override_generated_scores_breadth_and_ordinary_gameplay",
+        "backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains",
+        "backend/tests/test_game_adaptation.py::test_stockfish_timeout_preserves_game_positions_and_remains_retryable",
+        "backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh",
+        "backend/tests/test_graph_rehearsal_admission.py::test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease[execute_graph_cleanup_slice]",
+        "backend/tests/test_graph_rehearsal_admission.py::test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease[prepare_obsolete_graph_cards]",
+        "backend/tests/test_graph_rehearsal_admission.py::test_native_graph_direct_entry_calls_use_shared_admission_protocol[check_postgres_canonical_freshness.py]",
+        "backend/tests/test_graph_rehearsal_admission.py::test_native_graph_direct_entry_calls_use_shared_admission_protocol[check_postgres_graph_retention.py]",
+        "backend/tests/test_introduction_priorities.py::test_next_day_admits_from_last_published_scores_without_delaying_due_review",
+        "backend/tests/test_legacy_lifecycle_database_split.py::test_three_lifecycle_compositions_delegate_sql_and_ddl_to_database_owner",
+        "backend/tests/test_legacy_review_storage_separation.py::test_late_opening_reconciliation_preserves_both_reviews_and_original_receipt_without_priority_producer[borrowed_transaction]",
+        "backend/tests/test_legacy_review_storage_separation.py::test_late_opening_reconciliation_preserves_both_reviews_and_original_receipt_without_priority_producer[sqlite]",
+        "backend/tests/test_legacy_review_storage_separation.py::test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer[borrowed_transaction-False]",
+        "backend/tests/test_legacy_review_storage_separation.py::test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer[borrowed_transaction-True]",
+        "backend/tests/test_legacy_review_storage_separation.py::test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer[sqlite-False]",
+        "backend/tests/test_legacy_review_storage_separation.py::test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer[sqlite-True]",
+        "backend/tests/test_postgres_background_timeouts.py::test_daily_queue_timeout_cannot_change_a_replacement_generation",
+        "backend/tests/test_postgres_background_timeouts.py::test_daily_queue_transaction_deadlines_preserve_checkpoint_and_reach_cooldown",
+        "backend/tests/test_postgres_background_timeouts.py::test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit[opening_graph_rebuild-execute_postgres_opening_graph_slice]",
+        "backend/tests/test_postgres_background_timeouts.py::test_postgres_graph_timeout_superseded_generation_does_not_retry_or_fail_replacement",
+        "backend/tests/test_postgres_background_timeouts.py::test_postgres_other_timeouts_and_target_lock_contention_keep_existing_yield[opening_graph_rebuild-execute_postgres_opening_graph_slice-LockNotAvailable]",
+        "backend/tests/test_postgres_cutover.py::test_postgres_daily_queue_rollover_requests_refresh_until_ready",
+        "backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets[False]",
+        "backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets[True]",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_events_stage_then_publish_without_stale_replay",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_gameplay_event_import_targets_legacy_table",
+        "backend/tests/test_priority_callback_retirement.py::test_native_explorer_publication_preserves_progress_and_cursor_without_optional_priority",
+        "backend/tests/test_priority_callback_retirement.py::test_prefix_save_preserves_source_and_coverage_without_optional_priority",
+        "backend/tests/test_real_game_feedback.py::test_blocked_existing_card_keeps_game_evidence_without_automatic_again",
+        "backend/tests/test_real_game_feedback.py::test_canonical_decisions_recognize_deep_reentry_and_accepted_alternatives",
+        "backend/tests/test_real_game_feedback.py::test_foreground_review_completes_while_real_game_derivation_computes",
+        "backend/tests/test_real_game_feedback.py::test_fresh_game_miss_after_completed_cycle_keeps_priority_behind_issued_head",
+        "backend/tests/test_real_game_feedback.py::test_late_imported_miss_is_historical_and_does_not_change_fsrs",
+        "backend/tests/test_real_game_feedback.py::test_missing_card_keeps_finding_without_priority_or_review",
+        "backend/tests/test_real_game_feedback.py::test_opponent_deviation_and_line_end_create_no_player_miss_event",
+        "backend/tests/test_real_game_feedback.py::test_priority_game_miss_queue_reports_prior_study_without_a_clean_pass",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_admits_locked_or_new_card_despite_daily_limit[locked-0]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_admits_locked_or_new_card_despite_daily_limit[locked-1]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_admits_locked_or_new_card_despite_daily_limit[new-0]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_inside_configured_prefix_is_not_assumed_away",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_maps_to_existing_card_once_and_reaches_introduction_queue",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_obligation_survives_next_day_without_fsrs_mutation",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_promotes_existing_entry_ahead_of_ordinary_work_and_replays_once",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[INSERT INTO deleted_cards(card_id,deleted_at) VALUES('card','2026-01-01')]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('rep','card','unsafe-issue','scan','2026-01-01')]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[UPDATE cards SET archived=1 WHERE id='card']",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[UPDATE cards SET pending_validation=1 WHERE id='card']",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[UPDATE cards SET superseded_by='replacement' WHERE id='card']",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission[UPDATE imported_games SET adaptive_excluded=1 WHERE id='unsafe-miss']",
+        "backend/tests/test_real_game_feedback.py::test_real_game_miss_transposed_prefix_decision_prioritizes_whole_card_without_split",
+        "backend/tests/test_real_game_feedback.py::test_real_game_misses_deduplicate_by_card_and_study_consumes_all",
+        "backend/tests/test_real_game_feedback.py::test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants[game-False-True]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants[study-False-False]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants[study-True-True]",
+        "backend/tests/test_real_game_feedback.py::test_real_game_priority_retains_identified_active_attempt_and_burial_defers_obligation",
+        "backend/tests/test_real_game_feedback.py::test_reinforcement_order_survives_daily_queue_projection_rebuild",
+        "backend/tests/test_real_game_feedback.py::test_restart_does_not_relink_archived_opening_card_removed_by_graph",
+        "backend/tests/test_real_game_feedback.py::test_studied_game_miss_prioritizes_without_changing_fsrs_or_creating_review",
+        "backend/tests/test_real_game_feedback.py::test_targeted_study_updates_fsrs_and_later_success_is_measurable",
+        "backend/tests/test_real_game_feedback.py::test_transposed_decision_keeps_canonical_card_identity",
+        "backend/tests/test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete",
+        "backend/tests/test_repertoire_coverage.py::test_issue8_independent_claim_skips_superseded_failed_attempt",
+        "backend/tests/test_repertoire_coverage.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure",
+        "backend/tests/test_scheduling_turns.py::test_bounded_lease_recovery_selects_one_expired_item_in_requested_pipeline",
+        "backend/tests/test_scheduling_turns.py::test_discretionary_turns_advance_games_amid_continuous_graph_backlog",
+        "backend/tests/test_scheduling_turns.py::test_promoted_backlog_cannot_consume_other_pipelines_persisted_turns",
+        "backend/tests/test_scheduling_turns.py::test_prompt_control_backlog_yields_after_two_slices_without_losing_intent",
+        "backend/tests/test_scheduling_turns.py::test_scheduling_empty_queue_preserves_turn_and_new_supported_kind_is_not_lost",
+        "backend/tests/test_scheduling_turns.py::test_scheduling_selects_oldest_eligible_work_without_priority_starvation",
+        "backend/tests/test_scheduling_turns.py::test_scheduling_skips_paused_disabled_and_intentionally_delayed_classes",
+        "backend/tests/test_scheduling_turns.py::test_scheduling_turn_survives_database_reopen_and_uncommitted_claim",
+        "backend/tests/test_storage_reclaim.py::test_retired_priority_cleanup_cli_rejects_before_opening_a_database",
+        "backend/tests/test_storage_reclaim.py::test_visible_queue_checksum_preserves_order_cycle_and_status_without_cleanup"
+      ],
+      "selected_frontend_tests": [
+        "tests/unit/validated-data-regressions.test.ts::repertoire definitions and graph metadata validate without the retired priority producer",
+        "tests/unit/background-diagnostics-regressions.test.ts::pr116 diagnostic schemas accept every supported counter and runtime kind with finite bounds"
+      ],
+      "test_commands": [
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_adaptive_priority_retirement.py backend/tests/test_introduction_priorities.py backend/tests/test_canonical_repertoire_prefix.py::test_canonical_prefix_anchored_continuation_retains_downstream_routes_and_absolute_horizon backend/tests/test_canonical_repertoire_prefix.py::test_canonical_published_introduction_priorities_hide_after_source_edit backend/tests/test_canonical_repertoire_prefix.py::test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes backend/tests/test_frozen_opening_order.py::test_frozen_ranks_override_generated_scores_breadth_and_ordinary_gameplay backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains backend/tests/test_legacy_review_storage_separation.py::test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer backend/tests/test_legacy_review_storage_separation.py::test_late_opening_reconciliation_preserves_both_reviews_and_original_receipt_without_priority_producer backend/tests/test_postgres_cutover.py::test_postgres_daily_queue_rollover_requests_refresh_until_ready -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-source-boundary",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_real_game_feedback.py backend/tests/test_storage_reclaim.py backend/tests/test_graph_rehearsal_admission.py backend/tests/test_postgres_background_timeouts.py backend/tests/test_background_activity.py::test_activity_projection_lists_every_background_source_and_pages_without_losing_counts backend/tests/test_game_adaptation.py::test_stockfish_timeout_preserves_game_positions_and_remains_retryable backend/tests/test_postgres_game_completion.py -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-retained-mixed-boundaries",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_storage_reclaim.py -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-checksum-contract",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire backend/tests/test_priority_callback_retirement.py backend/tests/test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete backend/tests/test_repertoire_coverage.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure backend/tests/test_repertoire_coverage.py::test_issue8_independent_claim_skips_superseded_failed_attempt backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-final-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-final-owning",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_scheduling_turns.py backend/tests/test_background_diagnostics.py::test_background_runbook_snapshots_validate_without_private_fields -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-last-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-last-owning",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_legacy_lifecycle_database_split.py -q --rootdir=. -o cache_dir=/tmp/tempo-priority-producer-evidence-20261025/pytest-guard-cache --basetemp=/tmp/tempo-priority-producer-evidence-20261025/pytest-guard-owning",
+        "/opt/homebrew/bin/node /Users/andy/tempo/node_modules/vitest/vitest.mjs run tests/unit/validated-data-regressions.test.ts -t 'repertoire definitions and graph metadata validate without the retired priority producer' --config /private/tmp/tempo-priority-producer-evidence-20261025/vitest.config.mjs",
+        "node /Users/andy/tempo/node_modules/vitest/vitest.mjs run tests/unit/background-diagnostics-regressions.test.ts --config /tmp/tempo-priority-producer-evidence-20261025/vitest.config.mjs -t 'pr116 diagnostic schemas accept every supported counter and runtime kind with finite bounds'",
+        "node --test '--test-name-pattern=default PostgreSQL gate|focused PostgreSQL browser|durability mode and legacy|retired adaptive priority benchmark|standalone lifecycle prepares only|--list exposes|issue107 process restart|study_priority_large_transition_planning|full and split PostgreSQL verification' tests/runner/postgres-test-speedups.test.mjs tests/runner/ci-reliability.test.mjs"
+      ],
+      "test_command_receipts": [
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/source-boundary-command.json",
+          "sha256": "8cfa086abf65a414d4d9e118fa5ef9dfaa68ccba0018a3d768202913b24b37f4",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/retained-mixed-boundaries-command.json",
+          "sha256": "c911abc7e0fb38f8c9f3ee377aacfd5d23d3d0a2af0147e44844eea47ee30862",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/checksum-contract-command.json",
+          "sha256": "2427ea754258c8c386a33defd13823e8b265b711f7d6c7e723627aa7f48dc9ac",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/owning-final-command.json",
+          "sha256": "27f9f19fdf9f071485e026e76354f9a83cd67423eb072259e1243c0b0b461076",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/scheduler-command.json",
+          "sha256": "aa955160de5bfc8689d4a48b443bfd15819b35f02f614a40a9b0265244a73e11",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/lifecycle-guard-command.json",
+          "sha256": "6e61e5932ba5d7bd7522d12bba1deb232cc613a02cd8168d9803b117be982797",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/schema-canonical-path-command.json",
+          "sha256": "822202675566c64ad1da70a052bc8bbc3bed830bd77cc2564ad94dcaf5cc2cd8",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/diagnostic-schema-command.json",
+          "sha256": "5b230bfea2e5b81f2fd45f95f8efb1a72c725c7c581fae933eb333b7428a97eb",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        },
+        {
+          "path": "/tmp/tempo-priority-producer-evidence-20261025/runner-final-command.json",
+          "sha256": "287844690e6cee14f102ff5314d4f8ee10dede32fa46256162d7f0faa9318b0e",
+          "exit_code": 0,
+          "meaning": "Executed source-owner selection on task-owned SQLite/semantic fakes or selected frontend/runner cases. Overlapping Python selections are deduplicated by exact final83-ID union. Historical receipts do not request documentation-only reruns."
+        }
+      ],
+      "test_environment": "Task-owned SQLite and semantic/native-SQL fakes; two selected frontend cases and twelve selected Node plan/list/fake cases. No native PostgreSQL fixture execution/locking, browser, installed-artifact/resource isolation or full-system acceptance. Existing baseline deprecation warnings remain.",
+      "implementation_receipt": {
+        "owner": "/root/retirement_391",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/467",
+        "published_source_commit": "6f5bcd153b792438693190aee3a932797bfa5d6e",
+        "published_tree": "8bfa027d2e7aca104e2f26a6e7006b9ccdeda9c3",
+        "published_base": "8bcd897d16bb46fa89fef684842bea1559907074",
+        "published_base_branch": "codex/retire-opportunity-refresh-producer-20261025",
+        "dependency_pull_request": "https://github.com/aaweaver-actuary/tempo/pull/464",
+        "source_contract_sha256": "bc211adb5b2c2142dd607d5ceb46a073d4dce81f12a69aa471088c7552caccb4",
+        "source_state": "API verified open/draft/unmerged/mergeable at 6f5bcd, stacked on qualified 8bcd of #464. Actual reviewed feature code only; no main integration, merge/deployment or live action by metadata task.",
+        "exact_scope": "79actual paths =24 deletions (11 runtime Python,7 exclusive regular suites,4 exclusive native benchmark/proofs,2 owning drawings),15 production-related edits (11 runtime Python+2types+2tools),40 support/test/runner/docs edits or additions.",
+        "results": "83 unique Python cases passed,2 selected frontend cases passed and12 selected Node plan/list/fake cases passed. Exact83-ID union checked against current owning functions; overlapping runs are not double counted. Real local six-stage-stage completion, native seven-stagehandoff fakes, savedscore/frozen fallback, source invalidation, review/queue/FSRS, prefix/coverage, scheduling and lifecycle guard are included.",
+        "python_nodeids_sha256": "5d4d8a8f3cb2f4f58850fc3e062e2c3b55efcdae8ccf10a45f6a7e29eae687e2",
+        "reviewed_failure_repair": "Root caught stale lifecycle guard opening deleted services/refresh_requests.py. It now retains queue-origin/tasks/metrics boundary guards and asserts essential projection import; owning guard1case passed. Earlier source-read executor interruptions are not test failures.",
+        "source_absence": "11 runtime modules physically deleted and no remaining executable producer imports/calls or new runtime imports; task/retention/control/status/calculator admission consumers resolved.",
+        "qualification_limit": [
+          "native PostgreSQL fixture execution/locking",
+          "installed artifact/build/runtime correspondence",
+          "deployment/resource isolation",
+          "full system acceptance"
+        ]
+      },
+      "dependency_receipts": [
+        "Reuses exact #427 source/consumer inventory575f65fdf9bdc82dc8d58a9321d19797e8710da6 under superseding fresh-start policy. Old admitted-work recovery/drain/receipts are not source-retirement gates.",
+        "Stack base is actual repaired opportunity source 8bcd in draft #464; it resolves four former shared callback consumers before these producer modules are removed. Neither #464 nor merged #454 receives duplicate line-removal credit. Draft #467 depends on #464; it is not independently based onmain.",
+        "Root and #390 independently accepted final 6f5bcd after exact path/hash/AST/consumer review.26 unique graph/queue/DDL/native files and9 additional wholefile contracts plus 6 function sources verified unchanged; root lifecycle guard finding fixed and owning check passed. No runtime reviewer reruns.",
+        "All physical DDL and saved reader SQL/source epochs/canonical invalidators remain. Old priority rows may be disposable after exact graph separation, but current structural schema is not blanket cold storage or DROP eligible."
+      ],
+      "data_disposition": "No migration, schema/table/row/file mutation, snapshot, live app/DB/browser capture or deployment. Historical priority work does not need completion/replay/drain. Current saved readers, physical epochs/triggers and graph/repertoire/Study contracts remain; no target table count. Exact live graph-separated targets and protected verified graph recovery-copy handling require separate final execution confirmation.",
+      "reviewer": {
+        "reviewer": "/root/retirement_390",
+        "decision": "Independent source/graph/currentStudy review accepted with no remaining finding; final remote head/base correspondence confirmed. Candidate records reviewed feature source, not main integration or live authority.",
+        "review_sha256": "5a4bab21c7048f647ff70c31cac5598632a921a5f395c7187f2628d5ede791b0",
+        "rationale": "Removes only optional calculation, refresh, job/publication and retention owners; no new runtime/private import or cycle. Current queue/graph/review transaction and lifecycle owners remain. Existing checksum stays with its operator reader and daily rollover projection stays with its database owner; no new compatibility implementation."
       }
     }
   ],
