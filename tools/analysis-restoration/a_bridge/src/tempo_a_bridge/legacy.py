@@ -28,7 +28,34 @@ def policy_root_key(starting_fen):
     return ' '.join(chess.Board(starting_fen).fen(en_passant='legal').split()[:4])
 
 
-def _graph_only_scope(tables, graphs, selected):
+def _fresh_lineage_fact(document):
+    """One reviewed factual disposition, never a generic availability waiver."""
+    if document is None:
+        return None
+    def digest(value):
+        return type(value) is str and len(value)==64 and all(item in '0123456789abcdef' for item in value)
+    if (type(document) is not dict or set(document)!={'schema_version','capture_sha256','full_cards_absence_proof','facts'}
+            or type(document['schema_version']) is not int or document['schema_version']!=1
+            or not digest(document['capture_sha256'])):
+        raise ValueError('graph_only_lineage_fact_contract_unresolved')
+    proof=document['full_cards_absence_proof']
+    if (type(proof) is not dict or set(proof)!={'report_path','report_sha256','stream_script_sha256','captured_card_count'}
+            or type(proof['report_path']) is not str or not proof['report_path']
+            or not digest(proof['report_sha256']) or not digest(proof['stream_script_sha256'])
+            or type(proof['captured_card_count']) is not int or proof['captured_card_count']<1):
+        raise ValueError('graph_only_lineage_absence_evidence_unresolved')
+    facts=document['facts']
+    if type(facts) is not list or len(facts)!=1:
+        raise ValueError('graph_only_one_reviewed_lineage_fact_required')
+    fact=facts[0]
+    if (type(fact) is not dict or set(fact)!={'source_card_id','missing_target_card_id','source_record_sha256'}
+            or any(type(fact[field]) is not str or not fact[field] for field in ('source_card_id','missing_target_card_id'))
+            or fact['source_card_id']==fact['missing_target_card_id'] or not digest(fact['source_record_sha256'])):
+        raise ValueError('graph_only_lineage_source_pair_unresolved')
+    return fact
+
+
+def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
     """Project explicit published segments; never regenerate outside their scope."""
     for table in ('repertoires', 'repertoire_lines'):
         rows = tables[table]
@@ -63,6 +90,17 @@ def _graph_only_scope(tables, graphs, selected):
             retained.append({'table':table,'row_count':len(rows),'reason':'raw_graph_closure_metadata'})
 
     cards = {row['id']:row for row in tables.get('cards',[])}
+    reviewed_lineage = _fresh_lineage_fact(fresh_dangling_lineage)
+    if reviewed_lineage and fresh_dangling_lineage['full_cards_absence_proof']['captured_card_count']<len(cards):
+        raise ValueError('graph_only_lineage_capture_count_unresolved')
+    graph_references = frozenset(value for step in graphs for value in (step.get('card_id'),step.get('parent_card_id')) if value is not None)
+    graph_occurrence_counts = defaultdict(int)
+    for step in graphs:
+        graph_occurrence_counts[step.get('card_id')] += 1
+    graph_parent_references = frozenset(step.get('parent_card_id') for step in graphs if step.get('parent_card_id') is not None)
+    split_references = frozenset(row[field] for row in tables.get('prefix_splits',[])
+        for field in ('source_card_id','shortened_card_id','continuation_card_id') if row.get(field) is not None)
+    fresh_exceptions = {}
     deleted = {row['card_id'] for row in tables.get('deleted_cards',[])}
     publications = {row['repertoire_id']:row for row in tables.get('opening_graph_publications',[])}
     occurrences, excluded, exercises, bindings = [], [], {}, []
@@ -98,9 +136,27 @@ def _graph_only_scope(tables, graphs, selected):
         if not moves or len(moves) > 40:
             raise ValueError('graph_only_segment_executable_outside_contract')
         if card is not None:
-            if (card.get('archived',0) or card.get('pending_validation',0) or card.get('superseded_by')
+            if (card.get('archived',0) or card.get('pending_validation',0)
                     or card.get('content_type','opening') != 'opening'):
                 raise ValueError('graph_only_graph_card_availability_disagrees')
+            if card.get('superseded_by'):
+                target=card['superseded_by']
+                if (reviewed_lineage is None or reviewed_lineage['source_card_id']!=card['id']
+                        or reviewed_lineage['missing_target_card_id']!=target
+                        or reviewed_lineage['source_record_sha256']!=fingerprint(card)
+                        or any(type(card.get(field)) is not int or card[field]!=0
+                               for field in ('canonical_route_source','archived','pending_validation'))
+                        or card.get('kind')!='prefix' or card.get('content_type')!='opening'
+                        or graph_occurrence_counts[card['id']]!=1 or card['id'] in graph_parent_references or card['id'] in split_references
+                        or publication is None or publication['state']!='ready' or publication['generation']!=step['generation']
+                        or target in cards or target in graph_references or target in split_references or target in deleted):
+                    raise ValueError('graph_only_graph_card_availability_disagrees')
+                fresh_exceptions[card['id']]={
+                    'kind':'graph_only_dangling_generated_lineage_rebuilt',
+                    'source_card_id':card['id'],'raw_superseded_by':target,
+                    'source_record_sha256':reviewed_lineage['source_record_sha256'],
+                    'capture_sha256':fresh_dangling_lineage['capture_sha256'],
+                    'full_cards_absence_proof':dict(fresh_dangling_lineage['full_cards_absence_proof'])}
             if (step['starting_fen'] != card['start_fen'] or moves != json.loads(card['moves_json'])
                     or (card['trained_color'] is not None and step['trained_color'] != card['trained_color'])):
                 raise ValueError('graph_only_graph_card_definition_disagrees')
@@ -185,12 +241,16 @@ def _graph_only_scope(tables, graphs, selected):
             raise ValueError('graph_only_canonical_source_occurrence_required')
     if not exercises:
         raise ValueError('graph_only_no_serving_graph_decision')
-    return selected_lines, retained, exercises, bindings, occurrences, excluded
+    if reviewed_lineage and reviewed_lineage['source_card_id'] not in fresh_exceptions:
+        raise ValueError('graph_only_lineage_fact_unused')
+    return selected_lines, retained, exercises, bindings, occurrences, excluded, list(fresh_exceptions.values())
 
 
-def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False, graph_only=False):
+def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False, graph_only=False, fresh_dangling_lineage=None):
     if graph_only and preserve_physical_execution:
         raise ValueError('graph_only_cannot_adopt_physical_execution')
+    if fresh_dangling_lineage is not None and not graph_only:
+        raise ValueError('graph_only_lineage_facts_require_graph_only')
     # Establish policy only after the actual ordered route distinguishes it
     # from every other same-color authored repertoire in this capture.
     catalog={}
@@ -208,9 +268,9 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
     if len(selected) != len(repertoire_ids) or set(repertoires) != selected:
         raise ValueError('explicit_unique_existing_repertoires_required')
     lines = {row['id']:row for row in tables['repertoire_lines'] if row['repertoire_id'] in selected}
-    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph = [], {}, [], [], []
+    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions = [], {}, [], [], [], []
     if graph_only:
-        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph = _graph_only_scope(tables, graphs, selected)
+        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions = _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage)
     cards = {} if graph_only else {row['id']:row for row in tables['cards']}
     links = set() if graph_only else {(row['repertoire_id'],row['card_id']) for row in tables['repertoire_cards']}
     diagnostics, routes, memberships, bindings, exercises, aliases = [], [], [], [], {}, {}
@@ -386,7 +446,11 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
             serving_repertoires=sorted({row['repertoire_id'] for row in graph_occurrences}),
             serving_routes=sorted({row['line_id'] for row in graph_occurrences}),
             source_graph_bindings=sorted(graph_occurrences,key=canonical),
-            excluded_graph_occurrences=sorted(excluded_graph,key=canonical))
+            excluded_graph_occurrences=sorted(excluded_graph,key=canonical),
+            fresh_policy_exceptions=sorted(fresh_exceptions,key=canonical))
+        if fresh_exceptions:
+            manifest['provenance']['description']+=' One reviewed generated dangling-lineage marker was rebuilt under explicit fresh policy; raw lineage remains retained.'
+            manifest['provenance']['evidence_refs'].append('fresh-lineage-facts:'+fingerprint(fresh_dangling_lineage))
     if preserve_physical_execution:
         manifest['provenance']['description']='Complete selected authored scope with original physical executables and explicit learner-decision projections; unresolved identities remain unknown.'
         report.update(physical_execution_preserved=True,historical_prelude_count=sum('execution_prelude' in exercise for exercise in exercises.values()),historical_interior_binding_count=sum(binding.get('exercise_ply',0)>0 for binding in bindings))
@@ -401,16 +465,22 @@ def main(arguments=None):
     parser.add_argument('--source-key',required=True)
     parser.add_argument('--repertoire-id',action='append',required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--fresh-dangling-lineage',type=Path,help='One reviewed full-capture factual disposition for fresh graph-only projection')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--preserve-physical-execution',action='store_true')
     modes.add_argument('--graph-only',action='store_true',help='Project fresh authored routes without adopting legacy cards or history')
     args = parser.parse_args(arguments)
     if not args.graph_only and args.graphs is None:
         parser.error('--graphs is required unless --graph-only is selected')
+    if args.fresh_dangling_lineage is not None and not args.graph_only:
+        parser.error('--fresh-dangling-lineage requires --graph-only')
+    if args.fresh_dangling_lineage is not None and args.fresh_dangling_lineage.stat().st_size>16384:
+        raise ValueError('graph_only_lineage_fact_file_bound')
+    lineage = json.loads(args.fresh_dangling_lineage.read_text()) if args.fresh_dangling_lineage is not None else None
     capture = json.loads(args.capture.read_text())
     graphs = json.loads(args.graphs.read_text()) if args.graphs is not None else capture.get('graphs',[])
     source, manifest, report = translate(capture['tables'],graphs,workspace=args.workspace,
-        repertoire_ids=args.repertoire_id,source_key=args.source_key,preserve_physical_execution=args.preserve_physical_execution,graph_only=args.graph_only)
+        repertoire_ids=args.repertoire_id,source_key=args.source_key,preserve_physical_execution=args.preserve_physical_execution,graph_only=args.graph_only,fresh_dangling_lineage=lineage)
     args.output.mkdir(parents=True,exist_ok=True)
     documents = {'source.json':source,'import-manifest.json':(canonical(manifest)+'\n').encode(),'identity-mapping.json':(canonical(report)+'\n').encode()}
     for name, raw in documents.items():

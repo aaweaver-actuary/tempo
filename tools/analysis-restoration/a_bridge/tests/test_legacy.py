@@ -511,3 +511,120 @@ def test_graph_only_indexed_source_scope_preserves_shared_memberships_explicit_z
     tables['repertoire_cards'][0]['canonical_route_source']=1
     with pytest.raises(ValueError,match='canonical_source_occurrence_required'):
         graph_only(tables,steps,['italian','shared-policy'])
+
+
+def generated_dangling_capture():
+    tables=captured()
+    moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1']
+    tables['repertoire_lines'][0]['moves_json']=json.dumps(moves)
+    card=tables['cards'][0]
+    card.update(moves_json=json.dumps(moves),kind='prefix',content_type='opening',
+        canonical_route_source=0,superseded_by='synthetic-absent-successor')
+    tables['repertoire_cards'][0]['canonical_route_source']=0
+    tables['opening_graph_publications']=[{'repertoire_id':'italian','generation':1,'state':'ready'}]
+    tables['prefix_splits']=[];tables['deleted_cards']=[]
+    steps=published_graphs(tables);steps[0]['card_id']='physical'
+    return tables,steps
+
+
+def reviewed_dangling_fact(card):
+    import hashlib
+    row_bytes=json.dumps(card,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
+    return {'schema_version':1,'capture_sha256':'a'*64,
+        'full_cards_absence_proof':{'report_path':'synthetic-absence-report.json',
+            'report_sha256':'b'*64,'stream_script_sha256':'c'*64,'captured_card_count':3},
+        'facts':[{'source_card_id':card['id'],'missing_target_card_id':card['superseded_by'],
+            'source_record_sha256':hashlib.sha256(row_bytes).hexdigest()}]}
+
+
+def test_graph_only_dangling_generated_lineage_rebuilt_requires_exact_reviewed_fact_and_preserves_raw_marker():
+    tables,steps=generated_dangling_capture()
+    before=deepcopy(tables);fact=reviewed_dangling_fact(tables['cards'][0]);fact_before=deepcopy(fact)
+    with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
+        graph_only(tables,steps)
+    raw,manifest,report=translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],
+        source_key='fresh-graph',graph_only=True,fresh_dangling_lineage=fact)
+    source=json.loads(raw)
+    assert len(source['exercises'])==1 and len(source['bindings'])==5
+    assert source['exercises'][0]['specification']['accepted_lines']==[json.loads(tables['cards'][0]['moves_json'])]
+    assert manifest['legacy_aliases']=={} and manifest['historical_mapping_unknown']==[]
+    assert any(value.startswith('fresh-lineage-facts:') for value in manifest['provenance']['evidence_refs'])
+    assert report['fresh_policy_exceptions']==[{
+        'kind':'graph_only_dangling_generated_lineage_rebuilt','source_card_id':'physical',
+        'raw_superseded_by':'synthetic-absent-successor','source_record_sha256':fact['facts'][0]['source_record_sha256'],
+        'capture_sha256':'a'*64,'full_cards_absence_proof':fact['full_cards_absence_proof']}]
+    assert tables==before and fact==fact_before
+    report['fresh_policy_exceptions'][0]['full_cards_absence_proof']['report_path']='changed-output-only'
+    assert fact==fact_before
+
+
+@pytest.mark.parametrize('fault',[
+    'known-successor','canonical-source','archived','pending','wrong-kind','target-graph-parent',
+    'target-split','target-tombstone','not-ready','changed-marker','changed-fingerprint',
+])
+def test_graph_only_reviewed_dangling_fact_cannot_waive_known_or_conflicting_source(fault):
+    tables,steps=generated_dangling_capture();card=tables['cards'][0]
+    if fault=='canonical-source': card['canonical_route_source']=1
+    if fault=='archived': card['archived']=1
+    if fault=='pending': card['pending_validation']=1
+    if fault=='wrong-kind': card['kind']='response'
+    fact=reviewed_dangling_fact(card)
+    if fault=='known-successor': tables['cards'].append({'id':'synthetic-absent-successor'})
+    if fault=='target-graph-parent': steps[0]['parent_card_id']='synthetic-absent-successor'
+    if fault=='target-split': tables['prefix_splits']=[{'continuation_card_id':'synthetic-absent-successor'}]
+    if fault=='target-tombstone': tables['deleted_cards']=[{'card_id':'synthetic-absent-successor'}]
+    if fault=='not-ready': tables['opening_graph_publications'][0]['state']='failed'
+    if fault=='changed-marker': card['superseded_by']='different-absent-successor'
+    if fault=='changed-fingerprint': card['revision']=2
+    with pytest.raises(ValueError,match='graph_only_'):
+        translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',
+            graph_only=True,fresh_dangling_lineage=fact)
+
+
+def test_graph_only_reviewed_dangling_fact_still_requires_complete_ordered_graph_path():
+    tables,steps=generated_dangling_capture();fact=reviewed_dangling_fact(tables['cards'][0])
+    steps[0]['last_decision_index']=3
+    with pytest.raises(ValueError,match='graph_ordered_path_unresolved'):
+        translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',
+            graph_only=True,fresh_dangling_lineage=fact)
+    with pytest.raises(ValueError,match='lineage_facts_require_graph_only'):
+        translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',fresh_dangling_lineage=fact)
+
+
+@pytest.mark.parametrize('fault',['extra-approval','multiple-facts','invalid-hash','insufficient-count','missing-proof'])
+def test_graph_only_lineage_factual_port_is_single_exact_case_not_generic_approval(fault):
+    tables,steps=generated_dangling_capture();fact=reviewed_dangling_fact(tables['cards'][0])
+    if fault=='extra-approval': fact['approved']=True
+    if fault=='multiple-facts': fact['facts'].append(deepcopy(fact['facts'][0]))
+    if fault=='invalid-hash': fact['capture_sha256']='not-a-capture-digest'
+    if fault=='insufficient-count': fact['full_cards_absence_proof']['captured_card_count']=0
+    if fault=='missing-proof': fact.pop('full_cards_absence_proof')
+    with pytest.raises(ValueError,match='graph_only_'):
+        translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',
+            graph_only=True,fresh_dangling_lineage=fact)
+
+
+def test_graph_only_cli_one_reviewed_lineage_fact_is_explicit_and_reported(tmp_path):
+    from tempo_a_bridge.legacy import main
+    tables,steps=generated_dangling_capture();fact=reviewed_dangling_fact(tables['cards'][0])
+    capture=tmp_path/'capture.json';capture.write_text(json.dumps({'tables':tables,'graphs':steps}))
+    factual=tmp_path/'fact.json';factual.write_text(json.dumps(fact))
+    output=tmp_path/'fresh'
+    main(['--capture',str(capture),'--workspace','fresh','--source-key','fresh',
+        '--repertoire-id','italian','--output',str(output),'--graph-only','--fresh-dangling-lineage',str(factual)])
+    report=json.loads((output/'identity-mapping.json').read_text())
+    assert report['fresh_policy_exceptions'][0]['kind']=='graph_only_dangling_generated_lineage_rebuilt'
+    assert json.loads((output/'import-manifest.json').read_text())['legacy_aliases']=={}
+
+
+@pytest.mark.parametrize('role',['second-occurrence','parent'])
+def test_graph_only_reviewed_lineage_case_cannot_expand_beyond_one_unparented_unsplit_source(role):
+    tables,steps=generated_dangling_capture();fact=reviewed_dangling_fact(tables['cards'][0])
+    if role=='second-occurrence':
+        tables['repertoire_lines'].append({**tables['repertoire_lines'][0],'id':'second-route'})
+        steps.append({**steps[0],'line_id':'second-route'})
+    else:
+        steps[0]['parent_card_id']='physical'
+    with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
+        translate(tables,steps,workspace='fresh',repertoire_ids=['italian'],source_key='fresh',
+            graph_only=True,fresh_dangling_lineage=fact)
