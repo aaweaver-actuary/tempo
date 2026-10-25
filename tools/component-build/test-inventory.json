@@ -187,6 +187,7 @@
       "tests/runner/inference-priority.test.mjs",
       "tests/runner/merge-conflict-guard.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/runner/study-learning-proof.test.mjs",
       "tests/runner/tempo-cli.test.mjs"
     ],
     "integration": [
