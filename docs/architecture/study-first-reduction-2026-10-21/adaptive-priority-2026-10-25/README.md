@@ -168,14 +168,13 @@ symbols.
 ## Exact remaining gate and next bounded change
 
 No whole-file deletion or independently safe helper repair is justified here.
-Before an implementation candidate, the reviewer/parent must freeze an exact
-**stop-new-priority-recomputation** edit manifest and the disposition of issued
-legacy jobs, native tasks/preparations and refresh intents. The manifest must name
-every producer/control edge above, preserve stored-reader semantics and the
-minimum compatibility bindings, and coordinate publication's opportunity callback
-with that packet's owner. Until then, retain all six core files and lifecycle
-owners. A declaration that ranks are frozen is insufficient because it does not
-settle valid unranked legacy fallback or pending recovery.
+The [follow-on candidate](STOP-NEW-RECOMPUTATION.md) now pins the exact external
+callback edits and existing issued-work recovery/hold paths. Implementation still
+requires explicit D1/D2/D3 decisions about issued-tail admission, old source
+operations' optional effects and downstream opportunity settlement, plus the
+separate authority gates. All six core files and lifecycle owners stay retained.
+A declaration that ranks are frozen is insufficient because it does not settle
+valid unranked legacy fallback or pending recovery.
 
 An approved implementation then reuses the smallest affected checks: legacy
 introduction-priority and frozen/unranked/new-card-limit/real-game-feedback cases;

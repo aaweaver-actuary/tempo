@@ -146,3 +146,11 @@ base `ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f`. That owner edits only its
 packet edits only its adaptive entry and adaptive-ranking FEATURES row. Integration
 must preserve both appended candidates and all eight prior cohorts/top metadata.
 No other-owner candidate is copied or represented as approved.
+
+The future producer patches share some source files while changing different
+callbacks. Either implementation invalidates the other's full-file hashes and
+can shift its patch context. Rebase/regenerate the review text and recheck the
+original/proposed hashes, source correspondence and exact combined diff against
+the resulting base before execution. Preserve both owners' semantic allowlists
+and D1/D2/D3 gates; neither independent source review approves an unreviewed
+combined implementation or generic conflict resolution.
