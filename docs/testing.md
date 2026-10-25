@@ -104,6 +104,12 @@ Hosted branch-protection settings must be verified directly in GitHub before
 claiming which check is required. Documentation does not change branch
 protection or confer passing status.
 
+The root TypeScript check covers browser code and Node-based tooling with the DOM
+libraries and Node types. Cloudflare Worker ambient globals are not loaded into
+this program: their HTMLRewriter `Element` collides with browser DOM methods.
+There are no Worker API type consumers in this program; future Worker source must
+use explicitly imported Worker types or its own runtime-specific configuration.
+
 ## Current runner regression inventory
 
 The current ordinary qualification inventory has six global Chromium smoke

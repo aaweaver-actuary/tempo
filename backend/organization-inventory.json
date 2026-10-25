@@ -6,7 +6,8 @@
   "reviewed_original_modules": 202,
   "review_coverage_is_implementation_completion": false,
   "original_status_counts": {
-    "reviewed-awaiting-owner-closure": 169,
+    "reviewed-awaiting-owner-closure": 168,
+    "retired-source": 1,
     "split-transport-contracts": 1,
     "moved-cohesive-module": 29,
     "partial-contract-extraction": 3
@@ -74,7 +75,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 234,
+  "current_python_module_count": 233,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -1695,13 +1696,11 @@
     },
     {
       "original_path": "backend/app/services/opening_ranking_snapshot.py",
-      "current_paths": [
-        "backend/app/services/opening_ranking_snapshot.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
-      "owner": "Opt-in Study opening evaluation capture composition plus snapshot projection",
-      "responsibility": "Capture a bounded authoritative evidence snapshot, then project its supplied immutable data into the existing ranking replay document.",
-      "next_step": "Move capture_snapshot/_raw_rows/_check_capture_available intact into capture.py; extract _decoded_evidence/_project_snapshot as complete functions into Study opening evaluation only after passing captured source metadata/schema version and miss-reason fact explicitly. No evaluation-model merger."
+      "current_paths": [],
+      "status": "retired-source",
+      "owner": "Retired opt-in opening-ranking capture composition and snapshot projection",
+      "responsibility": "Former bounded authoritative evidence snapshot capture; no serving consumer remained.",
+      "next_step": "No implementation move remains. Recover source at 8c0b3b5a22fd357607497ac4e50ad9804884c12c; retain opening_ranking_evaluation.py DTOs/math and production admission, capacity, frontier and frozen ordering."
     },
     {
       "original_path": "backend/app/services/opening_segmentation.py",

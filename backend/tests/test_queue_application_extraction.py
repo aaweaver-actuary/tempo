@@ -50,8 +50,7 @@ def application_imports(module_name, *, include_deferred=True):
 
 def test_queue_application_import_does_not_load_http_or_worker_root():
     pending = ['app.services.queue_application', 'app.services.queue_ordering',
-               'app.services.postgres_queue_refresh', 'app.services.study_attempts',
-               'app.services.opening_ranking_snapshot']
+               'app.services.postgres_queue_refresh', 'app.services.study_attempts']
     owned_modules = set(pending)
     visited = set()
     while pending:

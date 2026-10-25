@@ -32,7 +32,7 @@ it('Study shell trains without optional capabilities and omits unsupported autho
   expect(screen.queryByLabelText('Open review position')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Edit card' })).toBeNull();
   for (const name of ['Games', 'Builder', 'Repertoire', 'Studies', 'Insights']) {
-    expect(screen.queryByRole('button', { name, exact: true })).toBeNull();
+    expect(screen.queryByRole('button', { name })).toBeNull();
   }
   expect(vi.mocked(fetch).mock.calls.some(([input]) => /repertoires|discoveries|games|integrity/.test(String(input)))).toBe(false);
 });
@@ -40,7 +40,7 @@ it('Study shell trains without optional capabilities and omits unsupported autho
 it('Study appearance settings change persisted browser preferences without loading workspace administration', async () => {
   render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe('ready'));
-  fireEvent.click(screen.getAllByRole('button', { name: 'Settings', exact: true })[0]);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Settings' })[0]);
   const settings = await screen.findByRole('region', { name: 'Study settings' });
   expect(settings).not.toBeNull();
   fireEvent.change(screen.getByLabelText('Board colors'), { target: { value: 'blue' } });

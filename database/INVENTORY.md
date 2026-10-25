@@ -70,7 +70,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed existing compatibility graph storage split: [backend/app/services/opening_graph.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed existing legacy opening graph recovery storage split: [backend/app/services/opening_graph_recovery.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
-- Completed opening ranking snapshot storage split: [backend/app/services/opening_ranking_snapshot.py](tempo_legacy_database/adapters/opening_ranking/README.md).
+- Retired exclusive opening ranking snapshot capture storage and legacy CLI; [history and retained pure evaluation](../docs/opening-shadow-ranking.md). Production candidate/admission SQL and shared connection behavior remain.
 - Completed controls SQL split: [backend/app/services/postgres_coverage_candidates.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_explorer.py](tempo_legacy_database/adapters/coverage/README.md).
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).

@@ -48,7 +48,7 @@ it.each(["shapes", "drawnShapes"] as const)("BUI-16 %s labels are literal, inclu
   const replay = new JSDOM(host.innerHTML, { runScripts: "dangerously" });
   try {
     replay.window.document.querySelector("text")!.dispatchEvent(new replay.window.MouseEvent("mouseover", { bubbles: true }));
-    expect((replay.window as any).executed).toBeUndefined();
+    expect(Reflect.get(replay.window, "executed")).toBeUndefined();
     expect(replay.window.document.querySelector("text")!.textContent).toBe(text);
   } finally { replay.window.close(); }
   controller.clearInput(); await frame();
@@ -186,7 +186,7 @@ it.each([{}, { locked: true }, { readOnly: true }, { mode: "select" as const }, 
 
 it("BUI-22 Strict Mode, mode/orientation changes and retained observer callbacks leave no live resources", async () => {
   vi.useFakeTimers(); vi.stubGlobal("matchMedia", () => ({ matches: true }));
-  const observers: { callback: () => void; element?: Element; disconnect: ReturnType<typeof vi.fn> }[] = [];
+  const observers: { callback: () => void; element?: Element; disconnect: ReturnType<typeof vi.fn<() => void>> }[] = [];
   vi.stubGlobal("ResizeObserver", class {
     record: typeof observers[number];
     constructor(callback: () => void) { this.record = { callback, disconnect: vi.fn() }; observers.push(this.record); }
