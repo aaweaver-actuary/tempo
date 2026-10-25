@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "synthetic_only": true
+  },
+  "tables": {
+    "daily_queue": [
+      {
+        "key": "synthetic:queue:7",
+        "row": {
+          "id": 7,
+          "queue_date": "2030-01-02",
+          "card_id": "synthetic-card",
+          "cycle": 2,
+          "position": 3,
+          "status": "complete",
+          "attempt_state": "guided",
+          "review_result_json": " {\"review\": 101} ",
+          "attempt_failed": 1,
+          "card_bucket": null,
+          "admission_kind": "review",
+          "gameplay_priority_reason": null,
+          "admission_repertoire_id": "synthetic-repertoire",
+          "admission_source": "daily"
+        }
+      }
+    ],
+    "daily_queue_days": [
+      {
+        "key": "synthetic:day:2030-01-02",
+        "row": {
+          "queue_date": "2030-01-02",
+          "seed": 17,
+          "membership_hash": "synthetic-membership",
+          "generated_at": "2030-01-02T09:00:00Z"
+        }
+      }
+    ],
+    "queue_attempt_origins": [
+      {
+        "key": "synthetic:origin:7-card-r2",
+        "row": {
+          "queue_entry_id": 7,
+          "card_id": "synthetic-card",
+          "revision": 2,
+          "queue_date": "2030-01-02",
+          "cycle": 2,
+          "admission_kind": "review",
+          "admission_repertoire_id": "synthetic-repertoire",
+          "attempt_failed": 1,
+          "last_status": "complete",
+          "review_result_json": " {\"review\": 101} ",
+          "legacy": 1,
+          "start_fen": "synthetic original fen",
+          "moves_json": "[ \"e2e4\", \"e7e5\" ]",
+          "trained_color": null,
+          "content_type": "opening",
+          "issued_as_head": 0
+        }
+      }
+    ],
+    "study_attempts": [
+      {
+        "key": "synthetic:attempt:old",
+        "row": {
+          "id": "synthetic-attempt",
+          "exercise_id": "synthetic-exercise",
+          "revision": 2,
+          "card_id": "synthetic-card",
+          "queue_entry_id": 7,
+          "cycle": 2,
+          "context": "review",
+          "answer_json": " {\"moves\": [\"e2e4\"]} ",
+          "answer_hash": "synthetic-original-answer-hash",
+          "assessment_json": "{\"correct\":true}",
+          "assessment_method": "original-grader",
+          "grader_version": 4,
+          "hint_seen": 1,
+          "solution_seen_before_answer": 0,
+          "started_at": "2030-01-02T09:59:00+02:00",
+          "committed_at": "2030-01-02T09:59:01+02:00",
+          "finalized_at": null,
+          "result_json": null,
+          "retired_operation_id": null
+        }
+      }
+    ],
+    "opening_evidence_attempts": [],
+    "opening_evidence_presentations": [],
+    "opening_evidence_queue_contexts": [],
+    "opening_evidence_events": [],
+    "tactic_discovery_attempts": [],
+    "defense_attempts": [],
+    "defense_recognition_submissions": [],
+    "endgame_attempts": [],
+    "queue_projections": [],
+    "queue_projection_diagnostics": [],
+    "gameplay_card_priorities": [],
+    "teaching_states": [
+      {
+        "key": "synthetic:teaching:card-r1-p0",
+        "row": {
+          "card_id": "synthetic-card",
+          "revision": 1,
+          "ply": 0,
+          "taught_at": "2030-01-01T08:00:00+02:00"
+        }
+      }
+    ],
+    "remediation_attempts": [],
+    "remediation_cards": [],
+    "remediation_incident_versions": [],
+    "remediation_contributions": [],
+    "remediation_obligation_heads": [],
+    "remediation_evidence": [],
+    "remediation_source_heads": [],
+    "remediation_game_heads": [],
+    "remediation_workspaces": [],
+    "operation_receipts": [
+      {
+        "key": "synthetic:receipt:original",
+        "row": {
+          "operation_id": "synthetic-original-operation",
+          "command_name": "review",
+          "request_hash": "synthetic-original-request-hash",
+          "payload_json": " {\"attempt_id\":\"synthetic-attempt\"} ",
+          "state": "complete",
+          "response_json": "{\"review_id\":101}",
+          "error_json": null,
+          "next_retry_at": null,
+          "created_at": "2030-01-02T09:59:01+02:00",
+          "updated_at": "2030-01-02T09:59:02+02:00",
+          "background": false,
+          "attempt_count": 2,
+          "lease_expires_at": null,
+          "last_error_json": " {\"error\":\"original-timeout\"} ",
+          "retry_cycle": 1,
+          "cycle_attempt_count": 1,
+          "attempt_token": "synthetic-retired-token"
+        }
+      }
+    ],
+    "review_attempt_receipts": [
+      {
+        "key": "synthetic:review-receipt:original",
+        "row": {
+          "attempt_id": "synthetic-attempt",
+          "card_id": "synthetic-card",
+          "queue_entry_id": 7,
+          "outcome": "correct",
+          "guided": 1,
+          "completed_at": "2030-01-02T09:59:02+02:00",
+          "review_id": 101,
+          "scheduling_status": "preserved",
+          "warning": null,
+          "result_json": "{\"review_id\":101}",
+          "request_json": null
+        }
+      }
+    ],
+    "remediation_deliveries": [],
+    "remediation_review_receipts": [],
+    "prefix_transition_applications": [],
+    "prefix_transition_card_fences": [],
+    "prefix_transition_repertoire_fences": [],
+    "discovery_admission_intents": [],
+    "background_tasks": [],
+    "background_task_events": []
+  },
+  "unresolved": []
+}
