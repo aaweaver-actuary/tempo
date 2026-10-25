@@ -233,8 +233,9 @@ application regression. No Docker installation or service action was attempted.
 
 ## Restricted-role, web and teardown evidence — 2026-10-25
 
-**Partial qualification: #378's subsequent native proof passed; #380 remains
-incomplete.** This run used clean main
+**#378's native proof passed. The initial #380 invocation below was partial;
+the focused follow-up later in this section completed its outage/recovery gap.**
+The initial run used clean main
 `f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26` (tree
 `9d0831b0fc8f31bbe45ef7ea1fc9692a1acb3064`) in an isolated temporary checkout.
 No implementation was changed. The existing bootstrap/ownership producer and
@@ -350,7 +351,7 @@ Its remaining values are `pgpass_file=runtime.pgpass`,
 `study_token_file=study.token`, and `operator_token_file=operator.token`.
 No password, token bytes or admin DSN were retained in the evidence.
 
-### Web-origin wiring: passed; outage and recovery: incomplete
+### Initial web-origin wiring: passed; outage and recovery: incomplete
 
 The harness used Python `urllib.request` against `http://127.0.0.1:53498`,
 with a 10-second client timeout. Authenticated requests supplied the generated
@@ -387,8 +388,9 @@ The cleanup handler then tore down the project. Outage `/health/live`,
 `/health/ready`, static continuity, and restart of the same installed artifacts
 with recovered readiness/bootstrap were **not reached**. A second project or
 reuse after teardown was not attempted under the one-new-project constraint.
-Those assertions remain open under #380. Independent review agreed with this
-partial result and the cleanup evidence; this receipt does not close #380.
+Those assertions remained open after this initial invocation; the focused
+follow-up below completes them. Independent review agreed with the initial
+partial result and cleanup evidence; that first receipt did not close #380.
 
 ### Ownership-verified teardown: passed
 
@@ -420,3 +422,122 @@ advisory lock were preserved. No production database, user history, normal
 launcher, installed Study, host settings, deployment or CI configuration was
 accessed or changed. This is synthetic component/composition evidence, not
 actual-data, deployment or full-system completion.
+
+### Focused outage/recovery follow-up — 2026-10-25: passed
+
+A fresh, separately authorized invocation completed the missing #380 observations
+without repeating the native role, ordinary asset, credential or workspace
+rejection checks above. No application, Compose, nginx or bootstrap code was
+changed. The earlier failure was in the task-local observation harness: it
+closed the connection before the proxy's existing connection timeout elapsed.
+
+The committed nginx config and the installed image's `nginx -T` output matched.
+Both proxy locations use the single owned `learning:8001` address and leave
+`proxy_connect_timeout` unset. Its [documented nginx default is
+60 seconds](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_connect_timeout).
+The `/api/` location's explicit `proxy_read_timeout 180s` governs gaps while
+reading an established connection, not this stopped-container connection
+attempt. No error-page rewrite, proxy cache or legacy upstream was configured.
+A ten-second client cutoff could therefore not observe this case's expected
+explicit proxy failure.
+
+The corrected task-local observer uses a **70-second absolute child-process
+deadline**, but rejects any complete gateway response taking **over 65 seconds**
+(the 60-second connection timeout plus five seconds of scheduling tolerance).
+This changes observation, not serving behavior or its latency policy. A response
+outside that bound, a client timeout, an HTML `200`, or a bootstrap fallback
+fails the check. The observer kills and reaps only its own child on deadline;
+secret request headers travel through its private stdin pipe, never arguments
+or evidence. Five focused harness regressions passed, including the old
+10-second budget rejection, a real stalled-child deadline, late-response
+rejection, and rejection of timeout/HTML-200/bootstrap as gateway success.
+Independent review approved the observer before execution.
+
+The clean tested revision was `e196559ef1df17defba7305d70b64b5f454854ba`
+(tree `b50e9799dd49735f399ef47695a916f40133e215`), including current main
+`311a712581deb95bf9035b2a3b934c03335a1cd5`. Its qualified application/build inputs
+are unchanged from the initial receipt; the new build/container identities are
+recorded independently:
+
+| Identity | Exact value |
+| --- | --- |
+| New project | `tempo-study-test-242983c57c0bdf45` |
+| Database / workspace | `learning_study_test_242983c57c0bdf45` / `qualification-242983c57c0bdf45` |
+| Web origin / timezone | `http://127.0.0.1:53673` / `Etc/UTC` |
+| Learning and bootstrap image | `sha256:076c3229b8e6cf0c5fbcd237b1fa01aa1c50ce7565f64b0b05bcc4367a94cff9` |
+| Study web image | `sha256:2f39e7857609fb0bfc1b6241417f572279b56d5c0efeb6359916bf6f814be9e7` |
+| PostgreSQL image | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+| Committed Compose SHA-256 | `8160500dd2d84ff3c62131c8068bd8f65b0abc54bd8a64a59c26cc0eeeac66ff` |
+
+The existing producer attested the new PostgreSQL/volume/network/system
+identities and the existing bootstrap completed successfully. Only the minimal
+ready/bootstrap and static index/worker baseline was taken before stopping
+Learning. The three outage observations then ran concurrently, after inspection
+confirmed that exact Learning container had stopped successfully:
+
+| Web-origin observation | Status | Complete-response time |
+| --- | --- | --- |
+| `GET /api/study/bootstrap` with the generated Study credential/workspace/origin | `504` | `60.091 s` |
+| `GET /health/ready` | `504` | `60.128 s` |
+| `GET /health/live` | `504` | `60.129 s` |
+
+All three returned the same explicit 167-byte nginx `504 Gateway Time-out` HTML
+error (body SHA-256
+`0af4acf6069f6d34050940c546de76ec7303b3af0b07133c450f5b17c406c567`), with no
+Study shell or workspace bootstrap body and no `200`. nginx independently logged
+`upstream timed out ... while connecting to upstream` for each exact request and
+the owned Learning address. Thus the observed latency matches the configured
+connection-failure behavior; this is not a fast-failure or production latency
+qualification. While those requests were pending and Learning remained stopped,
+`GET /` and `GET /sw.js` returned `200` and were byte-identical to their baseline.
+
+Learning was then restarted with `--no-deps --no-build --pull never`. All four
+container IDs and image IDs were unchanged. PostgreSQL, web and the completed
+bootstrap retained their original start times; only Learning's start time
+changed. The database/workspace and all four migration IDs/checksums were
+identical before and after. Through the same web origin, `/health/ready` returned
+`200` with the expected ready/workspace JSON, `/health/live` returned `200` with
+`{"status":"alive"}`, and authenticated `/api/study/bootstrap` returned `200`
+with schema version `1` and the expected workspace. No bootstrap replay, rebuild,
+web restart or migration was needed for recovery.
+
+The exact launch was
+`python3 /tmp/tempo-380-recovery-evidence-20261025/locked-run.py`; that parent held
+the same nontruncated exclusive advisory lock through the entire Docker child
+and teardown. Principal expanded stop/recovery/cleanup commands were:
+
+```sh
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 stop learning
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 up -d --wait --no-deps --no-build --pull never learning
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 down --volumes --remove-orphans
+```
+
+The run exited **0**, with **88 completed assertion checkpoints**, all passing,
+and 57 executed subprocess records. These are focused diagnostic assertions,
+not a repeated owning suite. The five harness regressions ran via
+`python3 -m unittest discover -s /tmp/tempo-380-recovery-evidence-20261025 -p test_outage_observation.py -v`.
+No role/auth/ordinary-asset suites or PR410 fresh-PGN cases were repeated.
+
+The same exact four-service/two-volume/default-network ownership checks were
+performed before teardown, including the existing producer receipt and cluster
+system identifier. Teardown exited `0`; all captured containers, volumes and
+network were absent by both exact identity and project-label inventory afterward.
+Both task image tags and the private admin/password/environment files were
+removed. Shared images/caches and the advisory lock were preserved.
+
+Sanitized evidence remains at `/tmp/tempo-380-recovery-evidence-20261025`, with
+all command vectors in `receipt.json`/`commands.txt`, response bodies, installed
+nginx configuration, timing records, ownership/recovery/schema inspections,
+regressions and cleanup logs. Selected SHA-256 identities:
+
+| Retained file | SHA-256 |
+| --- | --- |
+| `receipt.json` | `6b55d00cabbc53d4bffa09e3c75b266ca410494f06f075af54024a895941cff6` |
+| `qualify.py` | `20edea978d9357c87d5338610e0192457ce8b2d8348f698ccad5f5511d6f7772` |
+| `outage_observation.py` | `09a28fdf5f074e96f1c74016bf66591045b7ce241992339736bc2a08074f1273` |
+| `outage-nginx-log.log` | `a87f1348e0af0f6f997fe09eeb86b9f95d748176e9868eb32940b410db39746d` |
+
+Together with the initial role/web evidence, this completes the bounded missing
+#378/#380 disposable qualification. The evidence is synthetic component and
+composition proof. Study behavior, actual user data, browser offline semantics,
+#382's later assembled acceptance and deployment remain their separate gates.
