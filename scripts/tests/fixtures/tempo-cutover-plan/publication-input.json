@@ -1,0 +1,191 @@
+{
+  "transitionId": "fixture-transition-001",
+  "current": {
+    "registration": {
+      "version": 1,
+      "root": "/fixture/source",
+      "context": "fixture-context",
+      "daemonId": "fixture-daemon",
+      "project": "fixture-legacy",
+      "envFile": "/fixture/source/.env",
+      "composeFiles": [
+        "/fixture/source/docker-compose.yml",
+        "/fixture/source/maintenance.yml"
+      ],
+      "volumes": {
+        "legacy-data": {
+          "name": "fixture-legacy-data",
+          "external": true
+        },
+        "legacy-backups": {
+          "name": "fixture-legacy-backups",
+          "external": true
+        }
+      },
+      "ports": [
+        {
+          "service": "web",
+          "host": "127.0.0.1",
+          "port": "3000",
+          "target": 80
+        }
+      ],
+      "postgresVolumeKey": "legacy-data",
+      "postgresMajor": 18,
+      "postgresImage": "postgres:18",
+      "webUrl": "http://127.0.0.1:3000",
+      "disposable": true
+    },
+    "receipt": {
+      "version": 1,
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "schema": 110,
+      "images": {
+        "api": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "composeFiles": [
+        "/fixture/source/docker-compose.yml",
+        "/fixture/source/maintenance.yml"
+      ],
+      "imageOverride": "/fixture/state/legacy-images.yml",
+      "configFingerprint": "fixture-legacy-config",
+      "verified_at": "2026-10-25T00:00:00Z",
+      "backup": {
+        "filename": "fixture-only.dump",
+        "verified": true
+      }
+    }
+  },
+  "proposed": {
+    "registration": {
+      "version": 2,
+      "root": "/fixture/release",
+      "context": "fixture-context",
+      "daemonId": "fixture-daemon",
+      "project": "fixture-study",
+      "envFile": "/fixture/private/learning.env",
+      "composeFiles": [
+        "/fixture/release/study.yml",
+        "/fixture/release/maintenance.yml"
+      ],
+      "volumes": {
+        "learning-data": {
+          "name": "fixture-learning-data",
+          "external": true
+        },
+        "learning-backups": {
+          "name": "fixture-learning-backups",
+          "external": true
+        }
+      },
+      "ports": [
+        {
+          "service": "web",
+          "host": "127.0.0.1",
+          "port": "3000",
+          "target": 80
+        }
+      ],
+      "postgresVolumeKey": "learning-data",
+      "postgresMajor": 18,
+      "postgresImage": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "webUrl": "http://127.0.0.1:3000",
+      "disposable": true,
+      "cutover": {
+        "transitionId": "fixture-transition-001",
+        "phase": "quarantined",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "images": {
+          "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "database": {
+          "name": "fixture_learning",
+          "volume": "fixture-learning-data"
+        },
+        "workspace": "fixture-workspace",
+        "composeFiles": [
+          "/fixture/release/study.yml",
+          "/fixture/release/maintenance.yml"
+        ],
+        "volumes": {
+          "learning-data": {
+            "name": "fixture-learning-data",
+            "external": true
+          },
+          "learning-backups": {
+            "name": "fixture-learning-backups",
+            "external": true
+          }
+        },
+        "ingress": {
+          "origin": "http://127.0.0.1:3000",
+          "hosts": [
+            "127.0.0.1:3000"
+          ]
+        },
+        "schema": 1,
+        "transferReceipt": "fixture-transfer-001"
+      }
+    },
+    "receipt": {
+      "version": 2,
+      "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "schema": 1,
+      "images": {
+        "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "composeFiles": [
+        "/fixture/release/study.yml",
+        "/fixture/release/maintenance.yml"
+      ],
+      "imageOverride": "/fixture/state/target-images.yml",
+      "configFingerprint": "fixture-learning-config",
+      "verified_at": "2026-10-25T00:00:00Z",
+      "cutover": {
+        "transitionId": "fixture-transition-001",
+        "phase": "quarantined",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "images": {
+          "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "database": {
+          "name": "fixture_learning",
+          "volume": "fixture-learning-data"
+        },
+        "workspace": "fixture-workspace",
+        "composeFiles": [
+          "/fixture/release/study.yml",
+          "/fixture/release/maintenance.yml"
+        ],
+        "volumes": {
+          "learning-data": {
+            "name": "fixture-learning-data",
+            "external": true
+          },
+          "learning-backups": {
+            "name": "fixture-learning-backups",
+            "external": true
+          }
+        },
+        "ingress": {
+          "origin": "http://127.0.0.1:3000",
+          "hosts": [
+            "127.0.0.1:3000"
+          ]
+        },
+        "schema": 1,
+        "transferReceipt": "fixture-transfer-001"
+      }
+    }
+  },
+  "transferAcceptance": {
+    "fixtureOnly": true,
+    "reference": "fixture-transfer-001"
+  }
+}
