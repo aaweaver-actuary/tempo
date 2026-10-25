@@ -14,7 +14,7 @@ CLASS_KINDS = {
              'game_derivation_events', 'game_derivation_features',
              'game_derivation_priorities', 'repertoire_game_refresh',
              'game_analysis_followup'),
-    'priority': ('repertoire_priority', 'repertoire_opportunity',
+    'priority': ('repertoire_priority',
                  'priority_retention', 'discovery_recommendation'),
     'coverage': ('coverage_seed', 'coverage_explorer', 'opening_segmentation'),
     'sync': ('game_sync_record', 'game_sync_window', *DEFENSIVE_TASK_KINDS),

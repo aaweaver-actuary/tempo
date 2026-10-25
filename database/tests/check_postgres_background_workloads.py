@@ -25,7 +25,7 @@ from psycopg.rows import dict_row
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.connections import background_read_connection
-from app.services import introduction_priorities, priority_retention, repertoire_opportunities
+from app.services import introduction_priorities, priority_retention
 from app.threat_analysis_commands import claim_threat_analysis
 
 
@@ -191,16 +191,6 @@ def measure() -> None:
     assert request["lease_id"] == claimed["job"]["lease_id"], after_claim
     assert request["lease_expires_at"] is not None and request["attempts"] == 1, after_claim
     print(f"threat claim: 20000 queued, 1 eligible, committed in {claim_elapsed:.3f}s; baseline rollback and committed lease verified")
-
-    started = time.perf_counter()
-    with background_read_connection() as database:
-        recurring = repertoire_opportunities._load_recurring_decisions(
-            database, REPERTOIRE_ID, "incident-benchmark-card",
-        )
-    assert len(recurring) == 1
-    assert recurring[0]["previous_analyzed_count"] == 39
-    assert recurring[0]["previous_weak_count"] == 19
-    print(f"recurring evidence: 1 event, 40 analysis rows, read in {time.perf_counter()-started:.3f}s")
 
     @contextmanager
     def read_section():

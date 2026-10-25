@@ -545,8 +545,6 @@ def execute_coverage_node(node: dict) -> None:
                 ),
             )
             progress_counts = storage.explorer_progress_counts(database, (node["run_id"],))
-            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
@@ -561,8 +559,6 @@ def execute_coverage_node(node: dict) -> None:
                 return
             storage.requeue_explorer_node(database, (str(error), _now(), node["id"]))
             storage.requeue_run(database, (str(error), _now(), node["run_id"]))
-            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     except Exception as error:
         with connection(background=True) as database:
             storage.begin_write(database)
@@ -570,8 +566,6 @@ def execute_coverage_node(node: dict) -> None:
                 return
             storage.fail_explorer_node(database, (str(error), _now(), node["id"]))
             storage.fail_run(database, (str(error), _now(), node["run_id"]))
-            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
 
 
 def coverage_summary(repertoire_id: str) -> dict:
@@ -694,8 +688,6 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
         _recalculate_node(database, node_id, json.loads(node["settings_json"]))
         storage.complete_maia_node(database, (_now(), node_id))
         progress_counts = storage.maia_progress_counts(database, (node["run_id"],))
-        from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                     (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                     progress_counts["total"] * 2)

@@ -87,7 +87,7 @@
       "backend/app/game_analysis_publication.py", "backend/app/game_commands.py",
       "backend/app/game_sync_commands.py", "backend/app/integrity_repair_commands.py", "backend/app/models.py",
       "backend/app/opening_evidence_api.py", "backend/app/contracts/opening_evidence.py",
-      "backend/app/opening_segmentation_api.py", "backend/app/opportunity_commands.py",
+      "backend/app/opening_segmentation_api.py",
       "backend/app/pgn_import_commands.py", "backend/app/prefix_evaluation_api.py",
       "backend/app/contracts/prefix_evaluation.py", "backend/app/prefix_split_commands.py",
       "backend/app/queue_attempt_origins.py", "backend/app/queue_commands.py",
@@ -163,7 +163,7 @@
       "backend/app/services/repertoire_coverage.py",
       "backend/app/services/repertoire_game_refresh.py",
       "backend/app/services/repertoire_integrity.py",
-      "backend/app/services/repertoire_opportunities.py",
+
       "backend/app/services/repertoire_statistics.py",
       "backend/app/services/review_reconciliation.py",
       "backend/app/services/review_service.py",

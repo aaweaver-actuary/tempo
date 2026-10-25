@@ -16,7 +16,6 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from .postgres_coverage_candidates import recalculate_coverage_node
-from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .repertoire_coverage import (
     ExplorerAuthenticationError, _cached_explorer_payload, _fetch_explorer,
     get_explorer_session_token,
@@ -86,7 +85,6 @@ def _fail_for_missing_token(task: dict[str, Any], node: dict[str, Any]) -> bool:
             return complete_task_slice_in_transaction(database, task)
         storage.fail_node(database, (message, _now(), node["id"]))
         storage.fail_active_run(database, (message, _now(), node["run_id"]))
-        enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
         return complete_task_slice_in_transaction(database, task)
 
 
@@ -116,7 +114,6 @@ def _publish_node(
     maia_done = storage.maia_completed_count(database, (node["run_id"],))
     storage.publish_progress(database, (node["run_id"], node["run_id"], progress["completed_nodes"] + maia_done,
          progress["total_nodes"] * 2, _now()))
-    enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     return advance_task_slice_in_transaction(
         database, task, next_phase="explorer",
         next_payload={**task["payload"], "after_node_id": node["id"]},

@@ -46,7 +46,6 @@ from .opening_graph import (
     prepare_opening_graph_rebuild,
     publish_opening_graph_rebuild,
 )
-from .repertoire_opportunities import enqueue_opportunity_refresh
 
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
@@ -141,12 +140,6 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
         storage.queue_derivation(database, game_id, _now())
 
 
-def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
-    with connection(background=True) as database:
-        repertoire_ids = storage.matching_repertoire_ids(database, game_id)
-    for repertoire_id in repertoire_ids:
-        activity_gate.wait_for_foreground()
-        enqueue_opportunity_refresh(repertoire_id, background=True)
 
 
 def _claim_derivation() -> str | None:
@@ -166,8 +159,7 @@ def _set_derivation_phase(game_id: str, phase: str) -> None:
         storage.set_derivation_phase(database, game_id, phase, _now())
         row = storage.derivation_version(database, game_id)
     phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
-              "applying_real_game_misses", "refreshing_events", "refreshing_features",
-              "enqueueing_priorities")
+              "applying_real_game_misses", "refreshing_events", "refreshing_features")
     if row and phase in phases:
         emit_progress("derivation", game_id, str(row[0]), phase, phases.index(phase), len(phases))
 
@@ -176,8 +168,7 @@ def _run_derivation_phase(
     game_id: str, phase: str, operation: Callable[[], None]
 ) -> None:
     phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
-              "applying_real_game_misses", "refreshing_events", "refreshing_features",
-              "enqueueing_priorities")
+              "applying_real_game_misses", "refreshing_events", "refreshing_features")
     phase_index = phases.index(phase)
     with read_connection() as database:
         current = storage.derivation_phase_status(database, game_id)
@@ -253,17 +244,12 @@ def _execute_derivation(game_id: str) -> None:
                 "refreshing_features",
                 lambda: refresh_game_features(game_id, background=True),
             )
-            _run_derivation_phase(
-                game_id,
-                "enqueueing_priorities",
-                lambda: _enqueue_game_repertoire_refreshes(game_id),
-            )
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
                 changed = storage.complete_running_derivation(database, game_id, _now())
                 version = storage.derivation_version(database, game_id)[0]
             if changed:
-                emit_progress("derivation", game_id, str(version), "Finished", 7, 7)
+                emit_progress("derivation", game_id, str(version), "Finished", 6, 6)
         except _DerivationStopped:
             return
         except sqlite3.OperationalError as error:
@@ -417,7 +403,7 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"repertoire_opportunity", "defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if item["kind"] not in {"defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],

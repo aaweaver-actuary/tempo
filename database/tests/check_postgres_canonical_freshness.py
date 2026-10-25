@@ -26,7 +26,6 @@ from app.branch_commands import add_repertoire_branch
 from app.card_commands import revise_card, archive_card
 from app.pgn_import_commands import admit_pgn_import, prepare_import_payload
 from app.canonical_prefix_api import save_prefix
-from app.services import repertoire_opportunities as opportunities
 from app.services.canonical_prefix import read_prefix, line_origin, prefix_projection, scope_line
 from app.services.canonical_prefix_preview import request_preview, execute_prefix_preview_slice, _next_item
 from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current
@@ -432,141 +431,6 @@ def _wait_for_postgres_blocker(waiting_pid, blocking_pid):
     raise AssertionError(f'Backend {waiting_pid} never blocked on {blocking_pid}; last blockers={observed}')
 
 
-def prove_discovery_state_action_freshness():
-    """CF-12: scope/row serialization, rejection rollback and receipt replay."""
-    from concurrent.futures import ThreadPoolExecutor
-    from queue import Queue
-    from threading import Event
-    from app import opportunity_commands
-    from app.command_gateway import execute_command, read_operation
-    from app.services.canonical_scope_freshness import scope_identity
-    repertoire_id = 'canonical-state-' + uuid.uuid4().hex
-    operation_ids = []
-    opportunity_ids = []
-    def publish(target):
-        with postgres_store.connection() as database:
-            opportunities._publish(database, repertoire_id=repertoire_id, kind='missing_response',
-                                   fen_key=' '.join(prefix_projection(ITALIAN)['ending_fen'].split()[:4]),
-                                   target=target, card_id=None, opponent_move_uci='a7a6', score=1,
-                                   evidence={'supporting_games': 5})
-            identifier = opportunities._stable_id(repertoire_id, 'missing_response',
-                            ' '.join(prefix_projection(ITALIAN)['ending_fen'].split()[:4]), target)
-        opportunity_ids.append(identifier)
-        return {'repertoire_id': repertoire_id, 'opportunity_id': identifier}
-    def snapshot(payload):
-        with postgres_store.connection(read_only=True) as database:
-            return dict(database.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (payload['opportunity_id'],)).fetchone())
-    def invalidate(database, dimension):
-        if dimension == 'global':
-            database.execute('UPDATE repertoire_game_scope SET generation=generation+1 WHERE id=1')
-        else:
-            column = 'canonical_prefix_revision' if dimension == 'prefix' else 'scope_source_revision'
-            database.execute(f'UPDATE repertoires SET {column}={column}+1 WHERE id=?', (repertoire_id,))
-    def race_action(action, payload, announced_pid):
-        with postgres_store.connection() as database:
-            announced_pid.put(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
-            try:
-                getattr(opportunity_commands, action + '_opportunity')(database, payload)
-            except HTTPException as error:
-                assert error.status_code == 409 and 'refresh' in error.detail.lower()
-                return
-            raise AssertionError('A newly stale action succeeded after waiting for its scope lock')
-    try:
-        with postgres_store.connection() as database:
-            database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (repertoire_id, repertoire_id, repertoire_id + '.pgn', NOW))
-            add_repertoire_branch(database, {'repertoire_id': repertoire_id, 'name': 'Root', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': ITALIAN})
-        set_prefix(repertoire_id, ITALIAN)
-        for action in ('dismiss', 'acknowledge', 'snooze'):
-            for dimension in ('prefix', 'source', 'global'):
-                payload = publish(action + '-' + dimension)
-                with postgres_store.connection() as database:
-                    database.execute('UPDATE repertoire_opportunities SET seen_at=?,snoozed_until=? WHERE id=?', (NOW, NOW, payload['opportunity_id']))
-                    invalidate(database, dimension)
-                    if dimension == 'source':
-                        database.execute('UPDATE repertoire_opportunities SET game_scope_generation=(SELECT generation FROM repertoire_game_scope WHERE id=1) WHERE id=?', (payload['opportunity_id'],))
-                before = snapshot(payload)
-                with postgres_store.connection(read_only=True) as database:
-                    current_identity = {**scope_identity(database, repertoire_id), 'game_scope_generation': game_scope_generation(database)}
-                    stale_field = {'prefix': 'canonical_prefix_revision', 'source': 'canonical_scope_source_revision', 'global': 'game_scope_generation'}[dimension]
-                    assert {field for field, value in current_identity.items() if before[field] != value} == {stale_field}
-                operation_id = 'state-reject-' + uuid.uuid4().hex
-                operation_ids.append(operation_id)
-                assert execute_command(operation_id, 'opportunities.' + action, payload) is None
-                receipt = read_operation(operation_id)
-                assert receipt['state'] == 'failed' and receipt['error']['status_code'] == 409, receipt
-                assert 'refresh' in receipt['error']['detail'].lower()
-                assert snapshot(payload) == before, (action, dimension)
-                if action == 'dismiss':
-                    assert publish(action + '-' + dimension) == payload
-                    republished = snapshot(payload)
-                    assert republished['status'] == 'active' and republished['dismissed_evidence_json'] is None
-            payload = publish(action + '-replay')
-            operation_id = 'state-replay-' + uuid.uuid4().hex
-            operation_ids.append(operation_id)
-            original = execute_command(operation_id, 'opportunities.' + action, payload)
-            assert original == {{'dismiss': 'dismissed', 'acknowledge': 'acknowledged', 'snooze': 'snoozed'}[action]: True}
-            with postgres_store.connection() as database:
-                invalidate(database, 'source')
-            before_replay = snapshot(payload)
-            postgres_store.close_pools()
-            assert execute_command(operation_id, 'opportunities.' + action, payload) == original
-            assert snapshot(payload) == before_replay
-            for dimension in ('prefix', 'source', 'global'):
-                payload = publish(action + '-race-' + dimension)
-                before = snapshot(payload)
-                announced_pid = Queue()
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    with postgres_store.connection() as invalidator:
-                        invalidator_pid = invalidator.execute_native('SELECT pg_backend_pid()').fetchone()[0]
-                        invalidate(invalidator, dimension)
-                        if dimension == 'source':
-                            before['game_scope_generation'] = game_scope_generation(invalidator)
-                            invalidator.execute('UPDATE repertoire_opportunities SET game_scope_generation=? WHERE id=?', (before['game_scope_generation'], payload['opportunity_id']))
-                        pending = executor.submit(race_action, action, payload, announced_pid)
-                        _wait_for_postgres_blocker(announced_pid.get(timeout=3), invalidator_pid)
-                    pending.result(timeout=3)
-                assert snapshot(payload) == before
-        # Reverse the race: a valid action must retain its scope until commit.
-        payload = publish('current-action-locks')
-        scope_locked = Event()
-        release_action = Event()
-        action_pid = Queue()
-        writer_pid = Queue()
-        saved_is_current = opportunities.opportunity_is_current
-        def paused_current(database, opportunity, **kwargs):
-            scope_locked.set()
-            assert release_action.wait(timeout=3), 'Scope-lock proof did not release the action'
-            return saved_is_current(database, opportunity, **kwargs)
-        def valid_action():
-            with postgres_store.connection() as database:
-                action_pid.put(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
-                return opportunity_commands.acknowledge_opportunity(database, payload)
-        def blocked_invalidation():
-            with postgres_store.connection() as database:
-                writer_pid.put(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
-                invalidate(database, 'source')
-        opportunities.opportunity_is_current = paused_current
-        try:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                action_future = executor.submit(valid_action)
-                try:
-                    assert scope_locked.wait(timeout=3), 'Action never acquired its scope/row locks'
-                    writer_future = executor.submit(blocked_invalidation)
-                    _wait_for_postgres_blocker(writer_pid.get(timeout=3), action_pid.get(timeout=3))
-                finally:
-                    release_action.set()
-                assert action_future.result(timeout=3) == {'acknowledged': True}
-                writer_future.result(timeout=3)
-        finally:
-            release_action.set()
-            opportunities.opportunity_is_current = saved_is_current
-        print('PASS CF-12 stale state actions reject all nine scope cases without mutation; current controls, republication, both lock-race directions and completed receipt replay survive reconnect', flush=True)
-    finally:
-        with postgres_store.connection() as database:
-            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s::text[])', (operation_ids,))
-            database.execute_native('DELETE FROM background_tasks WHERE deduplication_key=ANY(%s::text[]) OR payload_json::jsonb->>\'repertoire_id\'=%s', ([*opportunity_ids, repertoire_id], repertoire_id))
-            database.execute('DELETE FROM repertoires WHERE id=?', (repertoire_id,))
-        postgres_store.close_pools()
 
 
 
@@ -819,7 +683,7 @@ def prove_deterministic_route_certification():
 
 def prove_canonical_scope_lifecycle():
     """CF-15 / CP-4/5/6: normal publication, source mutation and recovery."""
-    from app import main as api, coverage_commands, opportunity_commands, card_commands, repertoire_commands
+    from app import main as api, coverage_commands, card_commands, repertoire_commands
     from app.command_gateway import execute_command, read_operation
     from app.services import postgres_coverage_explorer as explorer, repertoire_coverage as coverage
     from app.chess.cards import card_id
@@ -854,26 +718,14 @@ def prove_canonical_scope_lifecycle():
         run_bounded_task_slices('coverage_seed', identifier, execute_coverage_seed_slice)
         phases = run_bounded_task_slices('coverage_explorer', identifier, explorer.execute_coverage_explorer_slice)
         assert phases and coverage_summary(identifier)['status'] == 'complete'
-        command('opportunities.refresh', {'repertoire_id': identifier})
-        def opportunity_slice(task):
-            if not opportunities.execute_opportunity_slice(task):
-                complete_task(task['id'], task['generation'], task['lease_token'], kind=task['kind'])
-        run_bounded_task_slices('repertoire_opportunity', identifier, opportunity_slice)
         return admitted['run_id']
     def visible(identifier, game_id, target_key):
-        current_identity = identity(identifier)
-        items = api.repertoire_opportunities(identifier)['opportunities']
-        selected = next(item for item in items if item['fen_key'] == target_key and item['opponent_move_uci'] == 'a7a6')
-        assert selected['id'] in {item['id'] for item in api.discoveries_feed(0, 100)['discoveries']}
         assert api.repertoire_coverage_gaps(identifier)['gaps']
         statistics = api.repertoire_statistics_summary(identifier, 'all')
         assert statistics['games']['matched'] == 1, statistics['games']
         with postgres_store.connection(read_only=True) as database:
-            publication = dict(database.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (selected['id'],)).fetchone())
-            assert all(publication[field] == value for field, value in current_identity.items())
             for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):
                 assert database.execute(f'SELECT 1 FROM {table} WHERE game_id=? AND repertoire_id=?', (game_id, identifier)).fetchone(), table
-        return selected['id']
     try:
         explorer._fetch_explorer = fetch
         coverage.set_explorer_session_token('fixture-ephemeral-token')
@@ -897,10 +749,8 @@ def prove_canonical_scope_lifecycle():
             command('repertoires.main.select', {'repertoire_id': identifier})
             recheck(identifier, ITALIAN)
             old_run = publish(identifier, game_id)
-            opportunity_id = visible(identifier, game_id, target_key)
+            visible(identifier, game_id, target_key)
             before_identity = identity(identifier)
-            with postgres_store.connection(read_only=True) as database:
-                before = dict(database.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone())
             if dimension == 'source':
                 command('cards.revise', {'card_id': authored_id, 'request': {'starting_fen': chess.STARTING_FEN, 'moves': [*authored_moves, 'b7b6', 'a2a3'], 'history_mode': 'preserve', 'expected_revision': 1}})
             elif dimension == 'prefix':
@@ -912,25 +762,15 @@ def prove_canonical_scope_lifecycle():
             assert (after_identity['canonical_scope_source_revision'] > before_identity['canonical_scope_source_revision']) == (dimension == 'source')
             assert (after_identity['canonical_scope_preview_id'] != before_identity['canonical_scope_preview_id']) == (dimension == 'prefix')
             assert after_identity['game_scope_generation'] > before_identity['game_scope_generation']
-            assert api.repertoire_opportunities(identifier)['opportunities'] == []
-            assert opportunity_id not in {item['id'] for item in api.discoveries_feed(0, 100)['discoveries']}
             assert api.repertoire_statistics_summary(identifier, 'all')['games']['matched'] == 0
             if dimension == 'source':
                 assert coverage_summary(identifier)['run_id'] is None and coverage_gaps(identifier) == []
-                for action in ('dismiss', 'acknowledge', 'snooze'):
-                    operation_id = 'canonical-stale-' + uuid.uuid4().hex
-                    operation_ids.append(operation_id)
-                    assert execute_command(operation_id, 'opportunities.' + action, {'repertoire_id': identifier, 'opportunity_id': opportunity_id}) is None
-                    receipt = read_operation(operation_id)
-                    assert receipt['state'] == 'failed' and receipt['error']['status_code'] == 409 and 'refresh' in receipt['error']['detail'].lower(), receipt
-                    with postgres_store.connection(read_only=True) as database:
-                        assert dict(database.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone()) == before
             recheck(identifier, prefix_metadata(identifier)['moves'])
             rechecked = identity(identifier)
             for field in ('canonical_prefix_revision', 'canonical_scope_source_revision', 'game_scope_generation'):
                 assert rechecked[field] == after_identity[field], field
             assert publish(identifier, game_id) != old_run
-            assert visible(identifier, game_id, target_key) == opportunity_id
+            visible(identifier, game_id, target_key)
             with postgres_store.connection(read_only=True) as database:
                 current = read_prefix(database, identifier)
                 assert {row[0] for row in database.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=?', (current['preview_id'],))} == {current['source_revision']}
@@ -965,7 +805,6 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
     baseline_repertoire_id = repertoire_id + '-baseline'
     game_id = repertoire_id + '-game'
     mutation_repertoire_id = repertoire_id + '-mutations'
-    saved_calculate = opportunities._calculate_node_opportunities
     try:
         with postgres_store.connection() as database:
             for identifier in (repertoire_id, other_repertoire_id, baseline_repertoire_id, mutation_repertoire_id):
@@ -1028,39 +867,6 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         set_prefix(repertoire_id,ITALIAN)
         assert complete_coverage(repertoire_id) != old_run and coverage_summary(repertoire_id)['run_id'] is not None
         print('PASS CF-1 PostgreSQL source invalidation hides old coverage, fences Explorer and Maia, and recertification restores a current run',flush=True)
-        # Race a real calculation against a foreground source write with no open read connection.
-        with postgres_store.connection() as database:
-            enqueue_task_in_transaction(database,'repertoire_opportunity',repertoire_id,{'repertoire_id':repertoire_id,'phase':'nodes','cursor':''},priority=130)
-        task = claim_owned('repertoire_opportunity',repertoire_id)
-        def race(inputs):
-            result = saved_calculate(inputs)
-            if any(decision['active'] for decision in result):
-                with postgres_store.connection() as database:
-                    database.execute("UPDATE repertoire_lines SET moves_json=? WHERE repertoire_id=? AND name='Root'",(json.dumps([*ITALIAN,'f8c5','c2c3']),repertoire_id))
-            return result
-        opportunities._calculate_node_opportunities = race
-        # A node without gaps can be visited first; walk until the calculation changes the version.
-        before_race = prefix_metadata(repertoire_id)['source_revision']
-        for _ in range(8):
-            admitted_call(opportunities.execute_opportunity_slice, task)
-            if prefix_metadata(repertoire_id)['source_revision'] != before_race:
-                break
-            task = claim_owned('repertoire_opportunity',repertoire_id)
-            assert task is not None
-        assert prefix_metadata(repertoire_id)['source_revision'] != before_race
-        with postgres_store.connection(read_only=True) as database:
-            assert not database.execute('SELECT 1 FROM repertoire_opportunities WHERE repertoire_id=?',(repertoire_id,)).fetchone()
-        opportunities._calculate_node_opportunities = saved_calculate
-        set_prefix(repertoire_id,ITALIAN)
-        complete_coverage(repertoire_id)
-        for _ in range(30):
-            task = claim_owned('repertoire_opportunity',repertoire_id)
-            assert task is not None
-            admitted_call(opportunities.execute_opportunity_slice, task)
-            with postgres_store.connection(read_only=True) as database:
-                if opportunities.list_opportunities(database,repertoire_id): break
-        else: raise AssertionError('Current opportunity never published after recertification')
-        print('PASS CF-4 PostgreSQL opportunity source race discards publication, then rebuilds current discoveries',flush=True)
         # A newly eligible repertoire invalidates the primary selected for a different repertoire.
         with postgres_store.connection() as database:
             database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,\'white\',?,?,?)',(other_repertoire_id+'-line',other_repertoire_id,'Stub',chess.STARTING_FEN,json.dumps(ITALIAN[:3]),NOW))
@@ -1128,16 +934,12 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         prove_generated_split_boundary(card_source=1)
         prove_card_mutation_coverage_status()
         prove_last_generated_membership_cleanup()
-        prove_discovery_state_action_freshness()
         prove_selected_batch_canonical_routes()
         prove_deterministic_route_certification()
         prove_canonical_scope_lifecycle()
         from database.tests.check_postgres_canonical_retention import prove_canonical_retention
         prove_canonical_retention()
-        from database.tests.check_postgres_opportunity_freshness import prove_opportunity_dismissal_and_source_freshness
-        prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices)
     finally:
-        opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:
             database.execute('DELETE FROM imported_games WHERE id=?',(game_id,))
             database.execute("DELETE FROM background_tasks WHERE deduplication_key IN (?,?,?) OR json_extract(payload_json,'$.repertoire_id') IN (?,?,?) OR json_extract(payload_json,'$.game_id')=?",(repertoire_id,other_repertoire_id,baseline_repertoire_id,repertoire_id,other_repertoire_id,baseline_repertoire_id,game_id))

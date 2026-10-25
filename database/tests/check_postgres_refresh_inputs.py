@@ -23,7 +23,6 @@ from tempo_legacy_database.connections import background_connection
 from app.services import durable_tasks, refresh_requests, postgres_priority
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 from app.services.introduction_priorities import enqueue_priority_refresh_in_transaction
-from app.services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 
 
 def proof_refresh_inputs(parent_database_url):
@@ -38,20 +37,13 @@ def proof_refresh_inputs(parent_database_url):
             for target_id in (repertoire_id, concurrent_repertoire_id):
                 database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,'Proof','synthetic',?)", (target_id, now.isoformat()))
             first_generation = enqueue_priority_refresh_in_transaction(database, repertoire_id)
-            enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
-            database.execute("UPDATE background_tasks SET phase='nodes',payload_json=? WHERE kind='repertoire_opportunity' AND deduplication_key=?",
-                             (json.dumps({'repertoire_id':repertoire_id,'phase':'nodes','cursor':'saved'}), repertoire_id))
         durations = []
         for _ in range(100):
             postgres_store.close_pools()
             started = time.perf_counter()
             with background_connection() as database:
                 assert enqueue_priority_refresh_in_transaction(database, repertoire_id) == first_generation
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
-            durations.append(time.perf_counter() - started)
-        with postgres_store.connection(read_only=True) as database:
-            row = database.execute("SELECT generation,phase,payload_json FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key=?", (repertoire_id,)).fetchone()
-            assert row['generation'] == 1 and row['phase'] == 'nodes' and json.loads(row['payload_json'])['cursor'] == 'saved'
+                durations.append(time.perf_counter() - started)
         # The epoch lock serializes first-time requests, before a refresh row exists.
         def concurrent_request(_index):
             from psycopg.errors import LockNotAvailable, TransactionTimeout
@@ -95,8 +87,6 @@ def proof_refresh_inputs(parent_database_url):
             assert publication and publication[0] == 7
         with postgres_store.connection(read_only=True) as database:
             assert database.execute("SELECT pending_since FROM analysis_refresh_requests WHERE kind='repertoire_priority' AND repertoire_id=?", (repertoire_id,)).fetchone()[0] is None
-            opportunity = database.execute("SELECT generation,phase,payload_json FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key=?", (repertoire_id,)).fetchone()
-            assert opportunity['generation'] == 2 and json.loads(opportunity['payload_json'])['phase'] == 'summaries'
         try:
             with background_connection() as database:
                 database.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?', (repertoire_id,))
@@ -122,10 +112,8 @@ def proof_refresh_inputs(parent_database_url):
 
 
 def proof_refresh_state_recovery(parent_database_url):
-    """Real task transitions, missing intent repair, and publication races."""
-    import threading
+    """Retained priority state is stable under repeated unchanged requests."""
     import database.tests.check_postgres_graph_retention as fixtures
-    from app.services.repertoire_opportunities import execute_opportunity_slice
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Refresh recovery proof requires disposable PostgreSQL')
     with patch.object(fixtures, 'DATABASE_URL', parent_database_url), fixtures.owned_fixture_database() as identity:
@@ -134,85 +122,17 @@ def proof_refresh_state_recovery(parent_database_url):
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,'Recovery','synthetic',?)",
                              (repertoire_id, datetime.now(timezone.utc).isoformat()))
             enqueue_priority_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
-            enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
         for task_state in ('queued', 'leased', 'retrying', 'failed'):
             with postgres_store.connection() as database:
-                database.execute("UPDATE background_tasks SET state=?,phase='nodes',attempt_count=3,last_error='retained diagnostic',lease_token=?,lease_expires_at=? WHERE kind IN ('repertoire_priority','repertoire_opportunity') AND deduplication_key=?",
+                database.execute("UPDATE background_tasks SET state=?,phase='nodes',attempt_count=3,last_error='retained diagnostic',lease_token=?,lease_expires_at=? WHERE kind='repertoire_priority' AND deduplication_key=?",
                                  (task_state, 'saved-lease' if task_state == 'leased' else None,
                                   (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat() if task_state == 'leased' else None, repertoire_id))
-                retained_task = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key=?", (repertoire_id,)).fetchone())
-                retained_priority_task = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_priority' AND deduplication_key=?", (repertoire_id,)).fetchone())
+                retained = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_priority' AND deduplication_key=?", (repertoire_id,)).fetchone())
             postgres_store.close_pools()
             with background_connection() as database:
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
                 assert enqueue_priority_refresh_in_transaction(database, repertoire_id, quiet_seconds=0) == 1
-                assert dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key=?", (repertoire_id,)).fetchone()) == retained_task
-                assert dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_priority' AND deduplication_key=?", (repertoire_id,)).fetchone()) == retained_priority_task
-        with postgres_store.connection() as database:
-            database.execute("DELETE FROM background_tasks WHERE kind IN ('repertoire_priority','repertoire_opportunity') AND deduplication_key=?", (repertoire_id,))
-            assert enqueue_priority_refresh_in_transaction(database, repertoire_id, quiet_seconds=0) == 2
-            enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
-        old_task = durable_tasks.claim_task('repertoire_opportunity')
-        assert old_task and old_task['deduplication_key'] == repertoire_id
-        request_barrier = threading.Barrier(2)
-        def replace_generation():
-            request_barrier.wait(timeout=5)
-            with postgres_store.connection() as database:
-                database.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?', (repertoire_id,))
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
-        def deliver_old_completion():
-            request_barrier.wait(timeout=5)
-            return durable_tasks.complete_task(old_task['id'], old_task['generation'], old_task['lease_token'], kind='repertoire_opportunity')
-        with ThreadPoolExecutor(max_workers=2) as workers:
-            request_future = workers.submit(replace_generation)
-            completion_future = workers.submit(deliver_old_completion)
-            request_future.result(timeout=10)
-            completion_future.result(timeout=10)
-        with postgres_store.connection(read_only=True) as database:
-            intent = database.execute("SELECT input_version,published_input_version FROM analysis_refresh_requests WHERE kind='repertoire_opportunity' AND repertoire_id=?", (repertoire_id,)).fetchone()
-            assert intent['published_input_version'] != intent['input_version']
-        postgres_store.close_pools()
-        from app.services import redis_admission_gate
-        # A fresh process resumes the committed request without another user
-        # refresh and inherits only this helper's existing admission ownership.
-        child_source = """
-import os
-from app.services import durable_tasks, redis_admission_gate
-from app.services.repertoire_opportunities import execute_opportunity_slice
-redis_admission_gate._FOREGROUND_KEY = os.environ['TEMPO_REFRESH_FOREGROUND_KEY']
-redis_admission_gate._BACKGROUND_KEY = os.environ['TEMPO_REFRESH_BACKGROUND_KEY']
-task = durable_tasks.claim_task('repertoire_opportunity')
-assert task and task['deduplication_key'] == os.environ['TEMPO_REFRESH_REPERTOIRE_ID']
-assert execute_opportunity_slice(task)
-"""
-        child_environment = {**os.environ,
-            'TEMPO_REFRESH_REPERTOIRE_ID': repertoire_id,
-            'TEMPO_REFRESH_FOREGROUND_KEY': redis_admission_gate._FOREGROUND_KEY,
-            'TEMPO_REFRESH_BACKGROUND_KEY': redis_admission_gate._BACKGROUND_KEY,
-        }
-        subprocess.run([sys.executable, '-c', child_source], env=child_environment,
-                       check=True, timeout=15)
-        # Drive the actual bounded phases after reconnect. There are seven
-        # empty-scope phases; this ceiling diagnoses loss rather than waiting.
-        for _ in range(8):
-            current_task = durable_tasks.claim_task('repertoire_opportunity')
-            assert current_task and current_task['deduplication_key'] == repertoire_id
-            with background_connection() as database:
-                retained_task = dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (current_task['id'],)).fetchone())
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
-                assert dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (current_task['id'],)).fetchone()) == retained_task
-            if not execute_opportunity_slice(current_task):
-                assert durable_tasks.complete_task(current_task['id'], current_task['generation'], current_task['lease_token'], kind='repertoire_opportunity')
-                break
-        else:
-            raise AssertionError('Unchanged opportunity work failed to complete its bounded phases')
-        with postgres_store.connection() as database:
-            database.execute('DELETE FROM background_tasks WHERE id=?', (current_task['id'],))
-            for _ in range(10):
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
-            assert database.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key=?", (repertoire_id,)).fetchone()[0] == 0
-        print(json.dumps({'test': 'test_postgres_refresh_missing_work_recovery_states_publication_race_and_no_loop',
-                          'states': ['queued', 'leased', 'retrying', 'failed'], 'actual_opportunity_publication': True}))
+                assert dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_priority' AND deduplication_key=?", (repertoire_id,)).fetchone()) == retained
+        print(json.dumps({'test':'test_postgres_priority_refresh_unchanged_requests_preserve_states','states':4}))
 
 
 def proof_refresh_schema_upgrade(parent_database_url):

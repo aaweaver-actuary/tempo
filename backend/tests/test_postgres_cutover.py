@@ -48,10 +48,9 @@ def unscoped_canonical_prefix(monkeypatch):
     test_canonical_repertoire_prefix.py and the PostgreSQL browser/durability gate.
     """
     from app import coverage_maia_commands
-    from app.services import canonical_prefix, canonical_scope_freshness, repertoire_opportunities, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage
+    from app.services import canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage
     monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(repertoire_opportunities, "game_scope_generation", lambda *_args, **_kwargs: 0)
-    for module in (canonical_prefix, canonical_scope_freshness, repertoire_opportunities, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage, coverage_maia_commands):
+    for module in (canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage, coverage_maia_commands):
         if hasattr(module, "read_prefix"):
             monkeypatch.setattr(module, "read_prefix", lambda *_args, **_kwargs: {
                 "moves": [], "revision": 0, "preview_id": None, "source_revision": 0,
@@ -106,20 +105,12 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
     monkeypatch.setattr(game_commands, "enqueue_task_in_transaction",
                         lambda _database, kind, key, payload, *, priority:
                         followups.append((kind, key, payload, priority)))
-    monkeypatch.setattr(game_commands, 'enqueue_opportunity_refresh_in_transaction',
-                        lambda _database, key: followups.append(('repertoire_opportunity', key,
-                            {'repertoire_id': key, 'phase': 'summaries', 'cursor': ''}, 130)))
     assert game_commands.set_game_exclusion(
         Database(), {"game_id": "provider:one", "excluded": True},
     ) == {"game_id": "provider:one", "excluded": True}
     assert any("FOR UPDATE" in statement for statement, _ in statements)
     assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
-    assert followups == [
-        ("game_derivation_positions", "provider:one",
-         {"game_id": "provider:one", "derivation_version": 2, "cursor": 0}, 125),
-        ("repertoire_opportunity", "repertoire-a",
-         {"repertoire_id": "repertoire-a", "phase": "summaries", "cursor": ""}, 130),
-    ]
+    assert followups == [('game_derivation_positions', 'provider:one', {'game_id': 'provider:one', 'derivation_version': 2, 'cursor': 0}, 125)]
 
 
 def test_postgres_manual_threat_refresh_admits_scan_through_foreground_receipt(monkeypatch):
@@ -1958,86 +1949,8 @@ def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(mon
     assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
 
 
-@pytest.mark.parametrize("action", ["dismiss", "acknowledge", "snooze", "train"])
-def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeypatch, action):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(command_dispatch, "dispatch_command",
-                        lambda name, payload, *, idempotency_key:
-                        dispatched.append((name, payload, idempotency_key)) or {
-                            "train": {"card_id": "card", "queued": True, "idempotent": False},
-                            "dismiss": {"dismissed": True},
-                            "acknowledge": {"acknowledged": True},
-                            "snooze": {"snoozed": True},
-                        }[action])
-    response = TestClient(main.app).post(
-        f"/api/repertoires/white/opportunities/discovery-1/{action}",
-        headers={"Idempotency-Key": f"discovery-1-{action}"},
-        **({"json": {"evidence_fingerprint": "reviewed-A"}} if action == "train" else {}),
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [(f"opportunities.{action}", {
-        "repertoire_id": "white", "opportunity_id": "discovery-1",
-        **({"evidence_fingerprint": "reviewed-A"} if action == "train" else {}),
-    }, f"discovery-1-{action}")]
 
 
-def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch, unscoped_canonical_prefix):
-    from app import opportunity_commands
-
-    events = []
-
-    class Cursor:
-        def __init__(self, row=None, rows=()):
-            self.row = row
-            self.rows = rows
-
-        def fetchone(self):
-            return self.row
-
-        def __iter__(self):
-            return iter(self.rows)
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            if statement.startswith("SELECT card_id FROM repertoire_opportunities"):
-                return Cursor(("source",))
-            if statement.startswith("SELECT kind FROM cards"):
-                return Cursor(("prefix",))
-            if statement.startswith("SELECT shortened_card_id"):
-                return Cursor(("parent", "continuation"))
-            if statement.startswith("SELECT repertoire_id FROM repertoire_cards"):
-                return Cursor(rows=[("white",), ("black",)])
-            raise AssertionError(statement)
-
-    database = Database()
-    monkeypatch.setattr(opportunity_commands, "lock_queue_date_for_position",
-                        lambda db, day: events.append(("queue-lock", db, day)))
-    monkeypatch.setattr(opportunity_commands, "admit_existing_decision",
-                        lambda db, repertoire_id, opportunity_id, evidence_fingerprint:
-                        events.append(("admit", db, repertoire_id, opportunity_id, evidence_fingerprint)) or
-                        {"card_id": "continuation", "queued": True, "idempotent": False})
-    monkeypatch.setattr(opportunity_commands, "invalidate_integrity_in_transaction",
-                        lambda db, repertoire_id:
-                        events.append(("invalidate", db, repertoire_id)))
-    monkeypatch.setattr(opportunity_commands, "request_graph_rebuild_in_transaction",
-                        lambda db, repertoire_id, day:
-                        events.append(("graph", db, repertoire_id, day)))
-    result = opportunity_commands.train_opportunity(database, {
-        "repertoire_id": "white", "opportunity_id": "discovery-1", "evidence_fingerprint": "revision-B",
-    })
-    assert result["card_id"] == "continuation"
-    assert events[0][0] == "queue-lock" and events[1] == (
-        "admit", database, "white", "discovery-1", "revision-B",
-    )
-    assert [(event[0], event[2]) for event in events[2:]] == [
-        ("invalidate", "black"), ("graph", "black"),
-        ("invalidate", "white"), ("graph", "white"),
-    ]
 
 
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
@@ -5497,141 +5410,12 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     assert completed_tasks == ["refresh-task"]
 
 
-def test_postgres_opportunity_refresh_dispatches_idempotent_command(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, opportunity_commands
-
-    dispatched = []
-    queued = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch, "dispatch_command",
-        lambda name, payload, *, idempotency_key:
-            dispatched.append((name, payload, idempotency_key)) or {"queued": True},
-    )
-    response = TestClient(main.app).post(
-        "/api/repertoires/rep/opportunities/refresh",
-        headers={"Idempotency-Key": "refresh-one"},
-    )
-    assert response.status_code == 202, response.text
-    assert response.json() == {"queued": True}
-    assert dispatched == [("opportunities.refresh", {"repertoire_id": "rep"}, "refresh-one")]
-
-    class ExistingRepertoire:
-        def execute_native(self, statement, _parameters):
-            assert "FROM repertoires" in statement
-            return SimpleNamespace(fetchone=lambda: (1,))
-
-    monkeypatch.setattr(
-        opportunity_commands, "enqueue_opportunity_refresh_in_transaction",
-        lambda _database, key, *, quiet_seconds=5: queued.append((key, quiet_seconds)),
-    )
-    assert opportunity_commands.refresh_opportunities(
-        ExistingRepertoire(), {"repertoire_id": "rep"},
-    ) == {"queued": True}
-    assert queued == [('rep', 0)]
 
 
-def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
-    from app import tasks
-    from app.services import repertoire_opportunities
-
-    foreground_finished = threading.Event()
-    read_opened = threading.Event()
-    published_phases: list[str] = []
-    current_lease = {"token": "first-lease"}
-    claimed_task = {
-        "kind": "repertoire_opportunity", "id": "opportunity-refresh",
-        "generation": 3, "lease_token": "first-lease",
-        "payload": {"repertoire_id": "rep", "phase": "summaries", "cursor": ""},
-    }
-
-    class EmptyCursor:
-        def fetchone(self):
-            return None
-
-    class EmptyDatabase:
-        def execute(self, statement, _parameters):
-            assert "repertoire_decision_events" in statement
-            return EmptyCursor()
-
-    @contextmanager
-    def bounded_read():
-        read_opened.set()
-        yield EmptyDatabase()
-
-    @contextmanager
-    def bounded_write(*, background):
-        assert background
-        yield object()
-
-    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(repertoire_opportunities.activity_gate, "wait_for_foreground", foreground_finished.wait)
-    monkeypatch.setattr(repertoire_opportunities, "background_read_connection", bounded_read)
-    monkeypatch.setattr(repertoire_opportunities, "connection", bounded_write)
-    monkeypatch.setattr(
-        repertoire_opportunities, "lock_current_slice",
-        lambda _database, task: task["lease_token"] == current_lease["token"],
-    )
-    monkeypatch.setattr(
-        repertoire_opportunities, "_advance_slice",
-        lambda _database, _task, phase, _cursor: published_phases.append(phase),
-    )
-
-    result: list[bool] = []
-    worker = threading.Thread(target=lambda: result.append(
-        repertoire_opportunities.execute_opportunity_slice(claimed_task)
-    ))
-    worker.start()
-    assert not read_opened.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert result == [True]
-    assert published_phases == ["cards"]
-    current_lease["token"] = "replacement-lease"
-    assert repertoire_opportunities.execute_opportunity_slice(claimed_task) is True
-    assert published_phases == ["cards"]
-    assert "repertoire_opportunity" in tasks._SUPPORTED_BACKGROUND_KINDS
 
 
-def test_postgres_opportunity_recurring_query_uses_native_modulo(monkeypatch):
-    from app.services import repertoire_opportunities
-
-    statements: list[str] = []
-
-    class EmptyCursor:
-        def __iter__(self):
-            return iter(())
-
-    class RecordingDatabase:
-        def execute_native(self, statement, _parameters):
-            statements.append(statement)
-            return EmptyCursor()
-
-    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(repertoire_opportunities, "_window_days", lambda _database: 90)
-    assert repertoire_opportunities._load_recurring_decisions(RecordingDatabase(), "rep", "card") == []
-    assert "MOD(event.ply-earlier.ply,2)=0" in statements[0]
-    assert "event.repertoire_id=%s" in statements[0]
 
 
-def test_postgres_recurring_evidence_uses_per_event_analysis_lookups(monkeypatch):
-    from app.services import repertoire_opportunities
-
-    statements: list[str] = []
-
-    class RecordingDatabase:
-        def execute_native(self, statement, _parameters):
-            statements.append(statement)
-            return []
-
-    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(repertoire_opportunities, "_window_days", lambda _database: 90)
-    assert repertoire_opportunities._load_recurring_decisions(RecordingDatabase(), "rep", "card") == []
-    assert statements[0].count("LEFT JOIN LATERAL") == 3
-    assert statements[0].count("LIMIT 1") == 3
 
 
 def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatch):
@@ -6123,14 +5907,8 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
 
     monkeypatch.setattr(coverage_maia_commands, "enqueue_priority_refresh_in_transaction",
                         unavailable_priority, raising=False)
-    opportunity_calls = []
-    original_opportunity = coverage_maia_commands.enqueue_opportunity_refresh_in_transaction
 
-    def retained_opportunity(database, repertoire_id):
-        opportunity_calls.append(repertoire_id)
-        return original_opportunity(database, repertoire_id)
 
-    monkeypatch.setattr(coverage_maia_commands, "enqueue_opportunity_refresh_in_transaction", retained_opportunity)
 
     statements = []
     node = {"id": "node", "run_id": "run", "maia_status": "leased",
@@ -6178,9 +5956,8 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
                for statement, _ in statements)
     assert json.loads(next(parameters[0] for statement, parameters in statements
                            if statement.startswith("UPDATE repertoire_coverage_candidates")))[0]["source_state"] == "blended"
-    assert opportunity_calls == ["rep"]
     assert not any("repertoire_priority" in statement for statement, _ in statements)
-    assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == 1
+    assert not any(statement.startswith("WITH queued AS") for statement, _ in statements)
 
 
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch, unscoped_canonical_prefix):
@@ -6492,8 +6269,6 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
 
     statements = []
     refreshes = []
-    monkeypatch.setattr(postgres_coverage_explorer, "enqueue_opportunity_refresh_in_transaction",
-                        lambda database, repertoire_id: refreshes.append(repertoire_id))
 
     class Database:
         def execute_native(self, statement, parameters=()):
@@ -6512,7 +6287,6 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
                and "Explorer token" in parameters[0]
                for statement, parameters in statements)
 
-    assert refreshes == ["rep"]
 
 
 def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
@@ -6622,36 +6396,8 @@ def test_postgres_coverage_building_summary_remains_queued(monkeypatch, unscoped
     assert summary["is_complete"] is False
 
 
-@pytest.mark.parametrize("body", [None, {}, {"evidence_fingerprint": None}, {"evidence_fingerprint": ""}])
-def test_postgres_discovery_train_requires_revision_before_dispatch(monkeypatch, body):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda *args, **kwargs: dispatched.append(args))
-    response = TestClient(main.app).post("/api/repertoires/rep/opportunities/discovery/train", json=body)
-    assert response.status_code == 422, response.text
-    assert dispatched == []
 
 
-@pytest.mark.parametrize("fingerprint", [None, "", " "])
-def test_postgres_legacy_train_payload_cannot_write_current_evidence(fingerprint):
-    from fastapi import HTTPException
-    from app import opportunity_commands
-
-    class Database:
-        def execute_native(self, *args):
-            raise AssertionError("A revisionless legacy command must be rejected before database work")
-
-    payload = {"repertoire_id": "rep", "opportunity_id": "discovery"}
-    if fingerprint is not None:
-        payload["evidence_fingerprint"] = fingerprint
-    with pytest.raises(HTTPException) as failure:
-        opportunity_commands.train_opportunity(Database(), payload)
-    assert failure.value.status_code == 409
-    assert "Review the current evidence" in failure.value.detail
 
 
 def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication(monkeypatch, unscoped_canonical_prefix):
