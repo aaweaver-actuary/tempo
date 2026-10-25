@@ -869,7 +869,7 @@
       "id": "legacy-guided-game-review-01",
       "status": "candidate",
       "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
-      "purpose": "Existing #423 exact Games guided-review server candidate under graph-preserving fresh start. Its 8 future deletes/15 edits remain unchanged and unexecuted. Old guided sessions/attempts/receipts/browser pending work may be disposable after exact graph separation; old-work drain and full history transfer are no longer approval prerequisites. Current graph/repertoire/Study interfaces and normal launcher must remain usable.",
+      "purpose": "Retire the correction-first top-five Games guided-review server capability under graph-preserving fresh start. Exact base-source consumer/edit/hash records below belong to source_commit1a0fd5c5; actual feature-branch code35ccb6e5 removes the eight files and thirteen non-central-metadata edits, separately recorded in implementation_receipt. Current main integration/deployment is not inferred from this manifest. No old Games session/history/receipt/broker/browser drain is required; current graph/repertoire/Study and shared launcher/schema ownership stay protected.",
       "delete_paths": [
         "backend/app/guided_review_commands.py",
         "backend/app/services/guided_review.py",
@@ -903,7 +903,7 @@
         },
         {
           "path": "docs/postgres-route-contract.json",
-          "required_edit": "Remove exactly POST /api/games/{game_id:path}/guided-review (start_guided_game_review), GET /api/guided-reviews/{session_id} (guided_game_review), POST /api/guided-reviews/{session_id}/attempt (attempt_guided_game_review). Preserve all other route/treatment rows and the route correspondence regression."
+          "required_edit": "Remove exactly the three guided route rows: start_guided_game_review, guided_game_review and attempt_guided_game_review. Root-authorized baseline metadata repair additionally adds exactly three already-existing retained GameEvidence routes: POST /api/game-evidence/legacy/deliveries receive_legacy_evidence foreground_command; POST /api/game-evidence/legacy/cards/{card_id}/queue queue_legacy_evidence_card foreground_command; GET /api/game-evidence/legacy/cards/{card_id} legacy_card_status reader; all state=staged. The same missing rows were reproduced on unchanged base1a0fd5c5. Preserve all other route/treatment rows and route correspondence assertions; this repair adds no API or schema."
         },
         {
           "path": "backend/organization-inventory.json",
@@ -1318,9 +1318,9 @@
         "git diff --check"
       ],
       "future_execution_checks": {
-        "status": "NOT RUN / NOT AUTHORIZED by candidate preparation",
+        "status": "Named focused source checks and physical absence executed by implementation owner at35ccb6e5, not by this metadata owner. No native/live/host proof or runtime rerun for documentation reconciliation.",
         "focused_source_removed_command": "TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database python -m pytest backend/tests/test_postgres_route_contract.py backend/tests/test_command_receipt_storage_boundary.py backend/tests/test_study_portable_storage_boundary.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_regressions.py::test_guided_review_after_stale_failure_marking_is_saved_once backend/tests/test_frozen_opening_order.py backend/tests/test_study_contract_identity.py -q --rootdir=.",
-        "required_before_approval": "Pin interpreter/dependencies/fixtures and exact installed/native source-absence commands for these guided server deletions. In a disposable tree only, demonstrate retained artifact/API/worker startup and current graph/repertoire/Study contracts with candidate paths absent before config loading. Preserve non-CF9 proof ownership and shared current schema/interface behavior. Old saved sessions/receipts/browser work need no drain or history transfer under fresh-start; no live runner or invented current-artifact pass.",
+        "required_before_approval": "The source-owner receipt establishes the exact current source cut and selected current Study/graph invariants on the feature branch. Preserve source/fixture/toolchain correspondence through source integration; documentation-only drift does not justify runtime repetition. Actual installed host/artifacts and any irreversible live action remain separate release decisions, with no full historical-state or old-work transfer prerequisite.",
         "receipt_reuse": "Reuse #382/#386 and other receipts only when relevant executable/dependency/fixture/toolchain inputs match; do not repeat unit/native/build suites solely for documentation overlap."
       },
       "dependency_receipts": [
@@ -1334,24 +1334,14 @@
       ],
       "acceptance_dependencies": [
         {
-          "gate": "Graph/repertoire/current Study separation",
-          "state": "SOURCE CLOSURE FROZEN; LIVE TARGET/COPY UNVERIFIED",
-          "required_evidence": "Reuse the 21 exact source keep paths and graph dependency contract in adaptive-priority-callbacks-fresh-start-01. The guided delete/edit list remains unexecuted; any future removal must preserve this closure and current Study/runtime interfaces. Actual installed target and verified protected graph-copy handling remain operator evidence before an irreversible action, not old-work/history drain."
+          "gate": "Source integration",
+          "state": "ACTUAL SOURCE CUT REVIEWED; FEATURE BRANCH ONLY",
+          "required_evidence": "Root/source owner final review and exact published PR/source correspondence. Current graph/repertoire/Study protected source and selected checks are recorded above; old history/background/receipt/browser drain is not a gate. No merge authorized by this metadata."
         },
         {
-          "gate": "Current normal launcher source",
-          "state": "RETAIN FUNCTIONAL",
-          "required_evidence": "Existing default start/restart/update still selects legacy services; do not delete its source/runtime/Compose/backend dependencies. Guided handler retirement requires exact functioning artifact/source proof or accepted replacement, independently of historical-state reset."
-        },
-        {
-          "gate": "Current artifact and source-absence acceptance",
-          "state": "CANDIDATE; EXECUTION PROOF NOT RUN",
-          "required_evidence": "For any later guided server deletion, demonstrate current selected Study/graph/repertoire artifacts and interfaces with the exact candidate paths absent. Historical #382/#386 receipts remain prior evidence; reconstructing full historical artifact equivalence is superseded and does not gate the six callback-only source preparation. No runtime suite is rerun for documentation policy changes."
-        },
-        {
-          "gate": "Physical reset/deletion",
+          "gate": "Live deletion/reset/deployment",
           "state": "NOT AUTHORIZED / NOT EXECUTED",
-          "required_evidence": "Identify exact graph-independent old data/file/backup targets, protect graph/repertoire source and any new verified graph recovery copy, then present the specific irreversible action for final confirmation. No live reads/captures/resets/DROP/cutover in this source manifest."
+          "required_evidence": "A separate exact graph-separated live target/action and verified protected graph recovery-copy handling require final confirmation. Source removal does not drop tables, mutate old data or deploy."
         }
       ],
       "data_disposition": "Fresh start permits old guided sessions/attempts, reviews/schedules, background jobs, server receipts, browser old envelopes and obsolete backup state to be discarded once exact graph/repertoire separation is established. No drain/old-history migration is required. Preserve usable graph + necessary repertoire/line/card/membership/prefix/exclusion/reference sources; preserve current Study semantic APIs, shared queue/transaction/runtime/schema ownership and normal launcher source. No table/file/row is removed or reset by this manifest; graph/repertoire source and a new verified graph recovery copy must not be deleted. Current implementation snapshots/converter code remain authored work; unused legacy-only source can get its own bounded future retirement.",
@@ -1364,21 +1354,25 @@
           "reviewed_manifest_sha256": "420f6fee062ffc1d4329962f9fdf41131d94ca08c1395e86ac3fa8e2f81b5498",
           "decision": "Accepted current-source correspondence with no remaining finding: seven prior cohorts/top metadata, unchanged 8/15 allowlist, 23 baseline hashes, 29 protected hashes, three decorated regions, three peer artifact hashes, exact #431 class and current artifact UNVERIFIED disposition independently verified. This receipt-only addition does not repeat executable checks or approve retirement/source absence."
         },
-        "fresh_start_review": "Prior /root independent source-correspondence receipt remains historical. Fresh-start policy, exact graph/repertoire separation and the new six-file source implementation slice require current root review; no source deletion or live reset approval is inferred."
+        "fresh_start_review": "Prior /root independent source-correspondence receipt remains historical. Fresh-start policy, exact graph/repertoire separation and the new six-file source implementation slice require current root review; no source deletion or live reset approval is inferred.",
+        "actual_source_review": {
+          "reviewer": "/root/retirement_390",
+          "source_commit": "35ccb6e5fc497810d29582926e0e3a570767a051",
+          "source_review_sha256": "1af67a2b50d1ac0243f74bb81a7a9898bf8004aff3189031e0d5468268cb8762",
+          "decision": "Accepted no remaining source finding: exact21paths, unchanged graph/currentStudy/normal launcher source and shared generic endpoints; all remaining main functions AST-identical except exact middleware change. Current executable guided modules/commands absent. Root-authorized three retained route rows only. Actual data/live action not observed or authorized."
+        }
       },
       "initial_inspected_source_commit": "782bf5374b87f223a023568305056415d5b63cea",
       "execution_handoff": {
         "prior_issue391_batch_id": "legacy-01",
         "available_candidate_id": "legacy-guided-game-review-01",
-        "state": "GUIDED SERVER DELETION REMAINS CANDIDATE; fresh-start callback source slice below is separately released for implementation preparation",
+        "state": "ACTUAL GUIDED SERVER SOURCE CUT IMPLEMENTED/REVIEWED ON FEATURE BRANCH; pending source integration, not live reset",
         "delete_edit_allowlist_unchanged": true,
-        "production_removed": false,
+        "production_removed": "Yes on reviewed feature branch35ccb6e5 only: net469narrow/broad cohort lines; not merged/deployed.",
         "fresh_start_scope": "Literal legacy-01 and old-history/background/receipt/browser drain were the prior retirement route. They do not block the new six-file optional-priority callback preparation; that slice uses its own exact id/path/hashes and graph/current Study review. No inference of approval for these eight guided deletions.",
         "release_requires": [
-          "Exact graph/repertoire/current Study separation of proposed source effects.",
-          "Functioning current normal launcher/artifact or separately accepted replacement before deleting its required source.",
-          "Owning current-source regressions and exact source-absence proof for any later deletion.",
-          "Separate exact irreversible live-action confirmation after graph-separated targets are known."
+          "Exact published source/PR correspondence and source-integration owner decision; current reviewed graph/repertoire/Study boundaries and tests recorded above.",
+          "Separate deployment/live reset authorization if requested; exact graph-separated targets and protected graph recovery-copy handling precede irreversible execution. No old-history/background/receipt/browser drain gate."
         ]
       },
       "current_source_path_hashes": [
@@ -1558,11 +1552,40 @@
         ],
         "current_artifact_equivalence": "UNVERIFIED; changed position-similarity.ts was a qualified Study module. Source comparison and #434 unused-helper removal do not create a new build/browser acceptance receipt. No runtime tests or build repeated here.",
         "fresh_start_disposition": "Historical source comparison retained as authored evidence; full prior artifact historical-equivalence is superseded and does not block graph-preserving callback preparation. Current affected-source regression/artifact checks still apply when executable inputs change."
+      },
+      "source_scope_amendments": [
+        {
+          "path": "docs/postgres-route-contract.json",
+          "authority": "Root explicitly authorized exact three-row retained GameEvidence baseline repair after a same-baseline failing route-contract proof.",
+          "effect": "Metadata only; existing API/Study/graph behavior unchanged, no extra file added to allowlist."
+        }
+      ],
+      "implementation_receipt": {
+        "owner": "/root/guided_source_retirement",
+        "branch": "codex/retire-guided-review-server-20261025",
+        "source_base": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
+        "tested_source_commit": "35ccb6e5fc497810d29582926e0e3a570767a051",
+        "publication_state": "Published draft458 at reviewed source35ccb6e5; owner reconciling with currentmain66d98610. Not merged/deployed; final published rebase/input correspondence will be recorded separately.",
+        "exact_paths": "8 deleted + 13 edited source/support paths; central manifest and FEATURES not edited by implementation owner.",
+        "realized_feature_branch_delta": {
+          "narrow_production_net": -469,
+          "broad_production_net": -469,
+          "test_net": -313,
+          "docs_net": -27,
+          "metadata_net": -9,
+          "moves": 0,
+          "scope": "Exact cohort classification only; earlier464was candidate footprint, not actual net deletion or programme reduction."
+        },
+        "owning_results": "92 unique selected cases established passed with no remaining skips: 87 unaffected initial passes plus five current route/corpus cases. Initial same-baseline missing three retained GameEvidence route rows and sparse missing public/data/studies corpus were corrected narrowly; full unrelated suites were not repeated. Physical source absence probe passed: four modules, three routes and two registered handlers gone; 184 API routes remain and ordinary review command registrations stay.",
+        "retained_proofs": "29 legacy + 21 graph protected file hashes (48 unique blobs), three generic main regions and 18 other canonical freshness proof functions unchanged.",
+        "retired_checks": "Two Games-guided exclusive suites/10cases and only CF-9 retire with unsupported capability; never counted as passing removal tests.",
+        "qualification_limit": "Task-owned SQLite/fakes and current source absence, not native PostgreSQL/live/installed-host/reset/cutover acceptance. #390 reviewer did not rerun runtime tests.",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/458"
       }
     },
     {
       "id": "adaptive-priority-callbacks-fresh-start-01",
-      "status": "candidate",
+      "status": "approved",
       "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
       "purpose": "Implement the six remaining #427 optional priority callback withdrawals after merged #431. Graph-preserving source-only branch preparation is authorized now under fresh-start policy; independent graph/current Study review and owning checks precede integration. This does not remove all priority calculation/recovery or perform a live reset.",
       "implementation_owner": "/root/retirement_391",
@@ -1754,13 +1777,13 @@
       "acceptance_dependencies": [
         {
           "gate": "Source implementation preparation",
-          "state": "RELEASED NOW",
-          "required_evidence": "Root assigned #391 owner for this exact six-file callback-only source slice; authored code stays isolated on its branch. No old background/history/receipt/browser drain or live observation required."
+          "state": "COMPLETED ON EXACT SOURCE BRANCH AND INTEGRATED",
+          "required_evidence": "Exact source454 implementation and focused source receipt recorded; no old-work/history/receipt/browser drain needed."
         },
         {
           "gate": "Source integration",
-          "state": "PENDING CURRENT GRAPH/REPERTOIRE/STUDY REVIEW AND FOCUSED CHECKS",
-          "required_evidence": "Freeze exact graph/definition retention hashes, primary/opportunity preservation assertions and affected selectors. Source owner must preserve current launcher/runtime/schema/transaction/command registrations and avoid private cross-domain imports. No full producer-cessation claim."
+          "state": "COMPLETED FOR THIS EXACT CALLBACK SLICE",
+          "required_evidence": "Verified #454 merged15c8a858/currentmain66d98610. Future opportunity/statistics cuts require their own exact combined-source reconciliation because their callbacks share files; this source receipt does not certify unreviewed combinations."
         },
         {
           "gate": "Live deletion/reset",
@@ -1939,13 +1962,21 @@
       "implementation_preparation_receipt": {
         "owner": "/root/retirement_391",
         "branch": "codex/retire-immediate-priority-callbacks-20261025",
-        "publication_state": "Draft #454 published and independently reviewed on the exact tested source; no merge/deployment/live action.",
+        "publication_state": "Source PR454 merged as15c8a858, exact tested source retained. This establishes bounded source integration only; no deployment/live reset action.",
         "source_correspondence_sha256": "71169973d129b3fceee06045290a9ef876554aac1a579b5a310d1949f33ca2b8",
         "reported_results": "8 affected + 10 retained cases = 18 passed, 0 skipped using task-owned SQLite/fakes. Prior source failed 7 direct cases plus the legacy swallowed-error assertion. Exact six proposed source hashes and 17-/0+ match; all four opportunity callback ASTs unchanged.",
         "qualification_limit": "These checks belong to the source-owner executable commit, not this documentation branch. No native/live/actual-version/reset/cutover acceptance; no runtime tests rerun by #390.",
         "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/454",
         "tested_and_published_commit": "e46c41bba8906a751979fd47b147088cdf9a734a",
         "tested_and_published_tree": "c2b33697e1dac17ec5c0be48fc436db49021a3fb"
+      },
+      "approval_scope": "Exact reviewed six-file source callback slice only, now actually integrated through #454; not complete priority producer retirement or live deployment/reset approval.",
+      "source_integration": {
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/454",
+        "merged_commit": "15c8a8581c5a2141676fc103b9b666974834aead",
+        "reviewed_tested_head": "e46c41bba8906a751979fd47b147088cdf9a734a",
+        "verified_main_checkpoint": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+        "effect": "Actual seven optional callback requests removed in main; -17 production lines, no files or data deleted. Not complete priority calculation/recovery shutdown or deployed-state evidence."
       }
     }
   ],
