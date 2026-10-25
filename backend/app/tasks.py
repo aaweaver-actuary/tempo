@@ -38,7 +38,6 @@ from . import settings_commands  # noqa: F401 - registers foreground settings co
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
-from . import guided_review_commands  # noqa: F401 - registers foreground guided review changes
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes

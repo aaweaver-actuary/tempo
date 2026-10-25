@@ -6,10 +6,10 @@
   "reviewed_original_modules": 202,
   "review_coverage_is_implementation_completion": false,
   "original_status_counts": {
-    "reviewed-awaiting-owner-closure": 166,
+    "reviewed-awaiting-owner-closure": 164,
     "split-transport-contracts": 1,
     "moved-cohesive-module": 29,
-    "retired-source": 3,
+    "retired-source": 5,
     "partial-contract-extraction": 3
   },
   "new_python_paths_separately_tracked": [
@@ -51,7 +51,6 @@
     "backend/app/contracts/transport/game_findings.py",
     "backend/app/contracts/transport/game_sync.py",
     "backend/app/contracts/transport/games.py",
-    "backend/app/contracts/transport/guided_review.py",
     "backend/app/contracts/transport/settings.py",
     "backend/app/contracts/transport/study.py",
     "backend/app/contracts/transport/tactics.py",
@@ -75,7 +74,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 231,
+  "current_python_module_count": 228,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -511,13 +510,11 @@
     },
     {
       "original_path": "backend/app/guided_review_commands.py",
-      "current_paths": [
-        "backend/app/guided_review_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "games_guided_review",
       "responsibility": "Receipt-backed correction-first guided game review start/attempt commands, separate from ordinary Study/FSRS review.",
-      "next_step": "Move intact commands under games/guided_review; move existing ranking/grading blocks to same-owner helpers when separating policy from transport."
+      "next_step": "Retired correction-first Games guided review server source. Recover at 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf; ordinary Study guided scheduling, graph/repertoire, generic command authority and stored schema remain."
     },
     {
       "original_path": "backend/app/integrity_repair_commands.py",
@@ -570,8 +567,7 @@
         "backend/app/contracts/transport/game_findings.py",
         "backend/app/contracts/transport/game_sync.py",
         "backend/app/contracts/transport/games.py",
-        "backend/app/contracts/transport/authored_import.py",
-        "backend/app/contracts/transport/guided_review.py"
+        "backend/app/contracts/transport/authored_import.py"
       ],
       "status": "split-transport-contracts",
       "owner": "Multiple explicit feature transport contracts",
@@ -1399,13 +1395,11 @@
     },
     {
       "original_path": "backend/app/services/guided_review.py",
-      "current_paths": [
-        "backend/app/services/guided_review.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "games_guided_review",
       "responsibility": "Durable correction-only game-review policy, reconciliation and public session presentation.",
-      "next_step": "Move intact under games/guided_review; keep _impact/_public_item as explicit same-owner policy/presentation helpers; extract existing grading/reconciliation computation only as needed."
+      "next_step": "Retired correction-first Games guided review server source. Recover at 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf; ordinary Study guided scheduling, graph/repertoire, generic command authority and stored schema remain."
     },
     {
       "original_path": "backend/app/services/introduction_priorities.py",
