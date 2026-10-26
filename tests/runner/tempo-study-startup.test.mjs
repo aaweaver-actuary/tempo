@@ -42,9 +42,9 @@ for (const command of ["start", "stop", "status"])
       for (const container of Object.values(f.containers)) container.State.Running = true;
       messages.length = 0;
       assert.equal(await invoke(), 0);
-      assert.ok(messages.some(message => message.includes("runtime: running") && message.includes("schema verified")
-        && message.includes("health verified") && message.includes("PostgreSQL running") && message.includes("Learning running")),
-        "Current running identity/schema/health is read through the actual runtime public boundary");
+      assert.ok(messages.some(message => message.includes("runtime: running") && message.includes("schema unverified")
+        && message.includes("health unverified") && message.includes("PostgreSQL running") && message.includes("Learning running")),
+        "Current running identity is read through the actual runtime public boundary without claiming live schema or health");
       assert.equal(f.calls.some(call => call.argv.includes("up") || call.argv.includes("stop") || call.lockHeld), false);
     }
     assert.equal(f.calls.some(call => call.argv.some(arg => /^(?:build|pull|migrate|grant|DROP)$/.test(arg))), false);
