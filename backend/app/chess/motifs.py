@@ -5,6 +5,14 @@ be evaluated by tempo-core.  Detectors return evidence objects rather than a
 single label so secondary motifs remain reviewable.
 """
 
+# Broadly speaking, too much is done in this module. Each motif should have its own module that defines a X motif detector
+# based on a protocol class. These motif detectors should be based on board identities and details defined in their
+# own typed objects. Because they are based on the protocol class, motif detectors can be added in as they are completed.
+# Consumers of these detectors will really consume a list of the various detectors subclassing the protocol.
+
+# We should not be defining details about relative piece values here for example--those belong in a typed chess piece
+# abstraction that we define separately. We should not be doing that sort of work over and over. 
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -13,7 +21,7 @@ from typing import Any
 
 import chess
 
-
+# These should not be defined here--they should use a shared definition from somewhere else
 PIECE_VALUES_CP = {
     chess.PAWN: 100,
     chess.KNIGHT: 300,
@@ -26,6 +34,7 @@ MINIMUM_MATERIAL_GAIN_CP = 300
 MINIMUM_EVALUATION_SWING_CP = 100
 MATE_SCORE_CP = 1_000_000
 
+# Would a set/enum be better here? I don't know that there is an important ordering to follow
 MOTIF_PRECEDENCE = (
     "matingTactic",
     "pin",
@@ -50,7 +59,8 @@ class EngineCandidate:
 class MotifEvidence:
     """Structured proof that one motif occurs in one candidate line."""
 
-    motif: str
+    # Should this be an enum? 
+    motif: str 
     confidence: float
     candidate_move_uci: str
     played_move_uci: str | None
@@ -81,6 +91,9 @@ class _PinGeometry:
     pinner_square: chess.Square
     pinned_square: chess.Square
     target_square: chess.Square
+
+    # Assuming this is absolute or relative? If so it should be either an enum
+    # or maybe better to have a boolean is_absolute
     pin_type: str
 
     @property
@@ -93,10 +106,14 @@ class _PinGeometry:
         )
 
 
+# Do we need this? This feels like indirection that isn't simplifying anything or making 
+# the code easier to read. Something like this is not related to a "motif", this is a property
+# of a chess piece. It belongs closer to where we integrate chess concepts for our use. 
 def _piece_value_cp(piece: chess.Piece | None) -> int:
     return PIECE_VALUES_CP.get(piece.piece_type, 0) if piece else 0
 
 
+# See above--not sure why this is defined here. 
 def _piece_evidence(board: chess.Board, square: chess.Square, role: str) -> dict[str, Any]:
     piece = board.piece_at(square)
     return {
@@ -107,6 +124,8 @@ def _piece_evidence(board: chess.Board, square: chess.Square, role: str) -> dict
     }
 
 
+# Instead of the next few "helpers" (if you can really call them that), we should explicitly
+# define all the diagonals on the board. There aren't so many that this is unreasonable. 
 def _direction_between(
     first: chess.Square, second: chess.Square
 ) -> tuple[int, int] | None:
@@ -156,6 +175,9 @@ def _directions_for_piece(piece_type: chess.PieceType) -> tuple[tuple[int, int],
     return ()
 
 
+# Instead of having all these be in a single module, I think it makes much more sense to have a defined 
+# pin detection module. It also seems like the process could be simpler and more rigorously based on actual
+# chess definitions. 
 def _find_pins(board: chess.Board) -> tuple[_PinGeometry, ...]:
     geometries: list[_PinGeometry] = []
     for pinner_color in (chess.WHITE, chess.BLACK):
