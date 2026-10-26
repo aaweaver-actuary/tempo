@@ -80,7 +80,7 @@ def main():
         assert database.execute_native("SELECT 1 FROM repertoires WHERE id='r11-repertoire' AND source_name=%s",(identity,)).fetchone(), "fixture not owned"
         if action=="practice":
             from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination, PostgresRecombinationStore
-            from app.services.review_service import ensure_card_queued_after
+            from app.services.review_service import ensure_card_queued_after, capture_daily_queue_order, preserve_daily_queue_order
             target = args[0]
             if target=="combined":
                 from tempo_game_evidence_contracts.legacy import decision_identity
@@ -91,10 +91,13 @@ def main():
             assert any(m.presentation.presentation_id==target and m.available for m in current.members), "not current approved fixture material"
             # Deliberate extra same-day practice only; no review, assistance,
             # streak, FSRS value or success is seeded by this staging action.
+            previous=capture_daily_queue_order(database,day)
             ensure_card_queued_after(database,target,0,attempt_state="clean",queue_date=day,preserve_order=False)
+            preserve_daily_queue_order(database,day,previous=previous)
             database.execute_native("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=%s",(day,))
             row = database.execute_native("SELECT start_fen,moves_json FROM cards WHERE id=%s",(target,)).fetchone()
-            print(json.dumps(dict(card_id=target,starting_fen=row[0],moves=json.loads(row[1]))))
+            entry=database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued' ORDER BY cycle DESC LIMIT 1",(target,day)).fetchone()[0]
+            print(json.dumps(dict(card_id=target,queue_entry_id=entry,starting_fen=row[0],moves=json.loads(row[1]))))
             return
         if action!="readback":
             raise ValueError("seed, practice or readback required")

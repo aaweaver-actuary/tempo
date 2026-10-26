@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import { api, expect, move, test } from "./product-fixtures";
 import { prepareUI } from "./ui-fixtures";
 
-type Stage = { card_id: string; starting_fen: string; moves: string[] };
+type Stage = { card_id: string; queue_entry_id: number; starting_fen: string; moves: string[] };
 type Readback = {
   generations: Array<{ presentation_id: string; clean_count: number; review_count: number; components: number; lineage: string[] }>;
   changes: number; original_cards: number; unknown_history: number; protected: unknown[];
@@ -32,10 +32,9 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     const staged = fixture<Stage>("practice", label);
     const before = fixture<Readback>("readback").study_counts[staged.card_id] ?? 0;
     await page.reload();
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id",String(staged.queue_entry_id));
     await expect.poll(async () => (await page.locator(".board-frame").first().getAttribute("data-fen"))?.split(" ").slice(0,3).join(" "))
       .toBe(staged.starting_fen.split(" ").slice(0,3).join(" "));
-    const saved = page.waitForResponse(response => response.url().endsWith(`/api/cards/${staged.card_id}/review`)
-      && response.request().method() === "POST");
     if (failed) await page.getByRole("button", { name: /Show move/ }).first().click();
     // The real board supplies every learner response; no Study API is mocked.
     const color = staged.starting_fen.split(" ")[1];
@@ -50,9 +49,10 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
       }
       expectedPosition.move({ from: uci.slice(0,2), to: uci.slice(2,4), promotion: uci.slice(4) || undefined });
     }
-    const response = await saved;
-    expect(response.ok(), await response.text()).toBe(true);
-    await expect.poll(() => fixture<Readback>("readback").study_counts[staged.card_id]).toBe(before+1);
+    // Persistence is authoritative even when the client sends through its
+    // worker; a Page response event alone does not cover that transport.
+    await expect.poll(() => fixture<Readback>("readback").study_counts[staged.card_id],{timeout:15_000}).toBe(before+1);
+    await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id",String(staged.queue_entry_id));
     await expect.poll(() => fixture<Readback>("readback").protected).toEqual(protectedOrigin);
     return staged;
   };
@@ -81,14 +81,12 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
   expect(abc.clean_count).toBe(0);
   expect(abc.review_count).toBe(0);
   for (let review = 0; review < 3; review += 1) await complete("combined", true);
-  fixture<Stage>("practice", "combined");
+  const splitStage=fixture<Stage>("practice", "combined");
   await page.reload();
+  await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id",String(splitStage.queue_entry_id));
   await expect(page.getByRole("button", { name: "Accept", exact: true })).toBeVisible();
-  const splitSaved = page.waitForResponse(response => response.url().endsWith(`/api/cards/${abc.presentation_id}/prefix-split`)
-    && response.request().method() === "POST");
   await page.getByRole("button", { name: "Accept", exact: true }).click();
-  expect((await splitSaved).ok()).toBe(true);
-  await expect.poll(() => fixture<Readback>("readback").changes).toBe(3);
+  await expect.poll(() => fixture<Readback>("readback").changes,{timeout:15_000}).toBe(3);
   await page.reload();
   state = fixture<Readback>("readback");
   expect(state.changes).toBe(3);
