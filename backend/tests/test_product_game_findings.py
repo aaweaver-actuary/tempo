@@ -10,6 +10,7 @@ import chess.pgn
 import pytest
 
 from app.contracts.product_v02.games import GameRecord
+from app.contracts.product_v02.learning import GameEncounter
 from app.contracts.product_v02.repertoire import DecisionPresentation, IntroductionGameScope, RepertoireSnapshot, RouteBoundary
 from app.games.feedback.comparison import compare_game, compare_record, effect_key, normalize_record
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot, replay_line
@@ -190,6 +191,45 @@ def test_historical_encounter_key_survives_later_introduction_without_a_lapse(pl
     # The finding is not a command to introduce: current owner facts still say
     # introduced, and Study must read current state before choosing disposition.
     assert after.decision_presentations[0].introduction == "introduced"
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+@pytest.mark.parametrize("introduced_later", [False, True])
+def test_game_encounter_contract_preserves_classified_facts(played, introduced_later):
+    source = record((played,))
+    scope = IntroductionGameScope(provider="lichess", game_id=source.source_game_id,
+                                  source_revision=source.source_revision, source_digest=source.source_digest)
+    captured = snapshot(route(("e2e4",)), mapping_changes={
+        "introduction": "introduced" if introduced_later else "unintroduced",
+        "introduced_at": "2026-10-21T00:00:00Z" if introduced_later else None,
+        "route_id": "route", "route_ply": 0,
+        "introduced_before_game": False, "introduction_game": scope,
+    })
+    captured = captured.model_copy(update={"membership": captured.membership.model_copy(
+        update={"captured_at": "2026-10-22T00:00:00Z"})})
+    game = normalize_record(source, provider="lichess", account="Learner", workspace_id="workspace")
+    before = deepcopy((game.model_dump(), captured.model_dump()))
+    finding, = compare_game(game, provider="lichess", snapshot=captured, time_precision=source.time_precision)
+    assert finding.kind == "known_unintroduced" and not finding.lapse_eligible
+    decision, = captured.decision_presentations
+    # Composition supplies the durable original detection and digest claim;
+    # the classifier supplies facts, not current Study disposition or delivery.
+    encounter = GameEncounter(
+        key=effect_key(finding, workspace_id=game.workspace_id), source=scope, decision=decision,
+        expected_uci=finding.expected_uci[0], played_uci=finding.played_uci,
+        observation="matched" if played == "e2e4" else "missed",
+        detected_at="2026-10-20T12:01:00Z", occurred_at=game.played_at, payload_digest="e" * 64,
+    )
+    assert encounter.interface_version == "0.2.1"
+    assert encounter.key.occurrence_ply == finding.ply == 1
+    assert (encounter.source.game_id, encounter.source.source_revision, encounter.source.source_digest) == (
+        finding.game_id, finding.source_revision, finding.source_digest)
+    assert (encounter.played_uci, encounter.expected_uci, encounter.observation) == (
+        played, "e2e4", "matched" if played == "e2e4" else "missed")
+    assert (encounter.decision.route_id, encounter.decision.route_ply) == ("route", 0)
+    assert encounter.decision.introduction == ("introduced" if introduced_later else "unintroduced")
+    assert encounter.detected_at == "2026-10-20T12:01:00Z" and encounter.occurred_at == TIME
+    assert (game.model_dump(), captured.model_dump()) == before
 
 
 @pytest.mark.parametrize("problem", ["unmapped", "unavailable", "ambiguous"])
