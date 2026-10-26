@@ -195,7 +195,7 @@ def create_app(configuration: Configuration):
                 async for chunk in request.stream():
                     body.extend(chunk)
                     if len(body)>publication_bridge.MAX_BUNDLE_BYTES:
-                        return JSONResponse(status_code=413,content={'detail':'Publication bundle exceeds 12 MiB'})
+                        return JSONResponse(status_code=413,content={'detail':f'Publication bundle exceeds {publication_bridge.MAX_BUNDLE_BYTES // (1024 * 1024)} MiB'})
                 request._body=bytes(body)
         # Optional host reporting stays outside the durable transaction owner.
         # A pending essential request remains protected even if its browser is suspended.

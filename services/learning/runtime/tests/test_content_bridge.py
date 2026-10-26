@@ -14,6 +14,7 @@ from pathlib import Path
 import chess
 import psycopg
 import pytest
+from tempo_learning_runtime import publication_bridge
 from test_runtime import bundle, activate, head, review_payload, submit
 
 
@@ -180,7 +181,7 @@ def test_A_activation_response_loss_replays_original_operator_receipt(case):
     assert case.client.post('/api/operations/'+request['activation_id']+'/retry').status_code==403
     assert case.client.get('/internal/publications/publication-a/status').status_code==401
     assert case.client.get('/internal/publications/publication-a/status',headers={'Authorization':'Bearer '+case.configuration.evidence_token}).status_code==401
-    assert case.client.post('/internal/publications/v2/stage',content=b' '* (12*1024*1024+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
+    assert case.client.post('/internal/publications/v2/stage',content=b' '* (publication_bridge.MAX_BUNDLE_BYTES+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
     assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
 
 
@@ -716,7 +717,7 @@ def test_C3_publication_bundle_capacity_is_bounded_after_default_expansion(monke
     expanded=module.PublicationBundleV2.model_validate(payload)
     assert module.MAX_DEFINITIONS == 10000
     assert module.PublicationBundleV2.model_json_schema()['properties']['legacy_aliases']['maxProperties'] == 8192
-    assert module.MAX_BUNDLE_BYTES == 12 * 1024 * 1024
+    assert module.MAX_BUNDLE_BYTES == 16 * 1024 * 1024
     size=len(expanded.model_dump_json().encode())
     monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size)
     assert module.PublicationBundleV2.model_validate(payload).publication == expanded.publication
@@ -740,7 +741,7 @@ def test_complete_9612_definition_publication_fits_public_ceiling_without_trunca
     from tempo_learning_runtime.publication_bridge import PublicationBundleV2,MAX_DEFINITIONS,MAX_BUNDLE_BYTES
     payload=complete_definition_capacity_bundle(9612)
     accepted=PublicationBundleV2.model_validate(payload)
-    assert MAX_DEFINITIONS==10000 and MAX_BUNDLE_BYTES==12*1024*1024
+    assert MAX_DEFINITIONS==10000 and MAX_BUNDLE_BYTES==16*1024*1024
     assert len(accepted.publication.definitions)==len(accepted.facts)==9612
     assert len(accepted.model_dump_json().encode())<=MAX_BUNDLE_BYTES
 

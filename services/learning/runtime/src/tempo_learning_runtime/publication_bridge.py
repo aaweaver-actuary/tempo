@@ -22,7 +22,7 @@ from tempo_learning_database.adapters import publication_bridge as storage
 
 MAX_DEFINITIONS = Publication.model_json_schema()['properties']['definitions']['maxItems']
 MAX_LEGACY_ALIASES = 8192
-MAX_BUNDLE_BYTES = 12 * 1024 * 1024
+MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 prepared_activation = ContextVar('prepared_content_activation',default=None)
 
 
@@ -196,7 +196,7 @@ class PublicationBundleV2(PublicationBundle):
         if primary_coverage!=coverage:
             raise ValueError('Every accepted membership requires its primary physical exercise decision')
         if len(self.model_dump_json().encode()) > MAX_BUNDLE_BYTES:
-            raise ValueError("Publication bundle exceeds 12 MiB")
+            raise ValueError(f"Publication bundle exceeds {MAX_BUNDLE_BYTES // (1024 * 1024)} MiB")
         return self
 
 
