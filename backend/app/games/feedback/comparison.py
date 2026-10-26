@@ -154,8 +154,9 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
                 candidates = {(index, ply)}
         if not candidates:
             if not departed:
-                findings.append(_finding(game, provider, membership, position, scope[0], (),
-                                         "known_unavailable", "no_applicable_authored_route", None, None))
+                for repertoire_id in sorted(scope):
+                    findings.append(_finding(game, provider, membership, position, repertoire_id, (),
+                                             "known_unavailable", "no_applicable_authored_route", None, None))
             departed = True
             continue
         repertoires = {routes[index].repertoire_id for index, _ in candidates}

@@ -87,6 +87,8 @@ def test_unknown_date_precision_is_not_assumed_before_introduction():
     finding, = compare(source=record(played_at="2026-10-20T00:00:00Z", precision="day"))
     assert finding.kind == "known_unavailable" and not finding.lapse_eligible
     unknown = record(played_at=None, precision="unknown")
+    pgn = '[UTCDate "2026.10.20"]\n[UTCTime "12:00:00"]\n' + unknown.pgn
+    unknown = unknown.model_copy(update={"pgn": pgn, "source_digest": hashlib.sha256(pgn.encode()).hexdigest()})
     assert normalize_record(unknown, provider="lichess", account="Learner", workspace_id="workspace").played_at is None
 
 
@@ -220,6 +222,15 @@ def test_ambiguous_repertoire_or_card_not_guessed():
     findings = compare(captured=cross)
     assert len(findings) == 2 and {item.repertoire_id for item in findings} == {"rep", "other"}
     assert all(item.kind == "ambiguous" and item.decision_id is None for item in findings)
+
+
+def test_no_matching_start_does_not_guess_one_of_several_repertoires():
+    start = replay_line(START, ["e2e4", "e7e5"])[-1]["fen"]
+    routes = [route(("g1f3",), route_id=name, repertoire_id=name).model_copy(update={"starting_fen": start})
+              for name in ("rep", "other")]
+    findings = compare(captured=snapshot(*routes))
+    assert {item.repertoire_id for item in findings} == {"rep", "other"}
+    assert all(item.kind == "known_unavailable" and item.presentation_id is None for item in findings)
 
 
 def test_same_game_recomparison_keeps_effect_key():

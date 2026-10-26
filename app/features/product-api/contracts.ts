@@ -11,14 +11,14 @@ const provider = z.enum(["lichess", "chesscom"]);
 const precision = z.enum(["unknown", "day", "hour", "minute", "second", "millisecond"]);
 const version = z.literal(INTERFACE_VERSION).default(INTERFACE_VERSION);
 
-export const GameWindowSchema = z.strictObject({ start_at: utc, end_at: utc, precision }).refine(value => Date.parse(value.start_at) < Date.parse(value.end_at), "window must be nonempty");
-export const GameRecordSchema = z.strictObject({ source_game_id: id, source_revision: revision, source_digest: digest, pgn: z.string().min(1), played_at: utc.nullable(), time_precision: precision }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "unknown source time remains null");
-export const GamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: GameWindowSchema, records: z.array(GameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean() }).superRefine((value, ctx) => {
+const RawGameWindowSchema = z.strictObject({ start_at: utc, end_at: utc, precision }).refine(value => Date.parse(value.start_at) < Date.parse(value.end_at), "window must be nonempty");
+const RawGameRecordSchema = z.strictObject({ source_game_id: id, source_revision: revision, source_digest: digest, pgn: z.string().min(1), played_at: utc.nullable(), time_precision: precision }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "unknown source time remains null");
+const RawGamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: RawGameWindowSchema, records: z.array(RawGameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean() }).superRefine((value, ctx) => {
   if (value.complete && (value.saturated || value.continuation !== null)) ctx.addIssue({ code: "custom", message: "saturated/continuing page cannot be complete" });
   if (new Set(value.records.map(item => item.source_game_id)).size !== value.records.length) ctx.addIssue({ code: "custom", message: "conflicting game revisions in page" });
 });
 
-export const FindingSchema = z.strictObject({
+const RawFindingSchema = z.strictObject({
   interface_version: version,
   kind: z.enum(["confirmed_miss", "opponent_gap", "missing_own_continuation", "known_unintroduced", "known_unavailable", "conflict", "ambiguous", "coverage_end"]),
   provider, game_id: id, source_revision: revision, source_digest: digest, ply: z.number().int().min(1).max(1000), position_key: id, expected_uci: z.array(uci), played_uci: uci,
@@ -35,19 +35,44 @@ const ReentrySchema = z.strictObject({ ply: z.number().int().min(0).max(1000), a
 const AuthoredRouteSchema = z.strictObject({ repertoire_id: id, route_id: id, policy_id: id, learner_color: z.enum(["white", "black"]), starting_fen: id, moves: z.array(uci).max(1000), reentries: z.array(ReentrySchema).max(1000).default([]) });
 // Wire mirror of tempo_game_review_contracts.RepertoireSnapshot; Python reuses that owner.
 const MembershipSnapshotSchema = z.strictObject({ schema_version: z.literal(1).default(1), workspace_id: id, snapshot_id: id, revision, digest, source_revision: id, captured_at: utc, basis: z.literal("current_repertoire").default("current_repertoire"), scope_id: id, scope_repertoire_ids: z.array(id).min(1), complete: z.boolean(), available: z.boolean().default(true), unavailable_reason: id.nullable().default(null), routes: z.array(AuthoredRouteSchema) });
-export const DecisionPresentationSchema = z.strictObject({ decision_id: id, repertoire_id: id, position_key: id, selected_response_uci: uci, presentation_id: id, presentation_revision: revision, repertoire_revision: revision, introduction: z.enum(["introduced", "unintroduced", "unknown"]), introduced_at: utc.nullable() }).refine(value => value.introduction === "introduced" || value.introduced_at === null, "unknown/unintroduced cannot assert introduction time");
-export const RepertoireSnapshotSchema = z.strictObject({ interface_version: version, membership: MembershipSnapshotSchema, variant: id, learner_color: z.enum(["white", "black"]), boundaries: z.array(z.strictObject({ route_id: id, terminal_ply: z.number().int().min(0), deliberate: z.boolean() })), decision_presentations: z.array(DecisionPresentationSchema) }).superRefine((value, ctx) => {
+const RawDecisionPresentationSchema = z.strictObject({ decision_id: id, repertoire_id: id, position_key: id, selected_response_uci: uci, presentation_id: id, presentation_revision: revision, repertoire_revision: revision, introduction: z.enum(["introduced", "unintroduced", "unknown"]), introduced_at: utc.nullable(), available: z.boolean().default(false), introduction_matches_current_content: z.boolean().default(false) }).refine(value => value.introduction === "introduced" || value.introduced_at === null, "unknown/unintroduced cannot assert introduction time");
+const RawRepertoireSnapshotSchema = z.strictObject({ interface_version: version, membership: MembershipSnapshotSchema, variant: id, learner_color: z.enum(["white", "black"]), boundaries: z.array(z.strictObject({ route_id: id, terminal_ply: z.number().int().min(0), deliberate: z.boolean() })), decision_presentations: z.array(RawDecisionPresentationSchema) }).superRefine((value, ctx) => {
   const routes = new Map(value.membership.routes.map(route => [route.route_id, route]));
   if (routes.size !== value.membership.routes.length || value.boundaries.length !== routes.size || new Set(value.boundaries.map(item => item.route_id)).size !== routes.size || value.boundaries.some(item => routes.get(item.route_id)?.moves.length !== item.terminal_ply)) ctx.addIssue({ code: "custom", message: "every route requires its actual terminal boundary" });
   if (value.decision_presentations.some(item => item.repertoire_revision !== value.membership.revision || !value.membership.scope_repertoire_ids.includes(item.repertoire_id))) ctx.addIssue({ code: "custom", message: "conflicting repertoire revision/scope" });
 });
 
-export const GameEffectKeySchema = z.strictObject({ workspace_id: id, provider, game_id: id, decision_id: id, occurrence_ply: z.number().int().min(1).max(1000) });
-export const GameLapseSchema = z.strictObject({ key: GameEffectKeySchema, finding: FindingSchema, detected_at: utc, occurred_at: utc.nullable(), payload_digest: digest }).refine(value => value.finding.kind === "confirmed_miss" && value.key.provider === value.finding.provider && value.key.game_id === value.finding.game_id && value.key.decision_id === value.finding.decision_id && value.key.occurrence_ply === value.finding.ply, "lapse must name same confirmed occurrence");
+const RawGameEffectKeySchema = z.strictObject({ workspace_id: id, provider, game_id: id, decision_id: id, occurrence_ply: z.number().int().min(1).max(1000) });
+const RawGameLapseSchema = z.strictObject({ key: RawGameEffectKeySchema, finding: RawFindingSchema, detected_at: utc, occurred_at: utc.nullable(), payload_digest: digest }).refine(value => value.finding.kind === "confirmed_miss" && value.key.provider === value.finding.provider && value.key.game_id === value.finding.game_id && value.key.decision_id === value.finding.decision_id && value.key.occurrence_ply === value.finding.ply, "lapse must name same confirmed occurrence");
 // Exact v2 EvidenceWithdrawal wire shape; v3 already supports withdrawal-only envelopes.
-export const EvidenceWithdrawalSchema = z.strictObject({ obligation_id: id, expected_obligation_revision: revision, reason: z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]) });
-export const GameEffectControlSchema = z.strictObject({ key: GameEffectKeySchema, source_revision: revision, action: z.enum(["hold", "withdraw"]), withdrawal: EvidenceWithdrawalSchema });
-export const LearningReceiptSchema = z.strictObject({ key: GameEffectKeySchema, source_revision: revision, status: z.enum(["pending", "held", "applied", "settled"]), outcome: z.enum(["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]), owner_receipt_id: id, admitted_at: utc.nullable(), available_by: utc.nullable(), applied_at: utc.nullable(), reason: id.nullable() });
+const RawEvidenceWithdrawalSchema = z.strictObject({ obligation_id: id, expected_obligation_revision: revision, reason: z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]) });
+const controlReason = z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]);
+const RawGameEffectControlSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, action: z.enum(["hold", "withdraw"]), reason: controlReason.nullable().default(null), withdrawal: RawEvidenceWithdrawalSchema.nullable().default(null) }).refine(value => (value.reason !== null || value.withdrawal !== null) && !(value.reason !== null && value.withdrawal !== null && value.reason !== value.withdrawal.reason), "control requires a reason; optional existing withdrawal must agree");
+const RawLearningReceiptSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, status: z.enum(["pending", "held", "applied", "settled"]), outcome: z.enum(["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]), owner_receipt_id: id, admitted_at: utc.nullable(), available_by: utc.nullable(), applied_at: utc.nullable(), reason: id.nullable() });
+
+
+export type DeepReadonly<T> = T extends object ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> } : T;
+function freezeValue<T>(value: T): DeepReadonly<T> {
+  if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) freezeValue(item);
+    Object.freeze(value);
+  }
+  return value as DeepReadonly<T>;
+}
+function immutable<Schema extends z.ZodType>(schema: Schema) {
+  return schema.transform(value => freezeValue(value));
+}
+export const GameWindowSchema = immutable(RawGameWindowSchema);
+export const GameRecordSchema = immutable(RawGameRecordSchema);
+export const GamePageSchema = immutable(RawGamePageSchema);
+export const FindingSchema = immutable(RawFindingSchema);
+export const DecisionPresentationSchema = immutable(RawDecisionPresentationSchema);
+export const RepertoireSnapshotSchema = immutable(RawRepertoireSnapshotSchema);
+export const GameEffectKeySchema = immutable(RawGameEffectKeySchema);
+export const GameLapseSchema = immutable(RawGameLapseSchema);
+export const EvidenceWithdrawalSchema = immutable(RawEvidenceWithdrawalSchema);
+export const GameEffectControlSchema = immutable(RawGameEffectControlSchema);
+export const LearningReceiptSchema = immutable(RawLearningReceiptSchema);
 
 export type GamePage = z.infer<typeof GamePageSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
