@@ -700,6 +700,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
+        or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
