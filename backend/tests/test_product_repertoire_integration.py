@@ -70,6 +70,7 @@ class ChangesStore:
     def publish(self, change):
         self.current = change.after
         self.publications.append(change)
+        return self.current
 
 
 def test_c_real_owner_manual_preview_approval_and_replay_preserve_unrelated_route():
