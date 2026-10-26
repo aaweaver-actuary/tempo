@@ -37,3 +37,7 @@ It returns raw revision/executable/introduction facts and grants no eligibility
 or uniqueness claim. After selecting its exact position and a genuine imported
 occurrence, always call `decision_bindings` to retain all alternatives, then the
 unchanged authority capture. This bounded lead read cannot replace either proof.
+
+The single-card lead accepts `excluded_card_ids=()` with at most eight already
+inspected IDs. This bounds subsequent discovery after a lead has no qualifying
+miss; it never narrows `decision_bindings` or the complete authority capture.

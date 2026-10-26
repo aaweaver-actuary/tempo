@@ -5267,4 +5267,8 @@ Python SQLite/fake, selected schema and runner source checks establish their
 stated boundaries only. Native fixture edits have no native execution receipt;
 installed artifacts, deployment and full-system qualification remain unverified.
 
+## Bounded Games candidate discovery
+
+| Behavior | Owning test |
+| --- | --- |
 | Read-only legacy game candidate discovery retains conflicting/ineligible physical bindings, rejects invalid scope and refuses a 65th candidate without returning a partial lead | `backend/tests/test_legacy_candidate_lookup.py` |

@@ -51,3 +51,16 @@ def test_introduced_card_discovery_refuses_invalid_publication_before_read():
     from tempo_legacy_database.adapters.games.authority.candidate_lookup import introduced_card_lead
     with pytest.raises(ValueError):
         introduced_card_lead(lambda *_: pytest.fail("read attempted"), "r", True)
+
+
+def test_single_card_lead_has_bounded_already_inspected_exclusions():
+    from tempo_legacy_database.adapters.games.authority.candidate_lookup import introduced_card_lead
+    calls = []
+    def read(_statement, parameters):
+        calls.append(parameters)
+        return []
+    assert introduced_card_lead(read, "r", 1, excluded_card_ids=("known",)) is None
+    assert calls == [("r", 1, ["known"])]
+    with pytest.raises(ValueError):
+        introduced_card_lead(lambda *_: pytest.fail("read attempted"), "r", 1,
+                             excluded_card_ids=tuple(str(i) for i in range(9)))
