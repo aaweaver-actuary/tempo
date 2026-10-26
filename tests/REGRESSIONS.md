@@ -1,15 +1,26 @@
 ## Product v0.2 game-feedback composition
 
-`backend/tests/test_product_feedback_integration.py` owns the bounded T07 source
-join: `test_imported_game_maps_to_existing_card`,
-`test_duplicate_pipeline_has_one_lapse`,
-`test_missing_mapping_cannot_prepare_a_lapse`, and
-`test_preview_is_private_read_only_and_never_overwrites_retry_payload`.
-Synthetic supplied snapshots bind the actual fixture presentation identity;
-PGN/position equality cannot create a card. The real index, comparison adapter,
-and Study policy execute; the owner store is fake. These cases do not establish
-PostgreSQL transactions, an actual private game mapping, ordinary browser review,
-restart/off-day behavior or deployed producer isolation.
+`backend/tests/test_product_feedback_integration.py` owns the T07 source and
+actual disposable PostgreSQL join: supplied existing physical identity, missing
+mapping rejection, canonical moves without reconstructed PGN, one lapse/replay,
+ordinary controller save/settlement, deadline survival across no-Study days and
+new connections/queue recovery, unrelated issued attempt preservation, canonical
+source correction rejection, durable pending maintenance, and producer absence.
+`test_day_only_introduction_binds_exact_canonical_source` covers stored date-only
+introduction with exact comparison source scope;
+`test_maintenance_cold_import_has_no_games_dependency` checks a fresh interpreter.
+The source/native suite uses synthetic task-owned data and establishes no genuine
+private-game mapping or deployment/resource isolation.
+
+`tests/browser/product-game-feedback.spec.ts` owns the single real API/worker/
+PostgreSQL/Chromium acceptance for protected queue head, one applied effect and
+retry identity, exact target FEN/move, optional producer transport disabled,
+ordinary Study review save, reload and settled receipt/history readback. A fixture
+or browser failure is never recorded as a pass. Current results and blockers are
+in the [composition receipt](../backend/app/product_composition/README.md).
+`test_legacy_intake_study_mode.py` owns exact command admission and foreground
+race deferral; the HTTP admission/query-only parametrization in
+`test_legacy_study_remediation.py` owns both new transport route classifications.
 
 `backend/tests/test_product_contracts.py` and
 `tests/unit/product-contracts.test.ts` own shared synthetic fixture round trips,

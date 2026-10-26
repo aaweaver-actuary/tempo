@@ -1,191 +1,155 @@
 # One imported game to ordinary Study (#488)
 
-This is the T07 integration lane under [#481](https://github.com/aaweaver-actuary/tempo/issues/481),
-against [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/6885b9420320517ac74df47e631ed796da96c94a/SPEC.md).
-Baseline: `24ec4c06f666f50104c979840c403826fb1ce280`.
+This unmerged integration under [#481](https://github.com/aaweaver-actuary/tempo/issues/481)
+implements the first game-feedback slice of [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/5d5673e43c722786a101c12d26a214649a909502/SPEC.md).
+It has not been installed by this lane. Actual private-game correspondence and a
+passing ordinary-Study browser case remain required acceptance evidence.
 
-## Checkpoint status
+## Published dependencies
 
-Source composition checkpoint. Integrated inputs are #482 corrected contracts
-`50dd8220`, #483 typed snapshot/index `7b16e25e`, #486 qualified comparer
-`49995ad2`, and #487 first owner checkpoint `16446623`. Their unchanged leaf
-suites were not rerun. Four focused source integration cases pass: the real
-index/comparer and Study policy execute against synthetic supplied mappings and
-a fake owner store. No native product acceptance, successful live capture,
-durable delivery, ordinary queue admission or review is claimed. This README is the canonical bounded integration/fixture plan, not a
-description of a deployed feature. A successful HTTP response alone will never
-be recorded as an admitted or settled obligation.
+| Owner | Integrated checkpoint |
+| --- | --- |
+| #482 contracts, including route/game-scoped introductions | #516 `e73c7beb` |
+| #483 capture projection and position index | #511 `7290f052` |
+| #486 canonical-game comparer | #510 `3bce27fd` |
+| #487 Study receiver, current-owner fencer, provider alias | #515 `c59b93a8` |
+| Adopted specification and repository guidance | main `5d5673e4` |
 
-One narrowly scoped capture attempt through the retained read-only owner failed
-closed with `legacy_repertoire_authority_missing`. No capture document was
-produced and no delivery, queue admission or review was attempted. The previous
-game/ply lead remains unverified. Do not repair live metadata, switch writers or
-resume a held migration to turn this into a passing example. Actual-data
-correspondence remains a separate unverified acceptance item.
+Unchanged leaf suites are reused. Later analysis, workflow, recombination and
+conflict features are excluded from this first-release candidate.
 
-A bounded alternative lookup read 10 repertoire authority records, of which
-three were ready/current. Their small recent-game selections yielded no usable
-departure candidate, so no further capture/delivery/review was attempted. The
-original authority error is candidate-specific; it does not establish that all
-live mappings are unavailable. The missing actual-data fact is one genuine game
-with a unique introduced decision/current physical-card mapping under a
-currently verifiable repertoire source.
+## Implemented ownership and transactions
 
-## Executable source checkpoint
+[`feedback.py`](feedback.py) composes the shared game/finding values, real
+index/comparer and `LearningFeedbackPort`; it owns no scheduling policy.
+[`retained_game.py`](retained_game.py) projects retained canonical moves and their
+exact source fingerprint without reconstructing original PGN. The provider is
+the canonical source namespace; the original provider/game IDs remain unchanged
+in the retained capture. Revision 1 is this slice's initial retained source;
+changed bytes under that identity are quarantined, not treated as another lapse.
 
-[`feedback.py`](feedback.py) exposes `prepare_record_feedback(...)` and
-`submit_feedback(prepared, LearningFeedbackPort)`. It reuses `build_index`,
-`compare_record`, `effect_key`, shared `GameLapse` and Study's existing pure
-`semantic_digest`; it contains no classification, hash or scheduling policy.
-The prepared result retains the exact logical identity/payload for retries.
-`submit_feedback` returns a provisional owner receipt; only the caller's commit
-can make it durable. Concrete current-authority fencing and transport composition
-are still pending the owner handoff. A retained snapshot alone grants no write.
+[`feedback_commands.py`](feedback_commands.py) prepares one explicit game/ply
+through the existing read-only capture owner, then passes that exact canonical
+game to `project_capture`. Day-only introduction evidence stays a scoped boolean;
+it never becomes an invented timestamp. Partial/UTC-midnight retained game times
+remain unknown precision and lapse-ineligible. Intake uses the existing durable
+command gateway and caller transaction: the Games owner locks/rereads the
+canonical source first, then the Study owner fences current repertoire/card
+facts and owns all schedule, queue, history and receipt mutations.
 
-The file operator prepares a private preview and has no delivery mode:
+The explicit transport is POST `/api/game-evidence/product/feedback` with a
+repertoire ID, existing game ID, one-based occurrence ply and Idempotency-Key.
+GET `/api/game-evidence/product/effect` reads the logical owner receipt. Both
+routes use background request classification, and the exact explicit command is
+Study-compatible while still yielding to foreground admission. A 202 operation
+response does not establish an admitted Study effect. Resolve uncertain outcomes
+through the original operation and receipt, using the same payload/identity.
 
-```sh
-python -m app.product_composition.feedback \
-  --record private-record.json --snapshot private-snapshot.json \
-  --provider chesscom --account supplied-player --workspace-id supplied-workspace \
-  --detected-at 2026-10-26T12:00:00Z --occurrence-ply 1 --output private-preview.json
-```
-
-Supply actual provider PGN when using this record entry point. Existing imported
-games retain canonical moves rather than original PGN, so they need the
-normalization-independent comparer entry requested from #486; never reconstruct
-PGN and label it as the original source. Input files are bounded at 32 MiB;
-preview creation is exclusive and mode 0600. This is not a live review command.
-
-The backend project/Docker registrations include only the five local libraries
-used by this boundary. `uv lock --check --offline --no-build --directory backend`
-passes; all prior registry package records are unchanged. No software was
-installed and no image build or service activation is claimed.
-
-## Smallest composition
-
-Use one explicitly selected already-imported game, one repertoire snapshot and
-one exact introduced-card miss. Prefer an explicit local operator entry point
-over a new screen or background service. Composition injects these public
-capabilities as they become available:
-
-| Capability | Owner | Required evidence |
-| --- | --- | --- |
-| Immutable game/snapshot/finding/feedback values | #482 | Published branch/SHA, version and JSON fixtures |
-| Consistent repertoire snapshot and exact index | #483 | Public snapshot/build/lookup API; explicit decision/presentation/introduction mapping |
-| PGN normalization and pure findings | #486 | Public comparer; stable logical effect identity; no storage/provider effects |
-| Lapse, deadline, hold/status and settlement | #487 | LearningFeedbackPort implementation and durable owner receipt; actual Study hooks |
-
-Do not copy their DTOs or policy into composition. A changed source under a
-logical identity goes through the owner's hold/withdraw operation, including
-when the new finding is not a miss. Retry the retained operation identity and
-payload. An uncertain accepted write is resolved by owner status; it never
-triggers another writer or legacy fallback.
+[`feedback_maintenance.py`](feedback_maintenance.py) performs one durable cursor
+slice per invocation, closes read/capture work before the writer, fences the
+current task lease and source, and borrows the Study receiver transaction.
+Pending effects retry current owner facts; changed source is held. Applied
+effects use ordinary queue recovery. The bounded `maintain_game_feedback` wake
+runs on the existing foreground worker every 60 seconds, independently of the
+optional Games worker. No ordinary Study controller imports/calls/waits for Games.
+The current retained backend still shares process packaging, broker and database;
+these source/native checks do not establish deployment/resource isolation.
 
 ```mermaid
 flowchart LR
-  subgraph proposed["Proposed / unmerged integration"]
-    Imported["Explicit existing imported game"] --> Wiring["T07 composition"]
-    Snapshot["T02 read-only snapshot + index"] --> Wiring
-    Wiring --> Compare["T05 pure comparer"]
-    Compare --> Wiring
-    Wiring --> Port["T01 LearningFeedbackPort"]
-    Port --> Owner["T06 Study owner transaction + durable receipt"]
-    Owner --> Queue["Ordinary Study queue"]
-    Queue --> Review["Existing Study controller + genuine review"]
-    Review --> Owner
+  subgraph unmerged["Implemented candidate / unmerged / installation unverified"]
+    Selection["Explicit imported game and ply"] --> Capture["Existing owner: admitted read-only capture"]
+    Capture --> Projection["Exact canonical game + #483 snapshot/index"]
+    Projection --> Compare["#486 pure comparer"]
+    Compare --> Gateway["Durable command gateway"]
+    Gateway --> Fence["Games owner: lock/reread canonical source"]
+    Fence --> Study["#487 Study owner: current facts, Again effect, queue + receipt"]
+    Study --> Queue["Ordinary Study queue"]
+    Queue --> Review["Existing Study save/controller"]
+    Review --> Study
+    Wake["Bounded independent maintenance wake"] --> Fence
   end
 ```
 
-Study owns schedules, queue state, review history, receipt persistence and
-settlement. It imports no optional producer. Stopping the producer after
-admission must leave ordinary issuance, save, retry and settlement usable.
-Composition owns selection/wiring and the short operator lifecycle only. Shared
-host/database resource isolation remains deployment-unverified.
+## Focused evidence and current blockers
 
-## Current source and capture boundary
+At `05c15bff`, `make python-file FILE=backend/tests/test_product_feedback_integration.py`
+passed 12 cases: real PostgreSQL receipt/replay, ordinary controller completion,
+o-Study-day/new-connection queue recovery, unrelated issued attempt preservation,
+canonical source fencing, pending maintenance and producer absence, plus source
+composition cases. The retained-owner fixtures then supplied precise timestamps.
+They were not evidence for ordinary date-only introduction storage.
 
-The retained API registers `game_evidence_routes` in `backend/app/main.py` and
-explicitly requires the configured PostgreSQL legacy owner. This source fact is
-not proof of a particular host installation. Do not install or activate an
-independent Learning service to satisfy this slice.
+The ordinary date-only fixture now reproduces the actual missing seam. At
+`9ef6b2a3`, the changed integration run selected 13 cases: 11 passed and two
+failed with `current_owner_exact_introduction_time_unproved`. The projection
+successfully carries the exact source-scoped before-game boolean; #487's fencer
+still requires timestamp equality. The exact owning repair is requested in
+[#487](https://github.com/aaweaver-actuary/tempo/issues/487#issuecomment-6428338319).
+The added cold-import case passed separately (1 selected, 13 deselected), proving
+maintenance imports no optional `app.games` implementation even in a fresh
+interpreter. The current file therefore contains 14 cases, not a claimed 14-case
+pass. Chess.com's scope-provider alias normalization is requested from
+[#483](https://github.com/aaweaver-actuary/tempo/issues/483#issuecomment-6428299253).
 
-Reuse `app.legacy_game_observation.capture_game` only as a read donor when it
-meets the new public snapshot contract. Its default owner reads use
-`background_read_connection`: short, read-only sections admitted while foreground
-work is idle, with before/after source and graph fencing. Preserve that admission
-and fail closed on unavailable admission, changing content, incomplete traversal,
-unsupported mappings or exhausted bounds. Do not substitute an unfenced direct
-database export. `observe_capture` / `comparison_snapshot` and
-`preview_legacy_observation` are mapping/comparison donors, not permission to
-restore their retired orchestration or bypass the T06 scheduling effect.
+At `bd8c275d`, the exact Study-compatible command/foreground-race file passed
+7 cases. At `2b841de8`, the changed HTTP admission/query-only selection passed
+6 cases. The middleware prevents the new optional transport from acquiring a
+foreground lease that defers its own background command.
 
-## Private genuine example and disposable fixtures
+`make ui-file FILE=product-game-feedback.spec.ts` is the single normal-Study
+Chromium acceptance case, using a task-owned synthetic imported game, authentic
+existing-card/graph fixture and real API/worker/database/controller. The first
+completed run at `05c15bff` reached applied receipt and duplicate replay, then
+failed client validation because fixture introduction used a timestamp rather
+than the queue's date shape. The second at `bd8c275d` timed out awaiting receipt;
+its missing HTTP background classification is fixed at `2b841de8`. Both completed
+runs built, started and cleaned their owned stacks successfully. A subsequent
+build was canceled after the concrete scoped-chronology defect was identified;
+zero browser cases ran in that attempt, and its owned builder/project journals
+were reconciled through the supported ownership cleanup APIs. None is a browser
+pass. Consume the owner fixes, rerun the focused integration file, then rerun this
+one browser case. No full leaf-suite or unrelated image qualification is needed.
 
-1. Prefer an existing authorized capture with its original source digest,
-   complete scoped catalogue proof, capture time and source revisions. Otherwise
-   take one narrow read-only capture only after the exact configured live target
-   and foreground admission path are established. Never print credentials or
-   commit raw games, names, repertoire content or private snapshot data.
-2. Treat any candidate game/ply/move lead as unverified until the capture proves
-   legal exact position/history, the expected and played moves, unique route and
-   decision/current physical presentation identity, current source revision, and
-   introduction before the game's precise occurrence time. A matching FEN or SAN
-   alone is insufficient. Capture plies are zero-based; product Finding plies
-   are one-based and the conversion must be explicit.
-3. Retain raw private capture and reproduction receipt outside tracked source.
-   Record its SHA-256 and source/fixture revision in the private receipt. Public
-   regressions use sanitized legal equivalents, labeled as synthetic and never
-   presented as proof of the genuine mapping.
-4. Reproduce the retained game, content, physical mapping, introduction and prior
-   review history in a task-owned disposable PostgreSQL fixture. Verify the
-   disposable target before any fixture mutation. Production remains read-only.
-   Use explicit clocks and initial FSRS state, not sleeps or fake live reviews.
-5. Drive the composed command, replay its exact identity, inspect the owner's
-   receipt/deadline and ordinary queue, then disable the producer. Complete the
-   expected move through the existing Study controller and genuine review/save
-   path in the disposable product. Reload and read settled status. Do not settle
-   by direct SQL or a test-only queue. Preserve a separately active unrelated
-   attempt and its history.
-6. Advance the disposable clock across two days without Study, rebuild/restart
-   only task-owned resources, and show the original deadline/obligation survives.
-   No live settings, queue issuance or review mutation is part of this proof.
+The browser case must preserve the separately issued unrelated card, complete
+its actual move, present the exact target FEN/move, disable optional producer
+transport, save a genuine ordinary Study review, reload, and verify one lapse,
+one receipt and settled owner status with the original deadline.
 
-## Focused verification and integrated receipt
+## Genuine-data and release handoff
 
-The #488 suite owns these cases:
-`test_imported_game_maps_to_existing_card`,
-`test_duplicate_pipeline_has_one_lapse`,
-`test_normal_study_review_settles_obligation`,
-`test_no_study_day_and_restart_preserve_deadline`,
-`test_producer_absence_does_not_block_study`, and
-`test_unrelated_active_attempt_unchanged`.
+A prior candidate failed closed with `legacy_repertoire_authority_missing`.
+That failure is candidate-specific. Bounded read-only alternatives found three
+current ready authorities among ten repertoires; small recent summaries gave no
+usable candidate, historical materialized positions returned zero under all
+three, and one naturally admitted ready-authority summary reported total zero.
+No genuine capture, delivery or review has succeeded. This does not establish
+that all imported games are unusable. The sole release owner continues the
+smallest supported imported-game selection; do not rebuild authority or resume
+the held graph migration.
 
-Required commands after implementations and fixtures are available:
+Supported foreground status changed naturally between active and inactive;
+Study-only mode remained true, policy generation 11. Some authority reads
+succeeded; another bounded read deferred before summaries. These observations do
+not prove active human Study or a persistent pause. Never clear a gate/lease to
+obtain evidence. Store raw private captures and receipt/source digests outside
+tracked source, and publish no private game payloads or machine paths.
 
-```sh
-make python-file FILE=backend/tests/test_product_feedback_integration.py
-make ui-file FILE=product-game-feedback.spec.ts
-```
+Installation requires additive migration
+[`051_study_game_feedback.sql`](../../../database/tempo_legacy_database/ddl/migrations/051_study_game_feedback.sql)
+and schema readiness 51, the five local pure-library backend dependencies
+already registered in `pyproject.toml`, `uv.lock` and Dockerfile, root command and
+router wiring, and the bounded Celery wake. The offline lock check previously
+passed without installations or changes to prior registry records. Retain the
+normal API/foreground worker/broker and existing command machinery. Intake needs
+the existing background command worker; ordinary Study and pending maintenance
+do not require the optional Games producer runtime.
 
-The browser spec must assert the exact expected move/position, delivery status,
-same-identity replay, ordinary review completion, reload and owner settlement.
-Run only the small Study/Tactics preservation selection published by #504 (or
-name the existing focused checks if it is unavailable). Reuse leaf results when
-their source, contracts, fixtures, commands and toolchain inputs are unchanged;
-do not rerun every leaf suite. Acquire the existing advisory validation lock in
-append mode without truncating/unlinking it, hold it only for validation and
-release it promptly.
-
-The published #504 selection at `27dc7fa1`,
-[`docs/product-v02/PRESERVATION.md`](https://github.com/aaweaver-actuary/tempo/blob/27dc7fa179d01a2fadd1ffe874fd6ed377528c61/docs/product-v02/PRESERVATION.md),
-provides exact uncertain-save/reload and unrelated-active-attempt unit titles.
-Those are affected-boundary source checks, not substitutes for native
-game-feedback receipt, deadline or settlement proof.
-
-The final integrated receipt records every consumed branch/SHA, tested SHA,
-capture and fixture digests, exact commands/counts, decision/presentation mapping,
-original deadline, lapse receipt, retry/settlement identities, history and
-protected-attempt outcomes, resource cleanup, and any unavailable native/browser
-or actual-data proof. Missing, skipped and zero-selected checks are unverified.
-Source integration is not installation, merge or deployment.
+Only the release owner may install or coordinate a brief controlled Study pause.
+Use a schema-51-compatible known Study fallback; schema50 images reject51.
+Rollback stops new optional intake/wakes and uses that compatible fallback,
+preserving additive tables, durable obligations/receipts and all review history.
+Never drop migration051, reset data or fabricate a live review. Stopping an
+optional producer must leave normal Study usable. Live installation, fallback
+smoke, actual-data correspondence and final browser acceptance are not claimed
+by this source checkpoint.
