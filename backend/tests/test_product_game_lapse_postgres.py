@@ -306,7 +306,7 @@ def retained_owner_case(case, changed):
     introduced = (NOW-timedelta(days=6)).isoformat()
     with case.transaction() as database:
         database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Owner fixture','fixture',%s)", (repertoire,NOW.isoformat()))
-        database.execute_native('UPDATE cards SET repertoire_id=%s,introduced_at=%s,start_fen=%s WHERE id=%s', (repertoire,introduced,start,case.card_id))
+        database.execute_native("UPDATE cards SET repertoire_id=%s,introduced_at=%s,start_fen=%s,trained_color='white' WHERE id=%s", (repertoire,introduced,start,case.card_id))
         database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', (repertoire,case.card_id))
         database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
             VALUES(%s,%s,'Route','white',%s,'["e2e4"]',%s)""", (route,repertoire,start,NOW.isoformat()))
