@@ -67,6 +67,8 @@ def parse_pgn(raw_pgn: str) -> tuple[int, list[ParsedLine]]:
     games = 0
     parsed: list[ParsedLine] = []
     while game := chess.pgn.read_game(stream):
+        if game.errors:
+            raise ValueError("invalid_pgn_source: an illegal tail cannot be imported as a legal prefix")
         games += 1
         board = game.board()
         starting_fen = board.fen()
