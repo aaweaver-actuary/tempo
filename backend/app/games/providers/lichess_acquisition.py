@@ -55,7 +55,7 @@ def _digest(value: bytes) -> str:
 
 
 def _json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False).encode()
 
 
 def _milliseconds(value: str) -> int:
@@ -166,7 +166,7 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
     if not 0 <= start < end <= 253402300799999:
         raise LichessAcquisitionError("invalid_request", continuation=continuation)
     filters = (("perfType", ",".join(speeds)),) + (() if rated is None else (("rated", str(rated).lower()),))
-    key = _digest(_json([account, start, end, filters, source_revision, page_size]))
+    key = _digest(_json([account, start, end, window.precision, filters, source_revision, page_size]))
     since, seen = _restore(continuation, key, start, end)
     if len(seen) >= MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
