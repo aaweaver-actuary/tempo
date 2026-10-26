@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from app.contracts.product_v02.analysis import RankingOutput
+from app.contracts.product_v02.repertoire import RepertoireSnapshot
+from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken, fingerprint
 from .policy import Candidate, RankingContext, RequiredWork
 
 
@@ -54,3 +56,40 @@ class IntroductionStore(Protocol):
     def lock_allocation(self) -> None: ...
     def receipt(self, presentation_id: str) -> Receipt | None: ...
     def record_introduction(self, receipt: Receipt, *, period_rotation_after: str | None) -> None: ...
+
+
+@dataclass(frozen=True)
+class IntroductionSettings:
+    revision: str
+    global_budget: int
+    weights: tuple[tuple[str, float], ...]
+    enabled: bool = False
+    paused: bool = False
+
+    def __post_init__(self):
+        from .policy import validated_weights
+        object.__setattr__(self, 'weights', tuple(tuple(pair) for pair in self.weights))
+        validated_weights(self.weights)
+        if (not self.revision or type(self.global_budget) is not int or self.global_budget < 0
+                or type(self.enabled) is not bool or type(self.paused) is not bool):
+            raise ValueError("explicit settings revision and nonnegative global budget required")
+
+
+@dataclass(frozen=True)
+class IntroductionSource:
+    """Existing retained-owner authority plus its shared #483 projection.
+
+    Outer wiring supplies these existing factual values, not new eligibility
+    callbacks. Current Study rechecks actual source/card/route rows itself.
+    """
+    snapshot: RepertoireSnapshot
+    authority: LegacyAuthorityToken
+
+    def __post_init__(self):
+        object.__setattr__(self, 'authority', LegacyAuthorityToken.model_validate_json(self.authority.model_dump_json()))
+        object.__setattr__(self, 'snapshot', RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()))
+        token, membership = self.authority, self.snapshot.membership
+        if (self.snapshot.variant != "standard" or token.repertoire_id not in membership.scope_repertoire_ids
+                or membership.revision != token.graph_generation
+                or membership.source_revision != fingerprint(token.model_dump(mode="json"))):
+            raise ValueError("retained source and snapshot bindings disagree")
