@@ -41,6 +41,25 @@ the actual current source/repertoire/card revision, exact position, selected
 response and introduction evidence; never resolve a card by position alone.
 T07 owns command dispatch, authority capture/fencing and outer composition.
 
+The concrete retained-owner factory is now
+`tempo_legacy_database.adapters.study.game_feedback_authority.current_owner_game_feedback(database, retained_owner_capture=..., snapshot=..., clock=...)`.
+Pass the existing backend-owned `legacy_game_capture` export and its #483 public
+snapshot projection, inside the same writer transaction used for delivery.
+This factory supplies `CurrentOwnerDecisions`; a producer snapshot by itself is
+insufficient. It rereads and locks the current source/scope/card/graph/membership
+and existing completed integrity facts. Graph/source locks are nonblocking after
+the receiver's card/day locks. `CurrentDecisionUnavailable.reason` identifies
+busy, missing or changed authority; abort/roll back and report that reason.
+It creates no certificate, captures no new catalogue, and never calls Games.
+T07 authenticates and fences the canonical imported game in its own boundary;
+the factory requires that canonical game ID, not a provider-ID alias.
+
+The initial concrete adapter supports original physical revision 1 with exact
+stored UTC introduction evidence. Date-only introduction or changed-content
+revision without explicit owner evidence is rejected with an exact reason;
+neither a timestamp nor historical introduction is inferred. Later compatible
+shared introduction facts can extend that owner boundary without a new effect.
+
 The caller starts/commits/rolls back the transaction. `accept_lapse` acquires
 existing card-edit/card-row/day locks before the effect lock. The schedule,
 honestly labelled `reviews.source_kind='game_lapse'` Again record, queue and

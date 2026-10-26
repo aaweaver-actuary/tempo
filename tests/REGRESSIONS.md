@@ -46,6 +46,10 @@ It provisions only a unique capped disposable PostgreSQL container and verifies
 its removal. These tests do not certify installed artifacts or the actual T07
 game-to-Study product loop. The [owner interface](../backend/app/study/README.md)
 records boundary ownership and composition responsibilities.
+`test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_authority`
+adds a real retained-owner source capture: current authority applies, a concurrent
+source edit is blocked by its transaction fence, and a changed captured revision
+is rejected without a schedule/receipt. It creates no producer authority.
 
 ## Daily statistics producer retirement
 
