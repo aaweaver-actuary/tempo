@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from app.repertoire.changes.retained import current_snapshot as read_current_snapshot, retained_changes
+from app.repertoire.changes.retained import current_snapshot as read_current_snapshot, current_card_definitions, retained_changes
 from app.repertoire.changes.ports import ChangeError
 from .repertoire_commands import create_current_repertoire_http, register_repertoire_commands
 
@@ -45,7 +45,7 @@ def create_retained_repertoire_router(*, current_study_block):
 
     return create_current_repertoire_http(reader=read_connection,
         current_snapshot=current_snapshot, dispatch=dispatch_command,
-        current_study_block=current_study_block)
+        current_study_block=current_study_block,current_card_definitions=current_card_definitions)
 
 
 def register_retained_repertoire_commands(*, audit_for_transaction, after_publication):

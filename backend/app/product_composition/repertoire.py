@@ -20,7 +20,7 @@ def create_repertoire_router(changes, snapshots: RepertoireSnapshotPort):
     return routes(changes, snapshots)
 
 
-def audit_projection(snapshot, *, study_block=None):
+def audit_projection(snapshot, *, study_block=None, card_definitions=()):
     """Adapt #492 facts/alternatives to #500's read-only display projection.
 
     A detector result is never evidence that Study actually suspended a target.
@@ -51,7 +51,8 @@ def audit_projection(snapshot, *, study_block=None):
             source.revision, source.digest], separators=(",", ":")).encode()).hexdigest()
         choices = [dict(move_uci=move, proposal=manual_resolution(snapshot,
             repertoire_id=conflict.position.repertoire_id, position=key, selected_uci=move,
-            proposal_id="resolve:"+hashlib.sha256((identity+move).encode()).hexdigest()).model_dump(mode="json"))
+            proposal_id="resolve:"+hashlib.sha256((identity+move).encode()).hexdigest(),
+            card_definitions=card_definitions).model_dump(mode="json"))
             for move in conflict.responses_uci]
         affected = tuple(sorted({item.route_id for item in conflict.occurrences}))
         block = study_block(conflict.position.repertoire_id, affected,
@@ -74,7 +75,8 @@ def audit_projection(snapshot, *, study_block=None):
 
 
 def create_repertoire_review_router(changes, snapshots: RepertoireSnapshotPort, *, study_block=None,
-                                    proposals=lambda _: (), evidence=lambda _rep, _position: (), audit=None):
+                                    proposals=lambda _: (), evidence=lambda _rep, _position: (), audit=None,
+                                    review_source=None):
     """Unregistered C router; optional E reads are injected, never called by Study."""
     router = APIRouter()
     router.include_router(create_repertoire_router(changes, snapshots))
@@ -82,7 +84,9 @@ def create_repertoire_review_router(changes, snapshots: RepertoireSnapshotPort, 
     @router.get("/api/product/repertoires/{repertoire_id}/review")
     def review(repertoire_id: str):
         try:
-            return audit_projection(snapshots.snapshot(repertoire_id), study_block=study_block)
+            snapshot,definitions=(review_source(repertoire_id) if review_source else
+                                  (snapshots.snapshot(repertoire_id),()))
+            return audit_projection(snapshot,study_block=study_block,card_definitions=definitions)
         except ChangeError as error:
             raise HTTPException(409, str(error)) from error
 

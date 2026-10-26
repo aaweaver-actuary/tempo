@@ -41,23 +41,7 @@ def current_study_block(database,repertoire_id,route_ids,**expected):
     snapshot=approval_snapshot(database,repertoire_id)
     if asdict(_fence(snapshot))!=expected:
         return None
-    current=study_snapshot(database,repertoire_id)
-    # #492's explicit source namespaces are public source identity, while
-    # Study retains authored route IDs. Physical IDs are matched only through
-    # #483's actual graph bindings; no position equality creates membership.
-    routes=set()
-    for identity in route_ids:
-        if identity.startswith('line:'):
-            routes.add(identity[5:])
-        elif identity.startswith('card:'):
-            mapped={item.route_id for item in current.decision_presentations
-                    if item.presentation_id==identity[5:] and item.route_id is not None}
-            if not mapped:
-                return None
-            routes.update(mapped)
-        else:
-            routes.add(identity)
-    return create_conflict_store(database).block_state(repertoire_id,tuple(sorted(routes)))
+    return create_conflict_store(database).block_state(repertoire_id,route_ids)
 
 
 def synchronize_current_conflicts(database,repertoire_id):
@@ -77,14 +61,6 @@ def synchronize_current_conflicts(database,repertoire_id):
     store=create_conflict_store(database)
     current={}
     unmapped=[]
-    # The approval inventory also retains physical-card-only source routes.
-    # A conflict outside the graph-bound authored view cannot receive a fake
-    # positive suspension receipt merely because no Study target was proved.
-    approval=conflict_report(approval_snapshot(database,repertoire_id))
-    indexed_conflicts={(item.position.repertoire_id,item.position.position) for item in report.conflicts}
-    for conflict in approval.conflicts:
-        if (conflict.position.repertoire_id,conflict.position.position) not in indexed_conflicts:
-            unmapped.extend((item.route_id,item.ply) for item in conflict.occurrences)
     for conflict in report.conflicts:
         for occurrence in conflict.occurrences:
             bindings=index.routes[occurrence.repertoire_id,occurrence.route_id][occurrence.ply].bindings

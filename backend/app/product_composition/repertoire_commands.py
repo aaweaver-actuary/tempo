@@ -59,12 +59,25 @@ def register_repertoire_commands(changes_for_transaction, *, audit_for_transacti
 
 class CurrentSnapshots:
     """Each read releases its owning read connection before returning a value."""
-    def __init__(self, reader, current_snapshot):
+    def __init__(self, reader, current_snapshot, current_card_definitions=None):
         self.reader, self.current_snapshot = reader, current_snapshot
+        self.current_card_definitions=current_card_definitions
 
     def snapshot(self, repertoire_id):
         with self.reader() as database:
             return self.current_snapshot(database, repertoire_id)
+
+    def review_source(self,repertoire_id):
+        with self.reader() as database:
+            snapshot=self.current_snapshot(database,repertoire_id)
+            definitions=(() if self.current_card_definitions is None else
+                         self.current_card_definitions(database,repertoire_id))
+            if self.current_card_definitions is not None:
+                observed=self.current_snapshot(database,repertoire_id)
+                fence=lambda value:(value.membership.source_revision,value.membership.revision,value.membership.digest)
+                if fence(observed)!=fence(snapshot):
+                    raise ChangeError('repertoire_source_changed_during_display')
+            return snapshot,definitions
 
 
 class DispatchedChanges:
@@ -87,7 +100,8 @@ class DispatchedChanges:
         return self._command("decision", decision)
 
 
-def create_current_repertoire_http(*, reader, current_snapshot, dispatch, current_study_block):
+def create_current_repertoire_http(*, reader, current_snapshot, dispatch, current_study_block,
+                                   current_card_definitions=None):
     """Complete outer HTTP wiring; supply actual owning read capabilities.
 
     The command worker separately calls register_repertoire_commands with the
@@ -96,7 +110,7 @@ def create_current_repertoire_http(*, reader, current_snapshot, dispatch, curren
     """
     from app.product_composition.repertoire import create_repertoire_review_router
 
-    snapshots = CurrentSnapshots(reader,current_snapshot)
+    snapshots = CurrentSnapshots(reader,current_snapshot,current_card_definitions)
 
     def block(repertoire_id,routes,**source_fence):
         if current_study_block is None:
@@ -106,6 +120,7 @@ def create_current_repertoire_http(*, reader, current_snapshot, dispatch, curren
 
     return create_repertoire_review_router(
         lambda repertoire_id:DispatchedChanges(repertoire_id,dispatch), snapshots,
-        study_block=block, audit=lambda repertoire_id,key:dispatch("product.repertoire.audit",
+        study_block=block,review_source=snapshots.review_source,
+        audit=lambda repertoire_id,key:dispatch("product.repertoire.audit",
             {"repertoire_id":repertoire_id},idempotency_key=key),
     )

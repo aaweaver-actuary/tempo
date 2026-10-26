@@ -16,6 +16,7 @@ from tempo_evidence_math import LearnerPolicy,LearnerPolicyAction,opening_positi
 from app.contracts.product_v02.analysis import ProposalDecision
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.product_composition.repertoire import RepertoireCommands,create_repertoire_review_router
+from app.product_composition.repertoire import audit_projection
 from app.product_composition.repertoire_commands import CurrentSnapshots,DispatchedChanges,command_handlers
 from app.product_composition import repertoire_runtime, repertoire_study
 from app.repertoire.changes.application import RepertoireChanges,conflict_report,manual_resolution,study_eligibility
@@ -63,6 +64,7 @@ class ChangesStore:
         assert repertoire_id in {"rep", ""}
         yield self
     def snapshot(self): return self.current
+    def card_definitions(self): return ()
     def preview(self, identity): return self.previews.get(identity)
     def save_preview(self, proposal): self.previews[proposal.proposal_id] = proposal
     def receipt(self, identity): return self.receipts.get(identity)
@@ -258,3 +260,30 @@ def test_c_root_write_permission_is_limited_to_three_exact_post_paths():
         assert not allowed('POST',path+['extra'])
     assert not allowed('POST',['api','product','repertoires','rep','unknown'])
     assert not allowed('POST',['api','repertoires','rep','changes','decide'])
+
+
+def test_c_display_uses_owner_card_definitions_for_complete_physical_change_preview():
+    from app.contracts.product_v02.analysis import DisplayedCardChange
+    snapshot,_=source(conflict=True)
+    definition=DisplayedCardChange(action='reuse',presentation_id='physical:conflict',expected_revision=3,
+        starting_fen=chess.STARTING_FEN,moves=('e2e4','c7c5'),learner_color='black')
+    view=audit_projection(snapshot,card_definitions=(definition,))
+    choice=next(item for item in view['conflicts'][0]['choices'] if item['move_uci']=='e7e5')
+    assert choice['proposal']['card_changes']==[dict(action='update',presentation_id='physical:conflict',
+        expected_revision=3,starting_fen=chess.STARTING_FEN,moves=['e2e4','e7e5'],learner_color='black')]
+
+
+def test_c_card_display_read_refuses_a_source_change_and_releases_reader():
+    from app.repertoire.changes.ports import ChangeError
+    snapshot,_=source()
+    events=[]
+    @contextmanager
+    def reader():
+        try: yield object()
+        finally: events.append('closed')
+    values=iter((snapshot,snapshot.model_copy(update={'membership':snapshot.membership.model_copy(
+        update={'revision':2,'digest':'b'*64})})))
+    port=CurrentSnapshots(reader,lambda db,rep:next(values),lambda db,rep:())
+    with pytest.raises(ChangeError,match='repertoire_source_changed_during_display'):
+        port.review_source('rep')
+    assert events==['closed']

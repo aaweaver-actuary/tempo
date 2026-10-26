@@ -216,13 +216,19 @@ approval receipts. Stable payload-bound command identities preserve uncertain
 acknowledgments across retry/remount. No SQL, second writer, conflict decision,
 queue policy or automatic job is owned by composition.
 
-[repertoire_runtime.py](repertoire_runtime.py) now binds the actual #492 retained
-`current_snapshot` and `retained_changes` at `e5bc95a0`, with the existing read
-connection and durable dispatch resources. After an accepted publication the
-actual Study reconciliation must enlist in that same borrowed transaction;
-failure propagates to the gateway rollback. Missing reconciliation refuses
-acceptance with 503. The scoped Study callback and final main/tasks registration
-remain pending, rather than being filled with a fake block/restore operation.
+[repertoire_runtime.py](repertoire_runtime.py) binds #492 `09548df7` retained
+changes and complete current-card definitions to #483's sole current snapshot
+reader, with the existing read connection and durable dispatch resources. The
+display rereads its source fence after the card facts; changed source refuses the
+display. Every proposed physical-card update comes from Repertoire's policy.
+
+[repertoire_study.py](repertoire_study.py) injects the actual shared reader/index
+and #492 eligibility into #487's `SnapshotConflictAuthority` and
+`current_study_conflicts`. Commands contain at most 16 exact route/ply/card/revision
+targets. Unmapped targets remain pending. Persisted block reads require the
+displayed source fence to remain current. Accepted content and current Study
+reconciliation enlist in the same borrowed transaction; failure propagates to
+the gateway rollback. Missing reconciliation refuses acceptance with 503.
 
 ```mermaid
 flowchart LR
@@ -230,24 +236,27 @@ flowchart LR
   Mount --> View["#500 RepertoireReviewView"]
   View --> HTTP["#501 C read / command router"]
   HTTP --> Read["CurrentSnapshots: one released read"]
-  Read --> Snapshot["#492 retained conflicted-repertoire snapshot"]
+  Read --> Snapshot["#483 current repertoire snapshot / #492 card facts"]
   HTTP --> Gateway["Existing foreground command gateway"]
   Gateway --> Binding["#501 borrowed transaction bindings"]
   Binding --> Changes["#492 current changes / approved publisher"]
-  Binding -. "actual scoped command pending" .-> Blocks["Study owner: conflict blocks / affected attempt suspension"]
+  Binding --> Blocks["#487 Study conflict command / affected attempt suspension"]
+  Blocks --> Authority["Injected current Repertoire index / eligibility"]
   Blocks --> Local["Study-owned persisted eligibility"]
   Study["ordinary Study"] --> Local
   Changes --> Content["Repertoire source / preview / approval evidence"]
 ```
 
-Solid edges describe this source increment; HTTP/worker registration is still
-pending. Dotted operations are exact owner handoffs still being implemented;
-**no fake callback is registered as product
-acceptance**. #492's current publication must enlist displayed source/card effects
+Solid edges describe implemented source; final HTTP/worker registration is still
+pending. **No fake callback is registered as product acceptance**. #492's current
+publication enlists displayed source/card effects
 and receipt in the same transaction and preserve unrelated history/memberships.
 Study owns affected attempt suspension without Again and valid eligibility
 restoration; its local serving path must not call this optional HTTP producer.
-Shared host/database contention and actual browser/PG behavior remain unverified.
+#503/#495 own serving/recovery/rebuild and admission guard adoption. Until those
+hooks are published and the product check passes, continuous Study enforcement
+is unverified. Shared host/database contention and actual browser/PG behavior
+remain unverified. Existing repertoire moves require no engine reevaluation.
 
 C's exact source checks are `make python-file
 FILE=backend/tests/test_product_repertoire_integration.py` and `make unit-file
