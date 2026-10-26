@@ -18,7 +18,11 @@ def classify_response(
     occurred_at: datetime | None = None, occurrence_is_exact: bool = False,
     introduction_matches_content: bool = False,
 ) -> tuple[FindingKind, str] | None:
-    """Classify one authoritative covered occurrence; None means correct.
+    """Classify one authoritative occurrence, including unintroduced encounters.
+
+    A correct unintroduced encounter is a frequency fact, never a failure.
+    None means there is no reportable finding for the supplied facts. Historical
+    non-lapse findings do not decide current Study admission or priority.
 
     Route selection, exact identity, and decision/card mapping belong to the
     supplied index. Any introduced_before_game assertion must already be scoped
@@ -39,7 +43,8 @@ def classify_response(
             return "coverage_end", "deliberate_authored_coverage_end"
         return ("missing_own_continuation", "own_continuation_not_authored") if learner_turn else (
             "opponent_gap", "opponent_reply_not_authored")
-    if played_uci in expected:
+    matched = played_uci in expected
+    if matched and (not learner_turn or terminal or mapping_count != 1 or not available):
         return None
     if terminal:
         return "coverage_end", "terminal_route_cannot_prove_missing_continuation"
@@ -52,19 +57,21 @@ def classify_response(
     if introduced is False:
         return "known_unintroduced", "decision_not_introduced"
     if introduced is not True:
-        return "known_unavailable", "introduction_evidence_unavailable"
+        return None if matched else ("known_unavailable", "introduction_evidence_unavailable")
     if introduced_before_game is False:
         return "known_unintroduced", "introduction_not_before_game"
     if not occurrence_is_exact or occurred_at is None:
-        return "known_unavailable", "game_occurrence_time_not_exact"
+        return None if matched else ("known_unavailable", "game_occurrence_time_not_exact")
     if occurred_at.tzinfo is None or (introduced_at is not None and introduced_at.tzinfo is None):
-        return "known_unavailable", "chronology_requires_timezone"
+        return None if matched else ("known_unavailable", "chronology_requires_timezone")
     if introduced_at is not None and introduced_at >= occurred_at:
         if introduced_before_game is True:
-            return "known_unavailable", "conflicting_introduction_chronology"
+            return None if matched else ("known_unavailable", "conflicting_introduction_chronology")
         return "known_unintroduced", "introduction_not_before_game"
     if introduced_at is None and introduced_before_game is not True:
-        return "known_unavailable", "introduction_evidence_unavailable"
+        return None if matched else ("known_unavailable", "introduction_evidence_unavailable")
+    if matched:
+        return None
     if not introduction_matches_content:
         return "known_unavailable", "introduced_content_identity_unproved"
     return "confirmed_miss", "unique_introduced_response_not_played"
