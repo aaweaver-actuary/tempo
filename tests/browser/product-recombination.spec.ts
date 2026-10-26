@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { Chess } from "chess.js";
 import { api, expect, move, test } from "./product-fixtures";
 import { prepareUI } from "./ui-fixtures";
 
@@ -38,9 +39,16 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     if (failed) await page.getByRole("button", { name: /Show move/ }).first().click();
     // The real board supplies every learner response; no Study API is mocked.
     const color = staged.starting_fen.split(" ")[1];
-    for (let offset = color === "w" ? 0 : 1; offset < staged.moves.length; offset += 2) {
-      const uci = staged.moves[offset];
-      await move(page, uci.slice(0, 2), uci.slice(2, 4));
+    const expectedPosition = new Chess(staged.starting_fen);
+    for (const uci of staged.moves) {
+      if (expectedPosition.turn() === color) {
+        // Input can be enabled before the scheduled opponent reply. Wait for
+        // that actual position rather than clicking a later response early.
+        await expect.poll(async () => (await page.locator(".board-frame").first().getAttribute("data-fen"))?.split(" ").slice(0,3).join(" "))
+          .toBe(expectedPosition.fen().split(" ").slice(0,3).join(" "));
+        await move(page, uci.slice(0, 2), uci.slice(2, 4));
+      }
+      expectedPosition.move({ from: uci.slice(0,2), to: uci.slice(2,4), promotion: uci.slice(4) || undefined });
     }
     const response = await saved;
     expect(response.ok(), await response.text()).toBe(true);
@@ -80,6 +88,7 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     && response.request().method() === "POST");
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   expect((await splitSaved).ok()).toBe(true);
+  await expect.poll(() => fixture<Readback>("readback").changes).toBe(3);
   await page.reload();
   state = fixture<Readback>("readback");
   expect(state.changes).toBe(3);
