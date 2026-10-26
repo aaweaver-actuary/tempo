@@ -62,7 +62,7 @@ request is needed for the component checks.
 
 All examples below are synthetic and omit the full legal inventory for brevity;
 actual `ProbabilityEvidence` always includes it. The shared
-[T01 fixtures](../../../../../../contracts/product-v02/fixtures) retain complete
+[T01 fixtures](../../../../contracts/product-v02/fixtures) retain complete
 JSON examples; `test_complete_distribution_round_trip` exercises this producer.
 
 | Sample | Reported move counts | Evidence probabilities | Unknown mass |
@@ -110,7 +110,7 @@ are a call argument only and never part of data, cache or diagnostic text.
 ## Reuse and focused proof
 
 [explorer.py](explorer.py) adapts the small donor
-[ExplorerClient/validate_evidence](../../../../../services/intelligence/src/tempo_intelligence/provider.py)
+[ExplorerClient/validate_evidence](../../../../services/intelligence/src/tempo_intelligence/provider.py)
 acquisition logic: bounded streaming, no redirects/trust-env, strict native
 outcomes, outcome-wise subtotal checks, duplicate-field detection and safe
 HTTP/Retry-After errors. Donor callers are unchanged. Its descriptor/runtime

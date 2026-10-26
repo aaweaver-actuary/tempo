@@ -18,7 +18,7 @@ flowchart LR
 
 Sources: [client](explorer.py), [capabilities](ports.py),
 [shared values](../../contracts/product_v02/analysis.py),
-[evidence-math public API](../../../../../packages/evidence-math/README.md).
+[evidence-math public API](../../../../packages/evidence-math/README.md).
 The diagram's #501 composition/#494 consumption is an integration seam, not an
 implemented root binding. This adapter owns only per-call computation/HTTP
 lifetime; the injected cache owns any stored results. It has no Study, Tactics,

@@ -53,6 +53,10 @@ def _unique_object(pairs):
     return result
 
 
+def _reject_nonfinite(_):
+    raise ValueError("nonfinite JSON number")
+
+
 def _outcomes(value) -> tuple[int | None, int | None, int | None]:
     if not isinstance(value, dict):
         raise _Failure("invalid_response")
@@ -105,6 +109,7 @@ def _validate_payload(payload, request):
     if any(root[index] is not None and sum(row[index] for row in outcomes
             if row[index] is not None) > root[index] for index in range(3)):
         raise _Failure("invalid_response")
+    counts.sort(key=lambda item: item.move_uci)
     if any(count is None for count in root):
         # Do not replace a missing denominator with the returned subtotal.
         return None, unknown_distribution(request.position), tuple(counts)
@@ -215,7 +220,7 @@ class ExplorerClient:
                     contents.extend(part)
                 try:
                     return json.loads(contents, object_pairs_hook=_unique_object,
-                                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite")))
+                                      parse_constant=_reject_nonfinite)
                 except (ValueError, TypeError, UnicodeError):
                     raise _Failure("invalid_response") from None
 
