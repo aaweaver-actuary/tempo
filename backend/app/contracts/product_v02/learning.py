@@ -130,7 +130,8 @@ class EncounterReceipt(LearningReceipt):
     """Owner disposition, separately recording relevance and actual admission.
 
     Existing LearningReceipt fields/statuses are reused, never relabelled as
-    queue availability. No deadline is promised under explicit disabled controls.
+    queue availability. Encounter first introductions bypass ordinary allowance
+    and Study-only controls; explicit full pause and safety guards still apply.
     """
     interface_version: Literal["0.2.1"] = "0.2.1"
     detected_at: UtcTimestamp
@@ -155,7 +156,10 @@ class EncounterReceipt(LearningReceipt):
             raise ValueError("deferred work must remain visibly pending")
         if self.admission_status == "pending" and self.deferred_reason is None and self.reason is None:
             raise ValueError("pending encounter admission requires an owner reason")
-        if self.deferred_reason in {"study_only", "disabled", "paused", "zero_limit"} and self.available_by is not None:
+        if self.disposition == "first_introduction" and self.deferred_reason in {
+                "study_only", "zero_limit", "introduction_allowance"}:
+            raise ValueError("real-game first introduction is a targeted exception to ordinary cap and Study-only")
+        if self.deferred_reason in {"disabled", "paused"} and self.available_by is not None:
             raise ValueError("explicit disabled controls cannot promise an availability deadline")
         return self
 
@@ -170,9 +174,12 @@ class EncounterFeedbackPort(LearningFeedbackPort, Protocol):
     Historical misses may retain priority without reversing later progress;
     correct play is frequency, never invented failure. Study revalidates current
     definition/mapping/state, owns fresh first introduction, and preserves active
-    attempts. Paused/disabled/zero-limit and introduction allowance decisions stay
-    with Study. No reserve/exception policy or universal <=48h promise is chosen
-    by this seam. A supplied payload digest is a claim, not owner authority.
+    attempts. Real-game first introductions use the approved targeted exception
+    to ordinary new-card allowance (including zero) and Study-only. Study must
+    not change those global settings or extend the exception to unrelated cards.
+    Explicit full pause, foreground/maintenance safety, source/identity/legality
+    and conflict guards remain. No <=48h promise applies while full pause blocks
+    admission. A supplied payload digest is a claim, not owner authority.
     """
     def accept_encounter(self, encounter: GameEncounter) -> EncounterReceipt: ...
     def encounter_status(self, key: GameEffectKey) -> EncounterReceipt | None: ...

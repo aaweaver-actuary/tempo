@@ -346,3 +346,20 @@ def test_encounter_receipt_reports_disposition_and_control_deferral_honestly(fau
     elif fault == "reasonless_pending": payload.update(deferred_reason=None, reason=None)
     else: payload.update(disposition="frequency_only", admission_status="not_requested", deferred_reason=None)
     with pytest.raises(ValidationError): EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("ordinary_control", ["zero_limit", "introduction_allowance", "study_only"])
+def test_encounter_first_introduction_cannot_defer_to_ordinary_controls(ordinary_control):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=ordinary_control, reason=ordinary_control)
+    with pytest.raises(ValidationError, match="targeted exception"):
+        EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("safety_guard", ["paused", "disabled", "active_attempt", "authority_unavailable", "unknown_chronology"])
+def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(safety_guard):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=safety_guard, reason=safety_guard)
+    receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
+    assert receipt.admission_status == "pending" and receipt.available_by is None
+    assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
