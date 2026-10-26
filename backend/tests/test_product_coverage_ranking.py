@@ -1,5 +1,6 @@
 """Hand-computable synthetic policy facts; no live infrastructure."""
 import sys
+import json
 from dataclasses import FrozenInstanceError, replace
 from copy import deepcopy
 from pathlib import Path
@@ -17,8 +18,9 @@ from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.analysis.coverage.ranking import rank_candidates, rank_coverage
 from app.analysis.coverage.ports import AnalysisLimits
 from app.analysis.coverage.personal_evidence import (
-    PersonalEncounter, PersonalGame, deduplicate_games, decision_importance,
+    PersonalEncounter, PersonalGame, deduplicate_games, decision_importance, importance_from_encounters,
 )
+from app.contracts.product_v02.learning import GameEncounter
 from app.repertoire import build_index
 from tempo_evidence_math import (
     LearnerPolicy, LearnerPolicyAction, MoveProbability, MoveProbabilityDistribution,
@@ -471,3 +473,81 @@ def test_importance_new_source_revision_retracts_obsolete_facts_and_fences_curre
     conflict = decision.model_copy(update={"selected_response_uci": "c7c5", "decision_id": "other"})
     with pytest.raises(ValueError, match="conflicting_current_approved_responses"):
         decision_importance(current_approved_decisions=(decision, conflict), games=(old,))
+
+
+def encounter_fixture(name):
+    payload = json.loads((ROOT / f"contracts/product-v02/fixtures/encounters/{name}.json").read_text())["payload"]
+    return GameEncounter.model_validate_json(json.dumps(payload))
+
+
+def from_encounters(decision, *encounters):
+    return importance_from_encounters(workspace_id="fixture", account="synthetic-player",
+        current_approved_decisions=(decision,), encounters=tuple(encounters))[0]
+
+
+@pytest.mark.parametrize("name,state,misses", [
+    ("unintroduced-correct", "unintroduced", 0),
+    ("unintroduced-missed", "unintroduced", 1),
+    ("historical-missed", "introduced", 1),
+])
+def test_frozen_encounter_importance_preserves_both_states_and_observation(name, state, misses):
+    event = encounter_fixture(name)
+    result = from_encounters(event.decision, event)
+    assert result.decision.introduction == state
+    assert result.facts.personal_encounters == 1
+    assert len(result.differing_response_sources) == misses
+    assert result.source_encounters == (event,)
+    assert result.source_encounters[0].key.logical_id() == event.key.logical_id()
+    assert result.source_encounters[0].source.source_digest == event.source.source_digest
+
+
+def test_frozen_encounter_duplicate_recomparison_retains_original_detection_after_learning():
+    event = encounter_fixture("unintroduced-missed")
+    learned = event.decision.model_copy(update={"introduction": "introduced", "introduced_at": "2026-10-27T12:00:00Z",
+                                              "presentation_revision": 2})
+    repeated = event.model_copy(update={"decision": learned, "detected_at": "2026-10-28T12:00:00Z"})
+    result = from_encounters(learned, event, repeated, event)
+    assert result.facts.personal_encounters == len(result.differing_response_sources) == 1
+    assert result.source_encounters == (event,)
+    assert from_encounters(learned, repeated, event) == result
+
+
+def test_frozen_historical_miss_and_correct_play_are_not_relabelled_by_current_response():
+    missed = encounter_fixture("historical-missed")
+    now_matches = missed.decision.model_copy(update={"selected_response_uci": missed.played_uci,
+                                                    "repertoire_revision": 2, "presentation_revision": 2})
+    retained = from_encounters(now_matches, missed)
+    assert len(retained.differing_response_sources) == 1
+    correct = encounter_fixture("unintroduced-correct")
+    now_differs = correct.decision.model_copy(update={"selected_response_uci": "d2d4", "repertoire_revision": 2})
+    result = from_encounters(now_differs, correct)
+    assert result.differing_response_sources == ()
+    assert result.facts.personal_encounters == 1
+    assert result.source_encounters[0].observation == "matched"
+
+
+def test_frozen_encounter_source_correction_and_authority_fences_are_explicit():
+    event = encounter_fixture("unintroduced-missed")
+    source = event.source.model_copy(update={"source_revision": 2, "source_digest": "f"*64})
+    revised_mapping = event.decision.model_copy(update={"introduction_game": source})
+    corrected = event.model_copy(update={"source": source, "decision": revised_mapping,
+                                        "played_uci": event.expected_uci, "observation": "matched"})
+    result = from_encounters(revised_mapping, event, corrected)
+    assert result.facts.personal_encounters == 1 and result.differing_response_sources == ()
+    assert result.source_encounters == (corrected,)
+    with pytest.raises(ValueError, match="encounter_importance_workspace_mismatch"):
+        importance_from_encounters(workspace_id="another", account="synthetic-player",
+            current_approved_decisions=(event.decision,), encounters=(event,))
+    with pytest.raises(ValueError, match="conflicting_encounter_observation"):
+        from_encounters(event.decision, event, event.model_copy(update={"observation": "matched", "played_uci": event.expected_uci}))
+
+
+def test_frozen_encounter_keeps_exact_decision_identity_beyond_equal_positions():
+    event = encounter_fixture("unintroduced-missed")
+    other = event.decision.model_copy(update={"decision_id": "different-decision", "presentation_id": "another-card"})
+    result = importance_from_encounters(workspace_id="fixture", account="synthetic-player",
+        current_approved_decisions=(event.decision, other), encounters=(event,))
+    by_id = {item.decision.decision_id: item for item in result}
+    assert by_id[event.key.decision_id].facts.personal_encounters == 1
+    assert by_id["different-decision"].facts.personal_encounters == 0
+    assert by_id["different-decision"].source_encounters == ()
