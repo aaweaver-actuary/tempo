@@ -220,6 +220,7 @@
       "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
       "tests/runner/tempo-cli-study-routing.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
+      "tests/runner/tempo-study-authority.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-study-configuration.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
     },
