@@ -46,40 +46,19 @@ it("Study-only CLI routing regressions run in the regular suite", () => {
   expect(result.stdout).toMatch(/# skipped 0\b/);
 }, 60_000);
 
-it("Installed Study authority regressions run in the regular suite", () => {
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-study-authority.test.mjs"], { encoding: "utf8" });
+it.each([
+  "tempo-study-admission",
+  "tempo-study-assembly",
+  "tempo-study-authority",
+  "tempo-study-configuration",
+  "tempo-study-runtime",
+  "tempo-study-startup-health-recovery",
+  "tempo-study-startup",
+  "tempo-study-startup-recovery",
+])("Installed Study provider regressions run in the regular suite: %s", name => {
+  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", `tests/runner/${name}.test.mjs`], { encoding: "utf8" });
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stdout, "The owning provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
-  expect(result.stdout).toMatch(/# fail 0\b/);
-  expect(result.stdout).toMatch(/# cancelled 0\b/);
-  expect(result.stdout).toMatch(/# skipped 0\b/);
-  expect(result.stdout).toMatch(/# todo 0\b/);
-}, 60_000);
-
-it("Installed Study configuration regressions run in the regular suite", () => {
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-study-configuration.test.mjs"], { encoding: "utf8" });
-  expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stdout, "The owning provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
-  expect(result.stdout).toMatch(/# fail 0\b/);
-  expect(result.stdout).toMatch(/# cancelled 0\b/);
-  expect(result.stdout).toMatch(/# skipped 0\b/);
-  expect(result.stdout).toMatch(/# todo 0\b/);
-}, 60_000);
-
-it("Installed Study runtime regressions run in the regular suite", () => {
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-study-runtime.test.mjs"], { encoding: "utf8" });
-  expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stdout, "The owning provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
-  expect(result.stdout).toMatch(/# fail 0\b/);
-  expect(result.stdout).toMatch(/# cancelled 0\b/);
-  expect(result.stdout).toMatch(/# skipped 0\b/);
-  expect(result.stdout).toMatch(/# todo 0\b/);
-}, 60_000);
-
-it("Installed Study admission regressions run in the regular suite", () => {
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-study-admission.test.mjs"], { encoding: "utf8" });
-  expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stdout, "The owning provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
+  expect(result.stdout, "Each provider suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
   expect(result.stdout).toMatch(/# fail 0\b/);
   expect(result.stdout).toMatch(/# cancelled 0\b/);
   expect(result.stdout).toMatch(/# skipped 0\b/);

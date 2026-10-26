@@ -186,9 +186,13 @@
       "tests/runner/tempo-cli-study-routing.test.mjs",
       "tests/runner/tempo-cli.test.mjs",
       "tests/runner/tempo-study-admission.test.mjs",
+      "tests/runner/tempo-study-assembly.test.mjs",
       "tests/runner/tempo-study-authority.test.mjs",
       "tests/runner/tempo-study-configuration.test.mjs",
-      "tests/runner/tempo-study-runtime.test.mjs"
+      "tests/runner/tempo-study-runtime.test.mjs",
+      "tests/runner/tempo-study-startup-health-recovery.test.mjs",
+      "tests/runner/tempo-study-startup-recovery.test.mjs",
+      "tests/runner/tempo-study-startup.test.mjs"
     ],
     "integration": [
       "tests/unit/domain-boundary-regressions.test.tsx"
