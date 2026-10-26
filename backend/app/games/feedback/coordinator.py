@@ -140,10 +140,17 @@ class Coordinator:
             held = changed or bool(previous and previous.quarantined) or diagnostic is not None
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
-            observations = {encounter_observation(item) for item in encounters}
+            observations = {}
+            for item in encounters:
+                observations.setdefault(item.key.logical_id(), set()).add(encounter_observation(item))
             for effect in effects:
-                still_supported = ((effect.key.decision_id, effect.key.occurrence_ply) in confirmed
-                    if isinstance(effect, GameLapse) else not self.encounter_feedback or encounter_observation(effect) in observations)
+                if isinstance(effect, GameLapse):
+                    still_supported = (effect.key.decision_id, effect.key.occurrence_ply) in confirmed
+                else:
+                    current = observations.get(effect.key.logical_id())
+                    # Later admission/learning or missing proof cannot erase history.
+                    # A positively changed observation still fences pending work.
+                    still_supported = current is None or encounter_observation(effect) in current
                 if held or not still_supported:
                     command = GameEffectControl(key=effect.key, source_revision=source_revision(effect),
                         action="hold", reason="source_corrected" if changed else "reanalysis")

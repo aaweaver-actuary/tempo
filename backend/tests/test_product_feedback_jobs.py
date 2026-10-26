@@ -451,7 +451,8 @@ def test_unintroduced_encounter_delivery_is_not_a_lapse(observation):
     assert not any(isinstance(command, GameLapse) for command in h.receiver.calls)
 
 
-def test_encounter_lost_ack_and_later_introduction_keep_original_effect():
+@pytest.mark.parametrize("later_finding", ["confirmed_miss", "unavailable"])
+def test_encounter_lost_ack_and_later_introduction_keep_original_effect(later_finding):
     h = encounter_harness()
     h.store.enqueue(spec())
     h.runner.run_once()
@@ -463,7 +464,8 @@ def test_encounter_lost_ack_and_later_introduction_keep_original_effect():
     FeedbackRunner(h.coordinator).run_once()
     assert h.store.delivery(original.operation_id).receipt.outcome == "duplicate"
     h.encounter_state.introduced = True
-    h.coordinator.comparer = harness(kinds=("confirmed_miss",)).coordinator.comparer
+    h.coordinator.comparer = (harness(kinds=("confirmed_miss",)).coordinator.comparer
+        if later_finding == "confirmed_miss" else SimpleNamespace(compare=lambda *_, **__: ()))
     h.store.enqueue(spec("after-introduction"))
     FeedbackRunner(h.coordinator).run_once()
     assert len(h.store.deliveries) == 1 and h.receiver.first_introductions == 1

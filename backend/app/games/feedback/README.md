@@ -306,3 +306,9 @@ an injected semantic receiver, including lost acknowledgment plus actual server
 restart. It does not certify Study's fresh-introduction transaction. #487 owns
 that separate real receiving-owner proof, and normal-Study next-release product
 acceptance remains unverified until composition consumes both checkpoints.
+
+Later comparison lacking a fresh eligible finding does not erase an original
+encounter or its historical relevance. The original typed command remains in the
+source ledger. Raw-source correction or a positively contradictory observation
+still quarantines/fences it; current Study admission and authority checks remain
+with the receiving owner.
