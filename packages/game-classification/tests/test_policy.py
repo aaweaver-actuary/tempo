@@ -65,6 +65,27 @@ def test_correct_move_produces_no_lapse_even_without_introduction_proof():
     assert classify(played_uci="e2e4", introduced=None, available=False) is None
 
 
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_unintroduced_encounter_is_a_fact_for_correct_or_different_play(played):
+    assert classify(played_uci=played, introduced=False, introduced_at=None,
+                    introduction_matches_content=False) == ("known_unintroduced", "decision_not_introduced")
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_introduction_after_game_remains_a_non_lapse_encounter(played):
+    assert classify(played_uci=played, introduced_at=datetime(2026, 10, 3, tzinfo=timezone.utc)) == (
+        "known_unintroduced", "introduction_not_before_game")
+
+
+def test_correct_already_introduced_move_has_no_failure_finding():
+    assert classify(played_uci="e2e4") is None
+
+
+@pytest.mark.parametrize("changes", [{"mapping_count": 0}, {"mapping_count": 2}, {"available": False}])
+def test_correct_unintroduced_play_cannot_invent_a_mapping(changes):
+    assert classify(played_uci="e2e4", introduced=False, introduced_at=None, **changes) is None
+
+
 @pytest.mark.parametrize("changes,kind", [
     ({"introduced_before_game": True}, "confirmed_miss"),
     ({"introduced_before_game": False}, "known_unintroduced"),

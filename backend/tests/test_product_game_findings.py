@@ -143,6 +143,68 @@ def test_correct_move_has_no_lapse_without_introduction_evidence():
     assert compare(record(("e2e4",)), captured) == ()
 
 
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_unintroduced_encounter_preserves_played_expected_and_source_facts(played):
+    source = record((played,))
+    captured = snapshot(mapping_changes={"introduction": "unintroduced", "introduced_at": None,
+                                          "introduction_matches_current_content": False})
+    finding, = compare(source, captured)
+    assert finding.kind == "known_unintroduced" and finding.membership == "present"
+    assert (finding.played_uci, finding.expected_uci, finding.ply) == (played, ("e2e4",), 1)
+    assert (finding.game_id, finding.source_revision, finding.source_digest) == (
+        source.source_game_id, source.source_revision, source.source_digest)
+    assert (finding.decision_id, finding.presentation_id) == ("decision-route-0", "card-route-0")
+    assert finding.introduced_before_game is False and not finding.lapse_eligible
+
+
+def test_correct_unintroduced_encounters_continue_covered_traversal():
+    moves = ("e2e4", "e7e5", "g1f3", "b8c6", "f1b5")
+    captured = snapshot(route(moves), mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    findings = compare(record(moves), captured)
+    assert [item.ply for item in findings] == [1, 3, 5]
+    assert all(item.kind == "known_unintroduced" and item.expected_uci == (item.played_uci,)
+               and not item.lapse_eligible for item in findings)
+    assert len({effect_key(item, workspace_id="workspace").logical_id() for item in findings}) == 3
+
+
+def test_correct_encounter_does_not_hide_a_later_opponent_gap():
+    captured = snapshot(mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    findings = compare(record(("e2e4", "c7c5", "g1f3")), captured)
+    assert [(item.kind, item.ply) for item in findings] == [("known_unintroduced", 1), ("opponent_gap", 2)]
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_historical_encounter_key_survives_later_introduction_without_a_lapse(played):
+    source = record((played,))
+    before = snapshot(mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    after = snapshot(revision=2, mapping_changes={"introduced_at": "2026-10-21T00:00:00Z"})
+    after = after.model_copy(update={"membership": after.membership.model_copy(
+        update={"captured_at": "2026-10-22T00:00:00Z"})})
+    original, = compare(source, before)
+    historical, = compare(source, after)
+    assert original.kind == historical.kind == "known_unintroduced"
+    assert not original.lapse_eligible and not historical.lapse_eligible
+    assert effect_key(original, workspace_id="workspace").logical_id() == effect_key(
+        historical, workspace_id="workspace").logical_id()
+    assert historical.played_uci == played and historical.expected_uci == ("e2e4",)
+    # The finding is not a command to introduce: current owner facts still say
+    # introduced, and Study must read current state before choosing disposition.
+    assert after.decision_presentations[0].introduction == "introduced"
+
+
+@pytest.mark.parametrize("problem", ["unmapped", "unavailable", "ambiguous"])
+def test_correct_unintroduced_encounter_never_guesses_card_authority(problem):
+    captured = snapshot(mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    if problem == "unmapped":
+        captured = captured.model_copy(update={"decision_presentations": ()})
+    elif problem == "unavailable":
+        captured = snapshot(mapping_changes={"introduction": "unintroduced", "introduced_at": None, "available": False})
+    else:
+        other = captured.decision_presentations[0].model_copy(update={"presentation_id": "other-card"})
+        captured = captured.model_copy(update={"decision_presentations": (*captured.decision_presentations, other)})
+    assert compare(record(("e2e4",)), captured) == ()
+
+
 def test_opponent_gap_and_missing_own_continuation_distinct():
     gap, = compare(record(("e2e4", "c7c5", "g1f3")))
     assert (gap.kind, gap.ply) == ("opponent_gap", 2)
@@ -191,6 +253,17 @@ def test_opponent_gap_survives_a_later_reentry():
     captured = snapshot(authored)
     actual = record(("g1f3", "c7c5", "g2g3", "d7d5", "d2d3"))
     assert [(item.kind, item.ply) for item in compare(actual, captured, reentry_lookup=FakeReentryIndex(captured, 4))] == [("opponent_gap", 2), ("confirmed_miss", 5)]
+
+
+def test_correct_unintroduced_reentry_retains_the_earlier_gap():
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored, mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    actual = record(("g1f3", "c7c5", "g2g3", "d7d5", "f1g2"))
+    findings = compare(actual, captured, reentry_lookup=FakeReentryIndex(captured, 4))
+    assert [(item.kind, item.ply) for item in findings] == [
+        ("known_unintroduced", 1), ("opponent_gap", 2), ("known_unintroduced", 5)]
+    assert findings[-1].reentry_authority_id == "anchor"
+    assert findings[-1].played_uci == "f1g2" and not findings[-1].lapse_eligible
 
 
 @pytest.mark.parametrize("bad", [{"source_revision": "stale"}, {"wrong_route": True}])

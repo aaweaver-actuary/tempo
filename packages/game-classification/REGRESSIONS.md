@@ -33,3 +33,11 @@ proof reused across providers, games, source revisions or digests. The pure poli
 test `test_explicit_game_scoped_introduction_preserves_missing_timestamp` covers
 positive/negative/unknown assertions, unchanged-content and occurrence-precision
 guards, and conflicting timestamp evidence without fabricating a timestamp.
+
+Next-release encounter regressions keep played/expected/source facts for correct
+and different unintroduced play, continue covered traversal after a correct
+encounter, preserve a later gap and authorized reentry, refuse invented card
+authority, and preserve the event key after later introduction. An incorrect
+historical encounter remains importance evidence without an FSRS lapse; a correct
+one remains frequency evidence without failure. Current Study disposition is not
+selected by these tests or this component.
