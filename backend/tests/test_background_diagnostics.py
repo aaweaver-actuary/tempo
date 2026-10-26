@@ -537,7 +537,7 @@ def test_background_runbook_snapshots_validate_without_private_fields():
     for example in examples:
         snapshot=BackgroundDiagnostics.model_validate(example['snapshot'])
         assert snapshot.available
-        assert all(entry.kind in {'engine_game','repertoire_priority','game_analysis_publish'} for entry in snapshot.counters)
+        assert all(entry.kind in {'engine_game','discovery_recommendation','game_analysis_publish'} for entry in snapshot.counters)
 
 
 def test_background_postgres_numeric_aggregates_preserve_strict_public_schema(diagnostic_database,monkeypatch):

@@ -1,7 +1,13 @@
 """Existing segmentation advisory projections and preference writes."""
 
 from ...prefix_reads.diagnostics import postgres_is_configured
-from ..discovery_commands import repertoire
+
+
+def repertoire(database, repertoire_id):
+    return database.execute_native(
+        "SELECT 1 FROM repertoires WHERE id=%s", (repertoire_id,),
+    ).fetchone()
+
 
 
 def consistent_preview_read(database):

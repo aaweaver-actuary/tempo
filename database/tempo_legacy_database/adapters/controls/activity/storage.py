@@ -10,8 +10,6 @@ SOURCES = {
     "derivation": ("game_derivation_jobs", "game_id"),
     "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
     "coverage": ("repertoire_coverage_runs", "id"),
-    "statistics": ("daily_statistics_jobs", "local_day"),
-    "priority": ("repertoire_priority_jobs", "repertoire_id"),
     "game_analysis": ("game_analysis_jobs", "game_id"),
     "threat_analysis": ("threat_analysis_requests", "id"),
 }
@@ -21,7 +19,7 @@ def prepare_progress_read(source):
     generation_columns = {
         "durable": ("generation",), "derivation": ("derivation_version",),
         "integrity": ("run_id",), "coverage": ("id",),
-        "priority": ("generation",), "game_analysis": ("analysis_version", "analysis_evidence_version"),
+        "game_analysis": ("analysis_version", "analysis_evidence_version"),
     }
     table, id_column = SOURCES[source]
     columns = generation_columns.get(source)
@@ -186,20 +184,8 @@ def coverage_activity(database):
     )
 
 
-def statistics_activity(database, values):
-    return database.execute(
-        "SELECT * FROM daily_statistics_jobs WHERE status!='complete' OR updated_at>=?",
-        values,
-    )
 
 
-def priority_activity(database, values):
-    return database.execute(
-        """SELECT j.*,r.name AS repertoire_name FROM repertoire_priority_jobs j
-                                      JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""",
-        values,
-    )
 
 
 def analysis_position_counts(database):

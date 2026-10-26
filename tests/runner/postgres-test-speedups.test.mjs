@@ -168,7 +168,7 @@ test("study_import_pending_issuance_remains_bounded_and_preserves_integrity_fail
 
 const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
-  "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics", "deployment_lifecycle", "background_workloads",
+  "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics", "deployment_lifecycle", "background_workloads",
   "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
   "study_isolation", "study_durability", "cleanup",
 ];
@@ -297,13 +297,8 @@ test("durability mode and legacy skip-browser retain ordinary recovery without d
   assert.equal(parse(["--mode", "durability"]).skipBrowser, true);
 });
 
-test("priority benchmark mode runs only its isolated PostgreSQL measurement", () => {
-  const options = parse(["--mode", "priority-benchmark"]);
-  assert.deepEqual(postgresTestStages(options), [
-    "compose_config", "image_build", "startup", "service_health", "priority_benchmark", "cleanup",
-  ]);
-  assert.throws(() => parse(["--mode", "priority-benchmark", "--browser-grep", "Train"]),
-    /cannot be combined/);
+test("retired adaptive priority benchmark mode is rejected before setup", () => {
+  assert.throws(() => parse(["--mode", "priority-benchmark"]), /--mode must be/);
 });
 
 test("standalone lifecycle mode requires the complete rehearsal without parent startup or browser work", () => {
@@ -318,7 +313,7 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
-  for (const mode of ["lifecycle", "durability", "full", "browser", "priority-benchmark"]) {
+  for (const mode of ["lifecycle", "durability", "full", "browser"]) {
     for (const cachedServices of [[], ["postgres"], ["postgres", "redis"]]) {
       const servicesWithAvailableImages = new Set(cachedServices);
       const imagePreparationCommands = [];
@@ -572,7 +567,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
   }
 });
 
-for (const mode of ["full", "browser", "durability", "lifecycle", "priority-benchmark"]) {
+for (const mode of ["full", "browser", "durability", "lifecycle"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
     const result = spawnSync(process.execPath, [resolve(root, "database/tests/test-postgres-docker.mjs"), "--list", "--mode", mode], {
@@ -1076,7 +1071,7 @@ test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () 
 
 test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  priority_recovery: async () => {"));
+  const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  background_diagnostics: async () => {"));
   assert(upgradeAction.includes("check_postgres_next_opponent.py"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
@@ -1170,7 +1165,7 @@ test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps'
 test('study_priority_large_transition_planning_uses_bounded_diagnostic_allocation_without_retrying_read_failures', () => {
   const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
   const workload=runner.slice(runner.indexOf('  background_workloads: async () => {'),
-    runner.indexOf('  priority_benchmark: async () => {'));
+    runner.indexOf('  threat_candidate_upsert: async () => {'));
   assert.match(workload,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_prefix_transition_application\.py"/,
     'The 128/512-line planning proof must not use the 0.2 CPU helper');
   const proof=readFileSync(join(root,'database/tests/check_postgres_prefix_transition_application.py'),'utf8');
