@@ -17,7 +17,7 @@ from app.contracts.product_v02.analysis import ProposalDecision
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.product_composition.repertoire import RepertoireCommands,create_repertoire_review_router
 from app.product_composition.repertoire_commands import CurrentSnapshots,DispatchedChanges,command_handlers
-from app.product_composition import repertoire_runtime
+from app.product_composition import repertoire_runtime, repertoire_study
 from app.repertoire.changes.application import RepertoireChanges,conflict_report,manual_resolution,study_eligibility
 
 
@@ -197,7 +197,7 @@ def test_c_runtime_refuses_publication_without_actual_study_reconciliation(monke
     from fastapi import HTTPException
     snapshot,_=source(conflict=True)
     store=ChangesStore(snapshot)
-    monkeypatch.setattr(repertoire_runtime,"retained_changes",lambda database,repertoire:RepertoireChanges(store))
+    monkeypatch.setattr(repertoire_runtime,"retained_changes",lambda database,repertoire,**ports:RepertoireChanges(store))
     owner=repertoire_runtime.retained_changes_factory(after_publication=None)(object(),"rep")
     conflict=conflict_report(snapshot).conflicts[0]
     proposal=manual_resolution(snapshot,repertoire_id="rep",position=conflict.position.position,
@@ -209,3 +209,52 @@ def test_c_runtime_refuses_publication_without_actual_study_reconciliation(monke
     with pytest.raises(HTTPException) as failure:
         owner.decide(decision)
     assert failure.value.status_code==503 and not store.publications
+
+
+def test_c_study_binding_delegates_exact_current_mappings_and_policy_without_inventing_targets(monkeypatch):
+    from app.study.conflicts import ConflictReceipt
+    snapshot,_=source(conflict=True)
+    calls=[]
+    database=object()
+    monkeypatch.setattr(repertoire_study,'study_snapshot',lambda db,rep:snapshot)
+    monkeypatch.setattr(repertoire_study,'approval_snapshot',lambda db,rep:snapshot)
+    class Store:
+        def __init__(self,db): assert db is database
+        def active_occurrences(self,rep,*,limit):
+            assert (rep,limit)==('rep',16)
+            return ()
+    monkeypatch.setattr(repertoire_study,'create_conflict_store',Store)
+    def owner(db,*,authority,clock):
+        assert db is database and clock().utcoffset().total_seconds()==0
+        class Owner:
+            def synchronize(self,command):
+                assessment=authority.assess(command)
+                assert assessment.fence==command.expected
+                assert all(not item.eligible and item.reason=='own_response_conflict'
+                           for item in assessment.decisions)
+                calls.append(command)
+                return ConflictReceipt(command.command_id,'applied',command.occurrences,(),(),())
+        return Owner()
+    monkeypatch.setattr(repertoire_study,'create_conflict_owner',owner)
+    result=repertoire_study.synchronize_current_conflicts(database,'rep')
+    assert result['status']=='applied' and not result['unmapped_occurrences']
+    assert {(item.route_id,item.ply,item.presentation_id) for item in calls[0].occurrences}=={
+        ('twenty',1,'physical:twenty'),('conflict',1,'physical:conflict')}
+    assert repertoire_study.synchronize_current_conflicts(database,'rep')==result
+    assert calls[0]==calls[1]
+    # Missing identity remains pending; equal positions create no new target.
+    snapshot=snapshot.model_copy(update={'decision_presentations':()})
+    pending=repertoire_study.synchronize_current_conflicts(database,'rep')
+    assert pending['status']=='pending' and not pending['receipts'] and len(calls)==2
+    assert pending['unmapped_occurrences']==[('conflict',1),('twenty',1)]
+
+
+def test_c_root_write_permission_is_limited_to_three_exact_post_paths():
+    allowed=repertoire_runtime.is_repertoire_command_path
+    for tail in (['audit'],['changes','preview'],['changes','decide']):
+        path=['api','product','repertoires','rep',*tail]
+        assert allowed('POST',path)
+        assert not allowed('PUT',path) and not allowed('GET',path)
+        assert not allowed('POST',path+['extra'])
+    assert not allowed('POST',['api','product','repertoires','rep','unknown'])
+    assert not allowed('POST',['api','repertoires','rep','changes','decide'])
