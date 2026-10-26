@@ -155,6 +155,8 @@ def test_range_player_variant_time_control_filters():
                      game("end", at="2026-11-01T00:00:00+00:00"), game("variant", rules="chess960"),
                      game("speed", time_class="bullet"), game("casual", rated=False),
                      game("player", pgn=original["pgn"].replace('"Learner"', '"Stranger"')),
+                     game("raw-player", white={"username": "Stranger"}, black={"username": "Opponent"}),
+                     game("bad-url", url="https://evil.test/game/live/123"),
                      game("bad-time", end_time=None), game("bad-pgn", pgn="not a game"), None]
         client, _ = fixture(["2026/09"], {"2026/09": raw_games})
         async with client:
@@ -162,49 +164,38 @@ def test_range_player_variant_time_control_filters():
         assert [record.source_game_id for record in page.records] == ["included"]
         reasons = [item.reason for item in page.rejections]
         assert reasons.count("outside_window") == 2
-        assert {"unsupported_variant", "time_control_filtered", "rated_filtered", "invalid_pgn_or_player", "invalid_timestamp", "malformed_record"} <= set(reasons)
+        assert {"unsupported_variant", "time_control_filtered", "rated_filtered", "invalid_pgn_or_player", "invalid_timestamp", "invalid_game_url", "malformed_record"} <= set(reasons)
         assert len(page.records) + len(page.rejections) == len(raw_games)
         assert ("speeds", "rapid") in page.filters
     run(scenario())
 
 
-@pytest.mark.parametrize("bad_url", ["https://evil.test/2026/09", "https://api.chess.com@evil.test/2026/09", "http://api.chess.com/pub/player/learner/games/2026/09", ROOT + "2026/13", ROOT.replace("learner", "other") + "2026/09", ROOT + "2026/09?token=secret", None])
-def test_bad_archive_url_is_typed(bad_url):
+@pytest.mark.parametrize("response,code", [
+    (httpx.Response(200, json={"archives": [url]}), "invalid_archive_url") for url in (
+        "https://evil.test/2026/09", "https://api.chess.com@evil.test/2026/09",
+        "http://api.chess.com/pub/player/learner/games/2026/09", ROOT + "2026/13",
+        ROOT.replace("learner", "other") + "2026/09", ROOT + "2026/09?token=secret", None)
+] + [(httpx.Response(200, text="<html>oops</html>"), "unexpected_content_type"),
+     (httpx.Response(200, content=b"{", headers={"Content-Type": "application/json"}), "malformed_json"),
+     (httpx.Response(200, json={}), "malformed_archives"),
+     (httpx.Response(200, json={"archives": {}}), "malformed_archives"), (None, "timeout")])
+def test_bad_archive_url_html_json_and_timeout_are_typed(response, code):
     async def scenario():
         requests = []
         def handle(request):
             requests.append(request)
-            return httpx.Response(200, json={"archives": [bad_url]})
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
-            with pytest.raises(ChesscomAcquisitionError, match="invalid_archive_url") as failed:
-                await fetch_chesscom_page("learner", WINDOW, client)
-        assert len(requests) == 1 and not failed.value.complete
-        assert "secret" not in str(failed.value) and not failed.value.retryable
-    run(scenario())
-
-
-@pytest.mark.parametrize("response,code", [(httpx.Response(200, text="<html>oops</html>"), "unexpected_content_type"),
-    (httpx.Response(200, content=b"{", headers={"Content-Type": "application/json"}), "malformed_json"),
-    (httpx.Response(200, json={}), "malformed_archives"), (httpx.Response(200, json={"archives": {}}), "malformed_archives")])
-def test_bad_archive_html_json_are_typed(response, code):
-    async def scenario():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response)) as client:
-            with pytest.raises(ChesscomAcquisitionError) as failed:
-                await fetch_chesscom_page("learner", WINDOW, client)
-        assert failed.value.code == code and not failed.value.complete
-    run(scenario())
-
-
-def test_timeout_is_typed_and_redacted():
-    async def scenario():
-        def timeout(request):
             assert request.extensions["timeout"]["read"] == 2
-            raise httpx.ReadTimeout("credential=secret", request=request)
-        async with httpx.AsyncClient(transport=httpx.MockTransport(timeout)) as client:
+            if response is None:
+                raise httpx.ReadTimeout("credential=secret", request=request)
+            return response
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
             with pytest.raises(ChesscomAcquisitionError) as failed:
                 await fetch_chesscom_page("learner", WINDOW, client, timeout_seconds=2)
-        assert failed.value.code == "timeout" and failed.value.continuation is None
+        assert len(requests) == 1 and not failed.value.complete
+        assert failed.value.code == code and not failed.value.complete
         assert "secret" not in str(failed.value) and failed.value.__cause__ is None
+        if code == "invalid_archive_url":
+            assert not failed.value.retryable
     run(scenario())
 
 

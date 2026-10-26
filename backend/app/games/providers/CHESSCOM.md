@@ -81,7 +81,7 @@ callbacks are checked before HTTP, during bounded reads, between records and
 before return. Callback cancellation is typed `code=cancelled`; native asyncio
 cancellation propagates after response cleanup, with a cooperative yield every
 16 records. Neither advances a checkpoint.
-Socket timeouts are explicit (0–15 seconds); they are not a hard total deadline.
+Socket timeouts are explicit (greater than 0, at most 15 seconds); they are not a hard total deadline.
 The caller can cancel the task to enforce its own total budget. Bodies above the
 configured maximum fail incomplete; increase a lower configured bound up to
 32 MiB or subdivide/manual-handle the archive rather than checkpointing it away.

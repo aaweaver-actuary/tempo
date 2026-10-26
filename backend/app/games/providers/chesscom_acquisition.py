@@ -262,14 +262,22 @@ async def fetch_chesscom_page(
 
 
 def _source_id(raw: dict) -> str:
+    url = raw.get("url")
+    match = None
+    if url is not None:
+        if not isinstance(url, str):
+            raise RejectedGame("invalid_game_url")
+        try:
+            parsed = urlsplit(url)
+            match = re.fullmatch(r"/(?:game/(?:live|daily)|(?:live|daily)/game)/([0-9]+)", parsed.path)
+        except ValueError:
+            raise RejectedGame("invalid_game_url") from None
+        if (parsed.scheme != "https" or parsed.netloc not in {"www.chess.com", "chess.com"}
+                or parsed.query or parsed.fragment or not match):
+            raise RejectedGame("invalid_game_url")
     uuid = raw.get("uuid")
     if isinstance(uuid, str) and 0 < len(uuid) <= 200 and not any(c.isspace() for c in uuid):
         return uuid
-    url = raw.get("url")
-    if isinstance(url, str):
-        parsed = urlsplit(url)
-        match = re.fullmatch(r"/game/(?:live|daily)/([0-9]+)", parsed.path)
-        if (parsed.scheme == "https" and parsed.netloc in {"www.chess.com", "chess.com"}
-                and not parsed.query and not parsed.fragment and match):
-            return match[1]
+    if match:
+        return match[1]
     raise RejectedGame("missing_source_id")
