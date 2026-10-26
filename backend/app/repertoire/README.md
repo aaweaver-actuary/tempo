@@ -23,15 +23,18 @@ The public API in [__init__.py](__init__.py) is:
 - `index.reentry_candidate(...) -> RouteOccurrence | None`: requires one legal
   selected response, one route occurrence, one explicit current physical mapping
   and a supplied reentry authority. It makes no lapse or introduction decision.
-- `project_capture(retained_owner_capture) -> RepertoireSnapshot` and
-  `CapturedSnapshotAdapter(capture_callable).snapshot(repertoire_id)`: adapt one
+- `project_capture(retained_owner_capture, comparison_game=None) -> RepertoireSnapshot`
+  and `CapturedSnapshotAdapter(capture_callable, comparison_game=None).snapshot(repertoire_id)`: adapt one
   existing bounded owner read. Outer composition binds the selected game and
   injects the callable. Nothing in this module imports a sibling implementation.
 
 `occurrence.binding` is the existing shared `DecisionPresentation`, or `None`
 when missing/ambiguous. Its presentation ID is the actual physical card ID in
-this current-owner adapter. It is never a position-key alias. All competing
-mappings remain visible in `occurrence.bindings`.
+this current-owner adapter. It is never a position-key alias. `route_id` and
+zero-based `route_ply` restrict the mapping to the exact proven occurrence. An
+unbound transposed route stays unknown while its mapped neighbour retains its
+physical evidence. A paired null route scope remains an explicitly global
+owner mapping. All competing applicable mappings remain in `occurrence.bindings`.
 
 ## Ownership and source boundary
 
@@ -93,12 +96,18 @@ route and card, matching color and the exact ordered legal executable at one
 unambiguous route root. Card existence, matching FEN or SAN alone never binds
 anything. Missing, duplicate, stale, archived, deleted or ambiguous evidence
 remains unknown. The index does not decide forgetting or compare game time.
-The initial T01 freeze has position-wide mappings. If any transposed occurrence
-lacks explicit graph mapping, this adapter conservatively withholds that
-position's physical mapping, pending the requested route/ply contract addition.
-UTC introduction instants are retained; date-only or missing chronology stays
-unknown until the requested game-scoped Study evidence addition is available.
-No introduction timestamp is fabricated. `available` is true only after explicit
+The [T01 route/game addon](https://github.com/aaweaver-actuary/tempo/pull/516)
+retains the exact route occurrence and game-scoped Study chronology. UTC
+introduction instants remain intact. A supplied Study `introduced_before_game`
+boolean can survive a day-only stored date with `introduced_at=None` when
+`comparison_game` supplies the exact canonical source. The adapter checks game
+ID, provider, learner color, normalized root/moves and occurrence time against
+the retained capture. It copies source revision/digest into `introduction_game`;
+callers/comparers must match all four scope fields before using the boolean.
+Missing exact source or nonboolean Study evidence remains null/null. No timestamp
+is fabricated. Legacy capture has neither original PGN bytes nor a source
+revision label: composition authenticates those supplied canonical provenance
+facts; this adapter cannot authenticate absent original bytes. `available` is true only after explicit
 membership, availability flags and exact graph/executable checks.
 `introduction_matches_current_content` preserves a supplied owner fact; without
 one, only the donor's original physical revision 1 compatibility invariant is
@@ -130,7 +139,9 @@ validation lock. Runtime/dependency registration belongs to integration #488.
 The index file owns the issue's named identity/transposition/conflict/opponent
 fork/terminal/illegal-tail/mapping/immutability acceptance cases and explicit
 reentry tests. The snapshot file owns consistent revision and read-only capture,
-physical identity, introduction unknowns, source bounds and wrong-scope tests.
+physical identity, game-scoped day-precision chronology without fabricated
+timestamps, route-only binding, introduction unknowns, source bounds and
+wrong-scope tests.
 No existing helper changed, so unchanged donor identity/conflict tests are reused
 as retained evidence, not rerun or claimed as newly tested. The changed import
 boundary uses T01's scoped dependency guard. Actual provider, PostgreSQL,

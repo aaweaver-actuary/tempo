@@ -206,7 +206,8 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
             current = chess.Board(fen)
             own_turn = current.turn == (raw["learner_color"] == "white")
             next_move = valid_moves[ply] if ply < len(valid_moves) else None
-            raw_bindings = mappings[repertoire_id, opening_position_key(fen), next_move]
+            raw_bindings = [item for item in mappings[repertoire_id, opening_position_key(fen), next_move]
+                            if item.route_id is None or (item.route_id == route_id and item.route_ply == ply)]
             bindings = tuple({item.model_dump_json(): item for item in raw_bindings}.values())
             if len(bindings) > 1:
                 diagnose("ambiguous_physical_mapping", ply)

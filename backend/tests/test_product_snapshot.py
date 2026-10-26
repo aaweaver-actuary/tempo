@@ -10,6 +10,7 @@ import chess
 import pytest
 
 from app.repertoire import CapturedSnapshotAdapter, build_index, project_capture
+from tempo_game_review_contracts import CanonicalGame
 from tempo_game_evidence_contracts.legacy import authority_graph_digest, authority_source_digest, fingerprint
 
 
@@ -34,7 +35,7 @@ def capture():
                      graph_digest=authority_graph_digest(graphs))
     return seal(dict(kind="legacy_game_capture", schema_version=1, tables=tables, graphs=graphs,
                      authority=authority, observed_after=deepcopy(authority),
-                     captured_at="2026-10-26T12:00:00Z", game=dict(id="game", color="white", content_hash="b"*64,
+                     captured_at="2026-10-26T12:00:00Z", game=dict(id="game", provider="lichess", provider_game_id="source-game", color="white", content_hash="b"*64,
                          start_fen=chess.STARTING_FEN, moves_json=json.dumps(moves),
                          played_at="2026-10-25T12:00:00Z"), catalogue_complete=True))
 
@@ -159,9 +160,9 @@ def test_unbound_transposed_route_does_not_inherit_physical_mapping():
     assert index.routes["rep", "unbound"][0].binding is None
     assert any(item.route_id == "unbound" and item.code == "physical_mapping_unknown"
                for item in index.mapping_diagnostics)
-    # With position-wide T01 mappings, safe fallback withholds both until the
-    # contract can retain the explicitly mapped route/ply separately.
-    assert index.routes["rep", "route"][0].binding is None
+    proven = index.routes["rep", "route"][0].binding
+    assert proven.presentation_id == "physical"
+    assert (proven.route_id, proven.route_ply) == ("route", 0)
 
 
 def test_missing_current_membership_or_availability_stays_unknown():
@@ -222,6 +223,10 @@ def test_scoped_capture_retains_exclusive_policy_anchor_before_physical_mapping(
     with pytest.raises(ValueError, match="snapshot_game_scope_mismatch"):
         project_capture(seal(source))
     source["game"]["id"] = "game"
+    source["catalogue_scope"]["scope"]["occurred_at"] = "2026-10-24T12:00:00Z"
+    with pytest.raises(ValueError, match="snapshot_game_scope_mismatch"):
+        project_capture(seal(source))
+    source["catalogue_scope"]["scope"]["occurred_at"] = "2026-10-25T12:00:00Z"
     source["catalogue_scope"]["integrity_certificate"]["graph_task_generation"] += 1
     with pytest.raises(ValueError, match="snapshot_scope_revision_mismatch"):
         project_capture(seal(source))
@@ -236,3 +241,48 @@ def test_unambiguous_original_card_has_complete_first_milestone_mapping():
     assert mapping.presentation_id == "physical" and mapping.presentation_revision == 1
     assert mapping.available and mapping.introduction_matches_current_content
     assert mapping.introduction == "introduced" and mapping.introduced_at == "2026-10-20T00:00:00Z"
+
+
+def comparison_game(source, **changes):
+    raw = source["game"]
+    return CanonicalGame(**(dict(workspace_id="fixture", game_id=raw["id"], game_revision=1,
+        source_id=raw["provider"], source_revision=2, source_digest="c"*64,
+        starting_fen=raw["start_fen"], moves=json.loads(raw["moves_json"]),
+        learner_color=raw["color"], played_at=raw["played_at"]) | changes))
+
+
+@pytest.mark.parametrize("before", [True, False])
+def test_game_scoped_day_precision_evidence_preserved_without_inventing_timestamp(before):
+    source = capture()
+    source["tables"]["cards"][0].update(revision=1, introduced_at="2026-10-20", introduced_before_game=before)
+    source = reseal(source); game = comparison_game(source)
+    snapshot = CapturedSnapshotAdapter(lambda _: source, comparison_game=game).snapshot("rep")
+    mapping = build_index(snapshot).routes["rep", "route"][0].binding
+    assert mapping.introduced_at is None
+    assert mapping.introduced_before_game is before
+    assert mapping.introduction_game.provider == game.source_id
+    assert mapping.introduction_game.game_id == game.game_id
+    assert mapping.introduction_game.source_revision == game.source_revision
+    assert mapping.introduction_game.source_digest == game.source_digest
+    if before: assert mapping.introduction == "introduced"
+    # Without the exact caller-supplied game source, the boolean stays unknown.
+    unscoped = project_capture(source).decision_presentations[0]
+    assert unscoped.introduced_before_game is None and unscoped.introduction_game is None
+
+
+@pytest.mark.parametrize("changes", [dict(game_id="different"), dict(source_id="chesscom"),
+    dict(learner_color="black"), dict(moves=["d2d4"]), dict(played_at="2026-10-26T12:00:00Z"),
+    dict(starting_fen=chess.STARTING_FEN.replace("KQkq", "-"))])
+def test_chronology_is_not_bound_to_a_different_captured_game(changes):
+    source = capture()
+    with pytest.raises(ValueError, match="snapshot_comparison_game_mismatch"):
+        project_capture(source, comparison_game=comparison_game(source, **changes))
+
+
+def test_absent_or_nonboolean_study_chronology_stays_unknown():
+    source = capture()
+    source["tables"]["cards"][0]["introduced_before_game"] = "true"
+    source = reseal(source)
+    result = project_capture(source, comparison_game=comparison_game(source))
+    assert result.decision_presentations[0].introduced_before_game is None
+    assert result.decision_presentations[0].introduction_game is None
