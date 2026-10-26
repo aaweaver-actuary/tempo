@@ -52,6 +52,7 @@ it.each([
   "tempo-study-authority",
   "tempo-study-configuration",
   "tempo-study-runtime",
+  "tempo-study-startup-health-recovery",
   "tempo-study-startup",
   "tempo-study-startup-recovery",
 ])("Installed Study provider regressions run in the regular suite: %s", name => {

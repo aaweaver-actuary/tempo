@@ -229,6 +229,7 @@
       "tests/runner/tempo-study-authority.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-study-configuration.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-study-runtime.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
+      "tests/runner/tempo-study-startup-health-recovery.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-study-startup-recovery.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-study-startup.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
