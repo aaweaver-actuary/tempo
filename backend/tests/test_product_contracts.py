@@ -104,6 +104,29 @@ def test_current_availability_and_unchanged_introduced_content_are_expressible()
     assert not unknown.available and not unknown.introduction_matches_current_content
 
 
+@pytest.mark.parametrize("before_game", [True, False])
+def test_route_local_date_only_chronology_keeps_exact_game_source(before_game):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0]["introduced_before_game"] = before_game
+    value = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    binding, = value.decision_presentations
+    assert binding.route_id == "route-a" and binding.route_ply == 4
+    assert len(value.membership.routes) == 2  # Same response after a legal transposition.
+    assert binding.introduced_at is None  # Do not turn a supplied date into a timestamp.
+    assert binding.introduced_before_game is before_game
+    assert binding.introduction_game.game_id == "synthetic-transposed-game"
+    with pytest.raises(ValidationError): binding.introduction_game.source_revision = 2
+    changed = binding.introduction_game.model_copy(update={"source_revision": 2})
+    assert changed != binding.introduction_game  # Other/corrected sources do not share the proof.
+
+
+@pytest.mark.parametrize("field,value", [("route_id", None), ("route_ply", None), ("route_ply", 5), ("introduction_game", None), ("introduced_before_game", None)])
+def test_partial_or_wrong_occurrence_and_chronology_scope_is_rejected(field, value):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0][field] = value
+    with pytest.raises(ValidationError): RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+
 def test_contract_imports_have_no_runtime_side_effects():
     script = '''
 import builtins, sys

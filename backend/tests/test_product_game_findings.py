@@ -10,7 +10,7 @@ import chess.pgn
 import pytest
 
 from app.contracts.product_v02.games import GameRecord
-from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
+from app.contracts.product_v02.repertoire import DecisionPresentation, IntroductionGameScope, RepertoireSnapshot, RouteBoundary
 from app.games.feedback.comparison import compare_game, compare_record, effect_key, normalize_record
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot, replay_line
 
@@ -95,6 +95,30 @@ def test_unknown_date_precision_is_not_assumed_before_introduction():
 def test_changed_content_is_not_historical_introduction_proof():
     finding, = compare(captured=snapshot(mapping_changes={"introduction_matches_current_content": False}))
     assert finding.kind == "known_unavailable" and not finding.lapse_eligible
+
+
+@pytest.mark.parametrize("scope_changes,proof,kind", [
+    ({}, True, "confirmed_miss"),
+    ({}, False, "known_unintroduced"),
+    ({"provider": "chesscom"}, True, "known_unavailable"),
+    ({"game_id": "different-game"}, True, "known_unavailable"),
+    ({"source_revision": 2}, True, "known_unavailable"),
+    ({"source_digest": "b" * 64}, True, "known_unavailable"),
+])
+def test_introduction_assertion_applies_only_to_its_exact_game_source(scope_changes, proof, kind):
+    source = record()
+    scope = dict(provider="lichess", game_id=source.source_game_id,
+                 source_revision=source.source_revision, source_digest=source.source_digest)
+    scope.update(scope_changes)
+    captured = snapshot(mapping_changes={"introduced_at": None, "introduced_before_game": proof,
+                                          "introduction_game": IntroductionGameScope(**scope)})
+    finding, = compare(source, captured)
+    assert finding.kind == kind and finding.lapse_eligible is (kind == "confirmed_miss")
+    assert captured.decision_presentations[0].introduced_at is None
+    if kind == "confirmed_miss":
+        game = normalize_record(source, provider="lichess", account="Learner", workspace_id="workspace")
+        unknown, = compare_game(game, provider="lichess", snapshot=captured)
+        assert unknown.kind == "known_unavailable" and not unknown.lapse_eligible
 
 
 @pytest.mark.parametrize("changes,kind", [
@@ -210,6 +234,46 @@ def test_conflict_on_a_different_authored_route_is_not_an_accepted_alternative()
     finding, = compare(record(moves), snapshot(route(moves), elsewhere))
     assert finding.kind == "conflict" and finding.ply == 5
     assert finding.expected_uci == ("d2d3", "f1g2") and not finding.lapse_eligible
+
+
+def test_route_local_mapping_does_not_cover_an_unbound_transposed_occurrence():
+    moves = ("g1f3", "d7d5", "g2g3", "c7c5", "f1g2")
+    position = replay_line(START, list(moves))[4]
+    authored = route(moves, route_id="mapped")
+    other = route(("f1g2",), route_id="unbound").model_copy(update={"starting_fen": position["fen"]})
+    captured = snapshot(authored, other)
+    mapping = next(item for item in captured.decision_presentations
+                   if item.decision_id == "decision-mapped-4")
+    mapping = mapping.model_copy(update={"route_id": "mapped", "route_ply": 4})
+    captured = snapshot(authored, other, mappings=[mapping])
+    bound, = compare(record((*moves[:4], "d2d3")), captured)
+    assert bound.kind == "confirmed_miss" and bound.presentation_id == mapping.presentation_id
+    unbound, = compare(record(("d2d3",), starting_fen=position["fen"]), captured)
+    assert unbound.kind == "known_unavailable" and unbound.presentation_id is None
+
+
+def test_reentry_cannot_borrow_another_route_local_binding():
+    moves = ("g1f3", "d7d5", "g2g3", "c7c5", "f1g2")
+    position = replay_line(START, list(moves))[4]
+    authored = route(moves, route_id="mapped", reentry=4)
+    other = route(("f1g2",), route_id="different").model_copy(update={"starting_fen": position["fen"]})
+    captured = snapshot(authored, other)
+    mappings = [item for item in captured.decision_presentations if item.position_key != position["comparison_key"]]
+    wrong_route = next(item for item in captured.decision_presentations if item.decision_id == "decision-different-0")
+    mappings.append(wrong_route.model_copy(update={"route_id": "different", "route_ply": 0}))
+    captured = snapshot(authored, other, mappings=mappings)
+    actual = record(("g2g3", "c7c5", "g1f3", "d7d5", "d2d3"))
+    findings = compare(actual, captured, reentry_lookup=FakeReentryIndex(captured, 4))
+    assert [(item.kind, item.ply) for item in findings] == [("confirmed_miss", 1)]
+
+
+def test_route_local_mapping_does_not_choose_between_active_occurrences():
+    authored = route(route_id="mapped")
+    other = route(("e2e4", "e7e5", "f1c4"), route_id="unbound")
+    captured = snapshot(authored, other)
+    mapping = captured.decision_presentations[0].model_copy(update={"route_id": "mapped", "route_ply": 0})
+    finding, = compare(captured=snapshot(authored, other, mappings=[mapping]))
+    assert finding.kind == "ambiguous" and finding.presentation_id is None and not finding.lapse_eligible
 
 
 def test_ambiguous_repertoire_or_card_not_guessed():

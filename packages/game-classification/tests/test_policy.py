@@ -65,6 +65,19 @@ def test_correct_move_produces_no_lapse_even_without_introduction_proof():
     assert classify(played_uci="e2e4", introduced=None, available=False) is None
 
 
+@pytest.mark.parametrize("changes,kind", [
+    ({"introduced_before_game": True}, "confirmed_miss"),
+    ({"introduced_before_game": False}, "known_unintroduced"),
+    ({}, "known_unavailable"),
+    ({"introduced_before_game": True, "occurrence_is_exact": False}, "known_unavailable"),
+    ({"introduced_before_game": True, "introduction_matches_content": False}, "known_unavailable"),
+    ({"introduced_before_game": True, "introduced_at": datetime(2026, 10, 3, tzinfo=timezone.utc)}, "known_unavailable"),
+])
+def test_explicit_game_scoped_introduction_preserves_missing_timestamp(changes, kind):
+    facts = {"introduced_at": None, **changes}
+    assert classify(**facts)[0] == kind
+
+
 def test_input_containers_unchanged():
     facts = evidence()
     before = facts["expected_uci"].copy()

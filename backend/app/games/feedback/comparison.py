@@ -160,7 +160,7 @@ def compare_game(game: CanonicalGame, *, provider: str,
                             or traversal[index].position_keys[candidate.ply] != key):
                         continue
                     binding = candidate.binding
-                    if binding is None:
+                    if binding is None or not _mapping_applies(binding, route.route_id, candidate.ply):
                         continue
                     anchors = [item for item in route.reentries if item.ply == candidate.ply
                                and item.authority_id == candidate.reentry_authority_id]
@@ -169,7 +169,8 @@ def compare_game(game: CanonicalGame, *, provider: str,
                                 and item.decision_id == binding.decision_id
                                 and item.presentation_id == binding.presentation_id
                                 and item.presentation_revision == binding.presentation_revision
-                                and item.selected_response_uci == route.moves[candidate.ply]]
+                                and item.selected_response_uci == route.moves[candidate.ply]
+                                and _mapping_applies(item, route.route_id, candidate.ply)]
                     if len(anchors) == 1 and len(mappings) == 1:
                         validated.append((index, candidate.ply, anchors[0].authority_id))
             if len(validated) == 1:
@@ -202,15 +203,21 @@ def compare_game(game: CanonicalGame, *, provider: str,
                        for index, ply in candidates)
         mappings = tuple({item for item in snapshot.decision_presentations
                           if item.repertoire_id == repertoire_id and item.position_key == key
-                          and item.selected_response_uci in expected})
+                          and item.selected_response_uci in expected
+                          and any(_mapping_applies(item, routes[index].route_id, ply)
+                                  for index, ply in candidates)})
         mapping = mappings[0] if len(mappings) == 1 else None
+        active_occurrences = {(routes[index].route_id, ply) for index, ply in candidates}
+        route_mapping_ambiguous = len(active_occurrences) > 1 and any(
+            item.route_id is not None for item in mappings)
         result = classify_response(
             played_uci=position["move"], expected_uci=expected, learner_turn=learner_turn,
             complete=membership.complete and membership.available, terminal=terminal,
-            ambiguous=len(repertoires) != 1, mapping_count=len(mappings),
+            ambiguous=route_mapping_ambiguous, mapping_count=len(mappings),
             available=mapping is not None and getattr(mapping, "available", False),
             introduced=None if mapping is None or mapping.introduction == "unknown" else mapping.introduction == "introduced",
             introduced_at=_timestamp(None if mapping is None else mapping.introduced_at),
+            introduced_before_game=_scoped_introduction(mapping, game, provider),
             occurred_at=_timestamp(game.played_at),
             occurrence_is_exact=time_precision in {"second", "millisecond"},
             introduction_matches_content=mapping is not None and getattr(mapping, "introduction_matches_current_content", False),
@@ -232,6 +239,20 @@ def compare_game(game: CanonicalGame, *, provider: str,
 
 def _timestamp(value):
     return None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _mapping_applies(mapping, route_id, route_ply):
+    return mapping.route_id is None or (mapping.route_id, mapping.route_ply) == (route_id, route_ply)
+
+
+def _scoped_introduction(mapping, game, provider):
+    if mapping is None or mapping.introduction_game is None:
+        return None
+    scope = mapping.introduction_game
+    if (scope.provider, scope.game_id, scope.source_revision, scope.source_digest) != (
+            provider, game.game_id, game.source_revision, game.source_digest):
+        return None
+    return mapping.introduced_before_game
 
 
 def _finding(game, provider, membership, position, repertoire_id, expected, kind,

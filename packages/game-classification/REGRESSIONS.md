@@ -25,3 +25,11 @@ proof is required before lapse eligibility.
 retained-history boundary: canonical game comparison never calls the PGN
 ingester, preserves exact source/game identity, revision, digest, history and
 input values, and keeps unspecified occurrence precision unavailable for lapses.
+
+Route-scoped mapping tests cover an unmapped transposed occurrence, attempted
+reentry with another route's binding, and multiple active authored occurrences.
+`test_introduction_assertion_applies_only_to_its_exact_game_source` rejects scoped
+proof reused across providers, games, source revisions or digests. The pure policy
+test `test_explicit_game_scoped_introduction_preserves_missing_timestamp` covers
+positive/negative/unknown assertions, unchanged-content and occurrence-precision
+guards, and conflicting timestamp evidence without fabricating a timestamp.
