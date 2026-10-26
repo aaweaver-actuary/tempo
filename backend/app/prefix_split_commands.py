@@ -37,7 +37,8 @@ def accept_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -
     lock_queue_date_for_position(database, date.today().isoformat())
     try:
         from tempo_legacy_database.adapters.study.recombination import accept_current_split
-        regrouped = accept_current_split(database, card_id, request.expected_revision)
+        regrouped = accept_current_split(database, card_id, request.expected_revision,
+            confirmed_queue_entry_id=request.queue_entry_id)
         if regrouped is not None:
             return {**regrouped, **_shared_usage(database, card_id)}
         result = apply_prefix_split(database, card_id, request.expected_revision)

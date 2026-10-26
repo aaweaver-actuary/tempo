@@ -613,6 +613,109 @@ def test_current_owner_regrouping_costs_zero_actual_introduction_slots(current_o
         assert sum(count for _,count in counts.counts)==0 and combined not in unseen, (
             'An already-introduced regrouping must not consume allowance or be reset by unseen reconciliation',
             counts,combined in unseen)
+        from app.services.queue_application import seed_queue,presentation_rows
+        assert next(row for row in presentation_rows(database,day) if row['card_id']==combined)['admission_kind']=='review'
+        for _ in range(2):
+            seed_queue(database,day)
+            assert sum(count for _,count in owner.introduction_count_page(day,None).counts)==0
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(combined,)).fetchone()[0]==day
+
+
+def issued_split_fixture(transaction,monkeypatch):
+    from app.queue_commands import issue_queue_head
+    from app.services.review_service import ensure_card_queued_after
+    qualify_before_final_review(transaction,monkeypatch)
+    with transaction() as database:
+        result,_=ordinary_current_review(database,'B',monkeypatch)
+        combined=result['recombination']['resulting_presentation_id']
+    for _ in range(3):
+        with transaction() as database:
+            ordinary_current_review(database,combined,monkeypatch,outcome='again')
+    day=datetime.now().astimezone().date().isoformat()
+    with transaction() as database:
+        ensure_card_queued_after(database,'C',0,queue_date=day,preserve_order=False)
+        other=database.execute_native("SELECT id FROM daily_queue WHERE card_id='C' AND status='queued'").fetchone()[0]
+        assert issue_queue_head(database,dict(entry_id=other,card_id='C',expected_revision=1,queue_date=day))['issued']
+        ensure_card_queued_after(database,combined,0,queue_date=day,preserve_order=False)
+        entry=database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()[0]
+        assert issue_queue_head(database,dict(entry_id=entry,card_id=combined,expected_revision=1,queue_date=day))['issued']
+    return combined,entry,other,day
+
+
+def persist_split_checkpoint(database,combined,entry,kind=None):
+    from app.services.opening_decision_evidence import decision_manifest
+    from app.services.postgres_opening_evidence import persist_checkpoint
+    from tempo_legacy_database.adapters.opening_evidence.storage import queue_context_rows
+    manifest=decision_manifest(dict(queue_context_rows(database,([entry],))[0]),'r11-repertoire')
+    now=datetime.now().astimezone().isoformat()
+    decision=manifest['decisions'][0]
+    events=[] if kind is None else [dict(sequence=1,decision_index=0,decision_id=decision['decision_id'],
+        expected_uci=decision['expected_uci'],kind='first_response' if kind=='response' else 'assistance',
+        observed_at=now,response_uci=decision['expected_uci'] if kind=='response' else None,
+        assistance=None if kind=='response' else 'hint',disposition='expected' if kind=='response' else None)]
+    attempt='split-head-'+uuid4().hex
+    result=persist_checkpoint(database,dict(prepared_manifest=manifest,checkpoint=dict(attempt_id=attempt,
+        manifest=manifest,origin_queue_entry_id=entry,queue_entry_id=entry,started_at=now,
+        study_timezone='UTC',events=events)))
+    assert result['persisted']
+    return attempt
+
+
+def test_current_owner_confirmed_issued_split_keeps_origins_history_and_zero_slots(current_owner_transaction,monkeypatch):
+    from app.prefix_split_commands import accept_prefix_split
+    from app.services.queue_admission_adapter import QueueAdmissionAdapter
+    from app.services.queue_application import seed_queue,presentation_rows
+    transaction=current_owner_transaction
+    combined,entry,other,day=issued_split_fixture(transaction,monkeypatch)
+    with transaction() as database:
+        empty=persist_split_checkpoint(database,combined,entry)
+        origin=tuple(database.execute_native('SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s',(entry,)).fetchone())
+        protected=tuple(database.execute_native('SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s',(other,)).fetchone())
+        history=tuple(tuple(row) for row in database.execute_native('SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id').fetchall())
+        payload=dict(card_id=combined,request=dict(expected_revision=1,queue_entry_id=entry))
+        result=accept_prefix_split(database,payload)
+        assert result['applied'] and accept_prefix_split(database,payload)['idempotent']
+        assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='buried'
+        assert tuple(database.execute_native('SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s',(entry,)).fetchone())==origin
+        assert tuple(database.execute_native('SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s',(other,)).fetchone())==protected
+        assert tuple(tuple(row) for row in database.execute_native('SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id').fetchall())==history
+        assert tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(empty,)).fetchone())==('active',0,None)
+        fragments=(result['parent']['card_id'],result['continuation']['card_id'])
+    tomorrow=(datetime.now().astimezone().date()+timedelta(days=1)).isoformat()
+    with transaction() as database:
+        # Emulate a lost projection, keeping the immutable original origins.
+        database.execute_native('DELETE FROM daily_queue WHERE card_id=ANY(%s)',(list(fragments),))
+        for _ in range(2):
+            seed_queue(database,tomorrow)
+        for identifier in fragments:
+            assert tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,repetitions FROM cards WHERE id=%s',(identifier,)).fetchone())==(day,None,0)
+            assert next(row for row in presentation_rows(database,tomorrow) if row['card_id']==identifier)['admission_kind']=='review'
+        owner=QueueAdmissionAdapter(database)
+        assert sum(count for _,count in owner.introduction_count_page(day,None).counts)==0
+        assert sum(count for _,count in owner.introduction_count_page(day,None,reviewed_only=True).counts)==0
+        assert sum(count for _,count in owner.introduction_count_page(tomorrow,None).counts)==0
+
+
+@pytest.mark.parametrize('kind',['response','assistance'])
+def test_current_owner_confirmed_split_rejects_pending_or_changed_attempt_without_retirement(current_owner_transaction,monkeypatch,kind):
+    from app.prefix_split_commands import accept_prefix_split
+    from fastapi import HTTPException
+    transaction=current_owner_transaction
+    combined,entry,other,_=issued_split_fixture(transaction,monkeypatch)
+    with transaction() as database:
+        for request in (dict(expected_revision=1),dict(expected_revision=1,queue_entry_id=other)):
+            with pytest.raises(HTTPException) as error:
+                accept_prefix_split(database,dict(card_id=combined,request=request))
+            assert error.value.status_code==422
+            assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='queued'
+        attempt=persist_split_checkpoint(database,combined,entry,kind)
+        before=tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(attempt,)).fetchone())
+        with pytest.raises(HTTPException) as error:
+            accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1,queue_entry_id=entry)))
+        assert error.value.status_code==422 and 'pending_attempt' in str(error.value.detail)
+        assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='queued'
+        assert tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(attempt,)).fetchone())==before
+        assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==1
 
 
 def test_current_owner_optional_conflict_guards_recovery_review_and_rebuild(current_owner_transaction,monkeypatch):

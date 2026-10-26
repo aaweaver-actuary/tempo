@@ -212,6 +212,18 @@ def regrouped_card_sql(database, qualified_card_id):
             'WHERE regrouped.presentation_id='+qualified_card_id+')')
 
 
+def regrouped_presentation_ids(database, identifiers):
+    if not installed(database):
+        return frozenset()
+    identifiers = sorted(set(identifiers))
+    result = set()
+    for offset in range(0,len(identifiers),128):
+        result.update(row[0] for row in database.execute_native(
+            'SELECT presentation_id FROM study_recombination_presentations WHERE presentation_id=ANY(%s)',
+            (identifiers[offset:offset+128],)).fetchall())
+    return frozenset(result)
+
+
 @dataclass(frozen=True)
 class _Route:
     route_id: str
@@ -243,6 +255,7 @@ class CurrentStudyRecombination:
         self.zone = datetime.now().astimezone().tzinfo if name == "local" else ZoneInfo(name)
         self.current = None
         self.reason = "current_authority_unavailable"
+        self._retired_empty_split_attempts = ()
 
     def next_day(self, now):
         local = now.astimezone(self.zone)
@@ -251,6 +264,50 @@ class CurrentStudyRecombination:
     def _hold(self, reason):
         self.reason = reason
         return None
+
+    def retire_confirmed_split_head(self, presentation_id, revision, entry_id):
+        """Explicit manual confirmation may retire only its untouched issued head.
+
+        Original evidence/origins are retained. The caller's savepoint rolls
+        this retirement back if any later source, policy or split write fails.
+        Empty checkpoint metadata is not a response or a fabricated completion.
+        """
+        from tempo_legacy_database.adapters.commands import queue as queue_storage
+        from app.services.queue_application import MISS_REASON
+        database = self.database
+        PostgresRecombinationStore(database)._writer()
+        day = self.clock().astimezone(self.zone).date().isoformat()
+        head = queue_storage.prepare_queue_head(database,MISS_REASON)(day)
+        if not head or head['id'] != entry_id:
+            raise ValueError('confirmed_split_attempt_changed')
+        row = database.execute_native("""SELECT queue.id FROM daily_queue queue
+            JOIN cards card ON card.id=queue.card_id
+            JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id
+              AND origin.card_id=card.id AND origin.revision=card.revision
+            WHERE queue.id=%s AND queue.card_id=%s AND card.revision=%s AND queue.queue_date=%s
+              AND queue.status='queued' AND queue.attempt_failed=0 AND queue.review_result_json IS NULL
+              AND origin.issued_as_head=1 AND origin.attempt_failed=0 AND origin.review_result_json IS NULL
+              AND origin.start_fen=card.start_fen AND origin.moves_json=card.moves_json
+              AND origin.trained_color=card.trained_color AND origin.content_type=card.content_type
+            FOR UPDATE OF queue,origin SKIP LOCKED""",(entry_id,presentation_id,revision,day)).fetchone()
+        if not row:
+            raise ValueError('confirmed_split_attempt_changed')
+        predicate = """card_id=%s AND card_revision=%s AND state<>'complete'
+            AND NOT EXISTS(SELECT 1 FROM review_attempt_receipts receipt WHERE receipt.attempt_id=opening_evidence_attempts.attempt_id)"""
+        expected = database.execute_native('SELECT count(*) FROM opening_evidence_attempts WHERE '+predicate,
+            (presentation_id,revision)).fetchone()[0]
+        attempts = database.execute_native('SELECT attempt_id,queue_entry_id,contiguous_sequence,terminal_json FROM opening_evidence_attempts WHERE '
+            +predicate+' ORDER BY attempt_id LIMIT 17 FOR UPDATE SKIP LOCKED',(presentation_id,revision)).fetchall()
+        if expected>16 or len(attempts)!=expected:
+            raise ValueError('pending_attempt')
+        for attempt in attempts:
+            if (attempt['queue_entry_id']!=entry_id or attempt['contiguous_sequence']!=0 or attempt['terminal_json'] is not None
+                    or database.execute_native("""SELECT 1 FROM opening_evidence_events WHERE attempt_id=%s UNION ALL
+                        SELECT 1 FROM opening_evidence_observations WHERE attempt_id=%s LIMIT 1""",
+                        (attempt['attempt_id'],attempt['attempt_id'])).fetchone()):
+                raise ValueError('pending_attempt')
+        database.execute_native("UPDATE daily_queue SET status='buried' WHERE id=%s AND status='queued'",(entry_id,))
+        self._retired_empty_split_attempts = tuple(row['attempt_id'] for row in attempts)
 
     def try_current(self, route_id, *, only_presentation_id=None):
         try:
@@ -411,8 +468,9 @@ class CurrentStudyRecombination:
                 WHERE q.card_id=%s AND q.status='queued' AND o.issued_as_head=1 LIMIT 1""", (card["revision"],identifier)).fetchone()
             pending = database.execute_native("""SELECT 1 FROM opening_evidence_attempts e
                 WHERE e.card_id=%s AND e.card_revision=%s AND e.state<>'complete'
-                  AND NOT EXISTS(SELECT 1 FROM review_attempt_receipts r WHERE r.attempt_id=e.attempt_id) LIMIT 1""",
-                (identifier,card["revision"])).fetchone()
+                  AND NOT EXISTS(SELECT 1 FROM review_attempt_receipts r WHERE r.attempt_id=e.attempt_id)
+                  AND NOT(e.attempt_id=ANY(%s)) LIMIT 1""",
+                (identifier,card["revision"],list(self._retired_empty_split_attempts))).fetchone()
             available = not (shared or unavailable or card["archived"] or card["pending_validation"] or card["superseded_by"]
                 or card["content_type"]!="opening" or card["trained_color"]!=route.learner_color or card["revision"]!=1)
             if shared:
@@ -615,7 +673,7 @@ def project_current_presentations(database, day, *, limit=16):
                         protect_presented=True,preserve_order=False)
 
 
-def accept_current_split(database, presentation_id, expected_revision):
+def accept_current_split(database, presentation_id, expected_revision, *, confirmed_queue_entry_id=None):
     """Return None for legacy cards; generated identities never enter donor rewrites."""
     if not installed(database) or not PostgresRecombinationStore(database).presentation_exists(presentation_id):
         return None
@@ -625,12 +683,17 @@ def accept_current_split(database, presentation_id, expected_revision):
         FROM study_recombination_presentations p WHERE p.presentation_id=%s""", (presentation_id,)).fetchone()
     route_id, last_failure = tuple(row)
     command_id = f"split:{presentation_id}:{expected_revision}:{last_failure}"
+    if confirmed_queue_entry_id is not None:
+        command_id += f":attempt:{confirmed_queue_entry_id}"
     store, boundary = PostgresRecombinationStore(database), CurrentStudyRecombination(database)
     prior = store.receipt(command_id)
-    receipt = Recombination(store,boundary,clock=boundary.clock,next_local_study_day=boundary.next_day).accept_split(
-        route_id,presentation_id,expected_revision,command_id,confirmed=True)
-    if receipt.status!="applied":
-        raise ValueError(receipt.reason or receipt.status)
+    with database.raw.transaction():
+        if confirmed_queue_entry_id is not None and prior is None:
+            boundary.retire_confirmed_split_head(presentation_id,expected_revision,confirmed_queue_entry_id)
+        receipt = Recombination(store,boundary,clock=boundary.clock,next_local_study_day=boundary.next_day).accept_split(
+            route_id,presentation_id,expected_revision,command_id,confirmed=True)
+        if receipt.status!="applied":
+            raise ValueError(receipt.reason or receipt.status)
     saved = database.execute_native("SELECT change_json FROM study_recombination_changes WHERE command_id=%s", (command_id,)).fetchone()[0]
     first, second = saved["results"]
     def fragment(value):
