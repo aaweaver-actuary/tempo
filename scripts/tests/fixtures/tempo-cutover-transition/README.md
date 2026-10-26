@@ -1,6 +1,6 @@
 # Graph-preserving fresh-start lifecycle
 
-**PROPOSED SOURCE / SYNTHETIC FIXTURES / DEPLOYMENT UNVERIFIED.**
+**MAIN SOURCE / SYNTHETIC FIXTURES / DEPLOYMENT UNVERIFIED.**
 The user selected a fresh start preserving the opening graph, authored sources
 and repertoire structure. Old reviews, schedules, server/background work,
 browser operations and old backup retention are outside this transition's
@@ -13,7 +13,9 @@ The [fresh-start driver](../../../tempo-cutover-transition.mjs) is an extension
 of the existing launcher component, with no CLI or production wiring. It reuses
 public `acquireTargetLock` and `atomicJson` from
 [the existing deployment component](../../../tempo-deployment.mjs). Current
-normal launch and Study remain unchanged. Only `executionScope:
+normal launch does not invoke this transition, and ordinary Study remains
+unchanged by it. Merged [normal v2 routing](../../../README.md) is a separate,
+fail-closed boundary. Only `executionScope:
 "synthetic-fixture"` is connected; production reports `graph-contract-pending`
 before acquiring a lock or changing files. A missing public fresh-Learning
 initialization port reports `fresh-initialization-contract-pending`.
@@ -139,10 +141,15 @@ target, explicit fresh choice, known-null receipt, graph/init identity binding,
 separate confirmations, interruption reconciliation, split publication,
 durability and preservation of newly accepted effects during forward repair.
 
-The schema-identity repair was authored through GitHub while the Mac execution
-environment was unavailable. Its added owning regressions are not executed
-evidence; the earlier 32-case pass applies only to head `84447fd13c67e093d8702fe10f798527dcee0009`.
-Run the owning command above when execution is available.
+The [merged #453 receipt](https://github.com/aaweaver-actuary/tempo/pull/453)
+records 37 passing owning cases at
+`69c9c58caba477926c2b94840c78b2750a70f795` (Node v26.12.0), with zero
+failures/skips/cancellations, plus six actual-module composition cases using
+planner `ecd0163c` and readiness `a51e51d0`. These dated fake/disposable-file
+results supersede the earlier unavailable-executor/32-case limitation; they are
+not a new run or native/installed acceptance. At the reviewed main baseline,
+[installed admission #473](https://github.com/aaweaver-actuary/tempo/pull/473)
+is still unmerged, so this lifecycle remains synthetic-only.
 
 No old artifact suites, real database/browser/service work, snapshots,
 deletion/reset, migration, deployment or cutover are run. Actual installed graph

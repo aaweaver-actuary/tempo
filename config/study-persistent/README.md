@@ -20,6 +20,8 @@ configuration guard pass. Profiles are convenience controls, not authorization.
 flowchart LR
     O[Independent resource observer] --> P[Persistent intent and resource plan]
     P --> B[Learning-owned persistent bootstrap]
+    Source["Selected database-owner source"] -->|"read-only tooling and DDL bind"| B
+    Source -->|"same guard source"| Q
     B --> D[Learning-owned creation / migrations / grants]
     B --> R[Private quarantine-required receipt]
     R --> Q[Read-only receipt and configuration guard]
@@ -36,6 +38,14 @@ not contain those CLIs. Operator origin http://learning:8001 differs from browse
 ingress; existing Study nginx does not expose /internal routes. Runner identity,
 UID/token access and any separate Content provisioning remain explicit inputs.
 Ordinary Study never depends on that operator runner remaining available.
+
+Provisioning and the quarantine startup guard use an explicit read-only bind of
+the selected `database/tempo_learning_database` source; they are not standalone
+image-only operations. [`quarantine.compose.yml`](quarantine.compose.yml) runs
+`bootstrap_persistent.py bootstrap` or `check-quarantine` from that source with
+the image's interpreter/dependencies, then executes installed `tempo-learning`.
+Keep the source mount, image pin, migration map and receipt bound to the selected
+revision. Source/fake preparation does not qualify that installed combination.
 
 ## Explicit phases
 

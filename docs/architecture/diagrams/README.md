@@ -8,26 +8,27 @@ sequence to inspect the transaction or failure boundary in question. The
 the target/migration authorities. Source wins if a drawing disagrees; correct the
 drawing and disclose the discrepancy.
 
-Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here. The [unmerged frozen-order extraction](../../../backend/app/study/frozen_order/README.md) documents its bounded policy/storage wiring and remaining legacy caller coupling. The subsequent [authored Studies conflict split](../../../backend/app/studies/README.md) keeps line queries in the legacy database owner and pure conflict computation outside it.
+Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here. The [implemented frozen-order policy/storage split](../../../backend/app/study/frozen_order/README.md) documents its bounded policy/storage wiring and remaining legacy caller coupling. The subsequent [authored Studies conflict split](../../../backend/app/studies/README.md) keeps line queries in the legacy database owner and pure conflict computation outside it.
 
-The [unmerged backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; it does not change the MAIN/deployment status below.
+The [current backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; reviewing or relocating source does not establish deployment isolation.
 
 ## Source and status
 
-Baseline reviewed: main at
-[`588cea54574c2b56799f0a22f8235976171c4fba`](https://github.com/aaweaver-actuary/tempo/commit/588cea54574c2b56799f0a22f8235976171c4fba),
-verified October 20, 2026 after the five scoped source repairs merged. PR328
-moves the ten maintained diagram bodies into their owning directory READMEs,
-reconciles them with that actual source, and adds no runtime behavior. Relative
-source links describe this MAIN baseline. Historical feature heads below identify
-reviewed inputs rather than unmerged behavior. The
-[durable integration receipt](../study-isolation-integration-2026-10-20.md)
-records exact code merge SHAs, source parity, selected evidence and cleanup.
-No deployment or effective host resource isolation is implied.
+Current documentation reconciliation: main at
+[`1ce172e9f4f312d7d70b2a363dce7b20dab35baf`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf),
+reviewed October 26, 2026 UTC. This is a bounded source review of the affected
+directory views, public interfaces and recent retirement/graph/launcher changes,
+not an exhaustive requalification of every component. Relative source links refer
+to that source baseline.
+
+The October 20 [durable integration receipt](../study-isolation-integration-2026-10-20.md)
+and PR322–329 entries below remain historical source/build evidence at their
+recorded SHAs. They are not fresh acceptance evidence for this later assembly.
+No deployment, live schema or effective host resource isolation is implied.
 
 | Label | Meaning and limits |
 | --- | --- |
-| **MAIN** | Implemented source at the baseline; independent installation, consumer adoption and live deployment are separate claims. |
+| **MAIN** | Implemented source at the stated baseline or a specifically dated owner view; independent installation, consumer adoption and live deployment are separate claims. |
 | **LEGACY / GAP** | Actual shared source, persistence or lifecycle coupling. A scoped observation, not acceptance of that coupling for new paths. |
 | **MERGED PR322** | [Games-only viewing PR322](https://github.com/aaweaver-actuary/tempo/pull/322), implementation [`653a85bb5f5b3e520c0eda0c36234d3b416708b4`](https://github.com/aaweaver-actuary/tempo/commit/653a85bb5f5b3e520c0eda0c36234d3b416708b4), is now included in the MAIN baseline above. Source availability does not establish deployment or exact live read grants. |
 | **MERGED PR324** | [Physical Study composition PR324](https://github.com/aaweaver-actuary/tempo/pull/324) at [`30191b9c026f27f3d816304c47e5b72e0ec390b0`](https://github.com/aaweaver-actuary/tempo/commit/30191b9c026f27f3d816304c47e5b72e0ec390b0). Historical reviewed feature input, now included in the MAIN baseline; exact merge recorded in the integration receipt. Deployment unverified. |
@@ -45,6 +46,70 @@ implemented views; it supplies no current API/behavior claim. The Games reader
 views now describe merged PR322 source, while operational activation is unverified. The user-identified live
 Study revision `86d11afe` is outside this inspection and was not touched.
 
+
+## Current public surfaces and coupling limits
+
+**Reduced, not eliminated.** Stable public-contract dependencies are intentional;
+the goal is to eliminate private implementation and shared mutable/lifecycle
+authority coupling at the changed boundary, not to have no dependencies. The recent source cuts remove optional producers,
+not the legacy assembly's shared database, broker, command registry or all
+cross-workflow imports. Retained stored facts do not imply a live call to their
+retired producer, and a public function name alone does not prove an independently
+replaceable plugin.
+
+| Current boundary / change | Canonical owner and remaining limitation |
+| --- | --- |
+| Games guided-review server and daily statistics | [Legacy service retirement map](../../../backend/app/services/README.md#retired-optional-capabilities) distinguishes the removed routes/commands/materialization from retained Study scheduling, game-feature calculation and canonical publication. Physical stored schema is not dropped. |
+| Opportunity and adaptive-priority producers | [Opportunity flow](../../../backend/app/services/README.md#opportunity-production-and-optional-api-retirement) and [priority flow](../../../backend/app/services/README.md#adaptive-priority-producer-retirement) remove refresh/scoring/worker edges. Ordinary queue owners still read saved opportunity/score/miss facts and retain fallback, source invalidation and canonical writing. |
+| Browser extension seam | [Study browser capabilities](../../../app/README.md#public-browser-capabilities-and-extension-limits) names connection/session exports and injected workspace callbacks. The physical Study entry excludes the legacy workspace; the full build still shares shell/runtime/state. This is not dynamic plugin discovery. |
+| Policy versus command composition | [Backend public surfaces](../../../backend/app/README.md#public-surfaces-and-extension-boundary) distinguishes supplied-fact policy, named contracts and borrowed storage from the legacy global command registry and HTTP/worker root. Local guards are scoped, not a repository-wide no-cycle proof. |
+| Graph recovery and serving | [Fresh graph helper](../../../database/tooling/opening_graph_fresh_learning/README.md) composes public Content/bridge/Learning commands; [title activation](../../../database/tempo_learning_database/adapters/publication-execution/README.md#optional-repertoire-display-title) preserves optional titles atomically. The source recovery bundle remains separate from Learning's reduced serving projection. |
+| Launcher and installed runtime | [Scripts](../../../scripts/README.md) expose planning, readiness, transition and fail-closed v2 routing; [persistent quarantine](../../../config/study-persistent/README.md) is non-serving preparation. Merged source does not establish a configured default provider, completed installed admission or live startup acceptance. |
+
+The [graph-preserving fresh-start disposition](../../../database/PERSISTENCE-DISPOSITION.md)
+and merged source cuts supersede the earlier retained-drain assumptions for those
+retired capabilities. The late-merged [#429 proposal](https://github.com/aaweaver-actuary/tempo/pull/429)
+is historical decision/source evidence, not proof that its former producer,
+refresh URL or recovery handler still exists.
+
+At this baseline, startup leaves
+[#469](https://github.com/aaweaver-actuary/tempo/pull/469),
+[#470](https://github.com/aaweaver-actuary/tempo/pull/470),
+[#471](https://github.com/aaweaver-actuary/tempo/pull/471),
+[#472](https://github.com/aaweaver-actuary/tempo/pull/472) and
+[#473](https://github.com/aaweaver-actuary/tempo/pull/473) are **PROPOSED / UNMERGED**:
+installed authority, serving configuration, database readback, cold start and
+completed admission are not current-main functionality. Their PRs carry their
+own source/fake evidence; do not infer live readiness from those receipts.
+
+For an additional optional integration, reuse an existing named public contract,
+wire implementations only in outer composition, and identify one owner for state,
+transactions, retries, cancellation and shutdown. Ordinary Study must not wait
+for that integration; queue influence enters Learning's semantic command boundary,
+not its tables. Existing evidence supports bounded separability, **not** a blanket
+claim of robust arbitrary plugins, eliminated coupling or deployed failure/resource
+isolation.
+
+## Bounded resumption priorities
+
+Resume from the pinned source and the existing owner task, not from an assumption
+that a merged preparation PR is an installed, accepted system. These are proposed
+next tasks, not changes implemented by this documentation update.
+
+| Priority / bounded owner task | Public boundary to preserve | Evidence needed before claiming closure |
+| --- | --- | --- |
+| 1. Reconcile Game Evidence's export inventory | [`components.json`](../../../components.json) lists five `game-evidence` exports; [the actual `__all__`](../../../services/game-evidence/src/tempo_game_evidence/__init__.py) lists ten, including the legacy authority/preview types. Decide the supported public surface with that owner; do not silently drop working exports. | Run the selected component boundary validator and existing import-side-effect proof after the owning fix. [`check-python.py`](../../../tools/component-build/check-python.py) compares exact lists, so source inspection predicts a mismatch; this review did **not** execute it or establish a runtime failure. |
+| 2. Finish the installed launcher composition, only after its dependencies are reviewed | Keep [planning/readiness/transition](../../../scripts/README.md) separate from normal start/stop/status. Review the unmerged #469–473 owner surfaces and bind the selected image, configuration, database readback and completed admission; do not add a second launcher or bypass fail-closed routing. | Exact installed-source/target correspondence, public-command readback and bounded startup/shutdown proof. Fake/synthetic receipts are not real-target acceptance or cutover authorization. |
+| 3. Remove the specific legacy worker-to-HTTP-root registration edge | [`background_worker.py`](../../../backend/app/background_worker.py) imports `main.coordinator`; [`tasks.py`](../../../backend/app/tasks.py) imports command modules for registration. Give outer composition an explicit owned registrar/handler set, preserving command identities and receipt authority. | Fresh-process import/duplicate-registration checks and an owning worker proof that does not import the HTTP root. Preserve existing command/transaction/recovery behavior; no generic plugin framework is needed. |
+| 4. Narrow one legacy Study facade at a time | Start with [frozen-order composition](../../../backend/app/study/frozen_order/README.md), which already has pure public policy/fact exports but still binds feedback and private queue-order helpers. Keep the caller transaction and canonical queue writer. | Fake semantic-capability tests plus the retained borrowed-transaction/queue-order regression for that changed boundary; check the actual imports, not just folder placement. |
+| 5. Qualify each optional integration's failure/removal boundary | Reuse explicit owner APIs; optional practice influence enters Learning, never its tables. Do not restart removed producers merely to demonstrate extensibility. | For a separately authorized integration, establish installed import/build closure without its implementation, then stop/fail it after accepted intake while the same Study instance retains queue/review/replay behavior. Record actual shared host/database limits. |
+
+Before resuming an interrupted disposable import or rehearsal, inspect its
+existing task-owned resources, artifacts and incomplete effects before deciding
+whether a retry or cleanup is safe. This documentation review did not inspect or
+clean those resources and grants no reset, deletion, deployment or live cutover
+authority. Reuse still-applicable exact-source receipts; documentation-only
+reconciliation is not a reason to repeat runtime suites.
 
 ## Implemented component increments
 
@@ -120,7 +185,7 @@ ownership; its status alone does not prove adoption.
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
 | [Study dependency detail](../../../app/README.md#main-study-path-and-source-gap) | Component: which adapters and semantic ports serve Study, and how is optional workspace ownership excluded from Study? | Study browser/session and Learning owners (merged MAIN source); [connection](../../../app/lib/study-connection.ts), [ReviewStore](../../../services/learning/application/src/tempo_learning_review/ports.py). |
 | [Conditional Study build/offline assets](../../../static/README.md#conditional-study-build-and-offline-assets-main) | Build/data flow: can emitted optional chunks enter the required offline shell without executing? | Study build and offline-shell owners; [inventory plugin](../../../scripts/offline-shell-assets.ts), [service worker](../../../public/sw.js), [readiness client](../../../app/lib/offline-shell.ts). PR324 retains actual emitted-artifact and synthetic offline evidence; combined deployment unverified. |
-| [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the proposed endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
+| [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the merged endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
 | [Games reader](../../../apps/workbench-web/README.md#merged-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
 | [Review and lost-response recovery](../../../services/learning/runtime/README.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
 | [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |

@@ -1,14 +1,15 @@
 # Graph-preserving fresh-start readiness (#359, packet 3)
 
-This branch prepares the selected **graph-preserving fresh start**. Old reviews,
+This merged source prepares the selected **graph-preserving fresh start**. Old reviews,
 schedules, server/background work and old pending browser envelopes impose no
 preservation, drain or replay gate. Preserve the complete authored opening graph,
 repertoire/source names and dependency closure, then initialize an independent
 clean Learning target under an explicitly selected new authority.
 
 Only a pure synthetic source harness is implemented here. The registered
-installation, current database, default CLI, credentials and browser storage are
-unchanged. The existing [cutover specification](../LAUNCHER-CUTOVER.md) supplies
+installation, current database, credentials and browser storage are
+unchanged by this harness. The separate merged [normal v2 CLI routing](../../../../scripts/README.md)
+does not assemble these actual providers or invoke the transition implicitly. The existing [cutover specification](../LAUNCHER-CUTOVER.md) supplies
 the original-lock, durable-publication and interruption-safety boundaries; its old
 history-preservation prerequisites are superseded for this fresh-start branch.
 
@@ -136,8 +137,8 @@ flowchart LR
   Inputs["Pinned graph-only plan and facts"] --> Gate["Pure fresh-start readiness\nsource implemented"]
   Gate -->|"opaque public inputs + exact binding"| Ports["Injected fixture graph / fresh-init ports"]
   Gate --> Result["Bound synthetic result\nproduction BLOCKED"]
-  Root["PROPOSED launcher composition\nactual adapters absent"] -.-> Gate
-  Root -.->|"inject public gate\noriginal maintenance lock"| Lifecycle["PROPOSED fresh-start lifecycle\ndeployment unverified"]
+  Root["Unassembled installed composition\nactual adapters absent"] -.-> Gate
+  Root -.->|"inject public gate\noriginal maintenance lock"| Lifecycle["MAIN fresh-start lifecycle source\nsynthetic-only; deployment unverified"]
 ```
 
 The implemented source and owning fixture are
@@ -157,7 +158,7 @@ backup retention is not a gate.
 Content's public `publication export <publication_id> --generation <n>` emits the
 serialized `content_bridge_export` envelope. The installed public
 `tempo-a-bridge ... apply <operation_id>` boundary owns delivery to Learning's
-`/internal/publications/v2/stage` and `/v2/activate` interfaces. Graph/fresh-init
+`/internal/publications/v2/stage` and `/internal/publications/v2/activate` interfaces. Graph/fresh-init
 helpers and version-specific closure acceptance remain the graph owner's work;
 the launcher must consume their public receipts one way. It must not call private
 converter functions or infer version-specific table mappings.
