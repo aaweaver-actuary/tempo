@@ -21,7 +21,7 @@
 - [queue_position_lock.py](queue_position_lock.py): existing queue-position advisory lock boundary.
 - [postgres_readiness.py](postgres_readiness.py): four existing PostgreSQL readiness fact queries on the same reader scope. [Operational health decisions](../../../backend/app/operations/README.md) retain HTTP/Celery/status evaluation outside database.
 
-[Command persistence](commands/README.md) groups the existing account/activity/annotation/statistics/endgame/teaching operations. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.
+[Command persistence](commands/README.md) groups the existing account/activity/annotation/endgame/teaching operations; the daily-statistics command helper is retired. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.
 
 [Legacy Games command storage](games/README.md) groups game/sync/finding/analysis lease/publication operations. Existing legacy shared-card/queue/feedback coupling remains disclosed at its original composition callers; this move adds no owner permissions or Study dependency.
 
@@ -29,7 +29,7 @@
 [Repertoire and tactical projections](projections/README.md) own complete comparison input/publication, statistics and tactical-opportunity queries. Existing application algorithms, cache/state and connection composition remain outside database.
 
 
-[Queue provenance and lifecycle storage](lifecycle/README.md) owns retained-attempt facts, refresh publication/intents and metric persistence/buffering. Existing recovery, coalescing, clocks and finite metric policy remain application decisions.
+[Queue provenance and lifecycle storage](lifecycle/README.md) owns retained-attempt facts, the essential `daily_queue_projection` readiness read and metric persistence/buffering. Optional priority/opportunity refresh coalescing, publication/status and intent mutations are retired; caller transaction, rollover and metric policy remain outside these helpers.
 
 
 [Foreground settings and authoring controls](foreground_controls/README.md) own existing settings/provider-account persistence, main-repertoire locks/edits and prefix-split reads/writes on the original command transaction. Validation and follow-up choices remain in their application owners.
@@ -38,7 +38,7 @@
 [Redis admission and policy storage](redis_control/README.md) owns the original cached clients, control keys/Lua/pipelines and Study-mode query. Lifecycle, clocks, identity, cancellation, local fallback and policy validation stay at their existing application composition points.
 
 
-[Derived publications](derived_publications/README.md) contains the next-opponent profile and daily-chess-statistics reads and guarded writes. Existing time/eligibility/math/insight/presentation decisions remain in their application compositions.
+[Derived publications](derived_publications/README.md) contains the retained next-opponent account/source projections and generation/lease-guarded profile publication. Profile math, clock, availability and task-completion decisions remain in application composition; daily-statistics publication storage is retired.
 
 
 [Scheduling storage](scheduling/README.md) owns existing engine/durable turn-state, candidate SQL and dialect/translation mechanics. Class/turn/fairness decisions remain in their original application compositions; lease and turn persistence share the caller's transaction.
@@ -50,7 +50,7 @@
 [Authored repertoire commands](authored_repertoires/README.md) contains existing canonical-prefix/branch reads, locks and writes. Payload/chess/HTTP validation, revision/route/callback policy and responses remain in the original command compositions.
 
 
-[Statistics storage](statistics/README.md) contains existing game-feature/dimension projections, daily snapshot/insight writes and job claims. Math/chess/time-zone/day/threshold and response decisions remain in the original application source; the whitelisted projection is captured once before its clock/read scope.
+[Game-feature storage](statistics/README.md) retains game, analysis, gameplay-event, primary-match and timezone input projections plus re-exports of the canonical Games feature writer. Player perspective, timezone/DST and chess/tactical feature calculation remain in `backend/app/services/statistics.py`; daily snapshot/insight materialization and job claims are retired.
 
 
 [Authored exercise attempts](study_attempts/README.md) holds existing attempt/replay/card/queue/exercise/review/burial operations. Grading, guided/self-assessed outcomes, dates, requeue and refresh composition stay outside database; legacy Studies content and Study practice boundaries remain distinct.
@@ -93,7 +93,7 @@ Readiness facts use [runtime metadata](../schema/runtime-metadata/README.md) and
 
 ```mermaid
 flowchart TD
-  caller[Existing legacy command / introduction-priority composition] --> capability[Existing borrowed feedback capability]
+  caller["Existing legacy command / queue / game-derivation composition"] --> capability[Existing borrowed feedback capability]
   capability --> facts[Root fixed facts / driver locks / bounded cursor batches]
   capability --> typed[Application typed card / event mapping]
   capability --> plan[Application sorted queue priority / changed-position choice]

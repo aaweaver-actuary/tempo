@@ -4,6 +4,9 @@ Existing explicit maintenance commands, physically relocated from `scripts/`. No
 
 | Tool | Purpose |
 | --- | --- |
+| [Opening graph preservation](opening_graph_preservation/README.md) | Existing public graph/source closure and recovery-transfer contracts; actual capture/execution and acceptance remain separately owned. |
+| [Fresh opening graph in Learning](opening_graph_fresh_learning/README.md) | Pure disposable-target plan and completed-receipt checks around public Content/bridge/Learning commands; does not capture, provision, import or infer installed acceptance. |
+| [Learning-owned bootstrap tooling](../tempo_learning_database/tooling/README.md#persistent-target-bootstrap) | Explicit disposable/persistent target preparation contracts; persistent quarantine is separate from serving admission and cutover. |
 | [apply_postgres_migrations.py](apply_postgres_migrations.py) | Legacy owner's ordered migration discovery and pinned installed remediation resource inclusion. |
 | [check-migration-inventory.mjs](check-migration-inventory.mjs) | Read-only source inventory/version correspondence check; run from the repository root. |
 | [generate_postgres_schema.py](generate_postgres_schema.py) | Existing reviewed SQLite snapshot-to-PostgreSQL DDL generation utility. |

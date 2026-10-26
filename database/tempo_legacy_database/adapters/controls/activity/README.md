@@ -1,15 +1,15 @@
 # Legacy background activity storage
 
-**Current source implementation; live schema and deployment unverified.** This directory owns the 22 existing complete background-activity queries and their finite source/column mapping. [Application composition](../../../../../backend/app/services/background_activity.py) retains progress validation, generation/lease matching, pause/resume decisions, clocks, HTTP conflicts, presentation and pagination. The existing shared [claim predicates](../claim_sql.py) stay in their original root storage home and remain re-exported by the application.
+**Current source implementation; live schema and deployment unverified.** This directory owns the retained complete background-activity queries and their finite source/column mapping. [Application composition](../../../../../backend/app/services/background_activity.py) retains progress validation, generation/lease matching, pause/resume decisions, clocks, HTTP conflicts, presentation and pagination. The existing shared [claim predicates](../claim_sql.py) stay in their original root storage home and remain re-exported by the application.
 
 [storage.py](storage.py) borrows the caller's connection; it never opens, commits or closes a transaction. The existing progress write scope, caller-owned activity-command transaction and projection read scope remain in application composition. Projection operations return the original cursors, so row iteration and each subsequent query occur in the same order within that read scope.
 
-Three small local preparations preserve existing evaluation timing. `prepare_progress_read` resolves only the nine named sources and existing generation columns at the original point inside the progress scope; its one fixed reader runs only when that source has a generation check. `prepare_control_read` prepares the existing source/state column, PostgreSQL `FOR UPDATE` suffix and settings-admission expression before its fixed reader. `prepare_control_update` chooses only the existing paused/promoted column before the caller computes the flag value. None accepts caller SQL, table names, column names or predicates. The canonical root defensive SQL builders are reused with the same application-owned defensive task kinds; the previous application wrapper names remain available.
+Three small local preparations preserve existing evaluation timing. `prepare_progress_read` resolves only the seven named sources and existing generation columns at the original point inside the progress scope; its one fixed reader runs only when that source has a generation check. `prepare_control_read` prepares the existing source/state column, PostgreSQL `FOR UPDATE` suffix and settings-admission expression before its fixed reader. `prepare_control_update` chooses only the existing paused/promoted column before the caller computes the flag value. None accepts caller SQL, table names, column names or predicates. The canonical root defensive SQL builders are reused with the same application-owned defensive task kinds; the previous application wrapper names remain available.
 
 ```mermaid
 flowchart LR
   app[Legacy activity composition] -->|existing progress or command transaction| write[Fixed progress and control operations]
-  app -->|existing read scope and cursor iteration| read[Fixed nine-source projections]
+  app -->|existing read scope and cursor iteration| read[Fixed seven-source projections]
   write --> progress[background_activity]
   write --> jobs[Existing job and lease tables]
   read --> jobs
@@ -46,7 +46,7 @@ erDiagram
 
 ## Source jobs and existing relationships
 
-`SOURCES` is the existing finite projection/control lookup, moved intact and re-exported by the application. The identities below are logical associations to `background_activity`, without a source-job foreign key. Each linked canonical dictionary supplies all stored fields/types, actual primary/composite keys, enforced foreign keys and cardinalities within that job's owning storage.
+`SOURCES` is the current finite projection/control lookup, re-exported by the application after removal of daily-statistics and adaptive-priority sources. The identities below are logical associations to `background_activity`, without a source-job foreign key. Each linked canonical dictionary supplies all stored fields/types, actual primary/composite keys, enforced foreign keys and cardinalities within that job's owning storage.
 
 | Source | Existing source table and identity | Generation read by progress | Canonical storage dictionary |
 | --- | --- | --- | --- |
@@ -55,7 +55,6 @@ erDiagram
 | `derivation` | `game_derivation_jobs.game_id` | `derivation_version` | [Game derivation](../../../schema/game-projections-1/README.md) |
 | `integrity` | `repertoire_integrity_jobs.repertoire_id` | `run_id` | [Authored integrity](../../../schema/authored-content-2/README.md) |
 | `coverage` | `repertoire_coverage_runs.id` | `id` | [Coverage](../../../schema/discovery-priority/README.md) |
-| `priority` | `repertoire_priority_jobs.repertoire_id` | `generation` | [Repertoire priorities](../../../schema/discovery-priority/README.md) |
 | `game_analysis` | `game_analysis_jobs.game_id` | `analysis_version:analysis_evidence_version`, plus current leased status/lease identity | [Game analysis](../../../schema/game-projections-1/README.md) |
 | `threat_analysis` | `threat_analysis_requests.id` | No generation query | [Threat requests](../../../schema/practice-families-2/README.md) |
 
@@ -67,11 +66,12 @@ This is existing legacy shared-storage coupling across background work owners. P
 
 ## Focused verification
 
-A task-local source reconstruction restores the complete retained non-import application AST from the fixed operations, including exact SQL literal/f-string values, parameters, preparation points, raw cursor iteration, callback/clock order, generation/lease checks and transaction scopes. The nine-source mapping matches exactly; the three existing defensive SQL wrappers were verified before substituting their canonical root builders. The application has no SQL text, direct query/cursor operation or dialect probe after extraction.
+**Historical extraction receipt, before daily-statistics and adaptive-priority retirement:** A task-local source reconstruction restored the complete retained non-import application AST from the fixed operations, including exact SQL literal/f-string values, parameters, preparation points, raw cursor iteration, callback/clock order, generation/lease checks and transaction scopes. The nine-source mapping matched exactly; the three existing defensive SQL wrappers were verified before substituting their canonical root builders. The application has no SQL text, direct query/cursor operation or dialect probe after extraction.
 
-Twenty-three existing focused cases pass: six activity/progress cases, sixteen defensive-settings/recommendation activity cases and one idempotent activity-command dispatch case, using task-temporary SQLite or fakes. No tests were edited. Each test command emitted the same existing Starlette/AnyIO deprecation warning. No native PostgreSQL execution/locking, live database, service activation or full-system check is claimed. The existing 1,000-job timing benchmark is outside this bounded relocation check.
+Twenty-three existing focused cases passed: six activity/progress cases, sixteen defensive-settings/recommendation activity cases and one idempotent activity-command dispatch case, using task-temporary SQLite or fakes. No tests were edited. Each test command emitted the same existing Starlette/AnyIO deprecation warning. No native PostgreSQL execution/locking, live database, service activation or full-system check is claimed. The existing 1,000-job timing benchmark is outside this bounded relocation check.
 
-Daily statistics no longer has an activity projection or control source in this
-branch. Old day-job rows do not need recovery or drain, and controls for the
-retired source are rejected. Other sources and the shared activity schema remain
-unchanged; no live row or table cleanup is performed.
+Daily statistics and adaptive priority no longer have activity projection/control
+sources. The current finite `SOURCES` map contains `durable`, `sync`,
+`derivation`, `integrity`, `coverage`, `game_analysis` and `threat_analysis`.
+Controls for retired sources are rejected; existing `background_activity` rows
+and schema are not deleted, and no recovery/drain or live cleanup is performed.

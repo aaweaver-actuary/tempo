@@ -1,6 +1,6 @@
 # Daily Study practice policy
 
-**Current unmerged source; deployment unverified.** Study means daily practice. Authored/imported [Studies](../studies/README.md) is a separate owner.
+**MAIN source; deployment unverified.** Study means daily practice. Authored/imported [Studies](../studies/README.md) is a separate owner.
 
 | Directory | Existing responsibility |
 | --- | --- |

@@ -16,9 +16,14 @@ is not imported or required by this helper.
 
 1. The Content owner validates the existing `SourceSnapshot` v1 source and its
    complete opening/repertoire closure. Keep the immutable source recovery bundle
-   independently: Learning's serving projection omits source route names,
-   training-depth/split facts and repertoire titles. The current activation creates
-   Learning repertoires with `name=id`; it does not restore original titles.
+   independently: Learning's serving projection still omits source route names
+   and training-depth/split facts. The public bridge forwards optional authored
+   repertoire titles, and the existing locked activation updates
+   `repertoires.name` atomically with graph/receipt effects; an omitted title
+   preserves existing metadata. See the canonical [title activation boundary](../../tempo_learning_database/adapters/publication-execution/README.md#optional-repertoire-display-title).
+   A title-capable bridge requires a title-capable runtime; this does not prove an
+   installed runtime upgrade or make the reduced serving projection a complete
+   authored-source recovery copy.
 2. The supported Content CLI is
    `tempo-content publication export <publication_id> --generation <generation>`.
    It serializes the existing Content bridge export. The installed launcher may

@@ -6,6 +6,30 @@ It imports no Content, Learning or legacy database implementation. Its default
 historical projection and `--preserve-physical-execution` behavior remain
 available; `--graph-only` adds an explicit fresh authored-source projection.
 
+## Public commands and ownership
+
+[`pyproject.toml`](pyproject.toml) declares four installed entry points:
+`tempo-a-bridge` → [`cli.main`](src/tempo_a_bridge/cli.py),
+`tempo-a-legacy-export` → [`legacy.main`](src/tempo_a_bridge/legacy.py),
+`tempo-a-legacy-observe` → [`legacy_observation.main`](src/tempo_a_bridge/legacy_observation.py),
+and `tempo-a-legacy-study` → [`legacy_study.main`](src/tempo_a_bridge/legacy_study.py).
+Their presence is not a requirement to run legacy observation/history workflows
+for a fresh graph.
+
+`tempo-a-bridge ... apply <approved-operation-id>` is the public serialized
+delivery boundary: it invokes an explicitly selected Content CLI, constructs the
+existing V2 bundle, sends Learning stage/activate requests and recovers authoritative
+operation results. It forwards optional `repertoire_title`; the
+[Learning title-activation owner](../../../database/tempo_learning_database/adapters/publication-execution/README.md#optional-repertoire-display-title)
+owns the locked metadata/graph/receipt transaction. A title-capable bridge needs
+a compatible runtime; source support does not establish the installed version.
+
+Unlike the file-only exporter below, the operator performs process/HTTP work.
+Outer composition owns target/credentials, runtime availability, authorization and
+resource lifetime. Consumers use the installed CLI and serialized contracts, not
+private `execution_bundle` imports; Learning never depends on this operator
+remaining online after acceptance.
+
 ## Fresh graph projection
 
 ```sh
@@ -59,6 +83,13 @@ bounded occurrence readers); raw NULL remains untouched. A non-NULL physical
 color disagreement fails. A present body disagreement on moves or legal chess
 state fails. Clock-only FEN differences use the exact source-card FEN after the
 explicit card/graph association is established; raw captured FENs are retained.
+
+The exporter [compatibility predicate](src/tempo_a_bridge/graph_fen_compatibility.py)
+compares the first four **raw supplied** FEN fields after legal validation.
+Learning's [explicit-binding validation](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py)
+instead compares the first four **normalized legal-en-passant** fields. These
+are separate owner-local checks, not a shared cross-service helper; neither
+infers a card/route association from FEN alone.
 
 For newly keyed definitions, generated (`canonical_route_source=0`) archive,
 pending-validation and supersession fields are derived legacy availability
@@ -120,7 +151,7 @@ flowchart LR
     Capture --> Transfer
 ```
 
-The bridge owns file parsing/projection and immutable output files only. The
+The graph-only exporter owns file parsing/projection and immutable output files only. The
 outer caller owns capture completeness, selected scope, recovery-copy verification
 and subsequent public Content/initialization commands. No browser/database read,
 live capture, import, reset, deletion or cutover occurs here. The graph-only path
