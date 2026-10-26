@@ -3,16 +3,13 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
     || nativeChecks.some(check => check !== 'redis-fixture-isolation')
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
-  if (!["full", "browser", "study", "durability", "lifecycle", "priority-benchmark"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
+  if (!["full", "browser", "study", "durability", "lifecycle"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeChecks, "browser", "cleanup"];
-  if (mode === "priority-benchmark") {
-    return ["compose_config", "image_build", "startup", "service_health", "priority_benchmark", "cleanup"];
-  }
   if (mode === "lifecycle") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup"];
   }
   const durabilityStages = [
-    "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics",
+    "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics",
     ...(mode === "full" ? ["deployment_lifecycle"] : []), "background_workloads",
     "threat_candidate_upsert", "command_recreation", "backup_restore",
   ];

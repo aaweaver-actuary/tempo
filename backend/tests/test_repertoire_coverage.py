@@ -1,3 +1,10 @@
+from datetime import date, datetime, timedelta, timezone
+import json
+import chess
+from fastapi.testclient import TestClient
+from app.main import app
+from tempo_legacy_database.adapters.database_executor import database_writer
+
 import pytest
 
 from tempo_legacy_database import connections as database
@@ -101,12 +108,8 @@ def test_opponent_reply_without_a_trained_response_remains_a_coverage_gap():
 def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete(
     tmp_path, monkeypatch
 ):
-    from app.services import introduction_priorities
-
-    def unavailable_priority(*_args, **_kwargs):
-        raise AssertionError("Explorer publication must not require optional adaptive priority")
-
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", unavailable_priority)
+    from importlib.util import find_spec
+    assert find_spec("app.services.introduction_priorities") is None
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as database_connection:
@@ -150,7 +153,7 @@ def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complet
         ).fetchone()[0] == "complete"
         assert database_connection.execute(
             "SELECT state FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key='r'"
-        ).fetchone()[0] == "queued"
+        ).fetchone() is None
         assert database_connection.execute("SELECT COUNT(*) FROM repertoire_priority_jobs").fetchone()[0] == 0
     repertoire_coverage.set_explorer_session_token(None)
 
@@ -266,3 +269,137 @@ def test_coverage_requeues_after_rejected_session_and_does_not_repeat_bad_token(
         assert status == "queued"
     finally:
         repertoire_coverage.set_explorer_session_token(None)
+
+
+def _seed_decision_route(db):
+    now = datetime.now(timezone.utc).isoformat()
+    start = chess.STARTING_FEN
+    board = chess.Board()
+    root_key = " ".join(board.fen().split()[:4])
+    board.push_uci("e2e4")
+    board.push_uci("e7e5")
+    target_key = " ".join(board.fen().split()[:4])
+    db.execute("INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES('rep','Main','main.pgn',?,1)", (now,))
+    db.execute("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+                  VALUES('line','rep','Main','white',?,?,?)""", (start, json.dumps(["e2e4", "e7e5", "g1f3"]), now))
+    for card_id, card_start, moves, state in (
+        ("root", start, ["e2e4"], "new"),
+        ("target", board.fen(), ["g1f3"], "locked"),
+    ):
+        db.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color)
+                      VALUES(?,?,?,?,?,?,?,'opening','white')""",
+                   (card_id, "rep", "response", card_start, json.dumps(moves), state, date.today().isoformat()))
+        db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',?)", (card_id,))
+    db.execute("""INSERT INTO opening_graph_publications(repertoire_id,generation,published_at)
+                  VALUES('rep',1,?)""", (now,))
+    for index, card_id, parent, key, moves in (
+        (0, "root", None, root_key, ["e2e4"]),
+        (1, "target", "root", target_key, ["g1f3"]),
+    ):
+        db.execute("""INSERT INTO opening_graph_steps(
+            repertoire_id,generation,line_id,decision_index,segment_kind,
+            first_decision_index,last_decision_index,decision_fen_keys_json,
+            card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+            VALUES('rep',1,'line',?,'decision',?,?,?, ?,?,?, ?,?,'white')""",
+            (index, index, index, json.dumps([key]), card_id, parent, key,
+             start if index == 0 else board.fen(), json.dumps(moves)))
+    return root_key, target_key
+
+
+
+def _seed_source_transition_coverage(db, *, run_id="transition-run", created_at=None,
+                                     explorer_status="complete", maia_status="complete",
+                                     run_status="complete", probability=0.2, covered=False):
+    board = chess.Board()
+    board.push_uci("e2e4")
+    fen_key = " ".join(board.fen().split()[:4])
+    now = created_at or datetime.now(timezone.utc).isoformat()
+    node_id = f"{run_id}-node"
+    db.execute("""INSERT INTO repertoire_coverage_runs
+        (id,repertoire_id,status,settings_json,created_at,updated_at)
+        VALUES(?,'rep',?, ?,?,?)""", (run_id, run_status,
+        json.dumps({"path_floor": 0.0005, "maia_elo": 1500, "reply_denominator": 20, "cumulative_target": 0.95}), now, now))
+    db.execute("""INSERT INTO repertoire_coverage_nodes
+        (id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
+         covered_replies_json,explorer_status,maia_status,explorer_games,updated_at)
+        VALUES(?,?,'rep',?,?,1,'white','[["e2e4"]]',?,?,?,?,?)""",
+        (node_id, run_id, board.fen(), fen_key,
+         json.dumps(["e7e5", "c7c5"] if covered else ["e7e5"]),
+         explorer_status, maia_status, 500, now))
+    db.execute("""INSERT INTO repertoire_coverage_candidates
+        (node_id,move_uci,explorer_probability,maia_probability,covered,source_state)
+        VALUES(?,'c7c5',?,?,?,'blended')""", (node_id, probability, probability, int(covered)))
+    return node_id, fen_key
+
+
+
+def test_issue8_maia_claim_and_partial_submit_survive_explorer_failure(tmp_path, monkeypatch, request):
+    from app.services import repertoire_coverage
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    from importlib.util import find_spec
+    assert find_spec("app.services.introduction_priorities") is None
+    with database.connection() as db:
+        _seed_decision_route(db)
+        node_id, _ = _seed_source_transition_coverage(db, run_status="failed",
+            explorer_status="failed", maia_status="queued")
+        db.execute("""INSERT INTO repertoire_coverage_nodes
+            (id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,covered_replies_json,updated_at)
+            VALUES('remaining-node','transition-run','rep',?,'other-position',3,'white','[]','[]',?)""",
+            (chess.STARTING_FEN, datetime.now(timezone.utc).isoformat()))
+    job = repertoire_coverage.claim_maia_coverage_node()
+    assert job and job["node_id"] == node_id
+    repertoire_coverage.submit_maia_coverage(node_id, job["lease_id"], [{"move_uci": "c7c5", "probability": 0.3}])
+    with database.connection() as db:
+        assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id=?", (node_id,)).fetchone()[0] == "complete"
+        assert db.execute("SELECT COUNT(*) FROM repertoire_priority_jobs").fetchone()[0] == 0
+        assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id='remaining-node'").fetchone()[0] == "queued"
+        assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id=?", (node_id,)).fetchone()[0] == "complete"
+        assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=? AND move_uci='c7c5'", (node_id,)).fetchone()[0] == 0.3
+        assert db.execute("SELECT state FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone() is None
+
+
+
+def test_issue8_partial_maia_failure_checkpoints_coverage_without_optional_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        node_id, _ = _seed_source_transition_coverage(db, maia_status="leased")
+        db.execute("UPDATE repertoire_coverage_nodes SET lease_id='failure-lease' WHERE id=?", (node_id,))
+    response = TestClient(app).post('/api/repertoire-coverage/maia/failure',
+        json={"node_id": node_id, "lease_id": "failure-lease", "error": "provider unavailable"})
+    assert response.status_code == 200
+    with database.connection() as db:
+        row = db.execute("SELECT maia_status,last_error FROM repertoire_coverage_nodes WHERE id=?", (node_id,)).fetchone()
+        assert row["maia_status"] == "failed"
+        assert "provider unavailable" in row["last_error"]
+        assert db.execute("SELECT state FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone() is None
+
+
+
+def test_issue8_independent_claim_skips_superseded_failed_attempt(tmp_path, monkeypatch, request):
+    from app.services import repertoire_coverage
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    with database.connection() as db:
+        _seed_decision_route(db)
+        old_node, _ = _seed_source_transition_coverage(db, run_id="old-run", run_status="failed",
+            explorer_status="failed", maia_status="queued",
+            created_at=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat())
+        new_node, _ = _seed_source_transition_coverage(db, run_id="new-run", run_status="failed",
+            explorer_status="failed", maia_status="queued")
+    job = repertoire_coverage.claim_maia_coverage_node()
+    assert job and job["node_id"] == new_node
+    with database.connection() as db:
+        db.execute("UPDATE repertoire_coverage_nodes SET maia_status='leased',lease_id='obsolete-lease' WHERE id=?", (old_node,))
+        before = dict(db.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone())
+    with pytest.raises(RuntimeError, match="lease is no longer active"):
+        repertoire_coverage.submit_maia_coverage(old_node, "obsolete-lease", [{"move_uci":"c7c5", "probability":0.9}])
+    with database.connection() as db:
+        assert dict(db.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone()) == before
+        assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=?", (old_node,)).fetchone()[0] == 0.2

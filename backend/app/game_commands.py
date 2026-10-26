@@ -11,7 +11,6 @@ from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import mutations as storage
 from .services.durable_tasks import enqueue_task_in_transaction
-from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 
 
 def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -34,8 +33,6 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
         priority=125,
     )
     affected_repertoire_ids = storage.affected_repertoire_ids(database, game_id)
-    for repertoire_id in sorted(set(affected_repertoire_ids)):
-        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     from .services.postgres_next_opponent import request_profile_refresh
     request_profile_refresh(database)
     return {"game_id": game_id, "excluded": excluded}

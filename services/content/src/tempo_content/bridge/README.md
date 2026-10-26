@@ -4,13 +4,21 @@
 
 ```mermaid
 flowchart LR
-  composition[Public Bridge composition] --> application[Content bridge application]
+  composition[Public Bridge composition] --> application[Content bridge application<br/>complete-source ceiling from public SourceSnapshot]
   composition --> storage[Content BridgeStore adapter]
   application -->|semantic facts and commands; original transaction| storage
   storage --> content[Content-owned PostgreSQL tables]
 ```
 
 [application.py](application.py) owns import/proposal validation, immutable draft identities, approval/state decisions, export construction and receipt/checkpoint rules. The [composition entry point](__init__.py) supplies the [database adapter](../../../../../database/tempo_content_database/adapters/bridge.py), which owns the existing complete SQL statements, JSON driver encoding, scope locks and row projections. No generic SQL execution capability is passed to the application.
+
+Complete-source scope and draft guards reuse the existing public
+`SourceSnapshot.exercises` ceiling of 10,000. Learning's existing V2 fact bound
+likewise derives from its public Publication definition ceiling. These checks do
+not truncate, partition or invent definitions. The separate Learning 12 MiB
+expanded-bundle limit, Content export-byte bounds and existing 8,192 historical
+alias limits remain unchanged; fitting the definition count alone does not prove
+that a complete source fits the other bounds or can be activated.
 
 Application orchestration retains the existing `ContentService._transaction()` section boundaries and order. Adapter mutations borrow that transaction and never open or commit another one; adapter read projections use the same existing `ContentService._one()` owner reads. The source-scope lock still precedes the operation/source checks. `ContentService` now imports the shared scope-lock implementation directly from its database owner, rather than reaching back into this application package.
 

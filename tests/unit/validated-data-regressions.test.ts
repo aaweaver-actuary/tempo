@@ -144,74 +144,15 @@ it("test_coverage_summary_accepts_adaptive_cohort_settings_without_diagnostic", 
   }).success).toBe(false);
 });
 
-it("test_fractional_personal_game_evidence_is_valid_repertoire_data", () => {
+it("repertoire definitions and graph metadata validate without the retired priority producer", () => {
   const parsed = repertoiresResponseSchema.parse({
-    repertoires: [
-      {
-        ...rawRepertoire,
-        introduction_priority: {
-          state: "partial",
-          personal_games: 637.74,
-          explorer: "unknown",
-          maia: "unknown",
-          updated_at: "2026-09-21T00:56:50.367084+00:00",
-          error: null,
-        },
-      },
-    ],
+    repertoires: [{ ...rawRepertoire, graph_generation: 3, graph_state: "ready",
+      graph_updated_at: null, graph_error: null }],
   });
-
-  expect(parsed.repertoires[0].introduction_priority?.personal_games).toBe(
-    637.74,
-  );
-});
-
-it("test_workspace_validation_does_not_drop_fractional_priority_records", () => {
-  const records = validRecords(
-    repertoiresResponseSchema.shape.repertoires.element,
-    [
-      {
-        ...rawRepertoire,
-        id: "black",
-        introduction_priority: {
-          state: "partial",
-          personal_games: 637.74,
-          explorer: "unknown",
-          maia: "unknown",
-          updated_at: null,
-          error: null,
-        },
-      },
-      {
-        ...rawRepertoire,
-        id: "white",
-        introduction_priority: {
-          state: "partial",
-          personal_games: 299.74,
-          explorer: "unknown",
-          maia: "unknown",
-          updated_at: null,
-          error: null,
-        },
-      },
-      {
-        ...rawRepertoire,
-        id: "malformed-optional-priority",
-        introduction_priority: {
-          state: "partial",
-          personal_games: "not-a-number",
-        },
-      },
-    ],
-    "repertoire",
-  );
-
-  expect(records.map((record) => record.id)).toEqual([
-    "black",
-    "white",
-    "malformed-optional-priority",
-  ]);
-  expect(records[2].introduction_priority).toBeUndefined();
+  expect(parsed.repertoires[0].id).toBe(rawRepertoire.id);
+  expect(parsed.repertoires[0].graph_generation).toBe(3);
+  expect(parsed.repertoires[0].graph_state).toBe("ready");
+  expect("introduction_priority" in parsed.repertoires[0]).toBe(false);
   expect(dataDiagnostics()).toEqual([]);
 });
 

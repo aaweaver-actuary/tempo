@@ -18,6 +18,8 @@ from pydantic import Field, model_validator
 from ..domain import ContentError, canonical_source, canonical_position, stable_id, decision_identity, project_move_line
 from ..models import SourceModel, SourceSnapshot, SourceRepertoire, SourcePolicy
 
+MAX_BRIDGE_DEFINITIONS = SourceSnapshot.model_json_schema()['properties']['exercises']['maxItems']
+
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
@@ -195,8 +197,8 @@ def validate_bridge_execution_scope(source, manifest):
     manifest = ImportManifest.model_validate(manifest)
     if not manifest.complete:
         raise ContentError('bridge_scope_unsupported', 'A requires a complete source')
-    if len(source.exercises) > 8192:
-        raise ContentError('bridge_scope_unsupported', 'A supports at most 8192 complete opening definitions')
+    if len(source.exercises) > MAX_BRIDGE_DEFINITIONS:
+        raise ContentError('bridge_scope_unsupported', f'A supports at most {MAX_BRIDGE_DEFINITIONS} complete opening definitions')
     exercises = {exercise.key: exercise for exercise in source.exercises}
     if any(exercise.specification.type != 'move_line' or exercise.specification.grading_policy != 'reference'
            for exercise in exercises.values()):
@@ -269,8 +271,8 @@ class BridgeApplication:
         manifest = ImportManifest.model_validate(manifest)
         if source.workspace_id != self.service.workspace_id or source.workspace_id != manifest.workspace_id or source.source_key != manifest.source_key:
             raise ContentError("workspace_mismatch", "Draft belongs to a different source/workspace")
-        if len(source.exercises)>8192:
-            raise ContentError('bridge_definition_limit','This bridge supports complete sources of at most 8192 definitions; no truncation is performed')
+        if len(source.exercises)>MAX_BRIDGE_DEFINITIONS:
+            raise ContentError('bridge_definition_limit',f'This bridge supports complete sources of at most {MAX_BRIDGE_DEFINITIONS} definitions; no truncation is performed')
         if type(expected_revision) is not int or expected_revision < 0:
             raise ContentError("invalid_source_revision", "Expected revision must be a nonnegative integer")
         # Freeze canonical ordering before identity; provenance byte digest remains explicit.
