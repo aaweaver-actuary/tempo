@@ -1,13 +1,124 @@
-# Daily Study practice policy
+# Study game feedback — T06 / #487
 
-**MAIN source; deployment unverified.** Study means daily practice. Authored/imported [Studies](../studies/README.md) is a separate owner.
+Source implementation, not deployed. Contract dependency: #482 checkpoint
+`1587828a`; [shared types](../contracts/product_v02/learning.py). Ordinary Study
+retains the existing scheduler, review transaction, queue and attempt authority.
+There is no independent Learning service requirement.
 
-| Directory | Existing responsibility |
-| --- | --- |
-| [openings](openings/README.md) | Pure opening preparedness/reach, admission frontier and frozen-order mathematics. |
-| [review](review/README.md) | Semantic feedback facts/port and UTC normalization. |
-| [frozen_order](frozen_order/README.md) | Previously separated frozen-order application policy; database work stays at its root owner. |
+## Public interface and composition handoff
 
-The first backend stage moves five opening/feedback leaves intact. They import only their own policy, explicit [contracts](../contracts/README.md), neutral [chess support](../chess/README.md) and external libraries. They do not import Games, authored Studies, concrete database adapters or the HTTP/worker root. Outer composition supplies capabilities and owns effects. Existing legacy queue/review workflows still need the separate [organization checklist](../../ORGANIZATION.md) closure; this directory does not establish deployment/resource independence.
+[`GameFeedback`](game_feedback.py) implements `LearningFeedbackPort`:
+`accept_lapse(GameLapse)`, `control_effect(GameEffectControl)`, and
+`effect_status(GameEffectKey) -> LearningReceipt | None`. Existing v2
+`EvidenceWithdrawal` is carried by `GameEffectControl`; v3 withdrawal-only
+transport remains with the producer/composition owner. Receipt identity is a
+stable hash of workspace/provider/game/decision/one-based occurrence ply.
 
-The `organized-study` local import-linter contract covers the newly moved openings/review namespaces, including initializers. Existing frozen-order checks retain their own bounded scope. No new scheduler, authority, database schema or queue behavior is introduced. Consolidation remains [proposal only](../../../database/SIMPLIFICATION.md).
+Construct it with a borrowed `PostgresGameFeedbackStore(database)`, an injected
+`CurrentDecisionPort.current(lapse) -> tuple[DecisionPresentation, ...]`, and an
+aware processing clock. The current mapping must be read/fenced by its owner
+inside the caller's transaction. Zero/multiple mappings grant no effect. Supply
+the actual current source/repertoire/card revision, exact position, selected
+response and introduction evidence; never resolve a card by position alone.
+T07 owns command dispatch, authority capture/fencing and outer composition.
+
+The caller starts/commits/rolls back the transaction. `accept_lapse` acquires
+existing card-edit/card-row/day locks before the effect lock. The schedule,
+honestly labelled `reviews.source_kind='game_lapse'` Again record, queue and
+effect receipt commit together. No Study attempt, introduction, or success is
+fabricated. Exceptions require rollback; acknowledge success only after commit.
+Read-only status does not acquire an effect or issue a review.
+
+`maintain(after='', limit=1) -> next_cursor | None` advances one effect per
+borrowed transaction using the same injected current mapping. Persist the cursor
+with the owning job; commit each unit, resume from its cursor, and restart a new
+sweep at `''`. This preserves card-before-day lock order and short transactions.
+No Games/provider call belongs inside that transaction. T07 wires this bounded
+Study-owned maintenance into its existing job execution; it must run independently
+of the producer and on resume. Missing external authority must leave work pending
+until owner revalidation; it is never permission to guess a card.
+
+## Behavior and chronology
+
+First detection fixes `available_by <= detected_at + 48h`; duplicate delivery or
+equivalent recomparison never reapplies Again or moves the original deadline.
+Semantic identity excludes delivery, comparison and presentation revisions.
+Changed source content/moves/occurrence facts quarantine the original effect.
+Hold/withdraw is durable even before delivery and cannot reactivate on a delayed
+original. A hold after application retains its original historical effect.
+No automatic correction release or historical reversal is implemented (D08).
+
+Active affected attempts defer mutation; unrelated attempts retain their issued
+slot. Burial, invalidity and conflicts remain visible. Required introduced-card
+work consumes no discretionary introduction allowance. Pending work advances at
+a safe boundary through maintenance. A genuine subsequent clean Study review
+settles the exact mapped revision once. Guided/Again/invalidated/game records do
+not settle. D10 processing policy: never backdate FSRS; a retained, revision-proved
+clean Study review after the game already satisfies late evidence. Otherwise
+apply Again to current state at processing time. A future review clock defers
+application. Legacy date-only introduction is conservatively bounded by the end
+of that day, so same-day ordering is not invented.
+
+## Narrow hook manifest
+
+- `services/learning_review_adapter.py::settle_remediation` calls
+  `settle_saved_review` after the real saved review in the same transaction.
+- `services/queue_application.py::seed_queue` invokes
+  `resume_available_feedback` for already-applied obligations after ordinary due
+  seeding. This recovery needs no producer or index. It uses nonblocking card
+  reservations when the caller already holds a day lock.
+- `queue_application.py::presentation_rows` removes obsolete priority, and
+  `queue_ordering.py::_priority_projection` uses the unchanged existing priority
+  algorithm for `product_game_lapse`. Protected issued attempts remain protected.
+
+The adapter lives in [the database owner](../../../database/tempo_legacy_database/adapters/study/README.md).
+Migration 051 is source only and must be allocated/applied by the existing
+migration owner at integration. Pre-migration/recovery paths retain their current
+behavior. No route, main.py, independent runtime or live data changes.
+
+```mermaid
+flowchart LR
+    Producer[Optional producer] -->|shared semantic command| Composition[T07 composition]
+    Composition -->|borrowed transaction and current mapping| Receiver[Study GameFeedback]
+    Receiver -->|Again| Scheduler[Existing scheduling application]
+    Receiver -->|semantic store port| Store[Study PostgreSQL adapter]
+    Scheduler -->|borrowed SchedulingReviewStore| Store
+    Store --> Receipt[(Study effect receipt and deadline)]
+    Store --> Owned[(Study cards / reviews / ordinary queue)]
+    Review[Normal Study completion] -->|same transaction| Settlement[Study settlement hook]
+    Settlement --> Receipt
+    Seed[Normal Study queue rebuild] -->|bounded recovery| Store
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Caller transaction
+    participant S as Study receiver
+    participant D as Study storage
+    participant A as Existing Again application
+    C->>S: accept_lapse(shared GameLapse)
+    S->>D: card/day lock, effect lock, read receipt
+    alt held or duplicate
+        D-->>S: original durable receipt/deadline
+    else current introduced target
+        S->>A: Again at processing clock, source=game_lapse
+        A->>D: append provenance review + save schedule
+        S->>D: promote ordinary queue + save effect receipt
+    end
+    S-->>C: provisional owner receipt
+    C->>C: commit all effects or roll back all
+```
+
+Shared host/database resource isolation and actual product activation remain T07
+integration evidence. Component proofs do not certify deployment isolation.
+
+## Focused checks
+
+`make python-file FILE=backend/tests/test_product_game_lapse.py`
+
+`make python-file FILE=backend/tests/test_product_game_lapse_postgres.py`
+
+The first uses immutable shared fixtures, frozen time, explicit FSRS and semantic
+fake capabilities; the second requires the documented task-owned native fixture.
+Unavailable native infrastructure is unverified, never a mock pass. Existing
+scheduler policy is unchanged; its unchanged regressions are reused.
