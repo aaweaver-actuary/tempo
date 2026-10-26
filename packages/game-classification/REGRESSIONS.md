@@ -41,3 +41,10 @@ authority, and preserve the event key after later introduction. An incorrect
 historical encounter remains importance evidence without an FSRS lapse; a correct
 one remains frequency evidence without failure. Current Study disposition is not
 selected by these tests or this component.
+
+`test_game_encounter_contract_preserves_classified_facts` verifies direct
+compatibility with the frozen 0.2.1 `GameEncounter` for matched/missed observations
+and unintroduced/later-introduced current state. It preserves the exact source,
+one-based key occurrence, route-local mapping, original detection/occurrence time
+and caller values. It does not implement command delivery, owner disposition or
+receipt/admission policy.

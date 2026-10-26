@@ -43,6 +43,17 @@ All existing route, source, mapping, conflict, ambiguity, coverage-end and chron
 guards remain. Unmapped or unavailable correct play never invents an authoritative
 encounter. The pure classifier issues no learning command and changes no state.
 
+This branch consumes the frozen additive `GameEncounter` / `EncounterReceipt`
+contract 0.2.1 from #533 at `46f07e9a`. Its findings and `GameEffectKey` map directly
+to `GameEncounter` without another classifier API or DTO. Outer composition supplies
+the exact `IntroductionGameScope`, the proved `DecisionPresentation`, original
+detection time and workflow-owned payload digest claim. Expected/played moves
+become `matched` / `missed` observation facts, including when Study has introduced
+the card since the game. The focused boundary regression constructs the frozen
+contract for both observations and both current introduction states. Existing
+`control_effect` fences remain shared; delivery, receipts, current-state disposition
+and live controls stay with their owners. No command is submitted by this module.
+
 ## Product adapter (unmerged source)
 
 [`backend/app/games/feedback/comparison.py`](../../backend/app/games/feedback/comparison.py)
@@ -85,6 +96,7 @@ flowchart LR
   Adapter --> Frontier["RouteFrontier / TraversalRoute\nexisting traversal owner"]
   Adapter --> Policy["classify_response\npure classification owner"]
   Adapter --> Findings["Shared Finding values / GameEffectKey"]
+  Findings -. "outer composition example\nverified at the contract boundary" .-> Encounter["Shared GameEncounter 0.2.1\noriginal detection / source / observation"]
 ```
 
 This is implemented, unmerged source; application wiring and real game-to-Study
