@@ -41,6 +41,8 @@ from app.study.introductions.ports import AllocationState, OwnerFacts
 
 
 from test_product_repertoire_integration import source, ChangesStore
+from app.product_composition.analysis import accept_current_owner_rankings
+from app.study.introductions.policy import RankingContext
 
 def request(*, population=True):
     snapshot, policy = source()
@@ -229,6 +231,25 @@ def test_d_study_rejects_a_context_change_after_analysis_fence_check():
     assert accept_published_introductions(day="2026-10-26", results=(publications.accepted,),
         publications=publications, introductions=Introductions(ledger, owner)) == "rejected"
     assert not ledger.rankings and not owner.effects
+
+
+def test_d_concrete_owner_handoff_uses_its_authority_context_without_recomputing_policy():
+    job=request()
+    publications=Publications(job.fence)
+    assert run(job,publications).status=="published"
+    owner,ledger=IntroductionFacts(job.fence),IntroductionLedger()
+    actual=RankingContext((("rep",job.fence.repertoire_revision,job.fence.source_revision),),"actual-owner-controls-binding")
+    owner.current=replace(owner.current,context=actual)
+    class CurrentReceiver(Introductions):
+        def context(self,day):return self.owner.facts(day).context
+    receiver=CurrentReceiver(ledger,owner)
+    assert accept_current_owner_rankings(day="2026-10-26",results=(publications.accepted,),
+        publications=publications,introductions=receiver)=="accepted"
+    assert tuple(ledger.rankings)==(actual,)
+    assert receiver.preview("2026-10-26").introductions[0].decision_id=="twenty"
+    owner.current=replace(owner.current,context=RankingContext((("rep",2,"changed-authority"),),actual.settings_revision))
+    assert accept_current_owner_rankings(day="2026-10-26",results=(publications.accepted,),
+        publications=publications,introductions=receiver)=="obsolete"
 
 
 def engine_fixture():

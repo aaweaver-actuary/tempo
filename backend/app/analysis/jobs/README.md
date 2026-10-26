@@ -55,6 +55,17 @@ receiver rechecks its current context in the borrowed owner transaction and owns
 all selection/charges. A source-only fake proves the handoff, one global slot,
 replay and preservation of an unrelated active attempt; it is not ordinary Study.
 
+The concrete #495 follow-on is consumed unchanged at `29443bda`.
+`create_current_introduction_receiver(database, sources=..., settings=...)`
+passes actual public `IntroductionSource`/`IntroductionSettings` to its canonical
+factory. `accept_current_owner_rankings` obtains the receiver's own current
+context and checks retained authority source revisions, rather than substituting
+the older fake fixture's snapshot-digest context. It supplies shared factual
+rankings only. No eligibility callback, SQL or canonical writer is introduced in
+composition. The future Analysis adapter must hold its publication/settings
+fence during the short delivery transaction; foreground Study reads its own
+accepted cache and must not call Analysis. Concrete Analysis persistence,+explicit saved D04 settings and normal-product D acceptance remain pending.
+
 `prepare_coverage` performs at most 32 sequential requests; overflow fails visibly
 instead of pretending partial acquisition is complete. It calls the actual
 Explorer adapter with a request-owned transport and then the actual coverage

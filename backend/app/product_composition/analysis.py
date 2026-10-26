@@ -165,6 +165,47 @@ def accept_published_introductions(*, day: str, results: tuple[PreparedAnalysis,
     return introductions.accept_ranking(day, context, rank_candidates(facts))
 
 
+def create_current_introduction_receiver(database, *, sources, settings):
+    """Opt-in outer binding: #495 receives its own factual sources/settings.
+
+    The caller owns the existing borrowed writer transaction. This function
+    adds no eligibility callback, SQL, admission writer or automatic activation.
+    """
+    from app.services.queue_admission_adapter import current_owner_introductions
+    return current_owner_introductions(database,sources=sources,settings=settings)
+
+
+def accept_current_owner_rankings(*, day: str, results: tuple[PreparedAnalysis, ...],
+                                 publications: AnalysisPublications, introductions) -> str:
+    """Use #495's actual current context rather than invent its authority digest.
+
+    Current-owner contexts bind retained authority fingerprints, which are the
+    snapshot source_revision, rather than the snapshot's content digest. The
+    Analysis adapter must hold its current publication/settings fence during
+    this short delivery transaction; ordinary Study reads only its own cache.
+    """
+    if not results or any(item.status!="ready" or item.ranking is None for item in results):
+        return "unavailable"
+    fences=tuple(item.fence for item in results)
+    if len({item.repertoire_id for item in fences})!=len(fences):
+        raise ValueError("unique_nonempty_ranking_scopes_required")
+    if any(publications.current(item.repertoire_id)!=item for item in fences):
+        return "obsolete"
+    context=introductions.context(day)
+    expected=tuple(sorted((item.repertoire_id,item.repertoire_revision,item.source_revision) for item in fences))
+    if context.repertoires!=expected:
+        return "obsolete"
+    for result in results:
+        if (result.ranking.source_revision!=result.fence.source_revision
+                or result.ranking.snapshot_digest!=result.fence.snapshot_digest):
+            return "obsolete"
+    facts=RankingInput(repertoire_revisions=tuple((name,revision) for name,revision,_ in expected),
+        candidates=tuple(candidate for result in results for candidate in result.ranking.introductions.based_on.candidates),
+        evidence_ids=tuple(sorted({identity for result in results
+            for identity in result.ranking.introductions.based_on.evidence_ids})))
+    return introductions.accept_ranking(day,context,rank_candidates(facts))
+
+
 def create_proposal_coordinator(snapshot: RepertoireSnapshot, engine, *, cancellation=None):
     """Wire unchanged #496 retrieval and #497 evidence to #499's pure policy."""
     index = build_index(snapshot)
