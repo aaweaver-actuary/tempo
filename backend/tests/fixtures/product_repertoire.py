@@ -1,7 +1,8 @@
 """Task-only legacy conflict seed/readback, supplied on stdin by the C browser test.
 
-Normal imports create the repertoire/cards first. This simulates one pre-existing
-legacy conflicting line; it is not an import bypass exposed by the product.
+Normal imports create the repertoire/cards first. This supplies one synthetic
+legacy conflicting line with an explicit stored card/graph binding. It records
+no review and is not an import bypass exposed by the product.
 """
 import hashlib
 import json
@@ -50,7 +51,7 @@ with postgres_store.connection(read_only=action=="readback") as database:
             "ON CONFLICT DO NOTHING", (repertoire_id,graph[0],identity,card,' '.join(first[2].split()[:4]),
                                        first[2],json.dumps(["d2d4"])))
     else:
-        cards = database.execute_native("SELECT card.id,card.revision,card.start_fen,card.moves_json,card.state,card.introduced_at FROM cards card "
+        cards = database.execute_native("SELECT card.id,card.revision,card.start_fen,card.moves_json FROM cards card "
             "WHERE card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards membership "
             "WHERE membership.repertoire_id=%s AND membership.card_id=card.id) ORDER BY card.id",
             (repertoire_id,repertoire_id)).fetchall()
