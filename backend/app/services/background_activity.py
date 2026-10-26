@@ -149,10 +149,6 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
             if state == "complete" and row["updated_at"] < cutoff:
                 continue
             items.append(_base_item("coverage", row["id"], f"{row['repertoire_name']} coverage", state, row["updated_at"], row["id"], "Checking positions", completed_nodes, total_nodes * 2, row["last_error"]))
-        for row in storage.statistics_activity(database, (cutoff,)):
-            items.append(_base_item("statistics", row["local_day"], f"Daily insights {row['local_day']}", row["status"], row["updated_at"], row["local_day"], error=row["last_error"]))
-        for row in storage.priority_activity(database, (cutoff,)):
-            items.append(_base_item("priority", row["repertoire_id"], f"{row['repertoire_name']} priorities", row["status"], row["updated_at"], str(row["generation"]), error=row["last_error"]))
         game_position_counts = {(item["game_id"], item["analysis_version"]): item
                                 for item in storage.analysis_position_counts(database)}
         for row in storage.analysis_activity(database, (cutoff,)):

@@ -1,24 +1,34 @@
-# Legacy chess feature and statistics storage
+# Legacy game-feature storage
 
-**Current source; live schema/deployment unverified.** [storage.py](storage.py) owns feature-input projections, snapshot/insight writes and daily-job operations used by [statistics.py](../../../../backend/app/services/statistics.py). The optional overview, breakdown and insights GET routes are retired; daily refresh commands and stored facts remain unchanged. All operations borrow existing connections and never open, commit or close one. The existing canonical [feature writer](../games/derivation/features.py) and [claim-control SQL](../controls/claim_sql.py) are reused; there is no second feature writer, claim authority or generic execution interface.
+**Current source; deployment unverified.** Daily chess snapshots and insights
+materialization is retired from this source branch. Its refresh route, command,
+workers, activity controls and exclusive storage operations are removed. It
+previously combined daily outcome/tactical totals after provider/analysis
+readiness; the [last implementation](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf) remains in Git. No old job/history drain
+or migration is required by the graph-preserving fresh start.
+
+[storage.py](storage.py) retains only feature-input projections and re-exports
+the single canonical [feature writer](../games/derivation/features.py). The
+[application](../../../../backend/app/services/statistics.py) retains player
+perspective, timezone/DST, chess phase and tactical feature calculations.
 
 ```mermaid
 flowchart LR
-  application[Existing statistics composition] -->|borrowed feature and daily reads| projections[Root statistics projections]
-  application -->|existing chess, dates and metrics| calculations[Application algorithms and responses]
-  calculations -->|same feature tuple| feature[Canonical feature-row writer]
-  application -->|existing transaction and claim decisions| jobs[Root daily-job operations]
-  application -->|selected snapshot and insight facts| publication[Root snapshot and insight writes]
+  game[Existing legacy or native game derivation] --> feature[Retained per-game feature calculation]
+  feature -->|borrowed bounded reads| projections[Game, analysis, event, match and timezone facts]
+  feature -->|unchanged 18-field tuple| writer[Canonical game-feature writer]
+  writer --> phase[Existing phase 6 and derivation-priority handoff]
 ```
 
-| Operation group | Stored facts and effects | Canonical fields, keys and relationships |
-| --- | --- | --- |
-| Feature inputs and canonical upsert | Reads one imported game, ordered move analysis, classifier-version-1 gameplay events, current primary repertoire match and settings timezone. Writes the unchanged 18-field feature tuple through the existing `write_feature_values` function. Chess phase scanning, player perspective, local day/hour/weekday, decision/loss/tactical calculations and feature timestamps remain outside database, after the existing read scope closes. `prepare_only` and foreground yielding remain application decisions. | [Imported-game fields](../../schema/authored-content-1/README.md), [move/match/event projections](../../schema/game-projections-2/README.md), [feature fields keyed by `game_id`](../../schema/game-projections-1/README.md), [settings](../../schema/runtime-metadata/README.md), [current-view DDL index](../../schema/README.md#read-projections). |
-| Daily readiness and publications | Reads configured providers, sync watermarks, eligible day-game/feature presence and ready feature rows; writes the existing waiting/complete snapshot JSON and the selected outcome-trend/tactical-focus insights. Application code retains next-day calculation, waiting-sync precedence, exclusions/failed-analysis handling, metric math, insight thresholds/IDs, JSON serialization and all clock points inside the same existing transaction. | [Account and feature storage](../../schema/game-projections-1/README.md), [sync watermarks](../../schema/game-projections-2/README.md), [daily snapshot/insight fields and keys](../../schema/study-queue-review-1/README.md). Snapshot key: `local_day`; insight key: `id`. |
-| Daily job lifecycle | Executes the existing enqueue upsert, `BEGIN IMMEDIATE`, paused/promoted/Study-mode-aware candidate query, conditional queued→running update and completion/failure writes. Application composition still samples the claim/status clock, handles the affected-row decision, runs the work and emits its original progress callbacks. Transaction ownership and failure handling remain unchanged. | [Daily job key/status/error fields](../../schema/study-queue-review-1/README.md), [activity controls/settings](../../schema/runtime-metadata/README.md). Control lookup is the existing logical `(source='statistics', work_id=local_day)` relationship, not a new FK. |
+The [native publication](../../../../backend/app/services/postgres_game_features.py)
+still checks its task lease, derivation version and phase before writing,
+advancing phase 6 and enqueuing the existing handoff in one caller-owned
+transaction. Legacy game import no longer invalidates retired daily results;
+its game identity, insert/update/duplicate and analysis admission remain.
 
-The linked schema READMEs remain canonical for every stored type, primary/composite key, enforced FK and explicitly logical relationship. Complete daily JSON stores day/status, game count, nullable score and tactical counts; waiting JSON stores missing provider watermarks and blocked game IDs. Insights store that same accepted snapshot as evidence. The existing source DDL distinguishes stored backing tables from current-publication views. No schema, stored representation, owner permissions or Study dependency changes are introduced, and no live schema/data was inspected.
-
-The unused `overview_rows` projection and the separate HTTP `daily_insights` adapter were removed after their overview/insights GET routes retired; neither had a retained caller. The remaining statistics service and daily-job routes remain active. The dimension reader and its compatibility whitelist were removed with the retired breakdown endpoint. Remaining feature and daily-publication operations still borrow the caller’s connection and preserve their transaction, callback and clock ordering. This does not claim a new isolated runtime.
-
-Retained tests cover timezone/DST, player-perspective evaluations, readiness and late-arrival invalidation, current-comparison filtering, pause/promotion/Study-mode job selection and the local SQL boundary. Tests solely for the retired overview/breakdown responses were removed. The earlier overview/breakdown route-retirement batch had static AST, caller and route-contract checks; its focused Python suite was unavailable in that historical cloud checkout. The later two-unused-read cleanup passed both existing cases in `backend/tests/test_legacy_statistics_database_split.py` using a disposable Python 3.13 environment. An AST comparison confirms every retained storage definition is unchanged, and the active service, command, worker, feature-writer and connection sources remain byte-identical to main `782bf537`. These two focused SQLite/source cases are not native PostgreSQL qualification. PostgreSQL execution/locking, deployment/resource isolation and full-system behavior remain unverified. The [unfinished extraction inventory](../../../INVENTORY.md) tracks the remaining mixed files.
+No schema, table, graph/repertoire source, stored field or transaction ownership
+changes here. Old daily tables remain described by the [source schema](../../schema/study-queue-review-1/README.md);
+this is source retirement, not live data deletion. The
+[named regressions](../../../../tests/REGRESSIONS.md#daily-statistics-producer-retirement)
+cover absent admission and retained game/feature behavior with task-owned SQLite
+and fakes. Native PostgreSQL, browser and deployment qualification are separate.

@@ -13,7 +13,7 @@ from test_daily_study_dispatch import dispatch_store, task_row
 
 
 PIPELINE_KINDS = (
-    'opening_graph_rebuild', 'game_derivation_positions', 'repertoire_priority',
+    'opening_graph_rebuild', 'game_derivation_positions', 'discovery_recommendation',
     'opening_segmentation', 'game_sync_record',
 )
 

@@ -298,7 +298,7 @@ test("full and split PostgreSQL verification preserve every existing proof", () 
   assert(full.includes("deployment_lifecycle"));
   assert(lifecycle.includes("deployment_lifecycle"));
   assert(!durability.includes("deployment_lifecycle"));
-  for (const stage of ["schema_migrations", "priority_recovery", "background_diagnostics"]) assert(durability.includes(stage));
+  for (const stage of ["schema_migrations", "background_diagnostics"]) assert(durability.includes(stage));
   const split = new Set([...durability, ...lifecycle, ...postgresTestStages({ mode: "browser" })]);
   assert.deepEqual([...split].sort(), full.filter(stage => stage !== "study_isolation").sort());
 });

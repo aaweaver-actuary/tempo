@@ -27,10 +27,32 @@ from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrati
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from app.services.repertoire_opportunities import _publish, _stable_id, list_opportunities
 from tempo_legacy_database.adapters import postgres_store
 from app import discovery_commands
 from app.services import discovery_admission
+
+
+def _fixture_id(repertoire_id, kind, fen_key, target):
+    import hashlib
+    return hashlib.sha256(f"{repertoire_id}\0{kind}\0{fen_key}\0{target}".encode()).hexdigest()
+
+
+def _seed_saved_opportunity(store, *, repertoire_id, kind, fen_key, target, card_id,
+                            opponent_move_uci, score, evidence):
+    """Static saved-row fixture for the retained admission/storage tests."""
+    from app.services.canonical_scope_freshness import scope_identity, game_scope_generation
+    identity = scope_identity(store, repertoire_id)
+    payload = json.dumps(evidence, sort_keys=True)
+    identifier = _fixture_id(repertoire_id, kind, fen_key, target)
+    store.execute("""INSERT INTO repertoire_opportunities(
+        id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,evidence_json,
+        evidence_fingerprint,created_at,updated_at,canonical_prefix_revision,
+        canonical_scope_source_revision,canonical_scope_preview_id,game_scope_generation)
+        VALUES(?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?)""",
+        (identifier,repertoire_id,kind,fen_key,card_id,opponent_move_uci,score,payload,
+         'saved-fixture:A','2026-10-02','2026-10-02',identity['canonical_prefix_revision'],
+         identity['canonical_scope_source_revision'],identity['canonical_scope_preview_id'],game_scope_generation(store)))
+    return identifier
 
 
 DISCOVERY_FEN_KEY = "4k3/8/8/8/8/8/8/4K3 w - -"
@@ -79,54 +101,22 @@ def test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(dsn
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw_database:
         database = PostgresConnection(raw_database)
         for target, expected_state in expected.items():
-            identifier = _stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
+            identifier = _fixture_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
             row = database.execute("SELECT evidence_fingerprint,admission_state,admitted_card_id,handled_evidence_json,evidence_json,card_id FROM repertoire_opportunities WHERE id=?", (identifier,)).fetchone()
             assert tuple(row)[:4] == expected_state, target
             assert row["evidence_json"] == '{"supporting_games":5}' and row["card_id"] == "known-plural", target
-        visible = {item["id"]: item for item in list_opportunities(database, "preserved-repertoire")}
-        assert set(visible) == {_stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
-                                for target in expected if target != "matching-queued"}
         assert tuple(database.execute("SELECT state,evidence_fingerprint,card_id FROM discovery_admission_intents WHERE id='legacy:mismatched-queued'").fetchone()) == ("queued", "A", "known-plural")
     print("PASS revision-aware PostgreSQL 027 backfill: matching handled; mismatch, ambiguity, wrong card and unfinished intent remain actionable; preparing/failed unhandled")
 
 
-def test_handled_discovery_postgres_upgrade_and_material_evidence_replay(dsn: str) -> None:
-    opportunity_id = _stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, "matching-queued")
-    with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw_database:
-        database = PostgresConnection(raw_database)
-        row = database.execute("SELECT handled_evidence_json FROM repertoire_opportunities WHERE id=?",
-                               (opportunity_id,)).fetchone()
-        assert row[0] == '{"supporting_games":5}'
-        assert database.execute("SELECT COUNT(*) FROM repertoire_opportunities WHERE handled_evidence_json IS NOT NULL").fetchone()[0] == 1
-        def publish(supporting_games):
-            _publish(database, repertoire_id="preserved-repertoire", kind="weak_known_decision",
-                     fen_key=DISCOVERY_FEN_KEY, target="matching-queued", card_id=None,
-                     opponent_move_uci=None, score=1, evidence={"supporting_games": supporting_games})
-        publish(7)
-        assert database.execute("SELECT handled_evidence_json FROM repertoire_opportunities WHERE id=?",
-                                (opportunity_id,)).fetchone()[0] is not None
-        publish(8)
-        row = database.execute("SELECT handled_evidence_json,admission_state,admitted_card_id,seen_at,card_id FROM repertoire_opportunities WHERE id=?",
-                               (opportunity_id,)).fetchone()
-        assert tuple(row) == (None, None, None, None, "known-plural")
-        publish(8)
-        assert database.execute("SELECT COUNT(*) FROM repertoire_opportunities WHERE id=?",
-                                (opportunity_id,)).fetchone()[0] == 1
-        assert database.execute("SELECT card_id FROM repertoire_opportunities WHERE id=?",
-                                (opportunity_id,)).fetchone()[0] == "known-plural"
-    with psycopg.connect(dsn) as database:
-        assert database.execute("SELECT handled_evidence_json,admission_state FROM repertoire_opportunities WHERE id=%s",
-                                (opportunity_id,)).fetchone() == (None, None)
-    print("PASS handled discovery PostgreSQL upgrade and material-evidence replay")
 
 
 def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> None:
     """Use real transactions, leases, unique constraints, and queue persistence."""
-    from app.main import discoveries_feed
     repertoire_id = "revision-lifecycle"
     starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     fen_key = " ".join(starting_fen.split()[:4])
-    opportunity_id = _stable_id(repertoire_id, "weak_known_decision", fen_key, "e2e4")
+    opportunity_id = _fixture_id(repertoire_id, "weak_known_decision", fen_key, "e2e4")
     original_urls = {name: os.environ.get(name) for name in ("TEMPO_DATABASE_WRITE_URL", "TEMPO_DATABASE_READ_URL")}
     postgres_store.close_pools()
     for name in original_urls:
@@ -136,7 +126,7 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
             now = datetime.now(timezone.utc).isoformat()
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)",
                              (repertoire_id, "Revision lifecycle", "regression", now))
-            _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
+            _seed_saved_opportunity(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
                      target="e2e4", card_id=None, opponent_move_uci=None, score=1, evidence={"supporting_games": 5})
             fingerprint_a = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?",
                                              (opportunity_id,)).fetchone()[0]
@@ -163,8 +153,10 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
                 return {**dict(row), "payload": {"intent_id": intent_id}}
         task_a = lease(intent_a)
         with postgres_store.connection() as database:
-            _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
-                     target="e2e4", card_id=None, opponent_move_uci=None, score=1, evidence={"supporting_games": 8})
+            # The retained admission reader receives a different saved evidence row;
+            # the withdrawn producer/materiality algorithm is outside this fixture.
+            database.execute("UPDATE repertoire_opportunities SET evidence_json=?,evidence_fingerprint='saved-fixture:B',handled_evidence_json=NULL,admission_state=NULL,admitted_card_id=NULL WHERE id=?",
+                             (json.dumps({"supporting_games": 8}, sort_keys=True), opportunity_id))
             fingerprint_b = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
             assert fingerprint_b != fingerprint_a
         # Engine/graph work is already published. Only the actual bounded admission
@@ -179,7 +171,6 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
                 assert current["evidence_fingerprint"] == fingerprint_b
                 assert current["handled_evidence_json"] is None and current["admission_state"] is None
                 assert current["card_id"] is None
-                assert [item["id"] for item in list_opportunities(database, repertoire_id)] == [opportunity_id]
                 payload_b = {**payload, "evidence_fingerprint": fingerprint_b}
                 intent_b = discovery_commands.accept_discovery(database, payload_b)["intent_id"]
                 assert intent_b != intent_a
@@ -187,7 +178,6 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
                 assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE opportunity_id=?", (opportunity_id,)).fetchone()[0] == 2
                 database.execute("UPDATE repertoire_integrity_state SET checked_at=? WHERE repertoire_id=?",
                                  (datetime.now(timezone.utc).isoformat(), repertoire_id))
-            assert opportunity_id in {item["id"] for item in discoveries_feed()["discoveries"]}
             task_b = lease(intent_b)
             assert discovery_admission.execute_admission_intent_slice(task_b) is False
             assert discovery_admission.execute_admission_intent_slice(task_b) is False
@@ -197,8 +187,6 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='revision-card'").fetchone()[0] == 1
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='revision-card'").fetchone()[0] == 0
             assert database.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0] == "queued"
-        assert opportunity_id not in {item["id"] for item in discoveries_feed()["discoveries"]}
-        test_postgres_direct_training_requires_current_reviewed_revision(repertoire_id, opportunity_id, fen_key)
     finally:
         postgres_store.close_pools()
         for name, value in original_urls.items():
@@ -209,42 +197,6 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
     print("PASS real PostgreSQL stale admission, revisioned same-move acceptance, reconnect, and replay")
 
 
-def test_postgres_direct_training_requires_current_reviewed_revision(repertoire_id: str, opportunity_id: str, fen_key: str) -> None:
-    from fastapi import HTTPException
-    from app import opportunity_commands
-    with postgres_store.connection() as database:
-        old_fingerprint = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
-        _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
-                 target="e2e4", card_id="revision-card", opponent_move_uci=None, score=1,
-                 evidence={"supporting_games": 11})
-        reviewed_fingerprint = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
-        assert reviewed_fingerprint != old_fingerprint
-    for fingerprint in (None, old_fingerprint):
-        with postgres_store.connection() as database:
-            payload = {"repertoire_id": repertoire_id, "opportunity_id": opportunity_id}
-            if fingerprint is not None:
-                payload["evidence_fingerprint"] = fingerprint
-            try:
-                opportunity_commands.train_opportunity(database, payload)
-            except HTTPException as error:
-                assert error.status_code == 409
-            else:
-                raise AssertionError("Legacy or stale Train must not handle current evidence")
-            assert database.execute("SELECT handled_evidence_json,admission_state FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0] is None
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='revision-card'").fetchone()[0] == 1
-            assert [item["id"] for item in list_opportunities(database, repertoire_id)] == [opportunity_id]
-    with postgres_store.connection() as database:
-        payload = {"repertoire_id": repertoire_id, "opportunity_id": opportunity_id,
-                   "evidence_fingerprint": reviewed_fingerprint}
-        assert opportunity_commands.train_opportunity(database, payload)["idempotent"] is False
-    postgres_store.close_pools()
-    with postgres_store.connection() as database:
-        assert opportunity_commands.train_opportunity(database, payload)["idempotent"] is True
-        assert database.execute("SELECT handled_evidence_json=evidence_json FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
-        assert list_opportunities(database, repertoire_id) == []
-        assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='revision-card'").fetchone()[0] == 1
-        assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='revision-card'").fetchone()[0] == 0
-    print("PASS real PostgreSQL direct Train rejects missing/stale revision, preserves current evidence, confirms matching revision and replays after reconnect")
 
 
 def main() -> None:
@@ -287,7 +239,7 @@ def main() -> None:
                 "failed": ("failed", "A", "failed", "A", "known-plural"),
             }
             for target, (opportunity_state, fingerprint, intent_state, accepted_fingerprint, intent_card) in legacy_cases.items():
-                opportunity_id = _stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
+                opportunity_id = _fixture_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
                 database.execute(
                     "INSERT INTO repertoire_opportunities(id,repertoire_id,kind,fen_key,card_id,status,score,evidence_json,evidence_fingerprint,created_at,updated_at,admission_state,admitted_card_id,seen_at) "
                     "VALUES(%s,'preserved-repertoire','weak_known_decision',%s,'known-plural','active',1,'{\"supporting_games\":5}',%s,'2026-01-01','2026-01-01',%s,'known-plural','2026-01-01')",
@@ -397,7 +349,6 @@ def main() -> None:
             database.execute("INSERT INTO discovery_admission_intents SELECT 'resurfaced-admission',opportunity_id,repertoire_id,'B',starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,last_error,created_at,updated_at FROM discovery_admission_intents WHERE id='legacy-admission' ON CONFLICT DO NOTHING")
             assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE selected_move_uci='e1d2'").fetchone()[0] == 7
         test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(rehearsal_dsn)
-        test_handled_discovery_postgres_upgrade_and_material_evidence_replay(rehearsal_dsn)
         test_postgres_stale_admission_and_revisioned_same_move_replay(rehearsal_dsn)
         test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates(rehearsal_dsn)
     finally:

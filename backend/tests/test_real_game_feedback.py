@@ -15,7 +15,6 @@ from app.main import queue_today, randomize_daily_queue, requeue, seed_queue
 from app.services import repertoire_comparison
 from app.services.game_sync_coordinator import _execute_derivation
 from app.services.game_findings import refresh_game_findings
-from app.services.introduction_priorities import rebuild_introduction_priorities
 from app.services.real_game_feedback_adapter import apply_real_game_misses
 from app.services.repertoire_comparison import compare_games
 
@@ -125,19 +124,6 @@ def test_real_game_miss_obligation_survives_next_day_without_fsrs_mutation(tmp_p
         assert dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone()) == before
 
 
-@pytest.mark.parametrize("study_offset,expected", [(0, False), (-1, True), (1, False)])
-def test_real_game_miss_uses_exact_study_instants_including_equal_and_microsecond_times(tmp_path, monkeypatch, study_offset, expected):
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    database.initialize()
-    missed_at = datetime.now(timezone.utc) - timedelta(days=1)
-    with database.connection() as db:
-        _seed_repertoire(db, studied_at=(missed_at + timedelta(microseconds=study_offset)).isoformat())
-        _seed_game(db, "precise-miss", ["d2d4"], missed_at.isoformat())
-    compare_games(["precise-miss"])
-    with database.connection() as db:
-        rebuild_introduction_priorities(db, "rep")
-        evidence = json.loads(db.execute("SELECT evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0])
-        assert bool(evidence["real_game_repertoire_miss"]) is expected
 
 
 def test_real_game_miss_transposed_prefix_decision_prioritizes_whole_card_without_split(tmp_path, monkeypatch):
@@ -244,11 +230,6 @@ def test_real_game_miss_maps_to_existing_card_once_and_reaches_introduction_queu
         assert events[0]["fen_key"] == " ".join(START.split()[:4])
         assert events[0]["expected_uci"] == "e2e4"
         assert events[0]["actual_uci"] == "d2d4"
-        rebuild_introduction_priorities(db, "rep")
-        priority = db.execute("SELECT * FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()
-        evidence = json.loads(priority["evidence_json"])["real_game_repertoire_miss"]
-        assert evidence["weight"] == 1.0 and evidence["game_id"] == "miss"
-        assert priority["priority_score"] >= 1.0
         tomorrow = (date.today() + timedelta(days=1)).isoformat()
         seed_queue(db, tomorrow)
         queued = db.execute("SELECT * FROM daily_queue WHERE queue_date=? AND card_id='card'", (tomorrow,)).fetchone()
@@ -345,9 +326,6 @@ def test_targeted_study_updates_fsrs_and_later_success_is_measurable(tmp_path, m
         after = dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
         assert after["fsrs_card_json"] != before["fsrs_card_json"]
         assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='card' AND source_kind='study'").fetchone()[0] == 2
-        rebuild_introduction_priorities(db, "rep")
-        evidence = json.loads(db.execute("SELECT evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0])
-        assert evidence["real_game_repertoire_miss"] is None
         _seed_game(db, "second", EXPECTED, (now + timedelta(days=1)).isoformat())
     apply_real_game_misses("first")
     with database.connection() as db:
@@ -378,9 +356,6 @@ def test_late_imported_miss_is_historical_and_does_not_change_fsrs(tmp_path, mon
     with database.connection() as db:
         assert db.execute("SELECT COUNT(*) FROM repertoire_decision_events WHERE outcome='miss'").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM reviews WHERE source_kind='game'").fetchone()[0] == 0
-        rebuild_introduction_priorities(db, "rep")
-        evidence = json.loads(db.execute("SELECT evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0])
-        assert evidence["real_game_repertoire_miss"] is None
 
 
 def test_blocked_existing_card_keeps_game_evidence_without_automatic_again(tmp_path, monkeypatch):
@@ -423,51 +398,8 @@ def test_transposed_decision_keeps_canonical_card_identity(tmp_path, monkeypatch
         assert success["card_id"] == "card"
 
 
-def test_study_review_consumes_real_game_miss_bonus(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    database.initialize()
-    missed_at = datetime.now(timezone.utc) - timedelta(days=1)
-    with database.connection() as db:
-        _seed_repertoire(db)
-        _seed_game(db, "miss", ["d2d4"], missed_at.isoformat())
-    compare_games(["miss"])
-    with database.connection() as db:
-        rebuild_introduction_priorities(db, "rep")
-        before = db.execute("SELECT priority_score FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0]
-        db.execute(
-            """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind)
-               VALUES('card','correct',?,0,7,'study')""",
-            (datetime.now(timezone.utc).isoformat(),),
-        )
-        rebuild_introduction_priorities(db, "rep")
-        after = db.execute("SELECT priority_score,evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()
-        assert before - after["priority_score"] == 1.0
-        assert json.loads(after["evidence_json"])["real_game_repertoire_miss"] is None
 
 
-def test_same_second_study_timestamps_consume_only_earlier_game_misses(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    database.initialize()
-    second = datetime.now(timezone.utc).replace(microsecond=0)
-    earlier_study = second + timedelta(milliseconds=100)
-    missed_at = second + timedelta(milliseconds=500)
-    later_study = second + timedelta(milliseconds=900)
-    with database.connection() as db:
-        _seed_repertoire(db, studied_at=earlier_study.isoformat())
-        _seed_game(db, "same-second", ["d2d4"], missed_at.isoformat())
-    compare_games(["same-second"])
-    apply_real_game_misses("same-second")
-    with database.connection() as db:
-        rebuild_introduction_priorities(db, "rep")
-        before = json.loads(db.execute("SELECT evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0])
-        assert before["real_game_repertoire_miss"]["game_id"] == "same-second"
-        db.execute(
-            "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) "
-            "VALUES('card','correct',?,7,14,'study')", (later_study.isoformat(),),
-        )
-        rebuild_introduction_priorities(db, "rep")
-        after = json.loads(db.execute("SELECT evidence_json FROM repertoire_card_introduction_priorities WHERE card_id='card'").fetchone()[0])
-        assert after["real_game_repertoire_miss"] is None
 
 
 def test_foreground_review_completes_while_real_game_derivation_computes(tmp_path, monkeypatch):
