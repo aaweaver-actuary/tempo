@@ -113,6 +113,9 @@ class LearningReviewAdapter:
             row = storage.attempt_by_id(self.database, command.queue_entry_id, command.card_id, lock)
         else:
             row = storage.first_queued_attempt(self.database, context.local_day.isoformat(), command.card_id, lock)
+        if row is not None:
+            from .study_attempt_guard import guard_current_attempt
+            guard_current_attempt(self.database,row['id'],command.card_id,self.current_revision(command.card_id))
         return self._attempt(row)
 
     def recover_attempt(self, command):

@@ -155,8 +155,9 @@ sequenceDiagram
 contains source DDL `SCHEMA`, also frozen in
 [`053_study_recombination.sql`](../../../../database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql).
 The store/adapter runs no DDL, opens no connection and commits nothing. 053 follows
-#491's allocated 052; readiness/registry coordination must complete before normal
-installation qualification. Columns are checked-in source, not a live-schema claim.
+#491's published `f137d970` migration 052; source readiness is 53. Complete ordered
+DDL through 053 is exercised in the native fixture. Central registration remains
+with the serialized integration owner. Columns are source, not a live-schema claim.
 
 ```mermaid
 erDiagram
@@ -254,6 +255,17 @@ there is no global archive/delete fallback. Foreground Study priority is retaine
 all added source/evidence/member lock acquisition is nonblocking, and join errors
 are isolated by the savepoint after the actual review has saved.
 
+Serving an existing generated presentation locks its own definition under the
+same current route fence; a busy join neighbour only defers the later proposal.
+The optional published #487 conflict store is checked before issuance, recovery,
+failure marking and review lookup. When its DDL is absent these controls add no
+hold. Queue seeding reconciles one currently queued, provably scoped durable hold
+per transaction; already suspended rows are durable progress, so a rebuilt queue
+cannot repeatedly visit only an old first hold. Scope and restoration policy stay
+in #487; #495 owns admission and #501 owns current Repertoire composition and its
+separate migration. A generated occurrence supplies exact identity proof from its
+immutable definition/current mapping without becoming conflict authority.
+
 The external task runner bounds the existing disposable image, uses a loopback
 ephemeral port, verifies exact container ownership, removes its container/anonymous
 volumes, and releases the nontruncating validation lock. It installs nothing.
@@ -267,8 +279,7 @@ unrelated attempt and all original card/history identities are checked throughou
 No Study API is intercepted. Exact browser/migration results are in the PR; a
 prepared but unrun browser spec is not a pass.
 
-Pending coordinated surfaces: publication of independent #491 migration 052,
-serialized readiness/version/database index and central test registration, then
+Pending coordinated surfaces: central test/diagram registration, then
 `make ui-file FILE=product-recombination.spec.ts` against the normal source stack.
 No live join/review, history reset, graph migration resumption, deployment or merge
 is performed by this task.

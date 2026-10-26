@@ -306,8 +306,8 @@ def test_native_shared_evidence_identity_serializes_different_routes_without_wai
 def current_owner_transaction(monkeypatch):
     """Actual retained owner schema on a separate DB in the task's own server.
 
-    Until independent #491/052 is published, apply <=051 plus the exact proposed
-    T22 source DDL. No installed/readiness or browser claim is made by this case.
+    Apply the complete ordered source DDL through allocated T22 migration 053.
+    Runtime readiness registration/browser installation is separately qualified.
     """
     from tempo_legacy_database.adapters import postgres_store
     monkeypatch.setattr(postgres_store,"configured",lambda:True)
@@ -326,16 +326,16 @@ def current_owner_transaction(monkeypatch):
     spec.loader.exec_module(migration_owner)
     try:
         with psycopg.connect(owner_dsn) as raw:
-            for path in sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
-                if int(path.name[:3])>51:
-                    continue
+            migrations = sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
+            migration_owner.validate_migration_history(migrations,[],expected_version=53)
+            for path in migrations:
                 registration = migration_owner.MODULE_MIGRATIONS.get(path.name)
                 if registration:
                     source = (root/"database"/registration[2]).read_bytes()
                     assert hashlib.sha256(source).hexdigest()==registration[3]
                     raw.execute(source.decode(),prepare=False)
                 raw.execute(path.read_text(),prepare=False)
-            raw.execute(SCHEMA,prepare=False)
+                assert raw.execute("SELECT max(version) FROM tempo_schema_migrations").fetchone()[0]==int(path.name[:3])
             raw.execute("INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'UTC',0,0,0)")
         @contextmanager
         def connect():
@@ -558,3 +558,68 @@ def test_current_owner_any_saved_assistance_resets_and_invalidated_success_canno
         assert PostgresRecombinationStore(database,validate_reviews=True).streak(CleanStreak("A",1,"physical:A:1")).count==0
         result,_ = ordinary_current_review(database,"A",monkeypatch)
         assert result["recombination"]["clean_streak"]==1
+
+
+def test_current_owner_existing_review_continues_when_a_join_neighbour_is_busy(current_owner_transaction,monkeypatch):
+    transaction=current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    with transaction() as database:
+        result,_=ordinary_current_review(database,'B',monkeypatch)
+        combined=result['recombination']['resulting_presentation_id']
+    def review_combined():
+        with transaction() as database:
+            return ordinary_current_review(database,combined,monkeypatch)[0]
+    with transaction() as busy:
+        busy.execute_native("SELECT pg_advisory_xact_lock(hashtextextended('tempo:card-edit:C',0))")
+        busy.execute_native("SELECT id FROM cards WHERE id='C' FOR UPDATE")
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            result=worker.submit(review_combined).result(timeout=10)
+        assert result['persisted'] and result['recombination']['status']=='held'
+        assert result['recombination']['clean_streak']==1
+    with transaction() as database:
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==1
+
+
+def test_current_owner_optional_conflict_guards_recovery_review_and_rebuild(current_owner_transaction,monkeypatch):
+    from app.contracts.review_conflicts import ReviewConflict
+    from app.contracts.transport.study import ReviewRequest
+    from app.queue_commands import issue_queue_head,mark_attempt_failed
+    from app.queue_attempt_origins import recover_queue_entry
+    from app.services.learning_review_adapter import submit_legacy_review
+    from app.services.queue_application import seed_queue
+    from app.services.review_service import ensure_card_queued_after
+    from app.study.conflicts import Occurrence,SourceFence
+    from tempo_legacy_database.adapters.study.conflicts import PostgresConflictStore
+    from contextlib import nullcontext
+    transaction=current_owner_transaction
+    day=datetime.now().astimezone().date().isoformat()
+    with transaction() as database:
+        database.execute_native((Path(__file__).resolve().parents[2]/'database/tempo_legacy_database/ddl/study_conflicts.sql').read_text())
+        ensure_card_queued_after(database,'A',0,queue_date=day,preserve_order=False)
+        entry=database.execute_native("SELECT id FROM daily_queue WHERE card_id='A' AND status='queued'").fetchone()[0]
+        assert issue_queue_head(database,dict(entry_id=entry,card_id='A',expected_revision=1,queue_date=day))['issued']
+        origin=tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())
+        # Existing validated hold is a synthetic owner-state fixture. #487's
+        # command/source-authority proofs are reused, not faked as C acceptance.
+        occurrence=Occurrence('r11-repertoire','r11-route',0,'A',1)
+        store=PostgresConflictStore(database)
+        store.hold(occurrence,SourceFence('fixture-current',1,'fixture-digest'),True,datetime.now().astimezone())
+        store.suspend(occurrence)
+    with transaction() as database:
+        request=ReviewRequest(outcome='correct',guided=False,queue_entry_id=entry,expected_revision=1,attempt_id='held-original')
+        with pytest.raises(ReviewConflict):
+            recover_queue_entry(database,'A',request)
+        with pytest.raises(ReviewConflict):
+            mark_attempt_failed(database,dict(entry_id=entry,card_id='A',expected_revision=1))
+        monkeypatch.setattr('app.services.learning_review_adapter.read_connection',lambda:nullcontext(database))
+        with pytest.raises(ReviewConflict):
+            submit_legacy_review(database,dict(card_id='A',review=request.model_dump()))
+        assert not issue_queue_head(database,dict(entry_id=entry,card_id='A',expected_revision=1,queue_date=day))['issued']
+        assert database.execute_native("SELECT count(*) FROM review_attempt_receipts").fetchone()[0]==0
+        assert database.execute_native("SELECT attempt_failed FROM daily_queue WHERE id=%s",(entry,)).fetchone()[0]==0
+        database.execute_native('DELETE FROM daily_queue WHERE id=%s',(entry,))
+        seed_queue(database,day)
+        assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id='A' AND status='queued'").fetchone()
+        assert tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())==origin
+    with transaction() as database:
+        assert ordinary_current_review(database,'B',monkeypatch)[0]['persisted']

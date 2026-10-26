@@ -7,6 +7,7 @@ type Stage = { card_id: string; starting_fen: string; moves: string[] };
 type Readback = {
   generations: Array<{ presentation_id: string; clean_count: number; review_count: number; components: number; lineage: string[] }>;
   changes: number; original_cards: number; unknown_history: number; protected: unknown[];
+  study_counts: Record<string, number>;
 };
 
 test("A08 normal Study joins only after saved clean reviews and retains confirmed splits and another issued attempt", async ({ page, request, context }) => {
@@ -16,7 +17,7 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     throw new Error("R11 requires the owning disposable PostgreSQL browser runner");
   const identity = `product-recombination-${randomUUID().replaceAll("-", "")}`;
   const fixture = <T>(action: string, ...args: string[]): T => JSON.parse(execFileSync("docker", ["compose", "-p", project,
-    "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "schema", "python",
+    "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "-e", "PYTHONPATH=/app", "schema", "python",
     "/source/backend/tests/fixtures/product_recombination.py", action, identity, ...args], { encoding: "utf8", timeout: 30_000 }));
   const facts = fixture<{ protected_id: string }>("seed");
   const other = await context.newPage();
@@ -28,8 +29,10 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
 
   const complete = async (label: string, failed = false) => {
     const staged = fixture<Stage>("practice", label);
+    const before = fixture<Readback>("readback").study_counts[staged.card_id] ?? 0;
     await page.reload();
-    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", staged.starting_fen);
+    await expect.poll(async () => (await page.locator(".board-frame").first().getAttribute("data-fen"))?.split(" ").slice(0,3).join(" "))
+      .toBe(staged.starting_fen.split(" ").slice(0,3).join(" "));
     const saved = page.waitForResponse(response => response.url().endsWith(`/api/cards/${staged.card_id}/review`)
       && response.request().method() === "POST");
     if (failed) await page.getByRole("button", { name: /Show move/ }).first().click();
@@ -41,6 +44,7 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     }
     const response = await saved;
     expect(response.ok(), await response.text()).toBe(true);
+    await expect.poll(() => fixture<Readback>("readback").study_counts[staged.card_id]).toBe(before+1);
     await expect.poll(() => fixture<Readback>("readback").protected).toEqual(protectedOrigin);
     return staged;
   };

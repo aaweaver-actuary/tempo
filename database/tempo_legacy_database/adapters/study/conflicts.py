@@ -5,6 +5,7 @@ conflict policy is an injected, current Repertoire capability, never copied SQL.
 """
 from dataclasses import asdict
 import json
+import psycopg
 
 from app.study.conflicts import ConflictError, ConflictReceipt, Occurrence, StudyConflicts
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
@@ -72,7 +73,9 @@ class PostgresConflictStore:
             (occurrence.repertoire_id,occurrence.route_id,occurrence.presentation_id,
              occurrence.presentation_revision,occurrence.repertoire_id,occurrence.repertoire_id)).fetchone()
         if not row:
-            raise ConflictError('current_physical_occurrence_unproved')
+            from .recombination import is_current_occurrence
+            if not is_current_occurrence(self.database,occurrence):
+                raise ConflictError('current_physical_occurrence_unproved')
 
     def hold(self, occurrence, fence, active, now):
         self.database.execute_native("""INSERT INTO study_conflict_holds(scope_key,repertoire_id,route_id,ply,
@@ -261,6 +264,40 @@ class PostgresConflictStore:
                                                  ('tempo:daily-queue-position:'+row[0],)).fetchone()[0]:
                 return False
         return True
+
+    def reconcile_current_queue(self, day):
+        """One provably scoped queued hold; queue status is durable progress.
+
+        Previously suspended rows are excluded, so rebuilding cannot repeatedly
+        revisit only the first old hold. Unproved shared rows stay pending and
+        are rejected by guard_attempt; no repertoire is guessed for them.
+        """
+        row=self.database.execute_native("""SELECT hold.scope_key FROM study_conflict_holds hold
+            JOIN cards card ON card.id=hold.card_id AND card.revision=hold.card_revision
+            WHERE hold.active AND EXISTS(SELECT 1 FROM daily_queue queue
+                WHERE queue.card_id=hold.card_id AND queue.queue_date=%s AND queue.status='queued'
+                  AND queue.review_result_json IS NULL AND (queue.admission_repertoire_id=hold.repertoire_id OR
+                    (queue.admission_repertoire_id IS NULL AND
+                     (SELECT count(*) FROM (SELECT repertoire_id FROM cards WHERE id=hold.card_id
+                         UNION SELECT repertoire_id FROM repertoire_cards WHERE card_id=hold.card_id) owners)=1
+                     AND (card.repertoire_id=hold.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards link
+                         WHERE link.card_id=hold.card_id AND link.repertoire_id=hold.repertoire_id)))))
+            ORDER BY hold.scope_key LIMIT 1""",(day,)).fetchone()
+        if not row:
+            return None
+        previous=self.database.execute_native("SELECT scope_key FROM study_conflict_holds WHERE active AND scope_key<%s ORDER BY scope_key DESC LIMIT 1",(row[0],)).fetchone()
+        return self.reconcile_queue(after=previous[0] if previous else '',limit=1)
+
+
+def installed(database):
+    return isinstance(getattr(database,'raw',None),psycopg.Connection) and database.execute_native(
+        "SELECT to_regclass('study_conflict_holds') IS NOT NULL").fetchone()[0]
+
+
+def reconcile_current_queue(database,day):
+    if installed(database):
+        return PostgresConflictStore(database).reconcile_current_queue(day)
+    return None
 
 
 def current_study_conflicts(database, *, authority, clock):

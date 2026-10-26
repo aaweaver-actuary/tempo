@@ -236,13 +236,13 @@ class CurrentStudyRecombination:
         self.reason = reason
         return None
 
-    def try_current(self, route_id):
+    def try_current(self, route_id, *, only_presentation_id=None):
         try:
-            return self._read_current(route_id)
+            return self._read_current(route_id,only_presentation_id=only_presentation_id)
         except (ValueError, KeyError, TypeError):
             return self._hold("current_route_unsupported")
 
-    def _read_current(self, route_id):
+    def _read_current(self, route_id, *, only_presentation_id=None):
         database = self.database
         PostgresRecombinationStore(database)._writer()
         route_row = database.execute_native("SELECT repertoire_id FROM repertoire_lines WHERE id=%s", (route_id,)).fetchone()
@@ -316,6 +316,12 @@ class CurrentStudyRecombination:
         active_generated = {identifier for identifier,row in metadata.items()
             if all(current_map.get(c["decision_id"])==identifier for c in row["result_json"]["presentation"]["components"])}
         identifiers = sorted(graph_ids | active_generated)
+        if only_presentation_id is not None:
+            if only_presentation_id not in identifiers:
+                return self._hold("current_presentation_replaced")
+            # Serving an existing attempt needs its own definition plus the
+            # held source fence, not locks on an unrelated join neighbour.
+            identifiers = [only_presentation_id]
         if len(identifiers)>128:
             return self._hold("member_scope_exceeds_bound")
         cards = {}
@@ -327,6 +333,8 @@ class CurrentStudyRecombination:
             if not card:
                 return self._hold("current_card_busy_or_missing")
             cards[identifier] = card
+        from .conflicts import installed as conflicts_installed, PostgresConflictStore
+        conflicts = PostgresConflictStore(database) if conflicts_installed(database) else None
         members, dues = [], []
         for identifier in identifiers:
             card = cards[identifier]
@@ -381,6 +389,7 @@ class CurrentStudyRecombination:
             unavailable = database.execute_native("""SELECT 1 FROM deleted_cards WHERE card_id=%s UNION ALL
                 SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s AND repertoire_id=%s LIMIT 1""",
                 (identifier,identifier,repertoire_id)).fetchone()
+            unavailable = unavailable or (conflicts is not None and conflicts.blocked(repertoire_id,identifier,card['revision']))
             active = database.execute_native("""SELECT 1 FROM daily_queue q JOIN queue_attempt_origins o
                 ON o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.revision=%s
                 WHERE q.card_id=%s AND q.status='queued' AND o.issued_as_head=1 LIMIT 1""", (card["revision"],identifier)).fetchone()
@@ -517,8 +526,40 @@ def current_presentation_available(database, presentation_id):
     row = database.execute_native("SELECT result_json->'presentation'->>'route_id' FROM study_recombination_presentations WHERE presentation_id=%s", (presentation_id,)).fetchone()
     if not row:
         return True
-    current = CurrentStudyRecombination(database).try_current(row[0])
+    current = CurrentStudyRecombination(database).try_current(row[0],only_presentation_id=presentation_id)
     return current is not None and any(m.presentation.presentation_id==presentation_id and m.available for m in current.members)
+
+
+def is_current_occurrence(database,occurrence):
+    """Explicit Study regrouping proof for #487's physical target validator.
+
+    This is identity/scope proof, not conflict or restoration eligibility. The
+    existing #487 source fence/current Repertoire capability still owns those.
+    """
+    if not installed(database):
+        return False
+    row=database.execute_native("""SELECT result_json,card.start_fen,card.moves_json,card.revision
+        FROM study_recombination_presentations presentation JOIN cards card ON card.id=presentation.presentation_id
+        WHERE presentation.presentation_id=%s""",(occurrence.presentation_id,)).fetchone()
+    if not row:
+        return False
+    result=row['result_json']
+    value=Presentation.model_validate_json(json.dumps(result['presentation']))
+    use=RouteUse(**result['route_use'])
+    if ((value.repertoire_id,value.route_id,value.revision)!=(occurrence.repertoire_id,occurrence.route_id,occurrence.presentation_revision)
+            or row['revision']!=value.revision or row['start_fen']!=result['starting_fen']
+            or tuple(json.loads(row['moves_json']))!=tuple(result['moves'])
+            or not use.start_ply<=occurrence.ply<use.stop_ply):
+        return False
+    mapping=PostgresRecombinationStore(database)
+    if not all(mapping.current_presentation(use.route_id,c.decision_id)==value.presentation_id for c in value.components):
+        return False
+    board=chess.Board(result['starting_fen'])
+    for offset,move in enumerate(result['moves']):
+        if use.start_ply+offset==occurrence.ply:
+            return board.turn==(value.learner_color=='white')
+        board.push_uci(move)
+    return False
 
 
 def project_current_presentations(database, day, *, limit=16):

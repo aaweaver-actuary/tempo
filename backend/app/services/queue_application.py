@@ -141,6 +141,8 @@ def seed_queue(db, day):
             seeding_storage.append_study_card(db, day, study_row["id"], next_position + offset)
     from tempo_legacy_database.adapters.study.recombination import project_current_presentations
     project_current_presentations(db, day)
+    from tempo_legacy_database.adapters.study.conflicts import reconcile_current_queue
+    reconcile_current_queue(db, day)
 
 
 from tempo_legacy_database.adapters.queue_refresh import presentation as presentation_storage

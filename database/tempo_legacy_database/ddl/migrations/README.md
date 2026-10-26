@@ -2,6 +2,13 @@
 
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
+T22 adds [053_study_recombination.sql](053_study_recombination.sql) after
+independent 052, with source readiness 53. The
+[Study recombination chart](../../adapters/study/README.md) covers immutable
+review/streak facts, new presentation generations/lineage and route-local current
+decision targets. Original cards, source moves, review/effect identities and
+deadlines are retained. No live migration or deployment is performed here.
+
 Existing ordered source DDL. Runtime startup and migration authority are unchanged. Use the owning documented explicit migration command; this PR does not run it.
 
 T06 adds [051_study_game_feedback.sql](051_study_game_feedback.sql), registered

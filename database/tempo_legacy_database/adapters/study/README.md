@@ -7,6 +7,13 @@ normal queue projection and confirmed splits. Its canonical
 describe source migration 053, explicit current decision/presentation mappings and
 original history/provenance relationships. No live schema/deployment is asserted.
 
+When the optional published [scoped conflict store](conflicts.py) is installed,
+the retained serving/recovery boundary uses its original-attempt guard, while
+queue seeding reapplies one provably scoped queued hold. Existing suspended rows
+remain unchanged. Generated-presentation identity proof comes from the current
+recombination mapping; conflict and restoration eligibility remain Repertoire's
+injected policy. These hooks neither register C's DDL nor claim C browser proof.
+
 `PostgresGameFeedbackStore.targeting` supplies the optional Study-owned
 `GameFeedbackTargets` capability: applied obligations follow one exact current
 decision target, and genuine whole-sequence reviews settle the original effect.
