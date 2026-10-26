@@ -335,7 +335,11 @@ rollback discards the transaction-bound receiver. Source, route or membership
 changes still close admission. Explicitly over-bound sources defer without
 silently using a prefix of the supplied snapshot.
 
-## Encounter-first introduction without optional ranking
+## Weighted D encounter prioritization
+
+This method belongs to the separate weighted D factory. The practical
+real-game encounter release uses `current_owner_encounter_introductions`
+described above, including its explicit targeted exception and full-pause input.
 
 ```python
 result = receiver.admit_encounter(
