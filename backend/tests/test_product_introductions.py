@@ -72,8 +72,8 @@ class Owner:
 
 
 def test_twenty_percent_before_two_percent_with_equal_weights():
-    low, high = candidate("two", "b"), candidate("twenty", "a")
-    plan = choose((low, high), global_budget=2, ranking=ranking(("twenty", "a", .2), ("two", "b", .02)))
+    low, high = candidate("two", "a"), candidate("twenty", "b")
+    plan = choose((low, high), global_budget=2, ranking=ranking(("twenty", "b", .2), ("two", "a", .02)))
     assert plan.introductions == (high, low)
 
 
@@ -144,6 +144,17 @@ def test_rebuild_and_retry_do_not_recharge():
     assert service.commit(DAY, choice, CONTEXT).status == "introduced"
     assert service.commit(NEXT_DAY, choice, CONTEXT).status == "replayed"
     assert len(owner.effects) == len(store.receipts) == 1
+
+
+@pytest.mark.parametrize("outcome", ["stale", "already_introduced"])
+def test_owner_effect_recheck_does_not_charge_rejected_or_existing_material(outcome):
+    class RecheckingOwner(Owner):
+        def introduce(self, day, choice): return outcome
+    store, owner = MemoryStore(), RecheckingOwner([candidate("one")])
+    service = Introductions(store, owner)
+    choice = service.preview(DAY).introductions[0]
+    assert service.commit(DAY, choice, CONTEXT).status == outcome
+    assert not store.receipts and not store.periods and store.cursor is None
 
 
 @pytest.mark.parametrize("facts", [dict(conflicted=True), dict(approved=False), dict(mapped=False),
@@ -227,9 +238,11 @@ def test_ranking_rejects_unknown_ids_duplicates_and_stale_source_revision():
 
 
 def test_new_product_modules_reuse_scoped_import_boundary():
-    from test_product_contracts import boundary_errors, has_import_cycle
+    from test_product_contracts import boundary_errors, has_import_cycle, import_targets
     root = Path(__file__).resolve().parents[2]
-    sources = {str(path.relative_to(root)): path.read_text()
+    sources = {"app.study.introductions." + path.stem: path.read_text()
                for path in (root / "backend/app/study/introductions").glob("*.py")}
-    assert boundary_errors(sources) == []
+    assert boundary_errors([("study", source, module) for module, source in sources.items()]) == []
+    assert not any(name == "app.analysis" or name.startswith("app.analysis.")
+                   for module, source in sources.items() for name in import_targets(source, module))
     assert not has_import_cycle(sources)

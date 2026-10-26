@@ -86,7 +86,12 @@ class PostgresIntroductionStore:
             "SELECT context_json,ranking_json FROM study_product_introduction_rankings WHERE context_key=?", (_key(context),)).fetchone()
         if row is None or row[0] != _context_json(context):
             return None
-        return RankingOutput.model_validate_json(row[1])
+        try:
+            return RankingOutput.model_validate_json(row[1])
+        except ValueError:
+            # An obsolete/invalid optional value cannot make Study unavailable.
+            # Keep the durable row for diagnosis; serving uses the owner order.
+            return None
 
     def save_ranking(self, context, ranking):
         self.database.execute(
