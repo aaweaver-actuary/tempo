@@ -22,7 +22,7 @@ from app.study.introductions.ports import AllocationState, OwnerFacts
 def test_encounter_ordinary_saved_allowance(study_only,global_limit,repertoire_limit,credits,reason):
     from app.study.introductions.application import ordinary_encounter_allowance
     assert ordinary_encounter_allowance(study_only=study_only,global_limit=global_limit,
-        repertoire_limit=repertoire_limit,introduced_repertoires=credits,repertoire_id='a') == reason
+        repertoire_limit=repertoire_limit,introduction_count=len(credits),repertoire_count=credits.count('a')) == reason
 
 
 def test_encounter_target_retains_complete_alternatives_not_unrelated_routes():

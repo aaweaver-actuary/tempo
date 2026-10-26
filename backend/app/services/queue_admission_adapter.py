@@ -198,15 +198,16 @@ class CurrentEncounterIntroductions:
             return CommitResult('deferred', reason='current_target_unavailable')
         if card['introduced_at'] is not None:
             return CommitResult('already_introduced')
-        controls, today, _, queued = admission_storage.product_current_queue_facts(self.database, day, fence=True)
+        controls, counts = admission_storage.product_encounter_budget_facts(
+            self.database, day, repertoire_id, card['id'])
         if controls is None:
             return CommitResult('deferred', reason='current_controls_unproved')
         reason = ordinary_encounter_allowance(study_only=bool(controls[0]), global_limit=controls[1],
             repertoire_limit=header['legacy_repertoire_limit'],
-            introduced_repertoires=(row[2] for row in today), repertoire_id=repertoire_id)
+            introduction_count=counts[0], repertoire_count=counts[1])
         if reason:
             return CommitResult('deferred', reason=reason)
-        if card['state'] not in ('new', 'locked') or card['id'] in queued:
+        if card['state'] not in ('new', 'locked') or counts[2]:
             return CommitResult('deferred', reason='current_target_queued_or_started')
         # Introducing a physical presentation exposes every owned move in it.
         # Check complete alternatives for all of them, not only the encounter.

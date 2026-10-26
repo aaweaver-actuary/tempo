@@ -103,10 +103,10 @@ def target_alternatives(routes, *, expected: tuple[tuple[str, str], ...], learne
 
 
 def ordinary_encounter_allowance(*, study_only, global_limit, repertoire_limit,
-                                introduced_repertoires, repertoire_id):
+                                introduction_count, repertoire_count):
     """Saved ordinary caps over canonical introductions, without D allocation.
 
-    The queue owner supplies one credit per actual physical introduction today.
+    The queue owner counts each actual physical introduction today once.
     A shared presentation consumes one global slot and its admitting membership's
     ordinary allowance. No reserve, weight default or separate ledger is created.
     """
@@ -119,8 +119,10 @@ def ordinary_encounter_allowance(*, study_only, global_limit, repertoire_limit,
     if global_limit == 0 or repertoire_limit == 0:
         return 'zero_limit'
     limit = global_limit if repertoire_limit is None else repertoire_limit
-    credits = tuple(introduced_repertoires)
-    if len(credits) >= global_limit or credits.count(repertoire_id) >= limit:
+    if (type(introduction_count) is not int or introduction_count < 0
+            or type(repertoire_count) is not int or not 0 <= repertoire_count <= introduction_count):
+        return 'current_controls_unproved'
+    if introduction_count >= global_limit or repertoire_count >= limit:
         return 'introduction_allowance'
     return None
 

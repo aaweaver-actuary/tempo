@@ -227,6 +227,25 @@ def product_target_route_page(database, repertoire_id, after_line_id, *, limit=1
         FROM page ORDER BY id""", (repertoire_id,after_line_id,limit)).fetchall()
 
 
+def product_encounter_budget_facts(database, day, repertoire_id, card_id):
+    """Saved controls, canonical aggregate spend and one exact queue presence.
+
+    No unrelated physical definitions, required-work list or queue rows leave
+    storage. The existing day reservation serializes these ordinary counts.
+    """
+    controls = database.execute_native('SELECT study_only_mode,new_cards_per_day FROM settings '
+        'WHERE id=1 FOR SHARE SKIP LOCKED', ()).fetchone()
+    counts = database.execute_native("""WITH introduced AS MATERIALIZED (
+        SELECT COALESCE((SELECT admission_repertoire_id FROM daily_queue WHERE card_id=card.id
+            AND cycle=0 AND queue_date=card.introduced_at ORDER BY id LIMIT 1),card.repertoire_id) credited
+        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s
+        ) SELECT count(*),count(*) FILTER(WHERE credited=%s),EXISTS(
+            SELECT 1 FROM daily_queue WHERE card_id=%s AND (queue_date=%s
+            OR (status='queued' AND attempt_state NOT IN ('clean','unstarted')))) FROM introduced""",
+        (day,repertoire_id,card_id,day)).fetchone()
+    return controls, counts
+
+
 def lock_product_admission(database, day, card_id):
     from tempo_legacy_database.adapters.real_game_feedback import lock_queue_day
     # A bounded batch may already own the day; never wait backwards for a card
