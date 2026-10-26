@@ -6,12 +6,13 @@ Baseline: `24ec4c06f666f50104c979840c403826fb1ce280`.
 
 ## Checkpoint status
 
-Preparation checkpoint only. The published #483 pure index `3fae59ab` and #486
-classification policy `83bb349b` are integrated. Their owners reported 11 and 19
-focused passing cases respectively; these unchanged leaf checks were not rerun.
-The #482 contract freeze and completed snapshot/comparer/Study receiver still
-block executable product wiring. No product acceptance, successful live capture,
-delivery, queue admission or review is claimed. This README is the canonical bounded integration/fixture plan, not a
+Source composition checkpoint. Integrated inputs are #482 corrected contracts
+`50dd8220`, #483 typed snapshot/index `7b16e25e`, #486 qualified comparer
+`49995ad2`, and #487 first owner checkpoint `16446623`. Their unchanged leaf
+suites were not rerun. Four focused source integration cases pass: the real
+index/comparer and Study policy execute against synthetic supplied mappings and
+a fake owner store. No native product acceptance, successful live capture,
+durable delivery, ordinary queue admission or review is claimed. This README is the canonical bounded integration/fixture plan, not a
 description of a deployed feature. A successful HTTP response alone will never
 be recorded as an admitted or settled obligation.
 
@@ -21,6 +22,45 @@ produced and no delivery, queue admission or review was attempted. The previous
 game/ply lead remains unverified. Do not repair live metadata, switch writers or
 resume a held migration to turn this into a passing example. Actual-data
 correspondence remains a separate unverified acceptance item.
+
+A bounded alternative lookup read 10 repertoire authority records, of which
+three were ready/current. Their small recent-game selections yielded no usable
+departure candidate, so no further capture/delivery/review was attempted. The
+original authority error is candidate-specific; it does not establish that all
+live mappings are unavailable. The missing actual-data fact is one genuine game
+with a unique introduced decision/current physical-card mapping under a
+currently verifiable repertoire source.
+
+## Executable source checkpoint
+
+[`feedback.py`](feedback.py) exposes `prepare_record_feedback(...)` and
+`submit_feedback(prepared, LearningFeedbackPort)`. It reuses `build_index`,
+`compare_record`, `effect_key`, shared `GameLapse` and Study's existing pure
+`semantic_digest`; it contains no classification, hash or scheduling policy.
+The prepared result retains the exact logical identity/payload for retries.
+`submit_feedback` returns a provisional owner receipt; only the caller's commit
+can make it durable. Concrete current-authority fencing and transport composition
+are still pending the owner handoff. A retained snapshot alone grants no write.
+
+The file operator prepares a private preview and has no delivery mode:
+
+```sh
+python -m app.product_composition.feedback \
+  --record private-record.json --snapshot private-snapshot.json \
+  --provider chesscom --account supplied-player --workspace-id supplied-workspace \
+  --detected-at 2026-10-26T12:00:00Z --occurrence-ply 1 --output private-preview.json
+```
+
+Supply actual provider PGN when using this record entry point. Existing imported
+games retain canonical moves rather than original PGN, so they need the
+normalization-independent comparer entry requested from #486; never reconstruct
+PGN and label it as the original source. Input files are bounded at 32 MiB;
+preview creation is exclusive and mode 0600. This is not a live review command.
+
+The backend project/Docker registrations include only the five local libraries
+used by this boundary. `uv lock --check --offline --no-build --directory backend`
+passes; all prior registry package records are unchanged. No software was
+installed and no image build or service activation is claimed.
 
 ## Smallest composition
 
