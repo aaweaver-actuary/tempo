@@ -2,17 +2,18 @@
 
 This unmerged integration under [#481](https://github.com/aaweaver-actuary/tempo/issues/481)
 implements the first game-feedback slice of [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/5d5673e43c722786a101c12d26a214649a909502/SPEC.md).
-It has not been installed by this lane. Actual private-game correspondence and a
-passing ordinary-Study browser case remain required acceptance evidence.
+It has not been installed by this lane. The focused native and ordinary-Study
+browser proof passes; actual private-game correspondence remains required
+release-owned acceptance evidence.
 
 ## Published dependencies
 
 | Owner | Integrated checkpoint |
 | --- | --- |
 | #482 contracts, including route/game-scoped introductions | #516 `e73c7beb` |
-| #483 capture projection and position index | #511 `7290f052` |
+| #483 capture projection, position index and retained provider alias | #511 `7290f052` + exact repair `668d3af5` |
 | #486 canonical-game comparer | #510 `3bce27fd` |
-| #487 Study receiver, current-owner fencer, provider alias | #515 `c59b93a8` |
+| #487 Study receiver, current-owner fencer and source-scoped day-only facts | #515 `c59b93a8` + exact repair `1446cd67` |
 | Adopted specification and repository guidance | main `5d5673e4` |
 
 Unchanged leaf suites are reused. Later analysis, workflow, recombination and
@@ -71,50 +72,50 @@ flowchart LR
   end
 ```
 
-## Focused evidence and current blockers
+## Focused integrated evidence
 
-At `05c15bff`, `make python-file FILE=backend/tests/test_product_feedback_integration.py`
-passed 12 cases: real PostgreSQL receipt/replay, ordinary controller completion,
-o-Study-day/new-connection queue recovery, unrelated issued attempt preservation,
-canonical source fencing, pending maintenance and producer absence, plus source
-composition cases. The retained-owner fixtures then supplied precise timestamps.
-They were not evidence for ordinary date-only introduction storage.
+Exact tested executable candidate: `673e3d690c136e98dfb1a38b5479bd8ad1e1d44c`.
+It contains the source checkpoint `9ef6b2a3`, the two exact owner repairs listed
+above and the adopted documentation baseline. Later feature implementations are
+excluded. Source validation did not change during the browser build/run.
 
-The ordinary date-only fixture now reproduces the actual missing seam. At
-`9ef6b2a3`, the changed integration run selected 13 cases: 11 passed and two
-failed with `current_owner_exact_introduction_time_unproved`. The projection
-successfully carries the exact source-scoped before-game boolean; #487's fencer
-still requires timestamp equality. The exact owning repair is requested in
-[#487](https://github.com/aaweaver-actuary/tempo/issues/487#issuecomment-6428338319).
-The added cold-import case passed separately (1 selected, 13 deselected), proving
-maintenance imports no optional `app.games` implementation even in a fresh
-interpreter. The current file therefore contains 14 cases, not a claimed 14-case
-pass. Chess.com's scope-provider alias normalization is requested from
-[#483](https://github.com/aaweaver-actuary/tempo/issues/483#issuecomment-6428299253).
+| Selected boundary | Command/selection | Result |
+| --- | --- | --- |
+| Source + actual PostgreSQL integration | `make python-file FILE=backend/tests/test_product_feedback_integration.py` | 14 passed, 3.31s |
+| Ordinary Study browser | `make ui-file FILE=product-game-feedback.spec.ts` | 1 Chromium case passed, 8.5s |
+| Exact Study-compatible command + foreground race | `make python-file FILE=backend/tests/test_legacy_intake_study_mode.py` | 7 passed at `bd8c275d`, unchanged evidence reused |
+| HTTP admission/query-only classification | `test_legacy_study_remediation.py -k http_cutover_matching_background_admission_and_query_only_guard_are_preserved` | 6 passed, 17 deselected at `2b841de8`, unchanged evidence reused |
+| Scoped dependency guard | `test_product_contracts.py -k new_product_boundaries_do_not_import_composition_or_private_siblings` | 1 passed, 31 deselected; unchanged boundary evidence reused |
 
-At `bd8c275d`, the exact Study-compatible command/foreground-race file passed
-7 cases. At `2b841de8`, the changed HTTP admission/query-only selection passed
-6 cases. The middleware prevents the new optional transport from acquiring a
-foreground lease that defers its own background command.
+The native file covers real receipt/replay, ordinary controller completion,
+no-Study-day/new-connection queue recovery with the original deadline, unrelated
+issued-attempt preservation, canonical source correction rejection and durable
+pending maintenance. The ordinary date-only fixture re-captures actual fixture
+rows and carries the exact source-scoped before-game boolean without inventing
+a timestamp. The cold-import case uses a fresh interpreter that refuses any
+optional `app.games` implementation import. All fixtures are task-owned and
+synthetic; they do not establish actual private-game correspondence.
 
-`make ui-file FILE=product-game-feedback.spec.ts` is the single normal-Study
-Chromium acceptance case, using a task-owned synthetic imported game, authentic
-existing-card/graph fixture and real API/worker/database/controller. The first
-completed run at `05c15bff` reached applied receipt and duplicate replay, then
-failed client validation because fixture introduction used a timestamp rather
-than the queue's date shape. The second at `bd8c275d` timed out awaiting receipt;
-its missing HTTP background classification is fixed at `2b841de8`. Both completed
-runs built, started and cleaned their owned stacks successfully. A subsequent
-build was canceled after the concrete scoped-chronology defect was identified;
-zero browser cases ran in that attempt, and its owned builder/project journals
-were reconciled through the supported ownership cleanup APIs. None is a browser
-pass. Consume the owner fixes, rerun the focused integration file, then rerun this
-one browser case. No full leaf-suite or unrelated image qualification is needed.
+The browser used the supported disposable PostgreSQL/API/worker product stack.
+It preserved the unrelated issued head, admitted exactly one lapse with stable
+receipt/deadline on replay, completed the protected card, presented the exact
+target FEN/e2e4 move, disabled optional producer transport, saved a genuine
+ordinary Study review, reloaded and verified settled status. Final readback
+asserted one lapse, two Study reviews including the retained prior review, and
+one saved-review receipt. Image build 194.7s, startup 19.34s, service health0.09s,
+browser stage9.19s and cleanup4.03s all exited0. Its labeled containers, volumes
+and network were independently verified absent, and the advisory validation lock
+was released promptly.
 
-The browser case must preserve the separately issued unrelated card, complete
-its actual move, present the exact target FEN/move, disable optional producer
-transport, save a genuine ordinary Study review, reload, and verify one lapse,
-one receipt and settled owner status with the original deadline.
+Earlier failed runs exposed the synthetic timestamp/date shape mismatch and
+missing optional-route HTTP classification. A later date-only native run
+reported 11 passed/2 failed at the exact owner fencing seam. Both concrete source
+repairs are now consumed and the 14-case file plus browser pass supersedes those
+failures for this candidate. A known-invalid intermediate build was canceled
+with zero browser cases; its owned builder/project journals were reconciled
+through supported ownership APIs. No failed, canceled or missing check is counted
+as a pass. Passing logs, timing, source fingerprints and the exact integration
+receipt are preserved outside the checkout. Unchanged leaf suites were reused.
 
 ## Genuine-data and release handoff
 
@@ -151,5 +152,5 @@ Rollback stops new optional intake/wakes and uses that compatible fallback,
 preserving additive tables, durable obligations/receipts and all review history.
 Never drop migration051, reset data or fabricate a live review. Stopping an
 optional producer must leave normal Study usable. Live installation, fallback
-smoke, actual-data correspondence and final browser acceptance are not claimed
-by this source checkpoint.
+smoke and actual-data correspondence are not claimed by this source checkpoint.
+The focused browser pass qualifies the synthetic local product boundary only.
