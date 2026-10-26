@@ -6,11 +6,21 @@ Baseline: `24ec4c06f666f50104c979840c403826fb1ce280`.
 
 ## Checkpoint status
 
-Preparation checkpoint only. The four leaf implementations are not integrated
-yet; no product acceptance, live capture, delivery, queue admission or review is
-claimed. This README is the canonical bounded integration/fixture plan, not a
+Preparation checkpoint only. The published #483 pure index `3fae59ab` and #486
+classification policy `83bb349b` are integrated. Their owners reported 11 and 19
+focused passing cases respectively; these unchanged leaf checks were not rerun.
+The #482 contract freeze and completed snapshot/comparer/Study receiver still
+block executable product wiring. No product acceptance, successful live capture,
+delivery, queue admission or review is claimed. This README is the canonical bounded integration/fixture plan, not a
 description of a deployed feature. A successful HTTP response alone will never
 be recorded as an admitted or settled obligation.
+
+One narrowly scoped capture attempt through the retained read-only owner failed
+closed with `legacy_repertoire_authority_missing`. No capture document was
+produced and no delivery, queue admission or review was attempted. The previous
+game/ply lead remains unverified. Do not repair live metadata, switch writers or
+resume a held migration to turn this into a passing example. Actual-data
+correspondence remains a separate unverified acceptance item.
 
 ## Smallest composition
 
@@ -126,6 +136,12 @@ their source, contracts, fixtures, commands and toolchain inputs are unchanged;
 do not rerun every leaf suite. Acquire the existing advisory validation lock in
 append mode without truncating/unlinking it, hold it only for validation and
 release it promptly.
+
+The published #504 selection at `27dc7fa1`,
+[`docs/product-v02/PRESERVATION.md`](https://github.com/aaweaver-actuary/tempo/blob/27dc7fa179d01a2fadd1ffe874fd6ed377528c61/docs/product-v02/PRESERVATION.md),
+provides exact uncertain-save/reload and unrelated-active-attempt unit titles.
+Those are affected-boundary source checks, not substitutes for native
+game-feedback receipt, deadline or settlement proof.
 
 The final integrated receipt records every consumed branch/SHA, tested SHA,
 capture and fixture digests, exact commands/counts, decision/presentation mapping,
