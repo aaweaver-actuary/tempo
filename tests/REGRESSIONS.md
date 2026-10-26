@@ -1,3 +1,32 @@
+## T06 Study-owned game lapse and durable withdrawal fence
+
+`backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:
+`test_game_lapse_matches_again_transition`,
+`test_duplicate_delivery_has_one_effect_and_original_deadline`,
+`test_recomparison_revision_is_not_new_lapse`,
+`test_unintroduced_conflicted_stale_or_ambiguous_is_rejected`,
+`test_no_fabricated_study_review`, `test_active_attempt_is_preserved`,
+`test_pending_feedback_survives_two_days_without_study`,
+`test_queue_rebuild_and_restart_do_not_erase_obligation`,
+`test_genuine_review_settles_once`, `test_late_evidence_does_not_rewind_state`,
+`test_changed_source_is_quarantined`, and
+`test_withdraw_after_apply_preserves_history`. Changed-source coverage includes
+the key/revision/reason-only pre-admission hold followed by delayed original
+delivery; no producer-guessed owner obligation identity is required.
+
+`backend/tests/test_product_game_lapse_postgres.py` owns source/native retry,
+concurrent same-key delivery, schedule-before-receipt rollback, new-connection
+readback/off-day ordinary-queue recovery, pre-delivery tombstone readback,
+saved-review settlement/invalidation, and unrelated issued-head preservation.
+It provisions only a unique capped disposable PostgreSQL container and verifies
+its removal. These tests do not certify installed artifacts or the actual T07
+game-to-Study product loop. The [owner interface](../backend/app/study/README.md)
+records boundary ownership and composition responsibilities.
+`test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_authority`
+adds a real retained-owner source capture: current authority applies, a concurrent
+source edit is blocked by its transaction fence, and a changed captured revision
+is rejected without a schedule/receipt. It creates no producer authority.
+
 ## Daily statistics producer retirement
 
 `backend/tests/test_statistics.py::test_daily_statistics_refresh_is_retired_without_admission`
