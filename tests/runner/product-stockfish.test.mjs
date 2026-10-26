@@ -127,6 +127,10 @@ test('timeout_and_cancel_release_owned_process',async()=>{
   assert.equal(cancelled.status,'cancelled');assert.equal(cancel.closed,1);assert.equal(cancel.alive,0);
   const failing=fake({failClose:true});await assert.rejects(failing.evaluator.evaluate(request()),{code:'cleanup_unverified'});
   await assert.rejects(failing.evaluator.evaluate(request()),{code:'cleanup_unverified'});assert.equal(failing.closed,1);
+  const hung=fake();const originalLaunch=hung.launch;
+  const bounded=createEvaluator({launch:callbacks=>({...originalLaunch(callbacks),close:()=>new Promise(()=>{})})});
+  await assert.rejects(bounded.evaluate(request()),{code:'cleanup_unverified'});
+  await assert.rejects(bounded.evaluate(request()),{code:'cleanup_unverified'});
 });
 
 test('malformed_uci_and_engine_exit_are_typed',async()=>{
@@ -148,7 +152,7 @@ async function stdio(raw,evaluator){
 
 test('request_limit_and_output_bound',async()=>{
   for(const input of [request({threads:2}),request({hash_mb:65}),request({max_depth:33}),
-    request({max_depth:null,max_nodes:null,max_time_ms:null}),request({variant:'chess960'})]){
+    request({max_depth:null,max_nodes:null,max_time_ms:null}),request({max_nodes:NaN}),request({variant:'chess960'})]){
     const engine=fake();await assert.rejects(engine.evaluator.evaluate(input));assert.equal(engine.commands.length,0);
   }
   const engine=fake();const big=await stdio('x'.repeat(LIMITS.requestBytes+1),engine.evaluator);

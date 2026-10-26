@@ -26,7 +26,10 @@ function move(board, uci) {
 }
 export function validateRequest(input) {
   let encoded;
-  try { encoded = JSON.stringify(input); } catch { fail('invalid_request'); }
+  try { encoded = JSON.stringify(input,(_key,value)=>{
+    if (typeof value==='number' && !Number.isFinite(value)) fail('invalid_request');
+    return value;
+  }); } catch { fail('invalid_request'); }
   if (!encoded || Buffer.byteLength(encoded) > LIMITS.requestBytes) fail('request_limit');
   const request = JSON.parse(encoded); // detach caller-owned values before the first await
   if (!keys(request,['request_id','context','candidates']) || typeof request.request_id !== 'string'
@@ -206,8 +209,14 @@ export function createEvaluator({launch, startupTimeoutMs=2000, searchTimeoutMs=
       clearTimeout(totalTimer);
       signal?.removeEventListener('abort',onAbort);
       waiting=null;
-      try { await transport?.close(); }
+      let cleanupTimer;
+      try {
+        await Promise.race([transport?.close(),new Promise((_,reject)=>{
+          cleanupTimer=setTimeout(()=>reject(new EvaluationError('cleanup_unverified')),1000);
+        })]);
+      }
       catch { quarantined=true; failure=new EvaluationError('cleanup_unverified'); result=null; }
+      finally {clearTimeout(cleanupTimer);}
       active=false;
     }
     if (!result) throw failure;

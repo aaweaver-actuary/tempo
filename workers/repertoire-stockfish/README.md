@@ -12,7 +12,8 @@ There is no database, Study hook, HTTP endpoint, polling or process singleton.
 exports asynchronous `evaluate(request, {signal?})`. `launch` is an injected,
 synchronous owned UCI transport factory receiving `{onLine,onError}` and
 returning `{send(command), close(): Promise<void>}`. `close` must verify exit or
-reject; successful cleanup cannot mean merely sending a kill signal.
+reject; successful cleanup cannot mean merely sending a kill signal. The evaluator
+also bounds an injected close operation to 1s and quarantines a hung transport.
 
 `createStockfishEvaluator({executable?, ...timeouts})` in [stdio.mjs](stdio.mjs)
 wires that API to a fresh owned process per request. With no executable it
