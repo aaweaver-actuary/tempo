@@ -1,13 +1,14 @@
 # Legacy next-opponent publications
 
-**Current unmerged source; live schema/deployment unverified.** These fixed operations were extracted from two small legacy derived-data services. They borrow existing read/write connections and never open, commit or close one. SQL values, parameter/query order, native timestamp projections, locks, bounded reads and generation/lease authority remain unchanged. These are existing optional game-evidence/statistics projections; moving them adds no Study dependency or owner permissions.
+**Current source; live schema/deployment unverified.** These fixed next-opponent profile operations borrow existing read/write connections and never open, commit or close one. Source sampling, account-generation facts and immutable profile publication remain behind the existing caller-owned transaction and lease fences. Daily-statistics projection/publication implementation is retired; its physical tables remain. This is an existing optional game-evidence adapter, not an independently deployed plugin or new Study dependency.
 
 ```mermaid
 flowchart LR
   composition[Existing legacy service composition] -->|borrowed bounded reads| projections[Root database projections]
   composition -->|connection and admission closed during profile math| policy[Existing profile and readiness algorithms]
   composition -->|existing lease and source-generation checks| fence[Existing publication authority]
-  fence -->|fixed writes in caller transaction| storage[Snapshot, account, job and insight storage]
+  fence -->|fixed writes in caller transaction| storage["next_opponent_accounts and next_opponent_snapshots"]
+  projections --> sources["settings, imported_games, game_sync_state and background_tasks"]
 ```
 
 | Database module / application caller | Stored facts and operations | Canonical fields, keys and relationships |
@@ -21,12 +22,12 @@ Application responsibilities remain outside database: profile math and freshness
 
 The linked schema READMEs remain canonical for actual stored field types, primary/composite keys, enforced FKs and explicitly logical relationships. No schema or stored representation changes, live queries or migrations were performed. SQLite-compatible test projections are not claimed equivalent to PostgreSQL execution/locking. Existing legacy service/task coupling remains explicit and is not an isolation claim.
 
-All 23 original direct database call sites are delegated; the identical configured-account SELECT used twice now shares one fixed helper, leaving runtime query count/order unchanged. Source comparison checks query/method/parameter expressions and restores delegation calls to verify unchanged application functions. Focused existing fake cases cover refresh coalescing, future-evidence timing, stale publication fences, closed-connection computation, foreground denial, read-only freshness responses and accepted daily publication. Additional task-owned SQLite cases cover daily readiness/query-only metrics, and one local guard prevents SQL returning to the two originals. Native PostgreSQL execution, deployment/resource isolation and full-system behavior remain unverified. Other mixed files remain on the [unfinished extraction inventory](../../../INVENTORY.md).
+**Historical extraction receipt, before daily-statistics retirement:** All 23 original direct database call sites were delegated; the identical configured-account SELECT used twice now shares one fixed helper, leaving runtime query count/order unchanged. Source comparison checked query/method/parameter expressions and restored delegation calls to verify unchanged application functions. Focused existing fake cases covered refresh coalescing, future-evidence timing, stale publication fences, closed-connection computation, foreground denial, read-only freshness responses and accepted daily publication. Additional task-owned SQLite cases covered daily readiness/query-only metrics, and one local guard prevented SQL returning to the two originals. Native PostgreSQL execution, deployment/resource isolation and full-system behavior remain unverified. Other mixed files remain on the [unfinished extraction inventory](../../../INVENTORY.md).
 
 ## Daily-statistics source retirement
 
 The daily-statistics projection/publication module and its command/worker are
-removed in this branch; the [last source](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf) records their daily readiness,
+removed from current source; the [last source](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf) records their daily readiness,
 metric and insight purpose. Original extraction receipts above are dated proof,
 not a current daily-runtime claim. The remaining next-opponent module and its
 SQL boundary are unchanged. No daily table or live data is deleted.

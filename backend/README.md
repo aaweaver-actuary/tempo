@@ -27,22 +27,27 @@ flowchart TB
   Broker -->|"foreground and background<br/>workers"| Commands["Legacy command gateway and<br/>handlers"]
   Commands -->|"borrow caller transaction"| Policy["Queue/review/feedback<br/>policies and storage<br/>adapters"]
   Policy -->|"same database: game<br/>projections and Study state"| DB[("Legacy tempo PostgreSQL<br/>database")]
-  API -->|"reader projection queries"| DB
+  API -->|"reader capabilities"| ReadStorage["Root database read adapters"]
+  ReadStorage -->|"existing shared database"| DB
   Compose["docker-compose.yml"] -->|"declares startup health<br/>dependencies"| API
   Compose -->|"declares shared<br/>infrastructure"| Broker
 ```
 
 The extracted feedback/queue ports improve local decision/effect ownership; they
 do not split this database, broker or application root. The legacy
-[`QueueAdmissionAdapter`](app/services/queue_admission_adapter.py)
-still joins gameplay priorities, opportunities and miss projections while preparing
-ordinary queue candidates. Its
-[feedback composition](app/services/real_game_feedback_adapter.py)
-wraps the caller connection with
-[`BorrowedFeedbackStore`](../database/tempo_legacy_database/adapters/real_game_feedback.py);
-the [miss projection](../database/tempo_legacy_database/adapters/real_game_miss_projection.py)
+[`QueueAdmissionAdapter`](app/services/queue_admission_adapter.py) composes
+bounded candidate reads through [queue admission storage](../database/tempo_legacy_database/adapters/queue_refresh/application/admission.py),
+frozen-order annotation and the existing miss-feedback capability. Stored gameplay
+priorities, active non-analysis weak-decision opportunities and saved introduction
+scores remain inputs; removed opportunity/adaptive producers are not serving
+prerequisites. [`BorrowedFeedbackStore`](app/services/real_game_feedback_store.py)
+maps facts and invokes existing queue/remediation choices over the caller
+transaction; [feedback SQL](../database/tempo_legacy_database/adapters/real_game_feedback.py),
+[miss projection](../database/tempo_legacy_database/adapters/real_game_miss_projection.py)
 and [accepted-scope storage](../database/tempo_legacy_database/adapters/legacy_game_evidence_scope.py)
-own those queries. Queue policies must not acquire a second writer.
+retain their persistence responsibilities. Queue admission still appends the
+existing queue entry and resolves a saved opportunity; no second writer or commit
+authority is introduced.
 
 The legacy [evidence command](app/game_evidence_commands.py)
 also borrows the existing [command gateway](app/command_gateway.py)
@@ -79,10 +84,15 @@ The backend can also be run through the repository launchers. Use the root
 
 - `app/main.py` — current FastAPI application and route registration. It is a
   known extraction target; see [the organization audit](../docs/CODE-ORGANIZATION-AUDIT.md).
-- `app/database.py` — PostgreSQL connection routing and the SQLite compatibility
-  path. PostgreSQL is authoritative for cards, reviews, queues, repertoires,
-  games, and sync metadata after the verified cutover.
-- `app/models.py` — request/response models used at the HTTP boundary.
+- [Root database connections](../database/tempo_legacy_database/connections.py)
+  and [PostgreSQL adapter](../database/tempo_legacy_database/adapters/postgres_store.py)
+  — current PostgreSQL/SQLite routing and compatibility; there is no
+  `app/database.py` implementation. Schema/migration and persistence owners are
+  indexed in [database/README.md](../database/README.md). Source routing is not a
+  live cutover claim.
+- `app/models.py` — explicit compatibility re-exports of
+  [owner-specific transport contracts](app/contracts/transport/README.md), not
+  the canonical model implementation.
 - `app/services/` — business logic, provider clients, and durable derived-data
   handlers. See its local README for the service clusters.
 - `tests/` — backend unit and integration coverage, including concurrency,

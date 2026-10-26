@@ -1,6 +1,6 @@
 # Graph-preserving fresh-start lifecycle
 
-**SOURCE PROTOCOL PREPARED / SYNTHETIC PROOFS / DEPLOYMENT UNVERIFIED.**
+**MAIN SOURCE / SYNTHETIC FIXTURES / DEPLOYMENT UNVERIFIED.**
 The user selected a fresh start preserving the opening graph, authored sources
 and repertoire structure. Old reviews, schedules, server/background work,
 browser operations and old backup retention are outside this transition's

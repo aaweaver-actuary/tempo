@@ -14,8 +14,9 @@ peer documents link to them instead of maintaining copies. See the
 ### Main Study path and source gap
 
 **MAIN IMPLEMENTED SOURCE:** the physical Study composition and Learning-owned
-semantic boundaries below are merged in main at
-[`588cea54`](https://github.com/aaweaver-actuary/tempo/commit/588cea54574c2b56799f0a22f8235976171c4fba).
+semantic boundaries below are present at the reviewed main source
+[`1ce172e9`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf).
+The October 20 qualification receipt remains dated evidence, not a new test run.
 PR324 separates optional legacy workspace ownership from the shared Study shell;
 PR327 reads policy through the borrowed submission transaction; PR329 owns queue
 read projections and ordered refresh operations. The gateway retains transaction,
@@ -49,17 +50,17 @@ flowchart TB
   Remediation -->|"Learning-owned obligation settlement"| DB
   Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
   Legacy -->|"same Home; narrow facts and callbacks"| Home
-  Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, comparison, repertoire, studies, administration and dialogs"]
+  Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, repertoire, studies, administration and dialogs"]
   Boundary -.->|"optional user navigation only; no readiness wait"| WB["Independent Workbench URL"]
 ```
 
 | Interface / decision | Source correspondence |
 | --- | --- |
-| Physical entry and loaded graph guard | [`studyComposition`](../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, comparison, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../static/src/study-main.tsx) has no legacy import. |
+| Physical entry and loaded graph guard | [`studyComposition`](../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../static/src/study-main.tsx) has no legacy import. |
 | Optional state, presentation and handoff owner | [`LegacyHome`](views/legacy-home.tsx) injects [`LegacyWorkspace`](views/legacy-workspace.tsx). It owns discovery/filter/paste/repair state, repair race fencing, deletion recovery and retained optional dialogs. Builder editing and its handoffs, plus the Games and analytics dashboards, were retired; Repertoire import and paste remain. [`LegacyWorkspaceProps` / slots / controller](components/optional-workspace.ts) expose explicit queue/card commands; they do not pass the Home store. Home owns one training controller and queue acquisition. Unsupported controls are omitted when their action capability is absent. |
 | Genuine Study settings and navigation | [`StudyConnectionBoundary`](components/study-connection-boundary.tsx) retains [`StudySettingsPanel`](components/study-settings-panel.tsx) for Learning settings. [`StudySettingsView`](views/study-settings-view.tsx) changes browser appearance/shortcuts. [`canOpenWorkspace`](lib/study-workspace-policy.ts) checks direct intents as well as Navbar visibility. |
 | Connection and allowed transport | [`study-connection.ts`](lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only the configured Learning origin/Study paths receive the credential; no Games fallback. The boundary waits for Learning bootstrap or explicitly permitted cached practice. |
-| Session and browser data ownership | [`study-session-runtime.ts`](lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../packages/study-session/src/index.ts); [`study-intent-storage.ts`](lib/study-intent-storage.ts) supplies [`IntentStore`](../database/browser-intents/src/index.ts). [`review-outbox.ts`](lib/review-outbox.ts) and [`study-command-client.ts`](lib/study-command-client.ts) preserve family-specific payloads/identities. |
+| Session and browser data ownership | [`study-session-runtime.ts`](lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../packages/study-session/src/index.ts); [`study-intent-storage.ts`](../database/browser/study-intent-storage.ts) supplies [`IntentStore`](../database/browser-intents/src/index.ts). [`review-outbox.ts`](lib/review-outbox.ts) and [`study-command-client.ts`](lib/study-command-client.ts) preserve family-specific payloads/identities. |
 | Borrowed policy and queue persistence ownership | [`LearningReviewAdapter.policy`](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py) reads settings through the caller's borrowed command transaction, unless an injected policy provider is supplied; it acquires no second connection. [`queue_application.read_queue_window`](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py) owns complete parameter-bound card/count/projection reads; HTTP composes semantic facts and retains canonical head-issuance commands. `mark_queue_refresh_pending_in_transaction` owns the projection write; review refresh orders all daily tasks, all remediation tasks, then projections. No second transaction writer is introduced. |
 | Serving, borrowed review and settlement | [API registration](../services/learning/runtime/src/tempo_learning_runtime/api.py), [gateway](../services/learning/runtime/src/tempo_learning_runtime/gateway.py), [`submit_review` / ports](../services/learning/application/src/tempo_learning_review/application.py), [review adapter](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py), [queue application](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py), [admission](../services/learning/runtime/src/tempo_learning_runtime/admission.py), [receivers](../services/learning/runtime/src/tempo_learning_runtime/receivers.py), [remediation adapter](../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py). The review application receives semantic capabilities; gateway retains transaction authority. Settlement uses Learning-local facts, not an online Games call. |
 
@@ -72,7 +73,7 @@ libraries do not create a producer lifecycle dependency.
 **Acceptance invariant:** Study must have no Games call, import, wait,
 readiness, transaction or lifecycle dependency. Games must be able to fail
 completely while ordinary Study continues. The physical Study composition repairs the browser source and artifact boundary.
-The proposed removal below retires optional endgame calculation; HostActivity
+The merged removal below retires optional endgame calculation; HostActivity
 ownership and deployment resource isolation retain their separate limits.
 
 Optional practice influence enters the **Learning/queue owner's semantic
@@ -82,6 +83,31 @@ and ordinary queue consumption. Producers must not write Learning queue, review
 or scheduling tables. PR319 remains paused; no proposed encountered-card API is
 assumed here.
 
+
+## Public browser capabilities and extension limits
+
+| Owner-facing surface | Exported functionality and authority |
+| --- | --- |
+| [Study connection](lib/study-connection.ts) | `connectStudy(origin, workspace, credential)`, `disconnectStudy()` and `studyWorkspace()` manage the selected Learning authority. In independent Study, `learningFetch(input, options)` restricts authenticated API delivery to that authority and allowed paths; the full legacy build delegates to ordinary fetch. Disconnect clears the session connection, not durable Study work. The internal path allowlist/authenticated-fetch helper is not a plugin API. |
+| [Study session](../packages/study-session/src/index.ts) | `createStudySession({store, learning, ...})` exposes `start`, `submit`, `checkSave`, `retrySave`, `retryNext`, `getSnapshot`, `subscribe` and `dispose`. Injected `IntentStore` and `LearningClient` (required `deliver`, optional `checkReceipt`) separate durable intent storage and delivery; the session never invents server settlement. |
+| [Optional workspace contract](components/optional-workspace.ts) | `LegacyWorkspaceProps`, `LegacyWorkspaceSlots` and `LegacyWorkspaceController` exchange named facts, callbacks and presentation slots. Legacy composition owns optional state/imports; the shared shell does not hand over its store. |
+| [Workspace policy](lib/study-workspace-policy.ts) | `canOpenWorkspace(view, study)` permits Train, Tactics, Endgames and Settings in Study, including direct navigation intents. This is a fixed composition policy, not dynamic plugin discovery. |
+| [Saved endgame guard](lib/saved-endgame-practice.ts) | `hasSavedEndgameLine(card)` validates the persisted legal line. It performs no generation, provider call, review write or automatic grading. |
+
+**Coupling is reduced, not eliminated.** The independent Study entry excludes
+the optional legacy workspace implementation; the full local/demo build still
+shares this React shell, runtime utilities and browser state with its injected
+workspace. The named callbacks include queue/card effects, so they are not an
+unrestricted third-party extension surface. Adding an optional module requires
+explicit outer composition, its own state/cancellation/lifecycle owner, and
+boundary proof that its absence cannot block ordinary Study. Practice influence
+must enter Learning's semantic command interface; importing another workspace's
+store or writing its persistence is not an extension mechanism. The [loaded-graph guard](../scripts/study-composition.ts) uses explicit optional
+families, name classification and exceptions; it is not generic owner-aware
+plugin enforcement. A new optional family needs a corresponding classification
+and negative boundary fixture. No exhaustive repository cycle audit, arbitrary
+plugin compatibility or deployed resource isolation is established by this
+review. Dynamic hot-loading is not required to obtain a clean public boundary.
 
 ## Directories
 
@@ -104,7 +130,7 @@ sample data into an implicit fallback for a failed service.
 
 ### Saved endgame practice after calculation removal
 
-**PROPOSED removal:** on-demand generation and tablebase calls are removed from
+**MAIN implemented removal; deployment unverified:** on-demand generation and tablebase calls are removed from
 both independent Study and the legacy Endgames screen. The canonical Learning
 [request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
 owns the server view; this browser view owns dispatch and user-visible behavior.

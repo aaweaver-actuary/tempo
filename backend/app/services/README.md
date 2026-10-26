@@ -1,6 +1,6 @@
 # Remaining legacy backend services
 
-**Current unmerged source; organization unfinished.** This flat namespace still contains application policies, concrete workflow composition and background orchestration that need logical owner placement and mixed-function splits. The [202-module checklist](../../ORGANIZATION.md) records actual progress and remaining work. A whole mixed hub moved to a new folder would not close its responsibilities or dependencies.
+**MAIN source; organization unfinished; deployment unverified.** This flat namespace still contains application policies, concrete workflow composition and background orchestration that need logical owner placement and mixed-function splits. The [202-module checklist](../../ORGANIZATION.md) records actual progress and remaining work. A whole mixed hub moved to a new folder would not close its responsibilities or dependencies.
 
 | Existing cluster | Current examples / canonical extracted leaves |
 | --- | --- |
@@ -15,9 +15,52 @@ Database queries, drivers, DDL, native harnesses and database tooling belong in 
 
 No consolidation is performed during this organization phase. Observed duplication/simplification questions stay in the one [running proposal list](../../../database/SIMPLIFICATION.md). Existing function behavior, SQL, transaction/lock order and resource authority remain the constraints on every split.
 
+## Callable surfaces and remaining coupling
+
+This directory is still legacy composition, not a plugin registry or a versioned
+plugin API. [HTTP composition](../main.py), [worker composition](../tasks.py) and
+[command registration/receipts](../command_gateway.py) wire retained functions.
+Command names are explicit; an unregistered command is rejected before receipt
+storage, not dynamically discovered.
+
+| Current capability | Entry point and authority |
+| --- | --- |
+| Ordinary queue admission | [queue_admission.py](queue_admission.py) exposes `QueueAdmissionStore`, `plan_opening_admissions` and `admit_prioritized_opening_cards`; [queue_application.py](queue_application.py) composes the existing [QueueAdmissionAdapter](queue_admission_adapter.py). It borrows the caller transaction, reads saved candidates/scores, annotates frozen order and uses the existing queue writer and saved-opportunity resolution. |
+| Foreground queue operations | [queue_commands.py](../queue_commands.py) registers `queue.issue_head`, `queue.attempt_failed`, `queue.bury`, `queue.ensure_current`; the gateway owns receipts/transaction, not a new producer. |
+| Per-game feature calculation | [statistics.py](statistics.py) retains `refresh_game_features`; [feature storage](../../../database/tempo_legacy_database/adapters/statistics/README.md) supplies inputs and the single canonical feature writer. It no longer materializes daily statistics. |
+| Native game completion | [postgres_game_priorities.py](postgres_game_priorities.py) retains `execute_game_priority_handoff_slice`, registered by `tasks.py` as `game_derivation_priorities`. It advances the bounded repertoire cursor and completes the existing derivation; the legacy name does not mean an adaptive-priority producer survives. |
+| Authored Discovery acceptance | [discovery_commands.py](../discovery_commands.py) retains `prepare_discovery_acceptance`, `accept_discovery` and `discovery.accept`. Recommendation/admission is separate from the retired opportunity feed/state/train producer. |
+| Canonical source and coverage | [canonical_prefix_api.py](../canonical_prefix_api.py) retains preview/save commands and source validation/invalidation; [coverage_maia_commands.py](../coverage_maia_commands.py) retains `coverage.maia.claim`, `heartbeat`, `release`, `failure` and `submit` under the same `coverage.maia.` prefix, candidate publication and progress. Neither recreates retired refresh producers. |
+
+**Coupling is reduced, not eliminated.** Removed producers no longer contribute
+their import/callback/worker/recovery paths, but saved-score/opportunity readers,
+shared graph/source facts, feedback callbacks, concrete database adapters and
+legacy coordinator/activity-gate resources remain. New optional integrations
+must be wired by outer composition through explicit owner capabilities; ordinary
+Study must not import or wait for them, and queue/receipt/transaction ownership
+must stay singular. Arbitrary plugin, resource and shutdown independence is not
+proven by these removals.
+
+## Retired optional capabilities
+
+The unsupported Games guided-review server, command module, transport DTO and
+exclusive adapter are absent after [#458](https://github.com/aaweaver-actuary/tempo/pull/458).
+Ordinary Study guided attempts/review semantics are a different owner and remain.
+Daily snapshot/insight materialization, `/api/statistics/daily/{day}/refresh`,
+`statistics.daily.refresh` and associated workers/activity controls are absent
+after [#461](https://github.com/aaweaver-actuary/tempo/pull/461);
+`statistics.py` now provides per-game feature calculation.
+[Guided server history and retained storage](../../../database/tempo_legacy_database/adapters/games/README.md)
+and [current feature ownership](../../../database/tempo_legacy_database/adapters/statistics/README.md)
+record these boundaries. The [fixed portable snapshot reader](../../../database/tempo_legacy_database/adapters/http_composition/snapshots.py)
+still includes saved guided-review and daily-statistics history. Source retirement
+does not drop tables, clear history, change graph/source ownership or establish
+live deployment isolation. Opportunity and adaptive-priority removals are
+documented in the canonical flows below.
+
 ## Immediate adaptive-priority callback cessation
 
-**Implemented in this source branch; deployment unverified.** Seven immediate
+**Implemented source; deployment unverified.** Seven immediate
 adaptive-priority requests are removed from the six source paths below. This is
 the remaining callback slice from #427 after #431 retired the legacy review
 hook. The full producer retirement below subsequently removes its remaining

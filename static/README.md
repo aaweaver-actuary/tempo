@@ -1,8 +1,13 @@
 # Static browser build
 
-The static build is the clearly marked GitHub Pages practice demo. It uses
-browser storage and packaged/sample data where supported; Docker Tempo remains
-the full local product and SQLite authority.
+This directory supplies two physical browser entries. The full local/demo entry
+[`src/main.tsx`](src/main.tsx) loads the legacy workspace; the Study entry
+[`src/study-main.tsx`](src/study-main.tsx) loads only the Learning connection
+boundary. The clearly marked GitHub Pages demo uses browser storage and
+packaged/sample data where supported. Independent Study connects to its selected
+Learning authority and keeps authority-scoped browser recovery data; the legacy
+Docker backend uses PostgreSQL with a separate SQLite compatibility path.
+These build choices are source capabilities, not proof of a live cutover.
 
 Build with `npm run build:static`, verify with `npm run verify:static`, and
 preview with `npm run preview:static`. Do not open `static/index.html` directly.

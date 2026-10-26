@@ -11,9 +11,12 @@ untouched until graph/new-target verification and separate cutover confirmation.
 This replaces the previous preparation in these same files. The old preservation
 planner remains retained on branch `codex/359-launcher-plan-prep`, PR #443, commit
 `60bca3b84e934ac0ffb9ab6edb6f2edaf9f6bfd1`; it is not the fresh-start contract.
-There is one planner implementation on this branch, and no new launcher.
-Current [`tempo-cli.mjs`](../../../tempo-cli.mjs) still requires registration v1
-and uses the legacy default composition. No command imports the new planner.
+There is one planner implementation, and no new launcher.
+Current [`tempo-cli.mjs`](../../../tempo-cli.mjs) recognizes registered v2
+targets through the fail-closed public Study routing boundary before importing
+legacy composition. The legacy default remains unchanged, no Study provider is
+selected by default, and normal routing does not import this fresh-start planner.
+See [the public launcher ports](../../../README.md).
 
 Run the narrow source proof with Node 22.13 or newer:
 
