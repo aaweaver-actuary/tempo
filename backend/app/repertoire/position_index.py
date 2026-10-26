@@ -106,6 +106,14 @@ class PositionIndex:
     diagnostics: tuple[Diagnostic, ...]
     adjacency: tuple[RouteAdjacency, ...]
 
+    @property
+    def mapping_diagnostics(self) -> tuple[Diagnostic, ...]:
+        """Mapping unknowns are separate from authored-content validity."""
+        return tuple(Diagnostic(item.key.repertoire_id, item.route_id, item.ply,
+            "ambiguous_physical_mapping" if len(item.bindings) > 1 else "physical_mapping_unknown")
+            for occurrences in self.routes.values() for item in occurrences
+            if item.learner_turn and item.next_move and len(item.bindings) != 1)
+
     def lookup(self, repertoire_id: str, fen: str, variant: str = "standard") -> PositionNode | None:
         return self.nodes.get(position_key(repertoire_id, fen, variant))
 

@@ -70,13 +70,17 @@ It keeps no connection or cursor.
 An actual `capture_game` result is a complete *decision scope*, not the whole
 repertoire catalogue. Its `catalogue_scope` public proof supplies exhausted
 stream manifests and retained candidate IDs. The snapshot scope identifies that
-capture; callers must acquire a whole-catalogue owner snapshot for a global audit.
+capture and binds the exact game ID/content/moves/root/color. The public scope
+proof's exclusive-policy anchor fences physical mappings before any omitted
+ended/diverged competing policy ceases to apply. Callers must acquire a
+whole-catalogue owner snapshot for a global audit.
 This module never resumes the graph migration or reads live data itself.
 
 ## Diagnostics, identity and safe unknowns
 
 `index.diagnostics` is deterministically ordered by repertoire, route, ply and
-code. Illegal moves retain only the legal prefix with `illegal_move`; that route
+code. `index.mapping_diagnostics` separately reports missing or ambiguous physical
+mappings without mislabeling valid authored content as incomplete. Illegal moves retain only the legal prefix with `illegal_move`; that route
 is incomplete and its last retained position is not a deliberate terminal.
 Invalid starting positions, unsupported variants, incomplete route boundaries,
 ambiguous physical mappings, invalid reentry plies and own-response conflicts
@@ -94,7 +98,11 @@ lacks explicit graph mapping, this adapter conservatively withholds that
 position's physical mapping, pending the requested route/ply contract addition.
 UTC introduction instants are retained; date-only or missing chronology stays
 unknown until the requested game-scoped Study evidence addition is available.
-No introduction timestamp is fabricated.
+No introduction timestamp is fabricated. `available` is true only after explicit
+membership, availability flags and exact graph/executable checks.
+`introduction_matches_current_content` preserves a supplied owner fact; without
+one, only the donor's original physical revision 1 compatibility invariant is
+retained. A changed revision requires explicit Study evidence.
 
 Capture revision changes, changed digests, unknown completeness, unsupported
 canonical-prefix captures, wrong requested scope and exceeded bounds raise

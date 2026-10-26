@@ -151,8 +151,9 @@ def test_index_does_not_alias_inputs():
     before = deepcopy(source)
     index = build_index(source)
     assert source == before
-    source.membership.routes[0].moves[0] = "d2d4"
-    source.membership.routes.clear()
+    with pytest.raises(TypeError): source.membership.routes[0].moves[0] = "d2d4"
+    assert index.routes["rep", "r"][0].route_moves is not source.membership.routes[0].moves
+    assert index.routes["rep", "r"][0].binding is not source.decision_presentations[0]
     occurrence = index.routes["rep", "r"][0]
     assert occurrence.next_move == "e2e4" and occurrence.binding.presentation_id == "card"
     assert occurrence.binding.introduction == "unknown"

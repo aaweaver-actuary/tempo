@@ -52,21 +52,23 @@ def _frames(starting_fen, moves):
     return frames
 
 
-def _mappings(capture, routes, revision):
+def _mappings(capture, routes, revision, scope_proof=None):
     cards = capture["tables"]["cards"]
     counts = Counter(row["id"] for row in cards)
     cards_by_id = {row["id"]: row for row in cards if counts[row["id"]] == 1}
+    memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
     bound_occurrences = {}
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
         route = routes.get((graph["repertoire_id"], graph["line_id"]))
-        if card is None or route is None:
+        if card is None or route is None or (graph["repertoire_id"], graph["card_id"]) not in memberships:
             continue
         if (graph["generation"] != capture["authority"]["graph_generation"]
                 or graph["trained_color"] != route.learner_color
                 or card.get("trained_color") != route.learner_color
                 or card.get("content_type") != "opening"
+                or not {"archived", "pending_validation", "superseded_by"} <= card.keys()
                 or any(card.get(flag) for flag in ("archived", "pending_validation", "superseded_by", "integrity_blocked", "deleted"))):
             continue
         try:
@@ -79,7 +81,7 @@ def _mappings(capture, routes, revision):
             card_frames = _frames(card["start_fen"], executable)
             roots = [ply for ply, frame in enumerate(route_frames)
                      if opening_position_key(frame.fen()) == opening_position_key(graph["starting_fen"])
-                     and route.moves[ply:ply + len(executable)] == executable]
+                     and tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.
             if len(roots) != 1:
@@ -91,12 +93,25 @@ def _mappings(capture, routes, revision):
             frame = card_frames[offset]
             if frame.turn != (route.learner_color == "white"):
                 continue
+            # The bounded capture may omit an ended/diverged competing route,
+            # but its public proof retains the exclusive-policy anchor. Never
+            # turn that omission into physical miss authority before the anchor.
+            if scope_proof is not None:
+                anchor = scope_proof.authority_anchor(route.repertoire_id)
+                if anchor is None or roots[0] + offset < anchor:
+                    continue
             mapping = DecisionPresentation(
                 decision_id=decision_identity(card["id"], offset, executable[:offset]),
                 repertoire_id=route.repertoire_id,
                 position_key=opening_position_key(frame.fen()), selected_response_uci=uci,
                 presentation_id=card["id"], presentation_revision=card["revision"],
-                repertoire_revision=revision, introduction=introduction, introduced_at=introduced_at)
+                repertoire_revision=revision, introduction=introduction, introduced_at=introduced_at,
+                available=True,
+                # Retain the donor's original-revision compatibility rule;
+                # changed physical content needs explicit owner introduction proof.
+                introduction_matches_current_content=(
+                    card["introduction_matches_current_content"] is True
+                    if "introduction_matches_current_content" in card else card["revision"] == 1))
             mappings.append(mapping)
             key = route.repertoire_id, mapping.position_key, uci
             bound_occurrences.setdefault(key, set()).add((route.route_id, roots[0] + offset))
@@ -139,11 +154,19 @@ def project_capture(capture: Mapping) -> RepertoireSnapshot:
             or len(source["graphs"]) > 256):
         raise ValueError("snapshot_capture_exceeds_bound")
     proof = source.get("catalogue_scope")
+    validated = None
     if proof is not None:
         from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
         from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
         token = LegacyAuthorityToken.model_validate(authority)
         validated = LegacyScopedCatalogueProof.model_validate(proof)
+        game = source["game"]
+        if (validated.scope.game_id != game.get("id")
+                or validated.scope.content_hash != game.get("content_hash")
+                or validated.scope.learner_color != game.get("color")
+                or list(validated.scope.moves) != json.loads(game["moves_json"])
+                or validated.scope.starting_position_key != opening_position_key(game["start_fen"])):
+            raise ValueError("snapshot_game_scope_mismatch")
         if (validated.authority_id != token.storage_identity()[0]
                 or validated.integrity_certificate.graph_task_generation != token.graph_generation
                 or validated.source_identity_digests() != {key: authority[key] for key in
@@ -180,7 +203,7 @@ def project_capture(capture: Mapping) -> RepertoireSnapshot:
         boundaries=tuple(RouteBoundary(route_id=route.route_id, terminal_ply=len(route.moves), deliberate=True)
                          for route in routes),
         decision_presentations=_mappings(source,
-            {(route.repertoire_id, route.route_id): route for route in routes}, revision))
+            {(route.repertoire_id, route.route_id): route for route in routes}, revision, validated))
 
 
 class CapturedSnapshotAdapter:
