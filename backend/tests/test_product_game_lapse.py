@@ -102,7 +102,7 @@ def test_recomparison_revision_is_not_new_lapse(owner):
     assert len(store.reviews) == 1
 
 
-@pytest.mark.parametrize("invalid", ["unintroduced", "conflicted", "stale", "ambiguous", "unavailable", "unknown_time"])
+@pytest.mark.parametrize("invalid", ["unintroduced", "conflicted", "stale", "ambiguous", "unavailable", "unknown_time", "mapping_unavailable", "introduction_old_content"])
 def test_unintroduced_conflicted_stale_or_ambiguous_is_rejected(owner, invalid):
     store, decisions, _, service = owner
     lapse = fixture("lapse", GameLapse)
@@ -112,6 +112,8 @@ def test_unintroduced_conflicted_stale_or_ambiguous_is_rejected(owner, invalid):
     if invalid == "ambiguous": decisions.mappings *= 2
     if invalid == "stale": decisions.mappings = (decisions.mappings[0].model_copy(update={"repertoire_revision": 3}),)
     if invalid == "unknown_time": lapse = lapse.model_copy(update={"occurred_at": None})
+    if invalid == "mapping_unavailable": decisions.mappings = (decisions.mappings[0].model_copy(update={"available": False}),)
+    if invalid == "introduction_old_content": decisions.mappings = (decisions.mappings[0].model_copy(update={"introduction_matches_current_content": False}),)
     assert service.accept_lapse(lapse).status == "held"
     assert not store.reviews and not store.queue
 
@@ -197,7 +199,9 @@ def test_changed_source_is_quarantined(owner):
     # The required withdrawal regression includes the delayed original command.
     other = MemoryStore()
     pending = GameFeedback(other, Decisions(), clock=lambda: NOW)
-    assert pending.control_effect(fixture("hold", GameEffectControl)).status == "held"
+    control = fixture("hold", GameEffectControl)
+    assert control.withdrawal is None  # No producer-guessed owner obligation identity.
+    assert pending.control_effect(control).status == "held"
     assert pending.accept_lapse(lapse).status == "held"
     pending.maintain()
     assert not other.reviews and len(other.effects) == 1

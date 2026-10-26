@@ -1,7 +1,26 @@
-# Study game feedback — T06 / #487
+# Daily Study practice policy
+
+Study means daily practice. Authored/imported [Studies](../studies/README.md) is a separate owner.
+
+| Directory | Existing responsibility |
+| --- | --- |
+| [openings](openings/README.md) | Pure opening preparedness/reach, admission frontier and frozen-order mathematics. |
+| [review](review/README.md) | Semantic feedback facts/port and UTC normalization. |
+| [frozen_order](frozen_order/README.md) | Frozen-order application policy; database work stays at its root owner. |
+
+These policies depend on their own modules, explicit contracts and neutral chess
+support. Existing legacy workflows retain the separate
+[organization checklist](../../ORGANIZATION.md). The `organized-study` local
+import-linter contract covers the moved openings/review namespaces; existing
+frozen-order guards retain their scope. This source organization does not certify
+deployment/resource isolation or activate the proposed
+[database simplification](../../../database/SIMPLIFICATION.md).
+
+## Study game feedback — T06 / #487
 
 Source implementation, not deployed. Contract dependency: #482 checkpoint
-`1587828a`; [shared types](../contracts/product_v02/learning.py). Ordinary Study
+`50dd8220` (including key/revision/reason-only controls);
+[shared types](../contracts/product_v02/learning.py). Ordinary Study
 retains the existing scheduler, review transaction, queue and attempt authority.
 There is no independent Learning service requirement.
 
@@ -63,6 +82,9 @@ of that day, so same-day ordering is not invented.
 
 - `services/learning_review_adapter.py::settle_remediation` calls
   `settle_saved_review` after the real saved review in the same transaction.
+- `services/legacy_study_remediation.py::invalidate_review` reopens debt only
+  after its actual settling review is invalidated, preserving the historical
+  application receipt so Again cannot repeat.
 - `services/queue_application.py::seed_queue` invokes
   `resume_available_feedback` for already-applied obligations after ordinary due
   seeding. This recovery needs no producer or index. It uses nonblocking card
@@ -72,8 +94,9 @@ of that day, so same-day ordering is not invented.
   algorithm for `product_game_lapse`. Protected issued attempts remain protected.
 
 The adapter lives in [the database owner](../../../database/tempo_legacy_database/adapters/study/README.md).
-Migration 051 is source only and must be allocated/applied by the existing
-migration owner at integration. Pre-migration/recovery paths retain their current
+Migration 051 is allocated and registered by readiness version 51; it is source
+only and must be applied by the existing migration owner at integration.
+Pre-migration/recovery paths retain their current
 behavior. No route, main.py, independent runtime or live data changes.
 
 ```mermaid

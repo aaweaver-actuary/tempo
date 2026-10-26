@@ -25,6 +25,12 @@ The 12 included remediation tables have their canonical charts/dictionary in the
 
 ## Read projections
 
+The additive T06 [Study game-feedback owner chart](../adapters/study/README.md)
+documents `study_game_feedback` from migration 051: stable effect identity,
+original deadline, pre-delivery hold, application and settlement provenance.
+Relationships to cards/reviews are logical and noncascading. Source only;
+live schema/deployment unverified.
+
 These are SQL views, not additional stored tables. DDL links define their projected fields and backing queries.
 
 | View | DDL |
