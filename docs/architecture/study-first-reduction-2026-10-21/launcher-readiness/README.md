@@ -118,8 +118,9 @@ still required, and production remains blocked.
 
 `facts.graphSource.graphSourceReference` identifies the pinned closure.
 `graphRecoveryCopy` requires `immutable`, `restoreVerified` and
-`fullSourcePreserved`; reduced Learning rows do not preserve authored source and
-repertoire names. `targetProvisioning` verifies clean, independent target identity,
+`fullSourcePreserved`; reduced Learning rows are not a complete authored-source
+recovery copy, even though optional repertoire display titles now propagate.
+`targetProvisioning` verifies clean, independent target identity,
 workspace, ingress and schema. Graph import and initialization return opaque
 receipts. Quarantine verifies the same authority/schema and graph closure with
 maintenance and write-capable traffic disabled. `facts.resumption` describes this

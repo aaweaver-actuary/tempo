@@ -50,13 +50,13 @@ flowchart TB
   Remediation -->|"Learning-owned obligation settlement"| DB
   Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
   Legacy -->|"same Home; narrow facts and callbacks"| Home
-  Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, comparison, repertoire, studies, administration and dialogs"]
+  Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, repertoire, studies, administration and dialogs"]
   Boundary -.->|"optional user navigation only; no readiness wait"| WB["Independent Workbench URL"]
 ```
 
 | Interface / decision | Source correspondence |
 | --- | --- |
-| Physical entry and loaded graph guard | [`studyComposition`](../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, comparison, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../static/src/study-main.tsx) has no legacy import. |
+| Physical entry and loaded graph guard | [`studyComposition`](../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../static/src/study-main.tsx) has no legacy import. |
 | Optional state, presentation and handoff owner | [`LegacyHome`](views/legacy-home.tsx) injects [`LegacyWorkspace`](views/legacy-workspace.tsx). It owns discovery/filter/paste/repair state, repair race fencing, deletion recovery and retained optional dialogs. Builder editing and its handoffs, plus the Games and analytics dashboards, were retired; Repertoire import and paste remain. [`LegacyWorkspaceProps` / slots / controller](components/optional-workspace.ts) expose explicit queue/card commands; they do not pass the Home store. Home owns one training controller and queue acquisition. Unsupported controls are omitted when their action capability is absent. |
 | Genuine Study settings and navigation | [`StudyConnectionBoundary`](components/study-connection-boundary.tsx) retains [`StudySettingsPanel`](components/study-settings-panel.tsx) for Learning settings. [`StudySettingsView`](views/study-settings-view.tsx) changes browser appearance/shortcuts. [`canOpenWorkspace`](lib/study-workspace-policy.ts) checks direct intents as well as Navbar visibility. |
 | Connection and allowed transport | [`study-connection.ts`](lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only the configured Learning origin/Study paths receive the credential; no Games fallback. The boundary waits for Learning bootstrap or explicitly permitted cached practice. |
@@ -88,8 +88,8 @@ assumed here.
 
 | Owner-facing surface | Exported functionality and authority |
 | --- | --- |
-| [Study connection](lib/study-connection.ts) | `connectStudy(origin, workspace, credential)`, `disconnectStudy()`, `studyWorkspace()` and `learningFetch(input, options)` bind the selected Learning authority and its permitted transport paths. Disconnect clears the session connection, not durable Study work. The internal path allowlist/authenticated-fetch helper is not a plugin API. |
-| [Study session](../packages/study-session/src/index.ts) | `createStudySession({store, learning, ...})` exposes `start`, `submit`, `checkSave`, `retrySave`, `retryNext`, `getSnapshot`, `subscribe` and `dispose`. Injected `IntentStore` and `LearningClient.deliver/checkReceipt` separate durable intent storage and delivery; the session never invents server settlement. |
+| [Study connection](lib/study-connection.ts) | `connectStudy(origin, workspace, credential)`, `disconnectStudy()` and `studyWorkspace()` manage the selected Learning authority. In independent Study, `learningFetch(input, options)` restricts authenticated API delivery to that authority and allowed paths; the full legacy build delegates to ordinary fetch. Disconnect clears the session connection, not durable Study work. The internal path allowlist/authenticated-fetch helper is not a plugin API. |
+| [Study session](../packages/study-session/src/index.ts) | `createStudySession({store, learning, ...})` exposes `start`, `submit`, `checkSave`, `retrySave`, `retryNext`, `getSnapshot`, `subscribe` and `dispose`. Injected `IntentStore` and `LearningClient` (required `deliver`, optional `checkReceipt`) separate durable intent storage and delivery; the session never invents server settlement. |
 | [Optional workspace contract](components/optional-workspace.ts) | `LegacyWorkspaceProps`, `LegacyWorkspaceSlots` and `LegacyWorkspaceController` exchange named facts, callbacks and presentation slots. Legacy composition owns optional state/imports; the shared shell does not hand over its store. |
 | [Workspace policy](lib/study-workspace-policy.ts) | `canOpenWorkspace(view, study)` permits Train, Tactics, Endgames and Settings in Study, including direct navigation intents. This is a fixed composition policy, not dynamic plugin discovery. |
 | [Saved endgame guard](lib/saved-endgame-practice.ts) | `hasSavedEndgameLine(card)` validates the persisted legal line. It performs no generation, provider call, review write or automatic grading. |

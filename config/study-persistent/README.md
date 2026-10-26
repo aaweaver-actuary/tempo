@@ -43,7 +43,8 @@ Provisioning and the quarantine startup guard use an explicit read-only bind of
 the selected `database/tempo_learning_database` source; they are not standalone
 image-only operations. [`quarantine.compose.yml`](quarantine.compose.yml) runs
 `bootstrap_persistent.py bootstrap` or `check-quarantine` from that source with
-the image's interpreter/dependencies, then executes installed `tempo-learning`.
+the image's interpreter/dependencies; the quarantine service then executes
+installed `tempo-learning`.
 Keep the source mount, image pin, migration map and receipt bound to the selected
 revision. Source/fake preparation does not qualify that installed combination.
 
