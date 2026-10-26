@@ -1,7 +1,7 @@
-"""Read-only projection of an existing backend-owned bounded game capture.
+"""Pure repertoire projections over supplied bounded owner facts.
 
-Composition supplies capture_game bound to the selected game. This adapter has no
-SQL, connection, transaction, graph migration or provider lifecycle authority.
+Game capture and repertoire-only reads retain separate scopes. SQL, connection,
+transaction, graph migration and provider lifecycle authority stay in adapters.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def _frames(starting_fen, moves):
     return frames
 
 
-def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None):
+def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None, *, include_unavailable=False):
     cards = capture["tables"]["cards"]
     counts = Counter(row["id"] for row in cards)
     cards_by_id = {row["id"]: row for row in cards if counts[row["id"]] == 1}
@@ -83,8 +83,11 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
                 or graph["trained_color"] != route.learner_color
                 or card.get("trained_color") != route.learner_color
                 or card.get("content_type") != "opening"
-                or not {"archived", "pending_validation", "superseded_by"} <= card.keys()
-                or any(card.get(flag) for flag in ("archived", "pending_validation", "superseded_by", "integrity_blocked", "deleted"))):
+                or not {"archived", "pending_validation", "superseded_by"} <= card.keys()):
+            continue
+        available = not any(card.get(flag) for flag in (
+            "archived", "pending_validation", "superseded_by", "integrity_blocked", "deleted"))
+        if not available and not include_unavailable:
             continue
         try:
             executable = json.loads(graph["moves_json"])
@@ -128,7 +131,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
                 route_id=route.route_id, route_ply=roots[0] + offset,
                 introduced_before_game=known_before,
                 introduction_game=comparison_scope if known_before is not None else None,
-                available=True,
+                available=available,
                 # Retain the donor's original-revision compatibility rule;
                 # changed physical content needs explicit owner introduction proof.
                 introduction_matches_current_content=(
@@ -230,3 +233,69 @@ class CapturedSnapshotAdapter:
         if captured["authority"]["repertoire_id"] != repertoire_id:
             raise ValueError("snapshot_scope_mismatch")
         return project_capture(captured, comparison_game=self._comparison_game)
+
+
+def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+    """Project the complete bounded repertoire-only owner read, including conflicts.
+
+    No game/clean-integrity prerequisite and no inferred date-only chronology.
+    The source digest excludes capture time and every schedule/review/queue field.
+    """
+    encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if len(encoded.encode()) > MAX_CAPTURE_BYTES:
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    source = json.loads(encoded)
+    header = source["repertoire"]
+    repertoire_id = header["id"]
+    if not header.get("workspace_id"):
+        raise ValueError("repertoire_workspace_unknown")
+    if json.loads(header.get("canonical_prefix_moves_json", "[]")):
+        raise ValueError("canonical_prefix_snapshot_unsupported")
+    if (len(source["lines"]) > 10000 or len(source["cards"]) > 10000
+            or len(source["memberships"]) > 10000 or len(source["graphs"]) > 20000):
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    if any(row["repertoire_id"] != repertoire_id for name in ("lines", "memberships", "graphs")
+           for row in source[name]):
+        raise ValueError("repertoire_snapshot_scope_mismatch")
+    routes = tuple(AuthoredRoute(repertoire_id=repertoire_id, route_id=row["id"],
+        policy_id=repertoire_id, learner_color=row["trained_color"], starting_fen=row["start_fen"],
+        moves=json.loads(row["moves_json"])) for row in sorted(source["lines"], key=lambda row: row["id"]))
+    if sum(len(route.moves) for route in routes) > 100000:
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    colors = {route.learner_color for route in routes}
+    if len(colors) != 1:
+        raise ValueError("repertoire_color_unknown" if not colors else "repertoire_color_ambiguous")
+    source["lines"].sort(key=lambda row: row["id"])
+    source["cards"].sort(key=lambda row: row["id"])
+    source["memberships"].sort(key=lambda row: (row["repertoire_id"], row["card_id"]))
+    source["graphs"].sort(key=lambda row: (row["line_id"], row["decision_index"]))
+    revision = header["scope_source_revision"] + 1
+    digest = fingerprint({"kind": "current_repertoire_snapshot", "schema_version": 1, "facts": source})
+    moment = captured_at or datetime.now(timezone.utc).isoformat()
+    membership = MembershipSnapshot(workspace_id=header["workspace_id"],
+        snapshot_id="repertoire:" + digest, revision=revision, digest=digest,
+        source_revision=digest, captured_at=moment, scope_id="repertoire:" + repertoire_id,
+        scope_repertoire_ids=[repertoire_id], complete=True, routes=list(routes))
+    # Retain the existing exact graph/executable/card mapping law. A missing or
+    # non-ready graph leaves physical mapping unknown but never hides source routes.
+    mapping_source = {"tables": {"cards": source["cards"], "repertoire_cards": source["memberships"]},
+        "graphs": source["graphs"] if header.get("graph_state") == "ready" else [],
+        "authority": {"graph_generation": header.get("graph_generation")}}
+    return RepertoireSnapshot(membership=membership, variant="standard", learner_color=next(iter(colors)),
+        boundaries=tuple(RouteBoundary(route_id=route.route_id, terminal_ply=len(route.moves), deliberate=True)
+                         for route in routes),
+        decision_presentations=_mappings(mapping_source,
+            {(route.repertoire_id, route.route_id): route for route in routes}, revision,
+            include_unavailable=True))
+
+
+class CurrentSnapshotAdapter:
+    """RepertoireSnapshotPort over an injected bounded repertoire-only read."""
+    def __init__(self, read: Callable[[str], Mapping]):
+        self._read = read
+
+    def snapshot(self, repertoire_id: str) -> RepertoireSnapshot:
+        facts = self._read(repertoire_id)
+        if facts["repertoire"]["id"] != repertoire_id:
+            raise ValueError("repertoire_snapshot_scope_mismatch")
+        return project_repertoire(facts)
