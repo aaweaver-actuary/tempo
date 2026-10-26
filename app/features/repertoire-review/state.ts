@@ -16,10 +16,11 @@ export function visibleConflicts(read: RepertoireReviewRead): readonly ConflictR
   return read.conflicts.filter(row => row.repertoire_id === read.repertoire_id &&
     row.position.target_fen.split(" ")[1] === (row.position.learner_color === "white" ? "w" : "b"));
 }
-export function validatedPreview(receipt: RepertoireChangeReceipt, read: RepertoireReviewRead, proposalId: string): Proposal {
+export function validatedPreview(receipt: RepertoireChangeReceipt, read: RepertoireReviewRead, proposalId: string, editedFromRevision?: number): Proposal {
   const proposal = receipt.proposal;
   if (receipt.status !== "preview" || receipt.proposal_id !== proposalId || !proposal ||
-      proposal.proposal_id !== proposalId || !currentProposal(proposal, read) || receipt.source_revision !== read.source_revision) {
+      proposal.proposal_id !== proposalId || !currentProposal(proposal, read) || receipt.source_revision !== read.source_revision ||
+      (editedFromRevision !== undefined && proposal.proposal_revision <= editedFromRevision)) {
     throw new Error(receipt.reason ?? "The owner did not return a current validated preview. Refresh before approving.");
   }
   return proposal;
@@ -43,21 +44,30 @@ export class RepertoireReviewSession {
   readonly snapshot = () => this.version;
   private changed() { this.version += 1; this.listeners.forEach(listener => listener()); }
   operation(decision: ProposalDecision): ReviewOperation | undefined { return this.operations.get(JSON.stringify(decision)); }
+  latest(proposal: Proposal): ReviewOperation | undefined {
+    return [...this.operations.values()].reverse().find(operation => {
+      const decision = operation.decision;
+      return decision.proposal_id === proposal.proposal_id && decision.expected_proposal_revision === proposal.proposal_revision &&
+        decision.expected_source_revision === proposal.source_revision && decision.display_digest === proposal.display_digest;
+    });
+  }
   isRunning(decision: ProposalDecision): boolean { return this.running.has(JSON.stringify(decision)); }
   submit(api: RepertoireReviewClient, decision: ProposalDecision): Promise<void> {
     const key = JSON.stringify(decision);
     const inFlight = this.running.get(key);
     if (inFlight) return inFlight;
     const previous = this.operations.get(key);
-    if (previous?.state === "complete") return Promise.resolve();
-    const operation: ReviewOperation = previous ?? {
-      operation_id: this.newId(), decision, state: "pending", receipt: null, error: null,
+    if (previous?.state === "complete" && ["accepted", "dismissed", "preview"].includes(previous.receipt?.status ?? "")) return Promise.resolve();
+    const operation: ReviewOperation = {
+      operation_id: previous?.operation_id ?? this.newId(), decision, state: "pending", receipt: null, error: null,
     };
-    this.operations.set(key, { ...operation, error: null });
+    this.operations.set(key, operation);
     // Start in a microtask so the in-flight fence exists even for a synchronous throw.
     const work = Promise.resolve().then(() => api.decide(operation.decision, { operation_id: operation.operation_id }))
       .then(receipt => {
-        if (receipt.proposal_id !== decision.proposal_id || receipt.source_revision < decision.expected_source_revision) {
+        const allowed = decision.action === "edit" ? ["preview", "conflict", "unavailable"]
+          : decision.action === "accept" ? ["accepted", "conflict", "unavailable"] : ["dismissed", "conflict", "unavailable"];
+        if (!allowed.includes(receipt.status) || receipt.proposal_id !== decision.proposal_id || receipt.source_revision < decision.expected_source_revision) {
           throw new Error("Unexpected acknowledgment; outcome is still pending.");
         }
         this.operations.set(key, { ...operation, state: "complete", receipt, error: null });

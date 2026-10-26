@@ -57,7 +57,7 @@ export interface RepertoireReviewClient extends RepertoireReviewApi {
   preview(proposal: Proposal, options?: RequestOptions): Promise<RepertoireChangeReceipt>;
   decide(decision: ProposalDecision, options?: CommandOptions): Promise<RepertoireChangeReceipt>;
   /** Constructs coherent edits/card changes; no publication. UI never rewrites PGN/evidence. */
-  prepareEdit(request: { readonly proposal: Proposal; readonly responses_uci: readonly string[] }, options?: RequestOptions): Promise<Proposal>;
+  prepareEdit?(request: { readonly proposal: Proposal; readonly responses_uci: readonly string[] }, options?: RequestOptions): Promise<Proposal>;
 }
 
 export type RepertoireNavigationIntent =
