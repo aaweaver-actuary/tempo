@@ -172,7 +172,7 @@ def test_interrupted_stream_preserves_checkpoint():
 
 
 def test_filtered_or_rejected_records_are_accounted():
-    rows = [source(0), source(1, speed="bullet"), source(2, pgn="bad PGN"), source(3, rated=False),
+    rows = [source(0), source(1, speed="bullet"), source(2, pgn=source(2)["pgn"].replace("1. e4", "1. e5")), source(3, rated=False),
             source(4, variant="crazyhouse"), source(5, pgn=source(5)["pgn"].replace('"Learner"', '"Another"'))]
     page = asyncio.run(acquire(Export(rows), speeds=("rapid",), rated=True))
     assert page.complete and len(page.records) == 1
