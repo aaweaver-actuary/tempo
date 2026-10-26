@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -28,6 +28,16 @@ FailureKind = Literal[
 ]
 
 
+class LichessSourceRecord(GameRecord):
+    """Provider facts extend shared record identity, rather than copying its DTO."""
+
+    source_metadata: tuple[tuple[str, str], ...] = ()
+
+
+class LichessGamePage(GamePage):
+    records: tuple[LichessSourceRecord, ...]
+
+
 class LichessAcquisitionError(RuntimeError):
     """Sanitized failure; replay the original continuation, never a partial read."""
 
@@ -45,7 +55,7 @@ def _digest(value: bytes) -> str:
 
 
 def _json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False).encode()
 
 
 def _milliseconds(value: str) -> int:
@@ -57,7 +67,7 @@ def _milliseconds(value: str) -> int:
 
 
 def _timestamp(value: int) -> str:
-    return datetime.fromtimestamp(value / 1000, timezone.utc).isoformat(timespec="milliseconds")
+    return (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=value)).isoformat(timespec="milliseconds")
 
 
 def _cursor(key: str, since: int, seen: dict[str, str]) -> str:
@@ -145,7 +155,9 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
             or type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
             or not 0 < timeout_seconds <= 30
             or type(max_response_bytes) is not int or not 1 <= max_response_bytes <= MAX_RESPONSE_BYTES
-            or not isinstance(speeds, tuple) or not speeds or any(speed not in _SPEEDS for speed in speeds)
+            or not isinstance(speeds, tuple) or not speeds
+            or any(not isinstance(speed, str) or speed not in _SPEEDS for speed in speeds)
+            or (cancelled is not None and not callable(cancelled))
             or (rated is not None and type(rated) is not bool)):
         raise LichessAcquisitionError("invalid_request", continuation=continuation)
     account = account.casefold()
@@ -154,7 +166,7 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
     if not 0 <= start < end <= 253402300799999:
         raise LichessAcquisitionError("invalid_request", continuation=continuation)
     filters = (("perfType", ",".join(speeds)),) + (() if rated is None else (("rated", str(rated).lower()),))
-    key = _digest(_json([account, start, end, filters, source_revision, page_size]))
+    key = _digest(_json([account, start, end, window.precision, filters, source_revision, page_size]))
     since, seen = _restore(continuation, key, start, end)
     if len(seen) >= MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
@@ -194,6 +206,8 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
         if game_id in page_ids:
             if page_ids[game_id] != row_digest:
                 raise LichessAcquisitionError("changed_boundary", continuation=continuation)
+            rejections.append(GameRejection(source_game_id=game_id,
+                source_revision=source_revision, reason="duplicate_source_id"))
             continue
         page_ids[game_id] = row_digest
         if timestamp != previous:
@@ -211,31 +225,48 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
             reason = "filtered_speed"
         elif rated is not None and row["rated"] != rated:
             reason = "filtered_rated"
+        elif row.get("variant") not in (None, "standard", "fromPosition"):
+            reason = "unsupported_variant"
         elif not isinstance(row.get("pgn"), str) or not row["pgn"].strip():
             reason = "invalid_pgn"
         else:
             try:
                 # Reuse the provider donor's legal-game/account/result validation.
-                normalize_provider_pgn("lichess", account, row["pgn"],
+                normalized = normalize_provider_pgn("lichess", account, row["pgn"],
                     provider_game_id=game_id, played_at=_timestamp(timestamp),
                     speed=row["speed"], rated=row["rated"],
                     game_url=f"https://lichess.org/{game_id}")
-            except (RejectedGame, ValueError):
+            except RejectedGame as error:
+                reason = {
+                    "configured account did not play this game": "account_mismatch",
+                    "only standard chess games are supported": "unsupported_variant",
+                    "game is unfinished or has an unsupported result": "unfinished_game",
+                }.get(str(error), "invalid_pgn")
+            except ValueError:
                 reason = "invalid_pgn"
         if reason:
             rejections.append(GameRejection(source_game_id=game_id,
                 source_revision=source_revision, reason=reason))
         else:
-            records.append(GameRecord(source_game_id=game_id, source_revision=source_revision,
+            metadata = {"payload_digest": row_digest, "game_url": f"https://lichess.org/{game_id}",
+                "created_at_ms": timestamp, "last_move_at_ms": row.get("lastMoveAt"),
+                "speed": row["speed"], "rated": row["rated"], "variant": row.get("variant"),
+                "learner_color": normalized.color}
+            records.append(LichessSourceRecord(source_game_id=game_id, source_revision=source_revision,
                 source_digest=_digest(row["pgn"].encode()), pgn=row["pgn"],
-                played_at=_timestamp(timestamp), time_precision="millisecond"))
+                played_at=_timestamp(timestamp), time_precision="millisecond",
+                source_metadata=tuple((name, _json(value).decode()) for name, value in sorted(metadata.items()))))
     saturated = len(rows) == limit
     if saturated and len(boundary) > MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
-    return GamePage(provider="lichess", account=account, window=window,
+    next_token = _cursor(key, previous, boundary) if saturated else None
+    if saturated and next_token == continuation:
+        raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
+    return LichessGamePage(provider="lichess", account=account, window=window,
         records=tuple(records), rejections=tuple(rejections), filters=filters,
-        continuation=_cursor(key, previous, boundary) if saturated else None,
+        continuation=next_token,
         complete=not saturated, saturated=saturated)
 
 
-__all__ = ["fetch_lichess_page", "LichessAcquisitionError", "MAX_PAGE_SIZE", "MAX_RESPONSE_BYTES"]
+__all__ = ["fetch_lichess_page", "LichessAcquisitionError", "LichessGamePage", "LichessSourceRecord",
+           "MAX_PAGE_SIZE", "MAX_RESPONSE_BYTES"]

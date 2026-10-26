@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 
 from app.contracts.product_v02.games import GamePage, GameWindow
 from app.games.providers.lichess_acquisition import (
-    LichessAcquisitionError, fetch_lichess_page,
+    LichessAcquisitionError, LichessGamePage, fetch_lichess_page,
 )
 
 
@@ -90,6 +90,10 @@ def test_more_than_one_page_is_complete_without_loss():
     assert first.pgn == rows[0]["pgn"]
     assert first.source_digest == hashlib.sha256(first.pgn.encode()).hexdigest()
     assert first.time_precision == "millisecond" and first.source_revision == 1
+    assert json.loads(dict(first.source_metadata)["learner_color"]) == "white"
+    assert json.loads(dict(first.source_metadata)["payload_digest"]) == hashlib.sha256(
+        json.dumps(rows[0], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert LichessGamePage.model_validate_json(pages[0].model_dump_json()) == pages[0]
     assert first.played_at == "2026-10-01T00:00:00.000+00:00"
     assert pages[0].account == "learner" and pages[0].provider == "lichess"
     assert dict(pages[0].filters)["perfType"] == "blitz,bullet,classical,rapid"
@@ -112,6 +116,15 @@ def test_equal_timestamp_boundary_keeps_all_ids():
     assert len(ids) == len(set(ids)) == 205
     assert set(ids) == {row["id"] for row in rows}
     assert pages[-1].complete
+
+
+def test_last_millisecond_is_retained_and_end_is_excluded():
+    rows = [source(0, timestamp=START), source(1, timestamp=START + 86400000 - 1),
+            source(2, timestamp=START + 86400000)]
+    pages = asyncio.run(consume(Export(rows), page_size=1))
+    records = [record for page in pages for record in page.records]
+    assert [record.source_game_id for record in records] == ["game0000", "game0001"]
+    assert records[-1].played_at == "2026-10-01T23:59:59.999+00:00"
 
 
 def test_retry_replays_same_page():
@@ -159,13 +172,23 @@ def test_interrupted_stream_preserves_checkpoint():
 
 
 def test_filtered_or_rejected_records_are_accounted():
-    rows = [source(0), source(1, speed="bullet"), source(2, pgn="bad PGN"), source(3, rated=False)]
+    rows = [source(0), source(1, speed="bullet"), source(2, pgn=source(2)["pgn"].replace("1. e4", "1. e5")), source(3, rated=False),
+            source(4, variant="crazyhouse"), source(5, pgn=source(5)["pgn"].replace('"Learner"', '"Another"'))]
     page = asyncio.run(acquire(Export(rows), speeds=("rapid",), rated=True))
     assert page.complete and len(page.records) == 1
     assert {item.source_game_id: item.reason for item in page.rejections} == {
-        "game0001": "filtered_speed", "game0002": "invalid_pgn", "game0003": "filtered_rated"}
+        "game0001": "filtered_speed", "game0002": "invalid_pgn", "game0003": "filtered_rated",
+        "game0004": "unsupported_variant", "game0005": "account_mismatch"}
     assert len(page.records) + len(page.rejections) == len(rows)
     assert dict(page.filters) == {"perfType": "rapid", "rated": "true"}
+
+
+def test_duplicate_source_rows_are_accounted_and_conflicting_rows_fail_closed():
+    page = asyncio.run(acquire(lambda request: response([source(0), source(0), source(1)])))
+    assert len(page.records) == 2 and page.complete
+    assert [(item.source_game_id, item.reason) for item in page.rejections] == [("game0000", "duplicate_source_id")]
+    with pytest.raises(LichessAcquisitionError, match="changed_boundary"):
+        asyncio.run(acquire(lambda request: response([source(0), source(0, rated=False)])))
 
 
 def test_429_preserves_retry_after():

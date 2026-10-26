@@ -29,8 +29,9 @@ new operation; it does not certify the legacy orchestration's isolation.
 
 ## Chess.com acquisition (#485)
 
-[CHESSCOM.md](CHESSCOM.md) and [chesscom_acquisition.py](chesscom_acquisition.py)
-are supplied by the separate #485 branch. The following is the canonical drawing
+[CHESSCOM.md](https://github.com/aaweaver-actuary/tempo/blob/52e671e45abbccb8bf7120421a3e9163d910912b/backend/app/games/providers/CHESSCOM.md)
+and [chesscom_acquisition.py](https://github.com/aaweaver-actuary/tempo/blob/52e671e45abbccb8bf7120421a3e9163d910912b/backend/app/games/providers/chesscom_acquisition.py)
+are supplied by the separate #485 checkpoint. The following is the canonical drawing
 for that prepared source; it is not a claim that #485 is merged into this branch
 or wired into the product.
 
