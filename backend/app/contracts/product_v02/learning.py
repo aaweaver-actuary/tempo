@@ -6,8 +6,9 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from tempo_game_evidence_contracts.v2 import EvidenceWithdrawal
 from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 
-from . import Digest, Identifier, Revision, UtcTimestamp, Value
+from . import Digest, Identifier, Revision, UciMove, UtcTimestamp, Value
 from .games import Finding
+from .repertoire import DecisionPresentation, IntroductionGameScope
 
 
 class ImmutableEvidenceWithdrawal(EvidenceWithdrawal):
@@ -91,6 +92,90 @@ class LearningFeedbackPort(Protocol):
     def accept_lapse(self, lapse: GameLapse) -> LearningReceipt: ...
     def control_effect(self, command: GameEffectControl) -> LearningReceipt: ...
     def effect_status(self, key: GameEffectKey) -> LearningReceipt | None: ...
+
+
+class GameEncounter(Value):
+    """Next-release source facts, not a producer decision to introduce or lapse.
+
+    Matched play is frequency evidence. Missed play remains importance evidence
+    even before introduction or after later learning makes a lapse ineligible.
+    Study revalidates the supplied current mapping and chooses any effect.
+    """
+    interface_version: Literal["0.2.1"] = "0.2.1"
+    key: GameEffectKey
+    source: IntroductionGameScope
+    decision: DecisionPresentation
+    expected_uci: UciMove
+    played_uci: UciMove
+    observation: Literal["matched", "missed"]
+    detected_at: UtcTimestamp
+    occurred_at: UtcTimestamp | None
+    payload_digest: Digest
+
+    @model_validator(mode="after")
+    def same_source_and_decision_occurrence(self):
+        if (self.key.provider, self.key.game_id, self.key.decision_id) != (
+                self.source.provider, self.source.game_id, self.decision.decision_id):
+            raise ValueError("encounter key must identify the same provider/game/decision")
+        if self.expected_uci != self.decision.selected_response_uci:
+            raise ValueError("expected move must be the supplied approved decision response")
+        if (self.observation == "matched") != (self.played_uci == self.expected_uci):
+            raise ValueError("observation must preserve actual expected/played facts")
+        if self.decision.introduction_game is not None and self.decision.introduction_game != self.source:
+            raise ValueError("supplied introduction chronology must identify this exact game source")
+        return self
+
+
+class EncounterReceipt(LearningReceipt):
+    """Owner disposition, separately recording relevance and actual admission.
+
+    Existing LearningReceipt fields/statuses are reused, never relabelled as
+    queue availability. No deadline is promised under explicit disabled controls.
+    """
+    interface_version: Literal["0.2.1"] = "0.2.1"
+    detected_at: UtcTimestamp
+    source_digest: Digest
+    observation: Literal["matched", "missed"]
+    observation_recorded: bool
+    disposition: Literal["review_priority", "first_introduction", "existing_lapse", "frequency_only"] | None
+    admission_status: Literal["pending", "available", "settled", "not_requested"]
+    deferred_reason: Literal["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"] | None
+
+    @model_validator(mode="after")
+    def truthful_disposition_and_deferral(self):
+        if self.observation == "matched" and self.disposition == "existing_lapse":
+            raise ValueError("correct play cannot produce a lapse")
+        if self.disposition == "frequency_only" and self.admission_status != "not_requested":
+            raise ValueError("frequency-only evidence cannot claim Study admission")
+        if self.disposition == "frequency_only" and self.observation != "matched":
+            raise ValueError("historical missed-response importance cannot be reduced to frequency-only")
+        if self.admission_status == "available" and (self.disposition is None or self.status == "held"):
+            raise ValueError("unresolved or held evidence cannot claim availability")
+        if self.deferred_reason is not None and self.admission_status != "pending":
+            raise ValueError("deferred work must remain visibly pending")
+        if self.admission_status == "pending" and self.deferred_reason is None and self.reason is None:
+            raise ValueError("pending encounter admission requires an owner reason")
+        if self.deferred_reason in {"study_only", "disabled", "paused", "zero_limit"} and self.available_by is not None:
+            raise ValueError("explicit disabled controls cannot promise an availability deadline")
+        return self
+
+
+class EncounterFeedbackPort(LearningFeedbackPort, Protocol):
+    """Additive next-release capability; LearningFeedbackPort remains unchanged.
+
+    Use one GameEffectKey/receipt ledger for both command kinds, shared with
+    control_effect's pre-admission holds. Persist original source, detection,
+    observation and owner disposition across replay/admission/recomparison.
+    A previously unintroduced encounter must not later become a fake Again.
+    Historical misses may retain priority without reversing later progress;
+    correct play is frequency, never invented failure. Study revalidates current
+    definition/mapping/state, owns fresh first introduction, and preserves active
+    attempts. Paused/disabled/zero-limit and introduction allowance decisions stay
+    with Study. No reserve/exception policy or universal <=48h promise is chosen
+    by this seam. A supplied payload digest is a claim, not owner authority.
+    """
+    def accept_encounter(self, encounter: GameEncounter) -> EncounterReceipt: ...
+    def encounter_status(self, key: GameEffectKey) -> EncounterReceipt | None: ...
 
 
 def withdrawal_only_delivery(delivery: EvidenceDelivery, withdrawal: EvidenceWithdrawal) -> EvidenceDelivery:
