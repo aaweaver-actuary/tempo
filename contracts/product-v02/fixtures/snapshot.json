@@ -51,7 +51,9 @@
         "presentation_revision": 1,
         "repertoire_revision": 1,
         "introduction": "introduced",
-        "introduced_at": "2026-10-20T12:00:00Z"
+        "introduced_at": "2026-10-20T12:00:00Z",
+        "available": true,
+        "introduction_matches_current_content": true
       }
     ]
   }

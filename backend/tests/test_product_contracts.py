@@ -58,24 +58,50 @@ def test_snapshot_revision_conflict_and_caller_alias_are_rejected():
     payload = fixture("snapshot")
     value = RepertoireSnapshot.model_validate_json(json.dumps(payload))
     payload["membership"]["routes"][0]["moves"].append("e7e5")
-    assert value.membership.routes[0].moves == ["e2e4"]
+    assert value.membership.routes[0].moves == ("e2e4",)
     second = RepertoireSnapshot.model_validate({"membership": value.membership, "variant": value.variant, "learner_color": value.learner_color, "boundaries": value.boundaries, "decision_presentations": value.decision_presentations})
-    value.membership.routes[0].moves.append("e7e5")
-    assert second.membership.routes[0].moves == ["e2e4"]
+    with pytest.raises(AttributeError): value.membership.routes[0].moves.append("e7e5")
+    with pytest.raises(ValidationError): value.membership.routes[0].moves = ("d2d4",)
+    with pytest.raises(AttributeError): value.membership.scope_repertoire_ids.append("other")
+    with pytest.raises(AttributeError): value.membership.routes.append(value.membership.routes[0])
+    assert second.membership.routes[0].moves == ("e2e4",)
 
 
 def test_hold_and_withdraw_reuse_stable_occurrence_and_existing_v3_wire():
     lapse = GameLapse.model_validate_json(json.dumps(fixture("lapse")))
-    hold = GameEffectControl.model_validate_json(json.dumps(fixture("hold")))
+    hold = GameEffectControl.model_validate_json(json.dumps(fixture("withdraw")))
     assert hold.key.logical_id() == lapse.key.logical_id()
     assert hold.source_revision > lapse.finding.source_revision
     original = EvidenceDelivery.model_validate(json.loads((ROOT / "contracts/game-evidence/fixtures/v3/delivery.json").read_text())["payload"])
     result = withdrawal_only_delivery(original, hold.withdrawal)
     assert not any((result.encounters, result.comparisons, result.misses, result.obligations))
-    assert result.withdrawals == [hold.withdrawal]
-    hold.withdrawal.reason = "reanalysis"
+    assert result.withdrawals[0].model_dump() == hold.withdrawal.model_dump()
+    with pytest.raises(ValidationError): hold.withdrawal.reason = "reanalysis"
     assert result.withdrawals[0].reason == "source_corrected"
     assert original.obligations  # Adapter did not mutate supplied envelope.
+
+
+def test_pre_admission_hold_can_precede_original_without_owner_identity():
+    hold = GameEffectControl.model_validate_json(json.dumps(fixture("hold")))
+    delayed_original = GameLapse.model_validate_json(json.dumps(fixture("lapse")))
+    assert hold.withdrawal is None and hold.reason == "source_corrected"
+    assert hold.key == delayed_original.key
+    assert hold.source_revision > delayed_original.finding.source_revision
+    # This sequence is representable before any admission/receipt exists. Study
+    # owns durable tombstone/race proof; producers need no guessed obligation ID.
+    assert [type(item).__name__ for item in (hold, delayed_original)] == ["GameEffectControl", "GameLapse"]
+    missing_reason = fixture("hold") | {"reason": None}
+    with pytest.raises(ValidationError): GameEffectControl.model_validate_json(json.dumps(missing_reason))
+
+
+def test_current_availability_and_unchanged_introduced_content_are_expressible():
+    payload = fixture("snapshot")
+    valid = RepertoireSnapshot.model_validate_json(json.dumps(payload)).decision_presentations[0]
+    assert valid.available and valid.introduction_matches_current_content
+    del payload["decision_presentations"][0]["available"]
+    del payload["decision_presentations"][0]["introduction_matches_current_content"]
+    unknown = RepertoireSnapshot.model_validate_json(json.dumps(payload)).decision_presentations[0]
+    assert not unknown.available and not unknown.introduction_matches_current_content
 
 
 def test_contract_imports_have_no_runtime_side_effects():
