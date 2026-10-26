@@ -36,11 +36,23 @@ const ReentrySchema = z.strictObject({ ply: z.number().int().min(0).max(1000), a
 const AuthoredRouteSchema = z.strictObject({ repertoire_id: id, route_id: id, policy_id: id, learner_color: z.enum(["white", "black"]), starting_fen: id, moves: z.array(uci).max(1000), reentries: z.array(ReentrySchema).max(1000).default([]) });
 // Wire mirror of tempo_game_review_contracts.RepertoireSnapshot; Python reuses that owner.
 const MembershipSnapshotSchema = z.strictObject({ schema_version: z.literal(1).default(1), workspace_id: id, snapshot_id: id, revision, digest, source_revision: id, captured_at: utc, basis: z.literal("current_repertoire").default("current_repertoire"), scope_id: id, scope_repertoire_ids: z.array(id).min(1), complete: z.boolean(), available: z.boolean().default(true), unavailable_reason: id.nullable().default(null), routes: z.array(AuthoredRouteSchema) });
-const RawDecisionPresentationSchema = z.strictObject({ decision_id: id, repertoire_id: id, position_key: id, selected_response_uci: uci, presentation_id: id, presentation_revision: revision, repertoire_revision: revision, introduction: z.enum(["introduced", "unintroduced", "unknown"]), introduced_at: utc.nullable(), available: z.boolean().default(false), introduction_matches_current_content: z.boolean().default(false) }).refine(value => value.introduction === "introduced" || value.introduced_at === null, "unknown/unintroduced cannot assert introduction time");
+const IntroductionGameScopeSchema = z.strictObject({ provider, game_id: id, source_revision: revision, source_digest: digest });
+const RawDecisionPresentationSchema = z.strictObject({ decision_id: id, repertoire_id: id, position_key: id, selected_response_uci: uci, presentation_id: id, presentation_revision: revision, repertoire_revision: revision, introduction: z.enum(["introduced", "unintroduced", "unknown"]), introduced_at: utc.nullable(), available: z.boolean().default(false), introduction_matches_current_content: z.boolean().default(false), route_id: id.nullable().default(null), route_ply: z.number().int().min(0).max(1000).nullable().default(null), introduced_before_game: z.boolean().nullable().default(null), introduction_game: IntroductionGameScopeSchema.nullable().default(null) }).superRefine((value, ctx) => {
+  if (value.introduction !== "introduced" && value.introduced_at !== null) ctx.addIssue({ code: "custom", message: "unknown/unintroduced cannot assert introduction time" });
+  if ((value.route_id === null) !== (value.route_ply === null)) ctx.addIssue({ code: "custom", message: "route identity/zero-based ply must be paired" });
+  if ((value.introduced_before_game === null) !== (value.introduction_game === null)) ctx.addIssue({ code: "custom", message: "chronology boolean requires exact captured game source" });
+  if (value.introduced_before_game === true && value.introduction !== "introduced") ctx.addIssue({ code: "custom", message: "pre-game introduction cannot be unknown/unintroduced" });
+});
 const RawRepertoireSnapshotSchema = z.strictObject({ interface_version: version, membership: MembershipSnapshotSchema, variant: id, learner_color: z.enum(["white", "black"]), boundaries: z.array(z.strictObject({ route_id: id, terminal_ply: z.number().int().min(0), deliberate: z.boolean() })), decision_presentations: z.array(RawDecisionPresentationSchema) }).superRefine((value, ctx) => {
   const routes = new Map(value.membership.routes.map(route => [route.route_id, route]));
   if (routes.size !== value.membership.routes.length || value.boundaries.length !== routes.size || new Set(value.boundaries.map(item => item.route_id)).size !== routes.size || value.boundaries.some(item => routes.get(item.route_id)?.moves.length !== item.terminal_ply)) ctx.addIssue({ code: "custom", message: "every route requires its actual terminal boundary" });
   if (value.decision_presentations.some(item => item.repertoire_revision !== value.membership.revision || !value.membership.scope_repertoire_ids.includes(item.repertoire_id))) ctx.addIssue({ code: "custom", message: "conflicting repertoire revision/scope" });
+  for (const item of value.decision_presentations) {
+    if (item.route_id !== null) {
+      const route = routes.get(item.route_id);
+      if (!route || route.repertoire_id !== item.repertoire_id || item.route_ply === null || item.route_ply >= route.moves.length || route.moves[item.route_ply] !== item.selected_response_uci) ctx.addIssue({ code: "custom", message: "route-local mapping must identify the authored response occurrence" });
+    }
+  }
 });
 
 const RawGameEffectKeySchema = z.strictObject({ workspace_id: id, provider, game_id: id, decision_id: id, occurrence_ply: z.number().int().min(1).max(1000) });

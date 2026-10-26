@@ -5,7 +5,7 @@ from typing import Literal, Protocol
 from pydantic import Field, field_validator, model_validator
 from tempo_game_review_contracts import AuthoredRoute, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot
 
-from . import Identifier, Revision, UciMove, UtcTimestamp, Value
+from . import Digest, Identifier, Revision, UciMove, UtcTimestamp, Value
 
 
 class ImmutableAuthoredRoute(AuthoredRoute):
@@ -17,6 +17,14 @@ class ImmutableAuthoredRoute(AuthoredRoute):
 class ImmutableMembershipSnapshot(MembershipSnapshot):
     scope_repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=10000)
     routes: tuple[ImmutableAuthoredRoute, ...] = Field(max_length=10000)
+
+
+class IntroductionGameScope(Value):
+    """The exact captured source to which Study's chronology boolean applies."""
+    provider: Literal["lichess", "chesscom"]
+    game_id: Identifier
+    source_revision: Revision
+    source_digest: Digest
 
 
 class DecisionPresentation(Value):
@@ -31,11 +39,21 @@ class DecisionPresentation(Value):
     introduced_at: UtcTimestamp | None
     available: bool = False
     introduction_matches_current_content: bool = False
+    route_id: Identifier | None = None
+    route_ply: int | None = Field(default=None, ge=0, le=1000)
+    introduced_before_game: bool | None = None
+    introduction_game: IntroductionGameScope | None = None
 
     @model_validator(mode="after")
     def introduction_is_evidence(self):
         if self.introduction != "introduced" and self.introduced_at is not None:
             raise ValueError("unintroduced/unknown decisions cannot assert an introduction time")
+        if (self.route_id is None) != (self.route_ply is None):
+            raise ValueError("route-local mapping requires paired route identity and zero-based ply")
+        if (self.introduced_before_game is None) != (self.introduction_game is None):
+            raise ValueError("Study chronology boolean requires the exact captured game source")
+        if self.introduced_before_game is True and self.introduction != "introduced":
+            raise ValueError("a known pre-game introduction cannot be unintroduced/unknown")
         return self
 
 
@@ -72,6 +90,12 @@ class RepertoireSnapshot(Value):
         for mapping in self.decision_presentations:
             if mapping.repertoire_revision != self.membership.revision or mapping.repertoire_id not in self.membership.scope_repertoire_ids:
                 raise ValueError("mapping conflicts with supplied repertoire revision/scope")
+            if mapping.route_id is not None:
+                route = routes.get(mapping.route_id)
+                if (route is None or route.repertoire_id != mapping.repertoire_id
+                        or mapping.route_ply >= len(route.moves)
+                        or route.moves[mapping.route_ply] != mapping.selected_response_uci):
+                    raise ValueError("route-local mapping must identify its supplied authored response occurrence")
         return self
 
 
