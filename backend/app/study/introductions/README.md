@@ -149,8 +149,12 @@ real-transaction/reload/concurrency/rollback proof. Pure checks use synthetic
 facts; native checks use a small task-owned SQL owner to exercise the application
 transaction, not a claim that normal Study has been wired.
 
-#501/T20 owns normal-product wiring, current eligibility/snapshot projection,
-explicit settings selection, migration allocation, central suite registration
-and visible ranking acceptance. The existing fallback/planner evidence remains
-unchanged. No current admission hook was edited. #503 can proceed without this
-feature; neither R11 nor existing Study depends on the new tables.
+#495 still owns the later concrete current-owner eligibility/fence/canonical
+writer adapter and any exactly reserved admission/reconciliation hook changes;
+this private checkpoint does not claim those are implemented. #501/T20 owns
+outer normal-product wiring, explicit settings selection, migration allocation,
+central suite registration and visible ranking acceptance. It can consume this
+accept/read capability with typed fake owner facts now. The existing fallback/
+planner evidence remains unchanged. No current admission hook was edited. #503
+can proceed without this feature; neither R11 nor existing Study depends on the
+new tables.

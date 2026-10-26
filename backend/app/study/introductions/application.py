@@ -40,8 +40,8 @@ class Introductions:
         if ranking is not None and not compatible_ranking(ranking, facts.context):
             ranking = None
         spent = dict(facts.introduced_today)
-        # Existing actual owner facts win; ledger covers a retained introduction
-        # even if its queue row is later rebuilt or membership is removed.
+        # Preserve each receipt's original credited membership. The ledger also
+        # covers an introduction after queue rebuild or membership removal.
         for receipt in state.charges:
             spent[receipt.presentation_id] = receipt.repertoire_id
         return select(candidates=facts.candidates, ranking=ranking,
