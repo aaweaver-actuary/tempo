@@ -4,11 +4,13 @@ Use the existing capped task-owned PostgreSQL fixture. Schema051 is unchanged
 published feedback-owner source, assembled for this qualification only.
 """
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import hashlib
 import json
 from pathlib import Path
 import uuid
+from threading import Barrier
 
 import chess
 import psycopg
@@ -168,3 +170,39 @@ def test_encounter_requires_explicit_policy_and_exact_mapping(encounter_case):
             current_owner_encounter_introductions(database,allowance='limited_reserve')
         receiver = current_owner_encounter_introductions(database,allowance='ordinary')
         assert receiver.admit_encounter(DAY,repertoire_id=repertoire,decision_id=mapping(database).decision_id).reason == 'current_mapping_required'
+
+
+def test_encounter_canonical_concurrent_targets_share_saved_global_cap(encounter_case):
+    transaction,repertoire,card,mapping = encounter_case
+    other = card+'-other'
+    with transaction() as database:
+        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) SELECT ?,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color FROM cards WHERE id=?",(other,card))
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)',(repertoire,other))
+        database.execute('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color) SELECT repertoire_id,generation,line_id,decision_index+1,?,decision_fen_key,starting_fen,moves_json,trained_color FROM opening_graph_steps WHERE card_id=?',(other,card))
+        database.execute('UPDATE settings SET new_cards_per_day=1 WHERE id=1',())
+        first = mapping(database)
+        second = first.model_copy(update=dict(presentation_id=other,decision_id=decision_identity(other,0,[])))
+    gate = Barrier(2)
+    def worker(target):
+        with transaction() as database:
+            gate.wait(timeout=3)
+            result = admit(database,target)
+            return result.status,result.reason
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(worker,(first,second)))
+    assert sorted(results,key=lambda item:item[0]) == [('deferred','introduction_allowance'),('introduced',None)]
+    with transaction() as database:
+        assert database.execute('SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND introduced_at=?',(repertoire,DAY)).fetchone()[0] == 1
+
+
+def test_encounter_canonical_rechecks_explicit_generated_membership(encounter_case):
+    transaction,repertoire,card,mapping = encounter_case
+    with transaction() as database:
+        database.execute('UPDATE cards SET canonical_route_source=0 WHERE id=?',(card,))
+        database.execute('UPDATE repertoire_cards SET canonical_route_source=0 WHERE card_id=?',(card,))
+        target = mapping(database)
+        database.execute('DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?',(repertoire,card))
+        # Generated membership removal need not advance the authored revision.
+        # A primary owner fallback must not manufacture the old exact graph link.
+        assert mapping(database).repertoire_revision == target.repertoire_revision
+        assert admit(database,target).reason == 'current_target_unavailable'
