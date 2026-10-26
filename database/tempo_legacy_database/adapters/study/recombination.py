@@ -463,7 +463,7 @@ class CurrentStudyRecombination:
                 introduced_at,trained_color,content_type,canonical_route_source,source_ref,revision)
                 VALUES(%s,%s,%s,%s,%s,'learning',%s,%s,%s,'opening',0,%s,1)""",
                 (value.presentation_id,value.repertoire_id,"prefix" if len(value.components)>1 else "response",result.starting_fen,
-                 json.dumps(result.moves),result.due_at.astimezone(self.zone).date().isoformat(),now.isoformat(),value.learner_color,"recombination:"+change.command_id))
+                 json.dumps(result.moves),result.due_at.astimezone(self.zone).date().isoformat(),day,value.learner_color,"recombination:"+change.command_id))
             self.database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)",
                 (value.repertoire_id,value.presentation_id))
             if result.due_at.astimezone(self.zone).date().isoformat()<=day:

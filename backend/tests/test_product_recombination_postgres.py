@@ -402,7 +402,7 @@ def test_current_owner_normal_reviews_join_after_save_and_require_fresh_combined
     combined = result["recombination"]["resulting_presentation_id"]
     with transaction() as database:
         row = database.execute_native("SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",(combined,)).fetchone()
-        assert row[0] is None and row[1]==0 and row[2] is not None and row[3]==0
+        assert row[0] is None and row[1]==0 and row[2]==datetime.now().astimezone().date().isoformat() and row[3]==0
         assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==0
         assert database.execute_native("SELECT count(*) FROM cards WHERE id IN ('A','B','C') AND archived=0 AND superseded_by IS NULL").fetchone()[0]==3
         boundary = CurrentStudyRecombination(database)

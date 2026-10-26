@@ -57,6 +57,11 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
   const ab = state.generations.find(generation => generation.components === 2)!;
   expect(ab.clean_count).toBe(0);
   expect(ab.review_count).toBe(0);
+  // The existing UI teaches a presentation with no prior whole-sequence
+  // review. That genuine assisted pass earns no clean evidence; it supplies
+  // no manufactured history or first-correct fact for the new composite.
+  await complete("combined");
+  expect(fixture<Readback>("readback").generations.find(generation => generation.presentation_id === ab.presentation_id)?.clean_count).toBe(0);
   for (let review = 0; review < 2; review += 1) {
     await complete("combined");
     expect(fixture<Readback>("readback").changes).toBe(1);

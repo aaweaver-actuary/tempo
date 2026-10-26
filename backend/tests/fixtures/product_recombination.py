@@ -28,7 +28,7 @@ def seed_current_owner(database):
             start = board.fen(en_passant="fen")
             database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
                 introduced_at,trained_color,canonical_route_source) VALUES(%s,%s,'response',%s,%s,'learning',%s,%s,'white',0)""",
-                (identifier,route.repertoire_id,start,json.dumps([move]),day,(now-timedelta(days=10)).isoformat()))
+                (identifier,route.repertoire_id,start,json.dumps([move]),day,(now-timedelta(days=10)).date().isoformat()))
             database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)",(route.repertoire_id,identifier))
             database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
                 decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
@@ -69,7 +69,7 @@ def main():
             database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Protected unrelated',%s,%s)",(protected,identity,now.isoformat()))
             database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,trained_color,
                 canonical_route_source) VALUES(%s,%s,'response',%s,'["d2d4"]','learning',%s,%s,'white',0)""",
-                (protected,protected,chess.STARTING_FEN,day,(now-timedelta(days=10)).isoformat()))
+                (protected,protected,chess.STARTING_FEN,day,(now-timedelta(days=10)).date().isoformat()))
             database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)",(protected,protected))
             from app.services.review_service import ensure_card_queued_after
             ensure_card_queued_after(database,protected,0,queue_date=day,preserve_order=False)

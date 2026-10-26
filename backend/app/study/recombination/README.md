@@ -53,7 +53,8 @@ historical presentation IDs, including old generations.
 
 `CurrentStudyRecombination.apply(PresentationChange)` initializes an actual fresh
 `cards` row: learning, zero repetitions/stability/interval, no FSRS state or first
-correct/review history, explicit already-introduced timestamp, generated source
+correct/review history, explicit already-introduced local date in the retained
+queue's date representation, generated source
 provenance (`canonical_route_source=0`). It uses the existing
 `ensure_card_queued_after` writer with review admission. Source cards and their
 memberships are retained. Only verified unissued duplicate queue occurrences are
@@ -278,6 +279,9 @@ seeds qualifying reviews, clean streaks or settlements. Another actually issued
 unrelated attempt and all original card/history identities are checked throughout.
 No Study API is intercepted. Exact browser/migration results are in the PR; a
 prepared but unrun browser spec is not a pass.
+The retained UI's first teaching pass on a fresh composite is an actual assisted
+review and earns no clean streak. A08 then requires three fresh whole-sequence
+clean reviews; it seeds no combined first-correct or prior-review facts.
 
 Pending coordinated surfaces: central test/diagram registration, then
 `make ui-file FILE=product-recombination.spec.ts` against the normal source stack.
