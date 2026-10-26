@@ -32,7 +32,7 @@ def test_clocks_do_not_split_position_identity():
     index = build_index(snapshot(route(), route("other", starting_fen=later)))
     node = index.lookup("rep", later)
     assert len(node.occurrences) == 2
-    assert node.occurrences[1].full_fen == later
+    assert next(item for item in node.occurrences if item.route_id == "other").full_fen == later
 
 
 def test_turn_castling_legal_ep_variant_do_split_identity():
