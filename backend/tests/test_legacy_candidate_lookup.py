@@ -36,3 +36,18 @@ def test_discovery_requires_explicit_bounded_scope_before_read(args):
         pytest.fail("invalid scope reached database")
     with pytest.raises(ValueError, match="one_explicit_current_position_required"):
         decision_bindings(forbidden, *args)
+
+
+def test_introduced_card_discovery_is_only_one_raw_position_lead():
+    from tempo_legacy_database.adapters.games.authority.candidate_lookup import introduced_card_lead
+    row = dict(card_id="lead", revision=2, introduced_at="2026-01-01")
+    assert introduced_card_lead(lambda _s, _p: [row], "r", 1) == row
+    assert introduced_card_lead(lambda _s, _p: [], "r", 1) is None
+    with pytest.raises(CandidateOverflow, match="introduced_card_lead_budget"):
+        introduced_card_lead(lambda _s, _p: [row, row], "r", 1)
+
+
+def test_introduced_card_discovery_refuses_invalid_publication_before_read():
+    from tempo_legacy_database.adapters.games.authority.candidate_lookup import introduced_card_lead
+    with pytest.raises(ValueError):
+        introduced_card_lead(lambda *_: pytest.fail("read attempted"), "r", True)

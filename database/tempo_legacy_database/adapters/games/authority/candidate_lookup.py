@@ -51,3 +51,28 @@ def decision_bindings(reader, repertoire_id: str, graph_generation: int,
     if len(rows) > MAX_BINDINGS:
         raise CandidateOverflow("decision_binding_candidate_budget")
     return tuple(dict(row) for row in rows)
+
+
+def introduced_card_lead(reader, repertoire_id: str, graph_generation: int) -> dict | None:
+    """Pick at most one introduced card as a position-discovery lead only.
+
+    This deliberately is not an alternatives/eligibility projection. Re-read all
+    alternatives with decision_bindings for the chosen physical position, then
+    run unchanged authority capture; this row alone cannot authorize anything.
+    """
+    if (not isinstance(repertoire_id, str) or not 1 <= len(repertoire_id) <= 200
+            or type(graph_generation) is not int or graph_generation < 1):
+        raise ValueError("one_explicit_current_publication_required")
+    rows = reader("""SELECT step.repertoire_id,step.generation,step.line_id,
+        step.decision_index,step.card_id,card.revision,card.start_fen,card.moves_json,
+        card.trained_color,card.introduced_at,step.decision_fen_keys_json
+        FROM opening_graph_steps step
+        JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id
+            AND publication.generation=step.generation
+        JOIN cards card ON card.id=step.card_id
+        WHERE step.repertoire_id=%s AND step.generation=%s AND card.introduced_at IS NOT NULL
+        ORDER BY card.introduced_at DESC,step.line_id,step.decision_index LIMIT 1""",
+        (repertoire_id, graph_generation))
+    if len(rows) > 1:
+        raise CandidateOverflow("introduced_card_lead_budget")
+    return dict(rows[0]) if rows else None
