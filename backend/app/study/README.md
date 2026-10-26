@@ -1,7 +1,26 @@
-# Study game feedback — T06 / #487
+# Daily Study practice policy
+
+Study means daily practice. Authored/imported [Studies](../studies/README.md) is a separate owner.
+
+| Directory | Existing responsibility |
+| --- | --- |
+| [openings](openings/README.md) | Pure opening preparedness/reach, admission frontier and frozen-order mathematics. |
+| [review](review/README.md) | Semantic feedback facts/port and UTC normalization. |
+| [frozen_order](frozen_order/README.md) | Frozen-order application policy; database work stays at its root owner. |
+
+These policies depend on their own modules, explicit contracts and neutral chess
+support. Existing legacy workflows retain the separate
+[organization checklist](../../ORGANIZATION.md). The `organized-study` local
+import-linter contract covers the moved openings/review namespaces; existing
+frozen-order guards retain their scope. This source organization does not certify
+deployment/resource isolation or activate the proposed
+[database simplification](../../../database/SIMPLIFICATION.md).
+
+## Study game feedback — T06 / #487
 
 Source implementation, not deployed. Contract dependency: #482 checkpoint
-`1587828a`; [shared types](../contracts/product_v02/learning.py). Ordinary Study
+`50dd8220` (including key/revision/reason-only controls);
+[shared types](../contracts/product_v02/learning.py). Ordinary Study
 retains the existing scheduler, review transaction, queue and attempt authority.
 There is no independent Learning service requirement.
 
@@ -21,6 +40,25 @@ inside the caller's transaction. Zero/multiple mappings grant no effect. Supply
 the actual current source/repertoire/card revision, exact position, selected
 response and introduction evidence; never resolve a card by position alone.
 T07 owns command dispatch, authority capture/fencing and outer composition.
+
+The concrete retained-owner factory is now
+`tempo_legacy_database.adapters.study.game_feedback_authority.current_owner_game_feedback(database, retained_owner_capture=..., snapshot=..., clock=...)`.
+Pass the existing backend-owned `legacy_game_capture` export and its #483 public
+snapshot projection, inside the same writer transaction used for delivery.
+This factory supplies `CurrentOwnerDecisions`; a producer snapshot by itself is
+insufficient. It rereads and locks the current source/scope/card/graph/membership
+and existing completed integrity facts. Graph/source locks are nonblocking after
+the receiver's card/day locks. `CurrentDecisionUnavailable.reason` identifies
+busy, missing or changed authority; abort/roll back and report that reason.
+It creates no certificate, captures no new catalogue, and never calls Games.
+T07 authenticates and fences the canonical imported game in its own boundary;
+the factory requires that canonical game ID, not a provider-ID alias.
+
+The initial concrete adapter supports original physical revision 1 with exact
+stored UTC introduction evidence. Date-only introduction or changed-content
+revision without explicit owner evidence is rejected with an exact reason;
+neither a timestamp nor historical introduction is inferred. Later compatible
+shared introduction facts can extend that owner boundary without a new effect.
 
 The caller starts/commits/rolls back the transaction. `accept_lapse` acquires
 existing card-edit/card-row/day locks before the effect lock. The schedule,
@@ -63,6 +101,9 @@ of that day, so same-day ordering is not invented.
 
 - `services/learning_review_adapter.py::settle_remediation` calls
   `settle_saved_review` after the real saved review in the same transaction.
+- `services/legacy_study_remediation.py::invalidate_review` reopens debt only
+  after its actual settling review is invalidated, preserving the historical
+  application receipt so Again cannot repeat.
 - `services/queue_application.py::seed_queue` invokes
   `resume_available_feedback` for already-applied obligations after ordinary due
   seeding. This recovery needs no producer or index. It uses nonblocking card
@@ -72,8 +113,9 @@ of that day, so same-day ordering is not invented.
   algorithm for `product_game_lapse`. Protected issued attempts remain protected.
 
 The adapter lives in [the database owner](../../../database/tempo_legacy_database/adapters/study/README.md).
-Migration 051 is source only and must be allocated/applied by the existing
-migration owner at integration. Pre-migration/recovery paths retain their current
+Migration 051 is allocated and registered by readiness version 51; it is source
+only and must be applied by the existing migration owner at integration.
+Pre-migration/recovery paths retain their current
 behavior. No route, main.py, independent runtime or live data changes.
 
 ```mermaid

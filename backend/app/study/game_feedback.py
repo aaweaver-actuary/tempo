@@ -184,6 +184,7 @@ class GameFeedback:
         facts = self.store.card_facts(effect.card_id, day)
         occurred = instant(lapse.occurred_at) if lapse.occurred_at else None
         if (facts is None or facts.revision != effect.card_revision or not facts.available
+                or not mapping.available or not mapping.introduction_matches_current_content
                 or mapping.introduction != "introduced" or mapping.introduced_at is None
                 or facts.introduced_at is None or occurred is None
                 or facts.introduced_at > occurred or instant(mapping.introduced_at) > occurred):

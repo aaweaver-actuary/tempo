@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
+import psycopg
+
 from app.contracts.product_v02.learning import GameEffectControl, GameEffectKey, GameLapse
 from app.study.game_feedback import CardFacts, Completion, Effect, GameFeedback, effect_id, instant
 from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
@@ -159,7 +161,7 @@ class PostgresGameFeedbackStore:
 
 def installed(database):
     """Old SQLite/recovery and pre-migration owners retain their current path."""
-    return hasattr(database, "execute_native") and database.execute_native(
+    return isinstance(getattr(database, "raw", None), psycopg.Connection) and database.execute_native(
         "SELECT to_regclass('study_game_feedback') IS NOT NULL").fetchone()[0]
 
 
@@ -180,6 +182,21 @@ def settle_saved_review(database, card_id, review_id, revision):
         row["source_kind"])
     GameFeedback(PostgresGameFeedbackStore(database), None,
                  clock=lambda: datetime.now(timezone.utc)).settle(completion)
+
+
+def invalidate_saved_review(database, card_id, review_id):
+    """Existing invalidation owner has already written the actual review row."""
+    if not installed(database):
+        return
+    row = database.execute_native("SELECT invalidated_at FROM reviews WHERE id=%s AND card_id=%s",
+                                  (review_id, card_id)).fetchone()
+    if not row or row[0] is None:
+        raise ValueError("the review owner must invalidate the actual settling review first")
+    database.execute_native("""UPDATE study_game_feedback SET
+        status=CASE WHEN applied_at IS NULL THEN 'pending' ELSE 'applied' END,
+        settled_at=NULL,settlement_review_id=NULL,reason='settling_review_invalidated',updated_at=%s
+        WHERE card_id=%s AND settlement_review_id=%s AND status='settled'""",
+        (datetime.now(timezone.utc), card_id, review_id))
 
 
 def resume_available_feedback(database, day, *, limit=16):
