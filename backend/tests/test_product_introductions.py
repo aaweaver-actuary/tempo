@@ -25,6 +25,19 @@ def test_encounter_ordinary_saved_allowance(study_only,global_limit,repertoire_l
         repertoire_limit=repertoire_limit,introduction_count=len(credits),repertoire_count=credits.count('a')) == reason
 
 
+@pytest.mark.parametrize('allowance,paused,expected',[
+    ('ordinary',False,'study_only'),('encounter_exception',False,None),
+    ('ordinary',True,'paused'),('encounter_exception',True,'paused'),
+])
+def test_encounter_exception_is_explicit_and_full_pause_is_independent(allowance,paused,expected):
+    from app.study.introductions.application import encounter_allowance
+    assert encounter_allowance(allowance=allowance,paused=paused,study_only=True,
+        global_limit=0,repertoire_limit=0,introduction_count=10,repertoire_count=10) == expected
+    with pytest.raises(ValueError,match='explicit'):
+        encounter_allowance(allowance='unknown',paused=False,study_only=True,
+            global_limit=0,repertoire_limit=0,introduction_count=0,repertoire_count=0)
+
+
 def test_encounter_target_retains_complete_alternatives_not_unrelated_routes():
     import chess
     from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute

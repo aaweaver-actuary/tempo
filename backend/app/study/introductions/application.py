@@ -127,6 +127,23 @@ def ordinary_encounter_allowance(*, study_only, global_limit, repertoire_limit,
     return None
 
 
+def encounter_allowance(*, allowance, paused, study_only, global_limit, repertoire_limit,
+                        introduction_count, repertoire_count):
+    """Explicit real-game exception; a full pause is a separate control.
+
+    Zero ordinary allowances and Study-only remain unchanged for ordinary work.
+    No exception is inferred from a source, budget, or missing configuration.
+    """
+    if allowance not in {'ordinary', 'encounter_exception'} or type(paused) is not bool:
+        raise ValueError('explicit encounter allowance and full-pause control required')
+    if paused:
+        return 'paused'
+    if allowance == 'encounter_exception':
+        return None
+    return ordinary_encounter_allowance(study_only=study_only,global_limit=global_limit,
+        repertoire_limit=repertoire_limit,introduction_count=introduction_count,repertoire_count=repertoire_count)
+
+
 @dataclass(frozen=True)
 class CommitResult:
     status: str

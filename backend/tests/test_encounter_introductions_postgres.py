@@ -96,8 +96,8 @@ def encounter_case(canonical_transaction):
         database.execute('UPDATE settings SET study_only_mode=0,new_cards_per_day=10 WHERE id=1',())
 
 
-def admit(database,target,**options):
-    receiver = current_owner_encounter_introductions(database,allowance='ordinary',**options)
+def admit(database,target,*,allowance='ordinary',paused=False,**options):
+    receiver = current_owner_encounter_introductions(database,allowance=allowance,paused=paused,**options)
     return receiver.admit_encounter(DAY,repertoire_id=target.repertoire_id,decision_id=target.decision_id,target=target)
 
 
@@ -108,28 +108,33 @@ def add_routes(database,repertoire,moves,count):
             (identity,repertoire,identity,chess.STARTING_FEN,json.dumps(moves),DAY))
 
 
-def test_encounter_canonical_large_unrelated_source_and_caller_receipt_rollback(encounter_case):
+@pytest.mark.parametrize('allowance',['ordinary','encounter_exception'])
+def test_encounter_canonical_large_unrelated_source_and_caller_receipt_rollback(encounter_case,allowance):
     transaction,repertoire,card,mapping = encounter_case
     with transaction() as database:
         add_routes(database,repertoire,['d2d4','d7d5','c2c4'],80)
         target = mapping(database)
         active = tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone())
+        history = dict(database.execute('SELECT * FROM cards WHERE id=?',(card,)).fetchone())
     with pytest.raises(RuntimeError,match='caller rollback'):
         with transaction() as database:
-            assert admit(database,target).status == 'introduced'
+            assert admit(database,target,allowance=allowance).status == 'introduced'
             database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at) VALUES(?,'{}','fixture',?,?,now(),'applied',now())",
                 ('receipt-'+card,card,target.decision_id))
             raise RuntimeError('caller rollback')
     with transaction() as database:
         assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(card,)).fetchone()[0] is None
         assert database.execute('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=?',(card,)).fetchone()[0] == 0
-        assert admit(database,target).status == 'introduced'
+        assert admit(database,target,allowance=allowance).status == 'introduced'
         database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at) VALUES(?,'{}','fixture',?,?,now(),'applied',now())",
             ('receipt-'+card,card,target.decision_id))
     with transaction() as database:
-        assert admit(database,target).status == 'already_introduced'
+        assert admit(database,target,allowance=allowance).status == 'already_introduced'
         assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == 1
         assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(card,)).fetchone()[0] == 0
+        after = dict(database.execute('SELECT * FROM cards WHERE id=?',(card,)).fetchone())
+        assert {key:value for key,value in after.items() if key not in {'state','introduced_at'}} == {
+            key:value for key,value in history.items() if key not in {'state','introduced_at'}}
         assert tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone()) == active
         assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE card_id=ANY(?) ORDER BY position',([card,card+'-due'],)).fetchall()] == [card+'-due',card]
 
@@ -139,7 +144,8 @@ def test_encounter_canonical_large_unrelated_source_and_caller_receipt_rollback(
     ('spent_global','introduction_allowance'),('spent_repertoire','introduction_allowance'),
     ('stale','current_source_unproved'),('hold','current_target_unavailable'),
     ('conflicting_route','target_response_conflict'),('relevant_bound','target_alternatives_bound')])
-def test_encounter_canonical_controls_and_complete_target_fences(encounter_case,change,reason):
+@pytest.mark.parametrize('allowance',['ordinary','encounter_exception'])
+def test_encounter_canonical_controls_and_complete_target_fences(encounter_case,change,reason,allowance):
     transaction,repertoire,card,mapping = encounter_case
     class Held:
         def blocked(self,rep,physical,revision): return True
@@ -157,18 +163,24 @@ def test_encounter_canonical_controls_and_complete_target_fences(encounter_case,
                 ['e2e4','e7e5','f1c4'] if change == 'conflicting_route' else ['e2e4','e7e5','g1f3'],
                 64 if change == 'relevant_bound' else 1)
             if change != 'stale': target = mapping(database)
-        result = admit(database,target,conflicts=Held() if change == 'hold' else None)
-        assert (result.status,result.reason) == ('deferred',reason)
-        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(card,)).fetchone()[0] is None
-        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == 0
+        controls = tuple(database.execute('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1',()).fetchone())
+        result = admit(database,target,allowance=allowance,conflicts=Held() if change == 'hold' else None)
+        exception = allowance == 'encounter_exception' and change in {
+            'study_only','zero_global','zero_repertoire','spent_global','spent_repertoire'}
+        assert (result.status,result.reason) == (('introduced',None) if exception else ('deferred',reason))
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(card,)).fetchone()[0] == (DAY if exception else None)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == int(exception)
+        assert tuple(database.execute('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1',()).fetchone()) == controls
 
 
 def test_encounter_requires_explicit_policy_and_exact_mapping(encounter_case):
     transaction,repertoire,card,mapping = encounter_case
     with transaction() as database:
-        with pytest.raises(ValueError,match='ordinary'):
-            current_owner_encounter_introductions(database,allowance='limited_reserve')
-        receiver = current_owner_encounter_introductions(database,allowance='ordinary')
+        with pytest.raises(ValueError,match='explicit'):
+            current_owner_encounter_introductions(database,allowance='limited_reserve',paused=False)
+        with pytest.raises(ValueError,match='full-pause'):
+            current_owner_encounter_introductions(database,allowance='encounter_exception',paused='false')
+        receiver = current_owner_encounter_introductions(database,allowance='ordinary',paused=False)
         assert receiver.admit_encounter(DAY,repertoire_id=repertoire,decision_id=mapping(database).decision_id).reason == 'current_mapping_required'
 
 
@@ -206,3 +218,39 @@ def test_encounter_canonical_rechecks_explicit_generated_membership(encounter_ca
         # A primary owner fallback must not manufacture the old exact graph link.
         assert mapping(database).repertoire_revision == target.repertoire_revision
         assert admit(database,target).reason == 'current_target_unavailable'
+
+
+def test_encounter_exception_respects_full_pause_without_rewriting_ordinary_controls(encounter_case):
+    transaction,repertoire,card,mapping = encounter_case
+    with transaction() as database:
+        database.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=0 WHERE id=1',())
+        database.execute('UPDATE repertoires SET new_cards_per_day=0 WHERE id=?',(repertoire,))
+        target = mapping(database)
+        assert admit(database,target,allowance='encounter_exception',paused=True).reason == 'paused'
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(card,)).fetchone()[0] is None
+        assert admit(database,target,allowance='ordinary').reason == 'study_only'
+        assert admit(database,target,allowance='encounter_exception').status == 'introduced'
+        assert tuple(database.execute('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1',()).fetchone()) == (1,0)
+        assert database.execute('SELECT new_cards_per_day FROM repertoires WHERE id=?',(repertoire,)).fetchone()[0] == 0
+
+
+def test_encounter_exception_races_ordinary_admission_on_same_physical_card_once(encounter_case):
+    transaction,repertoire,card,mapping = encounter_case
+    with transaction() as database:
+        target = mapping(database)
+    gate = Barrier(2)
+    def worker(allowance):
+        with transaction() as database:
+            gate.wait(timeout=3)
+            return admit(database,target,allowance=allowance).status
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(worker,('ordinary','encounter_exception')))
+    assert results.count('introduced') == 1
+    assert all(value in {'introduced','already_introduced','deferred'} for value in results)
+    with transaction() as database:
+        actual = tuple(database.execute('SELECT * FROM cards WHERE id=?',(card,)).fetchone())
+        assert admit(database,target,allowance='encounter_exception').status == 'already_introduced'
+        assert admit(database,target,allowance='ordinary').status == 'already_introduced'
+        assert tuple(database.execute('SELECT * FROM cards WHERE id=?',(card,)).fetchone()) == actual
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == 1
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(card,)).fetchone()[0] == 0

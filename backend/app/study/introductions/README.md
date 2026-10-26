@@ -18,7 +18,8 @@ Actual-game first introduction has a smaller, separate canonical capability:
 from app.services.queue_admission_adapter import current_owner_encounter_introductions
 
 receiver = current_owner_encounter_introductions(
-    borrowed_database, allowance="ordinary", conflicts=current_study_conflicts,
+    borrowed_database, allowance="encounter_exception", paused=explicit_full_pause,
+    conflicts=current_study_conflicts,
 )
 result = receiver.admit_encounter(
     local_day, repertoire_id=current_mapping.repertoire_id,
@@ -37,12 +38,22 @@ idempotency, replay and projection recovery; the capability neither saves a
 second effect receipt nor commits independently. Canonical already-introduced
 state returns `already_introduced` without consuming another slot.
 
-The required `allowance="ordinary"` choice reads saved `study_only_mode`, the
-global `new_cards_per_day` cap and the target repertoire's nullable override.
-Actual physical introductions today count once globally and toward their
-admitting repertoire. Zero limits pause, and exhausted caps defer. Reserve
-allowances are unsupported and cannot silently bypass these controls. No user
-D04 population/weight defaults or live activation are supplied here.
+The required allowance choice is either `"ordinary"` or `"encounter_exception"`.
+The latter implements the explicitly approved real-game exception to ordinary
+new-card caps (including zero) and Study-only. It changes no saved setting and
+does not enable unrelated introductions. The separate `paused` argument is a
+required actual Boolean full-pause control, bound by composition on this writer
+transaction; it is never inferred from zero ordinary caps or Study-only. A full
+pause closes both paths, and an unknown pause value cannot construct a receiver.
+There is no existing full-pause SQL column added by this task: composition owns
+that explicit control, foreground/maintenance admission and producer admission.
+
+`allowance="ordinary"` retains saved `study_only_mode`, the global
+`new_cards_per_day` cap and the repertoire's nullable override. Canonical actual
+introductions today count once globally and toward the admitting repertoire.
+Zero limits pause ordinary introductions, and exhausted ordinary caps defer.
+Neither path invents a reserve, D04 population/weight default or automatic live
+activation. Source/identity/legality/conflict and card/day fences apply to both.
 
 The owner locks the existing target/day and current source, checks explicit
 membership, definition, ready publication and optional current conflict hold,
@@ -198,7 +209,7 @@ flowchart LR
     App -->|cached ranking / charge / rotation| Store[Study private PostgreSQL store]
     App -->|rechecked introduction intent| Current
     Current -->|sole queue/card mutation| Queue[Existing Study queue and cards]
-    Effect[Study encounter owner / existing schema051 receipt] -->|exact shared current mapping + explicit ordinary policy| Exact[Canonical encounter admission]
+    Effect[Study encounter owner / existing schema051 receipt] -->|exact shared current mapping / explicit allowance / full pause| Exact[Canonical encounter admission]
     Exact -->|bounded current target / complete relevant alternatives| Source[Existing source / graph / memberships]
     Exact -->|saved ordinary caps / canonical introduced_at facts| Queue
     Exact -->|same sole queue/card writer, borrowed receipt transaction| Queue

@@ -144,10 +144,11 @@ class CurrentEncounterIntroductions:
     current shared mapping already resolved by the receiving Study owner; an
     opaque decision hash alone cannot identify a physical presentation safely.
     """
-    def __init__(self, database, *, allowance, conflicts=None):
-        if allowance != 'ordinary':
-            raise ValueError('explicit ordinary encounter allowance required')
+    def __init__(self, database, *, allowance, paused, conflicts=None):
+        if allowance not in {'ordinary', 'encounter_exception'} or type(paused) is not bool:
+            raise ValueError('explicit encounter allowance and full-pause control required')
         self.database, self.conflicts = database, conflicts
+        self.allowance, self.paused = allowance, paused
 
     def _routes(self, repertoire_id):
         import json
@@ -168,7 +169,7 @@ class CurrentEncounterIntroductions:
     def admit_encounter(self, day, *, repertoire_id, decision_id, target=None):
         from app.contracts.product_v02.repertoire import DecisionPresentation
         from app.study.introductions.application import (CommitResult, Introductions,
-            introduction_is_held, ordinary_encounter_allowance, target_alternatives)
+            introduction_is_held, encounter_allowance, target_alternatives)
         from tempo_legacy_database.adapters.queue_refresh.application import seeding
         from tempo_game_evidence_contracts.legacy import decision_identity
         from tempo_evidence_math import opening_position_key
@@ -177,6 +178,8 @@ class CurrentEncounterIntroductions:
         Introductions._day(day)
         if self.database.read_only or self.database.raw.info.transaction_status.name != 'INTRANS':
             raise CurrentIntroductionUnavailable('borrowed_writer_transaction_required')
+        if self.paused:
+            return CommitResult('deferred', reason='paused')
         if (not isinstance(target, DecisionPresentation) or not target.available
                 or (target.repertoire_id, target.decision_id) != (repertoire_id, decision_id)):
             return CommitResult('deferred', reason='current_mapping_required')
@@ -200,9 +203,10 @@ class CurrentEncounterIntroductions:
             return CommitResult('already_introduced')
         controls, counts = admission_storage.product_encounter_budget_facts(
             self.database, day, repertoire_id, card['id'])
-        if controls is None:
+        if controls is None and self.allowance == 'ordinary':
             return CommitResult('deferred', reason='current_controls_unproved')
-        reason = ordinary_encounter_allowance(study_only=bool(controls[0]), global_limit=controls[1],
+        reason = encounter_allowance(allowance=self.allowance,paused=self.paused,
+            study_only=bool(controls[0]) if controls else None,global_limit=controls[1] if controls else None,
             repertoire_limit=header['legacy_repertoire_limit'],
             introduction_count=counts[0], repertoire_count=counts[1])
         if reason:
@@ -261,14 +265,15 @@ class CurrentEncounterIntroductions:
         return CommitResult('introduced')
 
 
-def current_owner_encounter_introductions(database, *, allowance, conflicts=None):
+def current_owner_encounter_introductions(database, *, allowance, paused, conflicts=None):
     """No D storage/weights/ranking dependency; caller owns receipt and commit.
 
     Pass the exact shared current mapping as ``admit_encounter(..., target=...)``.
-    Ordinary admission reads saved global and per-repertoire caps, counts actual
-    canonical introductions and uses the existing card/day writer reservation.
+    Ordinary admission reads saved global and per-repertoire caps. The explicitly
+    selected real-game exception bypasses only those caps and Study-only, never
+    full pause, current-source/eligibility fences or the card/day reservation.
     """
-    return CurrentEncounterIntroductions(database, allowance=allowance, conflicts=conflicts)
+    return CurrentEncounterIntroductions(database, allowance=allowance, paused=paused, conflicts=conflicts)
 
 
 def _playable_introduction(mapping, card, graphs, routes, *, learner_color, route_cache):
