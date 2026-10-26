@@ -39,4 +39,29 @@ describe("product v0.2 shared wire", () => {
     expect(GamePageSchema.parse(source).records[0].played_at).toBeNull();
     expect(GamePageSchema.parse(source).records[0].pgn).toBe(source.records[0].pgn);
   });
+  it("represents a hold before the delayed original without owner obligation identity", () => {
+    const hold = GameEffectControlSchema.parse(fixture("hold"));
+    const original = GameLapseSchema.parse(fixture("lapse"));
+    expect(hold.withdrawal).toBeNull();
+    expect(hold.reason).toBe("source_corrected");
+    expect(hold.key).toEqual(original.key);
+    expect(hold.source_revision).toBeGreaterThan(original.finding.source_revision);
+    expect(() => GameEffectControlSchema.parse({ ...fixture("hold"), reason: null })).toThrow();
+  });
+  it("freezes returned nested evidence and preserves unknown current-content authority", () => {
+    const source = fixture("snapshot");
+    const snapshot = RepertoireSnapshotSchema.parse(source);
+    expect(() => (snapshot.membership.routes[0].moves as unknown as string[]).push("e7e5")).toThrow();
+    expect(() => (snapshot.membership.scope_repertoire_ids as unknown as string[]).push("other")).toThrow();
+    expect(Object.isFrozen(snapshot.membership.routes)).toBe(true);
+    const withdrawal = GameEffectControlSchema.parse(fixture("withdraw")).withdrawal!;
+    expect(() => Object.assign(withdrawal, { reason: "reanalysis" })).toThrow();
+    expect(snapshot.decision_presentations[0].available).toBe(true);
+    expect(snapshot.decision_presentations[0].introduction_matches_current_content).toBe(true);
+    delete source.decision_presentations[0].available;
+    delete source.decision_presentations[0].introduction_matches_current_content;
+    const unknown = RepertoireSnapshotSchema.parse(source).decision_presentations[0];
+    expect(unknown.available).toBe(false);
+    expect(unknown.introduction_matches_current_content).toBe(false);
+  });
 });
