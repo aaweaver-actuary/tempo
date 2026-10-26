@@ -286,3 +286,87 @@ def test_absent_or_nonboolean_study_chronology_stays_unknown():
     result = project_capture(source, comparison_game=comparison_game(source))
     assert result.decision_presentations[0].introduced_before_game is None
     assert result.decision_presentations[0].introduction_game is None
+
+
+def repertoire_facts():
+    source = capture()
+    return dict(repertoire=source["tables"]["repertoires"][0] | dict(name="Synthetic",
+        workspace_id="fixture", graph_generation=3, graph_state="ready", canonical_prefix_revision=0),
+        lines=source["tables"]["repertoire_lines"], cards=source["tables"]["cards"],
+        memberships=source["tables"]["repertoire_cards"],
+        graphs=[row | dict(decision_index=0) for row in source["graphs"]])
+
+
+def test_repertoire_only_snapshot_needs_no_game_and_keeps_unknown_chronology():
+    from app.repertoire import CurrentSnapshotAdapter
+    facts = repertoire_facts(); before = deepcopy(facts)
+    result = CurrentSnapshotAdapter(lambda _: facts).snapshot("rep")
+    assert result.membership.complete and result.membership.available
+    assert result.membership.scope_id == "repertoire:rep"
+    assert result.membership.revision == 8
+    mapping = build_index(result).routes["rep", "route"][0].binding
+    assert mapping.presentation_id == "physical" and mapping.introduced_at == "2026-10-20T00:00:00Z"
+    assert mapping.introduced_before_game is None and mapping.introduction_game is None
+    assert facts == before
+    facts["lines"][0]["moves_json"] = "[]"
+    assert result.membership.routes[0].moves == ("e2e4", "e7e5", "g1f3")
+
+
+def test_repertoire_only_snapshot_exposes_conflicts_without_ready_graph_or_clean_integrity():
+    from app.repertoire import project_repertoire
+    facts = repertoire_facts(); facts["repertoire"]["graph_state"] = "failed"
+    other = deepcopy(facts["lines"][0]); other.update(id="conflicting", moves_json='["d2d4"]')
+    facts["lines"].append(other)
+    result = project_repertoire(facts)
+    assert result.membership.complete and result.membership.available
+    assert result.decision_presentations == ()
+    assert build_index(result).lookup("rep", chess.STARTING_FEN).conflict
+    assert len(result.membership.routes) == 2
+
+
+def test_repertoire_only_snapshot_keeps_unavailable_physical_reference_without_eligibility():
+    from app.repertoire import project_repertoire
+    facts = repertoire_facts(); facts["cards"][0]["pending_validation"] = 1
+    mapping = project_repertoire(facts).decision_presentations[0]
+    assert mapping.presentation_id == "physical" and not mapping.available
+    assert mapping.introduced_before_game is None
+
+
+def test_repertoire_only_snapshot_identity_is_stable_and_changes_with_owner_facts():
+    from app.repertoire import project_repertoire
+    facts = repertoire_facts()
+    first = project_repertoire(facts, captured_at="2026-10-26T12:00:00Z")
+    later = project_repertoire(facts, captured_at="2026-10-27T12:00:00Z")
+    assert first.membership.captured_at != later.membership.captured_at
+    assert first.membership.digest == later.membership.digest
+    assert first.membership.source_revision == later.membership.source_revision
+    assert first.membership.snapshot_id == later.membership.snapshot_id
+    facts["cards"][0]["revision"] += 1
+    assert project_repertoire(facts).membership.digest != first.membership.digest
+
+
+def test_repertoire_only_snapshot_unknown_color_scope_or_overflow_is_explicit():
+    from app.repertoire import CurrentSnapshotAdapter, project_repertoire
+    facts = repertoire_facts(); facts["lines"] = []
+    with pytest.raises(ValueError, match="repertoire_color_unknown"): project_repertoire(facts)
+    with pytest.raises(ValueError, match="scope_mismatch"):
+        CurrentSnapshotAdapter(lambda _: repertoire_facts()).snapshot("other")
+    facts = repertoire_facts(); facts["graphs"] *= 20001
+    with pytest.raises(ValueError, match="exceeds_bound"): project_repertoire(facts)
+
+
+def test_repertoire_read_port_is_one_parameter_bound_read_and_fails_on_truncation():
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    class Reader:
+        def __init__(self): self.calls = []; self.bounded = True
+        def execute_native(self, statement, parameters):
+            self.calls.append((statement, parameters))
+            return self
+        def fetchone(self):
+            return {"snapshot": dict(exists=True, bounded=self.bounded, facts=repertoire_facts())}
+    reader = Reader(); requested = "rep' OR true --"
+    assert read_repertoire(reader, requested)["repertoire"]["id"] == "rep"
+    assert len(reader.calls) == 1 and reader.calls[0][1][0] == requested
+    assert requested not in reader.calls[0][0]
+    reader.bounded = False
+    with pytest.raises(ValueError, match="exceeds_bound"): read_repertoire(reader, "rep")

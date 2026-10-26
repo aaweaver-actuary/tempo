@@ -9,6 +9,6 @@ __all__ = [
     "RouteAdjacency", "RouteOccurrence", "build_index", "position_key",
 ]
 
-from .snapshot import CapturedSnapshotAdapter, project_capture
+from .snapshot import CapturedSnapshotAdapter, CurrentSnapshotAdapter, project_capture, project_repertoire
 
-__all__ += ["CapturedSnapshotAdapter", "project_capture"]
+__all__ += ["CapturedSnapshotAdapter", "CurrentSnapshotAdapter", "project_capture", "project_repertoire"]
