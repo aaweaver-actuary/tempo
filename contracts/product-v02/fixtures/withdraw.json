@@ -14,6 +14,7 @@
       "obligation_id": "existing-obligation",
       "expected_obligation_revision": 1,
       "reason": "source_corrected"
-    }
+    },
+    "reason": "source_corrected"
   }
 }
