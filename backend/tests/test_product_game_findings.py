@@ -11,8 +11,8 @@ import pytest
 
 from app.contracts.product_v02.games import GameRecord
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
-from app.games.feedback.comparison import compare_record, effect_key, normalize_record
-from tempo_game_review_contracts import AuthoredRoute, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot, replay_line
+from app.games.feedback.comparison import compare_game, compare_record, effect_key, normalize_record
+from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot, replay_line
 
 START = chess.STARTING_FEN
 TIME = "2026-10-20T12:00:00Z"
@@ -260,6 +260,28 @@ def test_normalization_preserves_supplied_source_identity_time_and_pgn(provider)
     assert (game.game_id, game.source_id, game.source_revision, game.source_digest, game.played_at) == (source.source_game_id, provider, source.source_revision, source.source_digest, source.played_at)
     assert game.learner_color == "white" and game.moves == ["d2d4"]
     assert source.pgn == record().pgn
+
+
+@pytest.mark.parametrize("precision,kind", [("second", "confirmed_miss"), (None, "known_unavailable")])
+def test_canonical_game_without_original_pgn_preserves_provenance(monkeypatch, precision, kind):
+    from app.games.feedback import comparison
+
+    def pgn_unavailable(*args, **kwargs):
+        raise AssertionError("retained canonical game must not invoke PGN ingestion")
+
+    monkeypatch.setattr(comparison.PgnGameIngester, "ingest", pgn_unavailable)
+    game = CanonicalGame(workspace_id="workspace", game_id="retained-game", game_revision=7,
+                         source_id="retained-source", source_revision=11, source_digest="c" * 64,
+                         starting_fen=START, moves=["d2d4"], learner_color="white", played_at=TIME)
+    before = deepcopy(game.model_dump())
+    kwargs = {} if precision is None else {"time_precision": precision}
+    finding, = compare_game(game, provider="chesscom", snapshot=snapshot(), **kwargs)
+    assert (finding.kind, finding.provider, finding.game_id, finding.source_revision, finding.source_digest) == (
+        kind, "chesscom", "retained-game", 11, "c" * 64)
+    assert (finding.ply, finding.played_uci, finding.expected_uci, finding.presentation_id) == (
+        1, "d2d4", ("e2e4",), "card-route-0")
+    assert finding.lapse_eligible is (precision == "second")
+    assert game.model_dump() == before
 
 
 def test_digest_mismatch_is_rejected():

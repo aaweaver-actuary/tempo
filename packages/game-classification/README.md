@@ -17,7 +17,7 @@ flowchart LR
 ## Product adapter (unmerged source)
 
 [`backend/app/games/feedback/comparison.py`](../../backend/app/games/feedback/comparison.py)
-exposes three transport-free entries:
+exposes four transport-free entries:
 
 - `normalize_record(GameRecord, provider, account, workspace_id, game_id?)`
   returns the existing `CanonicalGame`. It reuses `PgnGameIngester`/`BytesInput`,
@@ -31,6 +31,14 @@ exposes three transport-free entries:
   structural read seam implemented by #483's immutable `PositionIndex`:
   `snapshot_id`, `source_revision`, `revision`, `digest`, and `reentry_candidate(repertoire_id, fen,
   variant)`. The adapter imports no concrete Repertoire implementation.
+- `compare_game(CanonicalGame, provider, snapshot, time_precision='unknown',
+  reentry_lookup?) -> tuple[Finding, ...]` uses that same traversal for retained
+  imported history whose original PGN is unavailable. `compare_record` normalizes
+  once and delegates here. Source identity, revisions and digest are retained
+  exactly; legal replay validates the supplied history without reconstructing PGN
+  or claiming to authenticate unavailable original bytes. The caller supplies
+  retained occurrence precision; a timestamp alone never upgrades the default
+  unknown precision into lapse eligibility.
 - `effect_key(finding, workspace_id) -> GameEffectKey` reuses #482's logical key,
   which excludes comparison/source revisions and detection/retry clocks. It also
   supports a mapped non-miss after reclassification. A finding without a proved
@@ -40,6 +48,7 @@ exposes three transport-free entries:
 ```mermaid
 flowchart LR
   Record["Shared GameRecord\noriginal PGN / source time precision"] --> Adapter["Games comparison adapter\nnormalize_record / compare_record"]
+  Game["Retained CanonicalGame\nsource provenance / supplied time precision"] --> Adapter
   Snapshot["Supplied product RepertoireSnapshot"] --> Adapter
   Index["Injected immutable index\nReentryLookup structural seam"] --> Adapter
   Adapter --> Ingest["PgnGameIngester / BytesInput\nexisting normalization owner"]

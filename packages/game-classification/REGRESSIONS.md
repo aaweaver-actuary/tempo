@@ -18,5 +18,10 @@ terminal coverage, conflicts anywhere in one repertoire, ambiguous repertoire
 and physical mapping, stable logical effect keys under re-comparison/source
 correction, caller-container preservation and denied infrastructure imports/calls.
 It uses the shared product DTOs and a fake immutable-index capability. Shared
-contract additions required for current-content introduction proof must be
-published by #482; missing/failed product cases are not package-policy passes.
+availability and current-content introduction proof default to false; supplied
+proof is required before lapse eligibility.
+
+`test_canonical_game_without_original_pgn_preserves_provenance` owns #488's
+retained-history boundary: canonical game comparison never calls the PGN
+ingester, preserves exact source/game identity, revision, digest, history and
+input values, and keeps unspecified occurrence precision unavailable for lapses.
