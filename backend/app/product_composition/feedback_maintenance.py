@@ -16,6 +16,7 @@ from app.repertoire import project_capture
 from app.services.durable_tasks import (advance_task_slice_in_transaction, claim_task,
     complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice)
 from app.study.game_feedback import GameFeedback, effect_id
+from .retained_game import retained_canonical_game
 
 KIND = "study_game_feedback"
 
@@ -46,7 +47,7 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
         try:
             captured = capture(observed.lapse.finding.repertoire_id, observed.key.game_id,
                                (observed.key.occurrence_ply-1,))
-            snapshot = project_capture(captured)
+            snapshot = project_capture(captured, comparison_game=retained_canonical_game(captured))
         except (CurrentDecisionUnavailable, RemediationError, ValueError) as error:
             # Keep the obligation. The durable sweep exposes this hold reason
             # and proceeds fairly; its next generation retries missing facts.

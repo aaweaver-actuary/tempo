@@ -109,6 +109,21 @@ def test_preview_is_private_read_only_and_never_overwrites_retry_payload(inputs,
     assert output.read_bytes() == saved
 
 
+def test_maintenance_cold_import_has_no_games_dependency():
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, "-B", "-c", """
+import importlib.abc, sys
+class NoGames(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname == 'app.games' or fullname.startswith('app.games.'):
+            raise AssertionError('maintenance imported optional Games: ' + fullname)
+sys.meta_path.insert(0, NoGames())
+import app.product_composition.feedback_maintenance
+"""], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.fixture
 def native_case(inputs, owned_postgres, monkeypatch):
     """Real PostgreSQL and supplied current facts; source fencing is separate."""
@@ -275,8 +290,29 @@ def fenced_case(native_case):
     case = native_case
     case.lapse = case.prepared.lapse
     _, capture, _, _ = retained_owner_case(case, False)
+    # Ordinary retained cards store a date. Re-capture actual fixture rows after
+    # changing that shape; keep the existing owner certificate/header facts.
+    with case.transaction() as database:
+        database.execute_native("UPDATE cards SET introduced_at=%s WHERE id=%s",
+            ((NOW-timedelta(days=6)).date().isoformat(),case.card_id))
+    from app.legacy_game_observation import capture_game
+    metadata = {**capture["authority"], "integrity_current": True,
+                "integrity_certificate": capture["catalogue_scope"]["integrity_certificate"]}
+    with case.transaction() as database:
+        def reader(statement, parameters=()):
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+        capture = capture_game(capture["authority"]["repertoire_id"],capture["game"]["id"],(0,),
+            reader=reader,metadata=lambda _repertoire: metadata,now=NOW)
     prepared = prepare_captured_feedback(capture, detected_at=NOW.isoformat(), occurrence_ply=1)
     return case, prepared
+
+
+def test_day_only_introduction_binds_exact_canonical_source(fenced_case):
+    _, prepared = fenced_case
+    mapping = prepared.snapshot.decision_presentations[0]
+    assert mapping.introduced_at is None and mapping.introduced_before_game is True
+    assert mapping.introduction_game.source_digest == prepared.feedback.lapse.finding.source_digest
+    assert mapping.introduction_game.game_id == prepared.feedback.lapse.key.game_id
 
 
 def test_retained_source_fence_to_normal_study_controller(fenced_case):

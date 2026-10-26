@@ -7,7 +7,6 @@ import json
 import re
 
 from tempo_game_evidence_contracts.legacy import fingerprint
-from tempo_game_review_contracts import CanonicalGame
 from tempo_legacy_database.adapters.games.authority import acceptance as source_owner
 from tempo_legacy_database.adapters.study.game_feedback_authority import (
     CurrentDecisionUnavailable, current_owner_game_feedback,
@@ -18,6 +17,7 @@ from pydantic import Field
 from app.legacy_game_observation import capture_game
 from app.repertoire import project_capture
 from .feedback import PreparedFeedback, prepare_game_feedback
+from .retained_game import retained_canonical_game
 
 
 class ImportedFeedbackSelection(Value):
@@ -56,15 +56,12 @@ def retained_time_precision(game) -> str:
 def prepare_captured_feedback(capture, *, detected_at: str, occurrence_ply: int) -> PreparedImportedFeedback:
     """Compose one authentic owner capture, without reconstructing original PGN."""
     capture = json.loads(json.dumps(capture))
-    snapshot = project_capture(capture)
     raw = capture["game"]
     provider = {"lichess": "lichess", "chess.com": "chesscom", "chesscom": "chesscom"}.get(raw["provider"])
     if provider is None:
         raise ValueError("unsupported_retained_provider")
-    game = CanonicalGame(workspace_id=capture["authority"]["workspace_id"],
-        game_id=raw["id"], game_revision=1, source_id=raw["provider_game_id"],
-        source_revision=1, source_digest=fingerprint(raw), starting_fen=raw["start_fen"],
-        moves=json.loads(raw["moves_json"]), learner_color=raw["color"], played_at=raw["played_at"])
+    game = retained_canonical_game(capture)
+    snapshot = project_capture(capture, comparison_game=game)
     feedback = prepare_game_feedback(game, provider=provider, time_precision=retained_time_precision(raw),
         snapshot=snapshot, detected_at=detected_at, occurrence_ply=occurrence_ply)
     return PreparedImportedFeedback(capture, snapshot, feedback)
