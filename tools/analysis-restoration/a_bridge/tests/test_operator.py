@@ -63,6 +63,23 @@ def test_execution_mapping_preserves_optional_repertoire_title_without_changing_
     assert export==original
 
 
+def test_learning_profile_preserves_the_existing_complete_execution_bundle():
+    from copy import deepcopy
+    definition = {'card_id': 'content-card', 'specification': {'type': 'move_line', 'accepted_lines': [['e2e4']]}}
+    route = {'repertoire_id': 'white', 'route_id': 'line', 'policy_id': 'main',
+             'route_key': 'line', 'policy_key': 'main', 'repertoire_key': 'white',
+             'repertoire_title': 'Authored title', 'learner_color': 'white',
+             'starting_fen': 'explicit-fen', 'moves': ['e2e4'],
+             'bindings': [{'ply': 0, 'card_id': 'content-card', 'reentry': False}]}
+    full = {'publication': {'definitions': [definition]}, 'source': {'source_digest': 'a' * 64},
+            'routes': [route], 'legacy_aliases': {}, 'legal_replies': [{'optional': 'inventory'}]}
+    learning = {key: value for key, value in full.items() if key != 'legal_replies'}
+    learning.update(export_profile='learning', legal_replies_omitted=True)
+    original = deepcopy(learning)
+    assert execution_bundle(learning, '2026-10-26') == execution_bundle(full, '2026-10-26')
+    assert learning == original
+
+
 class SnapshotOperator(Operator):
     def __init__(self):
         self.endpoint = "http://127.0.0.1:8001"
@@ -87,6 +104,22 @@ class SnapshotOperator(Operator):
     def save(self, identifier, command, document):
         self.operations[identifier]["document"].setdefault("snapshots", {}).update(document["snapshots"])
         return self.operations[identifier]
+
+
+@pytest.mark.parametrize('cached', [False, True])
+def test_learning_profile_cannot_claim_complete_games_snapshot_even_with_cached_checkpoint(cached):
+    from copy import deepcopy
+    operator = SnapshotOperator()
+    operator.add_operation('learning', 1)
+    operation = operator.operations['learning']
+    operation['document']['export'].update(export_profile='learning', legal_replies_omitted=True)
+    if cached:
+        operation['document']['snapshots'] = {'prior': {'complete': True}}
+    prior = deepcopy(operation)
+    with pytest.raises(ValueError, match='snapshot_requires_complete_legal_reply_inventory'):
+        operator.snapshot('learning')
+    assert operator.observations == 0
+    assert operation == prior
 
 
 def test_A_snapshot_identity_distinguishes_publication_generations():

@@ -56,6 +56,7 @@ class ImportManifest(SourceModel):
     title: str
     complete: bool
     provenance: Provenance
+    export_profile: Literal["learning"] | None = Field(default=None, exclude_if=lambda value: value is None)
     repertoires: list[SourceRepertoire] = Field(default_factory=list)
     policies: list[SourcePolicy] = Field(default_factory=list)
     route_assignments: list[RouteAssignment] = Field(default_factory=list, max_length=10000)
@@ -524,6 +525,10 @@ class BridgeApplication:
             raise ContentError("publication_not_found", "Immutable publication is unavailable")
         source = SourceSnapshot.model_validate(row["provenance"]["snapshot"])
         manifest = manifest or {"complete": False, "provenance": {"kind": "unavailable"}, "legacy_aliases": {}, "reentry": []}
+        profile = manifest.get("export_profile")
+        if profile not in (None, "learning"):
+            raise ContentError("bridge_export_profile_unsupported", "Unsupported approved bridge export profile")
+        learning_only = profile == "learning"
         definitions = json.loads(row["payload"])
         by_card_id = {value["card_id"]: value for value in definitions["definitions"]}
         definition_by_key = {item.key: by_card_id[stable_id(source.workspace_id, source.source_key, "card", item.key)] for item in source.exercises}
@@ -554,17 +559,18 @@ class BridgeApplication:
             if authored.authority_start_ply != 0:
                 route["authority_start_ply"] = authored.authority_start_ply
             routes.append(route)
-            board = chess.Board(authored.starting_fen)
-            for ply in range(len(authored.moves) + 1):
-                if board.turn != (repertoire.learner_color == "white"):
-                    key = canonical_position(board.fen())
-                    if key not in legal_replies:
-                        if len(legal_replies)>=32768:
-                            raise ContentError('bridge_inventory_limit','Complete bridge export exceeds 32768 opponent positions; no Learning activation was attempted')
-                        legal_replies[key] = {"position_key": key, "complete": True, "generation": generation,
-                            "inventory_version": 1, "moves": sorted(move.uci() for move in board.legal_moves), "scopes": []}
-                if ply < len(authored.moves):
-                    board.push_uci(authored.moves[ply])
+            if not learning_only:
+                board = chess.Board(authored.starting_fen)
+                for ply in range(len(authored.moves) + 1):
+                    if board.turn != (repertoire.learner_color == "white"):
+                        key = canonical_position(board.fen())
+                        if key not in legal_replies:
+                            if len(legal_replies)>=32768:
+                                raise ContentError('bridge_inventory_limit','Complete bridge export exceeds 32768 opponent positions; no Learning activation was attempted')
+                            legal_replies[key] = {"position_key": key, "complete": True, "generation": generation,
+                                "inventory_version": 1, "moves": sorted(move.uci() for move in board.legal_moves), "scopes": []}
+                    if ply < len(authored.moves):
+                        board.push_uci(authored.moves[ply])
         document = {"schema_version": 1, "kind": "content_bridge_export", "workspace_id": source.workspace_id,
             "source": {key: row["provenance"][key] for key in ("source_id", "source_key", "source_digest", "source_revision", "inventory_version")},
             "publication": definitions, "publication_digest": row["digest"], "complete": manifest["complete"],
@@ -572,48 +578,52 @@ class BridgeApplication:
             "legacy_aliases": {stable_id(source.workspace_id, source.source_key, "card", key): value for key, value in manifest["legacy_aliases"].items()},
             "historical_mapping_unknown": [stable_id(source.workspace_id, source.source_key, "card", key) for key in manifest.get("historical_mapping_unknown", [])],
             "legal_replies": sorted(legal_replies.values(), key=lambda item: item["position_key"])}
+        if learning_only:
+            document.pop("legal_replies")
+            document.update(export_profile="learning", legal_replies_omitted=True)
         # Coverage is conditioned on an established route prefix and policy, never
         # FEN coincidence. Enumerate the complete legal support, including absence.
         budget = {'bytes': len(canonical(document).encode()), 'maximum': 64*1024*1024-83}
         if budget['bytes'] > budget['maximum']:
             raise ContentError('bridge_export_limit', 'Complete bridge export exceeds 64 MiB; no Learning activation was attempted')
-        nodes = {}
-        for route in routes:
-            board = chess.Board(route['starting_fen'])
-            for ply in range(len(route['moves'])+1):
-                if board.turn != (route['learner_color']=='white'):
-                    context = (route['repertoire_id'],route['policy_id'],route['learner_color'],route['starting_fen'],tuple(route['moves'][:ply]))
-                    nodes.setdefault(context,[]).append((route,ply,board.fen(en_passant='fen')))
-                if ply<len(route['moves']):
-                    board.push_uci(route['moves'][ply])
-        definitions_by_id = {item['card_id']:item for item in definitions['definitions']}
-        for context,occurrences in nodes.items():
-            board=chess.Board(occurrences[0][2])
-            # Authored continuation without an executable binding is missing
-            # identity authority, not evidence that the response is absent.
-            complete = manifest['complete'] and all(
-                route.get('authority_start_ply',0) is not None and ply >= route.get('authority_start_ply',0) and ply < len(route['moves']) and any(binding['ply'] == ply + 1 for binding in route['bindings'])
-                for route, ply, _ in occurrences)
-            coverage=[]
-            for move in sorted(board.legal_moves,key=lambda value:value.uci()):
-                accepted={}
-                for route,ply,_ in occurrences:
-                    if ply<len(route['moves']) and route['moves'][ply]==move.uci():
-                        for binding in route['bindings']:
-                            if binding['ply']==ply+1:
-                                accepted[binding['card_id']]=projected_definition(definitions_by_id[binding['card_id']],binding)
-                decision_ids={item['decision_id'] for item in accepted.values()}
-                result=board.copy()
-                result.push(move)
-                coverage.append({'move_uci':move.uci(),'decision_fen':result.fen(en_passant='fen'),
-                    'status':'ambiguous' if len(decision_ids)>1 else 'covered' if accepted else 'uncovered' if complete else 'unknown',
-                    'responses':list(accepted.values())})
-            scope={'repertoire_id':context[0],'policy_id':context[1],'learner_color':context[2],
-                'starting_fen':context[3],'history':list(context[4]),'route_contexts':[{'route_id':route['route_id'],'route_key':route['route_key'],'policy_key':route['policy_key'],'repertoire_key':route['repertoire_key'],'ply':ply} for route,ply,_ in occurrences],
-                'complete':complete,
-                'source_revision':definitions['source_revision'],'publication_generation':generation,'replies':coverage}
-            scope['digest']=digest(scope)
-            append_export_scope(legal_replies[canonical_position(board.fen())], scope, budget)
+        if not learning_only:
+            nodes = {}
+            for route in routes:
+                board = chess.Board(route['starting_fen'])
+                for ply in range(len(route['moves'])+1):
+                    if board.turn != (route['learner_color']=='white'):
+                        context = (route['repertoire_id'],route['policy_id'],route['learner_color'],route['starting_fen'],tuple(route['moves'][:ply]))
+                        nodes.setdefault(context,[]).append((route,ply,board.fen(en_passant='fen')))
+                    if ply<len(route['moves']):
+                        board.push_uci(route['moves'][ply])
+            definitions_by_id = {item['card_id']:item for item in definitions['definitions']}
+            for context,occurrences in nodes.items():
+                board=chess.Board(occurrences[0][2])
+                # Authored continuation without an executable binding is missing
+                # identity authority, not evidence that the response is absent.
+                complete = manifest['complete'] and all(
+                    route.get('authority_start_ply',0) is not None and ply >= route.get('authority_start_ply',0) and ply < len(route['moves']) and any(binding['ply'] == ply + 1 for binding in route['bindings'])
+                    for route, ply, _ in occurrences)
+                coverage=[]
+                for move in sorted(board.legal_moves,key=lambda value:value.uci()):
+                    accepted={}
+                    for route,ply,_ in occurrences:
+                        if ply<len(route['moves']) and route['moves'][ply]==move.uci():
+                            for binding in route['bindings']:
+                                if binding['ply']==ply+1:
+                                    accepted[binding['card_id']]=projected_definition(definitions_by_id[binding['card_id']],binding)
+                    decision_ids={item['decision_id'] for item in accepted.values()}
+                    result=board.copy()
+                    result.push(move)
+                    coverage.append({'move_uci':move.uci(),'decision_fen':result.fen(en_passant='fen'),
+                        'status':'ambiguous' if len(decision_ids)>1 else 'covered' if accepted else 'uncovered' if complete else 'unknown',
+                        'responses':list(accepted.values())})
+                scope={'repertoire_id':context[0],'policy_id':context[1],'learner_color':context[2],
+                    'starting_fen':context[3],'history':list(context[4]),'route_contexts':[{'route_id':route['route_id'],'route_key':route['route_key'],'policy_key':route['policy_key'],'repertoire_key':route['repertoire_key'],'ply':ply} for route,ply,_ in occurrences],
+                    'complete':complete,
+                    'source_revision':definitions['source_revision'],'publication_generation':generation,'replies':coverage}
+                scope['digest']=digest(scope)
+                append_export_scope(legal_replies[canonical_position(board.fen())], scope, budget)
         document["export_digest"] = digest(document)
         if len(canonical(document).encode())>64*1024*1024:
             raise ContentError('bridge_export_limit','Complete bridge export exceeds 64 MiB; no Learning activation was attempted')

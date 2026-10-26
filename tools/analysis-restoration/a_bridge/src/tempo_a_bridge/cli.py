@@ -318,6 +318,8 @@ class Operator:
         if prepared["receipt"]["endpoint"] != self.endpoint:
             raise ValueError("original_learning_authority_required")
         export = prepared["export"]
+        if export.get("export_profile") is not None or export.get("legal_replies_omitted"):
+            raise ValueError("snapshot_requires_complete_legal_reply_inventory")
         _, current = self.http("/internal/publications/"+quote(export["publication"]["publication_id"],safe="")+"/status?generation="+str(export['publication']['publication_generation']))
         acceptance=current.pop('accepted')
         revision = current["activation_revision"]

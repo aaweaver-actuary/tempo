@@ -1,5 +1,14 @@
 # Authored-source operator bridge
 
+Content import manifests may explicitly approve `export_profile: "learning"`.
+This retains the complete authored Learning execution input and marks optional
+derived legal-reply inventory as omitted. The existing operator apply/reconcile
+path consumes the same publication/source/routes/aliases; it has no export-time
+profile override. The optional `snapshot` command rejects that profile before
+HTTP or checkpoint activity because it cannot claim complete Games coverage.
+Default full exports and snapshots retain their existing behavior. See the
+[Content profile contract](../../../services/content/src/tempo_content/bridge/README.md#approval-bound-learning-export-profile).
+
 The existing public `tempo-a-legacy-export` command translates supplied files into
 Content's serialized `SourceSnapshot` v1, import manifest and translation report.
 It imports no Content, Learning or legacy database implementation. Its default
