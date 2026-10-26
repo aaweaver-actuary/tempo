@@ -40,6 +40,8 @@ from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
 from .product_composition.feedback_commands import register_commands as register_product_feedback_commands
 register_product_feedback_commands()
+from .product_composition.repertoire_runtime import register_current_repertoire_commands
+register_current_repertoire_commands()
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
