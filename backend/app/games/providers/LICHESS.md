@@ -2,7 +2,12 @@
 
 `fetch_lichess_page` in [lichess_acquisition.py](lichess_acquisition.py) performs one
 bounded async export. It returns #482's `GamePage`/`GameRecord`/`GameRejection`
-values; it does not define competing DTOs. Existing donor entry points in
+values. Per #482's provider-wrapper direction, `LichessSourceRecord(GameRecord)`
+adds only immutable `source_metadata`; `LichessGamePage(GamePage)` specializes its
+records so JSON round trips retain those provider facts. These are shared-value
+subtypes, not competing canonical game/effect DTOs. Provider wire readers use
+`LichessGamePage.model_validate_json`; common in-process consumers use the inherited
+GamePage/GameRecord fields. Existing donor entry points in
 `lichess.py` remain unchanged. The new operation reuses the same
 `normalize_provider_pgn` legal-game/account/result validation, retaining the
 original PGN rather than re-exporting it.
@@ -35,6 +40,12 @@ The coordinator must compare digests, assign revisions and quarantine changed
 evidence; the revision integer alone is not a duplicate key. The PGN retains
 source player/color/move/result metadata. Responses outside account/result/legal
 game constraints are rejected with sanitized reasons.
+
+`source_metadata` contains JSON-encoded immutable values for source URL, complete
+canonical source-JSON SHA-256 `payload_digest`, original created/last-move time,
+speed, rated flag, variant (null when unsupplied), and validated learner color.
+The payload fingerprint preserves metadata changes separately from exact PGN
+content; the coordinator must inspect both when reconciling changed evidence.
 
 ## Checkpoint and completeness
 

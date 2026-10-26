@@ -28,6 +28,16 @@ FailureKind = Literal[
 ]
 
 
+class LichessSourceRecord(GameRecord):
+    """Provider facts extend shared record identity, rather than copying its DTO."""
+
+    source_metadata: tuple[tuple[str, str], ...] = ()
+
+
+class LichessGamePage(GamePage):
+    records: tuple[LichessSourceRecord, ...]
+
+
 class LichessAcquisitionError(RuntimeError):
     """Sanitized failure; replay the original continuation, never a partial read."""
 
@@ -222,7 +232,7 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
         else:
             try:
                 # Reuse the provider donor's legal-game/account/result validation.
-                normalize_provider_pgn("lichess", account, row["pgn"],
+                normalized = normalize_provider_pgn("lichess", account, row["pgn"],
                     provider_game_id=game_id, played_at=_timestamp(timestamp),
                     speed=row["speed"], rated=row["rated"],
                     game_url=f"https://lichess.org/{game_id}")
@@ -238,19 +248,25 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
             rejections.append(GameRejection(source_game_id=game_id,
                 source_revision=source_revision, reason=reason))
         else:
-            records.append(GameRecord(source_game_id=game_id, source_revision=source_revision,
+            metadata = {"payload_digest": row_digest, "game_url": f"https://lichess.org/{game_id}",
+                "created_at_ms": timestamp, "last_move_at_ms": row.get("lastMoveAt"),
+                "speed": row["speed"], "rated": row["rated"], "variant": row.get("variant"),
+                "learner_color": normalized.color}
+            records.append(LichessSourceRecord(source_game_id=game_id, source_revision=source_revision,
                 source_digest=_digest(row["pgn"].encode()), pgn=row["pgn"],
-                played_at=_timestamp(timestamp), time_precision="millisecond"))
+                played_at=_timestamp(timestamp), time_precision="millisecond",
+                source_metadata=tuple((name, _json(value).decode()) for name, value in sorted(metadata.items()))))
     saturated = len(rows) == limit
     if saturated and len(boundary) > MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
     next_token = _cursor(key, previous, boundary) if saturated else None
     if saturated and next_token == continuation:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
-    return GamePage(provider="lichess", account=account, window=window,
+    return LichessGamePage(provider="lichess", account=account, window=window,
         records=tuple(records), rejections=tuple(rejections), filters=filters,
         continuation=next_token,
         complete=not saturated, saturated=saturated)
 
 
-__all__ = ["fetch_lichess_page", "LichessAcquisitionError", "MAX_PAGE_SIZE", "MAX_RESPONSE_BYTES"]
+__all__ = ["fetch_lichess_page", "LichessAcquisitionError", "LichessGamePage", "LichessSourceRecord",
+           "MAX_PAGE_SIZE", "MAX_RESPONSE_BYTES"]

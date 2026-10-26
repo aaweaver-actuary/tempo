@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 
 from app.contracts.product_v02.games import GamePage, GameWindow
 from app.games.providers.lichess_acquisition import (
-    LichessAcquisitionError, fetch_lichess_page,
+    LichessAcquisitionError, LichessGamePage, fetch_lichess_page,
 )
 
 
@@ -90,6 +90,10 @@ def test_more_than_one_page_is_complete_without_loss():
     assert first.pgn == rows[0]["pgn"]
     assert first.source_digest == hashlib.sha256(first.pgn.encode()).hexdigest()
     assert first.time_precision == "millisecond" and first.source_revision == 1
+    assert json.loads(dict(first.source_metadata)["learner_color"]) == "white"
+    assert json.loads(dict(first.source_metadata)["payload_digest"]) == hashlib.sha256(
+        json.dumps(rows[0], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert LichessGamePage.model_validate_json(pages[0].model_dump_json()) == pages[0]
     assert first.played_at == "2026-10-01T00:00:00.000+00:00"
     assert pages[0].account == "learner" and pages[0].provider == "lichess"
     assert dict(pages[0].filters)["perfType"] == "blitz,bullet,classical,rapid"
