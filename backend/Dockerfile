@@ -16,11 +16,12 @@ RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /package
 # Keep their bounded adoption after the existing dependency layer so a feedback
 # source change does not reinstall dependencies or rebuild optional runtimes.
 COPY packages/game-review-contracts /packages/game-review-contracts
+COPY contracts/analysis-jobs /contracts/analysis-jobs
 COPY packages/evidence-math /packages/evidence-math
 COPY packages/game-ingestion /packages/game-ingestion
 COPY packages/repertoire-comparison /packages/repertoire-comparison
 COPY packages/game-classification /packages/game-classification
-ENV PYTHONPATH=/packages/game-review-contracts/src:/packages/evidence-math/src:/packages/game-ingestion/src:/packages/repertoire-comparison/src:/packages/game-classification/src
+ENV PYTHONPATH=/packages/game-review-contracts/src:/packages/evidence-math/src:/packages/game-ingestion/src:/packages/repertoire-comparison/src:/packages/game-classification/src:/contracts/analysis-jobs/src
 COPY backend/app ./app
 COPY database/tempo_legacy_database ./tempo_legacy_database
 COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json

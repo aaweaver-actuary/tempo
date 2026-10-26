@@ -1,5 +1,6 @@
 /** Product v0.2 wire values. No fetch, stores, scheduling or component imports. */
 import { z } from "zod";
+import { Chess } from "chess.js";
 
 export const INTERFACE_VERSION = "0.2.0";
 const id = z.string().min(1).max(200);
@@ -126,4 +127,113 @@ export type ProviderSyncStatus = z.infer<typeof ProviderSyncStatusSchema>;
 export type RecentGames = z.infer<typeof RecentGamesSchema>;
 export type GameDetail = z.infer<typeof GameDetailSchema>;
 
-export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema } as const;
+const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const probability = z.number().min(0).max(1);
+const PositionMoveUniverseSchema = z.strictObject({ fen_key: id, legal_moves: z.array(uci) }).superRefine((value, ctx) => {
+  try {
+    if (value.fen_key.split(" ").length !== 4) throw new Error("four-field position required");
+    const board = new Chess(`${value.fen_key} 0 1`);
+    const legal = board.moves({ verbose: true }).map(move => move.from + move.to + (move.promotion ?? "")).sort();
+    if (!legal.length || JSON.stringify([...value.legal_moves].sort()) !== JSON.stringify(legal) || board.fen().split(" ").slice(0, 4).join(" ") !== value.fen_key) throw new Error("incorrect legal inventory/position key");
+  } catch { ctx.addIssue({ code: "custom", message: "invalid exact position or legal move inventory" }); }
+});
+const MoveProbabilityDistributionSchema = z.strictObject({ contract_version: z.literal(1).default(1), position: PositionMoveUniverseSchema, moves: z.array(z.strictObject({ move_uci: uci, probability: probability.nullable() })), unknown_mass: probability }).superRefine((value, ctx) => {
+  const moves = value.moves.map(move => move.move_uci).sort();
+  const total = value.moves.reduce((sum, move) => sum + (move.probability ?? 0), 0);
+  if (JSON.stringify(moves) !== JSON.stringify([...value.position.legal_moves].sort()) || Math.abs(total + value.unknown_mass - 1) > 1e-9 || (value.moves.some(move => move.probability === null) && value.unknown_mass <= 0)) ctx.addIssue({ code: "custom", message: "preserve legal inventory and unknown probability mass" });
+});
+const CountEvidenceSchema = z.strictObject({ kind: z.literal("counts"), total_count: count, moves: z.array(z.strictObject({ move_uci: uci, count })) }).refine(value => new Set(value.moves.map(move => move.move_uci)).size === value.moves.length && value.moves.reduce((sum, move) => sum + move.count, 0) <= value.total_count, "invalid count evidence");
+const RawPopulationSelectionSchema = z.strictObject({ rating_min: count, rating_max: count, time_controls: z.array(id).min(1) }).refine(value => value.rating_min <= value.rating_max && new Set(value.time_controls).size === value.time_controls.length, "explicit ordered population required");
+const RawProbabilityEvidenceSchema = z.strictObject({ interface_version: version, evidence_id: id, position: PositionMoveUniverseSchema, provider: id, model: id.nullable(), basis: z.enum(["population", "personal"]), population: RawPopulationSelectionSchema.nullable(), personal_account: id.nullable(), observed_at: utc.nullable(), distribution: MoveProbabilityDistributionSchema.nullable(), counts: CountEvidenceSchema.nullable(), unavailable_reason: id.nullable() }).superRefine((value, ctx) => {
+  if ((value.basis === "population") !== (value.population !== null) || (value.basis === "personal") !== (value.personal_account !== null)) ctx.addIssue({ code: "custom", message: "separate population/personal contexts" });
+  if (value.distribution === null ? value.unavailable_reason === null : value.distribution.position.fen_key !== value.position.fen_key || value.unavailable_reason !== null || value.observed_at === null) ctx.addIssue({ code: "custom", message: "bind position/date or preserve unavailable reason" });
+  if (value.counts?.moves.some(move => !value.position.legal_moves.includes(move.move_uci))) ctx.addIssue({ code: "custom", message: "illegal count move" });
+});
+
+const RawEngineContextSchema = z.strictObject({ starting_fen: id, history_uci: z.array(uci), target_fen: id, variant: id, learner_color: z.enum(["white", "black"]), engine_version: id, max_depth: z.number().int().min(1).max(128).nullable(), max_nodes: revision.nullable(), max_time_ms: revision.nullable(), threads: z.number().int().min(1).max(64), hash_mb: revision }).refine(value => value.max_depth !== null || value.max_nodes !== null || value.max_time_ms !== null, "engine work requires a bound");
+const EngineScoreSchema = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("centipawns"), value: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER) }), z.strictObject({ kind: z.literal("mate"), value: z.number().int().min(-1000).max(1000) })]);
+const RawCandidateEvaluationSchema = z.strictObject({ move_uci: uci, score: EngineScoreSchema.nullable(), score_perspective: z.literal("learner").default("learner"), depth: z.number().int().min(1).max(128).nullable(), nodes: count.nullable(), unavailable_reason: id.nullable() }).refine(value => (value.score === null) === (value.unavailable_reason !== null), "missing evaluation requires reason");
+const RawEngineEvidenceSchema = z.strictObject({ interface_version: version, evidence_id: id, context: RawEngineContextSchema, requested_candidates: z.array(uci).min(1), best: RawCandidateEvaluationSchema.nullable(), candidates: z.array(RawCandidateEvaluationSchema), unavailable_reason: id.nullable() }).superRefine((value, ctx) => {
+  const evaluated = value.candidates.map(candidate => candidate.move_uci);
+  if (new Set(value.requested_candidates).size !== value.requested_candidates.length || new Set(evaluated).size !== evaluated.length || JSON.stringify([...evaluated].sort()) !== JSON.stringify([...value.requested_candidates].sort())) ctx.addIssue({ code: "custom", message: "every explicit candidate requires evidence" });
+  if ((value.best === null) !== (value.unavailable_reason !== null)) ctx.addIssue({ code: "custom", message: "missing best requires reason" });
+});
+
+const RepertoireEditSchema = z.strictObject({ route_id: id, position_key: id, previous_response_uci: uci.nullable(), proposed_response_uci: uci, displayed_pgn: z.string().min(1) });
+const DisplayedCardChangeSchema = z.strictObject({ action: z.enum(["add", "update", "reuse"]), presentation_id: id.nullable(), expected_revision: revision.nullable(), starting_fen: id, moves: z.array(uci).min(1), learner_color: z.enum(["white", "black"]) }).refine(value => value.action === "add" || (value.presentation_id !== null && value.expected_revision !== null), "existing card requires identity/revision");
+const RawProposalSchema = z.strictObject({ interface_version: version, proposal_id: id, proposal_revision: revision, repertoire_id: id, source_revision: revision, source_digest: digest, display_digest: digest, title: id, explanation: z.string().min(1), edits: z.array(RepertoireEditSchema), card_changes: z.array(DisplayedCardChangeSchema), engine_evidence: z.array(RawEngineEvidenceSchema), supporting_position_keys: z.array(id), max_loss_cp: count.default(30), threshold_adjustment_reason: id.nullable().default(null) }).refine(value => (value.max_loss_cp === 30 || value.threshold_adjustment_reason !== null) && new Set(value.supporting_position_keys).size === value.supporting_position_keys.length, "display threshold changes and count distinct support positions");
+const RawProposalDecisionSchema = z.strictObject({ proposal_id: id, expected_proposal_revision: revision, expected_source_revision: revision, display_digest: digest, action: z.enum(["accept", "edit", "dismiss"]), edited_proposal: RawProposalSchema.nullable() }).refine(value => (value.action === "edit") === (value.edited_proposal !== null), "edit requires a fresh preview");
+const RawRepertoireChangeReceiptSchema = z.strictObject({ owner_receipt_id: id, proposal_id: id, status: z.enum(["preview", "accepted", "dismissed", "conflict", "unavailable"]), source_revision: revision, proposal: RawProposalSchema.nullable(), reason: id.nullable() });
+
+const DecisionComponentSchema = z.strictObject({ decision_id: id, position_key: id, response_uci: uci, resulting_position_key: id });
+const OpponentCueSchema = z.strictObject({ position_key: id, move_uci: uci, resulting_position_key: id });
+const RawPresentationSchema = z.strictObject({ interface_version: version, presentation_id: id, revision, repertoire_id: id, repertoire_revision: revision, variant: id, learner_color: z.enum(["white", "black"]), route_id: id, components: z.array(DecisionComponentSchema).min(1), opponent_cues: z.array(OpponentCueSchema), clean_streak: count, introduced: z.boolean(), lineage: z.array(id), recorded_parent_id: id.nullable() });
+const RawJoinPlanSchema = z.strictObject({ interface_version: version, plan_id: id, expected_study_revision: revision, left: RawPresentationSchema, right: RawPresentationSchema, connecting_cues: z.array(OpponentCueSchema), result: RawPresentationSchema, resulting_clean_streak: z.literal(0).default(0), introduction_slots: z.literal(0).default(0), unresolved_obligation_ids: z.array(id) }).superRefine((value, ctx) => {
+  const scope = (item: z.infer<typeof PresentationSchema>) => JSON.stringify([item.repertoire_id, item.repertoire_revision, item.variant, item.learner_color, item.route_id]);
+  if (scope(value.left) !== scope(value.right) || scope(value.left) !== scope(value.result)) ctx.addIssue({ code: "custom", message: "join must retain route-local scope" });
+  if (new Set([value.left.presentation_id, value.right.presentation_id, value.result.presentation_id]).size !== 3 || value.result.clean_streak !== 0 || JSON.stringify(value.result.components) !== JSON.stringify([...value.left.components, ...value.right.components])) ctx.addIssue({ code: "custom", message: "join requires a fresh 0/3 combination of existing components" });
+  if (!(value.left.introduced && value.right.introduced && value.result.introduced && value.result.lineage.includes(value.left.presentation_id) && value.result.lineage.includes(value.right.presentation_id))) ctx.addIssue({ code: "custom", message: "retain introduced components and lineage" });
+  if (JSON.stringify(value.result.opponent_cues) !== JSON.stringify([...value.left.opponent_cues, ...value.connecting_cues, ...value.right.opponent_cues])) ctx.addIssue({ code: "custom", message: "preserve exact opponent cues" });
+  let position = value.left.components[value.left.components.length - 1].resulting_position_key;
+  for (const cue of value.connecting_cues) {
+    if (cue.position_key !== position) ctx.addIssue({ code: "custom", message: "connecting cue must retain exact position" });
+    position = cue.resulting_position_key;
+  }
+  if (position !== value.right.components[0].position_key) ctx.addIssue({ code: "custom", message: "cues must reach the existing next decision" });
+});
+const RawPresentationChangeReceiptSchema = z.strictObject({ owner_receipt_id: id, plan_id: id, status: z.enum(["applied", "stale_revision", "active_attempt", "ineligible"]), resulting_presentation_id: id.nullable(), reason: id.nullable() });
+const RankingCandidateSchema = z.strictObject({ decision_id: id, repertoire_id: id, reach_probability: probability.nullable(), evidence_support: count.nullable(), uncertainty: probability.nullable(), personal_encounters: count.nullable() });
+const RawRankingInputSchema = z.strictObject({ repertoire_revisions: z.array(z.tuple([id, revision])), candidates: z.array(RankingCandidateSchema), evidence_ids: z.array(id) });
+const RawRankingOutputSchema = z.strictObject({ based_on: RawRankingInputSchema, ordered: z.array(z.strictObject({ decision_id: id, rank: revision, reason: id })), unavailable_reason: id.nullable() });
+
+export const PopulationSelectionSchema = immutable(RawPopulationSelectionSchema);
+export const ProbabilityEvidenceSchema = immutable(RawProbabilityEvidenceSchema);
+export const EngineContextSchema = immutable(RawEngineContextSchema);
+export const CandidateEvaluationSchema = immutable(RawCandidateEvaluationSchema);
+export const EngineEvidenceSchema = immutable(RawEngineEvidenceSchema);
+export const ProposalSchema = immutable(RawProposalSchema);
+export const ProposalDecisionSchema = immutable(RawProposalDecisionSchema);
+export const RepertoireChangeReceiptSchema = immutable(RawRepertoireChangeReceiptSchema);
+export const PresentationSchema = immutable(RawPresentationSchema);
+export const JoinPlanSchema = immutable(RawJoinPlanSchema);
+export const PresentationChangeReceiptSchema = immutable(RawPresentationChangeReceiptSchema);
+export const RankingInputSchema = immutable(RawRankingInputSchema);
+export const RankingOutputSchema = immutable(RawRankingOutputSchema);
+
+export type ProbabilityEvidence = z.infer<typeof ProbabilityEvidenceSchema>;
+export type EngineEvidence = z.infer<typeof EngineEvidenceSchema>;
+export type Proposal = z.infer<typeof ProposalSchema>;
+export type ProposalDecision = z.infer<typeof ProposalDecisionSchema>;
+export type RepertoireChangeReceipt = z.infer<typeof RepertoireChangeReceiptSchema>;
+export type Presentation = z.infer<typeof PresentationSchema>;
+export type JoinPlan = z.infer<typeof JoinPlanSchema>;
+export type RankingInput = z.infer<typeof RankingInputSchema>;
+export type RankingOutput = z.infer<typeof RankingOutputSchema>;
+
+/** Same canonical SHA-256 binding as Proposal.content_digest(); Repertoire owns approval. */
+export async function proposalDisplayDigest(proposal: Proposal, subtle: SubtleCrypto = globalThis.crypto.subtle): Promise<string> {
+  const { display_digest: _binding, ...payload } = proposal;
+  function ordered(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(ordered);
+    if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, item]) => [key, ordered(item)]));
+    return value;
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(ordered(payload)));
+  const result = await subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(result), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function matchesProposalPreview(decision: ProposalDecision, proposal: Proposal, subtle?: SubtleCrypto): Promise<boolean> {
+  return decision.proposal_id === proposal.proposal_id && decision.expected_proposal_revision === proposal.proposal_revision && decision.expected_source_revision === proposal.source_revision && decision.display_digest === proposal.display_digest && proposal.display_digest === await proposalDisplayDigest(proposal, subtle);
+}
+
+export interface RepertoireChangePort {
+  preview(proposal: Proposal): Promise<RepertoireChangeReceipt>;
+  decide(decision: ProposalDecision): Promise<RepertoireChangeReceipt>;
+}
+export interface RepertoireReviewApi extends RepertoireChangePort {
+  proposals(repertoireId: string): Promise<readonly Proposal[]>;
+  evidence(positionKey: string): Promise<readonly ProbabilityEvidence[]>;
+}
+
+export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema, PopulationSelection: PopulationSelectionSchema, ProbabilityEvidence: ProbabilityEvidenceSchema, EngineContext: EngineContextSchema, CandidateEvaluation: CandidateEvaluationSchema, EngineEvidence: EngineEvidenceSchema, Proposal: ProposalSchema, ProposalDecision: ProposalDecisionSchema, RepertoireChangeReceipt: RepertoireChangeReceiptSchema, Presentation: PresentationSchema, JoinPlan: JoinPlanSchema, PresentationChangeReceipt: PresentationChangeReceiptSchema, RankingInput: RankingInputSchema, RankingOutput: RankingOutputSchema } as const;

@@ -29,6 +29,7 @@ name = "backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "tempo-analysis-jobs-contracts" },
     { name = "tempo-game-review-contracts" },
     { name = "tempo-evidence-math" },
     { name = "tempo-game-ingestion" },
@@ -52,6 +53,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "tempo-analysis-jobs-contracts", directory = "../contracts/analysis-jobs" },
     { name = "tempo-game-review-contracts", directory = "../packages/game-review-contracts" },
     { name = "tempo-evidence-math", directory = "../packages/evidence-math" },
     { name = "tempo-game-ingestion", directory = "../packages/game-ingestion" },
@@ -555,6 +557,17 @@ dev = [
 name = "tempo-content-publication-contracts"
 version = "1.0.0"
 source = { directory = "../contracts/content-publication" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = "==2.12.5" }]
+
+[[package]]
+name = "tempo-analysis-jobs-contracts"
+version = "1.0.0"
+source = { directory = "../contracts/analysis-jobs" }
 dependencies = [
     { name = "pydantic" },
 ]

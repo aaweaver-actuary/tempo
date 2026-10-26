@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
+from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.ports import ChangeError
+from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import.storage import PostgresConnection
 from app.chess.cards import card_id
@@ -89,6 +92,14 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     storage.lock_main_repertoire(database)
     existing_repertoire = storage.matching_repertoire(database, source_name, trained_color)
     repertoire_id = existing_repertoire[0] if existing_repertoire else str(uuid.uuid4())
+    # Hold an invalid/conflicting import before any active source/card changes.
+    proposed_sources = tuple(dict(source_id=f"import:{number}", start_fen=line.starting_fen,
+        moves_json=json.dumps(line.moves), trained_color=trained_color)
+        for number, line in enumerate(payload.lines))
+    try:
+        validate_source_rows(repertoire_id, change_storage.lock_sources(database, repertoire_id) + proposed_sources)
+    except ChangeError as error:
+        raise HTTPException(409, str(error)) from error
     storage.clear_main_repertoire(database)
     storage.upsert_main_repertoire(database, repertoire_id, source_name.rsplit(".", 1)[0], source_name, now)
     existing_lines = {
