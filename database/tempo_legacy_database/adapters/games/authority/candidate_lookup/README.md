@@ -32,7 +32,7 @@ are `backend/tests/test_legacy_candidate_lookup.py`; they retain ineligible
 alternatives and reject overflow/invalid inputs. Deployment remains unverified.
 
 `introduced_card_lead(reader, repertoire_id, graph_generation) -> dict | None`
-can select at most one introduced physical card to discover a position first.
+can select at most one oldest introduced physical card to discover a position first.
 It returns raw revision/executable/introduction facts and grants no eligibility
 or uniqueness claim. After selecting its exact position and a genuine imported
 occurrence, always call `decision_bindings` to retain all alternatives, then the

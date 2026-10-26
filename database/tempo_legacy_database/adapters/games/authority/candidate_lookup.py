@@ -54,7 +54,7 @@ def decision_bindings(reader, repertoire_id: str, graph_generation: int,
 
 
 def introduced_card_lead(reader, repertoire_id: str, graph_generation: int) -> dict | None:
-    """Pick at most one introduced card as a position-discovery lead only.
+    """Pick at most one oldest introduced card as a position-discovery lead only.
 
     This deliberately is not an alternatives/eligibility projection. Re-read all
     alternatives with decision_bindings for the chosen physical position, then
@@ -71,7 +71,7 @@ def introduced_card_lead(reader, repertoire_id: str, graph_generation: int) -> d
             AND publication.generation=step.generation
         JOIN cards card ON card.id=step.card_id
         WHERE step.repertoire_id=%s AND step.generation=%s AND card.introduced_at IS NOT NULL
-        ORDER BY card.introduced_at DESC,step.line_id,step.decision_index LIMIT 1""",
+        ORDER BY card.introduced_at,step.line_id,step.decision_index LIMIT 1""",
         (repertoire_id, graph_generation))
     if len(rows) > 1:
         raise CandidateOverflow("introduced_card_lead_budget")
