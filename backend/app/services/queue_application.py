@@ -107,16 +107,17 @@ _QUEUE_ELIGIBILITY_PHASES = (
 )
 
 
-def seed_queue(db, day):
+def seed_queue(db, day, *, introductions=None):
     for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
         apply_phase(db, day)
     seed_tactical_introductions(db, day)
-    _reset_unintroduced_opening_cards(db, day)
-    _reset_stale_opening_introductions(db, day)
-    limit = seeding_storage.opening_allowance(db)
-    from ..repertoire_settings import effective_opening_limits
-    repertoire_limits = effective_opening_limits(db)
-    reconcile_unseen_queue(db, day, limit, repertoire_limits)
+    if introductions is None:
+        _reset_unintroduced_opening_cards(db, day)
+        _reset_stale_opening_introductions(db, day)
+        limit = seeding_storage.opening_allowance(db)
+        from ..repertoire_settings import effective_opening_limits
+        repertoire_limits = effective_opening_limits(db)
+        reconcile_unseen_queue(db, day, limit, repertoire_limits)
     maximum = seeding_storage.maximum_position(db, day)
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
@@ -125,12 +126,15 @@ def seed_queue(db, day):
     resume_available_feedback(db, day)
     # Remediation is an introduced review and consumes no new-card allowance.
     maximum = seeding_storage.maximum_position(db, day)
-    admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
+    if introductions is None:
+        admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
     outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
     for missed_card in outstanding_studied_cards:
         promote_real_game_card(db, missed_card["card_id"], day)
     for stale_priority in seeding_storage.stale_miss_priority(db, day, MISS_REASON):
         clear_satisfied_miss_priority(db, stale_priority["card_id"])
+    if introductions is not None:
+        introductions.admit(day)
     study_allowance = seeding_storage.study_allowance(db)
     admitted_studies = seeding_storage.admitted_study_count(db, day)
     remaining_studies = max(0, study_allowance - admitted_studies)
