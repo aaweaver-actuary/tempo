@@ -168,11 +168,13 @@ def test_interrupted_stream_preserves_checkpoint():
 
 
 def test_filtered_or_rejected_records_are_accounted():
-    rows = [source(0), source(1, speed="bullet"), source(2, pgn="bad PGN"), source(3, rated=False)]
+    rows = [source(0), source(1, speed="bullet"), source(2, pgn="bad PGN"), source(3, rated=False),
+            source(4, variant="crazyhouse"), source(5, pgn=source(5)["pgn"].replace('"Learner"', '"Another"'))]
     page = asyncio.run(acquire(Export(rows), speeds=("rapid",), rated=True))
     assert page.complete and len(page.records) == 1
     assert {item.source_game_id: item.reason for item in page.rejections} == {
-        "game0001": "filtered_speed", "game0002": "invalid_pgn", "game0003": "filtered_rated"}
+        "game0001": "filtered_speed", "game0002": "invalid_pgn", "game0003": "filtered_rated",
+        "game0004": "unsupported_variant", "game0005": "account_mismatch"}
     assert len(page.records) + len(page.rejections) == len(rows)
     assert dict(page.filters) == {"perfType": "rapid", "rated": "true"}
 

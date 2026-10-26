@@ -145,7 +145,9 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
             or type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
             or not 0 < timeout_seconds <= 30
             or type(max_response_bytes) is not int or not 1 <= max_response_bytes <= MAX_RESPONSE_BYTES
-            or not isinstance(speeds, tuple) or not speeds or any(speed not in _SPEEDS for speed in speeds)
+            or not isinstance(speeds, tuple) or not speeds
+            or any(not isinstance(speed, str) or speed not in _SPEEDS for speed in speeds)
+            or (cancelled is not None and not callable(cancelled))
             or (rated is not None and type(rated) is not bool)):
         raise LichessAcquisitionError("invalid_request", continuation=continuation)
     account = account.casefold()
@@ -213,6 +215,8 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
             reason = "filtered_speed"
         elif rated is not None and row["rated"] != rated:
             reason = "filtered_rated"
+        elif row.get("variant") not in (None, "standard", "fromPosition"):
+            reason = "unsupported_variant"
         elif not isinstance(row.get("pgn"), str) or not row["pgn"].strip():
             reason = "invalid_pgn"
         else:
@@ -222,7 +226,13 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
                     provider_game_id=game_id, played_at=_timestamp(timestamp),
                     speed=row["speed"], rated=row["rated"],
                     game_url=f"https://lichess.org/{game_id}")
-            except (RejectedGame, ValueError):
+            except RejectedGame as error:
+                reason = {
+                    "configured account did not play this game": "account_mismatch",
+                    "only standard chess games are supported": "unsupported_variant",
+                    "game is unfinished or has an unsupported result": "unfinished_game",
+                }.get(str(error), "invalid_pgn")
+            except ValueError:
                 reason = "invalid_pgn"
         if reason:
             rejections.append(GameRejection(source_game_id=game_id,
