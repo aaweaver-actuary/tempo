@@ -253,3 +253,89 @@ def test_current_owner_settings_require_explicit_boolean_controls(control):
     from app.study.introductions.ports import IntroductionSettings
     with pytest.raises(ValueError):
         IntroductionSettings('explicit',1,(("a",1),),**control)
+
+
+def test_conflict_admission_delegates_exact_scoped_current_revision():
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def __init__(self): self.calls = []
+        def blocked(self, repertoire_id, card_id, revision):
+            self.calls.append((repertoire_id,card_id,revision))
+            return (repertoire_id,card_id,revision) == ('held','shared',3)
+    conflicts = Conflicts()
+    assert introduction_is_held(conflicts,repertoire_id='held',presentation_id='shared',presentation_revision=3)
+    assert not introduction_is_held(conflicts,repertoire_id='other',presentation_id='shared',presentation_revision=3)
+    assert not introduction_is_held(conflicts,repertoire_id='held',presentation_id='shared',presentation_revision=4)
+    assert conflicts.calls == [('held','shared',3),('other','shared',3),('held','shared',4)]
+
+
+def test_conflict_admission_absent_capability_retains_existing_behavior():
+    from app.study.introductions.application import introduction_is_held
+    assert not introduction_is_held(None,repertoire_id='rep',presentation_id='card',presentation_revision=1)
+
+
+@pytest.mark.parametrize('answer',[True,None,'false',0])
+def test_conflict_admission_requires_explicit_release(answer):
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def blocked(self,*args): return answer
+    assert introduction_is_held(Conflicts(),repertoire_id='rep',presentation_id='card',presentation_revision=1)
+
+
+def test_conflict_admission_unknown_physical_revision_is_not_a_release():
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def blocked(self,*args): raise AssertionError('unknown identity must not be queried')
+    assert introduction_is_held(Conflicts(),repertoire_id='rep',presentation_id='card',presentation_revision=0)
+
+
+def repertoire_only_snapshot():
+    import json
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    root = Path(__file__).resolve().parents[2]
+    payload = json.loads((root / 'contracts/product-v02/fixtures/snapshot.json').read_text())['payload']
+    payload['membership']['source_revision'] = payload['membership']['digest']
+    payload['membership']['scope_id'] = 'repertoire:white'
+    return RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+
+def test_repertoire_only_source_needs_no_game_capture_authority():
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    source = RepertoireIntroductionSource(repertoire_only_snapshot())
+    assert source.repertoire_id == 'white'
+    assert not hasattr(source,'authority')
+
+
+def test_repertoire_only_binding_ignores_capture_and_introduction_chronology():
+    from app.study.introductions.application import repertoire_introduction_binding
+    source = repertoire_only_snapshot()
+    changed = source.model_copy(update={
+        'membership':source.membership.model_copy(update={'snapshot_id':'new-capture','digest':'d'*64,
+            'source_revision':'d'*64,'captured_at':'2026-10-27T12:00:00Z'}),
+        'decision_presentations':(source.decision_presentations[0].model_copy(update={
+            'introduction':'unintroduced','introduced_at':None,'introduction_matches_current_content':False}),)})
+    assert repertoire_introduction_binding(source) == repertoire_introduction_binding(changed)
+
+
+@pytest.mark.parametrize('change',['route','physical_revision','source_revision'])
+def test_repertoire_only_binding_retains_exact_content_and_source_revision(change):
+    from app.study.introductions.application import repertoire_introduction_binding
+    source = repertoire_only_snapshot()
+    if change == 'route':
+        changed = source.model_copy(update={'membership':source.membership.model_copy(update={
+            'routes':(source.membership.routes[0].model_copy(update={'moves':('d2d4',)}),)})})
+    elif change == 'physical_revision':
+        changed = source.model_copy(update={'decision_presentations':(
+            source.decision_presentations[0].model_copy(update={'presentation_revision':2}),)})
+    else:
+        changed = source.model_copy(update={'membership':source.membership.model_copy(update={'revision':2}),
+            'decision_presentations':(source.decision_presentations[0].model_copy(update={'repertoire_revision':2}),)})
+    assert repertoire_introduction_binding(source) != repertoire_introduction_binding(changed)
+
+
+@pytest.mark.parametrize('change',[dict(complete=False),dict(available=False,unavailable_reason='unavailable')])
+def test_repertoire_only_source_rejects_unproved_current_snapshot(change):
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    source = repertoire_only_snapshot()
+    with pytest.raises(ValueError):
+        RepertoireIntroductionSource(source.model_copy(update={'membership':source.membership.model_copy(update=change)}))

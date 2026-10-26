@@ -3,8 +3,46 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.contracts.product_v02.analysis import RankingOutput
+from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from .policy import Candidate, RankingContext, Selection, compatible_ranking, select
-from .ports import IntroductionOwner, IntroductionStore, Receipt
+from .ports import IntroductionConflicts, IntroductionOwner, IntroductionStore, Receipt
+
+
+def introduction_is_held(conflicts: IntroductionConflicts | None, *, repertoire_id: str,
+                         presentation_id: str, presentation_revision: int) -> bool:
+    """Delegate current suspension to its Study owner, without copying policy.
+
+    No capability preserves the prior behavior. An injected capability must
+    explicitly prove False to permit admission; unknown is never a release.
+    """
+    if conflicts is None:
+        return False
+    if type(presentation_revision) is not int or presentation_revision < 1:
+        return True
+    return conflicts.blocked(repertoire_id, presentation_id, presentation_revision) is not False
+
+
+def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
+    """Bind actual repertoire content while excluding introduction chronology.
+
+    #483's public complete snapshot is reread under the existing source fences.
+    Scope/source revision, routes, boundaries, exact physical mappings and
+    availability stay bound. Capture time, review/schedule facts and changing
+    introduction evidence cannot replace content identity or create game proof.
+    """
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from .ports import RepertoireIntroductionSource
+    source = RepertoireIntroductionSource(snapshot)
+    membership = source.snapshot.membership
+    mappings = tuple({key:value for key,value in item.model_dump(mode='json').items()
+                      if not key.startswith('introduc')}
+                     for item in source.snapshot.decision_presentations)
+    return fingerprint(dict(repertoire_id=source.repertoire_id,workspace_id=membership.workspace_id,
+        source_revision=membership.revision,complete=membership.complete,available=membership.available,
+        variant=source.snapshot.variant,learner_color=source.snapshot.learner_color,
+        routes=tuple(route.model_dump(mode='json') for route in membership.routes),
+        boundaries=tuple(item.model_dump(mode='json') for item in source.snapshot.boundaries),
+        mappings=mappings))
 
 
 @dataclass(frozen=True)

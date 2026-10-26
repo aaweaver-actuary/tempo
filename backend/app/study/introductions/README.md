@@ -224,3 +224,42 @@ tables until the feature is explicitly wired with its schema installed. The
 retained bounded authority may conservatively defer after unrelated catalogue
 generation changes; refresh it through its existing source owner. No migration
 or graph rebuild is started by this module.
+
+## Conflict-admission follow-on: private boundary prepared, hook pending
+
+`IntroductionConflicts` matches the existing Study conflict owner's
+`PostgresConflictStore.blocked(repertoire_id, card_id, revision)` capability.
+`application.introduction_is_held` delegates to that capability without copying
+hold policy or SQL; it permits only an explicit False result. Absence retains
+prior behavior, and shared memberships/current revisions remain distinct.
+
+The concrete adapter integration patch is prepared but **not applied**. The
+existing factory does not yet accept a `conflicts` keyword. Its intended
+small hook is an optional injected capability checked while reading current
+candidates and again through the existing commit-time facts recheck, under the
+same card reservation used by conflict synchronization. No serving/recovery,
+conflict persistence, migration or first-release hook is edited by this private
+preparation. Keep later conflict controls and automatic introductions from being
+jointly activated until that owner hook and the separate serving guards are
+integrated. #501 still owns outer composition and C migration registration.
+
+## Repertoire-only source bridge: private binding prepared, hook pending
+
+`RepertoireIntroductionSource` wraps the actual complete repertoire-only shared
+snapshot from #483. It needs no game, retained game capture or
+`LegacyAuthorityToken`. `application.repertoire_introduction_binding` retains the
+source revision, workspace, ordered routes/boundaries, exact decision/physical
+mapping and availability, while excluding capture metadata and introduction
+chronology. This lets an actual newly introduced card retain compatible content
+ranking without manufacturing pre-game evidence.
+
+The pending compatible factory hook takes that source plus the existing public
+current-snapshot read capability, rereads it under the same current source/card
+locks and compares this binding. The actual reader defines its revision as
+`scope_source_revision + 1`; it must never be substituted for a graph generation
+or converted into a game authority token. Existing current membership, route,
+definition, saved controls, canonical writes and finite source bounds remain
+required. The private binding tests pass; the actual factory still only accepts
+the prior retained source until the unapplied hook is integrated and its changed
+native boundary is proved. #501 must not mount the new source through a fabricated
+capture as a fallback.
