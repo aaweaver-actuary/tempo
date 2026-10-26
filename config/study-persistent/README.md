@@ -100,3 +100,74 @@ or resources were contacted. These results supersede the authoring-time executor
 outage. No live resource, credential, grant, capture, service start or cutover was
 executed. Native PostgreSQL, installed-container runtime and actual admission
 qualification remain unverified.
+
+## Serving an admitted target
+
+[serving.compose.yml](serving.compose.yml) is the separate three-service serving
+configuration for an already admitted persistent target. It reuses the pinned
+[Study image](../../Dockerfile.study-web), including its existing
+[same-origin Learning proxy](../../nginx.study.conf). There is no duplicate nginx
+configuration, Content service, optional producer, bootstrap service, build,
+import or grant operation. All three images are explicit immutable inputs with
+pull disabled. All data, private-runtime and network resources are external;
+PostgreSQL and Learning expose no host ports. Only the selected loopback Study
+port is published. Automatic container restarts are disabled so the normal CLI
+retains lifecycle ownership.
+
+The distinction is deliberate: quarantine keeps maintenance and public traffic
+off; serving enables Learning's own maintenance only after the owning authority
+reader establishes completed admission. A rendered configuration or bootstrap
+receipt alone cannot establish that admission. Cold-start verification must prove
+the existing cluster before PostgreSQL is started; direct Compose invocation is
+not a substitute for the normal launcher's authority and cluster checks.
+
+The public source boundary is
+[tempo-study-configuration.mjs](../../scripts/tempo-study-configuration.mjs):
+
+- `validateStudyServingConfiguration({registration, configuration,
+  persistentIntent, persistentReceipt})` validates the rendered configuration
+  against the existing v2 registration and public persistent intent/bootstrap
+  receipt. It returns an independent frozen copy and changes none of its inputs.
+- `readStudyServingConfiguration(request, {run, persistentIntent,
+  persistentReceipt})` obtains that configuration using only the selected
+  registration's existing `commandExecutor` capability and Compose
+  `config --format json`. It does not create resources or issue a lifecycle
+  command. Missing or mismatched inputs fail closed.
+
+The existing `registration.installedStudy.runtime` descriptor supplies the exact
+PostgreSQL volume, mount, **strictly nested resolved** data directory, major and
+system identifier. Its `credentialDigests.studyTokenSha256` and
+`credentialDigests.runtimePassfileSha256` must match the persistent receipt's
+private-output hashes. `PGDATA` is an explicit environment input; its actual value
+is not guessed from the volume name. This validation binds declarations. The
+owning authority/runtime readers still independently verify the current daemon,
+actual mounts and cluster, private file bytes/modes and original-writer fence.
+No lifecycle journal or converter internals are read by this component.
+
+The private serving environment must explicitly supply the registered project,
+three immutable images, existing PostgreSQL data directory, workspace, exact
+credential-free writer/reader DSNs from `connection.json`, browser origin, IANA
+timezone, loopback port, two external volume names, network name and existing
+private PostgreSQL password-file path. This source emits no actual installation
+values and creates no credentials. Ordinary serving does not configure an
+operator/evidence token. Learning sees only its read-only runtime-secret volume;
+the PostgreSQL secret is unavailable to Learning and Study web.
+
+```mermaid
+flowchart LR
+    R[Published v2 registration and runtime descriptor] --> V[Pure serving configuration validator]
+    P[Existing persistent intent and bootstrap receipt] --> V
+    C[Selected Compose config read only] --> V
+    V --> A[Public authority reader and normal CLI assembly]
+    O[Independent current fence and cluster observations] --> A
+    A --> F[Existing public installed-provider command ports]
+    F --> S[Named admitted Study services]
+    Q[Quarantine preparation] -. no admission authority .-> A
+```
+
+This drawing describes implemented source boundaries and injected public ports,
+not a deployed installation. Source tests use protocol fixtures. An offline
+Compose render with a deliberately nonexistent Docker endpoint validates source
+configuration only; it is not actual target, credential, graph or admission
+qualification. The completed component/runtime suites need not be repeated for
+this bounded configuration adapter.
