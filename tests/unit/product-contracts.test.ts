@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
+import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, GameDetailSchema, ProviderSyncStatusSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
+import { ProbabilityEvidenceSchema, EngineEvidenceSchema, ProposalSchema, ProposalDecisionSchema, JoinPlanSchema, matchesProposalPreview } from "../../app/features/product-api/contracts";
 
 const directory = resolve("contracts/product-v02/fixtures");
 function fixture(name: string) { return JSON.parse(readFileSync(resolve(directory, `${name}.json`), "utf8")).payload; }
@@ -63,5 +65,55 @@ describe("product v0.2 shared wire", () => {
     const unknown = RepertoireSnapshotSchema.parse(source).decision_presentations[0];
     expect(unknown.available).toBe(false);
     expect(unknown.introduction_matches_current_content).toBe(false);
+  });
+  it("keeps original game moves separate from findings and preserves provider errors/filters", () => {
+    const detail = GameDetailSchema.parse(fixture("game-detail"));
+    expect(detail.moves).toEqual(["d2d4", "d7d5", "c2c4"]);
+    expect(detail.findings[0].played_uci).toBe("d2d4");
+    expect(() => (detail.moves as unknown as string[]).push("c7c6")).toThrow();
+    expect(() => ProviderSyncStatusSchema.parse({ ...fixture("provider-sync-failed"), error: null })).toThrow();
+    expect(GamePageSchema.parse(fixture("incomplete-page")).filters).toEqual([["rated", "false"], ["perfType", "rapid"]]);
+  });
+  it.each(["negative", "renormalized", "personal_population", "illegal_count"])("rejects invalid probability %s", fault => {
+    const payload = fixture("probability-unknown-mass");
+    if (fault === "negative") payload.distribution.moves[0].probability = -.1;
+    else if (fault === "renormalized") payload.distribution.unknown_mass = 0;
+    else if (fault === "personal_population") payload.basis = "personal";
+    else payload.counts = { kind: "counts", total_count: 1, moves: [{ move_uci: "e7e5", count: 1 }] };
+    expect(() => ProbabilityEvidenceSchema.parse(payload)).toThrow();
+  });
+  it("requires every explicit engine candidate and freezes nested scores", () => {
+    const payload = fixture("engine-explicit-candidate");
+    const value = EngineEvidenceSchema.parse(payload);
+    expect(value.requested_candidates).toHaveLength(7);
+    expect(value.candidates[6].move_uci).toBe("a2a3");
+    expect(() => Object.assign(value.best!.score!, { value: -999 })).toThrow();
+    payload.candidates.pop();
+    expect(() => EngineEvidenceSchema.parse(payload)).toThrow();
+  });
+  it.each(["source_revision", "explanation", "card_changes", "max_loss_cp"])("binds approval to displayed %s", async field => {
+    const payload = fixture("proposal");
+    const accept = ProposalDecisionSchema.parse(fixture("proposal-accept"));
+    const subtle = webcrypto.subtle as unknown as SubtleCrypto;
+    expect(await matchesProposalPreview(accept, ProposalSchema.parse(payload), subtle)).toBe(true);
+    if (field === "source_revision") payload.source_revision = 2;
+    else if (field === "explanation") payload.explanation += " changed";
+    else if (field === "card_changes") payload.card_changes[0].moves = ["d2d4"];
+    else {
+      payload.max_loss_cp = 300;
+      expect(() => ProposalSchema.parse(payload)).toThrow();
+      payload.threshold_adjustment_reason = "explicit_context_change_requires_repreview";
+    }
+    expect(await matchesProposalPreview(accept, ProposalSchema.parse(payload), subtle)).toBe(false);
+  });
+  it.each(["inherited_streak", "other_route", "lost_cue", "wrong_connection", "lost_lineage"])("rejects invalid join %s", fault => {
+    const payload = fixture("join-a-b-to-ab");
+    expect(JoinPlanSchema.parse(payload).result.clean_streak).toBe(0);
+    if (fault === "inherited_streak") payload.result.clean_streak = 3;
+    else if (fault === "other_route") payload.right.route_id = "other-route";
+    else if (fault === "lost_cue") payload.result.opponent_cues = [];
+    else if (fault === "wrong_connection") payload.connecting_cues[0].position_key = "other-position";
+    else payload.result.lineage = [];
+    expect(() => JoinPlanSchema.parse(payload)).toThrow();
   });
 });

@@ -1,0 +1,24 @@
+{
+  "model": "RankingInput",
+  "payload": {
+    "repertoire_revisions": [
+      [
+        "white",
+        1
+      ]
+    ],
+    "candidates": [
+      {
+        "decision_id": "decision-e4",
+        "repertoire_id": "white",
+        "reach_probability": 0.2,
+        "evidence_support": null,
+        "uncertainty": 0.4,
+        "personal_encounters": null
+      }
+    ],
+    "evidence_ids": [
+      "synthetic-explorer-evidence"
+    ]
+  }
+}

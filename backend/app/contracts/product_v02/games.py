@@ -53,6 +53,7 @@ class GamePage(Value):
     continuation: str | None
     complete: bool
     saturated: bool
+    filters: tuple[tuple[str, str], ...] = ()
 
     @model_validator(mode="after")
     def honest_completeness(self):
@@ -66,6 +67,42 @@ class GamePage(Value):
 
 class GameAcquisitionPort(Protocol):
     def fetch_page(self, *, account: str, window: GameWindow, continuation: str | None = None) -> GamePage: ...
+
+
+class GameSummary(Value):
+    """Read-only screen projection; canonical normalization keeps its existing owner."""
+    provider: Literal["lichess", "chesscom"]
+    game_id: Identifier
+    source_revision: Revision
+    played_at: UtcTimestamp | None
+    time_precision: TimePrecision
+    player_color: Literal["white", "black"]
+
+    @model_validator(mode="after")
+    def explicit_unknown_time(self):
+        if (self.played_at is None) != (self.time_precision == "unknown"):
+            raise ValueError("unknown source time remains null with unknown precision")
+        return self
+
+
+class ProviderSyncStatus(Value):
+    provider: Literal["lichess", "chesscom"]
+    status: Literal["idle", "pending", "complete", "failed"]
+    operation_id: Identifier | None
+    error: Identifier | None
+
+    @model_validator(mode="after")
+    def honest_operation_status(self):
+        if (self.status == "failed") != (self.error is not None):
+            raise ValueError("failed provider status requires an explicit error")
+        if self.status != "idle" and self.operation_id is None:
+            raise ValueError("non-idle status requires operation identity")
+        return self
+
+
+class RecentGames(Value):
+    games: tuple[GameSummary, ...]
+    sync: tuple[ProviderSyncStatus, ...]
 
 
 FindingKind = Literal["confirmed_miss", "opponent_gap", "missing_own_continuation", "known_unintroduced", "known_unavailable", "conflict", "ambiguous", "coverage_end"]
@@ -107,4 +144,4 @@ class Finding(Value):
         return self
 
 
-__all__ = ["CanonicalGame", "GameWindow", "GameRecord", "GameRejection", "GamePage", "GameAcquisitionPort", "Finding", "FindingKind"]
+__all__ = ["CanonicalGame", "GameWindow", "GameRecord", "GameRejection", "GamePage", "GameAcquisitionPort", "Finding", "FindingKind", "GameSummary", "ProviderSyncStatus", "RecentGames"]
