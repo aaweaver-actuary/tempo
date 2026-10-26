@@ -191,6 +191,7 @@ ownership; its status alone does not prove adoption.
 | [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
 | [Publication and activation](../../../services/content/README.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
 | [Games read and failure](../../../apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322) | Sequence: accepted snapshot read, unavailable state, cleanup | Workbench Games reader and Intelligence transaction/lifespan owners; merged PR322 source, deployment unverified. |
+| [Standalone Explorer evidence](../../../backend/app/analysis/probability/README.md) | Component/sequence: bounded optional acquisition, explicit population, unknown mass and cancellation | #493 provider adapter; injected HTTP/cache resource owners. Proposed source integration; product/deployment isolation unverified. |
 
 ## Drawing conventions
 
