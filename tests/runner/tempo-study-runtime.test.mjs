@@ -208,12 +208,42 @@ test("running outcome uses only concrete public DB and read-only HTTP checks wit
   assert.equal(f.fetchCalls[0].url, f.registration.webUrl); assert.equal(f.fetchCalls[0].options.method, "GET");
 });
 
-test("status can verify a running target without starting, recreating, or manufacturing business writes", async () => {
+test("recovery identity inspection reports running services without requiring or claiming current schema/health", async () => {
   const f = fixture({ running: true }); f.request.command = "status";
   const proof = await f.adapter.inspectRuntime(f.request, f.observation);
-  assert.equal(proof.state, "running"); assert.equal(proof.clusterIdentityVerified, true);
-  assert.equal(f.helpers().length, 0); assert.equal(f.starts().length, 0);
+  assert.equal(proof.state, "running"); assert.equal(proof.scope, "observed"); assert.equal(proof.verified, true);
+  assert.equal(proof.clusterIdentityVerified, false); assert.equal(proof.schemaVerified, false); assert.equal(proof.healthVerified, false);
+  assert.deepEqual(proof.binding, f.request);
+  assert.ok(Object.values(proof.services).every(service => service.running && service.containerId));
+  assert.equal(f.helpers().length, 0); assert.equal(f.starts().length, 0); assert.equal(f.fetchCalls.length, 0);
+  assert.ok(!f.calls.some(call => call.argv[2] === "exec"));
 });
+
+for (const command of ["doctor", "logs", "stop", "restart"])
+  test(`recovery identity inspection identifies the exact unhealthy target for ${command} without availability probes`, async () => {
+    const f = fixture({ running: true }); f.request.command = command;
+    f.state.failControl = true; f.state.db = {}; f.state.http = {}; f.state.ingress = { ok: false, status: 503 };
+    const proof = await f.adapter.inspectRuntime(f.request, f.observation);
+    assert.equal(proof.state, "running"); assert.equal(proof.verified, true);
+    assert.equal(proof.clusterIdentityVerified, false); assert.equal(proof.schemaVerified, false); assert.equal(proof.healthVerified, false);
+    assert.equal(f.helpers().length, 0); assert.equal(f.starts().length, 0); assert.equal(f.fetchCalls.length, 0);
+    assert.ok(!f.calls.some(call => call.argv[2] === "exec"));
+  });
+
+for (const command of ["stop", "logs", "restart"])
+  test(`recovery identity mismatches still block ${command} before any effect`, async () => {
+    for (const [alter, code] of [
+      [f => { f.state.daemonId = "foreign-daemon"; }, "study_runtime_daemon_mismatch"],
+      [f => { f.containers.learning.Image = selected("f"); }, "study_runtime_container_mismatch"],
+      [f => { f.containers.postgres.Mounts[0].Name = "foreign-data"; }, "study_runtime_volume_mismatch"],
+      [f => { f.containers["study-web"].HostConfig.PortBindings["80/tcp"][0].HostPort = "49999"; }, "study_runtime_ingress_mismatch"],
+    ]) {
+      const f = fixture({ running: true }); f.request.command = command; alter(f);
+      await rejects(() => f.adapter.inspectRuntime(f.request, f.observation), code);
+      assert.equal(f.helpers().length, 0); assert.equal(f.starts().length, 0); assert.equal(f.fetchCalls.length, 0);
+      assert.ok(!f.calls.some(call => call.argv[2] === "exec"));
+    }
+  });
 
 for (const location of ["HostConfig", "NetworkSettings"])
   test(`correct rendered ingress cannot hide a different actual ${location} binding behind unrelated HTTP 200`, async () => {

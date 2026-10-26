@@ -53,7 +53,8 @@ print(json.dumps({'ready':{key:ready.get(key) for key in ('status','workspace_id
 
 /** Concrete runtime commands only. The caller owns actual admission/configuration
  * verification and the original lock; prepareDatabase is for start/restart ONLY
- * inside that lock. A cold observation never claims a current schema or health.
+ * inside that lock. Identity inspection never claims a current schema or health;
+ * unavailable application probes cannot prevent recovery of the exact target.
  */
 export function createInstalledStudyRuntime({ run, fetcher = globalThis.fetch, inspectConfiguration, persistentReceipt } = {}) {
   const receipt = object(persistentReceipt) ? freeze(persistentReceipt) : null;
@@ -271,7 +272,10 @@ export function createInstalledStudyRuntime({ run, fetcher = globalThis.fetch, i
   return Object.freeze({
     async inspectRuntime(request, observation) {
       const context = await base(request, observation);
-      return roles.every(role => context.containers[role]?.State?.Running === true) ? running(request, context) : verdict(request, context, "cold");
+      // Authority needs the exact target, even when that target is unhealthy.
+      // Only preparation and post-start outcome verification require live probes.
+      const state = roles.every(role => context.containers[role]?.State?.Running === true) ? "running" : "cold";
+      return verdict(request, context, state);
     },
     async prepareDatabase(request, observation) {
       if (!["start", "restart"].includes(request.command)) fail("study_runtime_prepare_command_invalid", "Only an admitted start/restart under the original lock may prepare PostgreSQL.");
