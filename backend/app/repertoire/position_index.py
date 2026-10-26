@@ -106,6 +106,14 @@ class PositionIndex:
     diagnostics: tuple[Diagnostic, ...]
     adjacency: tuple[RouteAdjacency, ...]
 
+    @property
+    def mapping_diagnostics(self) -> tuple[Diagnostic, ...]:
+        """Mapping unknowns are separate from authored-content validity."""
+        return tuple(Diagnostic(item.key.repertoire_id, item.route_id, item.ply,
+            "ambiguous_physical_mapping" if len(item.bindings) > 1 else "physical_mapping_unknown")
+            for occurrences in self.routes.values() for item in occurrences
+            if item.learner_turn and item.next_move and len(item.bindings) != 1)
+
     def lookup(self, repertoire_id: str, fen: str, variant: str = "standard") -> PositionNode | None:
         return self.nodes.get(position_key(repertoire_id, fen, variant))
 
@@ -198,7 +206,8 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
             current = chess.Board(fen)
             own_turn = current.turn == (raw["learner_color"] == "white")
             next_move = valid_moves[ply] if ply < len(valid_moves) else None
-            raw_bindings = mappings[repertoire_id, opening_position_key(fen), next_move]
+            raw_bindings = [item for item in mappings[repertoire_id, opening_position_key(fen), next_move]
+                            if item.route_id is None or (item.route_id == route_id and item.route_ply == ply)]
             bindings = tuple({item.model_dump_json(): item for item in raw_bindings}.values())
             if len(bindings) > 1:
                 diagnose("ambiguous_physical_mapping", ply)

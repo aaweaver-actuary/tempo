@@ -29,7 +29,8 @@ def snapshot(*routes, variant="standard"):
                 position_key=opening_position_key(board.fen()),
                 selected_response_uci=raw["moves"][supplied["ply"]],
                 presentation_id=supplied["presentation_id"], presentation_revision=supplied["card_revision"],
-                repertoire_revision=1, introduction="unknown", introduced_at=supplied["introduced_at"]))
+                repertoire_revision=1, introduction="unknown", introduced_at=supplied["introduced_at"],
+                route_id=supplied.get("route_id"), route_ply=supplied.get("route_ply")))
             if supplied["reentry_authority_id"]:
                 reentries.append(ReentryAuthority(ply=supplied["ply"], authority_id=supplied["reentry_authority_id"]))
         item["reentries"] = reentries
@@ -151,8 +152,9 @@ def test_index_does_not_alias_inputs():
     before = deepcopy(source)
     index = build_index(source)
     assert source == before
-    source.membership.routes[0].moves[0] = "d2d4"
-    source.membership.routes.clear()
+    with pytest.raises(TypeError): source.membership.routes[0].moves[0] = "d2d4"
+    assert index.routes["rep", "r"][0].route_moves is not source.membership.routes[0].moves
+    assert index.routes["rep", "r"][0].binding is not source.decision_presentations[0]
     occurrence = index.routes["rep", "r"][0]
     assert occurrence.next_move == "e2e4" and occurrence.binding.presentation_id == "card"
     assert occurrence.binding.introduction == "unknown"
@@ -166,3 +168,13 @@ def test_invalid_source_routes_are_diagnosed_deterministically():
     assert not index.complete
     assert [item.code for item in index.diagnostics] == ["invalid_source_position"]
     assert build_index(snapshot(bad, first)).diagnostics == index.diagnostics
+
+
+def test_route_scoped_binding_does_not_authorize_other_transposed_occurrence():
+    index = build_index(snapshot(
+        route("a", bindings=[binding(route_id="a", route_ply=0)]), route("b")))
+    assert index.routes["rep", "a"][0].binding.presentation_id == "card"
+    assert index.routes["rep", "b"][0].binding is None
+    assert index.reentry_candidate("rep", chess.STARTING_FEN) is None
+    assert any(item.route_id == "b" and item.code == "physical_mapping_unknown"
+               for item in index.mapping_diagnostics)
