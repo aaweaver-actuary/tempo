@@ -172,7 +172,8 @@ Reused owner evidence (unchanged implementation inputs; not rerun wholesale):
 PostgreSQL rollback/restart case; that transaction evidence is reused, not rerun.
 #487 `16446623` supplies the receiver interface. #488 `a0751c7e` contains its
 preview/delivery source; its four source checks at executable `d4856935` are
-separate from A01/A02. #490 `57739c9f` has 22 focused unit cases. Native
+separate from A01/A02. #490 final `d55dd02a` has 23 focused unit cases; its
+endpoint/client contract inputs are unchanged from the compiled checkpoint. Native
 ordinary-Study/browser acceptance and complete product isolation remain pending.
 
 Next ready work: obtain Games-owned recent/detail projections and durable
