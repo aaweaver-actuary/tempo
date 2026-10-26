@@ -38,6 +38,8 @@ from . import settings_commands  # noqa: F401 - registers foreground settings co
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
+from .product_composition.feedback_commands import register_commands as register_product_feedback_commands
+register_product_feedback_commands()
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
@@ -284,6 +286,37 @@ def bounded_maintenance(function):
         _maintenance_cooldowns.pop(function.__name__, None)
         return result
     return bounded
+
+
+@celery_app.task(name="app.tasks.maintain_game_feedback", base=CoalescedWakeTask)
+@bounded_maintenance
+def maintain_game_feedback() -> bool:
+    """Resume one persisted Study effect without the optional Games worker."""
+    from .product_composition.feedback_maintenance import claim_feedback_sweep, execute_feedback_sweep
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+    task = None
+    try:
+        with activity_gate.background_job("study_game_feedback", "one-slice", yielding=True):
+            task = claim_feedback_sweep()
+            if task is None:
+                return False
+            complete = execute_feedback_sweep(task)
+        if not complete:
+            celery_app.send_task("app.tasks.maintain_game_feedback", countdown=1, queue="foreground")
+        return True
+    except BackgroundAdmissionDeferred:
+        if task is not None:
+            defer_task_for_foreground(task)
+        return False
+    except CurrentDecisionUnavailable as error:
+        _LOGGER.info("Study feedback maintenance deferred: %s", error.reason)
+        if task is not None:
+            defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+        return False
+    except (LockNotAvailable, DeadlockDetected, SerializationFailure, TransactionTimeout):
+        if task is not None:
+            defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+        return False
 
 
 @celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)

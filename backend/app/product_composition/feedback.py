@@ -11,10 +11,12 @@ import json
 import os
 from pathlib import Path
 
+from tempo_game_review_contracts import CanonicalGame
+
 from app.contracts.product_v02.games import Finding, GameRecord
 from app.contracts.product_v02.learning import GameLapse, LearningFeedbackPort, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
-from app.games.feedback.comparison import compare_record, effect_key
+from app.games.feedback.comparison import compare_game, compare_record, effect_key
 from app.repertoire import build_index
 from app.study.game_feedback import semantic_digest
 
@@ -46,14 +48,37 @@ def prepare_record_feedback(record: GameRecord, *, provider: str, account: str,
     findings = compare_record(record, provider=provider, account=account,
         workspace_id=workspace_id, snapshot=snapshot, reentry_lookup=index,
         game_id=game_id)
+    return _prepare(findings, workspace_id=workspace_id, snapshot=snapshot,
+        detected_at=detected_at, occurred_at=record.played_at,
+        source_digest=record.source_digest, occurrence_ply=occurrence_ply)
+
+
+def prepare_game_feedback(game: CanonicalGame, *, provider: str,
+                          time_precision: str, snapshot: RepertoireSnapshot,
+                          detected_at: str, occurrence_ply: int | None = None) -> PreparedFeedback:
+    """Prepare feedback from retained canonical facts without inventing PGN.
+
+    The caller supplies the existing canonical identity/digest and retained time
+    precision. Unknown precision stays unknown in the owning comparison policy.
+    """
+    index = build_index(snapshot)
+    findings = compare_game(game, provider=provider, snapshot=snapshot,
+        time_precision=time_precision, reentry_lookup=index)
+    return _prepare(findings, workspace_id=game.workspace_id, snapshot=snapshot,
+        detected_at=detected_at, occurred_at=game.played_at,
+        source_digest=game.source_digest, occurrence_ply=occurrence_ply)
+
+
+def _prepare(findings, *, workspace_id, snapshot, detected_at, occurred_at,
+             source_digest, occurrence_ply):
     selected = tuple(item for item in findings if item.kind == "confirmed_miss"
         and (occurrence_ply is None or item.ply == occurrence_ply))
     if len(selected) != 1:
         raise ValueError("one_confirmed_decision_occurrence_required")
     finding = selected[0]
     lapse = GameLapse(key=effect_key(finding, workspace_id=workspace_id),
-        finding=finding, detected_at=detected_at, occurred_at=record.played_at,
-        payload_digest=record.source_digest)
+        finding=finding, detected_at=detected_at, occurred_at=occurred_at,
+        payload_digest=source_digest)
     # Reuse Study's existing pure digest implementation. It ignores the supplied
     # digest and detection/retry clocks; no second semantic hash policy lives here.
     lapse = lapse.model_copy(update={"payload_digest": semantic_digest(lapse)})
