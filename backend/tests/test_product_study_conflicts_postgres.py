@@ -195,3 +195,30 @@ def test_native_ambiguous_scope_is_pending_and_preexisting_block_is_not_restored
         resolved=ConflictCommand(case.command.command_id+'-restore',case.scope.repertoire_id,FENCE,(case.scope,))
         assert not current_study_conflicts(database,authority=authority,clock=lambda:NOW).synchronize(resolved).restored_queue_ids
         assert queue(database,case.affected)['status']=='blocked'
+
+
+def test_native_resolution_does_not_clear_another_active_scoped_hold(case):
+    other_route=case.scope.route_id+'-other'
+    with case.transaction() as database:
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            SELECT %s,repertoire_id,name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines WHERE id=%s""",
+            (other_route,case.scope.route_id))
+        database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,
+            card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,
+            last_decision_index,decision_fen_keys_json)
+            SELECT repertoire_id,generation,%s,decision_index,card_id,decision_fen_key,starting_fen,moves_json,
+                trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json
+            FROM opening_graph_steps WHERE repertoire_id=%s AND line_id=%s""",
+            (other_route,case.scope.repertoire_id,case.scope.route_id))
+        second=Occurrence(case.scope.repertoire_id,other_route,0,case.scope.presentation_id,1)
+        authority=Authority()
+        service=current_study_conflicts(database,authority=authority,clock=lambda:NOW)
+        both=ConflictCommand(case.command.command_id+'-both',case.scope.repertoire_id,FENCE,(case.scope,second))
+        service.synchronize(both)
+        authority.eligible,authority.reason=True,None
+        first=ConflictCommand(case.command.command_id+'-one',case.scope.repertoire_id,FENCE,(case.scope,))
+        assert not service.synchronize(first).restored_queue_ids
+        assert queue(database,case.affected)['status']=='blocked'
+        final=ConflictCommand(case.command.command_id+'-last',case.scope.repertoire_id,FENCE,(second,))
+        assert service.synchronize(final).restored_queue_ids==(case.affected,)
+        assert queue(database,case.affected)['status']=='queued'
