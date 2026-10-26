@@ -189,3 +189,63 @@ original deadline, lapse receipt, retry/settlement identities, history and
 protected-attempt outcomes, resource cleanup, and any unavailable native/browser
 or actual-data proof. Missing, skipped and zero-selected checks are unverified.
 Source integration is not installation, merge or deployment.
+
+## C repertoire conflict audit — #501
+
+C is an independently reviewable continuation through the retained Repertoire
+workspace. The [mount](../../../app/features/product-api/RepertoireAuditMount.tsx)
+keeps its supplied existing library available and lazily opens #500 after an
+explicit repertoire choice. It does not query an optional provider or engine.
+[The client](../../../app/features/product-api/repertoire-review-api.ts) preserves
+shared proposals/receipts; a 202 is pending, never approval success. Its session
+retains exact retry identity across tab changes.
+
+[repertoire.py](repertoire.py) adapts #492's exact conflict report and complete
+manual alternatives to #500. GETs and choice generation are inert. Actual Study
+block facts must come from the current Study owner under the exact source fence;
+without those facts the UI says unknown. The explicit audit POST requires the
+owning scoped block/suspend/restore operation and fails unavailable when absent.
+No detector success is described as a persisted block.
+
+[repertoire_commands.py](repertoire_commands.py) supplies `CurrentSnapshots`,
+`DispatchedChanges`, `create_current_repertoire_http` and explicit command
+registration. Snapshot reads release the borrowed reader before returning.
+Writes use the existing durable foreground gateway and its borrowed writer
+transaction; #492's injected current changes factory alone publishes content and
+approval receipts. Stable payload-bound command identities preserve uncertain
+acknowledgments across retry/remount. No SQL, second writer, conflict decision,
+queue policy or automatic job is owned by composition.
+
+```mermaid
+flowchart LR
+  Library["Retained Repertoire library"] --> Mount["Optional C audit tab"]
+  Mount --> View["#500 RepertoireReviewView"]
+  View --> HTTP["#501 C read / command router"]
+  HTTP --> Read["CurrentSnapshots: one released read"]
+  Read -. "current generic projection pending" .-> Snapshot["#483 current repertoire snapshot"]
+  HTTP --> Gateway["Existing foreground command gateway"]
+  Gateway --> Binding["#501 borrowed transaction bindings"]
+  Binding -. "actual factory pending" .-> Changes["#492 current changes / approved publisher"]
+  Binding -. "actual scoped command pending" .-> Blocks["Study owner: conflict blocks / affected attempt suspension"]
+  Blocks --> Local["Study-owned persisted eligibility"]
+  Study["ordinary Study"] --> Local
+  Changes --> Content["Repertoire source / preview / approval evidence"]
+```
+
+Solid edges describe this source increment. Dotted operations are exact owner
+handoffs still being implemented; **no fake callback is registered as product
+acceptance**. #492's current publication must enlist displayed source/card effects
+and receipt in the same transaction and preserve unrelated history/memberships.
+Study owns affected attempt suspension without Again and valid eligibility
+restoration; its local serving path must not call this optional HTTP producer.
+Shared host/database contention and actual browser/PG behavior remain unverified.
+
+C's exact source checks are `make python-file
+FILE=backend/tests/test_product_repertoire_integration.py` and `make unit-file
+FILE=tests/unit/product-repertoire-integration.test.ts`. Its named actual product
+command is `make ui-file FILE=product-repertoire-review.spec.ts`; the new fixture
+requires the disposable health/database marker and verified Compose labels before
+seeding one synthetic legacy conflict. Source checks and a prepared/typechecked
+browser fixture are not A05. Runtime/root registration and owner migration054
+stay on this C branch; D/E implementations and the first release candidate are
+separate. No live data/settings, service restart, install, deploy or merge occurs.
