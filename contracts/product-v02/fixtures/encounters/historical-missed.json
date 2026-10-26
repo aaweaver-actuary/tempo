@@ -1,0 +1,47 @@
+{
+  "model": "GameEncounter",
+  "payload": {
+    "interface_version": "0.2.1",
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-historical-missed",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source": {
+      "provider": "lichess",
+      "game_id": "synthetic-historical-missed",
+      "source_revision": 1,
+      "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "decision": {
+      "decision_id": "existing-decision",
+      "repertoire_id": "white",
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "selected_response_uci": "e2e4",
+      "presentation_id": "existing-physical-card",
+      "presentation_revision": 1,
+      "repertoire_revision": 1,
+      "introduction": "introduced",
+      "introduced_at": "2026-10-20T12:00:00Z",
+      "available": true,
+      "introduction_matches_current_content": true,
+      "route_id": "route-a",
+      "route_ply": 0,
+      "introduced_before_game": false,
+      "introduction_game": {
+        "provider": "lichess",
+        "game_id": "synthetic-historical-missed",
+        "source_revision": 1,
+        "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    "expected_uci": "e2e4",
+    "played_uci": "d2d4",
+    "observation": "missed",
+    "detected_at": "2026-10-26T12:00:00Z",
+    "occurred_at": "2020-01-01T12:00:00Z",
+    "payload_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

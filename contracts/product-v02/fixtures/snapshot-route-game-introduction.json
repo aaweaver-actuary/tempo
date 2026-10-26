@@ -1,0 +1,93 @@
+{
+  "model": "RepertoireSnapshot",
+  "payload": {
+    "interface_version": "0.2.0",
+    "membership": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "snapshot_id": "owner-capture",
+      "revision": 1,
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "source_revision": "owner-source-1",
+      "captured_at": "2026-10-26T12:00:00Z",
+      "basis": "current_repertoire",
+      "scope_id": "white",
+      "scope_repertoire_ids": [
+        "white"
+      ],
+      "complete": true,
+      "available": true,
+      "unavailable_reason": null,
+      "routes": [
+        {
+          "repertoire_id": "white",
+          "route_id": "route-a",
+          "policy_id": "white-policy",
+          "learner_color": "white",
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "moves": [
+            "g1f3",
+            "d7d5",
+            "g2g3",
+            "c7c5",
+            "f1g2"
+          ],
+          "reentries": []
+        },
+        {
+          "repertoire_id": "white",
+          "route_id": "route-b",
+          "policy_id": "white-policy",
+          "learner_color": "white",
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "moves": [
+            "g2g3",
+            "c7c5",
+            "g1f3",
+            "d7d5",
+            "f1g2"
+          ],
+          "reentries": []
+        }
+      ]
+    },
+    "variant": "standard",
+    "learner_color": "white",
+    "boundaries": [
+      {
+        "route_id": "route-a",
+        "terminal_ply": 5,
+        "deliberate": true
+      },
+      {
+        "route_id": "route-b",
+        "terminal_ply": 5,
+        "deliberate": true
+      }
+    ],
+    "decision_presentations": [
+      {
+        "decision_id": "existing-decision",
+        "repertoire_id": "white",
+        "position_key": "rnbqkbnr/pp2pppp/8/2pp4/8/5NP1/PPPPPP1P/RNBQKB1R w KQkq -",
+        "selected_response_uci": "f1g2",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "repertoire_revision": 1,
+        "introduction": "introduced",
+        "introduced_at": null,
+        "available": true,
+        "introduction_matches_current_content": true,
+        "route_id": "route-a",
+        "route_ply": 4,
+        "introduced_before_game": true,
+        "introduction_game": {
+          "provider": "lichess",
+          "game_id": "synthetic-transposed-game",
+          "source_revision": 1,
+          "source_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      }
+    ]
+  }
+}
