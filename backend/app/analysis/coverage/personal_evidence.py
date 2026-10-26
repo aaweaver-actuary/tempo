@@ -1,7 +1,8 @@
 """Stable source-game deduplication, without population probability fusion."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 import hashlib
 import json
 
@@ -9,6 +10,7 @@ import chess
 from tempo_evidence_math import opening_position_key
 
 from app.contracts.product_v02.analysis import RankingCandidate
+from app.contracts.product_v02.learning import GameEncounter
 from app.contracts.product_v02.repertoire import DecisionPresentation
 
 IMPORTANCE_VERSION = "current-decision-personal-importance-v1"
@@ -79,6 +81,7 @@ class DecisionImportance:
     differing_response_sources: tuple[SourceGame, ...]
     dependency_digest: str
     policy_version: str = IMPORTANCE_VERSION
+    source_encounters: tuple[GameEncounter, ...] = ()
 
 
 def decision_importance(*, current_approved_decisions: tuple[DecisionPresentation, ...],
@@ -119,4 +122,66 @@ def decision_importance(*, current_approved_decisions: tuple[DecisionPresentatio
             decision=decision.model_dump(mode="json"), encounters=sources, differing=differing),
             sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
         results.append(DecisionImportance(decision, facts, sources, differing, digest))
+    return tuple(results)
+
+
+def importance_from_encounters(*, workspace_id: str, account: str,
+                               current_approved_decisions: tuple[DecisionPresentation, ...],
+                               encounters: tuple[GameEncounter, ...]) -> tuple[DecisionImportance, ...]:
+    """Consume frozen #533 facts, preserving observed misses separately from lapse.
+
+    Input is a complete supplied encounter set per source-game revision, not an
+    append delta. The owning pipeline applies source/control exclusions first.
+    Current approval/mapping comes from its owner, not the old event's state.
+    """
+    if not workspace_id or not account:
+        raise ValueError("encounter_importance_requires_workspace_and_account")
+    current = {(item.repertoire_id, item.decision_id): item for item in current_approved_decisions}
+    events, grouped, digests = {}, {}, {}
+    for event in encounters:
+        if event.key.workspace_id != workspace_id:
+            raise ValueError("encounter_importance_workspace_mismatch")
+        group = event.source.provider, account, event.source.game_id, event.source.source_revision
+        if group in digests and digests[group] != event.source.source_digest:
+            raise ValueError("conflicting_encounter_source_digest")
+        digests[group] = event.source.source_digest
+        identity = event.key.logical_id(), event.source.source_revision
+        def observation(item):
+            return (item.source, item.decision.repertoire_id, item.decision.position_key,
+                    item.expected_uci, item.played_uci, item.observation)
+        if identity in events and observation(events[identity]) != observation(event):
+            raise ValueError("conflicting_encounter_observation")
+        # Retry/recomparison metadata cannot discard the original detection.
+        order = lambda item: (datetime.fromisoformat(item.detected_at.replace("Z", "+00:00")), item.model_dump_json())
+        if identity not in events or order(event) < order(events[identity]):
+            events[identity] = event
+        grouped.setdefault(group, [])
+    for event in events.values():
+        group = event.source.provider, account, event.source.game_id, event.source.source_revision
+        mapping = current.get((event.decision.repertoire_id, event.key.decision_id))
+        if mapping is not None:
+            if mapping.position_key != event.decision.position_key:
+                raise ValueError("encounter_current_position_mismatch")
+            grouped[group].append(PersonalEncounter(mapping.repertoire_id, mapping.position_key, event.played_uci))
+    games = deduplicate_games(tuple(PersonalGame(*group, tuple(observations))
+                                   for group, observations in grouped.items()))
+    latest = {(*game.source_id, game.source_revision) for game in games}
+    results = []
+    for result in decision_importance(current_approved_decisions=current_approved_decisions, games=()):
+        supported = tuple(sorted((event for event in events.values()
+            if (event.source.provider, account, event.source.game_id, event.source.source_revision) in latest
+            and (event.decision.repertoire_id, event.key.decision_id) == (
+                result.decision.repertoire_id, result.decision.decision_id)), key=lambda event: event.key.logical_id()))
+        missed = tuple(sorted({(event.source.provider, account, event.source.game_id, event.source.source_revision)
+                               for event in supported if event.observation == "missed"}))
+        sources = tuple(sorted({(event.source.provider, account, event.source.game_id, event.source.source_revision)
+                                for event in supported}))
+        # The immutable original observation wins over reinterpreting a past
+        # played move against a later repertoire response. Matched stays matched.
+        digest = hashlib.sha256(json.dumps(dict(current=result.dependency_digest,
+            encounters=[event.model_dump(mode="json") for event in supported]),
+            sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        results.append(replace(result, differing_response_sources=missed, encounter_sources=sources,
+            facts=result.facts.model_copy(update={"personal_encounters": len(sources)}),
+            source_encounters=supported, dependency_digest=digest))
     return tuple(results)
