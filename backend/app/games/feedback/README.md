@@ -221,3 +221,94 @@ PostgreSQL test requires explicit `TEMPO_489_TEST_DSN` (loopback database name
 `tempo.task=issue-489-disposable` label). It never guesses a live URL and fails if
 the fixture is absent; a missing fixture is not a pass. Acquire the shared
 nontruncating advisory validation lock before either command; do not unlink it.
+
+## Immediately next release: encounter-priority delivery (#489 addendum)
+
+**Next-release source**, consuming #482/#533 checkpoint
+`46f07e9a6844c4772b12148a9ca303b6e34e883b` (interface 0.2.1). The first-release branch and its qualified installed path
+remain unchanged. This extension uses the same captured page, normalized game,
+exact repertoire occurrence, original detection time, GameEffectKey, pending
+command row, retry and hold/withdraw operations. There is no second ingestion
+workflow, live backfill, UI/synchronization prerequisite or producer scheduler.
+
+The existing #486 comparison boundary (`b2a9b903`) supplies `Finding` facts.
+With `encounter_feedback=True`, the Coordinator combines those facts with one
+exact available `DecisionPresentation` from the supplied snapshot and preserves correct versus different play, original provider/account/source
+revision/digest/time precision, exact mapped decision/presentation/route and
+one-based occurrence ply. `known_unintroduced` alone cannot authorize a fresh
+introduction: that finding can also describe a card introduced after the game.
+The producer consumes the shared encounter value, never fabricates lapse proof.
+
+Study's new semantic owner command decides priority-only review versus genuine
+first introduction, revalidating current mapping/content/admission state. Only
+the existing proven introduced-before-game miss path may apply a lapse. Historical
+misses remain relevance even when introduction or later learning makes an FSRS
+lapse inappropriate; correctly played encounters remain frequency facts, never
+fabricated recall failures. No introduction allowance, Study-only/pause control
+or <=48h exception is chosen by Games. The actual owner disposition/reason must
+be persisted verbatim, including paused/deferred pending receipts.
+
+The first persisted semantic effect for a logical GameEffectKey remains the
+original event across subsequent admission, overlaps and recomparison. An
+unintroduced encounter can never later be converted into a new GameLapse or a
+second first-introduction charge. Changed/withdrawn evidence fences either
+pending disposition; a delayed original cannot reactivate it or reverse history.
+
+```mermaid
+flowchart LR
+  Existing["Existing page capture / normalized game"] --> Facts["Shared exact encounter facts"]
+  Facts --> Durable["Existing Games pending-delivery row / stable GameEffectKey"]
+  Durable -->|"same-command retry"| Study["Study owner: accept_encounter"]
+  Study --> Receipt["actual priority / fresh-introduction / paused / deferred receipt"]
+  Control["Existing key + source-revision hold/withdraw"] --> Durable
+  Control --> Study
+```
+
+The Games database layout needs no new table or column: the existing typed JSON
+source/capture/delivery payloads gain shared `GameEncounter` values and the exact
+`EncounterReceipt` subtype;
+`command_kind` is a text fact. Production schema ownership remains #491's current
+Games migration. Only the existing workflow/native files gain focused regression
+cases for uncertain acknowledgment, later admission/recomparison, restart,
+pre-admission correction, and explicit paused/deferred readback. A fake receiver
+proves producer semantics; actual Study first-introduction atomicity belongs to
+#487 and the next-release normal-Study integration owner.
+
+
+Enable the source extension with `encounter_feedback=True` on the existing
+Coordinator and an `EncounterFeedbackPort` receiver. The default `False` preserves
+the first-release comparer/receiver path. Composition consumes #486's existing
+`compare_game` / `compare_record` entry; no concrete comparer, Study or Analysis implementation is imported.
+#494's published importance projection remains its owner: Games does not copy its
+scoring or turn an old priority observation into lapse authority. The shared
+transport keeps source, observation and disposition inspectable for that owner.
+
+`Delivery` now validates exactly one of `lapse`, `encounter` or `control`.
+The existing pending row uses `command_kind='encounter'`; control publication
+supersedes either pending disposition. `SourceState.effects` retains the original
+`GameLapse | GameEncounter` value once per logical occurrence. Later current
+admission/repertoire metadata does not reconstruct an old encounter as a lapse;
+changed source/expected-play facts quarantine and control its original identity.
+The original command/detection remains frozen while each new factual comparison
+is retained separately in `SourceState.encounters` / `Capture.encounters`.
+
+An actual encounter acknowledgment must be a shared `EncounterReceipt` for the
+same key/source revision/digest/observation. Receipt serialization/readback retains
+`disposition`, `admission_status`, `deferred_reason`, original detection and
+observation fields. `Delivery.state='acknowledged'` means Study accepted the
+command, not that a pending/paused introduction completed. Study owns resumption;
+Games does not spin retries for a durably accepted deferred receipt. A lost
+acknowledgment still retries the exact original command through the existing
+backoff path. No paused-control exception or scheduling decision is made here.
+
+The native workflow contract checks Games transactions and JSON readback using
+an injected semantic receiver, including lost acknowledgment plus actual server
+restart. It does not certify Study's fresh-introduction transaction. #487 owns
+that separate real receiving-owner proof, and normal-Study next-release product
+acceptance remains unverified until composition consumes both checkpoints.
+
+Later comparison lacking a fresh eligible finding does not erase an original
+encounter or its historical relevance. The original typed command remains in the
+source ledger. Raw-source correction or a positively contradictory observation
+still quarantines/fences it; current Study admission and authority checks remain
+with the receiving owner.

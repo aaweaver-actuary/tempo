@@ -5,8 +5,8 @@ import hashlib
 import json
 from typing import Mapping
 
-from app.contracts.product_v02.learning import GameEffectControl, GameEffectKey, GameLapse, LearningFeedbackPort
-from app.contracts.product_v02.repertoire import RepertoireSnapshotPort
+from app.contracts.product_v02.learning import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
+from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshotPort
 
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,
                     GamesStore, JobState, Normalizer, PageCommit, SourceState)
@@ -16,23 +16,37 @@ def stable_id(*parts: object) -> str:
     return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
-def delivery_for(source_key: str, command: GameLapse | GameEffectControl) -> Delivery:
-    kind = "lapse" if isinstance(command, GameLapse) else command.action
-    revision = command.finding.source_revision if isinstance(command, GameLapse) else command.source_revision
-    return Delivery(operation_id=stable_id(kind, command.key.logical_id(), revision), source_key=source_key,
+def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
+    if isinstance(command, GameLapse):
+        return command.finding.source_revision
+    return command.source.source_revision if isinstance(command, GameEncounter) else command.source_revision
+
+
+def delivery_for(source_key: str, command: GameLapse | GameEncounter | GameEffectControl) -> Delivery:
+    kind = "lapse" if isinstance(command, GameLapse) else ("encounter" if isinstance(command, GameEncounter) else command.action)
+    return Delivery(operation_id=stable_id(kind, command.key.logical_id(), source_revision(command)), source_key=source_key,
                     lapse=command if isinstance(command, GameLapse) else None,
+                    encounter=command if isinstance(command, GameEncounter) else None,
                     control=command if isinstance(command, GameEffectControl) else None)
+
+
+def encounter_observation(encounter: GameEncounter) -> tuple:
+    """Admission/review state is not a new historical source observation."""
+    return (encounter.key.logical_id(), encounter.source.source_digest, encounter.decision.position_key,
+            encounter.expected_uci, encounter.played_uci)
 
 
 class Coordinator:
     def __init__(self, *, providers: Mapping[str, Acquisition], normalizer: Normalizer,
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
-                 learning: LearningFeedbackPort, clock: Clock, max_page_records: int = 100,
+                 learning: LearningFeedbackPort | EncounterFeedbackPort, clock: Clock,
+                 encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
             raise ValueError("page bounds exceed optional workflow budget")
         if not 1 <= max_page_positions <= 100000:
             raise ValueError("position batch exceeds optional workflow budget")
+        self.encounter_feedback = encounter_feedback
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
@@ -69,7 +83,7 @@ class Coordinator:
                 return  # No checkpoint or partial page has been published.
             key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
             previous = self.store.source(key)
-            normalized, findings, diagnostic = None, (), None
+            normalized, findings, encounters, diagnostic = None, (), (), None
             try:
                 normalized = self.normalizer.normalize(record, spec)
                 if (normalized.workspace_id, normalized.source_revision, normalized.source_digest) != (
@@ -89,6 +103,35 @@ class Coordinator:
                             finding.repertoire_id in snapshot.membership.scope_repertoire_ids
                             and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
                         raise ValueError("comparison repertoire scope differs from captured snapshot")
+                if self.encounter_feedback:
+                    detected_at = self.clock.utc_now()
+                    candidates = []
+                    for finding in findings:
+                        if (finding.kind not in {"known_unintroduced", "confirmed_miss"}
+                                or finding.membership != "present" or len(finding.expected_uci) != 1):
+                            continue
+                        mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
+                            for mapping in snapshot.decision_presentations
+                            if mapping.available and (mapping.repertoire_id, mapping.repertoire_revision,
+                                mapping.decision_id, mapping.position_key, mapping.selected_response_uci,
+                                mapping.presentation_id, mapping.presentation_revision) == (
+                                finding.repertoire_id, finding.repertoire_revision, finding.decision_id,
+                                finding.position_key, finding.expected_uci[0], finding.presentation_id,
+                                finding.presentation_revision)}
+                        if len(mappings) != 1:
+                            continue  # Retain the finding; never guess a current presentation.
+                        if finding.ply > len(normalized.moves) or finding.played_uci != normalized.moves[finding.ply - 1]:
+                            raise ValueError("encounter played move differs from captured game")
+                        decision = next(iter(mappings.values()))
+                        candidates.append(GameEncounter(key=GameEffectKey(workspace_id=spec.workspace_id,
+                            provider=spec.provider, game_id=normalized.game_id, decision_id=decision.decision_id,
+                            occurrence_ply=finding.ply),
+                            source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
+                                source_revision=record.source_revision, source_digest=record.source_digest),
+                            decision=decision, expected_uci=finding.expected_uci[0], played_uci=finding.played_uci,
+                            observation="matched" if finding.played_uci == finding.expected_uci[0] else "missed",
+                            detected_at=detected_at, occurred_at=record.played_at, payload_digest=record.source_digest))
+                    encounters = tuple(candidates)
             except ValueError:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
                 boundary = True
@@ -97,9 +140,19 @@ class Coordinator:
             held = changed or bool(previous and previous.quarantined) or diagnostic is not None
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
+            observations = {}
+            for item in encounters:
+                observations.setdefault(item.key.logical_id(), set()).add(encounter_observation(item))
             for effect in effects:
-                if held or (effect.key.decision_id, effect.key.occurrence_ply) not in confirmed:
-                    command = GameEffectControl(key=effect.key, source_revision=effect.finding.source_revision,
+                if isinstance(effect, GameLapse):
+                    still_supported = (effect.key.decision_id, effect.key.occurrence_ply) in confirmed
+                else:
+                    current = observations.get(effect.key.logical_id())
+                    # Later admission/learning or missing proof cannot erase history.
+                    # A positively changed observation still fences pending work.
+                    still_supported = current is None or encounter_observation(effect) in current
+                if held or not still_supported:
+                    command = GameEffectControl(key=effect.key, source_revision=source_revision(effect),
                         action="hold", reason="source_corrected" if changed else "reanalysis")
                     deliveries.append(delivery_for(key, command))
                     held = True
@@ -116,14 +169,21 @@ class Coordinator:
                     effects.append(lapse)
                     occupied_keys.add((finding.decision_id, finding.ply))
                     deliveries.append(delivery_for(key, lapse))
+                for encounter in encounters:
+                    occurrence = (encounter.key.decision_id, encounter.key.occurrence_ply)
+                    if occurrence in occupied_keys or encounter.key.occurrence_ply in prior_plies:
+                        continue
+                    effects.append(encounter)
+                    occupied_keys.add(occurrence)
+                    deliveries.append(delivery_for(key, encounter))
             diagnostic = diagnostic or ("changed_source_requires_D08_resolution" if held else None)
             sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
                 record_fingerprint=previous.record_fingerprint if previous else fingerprint,
                 normalized=previous.normalized if changed else normalized, findings=findings,
-                comparison_revision=comparison_revision, effects=tuple(effects), quarantined=held, diagnostic=diagnostic))
+                comparison_revision=comparison_revision, effects=tuple(effects), encounters=encounters, quarantined=held, diagnostic=diagnostic))
             captures.append(Capture(source_key=key, account=spec.account, record=record, provider_record_json=record.model_dump_json(), normalized=normalized,
-                findings=findings, comparison_revision=comparison_revision, diagnostic=diagnostic))
+                findings=findings, encounters=encounters, comparison_revision=comparison_revision, diagnostic=diagnostic))
             quarantined = quarantined or held
         resumable = page.continuation is not None and page.continuation != job.continuation
         safe = not boundary and (page.complete or resumable)
@@ -145,9 +205,16 @@ class Coordinator:
         """Persist the owner receipt; transport success alone is never evidence."""
         command = delivery.command
         try:
-            receipt = (self.learning.control_effect(command) if delivery.control is not None
-                       else self.learning.accept_lapse(command))
-            revision = command.source_revision if delivery.control else command.finding.source_revision
+            if delivery.control is not None:
+                receipt = self.learning.control_effect(command)
+            elif delivery.encounter is not None:
+                receipt = self.learning.accept_encounter(command)
+                if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (
+                        command.source.source_digest, command.observation):
+                    raise ValueError("receiver_encounter_receipt_provenance_mismatch")
+            else:
+                receipt = self.learning.accept_lapse(command)
+            revision = source_revision(command)
             if receipt.key != command.key or receipt.source_revision != revision or not receipt.owner_receipt_id:
                 raise ValueError("receiver_receipt_identity_mismatch")
             state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
@@ -171,7 +238,7 @@ class Coordinator:
         if source_key != stable_id(job.spec.workspace_id, job.spec.provider, source.original.source_game_id):
             raise ValueError("withdrawal source is outside this job scope")
         controls = tuple(delivery_for(source_key, GameEffectControl(key=effect.key,
-            source_revision=effect.finding.source_revision, action="withdraw",
+            source_revision=source_revision(effect), action="withdraw",
             reason="source_deleted")) for effect in source.effects)
         quarantined = source.model_copy(update={"quarantined": True,
             "diagnostic": "withdrawn_source_requires_D08_resolution"})

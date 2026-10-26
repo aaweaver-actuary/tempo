@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameRejection, GameWindow
-from app.contracts.product_v02.learning import LearningReceipt
+from app.contracts.product_v02.learning import EncounterReceipt, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.games.feedback.coordinator import Coordinator, delivery_for, stable_id
 from app.games.feedback.jobs import FeedbackRunner
@@ -72,7 +72,7 @@ class MemoryStore:
         for delivery in commit.deliveries:
             if delivery.control:
                 for key, prior in tuple(self.deliveries.items()):
-                    if prior.lapse and prior.command.key == delivery.command.key and prior.state == "pending":
+                    if prior.command_kind in {"lapse", "encounter"} and prior.command.key == delivery.command.key and prior.state == "pending":
                         self.deliveries[key] = prior.model_copy(update={"state": "superseded"})
             self.deliveries.setdefault(delivery.operation_id, delivery)
     def pending_delivery(self, now):
@@ -365,3 +365,172 @@ def test_provider_extension_provenance_survives_base_projection():
     capture = next(iter(h.store.captures.values()))
     assert json.loads(capture.provider_record_json)["source_metadata"] == [["source_fingerprint", "raw-provider-json-hash"]]
     assert json.loads(next(iter(h.store.pages.values())))["filters"] == [["rated", "true"]]
+
+
+class EncounterReceiver(Receiver):
+    """Semantic owner fake; actual introduction transactions belong to #487."""
+    def __init__(self):
+        super().__init__()
+        self.introduced_cards = set()
+        self.deferred_reason = None
+        self.first_introductions = 0
+
+    def accept_encounter(self, encounter):
+        self.calls.append(encounter)
+        logical_id = encounter.key.logical_id()
+        prior = self.receipts.get(logical_id)
+        if isinstance(prior, EncounterReceipt):
+            return prior.model_copy(update={"outcome": "duplicate"})
+        held = prior is not None and prior.status == "held"
+        fresh = encounter.decision.introduction == "unintroduced" and encounter.decision.presentation_id not in self.introduced_cards
+        disposition = "first_introduction" if fresh else ("review_priority" if encounter.observation == "missed" else "frequency_only")
+        deferred = self.deferred_reason
+        frequency_only = disposition == "frequency_only" and not held
+        if not held and deferred is None and fresh:
+            self.introduced_cards.add(encounter.decision.presentation_id)
+            self.first_introductions += 1
+        receipt = EncounterReceipt(key=encounter.key, source_revision=encounter.source.source_revision,
+            status="held" if held else ("pending" if deferred else "applied"),
+            outcome="withdrawn" if held else "accepted", owner_receipt_id="owner-encounter-receipt",
+            admitted_at=None, available_by=None, applied_at=None,
+            reason="source_held" if held else ("owner_deferred" if deferred else None),
+            detected_at=encounter.detected_at, source_digest=encounter.source.source_digest,
+            observation=encounter.observation, observation_recorded=not held,
+            disposition=None if held else disposition,
+            admission_status="pending" if held or deferred else ("not_requested" if frequency_only else "available"),
+            deferred_reason=deferred if not held else None)
+        self.receipts[logical_id] = receipt
+        if self.uncertain:
+            self.uncertain = False
+            raise TimeoutError("owner_committed_but_ack_lost")
+        return receipt
+
+    def encounter_status(self, key):
+        receipt = self.receipts.get(key.logical_id())
+        return receipt if isinstance(receipt, EncounterReceipt) else None
+
+
+def encounter_harness(store=None, *, observation="missed"):
+    h = harness(store, kinds=("known_unintroduced",))
+    h.receiver = EncounterReceiver()
+    h.coordinator.learning = h.receiver
+    h.encounter_state = SimpleNamespace(introduced=False)
+    normalize = h.coordinator.normalizer.normalize
+    if observation == "matched":
+        h.coordinator.normalizer = SimpleNamespace(normalize=lambda value, request:
+            normalize(value, request).model_copy(update={"moves": ["e2e4"]}))
+
+    capture_snapshot = h.coordinator.snapshots.snapshot
+    def snapshot(repertoire_id):
+        captured = capture_snapshot(repertoire_id)
+        mapping = captured.decision_presentations[0].model_copy(update={
+            "introduction": "introduced" if h.encounter_state.introduced else "unintroduced",
+            "introduced_at": "2026-10-26T00:00:00Z" if h.encounter_state.introduced else None,
+            "introduced_before_game": None, "introduction_game": None})
+        return captured.model_copy(update={"decision_presentations": (mapping,)})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=snapshot)
+    if observation == "matched":
+        compare = h.coordinator.comparer.compare
+        h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs:
+            tuple(item.model_copy(update={"played_uci": "e2e4"}) for item in compare(*args, **kwargs)))
+    h.coordinator.encounter_feedback = True
+    return h
+
+
+@pytest.mark.parametrize("observation", ["matched", "missed"])
+def test_unintroduced_encounter_delivery_is_not_a_lapse(observation):
+    h = encounter_harness(observation=observation)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    delivery = next(iter(h.store.deliveries.values()))
+    assert delivery.command_kind == "encounter" and delivery.lapse is None
+    assert delivery.encounter.observation == observation
+    assert next(iter(h.store.captures.values())).encounters[0] == delivery.encounter
+    h.runner.run_once()
+    assert h.receiver.first_introductions == 1
+    assert not any(isinstance(command, GameLapse) for command in h.receiver.calls)
+
+
+@pytest.mark.parametrize("later_finding", ["confirmed_miss", "unavailable"])
+def test_encounter_lost_ack_and_later_introduction_keep_original_effect(later_finding):
+    h = encounter_harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original = next(iter(h.store.deliveries.values()))
+    h.receiver.uncertain = True
+    h.runner.run_once()
+    assert h.receiver.first_introductions == 1 and h.store.delivery(original.operation_id).state == "pending"
+    h.clock.value += 10
+    FeedbackRunner(h.coordinator).run_once()
+    assert h.store.delivery(original.operation_id).receipt.outcome == "duplicate"
+    h.encounter_state.introduced = True
+    h.coordinator.comparer = (harness(kinds=("confirmed_miss",)).coordinator.comparer
+        if later_finding == "confirmed_miss" else SimpleNamespace(compare=lambda *_, **__: ()))
+    h.store.enqueue(spec("after-introduction"))
+    FeedbackRunner(h.coordinator).run_once()
+    assert len(h.store.deliveries) == 1 and h.receiver.first_introductions == 1
+    source = next(iter(h.store.sources.values()))
+    assert not source.quarantined and source.effects == (original.encounter,)
+    assert source.effects[0].detected_at == original.encounter.detected_at
+    assert h.store.delivery(original.operation_id).encounter == original.encounter
+
+
+def test_corrected_encounter_is_held_before_admission_and_delayed_retry():
+    h = encounter_harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original = next(iter(h.store.deliveries.values()))
+    h.page[0] = page(records=(record(2, "corrected"),))
+    h.store.enqueue(spec("corrected-encounter"))
+    FeedbackRunner(h.coordinator).run_once()
+    assert h.store.delivery(original.operation_id).state == "superseded"
+    h.coordinator.deliver(h.store.pending_delivery(h.clock.now()))
+    restarted = EncounterReceiver()
+    restarted.receipts = dict(h.receiver.receipts)
+    assert restarted.accept_encounter(original.encounter).status == "held"
+    assert restarted.first_introductions == 0
+
+
+@pytest.mark.parametrize("reason", ["paused", "introduction_allowance"])
+def test_encounter_owner_deferral_receipt_is_preserved(reason):
+    h = encounter_harness()
+    h.receiver.deferred_reason = reason
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    h.runner.run_once()
+    delivery = next(iter(h.store.deliveries.values()))
+    # Serialize/reopen the producer record: no subtype/disposition fields may vanish.
+    restored = type(delivery).model_validate_json(delivery.model_dump_json())
+    assert restored.state == "acknowledged" and isinstance(restored.receipt, EncounterReceipt)
+    assert restored.receipt.admission_status == "pending" and restored.receipt.deferred_reason == reason
+    assert restored.receipt.available_by is None and h.receiver.first_introductions == 0
+    assert h.store.pending_delivery(h.clock.now()) is None  # Owner now owns pending admission.
+
+
+def test_historical_encounter_preserves_importance_without_lapse():
+    h = encounter_harness()
+    h.encounter_state.introduced = True
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    h.runner.run_once()
+    delivery = next(iter(h.store.deliveries.values()))
+    assert delivery.receipt.disposition == "review_priority"
+    assert delivery.encounter.observation == "missed" and delivery.lapse is None
+    assert h.receiver.first_introductions == 0
+
+
+def test_distinct_encounters_keep_provenance_without_reintroducing_one_card():
+    h = encounter_harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    h.runner.run_once()
+    h.encounter_state.introduced = True
+    h.page[0] = page(records=(record().model_copy(update={"source_game_id": "another-game"}),))
+    h.store.enqueue(spec("another-encounter"))
+    FeedbackRunner(h.coordinator).run_once()
+    pending = h.store.pending_delivery(h.clock.now())
+    h.coordinator.deliver(pending)
+    assert h.receiver.first_introductions == 1
+    assert len(h.store.deliveries) == 2 and len(h.store.captures) == 2
+    assert {item.encounter.key.game_id for item in h.store.deliveries.values()} == {"provider-game", "another-game"}
+    assert pending.encounter.observation == "missed" and h.store.delivery(pending.operation_id).receipt.disposition == "review_priority"
