@@ -5,11 +5,13 @@ command. No queue, review, scheduling or physical-card table is written here.
 SCHEMA_SQL is a disposable-fixture / integration-migration handoff, never auto-run.
 """
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import Callable
 
 from app.contracts.product_v02.analysis import Proposal, RepertoireChangeReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.repertoire.changes.ports import ChangeError, ValidatedChange
+from app.repertoire.changes.application import verify_retained_publication
 
 SCHEMA_SQL = """
 CREATE TABLE product_repertoire_previews (
@@ -65,11 +67,13 @@ class PostgresChangeStore:
     """
     def __init__(self, connection, repertoire_id: str,
                  reader: Callable[[object, str], RepertoireSnapshot],
-                 publisher: Callable[[object, ValidatedChange], None]):
+                 publisher: Callable[[object, ValidatedChange], RepertoireSnapshot | None],
+                 before_lock: Callable[[object, str], None] | None = None):
         self.connection = connection
         self.repertoire_id = repertoire_id
         self.reader = reader
         self.publisher = publisher
+        self.before_lock = before_lock
 
     @contextmanager
     def transaction(self, repertoire_id: str):
@@ -80,6 +84,8 @@ class PostgresChangeStore:
         with self.connection.transaction():
             self.connection.execute("SET LOCAL lock_timeout = '2s'")
             self.connection.execute("SET LOCAL statement_timeout = '5s'")
+            if self.before_lock is not None:
+                self.before_lock(self.connection, self.repertoire_id)
             row = self.connection.execute("SELECT id FROM repertoires WHERE id=%s FOR UPDATE",
                                            (self.repertoire_id,)).fetchone()
             if row is None:
@@ -119,12 +125,16 @@ class _Transaction:
         return RepertoireChangeReceipt.model_validate_json(row[0]) if row else None
 
     def publish(self, change):
-        self.store.publisher(self.connection, change)
+        accepted = self.store.publisher(self.connection, change)
+        if accepted is not None:
+            verify_retained_publication(change, accepted)
+        expected = accepted if accepted is not None else change.after
         published = self.snapshot()
         if (published.membership.revision, published.membership.digest) != (
-                change.after.membership.revision, change.after.membership.digest):
+                expected.membership.revision, expected.membership.digest):
             raise ChangeError("publication_not_enlisted")
-        self.change = change
+        self.change = replace(change, after=published)
+        return published
 
     def save_receipt(self, receipt):
         self.connection.execute("INSERT INTO product_repertoire_change_receipts "
@@ -132,3 +142,39 @@ class _Transaction:
             (self.store.repertoire_id, receipt.proposal_id, receipt.model_dump_json(),
              self.change.before.model_dump_json() if self.change else None,
              self.change.after.model_dump_json() if self.change else None))
+
+
+def current_source_facts(database, repertoire_id: str) -> dict:
+    """One bounded MVCC read of retained content, without game/clean-scan gate.
+
+    The one statement supplies one database snapshot even for a READ COMMITTED
+    borrower. No row lock, write, cursor lifecycle or implicit connection occurs.
+    """
+    row = database.execute_native("""
+        SELECT repertoire.id,repertoire.scope_source_revision,
+            repertoire.canonical_prefix_moves_json,repertoire.canonical_prefix_revision,
+            COALESCE((SELECT jsonb_agg(to_jsonb(source) ORDER BY source.source_id) FROM (
+                SELECT 'line:' || line.id source_id,line.start_fen,line.moves_json,line.trained_color,
+                    NULL::text presentation_id,NULL::bigint presentation_revision,
+                    NULL::text introduced_at,NULL::bigint pending_validation
+                FROM repertoire_lines line WHERE line.repertoire_id=repertoire.id
+                UNION ALL
+                SELECT 'card:' || card.id,card.start_fen,card.moves_json,
+                    COALESCE(card.trained_color,(SELECT candidate.trained_color
+                        FROM repertoire_lines candidate WHERE candidate.repertoire_id=repertoire.id
+                        ORDER BY candidate.created_at,candidate.id LIMIT 1)),
+                    card.id,COALESCE(card.revision,1),card.introduced_at,card.pending_validation
+                FROM cards card WHERE card.archived=0 AND card.content_type='opening'
+                    AND card.superseded_by IS NULL AND (card.repertoire_id=repertoire.id OR EXISTS(
+                        SELECT 1 FROM repertoire_cards membership
+                        WHERE membership.repertoire_id=repertoire.id AND membership.card_id=card.id))
+                ORDER BY source_id LIMIT 10001
+            ) source),'[]'::jsonb) sources
+        FROM repertoires repertoire WHERE repertoire.id=%s
+        """, (repertoire_id,)).fetchone()
+    if row is None:
+        raise ChangeError("repertoire_missing")
+    facts = dict(row)
+    if len(facts["sources"]) > 10000:
+        raise ChangeError("source_exceeds_bound")
+    return facts
