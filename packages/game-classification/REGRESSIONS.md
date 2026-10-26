@@ -9,3 +9,14 @@ precision, unavailable/ambiguous mappings, changed content, own-response conflic
 opponent gap versus missing own continuation, intentional coverage end, correct
 response, and caller-container preservation. These are pure supplied-fact checks;
 they do not prove a live snapshot or learning effect.
+
+The regular backend suite `backend/tests/test_product_game_findings.py` owns
+normalization for both providers, original source identity/FEN/history/time,
+illegal/unsupported rejection, digest fences, lapse versus gap/learning need,
+no-cascade, index-authorized exact reentry, unchanged earlier findings,
+terminal coverage, conflicts anywhere in one repertoire, ambiguous repertoire
+and physical mapping, stable logical effect keys under re-comparison/source
+correction, caller-container preservation and denied infrastructure imports/calls.
+It uses the shared product DTOs and a fake immutable-index capability. Shared
+contract additions required for current-content introduction proof must be
+published by #482; missing/failed product cases are not package-policy passes.
