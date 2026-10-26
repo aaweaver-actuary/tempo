@@ -164,7 +164,7 @@ def product_source_facts(database, repertoire_id, card_ids, line_ids, *, fence=F
         ('tempo:opening-graph:' + repertoire_id,)).fetchone()[0]:
         return None, (), (), ()
     header = database.execute_native("""SELECT repertoire.scope_source_revision,
-        repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
+        repertoire.canonical_prefix_revision,repertoire.canonical_prefix_moves_json,scope.generation catalogue_generation,
         publication.generation graph_generation,publication.state graph_state,
         identity.target_id,identity.workspace_id,repertoire.new_cards_per_day legacy_repertoire_limit
         FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
@@ -179,8 +179,10 @@ def product_source_facts(database, repertoire_id, card_ids, line_ids, *, fence=F
         EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id) deleted,
         (card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards membership
             WHERE membership.repertoire_id=%s AND membership.card_id=card.id)) member
+        ,EXISTS(SELECT 1 FROM repertoire_cards membership
+            WHERE membership.repertoire_id=%s AND membership.card_id=card.id) linked_member
         FROM cards card WHERE card.id=ANY(%s) ORDER BY card.id""" + suffix,
-        (repertoire_id, repertoire_id, repertoire_id, list(card_ids))).fetchall()
+        (repertoire_id, repertoire_id, repertoire_id, repertoire_id, list(card_ids))).fetchall()
     graphs = database.execute_native('SELECT * FROM opening_graph_steps WHERE repertoire_id=%s '
         'AND generation=(SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s) '
         'AND card_id=ANY(%s) ORDER BY line_id,decision_index LIMIT 257' + suffix,
@@ -204,6 +206,25 @@ def product_current_queue_facts(database, day, *, fence=False):
     queued = database.execute_native("""SELECT DISTINCT card_id FROM daily_queue WHERE queue_date=%s
         OR (status='queued' AND attempt_state NOT IN ('clean','unstarted'))""", (day,)).fetchall()
     return controls, introduced, required, frozenset(row[0] for row in queued)
+
+
+def product_target_route_page(database, repertoire_id, after_line_id, *, limit=16):
+    """Bounded discovery page, never a claimed complete prefix of the source.
+
+    The caller retains the existing repertoire/publication fence and completes
+    the stream before trusting relevant alternatives. Oversized rows return an
+    explicit sentinel instead of unbounded raw text. No expected-response filter.
+    """
+    if not 1 <= limit <= 16:
+        raise ValueError('target source page exceeds bound')
+    return database.execute_native("""WITH page AS MATERIALIZED (
+        SELECT id,repertoire_id,trained_color,start_fen,moves_json,
+            octet_length(concat_ws('',id,repertoire_id,trained_color,start_fen,moves_json))>65536 oversized
+        FROM repertoire_lines WHERE repertoire_id=%s AND id>%s ORDER BY id LIMIT %s
+        ) SELECT CASE WHEN octet_length(id)<=200 THEN id END id,repertoire_id,trained_color,
+            CASE WHEN NOT oversized THEN start_fen END start_fen,
+            CASE WHEN NOT oversized THEN moves_json END moves_json,oversized
+        FROM page ORDER BY id""", (repertoire_id,after_line_id,limit)).fetchall()
 
 
 def lock_product_admission(database, day, card_id):

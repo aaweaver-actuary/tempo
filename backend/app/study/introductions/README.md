@@ -12,6 +12,54 @@ existing factual values and wires this factory on the borrowed writer transactio
 
 ## Usable interface
 
+Actual-game first introduction has a smaller, separate canonical capability:
+
+```python
+from app.services.queue_admission_adapter import current_owner_encounter_introductions
+
+receiver = current_owner_encounter_introductions(
+    borrowed_database, allowance="ordinary", conflicts=current_study_conflicts,
+)
+result = receiver.admit_encounter(
+    local_day, repertoire_id=current_mapping.repertoire_id,
+    decision_id=current_mapping.decision_id, target=current_mapping,
+)
+# existing game-effect owner saves its receipt on this same transaction
+```
+
+`target` is the exact shared `DecisionPresentation` already resolved by the
+receiving Study encounter owner. An opaque decision hash alone cannot find a
+physical card, and a missing target defers. This capability uses existing
+schema051, canonical card introduction facts and the sole queue writer. It has
+**no weighted allocation store, ranking, cache, charge or rotation dependency**,
+and introduces no DDL. The caller's existing game-effect receipt owns delivery
+idempotency, replay and projection recovery; the capability neither saves a
+second effect receipt nor commits independently. Canonical already-introduced
+state returns `already_introduced` without consuming another slot.
+
+The required `allowance="ordinary"` choice reads saved `study_only_mode`, the
+global `new_cards_per_day` cap and the target repertoire's nullable override.
+Actual physical introductions today count once globally and toward their
+admitting repertoire. Zero limits pause, and exhausted caps defer. Reserve
+allowances are unsupported and cannot silently bypass these controls. No user
+D04 population/weight defaults or live activation are supplied here.
+
+The owner locks the existing target/day and current source, checks explicit
+membership, definition, ready publication and optional current conflict hold,
+then reads bounded pages of authored routes. It retains only alternatives for
+every learner decision exposed by that physical card. All current routes are
+checked, including ungraphed/transposed competing responses; unrelated cards
+are never enumerated. Eighty unrelated routes do not trip the 64 relevant-route
+guard. More than 64 relevant alternatives, 256 target graph occurrences, 10k
+discovery routes or 100k discovery plies defer honestly. Existing 64KiB source
+row, 40-ply card and 1000-ply route limits remain. This is complete bounded
+discovery, not an indexed position lookup. Nonempty canonical prefixes retain
+the public repertoire reader's unsupported status. Due work is appended before
+the exact introduction, and issued attempts/reviews/FSRS remain untouched.
+
+The weighted D capability below remains separately opt-in and requires its own
+uninstalled storage. Encounter integration should use the smaller factory above.
+
 ```python
 service = Introductions(PostgresIntroductionStore(borrowed_database), owner)
 service.accept_ranking(local_day, exact_context, shared_ranking_output)
@@ -150,7 +198,17 @@ flowchart LR
     App -->|cached ranking / charge / rotation| Store[Study private PostgreSQL store]
     App -->|rechecked introduction intent| Current
     Current -->|sole queue/card mutation| Queue[Existing Study queue and cards]
+    Effect[Study encounter owner / existing schema051 receipt] -->|exact shared current mapping + explicit ordinary policy| Exact[Canonical encounter admission]
+    Exact -->|bounded current target / complete relevant alternatives| Source[Existing source / graph / memberships]
+    Exact -->|saved ordinary caps / canonical introduced_at facts| Queue
+    Exact -->|same sole queue/card writer, borrowed receipt transaction| Queue
 ```
+
+The encounter branch does not traverse the D application/store. The existing
+receipt and canonical mutation commit or roll back together on the caller's
+transaction; ordinary Study never calls or waits for the producer. This source
+addition is inactive until outer composition injects it. Installation and live
+resource isolation are unverified and unchanged.
 
 The current owner retains card/day locks, current definition/control fences and
 the sole canonical card/queue writer. Acquire those existing locks **before**

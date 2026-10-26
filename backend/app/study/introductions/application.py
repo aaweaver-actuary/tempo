@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.contracts.product_v02.analysis import RankingOutput
-from app.contracts.product_v02.repertoire import RepertoireSnapshot
+from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute, RepertoireSnapshot
 from .policy import Candidate, RankingContext, Selection, compatible_ranking, select
 from .ports import IntroductionConflicts, IntroductionOwner, IntroductionStore, Receipt
 
@@ -46,9 +46,90 @@ def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
 
 
 @dataclass(frozen=True)
+class TargetAlternatives:
+    routes: tuple[ImmutableAuthoredRoute, ...]
+    reason: str | None = None
+
+
+def target_alternatives(routes, *, expected: tuple[tuple[str, str], ...], learner_color: str) -> TargetAlternatives:
+    """Complete relevant prescriptions, retaining no unrelated positions/index.
+
+    Reuse the current repertoire reader's finite 10k-route/100k-ply discovery
+    limits. The existing 64-*relevant*-route guard is unchanged. No response
+    filter is allowed before checking alternatives, including transpositions.
+    """
+    import chess
+    from tempo_evidence_math import opening_position_key
+    wanted = dict(expected)
+    if not wanted or len(wanted) != len(expected):
+        return TargetAlternatives((), 'target_context_unproved')
+    responses = {position:set() for position in wanted}
+    relevant, seen, plies = [], set(), 0
+    try:
+        for route in routes:
+            if route.route_id in seen or len(seen) >= 10000:
+                return TargetAlternatives((), 'target_discovery_bound')
+            seen.add(route.route_id)
+            plies += len(route.moves)
+            if plies > 100000 or len(route.moves) > 1000:
+                return TargetAlternatives((), 'target_discovery_bound')
+            if route.learner_color != learner_color:
+                return TargetAlternatives((), 'target_source_color_unproved')
+            board = chess.Board(route.starting_fen)
+            if not board.is_valid():
+                return TargetAlternatives((), 'target_source_legality_unproved')
+            touches = False
+            for uci in route.moves:
+                position = opening_position_key(board.fen())
+                move = chess.Move.from_uci(uci)
+                if move not in board.legal_moves:
+                    return TargetAlternatives((), 'target_source_legality_unproved')
+                if board.turn == (learner_color == 'white') and position in wanted:
+                    touches = True
+                    responses[position].add(uci)
+                    if uci != wanted[position]:
+                        return TargetAlternatives((), 'target_response_conflict')
+                board.push(move)
+            touches |= board.turn == (learner_color == 'white') and opening_position_key(board.fen()) in wanted
+            if touches:
+                relevant.append(route)
+                if len(relevant) > 64:
+                    return TargetAlternatives((), 'target_alternatives_bound')
+    except (ValueError, TypeError, KeyError):
+        return TargetAlternatives((), 'target_source_legality_unproved')
+    if any(responses[position] != {move} for position,move in wanted.items()):
+        return TargetAlternatives((), 'target_context_unproved')
+    return TargetAlternatives(tuple(relevant))
+
+
+def ordinary_encounter_allowance(*, study_only, global_limit, repertoire_limit,
+                                introduced_repertoires, repertoire_id):
+    """Saved ordinary caps over canonical introductions, without D allocation.
+
+    The queue owner supplies one credit per actual physical introduction today.
+    A shared presentation consumes one global slot and its admitting membership's
+    ordinary allowance. No reserve, weight default or separate ledger is created.
+    """
+    if study_only:
+        return 'study_only'
+    if (type(global_limit) is not int or global_limit < 0
+            or (repertoire_limit is not None and
+                (type(repertoire_limit) is not int or repertoire_limit < 0))):
+        return 'current_controls_unproved'
+    if global_limit == 0 or repertoire_limit == 0:
+        return 'zero_limit'
+    limit = global_limit if repertoire_limit is None else repertoire_limit
+    credits = tuple(introduced_repertoires)
+    if len(credits) >= global_limit or credits.count(repertoire_id) >= limit:
+        return 'introduction_allowance'
+    return None
+
+
+@dataclass(frozen=True)
 class CommitResult:
     status: str
     receipt: Receipt | None = None
+    reason: str | None = None
 
 
 class Introductions:
@@ -87,7 +168,8 @@ class Introductions:
                       spent=tuple(spent.items()), introduced=facts.introduced,
                       mandatory=facts.mandatory,
                       rotation_after=state.period_rotation_after if state.period_started else state.rotation_after,
-                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only, priority=priority)
+                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only,
+                      priority=priority)
 
     def commit(self, day: str, candidate: Candidate, context: RankingContext, *,
                priority: tuple[str, str] | None = None) -> CommitResult:

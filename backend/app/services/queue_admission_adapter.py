@@ -137,6 +137,139 @@ class CurrentIntroductionUnavailable(RuntimeError):
     pass
 
 
+class CurrentEncounterIntroductions:
+    """Exact canonical admission on the caller's existing receipt transaction.
+
+    This capability does not construct the weighted D store. Its input is the
+    current shared mapping already resolved by the receiving Study owner; an
+    opaque decision hash alone cannot identify a physical presentation safely.
+    """
+    def __init__(self, database, *, allowance, conflicts=None):
+        if allowance != 'ordinary':
+            raise ValueError('explicit ordinary encounter allowance required')
+        self.database, self.conflicts = database, conflicts
+
+    def _routes(self, repertoire_id):
+        import json
+        from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute
+        after = ''
+        while True:
+            rows = admission_storage.product_target_route_page(self.database, repertoire_id, after)
+            if not rows:
+                return
+            for row in rows:
+                if row['oversized'] or not row['id']:
+                    raise ValueError('target route exceeds source row bound')
+                yield ImmutableAuthoredRoute(repertoire_id=repertoire_id, route_id=row['id'],
+                    policy_id=repertoire_id, learner_color=row['trained_color'],
+                    starting_fen=row['start_fen'], moves=json.loads(row['moves_json']))
+            after = rows[-1]['id']
+
+    def admit_encounter(self, day, *, repertoire_id, decision_id, target=None):
+        from app.contracts.product_v02.repertoire import DecisionPresentation
+        from app.study.introductions.application import (CommitResult, Introductions,
+            introduction_is_held, ordinary_encounter_allowance, target_alternatives)
+        from tempo_legacy_database.adapters.queue_refresh.application import seeding
+        from tempo_game_evidence_contracts.legacy import decision_identity
+        from tempo_evidence_math import opening_position_key
+        import chess
+        import json
+        Introductions._day(day)
+        if self.database.read_only or self.database.raw.info.transaction_status.name != 'INTRANS':
+            raise CurrentIntroductionUnavailable('borrowed_writer_transaction_required')
+        if (not isinstance(target, DecisionPresentation) or not target.available
+                or (target.repertoire_id, target.decision_id) != (repertoire_id, decision_id)):
+            return CommitResult('deferred', reason='current_mapping_required')
+        if not admission_storage.lock_product_admission(self.database, day, target.presentation_id):
+            return CommitResult('deferred', reason='current_target_busy')
+        header, _, cards, graphs = admission_storage.product_source_facts(
+            self.database, repertoire_id, (target.presentation_id,), (), fence=True)
+        if (header is None or header['graph_state'] != 'ready' or len(cards) != 1
+                or header['scope_source_revision'] + 1 != target.repertoire_revision or len(graphs) > 256):
+            return CommitResult('deferred', reason='current_source_unproved')
+        if header['canonical_prefix_moves_json'] != '[]':
+            return CommitResult('deferred', reason='canonical_prefix_snapshot_unsupported')
+        card = cards[0]
+        if (card['revision'] != target.presentation_revision
+                or any(card[key] for key in ('archived', 'pending_validation', 'superseded_by', 'blocked', 'deleted'))
+                or not card['linked_member'] or card['content_type'] != 'opening'
+                or introduction_is_held(self.conflicts, repertoire_id=repertoire_id,
+                    presentation_id=card['id'], presentation_revision=card['revision'])):
+            return CommitResult('deferred', reason='current_target_unavailable')
+        if card['introduced_at'] is not None:
+            return CommitResult('already_introduced')
+        controls, today, _, queued = admission_storage.product_current_queue_facts(self.database, day, fence=True)
+        if controls is None:
+            return CommitResult('deferred', reason='current_controls_unproved')
+        reason = ordinary_encounter_allowance(study_only=bool(controls[0]), global_limit=controls[1],
+            repertoire_limit=header['legacy_repertoire_limit'],
+            introduced_repertoires=(row[2] for row in today), repertoire_id=repertoire_id)
+        if reason:
+            return CommitResult('deferred', reason=reason)
+        if card['state'] not in ('new', 'locked') or card['id'] in queued:
+            return CommitResult('deferred', reason='current_target_queued_or_started')
+        # Introducing a physical presentation exposes every owned move in it.
+        # Check complete alternatives for all of them, not only the encounter.
+        try:
+            moves = json.loads(card['moves_json'])
+            board, expected, exact = chess.Board(card['start_fen']), {}, False
+            if not board.is_valid() or not 1 <= len(moves) <= 40:
+                raise ValueError('unproved physical definition')
+            for offset, uci in enumerate(moves):
+                move = chess.Move.from_uci(uci)
+                if move not in board.legal_moves:
+                    raise ValueError('illegal physical definition')
+                if board.turn == (card['trained_color'] == 'white'):
+                    position = opening_position_key(board.fen())
+                    if position in expected and expected[position] != uci:
+                        raise ValueError('conflicting physical definition')
+                    expected[position] = uci
+                    exact |= (decision_id == decision_identity(card['id'], offset, moves[:offset])
+                        and target.position_key == position and target.selected_response_uci == uci)
+                board.push(move)
+            if not exact:
+                raise ValueError('unproved decision identity')
+        except (ValueError, TypeError, KeyError):
+            return CommitResult('deferred', reason='current_target_definition_unproved')
+        alternatives = target_alternatives(self._routes(repertoire_id),
+            expected=tuple(expected.items()), learner_color=card['trained_color'])
+        if alternatives.reason:
+            return CommitResult('deferred', reason=alternatives.reason)
+        current_header, lines, current_cards, current_graphs = admission_storage.product_source_facts(
+            self.database, repertoire_id, (card['id'],),
+            tuple(route.route_id for route in alternatives.routes), fence=True)
+        routes = {row['id']: row for row in lines}
+        if (current_header is None or tuple(current_header) != tuple(header) or len(current_cards) != 1
+                or tuple(current_cards[0]) != tuple(card)
+                or [tuple(row) for row in current_graphs] != [tuple(row) for row in graphs]
+                or len(routes) != len(alternatives.routes)):
+            return CommitResult('deferred', reason='current_source_changed_or_busy')
+        if any((routes[route.route_id]['start_fen'], json.loads(routes[route.route_id]['moves_json']),
+                routes[route.route_id]['trained_color']) != (route.starting_fen, list(route.moves), route.learner_color)
+                for route in alternatives.routes):
+            return CommitResult('deferred', reason='current_source_changed_or_busy')
+        if not _playable_introduction(target, card, graphs, routes,
+                learner_color=card['trained_color'], route_cache={}):
+            return CommitResult('deferred', reason='current_playable_context_unproved')
+        maximum = seeding.maximum_position(self.database, day)
+        for due in seeding.due_cards(self.database, day):
+            maximum += 1
+            seeding.append_due_card(self.database, day, due[0], maximum)
+        QueueAdmissionAdapter(self.database).introduce_opening(day,
+            dict(card_id=card['id'], repertoire_id=repertoire_id, reason=None), maximum + 1)
+        return CommitResult('introduced')
+
+
+def current_owner_encounter_introductions(database, *, allowance, conflicts=None):
+    """No D storage/weights/ranking dependency; caller owns receipt and commit.
+
+    Pass the exact shared current mapping as ``admit_encounter(..., target=...)``.
+    Ordinary admission reads saved global and per-repertoire caps, counts actual
+    canonical introductions and uses the existing card/day writer reservation.
+    """
+    return CurrentEncounterIntroductions(database, allowance=allowance, conflicts=conflicts)
+
+
 def _playable_introduction(mapping, card, graphs, routes, *, learner_color, route_cache):
     """Recheck exact physical definition inside an explicitly published route."""
     import json
