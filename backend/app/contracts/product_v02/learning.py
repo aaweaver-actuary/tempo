@@ -2,12 +2,17 @@
 import json
 from typing import Literal, Protocol
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 from tempo_game_evidence_contracts.v2 import EvidenceWithdrawal
 from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 
 from . import Digest, Identifier, Revision, UtcTimestamp, Value
 from .games import Finding
+
+
+class ImmutableEvidenceWithdrawal(EvidenceWithdrawal):
+    """Existing v2/v3 wire fields with assignment frozen only in this new seam."""
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
 class GameEffectKey(Value):
@@ -40,12 +45,24 @@ class GameEffectControl(Value):
     key: GameEffectKey
     source_revision: Revision
     action: Literal["hold", "withdraw"]
-    withdrawal: EvidenceWithdrawal
+    reason: Literal["source_corrected", "source_excluded", "source_deleted", "reanalysis"] | None = None
+    withdrawal: ImmutableEvidenceWithdrawal | None = None
 
-    @field_validator("withdrawal")
+    @field_validator("withdrawal", mode="before")
     @classmethod
     def copy_existing_withdrawal(cls, value):
-        return value.model_copy(deep=True)
+        if value is None:
+            return None
+        payload = value.model_dump(mode="json") if isinstance(value, EvidenceWithdrawal) else value
+        return ImmutableEvidenceWithdrawal.model_validate_json(json.dumps(payload))
+
+    @model_validator(mode="after")
+    def reason_without_owner_identity(self):
+        if self.reason is None and self.withdrawal is None:
+            raise ValueError("control requires a reason; owner obligation identity is optional")
+        if self.reason is not None and self.withdrawal is not None and self.reason != self.withdrawal.reason:
+            raise ValueError("control and existing withdrawal reasons must agree")
+        return self
 
 
 class LearningReceipt(Value):

@@ -1,10 +1,22 @@
 """Small extension of the existing authored membership snapshot, not a new graph."""
+import json
 from typing import Literal, Protocol
 
 from pydantic import Field, field_validator, model_validator
-from tempo_game_review_contracts import RepertoireSnapshot as MembershipSnapshot
+from tempo_game_review_contracts import AuthoredRoute, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot
 
 from . import Identifier, Revision, UciMove, UtcTimestamp, Value
+
+
+class ImmutableAuthoredRoute(AuthoredRoute):
+    """Wire-compatible adapter; donor types/behavior remain unchanged."""
+    moves: tuple[str, ...] = Field(max_length=1000)
+    reentries: tuple[ReentryAuthority, ...] = Field(default=(), max_length=1000)
+
+
+class ImmutableMembershipSnapshot(MembershipSnapshot):
+    scope_repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=10000)
+    routes: tuple[ImmutableAuthoredRoute, ...] = Field(max_length=10000)
 
 
 class DecisionPresentation(Value):
@@ -17,6 +29,8 @@ class DecisionPresentation(Value):
     repertoire_revision: Revision
     introduction: Literal["introduced", "unintroduced", "unknown"]
     introduced_at: UtcTimestamp | None
+    available: bool = False
+    introduction_matches_current_content: bool = False
 
     @model_validator(mode="after")
     def introduction_is_evidence(self):
@@ -33,16 +47,17 @@ class RouteBoundary(Value):
 
 class RepertoireSnapshot(Value):
     interface_version: Literal["0.2.0"] = "0.2.0"
-    membership: MembershipSnapshot
+    membership: ImmutableMembershipSnapshot
     variant: Identifier
     learner_color: Literal["white", "black"]
     boundaries: tuple[RouteBoundary, ...]
     decision_presentations: tuple[DecisionPresentation, ...]
 
-    @field_validator("membership")
+    @field_validator("membership", mode="before")
     @classmethod
     def independent_existing_value(cls, value):
-        return value.model_copy(deep=True)
+        payload = value.model_dump(mode="json") if isinstance(value, MembershipSnapshot) else value
+        return ImmutableMembershipSnapshot.model_validate_json(json.dumps(payload))
 
     @model_validator(mode="after")
     def bind_revision_and_routes(self):
