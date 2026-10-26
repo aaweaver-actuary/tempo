@@ -13,6 +13,8 @@ from typing import Mapping
 import chess
 from tempo_evidence_math import opening_position_key
 
+from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot
+
 
 @dataclass(frozen=True, order=True)
 class PositionKey:
@@ -39,34 +41,29 @@ class Diagnostic:
 
 
 @dataclass(frozen=True)
-class DecisionBinding:
-    decision_id: str | None
-    presentation_id: str | None
-    card_id: str | None
-    card_revision: int | None
-    introduced_at: str | None
-    introduced_before_game: bool | None
-    reentry_authority_id: str | None
-
-
-@dataclass(frozen=True)
 class RouteOccurrence:
     key: PositionKey
     route_id: str
+    policy_id: str
     source_revision: str
     learner_color: str
     ply: int
     full_fen: str
     starting_fen: str
-    history: tuple[str, ...]
+    route_moves: tuple[str, ...]
     next_move: str | None
     learner_turn: bool
     terminal: bool
     route_complete: bool
-    bindings: tuple[DecisionBinding, ...]
+    bindings: tuple[DecisionPresentation, ...]
+    reentry_authority_id: str | None
 
     @property
-    def binding(self) -> DecisionBinding | None:
+    def history(self) -> tuple[str, ...]:
+        return self.route_moves[:self.ply]
+
+    @property
+    def binding(self) -> DecisionPresentation | None:
         return self.bindings[0] if len(self.bindings) == 1 else None
 
 
@@ -97,6 +94,12 @@ class PositionNode:
 class PositionIndex:
     snapshot_id: str
     source_revision: str
+    revision: int
+    digest: str
+    captured_at: str
+    scope_id: str
+    scope_repertoire_ids: tuple[str, ...]
+    available: bool
     complete: bool
     nodes: Mapping[PositionKey, PositionNode]
     routes: Mapping[tuple[str, str], tuple[RouteOccurrence, ...]]
@@ -108,6 +111,8 @@ class PositionIndex:
 
     def reentry_candidate(self, repertoire_id: str, fen: str,
                           variant: str = "standard") -> RouteOccurrence | None:
+        if not self.complete:
+            return None
         node = self.lookup(repertoire_id, fen, variant)
         if node is None or node.conflict or node.selected_response is None:
             return None
@@ -117,34 +122,34 @@ class PositionIndex:
             return None
         item = candidates[0]
         binding = item.binding
-        if (not item.route_complete or binding is None or not binding.card_id
-                or not binding.decision_id or not binding.presentation_id
-                or binding.card_revision is None or not binding.reentry_authority_id):
+        if (not item.route_complete or binding is None or not binding.decision_id or not binding.presentation_id
+                or not item.reentry_authority_id):
             return None
         return item
 
 
-def _document(value):
-    """Accept the contract model or a local fixture; retain no mutable inputs."""
-    return value.model_dump(mode="python") if hasattr(value, "model_dump") else value
-
-
-def _binding(raw) -> DecisionBinding:
-    return DecisionBinding(**{name: raw.get(name) for name in DecisionBinding.__dataclass_fields__})
-
-
-def build_index(snapshot) -> PositionIndex:
-    source = _document(snapshot)
+def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
+    """Copy the public T01 snapshot into a deeply immutable exact-position index."""
+    if (len(snapshot.membership.routes) > 10000
+            or sum(len(route.moves) for route in snapshot.membership.routes) > 100000):
+        raise ValueError("snapshot_index_exceeds_bound")
+    # Revalidate even frozen models: legacy membership contains mutable lists.
+    source = RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
+    membership = source.membership
+    boundaries = {item.route_id: item for item in source.boundaries}
+    mappings = defaultdict(list)
+    for item in source.decision_presentations:
+        mappings[item.repertoire_id, item.position_key, item.selected_response_uci].append(item)
     nodes = defaultdict(list)
     routes = {}
     diagnostics = []
     adjacency = []
-    source_revision = str(source["source_revision"])
-    for raw in sorted(source["routes"], key=lambda row: (row["repertoire_id"], row["route_id"])):
-        raw = _document(raw)
+    source_revision = membership.source_revision
+    for route in sorted(membership.routes, key=lambda item: (item.repertoire_id, item.route_id)):
+        raw = route.model_dump(mode="python")
         repertoire_id, route_id = raw["repertoire_id"], raw["route_id"]
         identity = repertoire_id, route_id
-        variant = raw.get("variant", "standard")
+        variant = source.variant
         def diagnose(code, ply=0):
             diagnostics.append(Diagnostic(repertoire_id, route_id, ply, code))
         if identity in routes:
@@ -178,34 +183,34 @@ def build_index(snapshot) -> PositionIndex:
                 break
             valid_moves.append(uci)
             frames.append(board.fen(en_passant="fen"))
-        complete = raw.get("complete", True) and len(valid_moves) == len(moves)
-        if not raw.get("complete", True):
+        complete = boundaries[route_id].deliberate and len(valid_moves) == len(moves)
+        if not boundaries[route_id].deliberate:
             diagnose("incomplete_route", len(valid_moves))
-        raw_bindings = defaultdict(list)
-        for binding in raw.get("bindings", ()):
-            binding = _document(binding)
-            ply = binding["ply"]
-            if type(ply) is not int or not 0 <= ply < len(valid_moves):
-                diagnose("invalid_binding_ply")
-                continue
-            raw_bindings[ply].append(_binding(binding))
+        authorities = defaultdict(list)
+        for authority in route.reentries:
+            if not 0 <= authority.ply < len(valid_moves):
+                diagnose("invalid_reentry_ply", authority.ply)
+            else:
+                authorities[authority.ply].append(authority.authority_id)
         occurrences = []
+        legal_moves = tuple(valid_moves)
         for ply, fen in enumerate(frames):
             current = chess.Board(fen)
             own_turn = current.turn == (raw["learner_color"] == "white")
-            bindings = tuple(sorted(set(raw_bindings[ply]), key=repr))
+            next_move = valid_moves[ply] if ply < len(valid_moves) else None
+            raw_bindings = mappings[repertoire_id, opening_position_key(fen), next_move]
+            bindings = tuple({item.model_dump_json(): item for item in raw_bindings}.values())
             if len(bindings) > 1:
                 diagnose("ambiguous_physical_mapping", ply)
             if bindings and not own_turn:
                 diagnose("binding_on_opponent_turn", ply)
                 bindings = ()
             occurrence = RouteOccurrence(
-                position_key(repertoire_id, fen, variant), route_id,
-                str(raw.get("source_revision", source_revision)), raw["learner_color"], ply,
-                fen, raw["starting_fen"], tuple(valid_moves[:ply]),
-                valid_moves[ply] if ply < len(valid_moves) else None, own_turn,
-                complete and raw.get("terminal", True) and ply == len(valid_moves),
-                complete, bindings)
+                position_key(repertoire_id, fen, variant), route_id, route.policy_id,
+                source_revision, raw["learner_color"], ply,
+                fen, raw["starting_fen"], legal_moves,
+                next_move, own_turn, complete and ply == len(valid_moves),
+                complete, bindings, authorities[ply][0] if len(authorities[ply]) == 1 else None)
             occurrences.append(occurrence)
             nodes[occurrence.key].append(occurrence)
         routes[identity] = tuple(occurrences)
@@ -221,7 +226,9 @@ def build_index(snapshot) -> PositionIndex:
         if node.conflict:
             diagnostics.extend(Diagnostic(key.repertoire_id, item.route_id, item.ply, "own_response_conflict")
                                for item in occurrences if item.learner_turn and item.next_move)
-    return PositionIndex(source["snapshot_id"], source_revision,
-        bool(source.get("complete", True) and source.get("available", True) and not diagnostics),
+    return PositionIndex(membership.snapshot_id, source_revision, membership.revision,
+        membership.digest, membership.captured_at, membership.scope_id,
+        tuple(membership.scope_repertoire_ids), membership.available,
+        bool(membership.complete and membership.available and not diagnostics),
         MappingProxyType(frozen_nodes), MappingProxyType(routes),
         tuple(sorted(set(diagnostics))), tuple(adjacency))
