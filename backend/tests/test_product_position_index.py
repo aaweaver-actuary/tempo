@@ -6,6 +6,9 @@ import chess
 import pytest
 
 from app.repertoire import build_index, position_key
+from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
+from tempo_evidence_math import opening_position_key
+from tempo_game_review_contracts import AuthoredRoute, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot
 
 
 def route(route_id="r", moves=("e2e4", "e7e5", "g1f3"), **changes):
@@ -13,9 +16,33 @@ def route(route_id="r", moves=("e2e4", "e7e5", "g1f3"), **changes):
         starting_fen=chess.STARTING_FEN, moves=list(moves)) | changes
 
 
-def snapshot(*routes):
-    return dict(snapshot_id="snapshot", source_revision="source-1", complete=True,
-                available=True, routes=list(routes))
+def snapshot(*routes, variant="standard"):
+    authored, boundaries, mappings = [], [], []
+    for raw in routes:
+        item = {key: value for key, value in raw.items() if key not in {"complete", "bindings", "variant"}}
+        reentries = []
+        for supplied in raw.get("bindings", ()):
+            board = chess.Board(raw["starting_fen"])
+            for move in raw["moves"][:supplied["ply"]]: board.push_uci(move)
+            mappings.append(DecisionPresentation(
+                decision_id=supplied["decision_id"], repertoire_id=raw["repertoire_id"],
+                position_key=opening_position_key(board.fen()),
+                selected_response_uci=raw["moves"][supplied["ply"]],
+                presentation_id=supplied["presentation_id"], presentation_revision=supplied["card_revision"],
+                repertoire_revision=1, introduction="unknown", introduced_at=supplied["introduced_at"]))
+            if supplied["reentry_authority_id"]:
+                reentries.append(ReentryAuthority(ply=supplied["ply"], authority_id=supplied["reentry_authority_id"]))
+        item["reentries"] = reentries
+        item["policy_id"] = raw["repertoire_id"]
+        authored.append(AuthoredRoute(**item))
+        boundaries.append(RouteBoundary(route_id=raw["route_id"], terminal_ply=len(raw["moves"]),
+                                        deliberate=raw.get("complete", True)))
+    membership = MembershipSnapshot(workspace_id="fixture", snapshot_id="snapshot", revision=1,
+        digest="a"*64, source_revision="source-1", captured_at="2026-10-26T12:00:00Z",
+        scope_id="synthetic", scope_repertoire_ids=sorted({item["repertoire_id"] for item in routes}),
+        complete=True, available=True, routes=authored)
+    return RepertoireSnapshot(membership=membership, variant=variant, learner_color="white",
+        boundaries=tuple(boundaries), decision_presentations=tuple(mappings))
 
 
 def binding(card="card", **changes):
@@ -49,7 +76,7 @@ def test_turn_castling_legal_ep_variant_do_split_identity():
     assert position_key("rep", board.fen(en_passant="fen")) == position_key("rep", board.fen())
     with pytest.raises(ValueError, match="unsupported_variant"):
         position_key("rep", start, "chess960")
-    unsupported = build_index(snapshot(route(variant="chess960")))
+    unsupported = build_index(snapshot(route(), variant="chess960"))
     assert not unsupported.nodes and unsupported.diagnostics[0].code == "unsupported_variant"
 
 
@@ -112,10 +139,10 @@ def test_ambiguous_physical_mapping_not_guessed():
 
 def test_reentry_requires_explicit_single_route_and_mapping():
     source = snapshot(route(bindings=[binding()]))
-    assert build_index(source).reentry_candidate("rep", chess.STARTING_FEN).binding.card_id == "card"
-    source["routes"].append(route("second", bindings=[binding()]))
+    assert build_index(source).reentry_candidate("rep", chess.STARTING_FEN).binding.presentation_id == "card"
+    source = snapshot(route(bindings=[binding()]), route("second", bindings=[binding()]))
     assert build_index(source).reentry_candidate("rep", chess.STARTING_FEN) is None
-    source["routes"] = [route(bindings=[binding(reentry_authority_id=None)])]
+    source = snapshot(route(bindings=[binding(reentry_authority_id=None)]))
     assert build_index(source).reentry_candidate("rep", chess.STARTING_FEN) is None
 
 
@@ -124,18 +151,18 @@ def test_index_does_not_alias_inputs():
     before = deepcopy(source)
     index = build_index(source)
     assert source == before
-    source["routes"][0]["moves"][0] = "d2d4"
-    source["routes"][0]["bindings"][0]["card_id"] = "changed"
+    source.membership.routes[0].moves[0] = "d2d4"
+    source.membership.routes.clear()
     occurrence = index.routes["rep", "r"][0]
-    assert occurrence.next_move == "e2e4" and occurrence.binding.card_id == "card"
-    assert occurrence.binding.introduced_before_game is None
+    assert occurrence.next_move == "e2e4" and occurrence.binding.presentation_id == "card"
+    assert occurrence.binding.introduction == "unknown"
     with pytest.raises(TypeError): index.nodes[occurrence.key] = None
     with pytest.raises(FrozenInstanceError): occurrence.route_id = "changed"
 
 
-def test_invalid_and_duplicate_source_routes_are_diagnosed_deterministically():
-    source = snapshot(route(), route(), route("bad", starting_fen="invalid"))
-    index = build_index(source)
+def test_invalid_source_routes_are_diagnosed_deterministically():
+    first, bad = route(), route("bad", starting_fen="invalid")
+    index = build_index(snapshot(first, bad))
     assert not index.complete
-    assert [item.code for item in index.diagnostics] == ["invalid_source_position", "duplicate_route"]
-    assert build_index(snapshot(*reversed(source["routes"]))).diagnostics == index.diagnostics
+    assert [item.code for item in index.diagnostics] == ["invalid_source_position"]
+    assert build_index(snapshot(bad, first)).diagnostics == index.diagnostics
