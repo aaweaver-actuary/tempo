@@ -283,6 +283,20 @@ The offline owning qualification uses the existing runtime under a 512 MiB
 container limit and records semantic-model peak memory separately. Actual stage
 transport and target resource admission remain required for each delivery.
 
+```mermaid
+flowchart LR
+  Operator[Explicit publication operator] --> Auth[Existing operator authentication]
+  Auth --> Raw[API V2 streamed body<br/>16 MiB maximum]
+  Raw --> Model[Existing V2 semantic validation<br/>normalized JSON maximum 16 MiB]
+  Raw -->|over limit| Reject[Reject before staging]
+  Model -->|over limit| Reject
+  Model --> Stage[Existing inactive publication staging]
+  Stage --> Activate[Separate authenticated activation<br/>existing singular transaction owner]
+```
+
+This receiver-resource view describes source, not an installed-target or
+end-to-end delivery claim. Both byte checks use the same `MAX_BUNDLE_BYTES`.
+
 Full historical alias activation locks both physical and Content card identities
 in the existing sorted card-edit protocol. The 6,524-alias real-data rehearsal
 exhausted a disposable PostgreSQL cluster configured with
