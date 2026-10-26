@@ -277,7 +277,9 @@ def test_d_game_free_source_uses_public_study_binding_without_a_capture_token():
     assert accept_current_owner_rankings(day='2026-10-26',results=(publications.accepted,),
         publications=publications,introductions=receiver,sources=sources)=='accepted'
     assert tuple(ledger.rankings)==(actual,)
-    changed=snapshot.model_copy(update={'membership':member.model_copy(update={'revision':2})})
+    changed=snapshot.model_copy(update={'membership':member.model_copy(update={'revision':2}),
+        'decision_presentations':tuple(item.model_copy(update={'repertoire_revision':2})
+                                      for item in snapshot.decision_presentations)})
     class ChangedSnapshots:
         def snapshot(self,identity):return changed
     assert accept_current_owner_rankings(day='2026-10-26',results=(publications.accepted,),

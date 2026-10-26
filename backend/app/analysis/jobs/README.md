@@ -66,7 +66,7 @@ sources. Legacy captured sources retain their published authority binding. It
 supplies shared factual rankings only. No eligibility callback, SQL or canonical
 writer is introduced in composition. The future Analysis adapter must hold its publication/settings
 fence during the short delivery transaction; foreground Study reads its own
-accepted cache and must not call Analysis. Concrete Analysis persistence,
+accepted cache and must not call Analysis. Actual generation reservations,
 explicit saved D04 settings and normal-product D acceptance remain pending.
 The current owner still defers over 64 authored routes, 128 physical cards or
 256 mappings. This source fixture does not establish actual-user repertoire
@@ -83,8 +83,11 @@ invocation and never enter persisted result/fence/cache keys.
 
 [`AnalysisPublications`](ports.py) requires `current(repertoire_id)` and an atomic
 `publish_if_current(prepared)` that compares **every fence field** inside its own
-short transaction. The future concrete Analysis adapter owns result persistence;
-the current fake proves the semantic boundary only. It must never hold a DB
+short transaction. The [Analysis-owned publication adapter](../../../../database/tempo_legacy_database/adapters/analysis/README.md)
+now supplies bounded public-value JSON storage, atomic upsert and separate current
+versus historical reads. Its actual owner reservations, numbered migration and
+native proof remain pending; synthetic checks establish the semantic boundary.
+It must never hold a DB
 connection across HTTP/engine work or write Study state. A prepared result is
 advisory, not an introduction or permission to publish cards. #495 owns final
 ranking acceptance, eligibility, global budget, weights, unique charges, fallback
@@ -109,6 +112,8 @@ flowchart LR
   Work --> Explorer["#493 Explorer: finite request / transport cleanup"]
   Work --> Ranking["#494 pure coverage policy"]
   Work --> Store["AnalysisPublications: atomic current-fence publication"]
+  Adapter["Analysis-owned SQL adapter: unregistered"] --> Store
+  Adapter -. "pending actual binding" .-> OwnerFence["Source/settings/personal/evidence reservations"]
   Store --> Acceptance["#501 exact-context advisory handoff"]
   Acceptance --> Intro["#495 Study introductions owner"]
   Study["normal Study"] --> Intro
