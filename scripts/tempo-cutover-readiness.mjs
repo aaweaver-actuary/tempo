@@ -69,14 +69,41 @@ export function readFreshStartReadinessFixture(serialized) {
  */
 export function evaluateFreshStartReadiness({ plan, checkpoint, gateContext, evidence, facts = {} } = {},
   { graphAdapter, freshInitializationAdapter } = {}) {
+  return evaluateReadiness({ plan, checkpoint, gateContext, evidence, facts },
+    { graphAdapter, freshInitializationAdapter }, "synthetic-fixture");
+}
+
+/** Actual provider protocol, still pure and never an authorization executor.
+ * The composition supplies independent public graph/fresh-init verifiers.
+ * A scope label or positive fixture result is insufficient for either gate.
+ */
+export function evaluateInstalledFreshStartReadiness(input = {}, adapters = {}) {
+  return evaluateReadiness(input, adapters, "observed");
+}
+
+function evaluateReadiness({ plan, checkpoint, gateContext, evidence, facts = {} },
+  { graphAdapter, freshInitializationAdapter }, scope) {
   const blockers = [], block = (code, message) => blockers.push({ code, message });
   let binding;
   try { binding = readinessBinding(plan, checkpoint, gateContext); }
   catch { block("invalid-fresh-start-plan", "Supply a pinned JSON plan, original lock identity, checkpoint and current invocation context."); }
-  if (evidence?.scope !== "synthetic-fixture") block("live-fresh-start-unavailable", "Only synthetic source preparation is implemented; actual reset/cutover remains unavailable.");
+  if (evidence?.scope !== scope) block("live-fresh-start-unavailable", scope === "synthetic-fixture"
+    ? "Only synthetic source preparation is implemented; actual reset/cutover remains unavailable."
+    : "Observed public evidence is required; synthetic preparation cannot authorize installed execution.");
   if (!text(evidence?.evidenceId)) block("readiness-evidence-missing", "An explicit checkpoint evidence reference is required.");
   if (!binding || !sameJson(binding, evidence?.binding ?? null)) block("readiness-binding-mismatch", "Evidence must bind this complete plan, checkpoint and current lock invocation.");
   const identity = plan?.receipt?.cutover;
+  if (scope === "observed") {
+    const confirmation = evidence?.cutoverConfirmation;
+    if (!text(confirmation?.evidenceId) || confirmation.confirmed !== true
+      || confirmation.freshStartChoice !== "graph-preserving-fresh-start"
+      || confirmation.targetIdentity !== plan?.targetIdentity || confirmation.workspace !== identity?.workspace
+      || confirmation.ingressOrigin !== identity?.ingress?.origin || confirmation.graphSourceReference !== identity?.graphSourceReference)
+      block("exact-cutover-confirmation-missing", "Installed effects require the separately authorized exact graph-preserving target before any transition action.");
+    for (const name of ["graphSource", "graphRecoveryCopy", "targetProvisioning", "graphImported", "freshInitialization", "quarantine", "authorityFence"])
+      if (facts[name] !== undefined && (facts[name]?.scope !== "observed" || !text(facts[name]?.evidenceId)))
+        block("installed-effect-unverified", `${name} must be independently observed; fixture facts cannot be promoted.`);
+  }
   if (plan?.freshStartChoice !== "graph-preserving-fresh-start"
     || identity?.mode !== "graph-preserving-fresh-start" || !text(identity.graphSourceReference)
     || !text(identity.workspace) || !text(identity.ingress?.origin) || typeof identity.schema !== "string"
@@ -88,10 +115,11 @@ export function evaluateFreshStartReadiness({ plan, checkpoint, gateContext, evi
     graphSourceReference: identity?.graphSourceReference, workspace: identity?.workspace,
     ingressOrigin: identity?.ingress?.origin, schema: identity?.schema, checkpoint, gateContext };
   const adapterGate = (adapter, input, expectedBinding, pendingBlocker, failureCode) => {
-    if (adapter?.scope !== "synthetic-fixture" || typeof adapter.validate !== "function") { blockers.push({ ...pendingBlocker }); return; }
+    if (adapter?.scope !== scope || typeof adapter.validate !== "function") { blockers.push({ ...pendingBlocker }); return; }
     try {
       const result = adapter.validate(frozenCopy(input), frozenCopy(expectedBinding));
-      if (!record(result) || result.status !== "verified" || !sameJson(result.binding ?? null, expectedBinding))
+      if (!record(result) || result.status !== "verified" || !sameJson(result.binding ?? null, expectedBinding)
+        || (scope === "observed" && (result.scope !== "observed" || !text(result.evidenceId))))
         block(failureCode, "The fixture provider must verify the exact public input and selected binding.");
     } catch { block(failureCode, "Public fixture validation failed; preserve supplied inputs and report the owner blocker."); }
   };
@@ -109,6 +137,8 @@ export function evaluateFreshStartReadiness({ plan, checkpoint, gateContext, evi
   if (finalized) {
     const graph = facts.graphSource, recovery = facts.graphRecoveryCopy, target = facts.targetProvisioning;
     const imported = facts.graphImported, fresh = facts.freshInitialization, quarantine = facts.quarantine;
+    if (scope === "observed" && (imported?.graphReceipt !== identity?.graphReceipt || fresh?.freshInitReceipt !== identity?.freshInitReceipt))
+      block("final-receipt-reference-mismatch", "Installed graph/fresh-init facts must identify exactly the finalized public receipt references before authority changes.");
     if (!text(identity?.graphReceipt) || !text(identity?.freshInitReceipt))
       block("final-graph-receipts-missing", "Final public graph-import and fresh-initialization receipt references are required.");
     if (!text(graph?.evidenceId) || graph.graphSourceReference !== identity?.graphSourceReference || graph.closureVerified !== true)
@@ -162,6 +192,8 @@ export function evaluateFreshStartReadiness({ plan, checkpoint, gateContext, evi
     || facts.resumption?.originalFenced !== true))
     block("forward-recovery-unverified", "Preserve effects already accepted by this fresh target; no automatic older-snapshot fallback.");
   return Object.freeze({ status: blockers.length ? "blocked" : "ready", evidenceId: text(evidence?.evidenceId) ? evidence.evidenceId : null,
-    binding: binding ?? null, scope: "synthetic-fixture", liveExecutionAllowed: false,
-    blockers: Object.freeze(blockers.map(Object.freeze)), production: Object.freeze({ status: "blocked", blockers: pending }) });
+    binding: binding ?? null, scope, liveExecutionAllowed: false,
+    blockers: Object.freeze(blockers.map(Object.freeze)), production: scope === "synthetic-fixture"
+      ? Object.freeze({ status: "blocked", blockers: pending })
+      : Object.freeze({ status: blockers.length ? "blocked" : "ready", blockers: Object.freeze(blockers.map(Object.freeze)) }) });
 }

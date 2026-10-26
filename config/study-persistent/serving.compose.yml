@@ -1,0 +1,99 @@
+# Serving an already admitted persistent target only. No bootstrap or migration.
+name: ${TEMPO_PERSISTENT_PROJECT:?Set the exact registered persistent project}
+
+services:
+  postgres:
+    image: ${TEMPO_PERSISTENT_POSTGRES_IMAGE:?Set the admitted immutable PostgreSQL image}
+    pull_policy: never
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    labels:
+      tempo.owner: ${TEMPO_PERSISTENT_PROJECT}
+      tempo.target-kind: persistent
+      tempo.disposable: "false"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/persistent-postgres-password
+      PGDATA: ${TEMPO_PERSISTENT_POSTGRES_DATA_DIRECTORY:?Set the verified existing cluster data directory}
+    secrets:
+      - source: persistent-postgres-password
+        target: persistent-postgres-password
+        mode: 0400
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks: [persistent]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: "no"
+
+  learning:
+    image: ${TEMPO_PERSISTENT_LEARNING_IMAGE:?Set the admitted immutable Learning image}
+    pull_policy: never
+    user: "10001:10001"
+    command: ["serve", "--host", "0.0.0.0", "--port", "8001"]
+    labels:
+      tempo.owner: ${TEMPO_PERSISTENT_PROJECT}
+      tempo.target-kind: persistent
+      tempo.disposable: "false"
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      TEMPO_LEARNING_WORKSPACE: ${TEMPO_PERSISTENT_WORKSPACE:?Set the admitted workspace}
+      TEMPO_LEARNING_DATABASE_URL: ${TEMPO_PERSISTENT_WRITER_DSN:?Copy exact credential-free writer_dsn from connection.json}
+      TEMPO_LEARNING_READER_URL: ${TEMPO_PERSISTENT_READER_DSN:?Copy exact credential-free reader_dsn from connection.json}
+      TEMPO_LEARNING_TOKEN_FILE: /run/persistent/bootstrap/study.token
+      TEMPO_LEARNING_ORIGINS: ${TEMPO_PERSISTENT_INGRESS_ORIGIN:?Set the admitted browser origin}
+      TEMPO_LEARNING_HOSTS: "127.0.0.1,learning"
+      TEMPO_LEARNING_TIMEZONE: ${TEMPO_PERSISTENT_TIMEZONE:?Set the admitted timezone}
+      TEMPO_LEARNING_MAINTENANCE: "1"
+      PGPASSFILE: /run/persistent/bootstrap/runtime.pgpass
+    volumes:
+      - type: volume
+        source: runtime-secrets
+        target: /run/persistent
+        read_only: true
+    networks: [persistent]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/opt/learning/bin/python", "-I", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=2).close()"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+    restart: "no"
+
+  study-web:
+    image: ${TEMPO_PERSISTENT_STUDY_IMAGE:?Set the admitted immutable Study web image}
+    pull_policy: never
+    labels:
+      tempo.owner: ${TEMPO_PERSISTENT_PROJECT}
+      tempo.target-kind: persistent
+      tempo.disposable: "false"
+    ports:
+      - "127.0.0.1:${TEMPO_PERSISTENT_PORT:?Set the admitted loopback port}:80"
+    networks: [persistent]
+    depends_on:
+      learning:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres-data:
+    external: true
+    name: ${TEMPO_PERSISTENT_DATA_VOLUME:?Set the verified persistent data volume}
+  runtime-secrets:
+    external: true
+    name: ${TEMPO_PERSISTENT_SECRETS_VOLUME:?Set the verified private runtime volume}
+
+networks:
+  persistent:
+    external: true
+    name: ${TEMPO_PERSISTENT_NETWORK:?Set the verified target network}
+
+secrets:
+  persistent-postgres-password:
+    file: ${TEMPO_PERSISTENT_POSTGRES_PASSWORD_FILE:?Set the existing private cluster password file}
