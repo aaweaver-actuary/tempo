@@ -1,6 +1,6 @@
 # Graph-preserving fresh-start lifecycle
 
-**PROPOSED SOURCE / SYNTHETIC FIXTURES / DEPLOYMENT UNVERIFIED.**
+**SOURCE PROTOCOL PREPARED / SYNTHETIC PROOFS / DEPLOYMENT UNVERIFIED.**
 The user selected a fresh start preserving the opening graph, authored sources
 and repertoire structure. Old reviews, schedules, server/background work,
 browser operations and old backup retention are outside this transition's
@@ -13,8 +13,10 @@ The [fresh-start driver](../../../tempo-cutover-transition.mjs) is an extension
 of the existing launcher component, with no CLI or production wiring. It reuses
 public `acquireTargetLock` and `atomicJson` from
 [the existing deployment component](../../../tempo-deployment.mjs). Current
-normal launch and Study remain unchanged. Only `executionScope:
-"synthetic-fixture"` is connected; production reports `graph-contract-pending`
+normal launch and Study remain unchanged. The retained `executionScope:
+"synthetic-fixture"` path remains separate. Installed effects require the explicit
+`createInstalledFreshStartEffects` factory and every independently verified public
+operation; a raw installed scope label still reports `graph-contract-pending`
 before acquiring a lock or changing files. A missing public fresh-Learning
 initialization port reports `fresh-initialization-contract-pending`.
 
@@ -26,6 +28,8 @@ sequenceDiagram
     participant L as Fresh-start lifecycle
     participant S as Original maintenance lock and private journal
     participant G as Injected public graph and Learning capabilities
+    participant P as Private public-contract admission packet
+    participant A as Public installed-authority reader
     C->>L: Explicit fresh choice, graph source, pinned new target
     L->>S: Acquire original lock; persist transition identity
     L->>G: Verify source graph closure
@@ -43,7 +47,11 @@ sequenceDiagram
     L->>G: Separate fresh-target admission release gate
     L->>S: Persist activation-started
     L->>G: Open selected fresh target and verify
-    L->>S: Persist completion and release original lock
+    L->>S: Persist complete journal; writeCompletedAdmission(plan)
+    S->>P: Durably publish verified plan/evidence/facts
+    Note over L,S: Release original lock after publication
+    A->>P: Read exact selected admissionPath
+    P-->>A: Public packet; no raw journal
 ```
 
 Lifecycle owns phase and publication state. Injected capabilities own graph
@@ -79,7 +87,8 @@ receipt contracts remain external inputs; the driver never manufactures them.
 recovery bundle/receipt from the sole authorized capture executor; the bundle
 may have been prepared earlier. This capability does not authorize a second
 live capture or require a full-history backup. The lifecycle has no capture
-adapter, and all capabilities in this packet are disposable fixtures.
+adapter. All executed capabilities in this packet are disposable protocol
+fixtures; no actual installed operation or accepted graph receipt was created.
 The fresh initialization owner must verify a new configured workspace/origin/
 token authority isolates old browser authority. No unsupported authority-epoch
 runtime setting, old-browser compatibility, history replay or drain is added.
@@ -130,6 +139,59 @@ fallback or restoration of an older graph copy is implemented. Preparation
 never stops or changes the original database/services, and actual switching
 remains separately authorized.
 
+## Installed producer and public completion
+
+`createInstalledFreshStartEffects({operations, readReleaseEvidence,
+assessReadiness})` snapshots the named owner functions and creates a nominal
+capability. Copying its properties or setting `executionScope: "installed"`
+does not opt into execution. The composition supplies the public
+`evaluateInstalledFreshStartReadiness` evaluator with independent observed graph
+and fresh-initialization verifiers; the original synthetic evaluator remains
+production-blocked. Exact user confirmation is required even before installed
+preparation. No actual values or approval records are supplied by this source.
+
+Each installed owner returns `scope: "observed"`, `verified: true`, a nonblank
+evidence reference and the supplied complete-plan/operation/lock-nonce binding.
+Final graph and fresh-init references must match their owner facts before
+authority switching. Admission requires separate observed completed readback,
+not merely a successful command or user choice. The private journal records
+installed provenance, final release evidence and completion; a synthetic journal
+cannot be promoted by adding a scope label.
+
+The state owner's `readCompletedAdmission(plan)` checks its complete journal and
+both exact publication records, then returns the existing public packet
+`{plan, evidence, facts}`. `verifyInstalledAdmissionPacket(packet)` validates that
+packet and projects the completed source/lock/target identity for the public
+authority reader. `facts.admission.binding` reuses
+`readinessBinding(finalizedPlan, "before-admission", gateContext)` from the public
+readiness protocol. No parallel hash, journal parser or history-transfer model
+is introduced. The ordinary launcher consumes this packet but never invokes
+the one-time transition implicitly. Consumers must independently reobserve the
+current daemon, source writer fence, physical target and runtime lineage.
+
+Installed execution requires an explicit `admissionPath` on `createCutoverState`
+before any owner operation, canonically equal to the `installedStudy.admissionPath`
+already pinned in the selected registration. The carrier's original lock/state
+and receipt paths must match the owning state capability too. The separate
+`installedStudy.originalRegistrationPath` must already contain private preserved
+v1 metadata exactly equal to the planned original registration; it cannot point
+to the configuration that publication will rewrite. Missing or mismatched input
+blocks execution; the producer never fabricates that preservation evidence.
+The admission parent must be owned and private, the destination
+must be outside the source/target/executing checkouts, and it cannot alias a
+publication, journal or lock. Links and unrelated existing outputs are refused.
+`writeCompletedAdmission(plan)` derives its packet from that owner's completed
+journal; it never accepts a caller-invented packet. Existing `atomicJson` provides
+private-file and parent-directory durability. Publication occurs only after
+the complete journal. If that final file write fails, the normal command provider
+stays blocked; an explicit completed resume can publish without repeating target
+activation or reverting authority. An identical already-published packet is an
+idempotent no-op.
+
+These validators establish source protocol correspondence. They cannot replace
+the actual owner observations, complete graph readback or separately authorized
+cutover that must produce the real evidence.
+
 ## Focused verification
 
 Run `node --test scripts/tests/tempo-cutover-transition.test.mjs`. The owning
@@ -139,10 +201,14 @@ target, explicit fresh choice, known-null receipt, graph/init identity binding,
 separate confirmations, interruption reconciliation, split publication,
 durability and preservation of newly accepted effects during forward repair.
 
-The schema-identity repair was authored through GitHub while the Mac execution
-environment was unavailable. Its added owning regressions are not executed
-evidence; the earlier 32-case pass applies only to head `84447fd13c67e093d8702fe10f798527dcee0009`.
-Run the owning command above when execution is available.
+The added installed-protocol suite is
+[`tests/runner/tempo-study-admission.test.mjs`](../../../../tests/runner/tempo-study-admission.test.mjs).
+It uses injected observed-protocol fakes and disposable files only, including
+completed-packet projection, nominal capability checks, existing synthetic-mode
+behavior, exact authorizations, stage bindings, durable pair protection,
+interruption and explicit forward recovery. Earlier 37-case synthetic lifecycle
+and 38-case readiness evidence remains recorded at its qualified source; those
+suites are not repeated merely for documentation or registration.
 
 No old artifact suites, real database/browser/service work, snapshots,
 deletion/reset, migration, deployment or cutover are run. Actual installed graph
