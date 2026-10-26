@@ -59,3 +59,5 @@ migration has been run by the feature implementation.
 - [048_frozen_opening_order.sql](048_frozen_opening_order.sql)
 - [049_study_priority_recovery.sql](049_study_priority_recovery.sql)
 - [050_learning_remediation.sql](050_learning_remediation.sql)
+- [051_study_game_feedback.sql](051_study_game_feedback.sql) — Study-owned lapse receipt/fence.
+- [052_product_game_sync.sql](052_product_game_sync.sql) — Games-owned capture/checkpoint/delivery and explicit sync configuration; independent of Study startup.

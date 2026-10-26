@@ -1,8 +1,12 @@
 # Tempo working rules
 
-## Current programme: Study-first small tasks
+## Current product scope: SPEC.md
 
-The selected scope is [Study-first simplification #357](https://github.com/aaweaver-actuary/tempo/issues/357). Start with the assigned leaf issue and its exact read/write/test contract; [the task index](docs/architecture/study-first-reduction-2026-10-21/PLAN.md) and [small-task guide](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md) define the current execution sequence. Parent issues are coordination records, not whole-agent assignments. The older #192/M01-M12 roadmap is historical donor evidence, not a requirement to rebuild optional services.
+Start with the root [product specification](SPEC.md), then the assigned task and its exact read/write/test contract. SPEC.md governs product scope and delivery order: preserve working Study/Tactics, selectively restart unfinished workflows, and deliver real-game feedback without requiring replacement-runtime adoption, full history migration, or completion of the cleanup target first. Its concrete reuse map identifies starting points, not mandatory infrastructure.
+
+The [Study-first task index](docs/architecture/study-first-reduction-2026-10-21/PLAN.md), [small-task guide](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md), and #357 remain references for compatible, specifically assigned work; they do not override SPEC.md or require finishing the entire programme before a product slice. Parent issues are coordination records, not whole-agent assignments. The older #192/M01-M12 and adaptive-segmentation rollouts are historical donor evidence, not prerequisites to resurrect.
+
+Use the spec's bounded acceptance for the affected slice. If an assigned task contradicts current product scope, identify and reconcile that specific conflict rather than reviving the older programme or expanding into a broad audit. All data-safety, permission, transaction, branch, and actual required-check rules below remain in force; publishing a spec is not deployment or data-disposal authority.
 
 Read only the named source and relevant owner guidance after these safety rules. Do not preload the full module/table audit, every historical PR, or unrelated diagrams. Reuse completed implementations and existing named tests. A missing contract, unmerged prerequisite, conflicting file owner, or required edit outside the leaf's allowlist is a blocker to report, not permission to expand scope. Source/build tests and real deployment are different claims. No safety or transaction rule below is waived by a small task or cheaper model.
 
@@ -73,12 +77,13 @@ Read only the named source and relevant owner guidance after these safety rules.
 
 ## Authoritative guidance
 
-- [Current Study-first task plan and scope](docs/architecture/study-first-reduction-2026-10-21/PLAN.md)
+- [Current product specification, decisions, delivery, and reuse map](SPEC.md)
+- [Study-first task-plan reference for compatible assigned work](docs/architecture/study-first-reduction-2026-10-21/PLAN.md)
 - [Small-task execution contract](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md)
 - [Contribution and handoff workflow](CONTRIBUTING.md)
 - [Test selection, commands, and current runner behavior](docs/testing.md)
 - [Component architecture and historical migration index](docs/architecture/component-reconstruction.md)
 - [Maintained architecture drawings and review procedure](docs/architecture/diagrams/README.md)
-- [Historical 12-phase index and component manifest (#192)](https://github.com/aaweaver-actuary/tempo/issues/192) — superseded for product/task scope by #357
+- [Historical 12-phase index and component manifest (#192)](https://github.com/aaweaver-actuary/tempo/issues/192) — historical; current product scope is SPEC.md
 
 Read `CONTRIBUTING.md` before behavior changes. The architecture guide distinguishes target boundaries from current implementation and migration work; do not infer that a planned package, service, database, release, or toolchain already exists.
