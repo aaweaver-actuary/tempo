@@ -1,5 +1,12 @@
 # Study game-feedback storage
 
+[`game_feedback_authority.py`](game_feedback_authority.py) supplies the concrete
+`current_owner_game_feedback` factory and retained-owner `CurrentOwnerDecisions`
+fencer. It requires the existing backend capture plus its public snapshot,
+rechecks current stored rows/generations and existing completed scan facts in
+the mutation transaction, and returns no authority on missing/busy/stale facts.
+No new certificate, source migration, catalogue capture or Games call is added.
+
 [`game_feedback.py`](game_feedback.py) implements the Study owner's semantic
 storage port using its existing borrowed PostgreSQL connection. It opens no
 connection and never commits, rolls back, deploys, or calls a producer.

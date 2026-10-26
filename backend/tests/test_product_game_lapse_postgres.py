@@ -288,3 +288,102 @@ def test_native_priority_preserves_unrelated_issued_attempt(case):
         assert case.service(database).accept_lapse(case.lapse).status == 'applied'
         assert database.execute_native("SELECT position FROM daily_queue WHERE id=%s", (head,)).fetchone()[0] == 0
         assert tuple(database.execute_native("SELECT fsrs_card_json,interval_days,state FROM cards WHERE id=%s", (head_card,)).fetchone()) == before
+
+
+def retained_owner_case(case, changed):
+    """Actual existing source capture, no producer-supplied authority rows."""
+    from app.legacy_game_observation import capture_game
+    from app.services.postgres_integrity import current_integrity_certificate
+    from tempo_game_evidence_contracts.legacy import decision_identity, fingerprint
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    import chess
+    board = chess.Board()
+    board.remove_piece_at(chess.A8 if changed else chess.D8)
+    start = board.fen(en_passant='legal')
+    position = ' '.join(start.split()[:4])
+    repertoire = case.card_id + '-repertoire'
+    route, scan = repertoire + '-route', repertoire + '-scan'
+    introduced = (NOW-timedelta(days=6)).isoformat()
+    with case.transaction() as database:
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Owner fixture','fixture',%s)", (repertoire,NOW.isoformat()))
+        database.execute_native('UPDATE cards SET repertoire_id=%s,introduced_at=%s,start_fen=%s WHERE id=%s', (repertoire,introduced,start,case.card_id))
+        database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', (repertoire,case.card_id))
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES(%s,%s,'Route','white',%s,'["e2e4"]',%s)""", (route,repertoire,start,NOW.isoformat()))
+        database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire,NOW.isoformat()))
+        database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,
+            card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,
+            last_decision_index,decision_fen_keys_json) VALUES(%s,1,%s,0,%s,%s,%s,'["e2e4"]','white','prefix',0,0,%s)""",
+            (repertoire,route,case.card_id,position,start,json.dumps([position])))
+        for kind, identity in [('opening_graph_rebuild',repertoire+'-graph'),('integrity_scan',scan)]:
+            database.execute_native("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,
+                payload_json,next_attempt_at,created_at,updated_at) VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)""",
+                (identity,kind,repertoire,json.dumps(dict(repertoire_id=repertoire,graph_generation=1)),
+                 NOW.isoformat(),NOW.isoformat(),NOW.isoformat()))
+        database.execute_native("""INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,
+            scan_status,scan_generation,scan_completed_sources,scan_total_sources)
+            VALUES(%s,'clean',%s,'idle',%s,1,1)""", (repertoire,NOW.isoformat(),scan+':1'))
+        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,played_at,
+            speed,rated,color,result,start_fen,moves_json,content_hash)
+            VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','draw',%s,'["d2d4"]',%s)""",
+            (case.lapse.key.game_id,case.lapse.key.game_id,(NOW-timedelta(days=1)).isoformat(),start,'a'*64))
+    with case.transaction() as database:
+        def reader(statement, parameters=()):
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+        def metadata(repertoire_id):
+            row = database.execute_native("""SELECT repertoire.scope_source_revision,
+                repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
+                publication.generation graph_generation,publication.state graph_state,
+                integrity.status integrity_status,integrity.scan_status,integrity.scan_generation
+                FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
+                JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
+                JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
+                WHERE repertoire.id=%s AND scope.id=1""", (repertoire_id,)).fetchone()
+            certificate=current_integrity_certificate(database,repertoire_id,1)
+            return {**dict(row),'integrity_current':certificate is not None,'integrity_certificate':certificate}
+        captured = capture_game(repertoire,case.lapse.key.game_id,(0,),reader=reader,metadata=metadata,now=NOW)
+    decision = decision_identity(case.card_id,0,[])
+    mapping = case.decisions.mappings[0].model_copy(update={
+        'decision_id':decision,'repertoire_id':repertoire,'introduced_at':introduced,'position_key':position})
+    snapshot = fixture('snapshot',RepertoireSnapshot).model_dump(mode='json')
+    snapshot['membership'].update(workspace_id='legacy',snapshot_id='product:'+captured['export_digest'],
+        digest=captured['export_digest'],source_revision=fingerprint(captured['authority']),
+        scope_repertoire_ids=[repertoire],scope_id='capture:'+captured['export_digest'],
+        routes=[dict(repertoire_id=repertoire,route_id=route,policy_id=repertoire,learner_color='white',
+                     starting_fen=start,moves=['e2e4'],reentries=[])])
+    snapshot['boundaries']=[dict(route_id=route,terminal_ply=1,deliberate=True)]
+    snapshot['decision_presentations']=[mapping.model_dump(mode='json')]
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(snapshot))
+    lapse=case.lapse.model_copy(update={
+        'key':case.lapse.key.model_copy(update={'workspace_id':'legacy','decision_id':decision}),
+        'finding':case.lapse.finding.model_copy(update={'repertoire_id':repertoire,'decision_id':decision,'position_key':position})})
+    return repertoire,captured,snapshot,lapse
+
+
+@pytest.mark.parametrize('changed',[False,True])
+def test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_authority(case, changed):
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_game_feedback, CurrentDecisionUnavailable
+    repertoire,captured,snapshot,lapse = retained_owner_case(case, changed)
+    if changed:
+        with case.transaction() as database:
+            database.execute_native('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=%s', (repertoire,))
+        with pytest.raises(CurrentDecisionUnavailable,match='revision_changed'):
+            with case.transaction() as database:
+                current_owner_game_feedback(database,retained_owner_capture=captured,snapshot=snapshot,
+                                            clock=lambda:NOW).accept_lapse(lapse)
+        with case.transaction() as database:
+            assert PostgresGameFeedbackStore(database).get(lapse.key) is None
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'", (case.card_id,)).fetchone()[0] == 0
+        return
+    with case.transaction() as database:
+        service=current_owner_game_feedback(database,retained_owner_capture=captured,snapshot=snapshot,clock=lambda:NOW)
+        assert service.accept_lapse(lapse).status == 'applied'
+        def concurrent_source_edit():
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                with case.transaction() as editor:
+                    editor.execute_native("SET LOCAL lock_timeout='100ms'")
+                    editor.execute_native('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=%s', (repertoire,))
+            return 'fenced'
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(concurrent_source_edit).result(timeout=5) == 'fenced'
+        assert service.effect_status(lapse.key).status == 'applied'
