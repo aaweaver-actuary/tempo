@@ -99,6 +99,7 @@ test('mate_and_bound_not_cp',async()=>{
     const result=await fake({answer:()=>({score:`cp 12 ${bound}`})}).evaluator.evaluate(request({learner_color:'black'}));
     assert.equal(result.status,'inconclusive');assert.equal(result.evidence.best.score,null);
     assert.equal(result.evidence.best.unavailable_reason,bound==='lowerbound'?'score_upperbound':'score_lowerbound');
+    assert.equal(result.evidence.candidates[0].unavailable_reason,result.evidence.best.unavailable_reason);
     contractCheck(result.evidence);
   }
 });
@@ -110,20 +111,22 @@ test('mismatched_context_inconclusive',async()=>{
   assert.equal(shallow.evidence.candidates[0].score,null);assert.equal(shallow.evidence.candidates[0].unavailable_reason,'comparison_depth_mismatch');
   const inconsistent=await fake({answer:({candidate})=>({score:candidate?'cp 51':'cp 50'})}).evaluator.evaluate(request());
   assert.equal(inconsistent.evidence.candidates[0].unavailable_reason,'baseline_inconsistent');
+  assert.equal(inconsistent.diagnostics.inconsistent_candidates[0].score.value,51);
   const version=await fake({version:'Other engine'}).evaluator.evaluate(request());
   assert.equal(version.evidence.best.unavailable_reason,'engine_version_mismatch');assert.equal(version.evidence.context.engine_version,'Other engine');
   contractCheck(version.evidence);
 });
 
 test('timeout_and_cancel_release_owned_process',async()=>{
-  const timeout=fake({onGo:()=>{}});
+  const timeout=fake({onGo:({onLine,uci})=>onLine(`info depth 3 nodes 20 score cp 4 pv ${uci}`)});
   const result=await timeout.evaluator.evaluate(request());
-  assert.equal(result.evidence.unavailable_reason,'timeout');assert.equal(timeout.closed,1);assert.equal(timeout.alive,0);contractCheck(result.evidence);
+  assert.equal(result.evidence.unavailable_reason,'timeout');assert.equal(result.diagnostics.incomplete_baseline.depth,3);assert.equal(timeout.closed,1);assert.equal(timeout.alive,0);contractCheck(result.evidence);
   const controller=new AbortController();
   const cancel=fake({onGo:()=>controller.abort()});
   const cancelled=await cancel.evaluator.evaluate(request(),{signal:controller.signal});
   assert.equal(cancelled.status,'cancelled');assert.equal(cancel.closed,1);assert.equal(cancel.alive,0);
   const failing=fake({failClose:true});await assert.rejects(failing.evaluator.evaluate(request()),{code:'cleanup_unverified'});
+  await assert.rejects(failing.evaluator.evaluate(request()),{code:'cleanup_unverified'});assert.equal(failing.closed,1);
 });
 
 test('malformed_uci_and_engine_exit_are_typed',async()=>{

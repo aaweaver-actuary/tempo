@@ -100,7 +100,7 @@ export function createEvaluator({launch, startupTimeoutMs=2000, searchTimeoutMs=
     if (signal?.aborted) fail('cancelled');
     active=true;
     let transport, waiting, fault, bytes=0, version=null;
-    const started=performance.now();
+    const started=performance.now(), observations=new Map();
     const stop = code => {
       fault ??= new EvaluationError(code);
       waiting?.reject(fault);
@@ -147,7 +147,7 @@ export function createEvaluator({launch, startupTimeoutMs=2000, searchTimeoutMs=
         const info=parseInfo(line,board,sign);
         if (info) {
           if (candidate && info.move_uci!==candidate) fail('search_context_mismatch');
-          latest=info;
+          latest=info;observations.set(candidate??'*',info);
         }
         if (line.startsWith('bestmove ')) {
           const match=/^bestmove ([a-h][1-8][a-h][1-8][qrbn]?)(?: ponder [a-h][1-8][a-h][1-8][qrbn]?)?$/.exec(line);
@@ -198,8 +198,10 @@ export function createEvaluator({launch, startupTimeoutMs=2000, searchTimeoutMs=
       failure=error instanceof EvaluationError?error:new EvaluationError('engine_io');
       if (version) result={request_id:request.request_id,status:failure.code==='cancelled'?'cancelled':'unavailable',
         evidence:{interface_version:'0.2.0',evidence_id:request.request_id,context:{...request.context,engine_version:version},
-          requested_candidates:request.candidates,best:null,candidates:request.candidates.map(uci=>unavailable(uci,failure.code)),
-          unavailable_reason:failure.code},error:{code:failure.code}};
+          requested_candidates:request.candidates,best:null,candidates:request.candidates.map(uci=>unavailable(uci,failure.code,observations.get(uci))),
+          unavailable_reason:failure.code},error:{code:failure.code},
+        diagnostics:{elapsed_ms:Math.ceil(performance.now()-started),cleanup:'verified',
+          incomplete_baseline:observations.has('*')?unavailable(observations.get('*').move_uci,failure.code,observations.get('*')):null}};
     } finally {
       clearTimeout(totalTimer);
       signal?.removeEventListener('abort',onAbort);

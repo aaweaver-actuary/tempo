@@ -89,7 +89,10 @@ Default startup/readiness timeout is 2s, each search wall timeout 1.5s, total
 request wall timeout 15s. Custom timeouts are positive integers ≤15s. Every
 completion/failure/cancellation closes only its owned process; stop/quit gets
 75ms grace, then SIGKILL and up to 500ms for verified close. Missing exit is
-`cleanup_unverified` and cannot publish evidence. UCI output ≤1 MiB total,
+`cleanup_unverified` and cannot publish evidence; the evaluator is quarantined
+and refuses new work. Raw inconsistent candidate scores are retained only in
+`diagnostics.inconsistent_candidates`, with their shared evidence score withheld
+so a consumer cannot accidentally accept them. UCI output ≤1 MiB total,
 16 KiB per line; response ≤32 KiB. No endless search, retry or output buffer.
 Host scheduling/CPU priority and ordinary-product availability proof remain
 integration #501 responsibilities; this source check alone is not that proof.
@@ -114,7 +117,7 @@ assert response["request_id"] == request["request_id"]
 
 ```sh
 node --test tests/runner/product-stockfish.test.mjs
-TEMPO_STOCKFISH_SMOKE_EXECUTABLE=/absolute/existing/stockfish node --test tests/runner/product-stockfish-smoke.test.mjs
+TEMPO_STOCKFISH_SMOKE_EXECUTABLE=/absolute/existing/stockfish TEMPO_STOCKFISH_SMOKE_VERSION="Stockfish 19" node --test tests/runner/product-stockfish-smoke.test.mjs
 ```
 
 Fake tests check every issue-named boundary plus caller isolation/serialization
