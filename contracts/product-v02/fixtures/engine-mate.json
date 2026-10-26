@@ -1,0 +1,120 @@
+{
+  "model": "EngineEvidence",
+  "payload": {
+    "interface_version": "0.2.0",
+    "evidence_id": "synthetic-mate",
+    "context": {
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "history_uci": [],
+      "target_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "variant": "standard",
+      "learner_color": "white",
+      "engine_version": "synthetic-stockfish-fixture",
+      "max_depth": 12,
+      "max_nodes": 1000,
+      "max_time_ms": 100,
+      "threads": 1,
+      "hash_mb": 16
+    },
+    "requested_candidates": [
+      "e2e4",
+      "d2d4",
+      "g1f3",
+      "c2c4",
+      "b1c3",
+      "g2g3",
+      "a2a3"
+    ],
+    "best": {
+      "move_uci": "e2e4",
+      "score": {
+        "kind": "mate",
+        "value": 3
+      },
+      "score_perspective": "learner",
+      "depth": 12,
+      "nodes": 1000,
+      "unavailable_reason": null
+    },
+    "candidates": [
+      {
+        "move_uci": "e2e4",
+        "score": {
+          "kind": "centipawns",
+          "value": 50
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "d2d4",
+        "score": {
+          "kind": "centipawns",
+          "value": 46
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "g1f3",
+        "score": {
+          "kind": "centipawns",
+          "value": 42
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "c2c4",
+        "score": {
+          "kind": "centipawns",
+          "value": 38
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "b1c3",
+        "score": {
+          "kind": "centipawns",
+          "value": 34
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "g2g3",
+        "score": {
+          "kind": "centipawns",
+          "value": 30
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      },
+      {
+        "move_uci": "a2a3",
+        "score": {
+          "kind": "centipawns",
+          "value": 26
+        },
+        "score_perspective": "learner",
+        "depth": 12,
+        "nodes": 1000,
+        "unavailable_reason": null
+      }
+    ],
+    "unavailable_reason": null
+  }
+}
