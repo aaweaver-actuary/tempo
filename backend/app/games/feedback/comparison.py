@@ -228,6 +228,11 @@ def compare_game(game: CanonicalGame, *, provider: str,
                 mapping = None
             findings.append(_finding(game, provider, membership, position, repertoire_id,
                                      expected, kind, diagnostic, mapping, authority))
+            if kind == "known_unintroduced" and position["move"] in expected:
+                # A covered correct encounter is a frequency fact, not a
+                # departure. Retain the fact and keep following the same route.
+                frontier.advance(candidates, position["move"])
+                continue
             # Every meaningful uncertainty/departure ends this traversal, even
             # if an old raw comparer would accept one of conflicting own moves.
             frontier.advance((), position["move"])

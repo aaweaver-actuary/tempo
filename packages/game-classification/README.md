@@ -1,7 +1,8 @@
 # Game classification policy
 
 `classify_response` consumes supplied membership, mapping, availability and
-introduction facts. It returns `(kind, diagnostic)`, or `None` for a correct move.
+introduction facts. It returns `(kind, diagnostic)`, or `None` when there is no
+reportable finding. Correct unintroduced encounters are factual non-lapse output.
 It has no provider, database, engine, scheduling or Study dependency. The transport
 adapter owns conversion from the shared product contracts and supplied index.
 Only a unique response with one available mapping, exact occurrence chronology,
@@ -11,8 +12,47 @@ Different own responses are a conflict even if the played move is one of them.
 ```mermaid
 flowchart LR
   Facts["Supplied immutable membership / introduction facts"] --> Policy["classify_response\nclassification policy owner"]
-  Policy --> Result["kind + diagnostic / correct"]
+  Policy --> Result["kind + diagnostic / no finding"]
 ```
+
+## Next-release encounter facts
+
+This extension lives on `codex/issue-486-encounter-facts`, based on the separately
+usable first-release `codex/issue-486-game-classification` at `3bce27fd`. It does not
+activate or change that qualified first-release candidate.
+
+The existing shared `Finding` already supports `known_unintroduced` with the
+played move equal to the selected expected move, exact source/decision/card
+identity, `membership='present'` and `lapse_eligible=false`. No new DTO, parser or
+pipeline is required. A correctly played encounter records frequency and advances
+the same authored route; it is not a failure or a departure. A different played
+move retains its actual UCI and remains a meaningful departure, so downstream
+findings are suppressed until an authorized reentry.
+
+`known_unintroduced` is historical evidence, not a first-introduction command.
+It also covers an encounter before a card's later introduction, including a card
+that is now introduced. Incorrect historical encounters retain importance even
+when ineligible for a scheduling lapse. Correct encounters retain frequency
+without fabricating failure. Recomparison after later introduction preserves the
+same `GameEffectKey`; it does not create another event or decide a fresh-card
+effect. Study must revalidate current state and own priority, review versus first
+introduction, scheduling and receipts without rewinding later learning. Ordinary
+cap and Study-only exceptions remain unresolved and are not inferred here.
+
+All existing route, source, mapping, conflict, ambiguity, coverage-end and chronology
+guards remain. Unmapped or unavailable correct play never invents an authoritative
+encounter. The pure classifier issues no learning command and changes no state.
+
+This branch consumes the frozen additive `GameEncounter` / `EncounterReceipt`
+contract 0.2.1 from #533 at `46f07e9a`. Its findings and `GameEffectKey` map directly
+to `GameEncounter` without another classifier API or DTO. Outer composition supplies
+the exact `IntroductionGameScope`, the proved `DecisionPresentation`, original
+detection time and workflow-owned payload digest claim. Expected/played moves
+become `matched` / `missed` observation facts, including when Study has introduced
+the card since the game. The focused boundary regression constructs the frozen
+contract for both observations and both current introduction states. Existing
+`control_effect` fences remain shared; delivery, receipts, current-state disposition
+and live controls stay with their owners. No command is submitted by this module.
 
 ## Product adapter (unmerged source)
 
@@ -56,6 +96,7 @@ flowchart LR
   Adapter --> Frontier["RouteFrontier / TraversalRoute\nexisting traversal owner"]
   Adapter --> Policy["classify_response\npure classification owner"]
   Adapter --> Findings["Shared Finding values / GameEffectKey"]
+  Findings -. "outer composition example\nverified at the contract boundary" .-> Encounter["Shared GameEncounter 0.2.1\noriginal detection / source / observation"]
 ```
 
 This is implemented, unmerged source; application wiring and real game-to-Study
