@@ -211,6 +211,25 @@ class RuntimeReadbackTests(unittest.TestCase):
                 self.assert_blocked("runtime_session_identity_mismatch")
                 setattr(connection, attribute, original)
 
+    def test_session_host_projection_is_canonical_and_wrong_addresses_remain_rejected(self):
+        connection = self.connections["reader"]
+        execute = connection.execute
+
+        def postgres_inet_projection(query):
+            cursor = execute(query)
+            if query.startswith("SELECT current_database()"):
+                row = list(cursor.value)
+                # Model PostgreSQL inet text versus its host() projection. The
+                # production comparison must still receive and require an exact IP.
+                row[3] = connection.hostaddr if "host(inet_server_addr())" in query else connection.hostaddr + "/32"
+                return Cursor(tuple(row))
+            return cursor
+
+        connection.execute = postgres_inet_projection
+        self.assertEqual(self.run_readback()["server"]["hostaddr"], "192.0.2.7")
+        connection.hostaddr = "192.0.2.8"
+        self.assert_blocked("runtime_session_identity_mismatch")
+
     def test_privileged_inheriting_or_schema_creating_roles_are_refused(self):
         for index in range(1, 8):
             flags = list(self.connections["writer"].flags)
