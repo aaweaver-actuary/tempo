@@ -7,16 +7,24 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from email.utils import parsedate_to_datetime
+from threading import Event
 from typing import Literal
 
 import httpx
 from pydantic import Field, model_validator
 
 from app.contracts.product_v02 import Revision, Value
-from app.contracts.product_v02.games import GamePage, GameWindow
-from app.games.providers.chesscom_acquisition import fetch_chesscom_page
-from app.games.providers.lichess_acquisition import fetch_lichess_page
-
+from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameWindow
+from app.contracts.product_v02.learning import LearningFeedbackPort
+from app.contracts.product_v02.repertoire import RepertoireSnapshot, RepertoireSnapshotPort
+from app.games.feedback.comparison import compare_record, normalize_record
+from app.games.feedback.coordinator import Coordinator
+from app.games.feedback.jobs import FeedbackRunner
+from app.games.feedback.ports import AcquisitionFailure, Clock, GamesStore, JobSpec
+from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
+from app.games.providers.lichess_acquisition import LichessAcquisitionError, fetch_lichess_page
+from app.repertoire import build_index
 
 class AcquisitionPolicy(Value):
     """Explicit user filters plus finite integration resource bounds.
@@ -97,3 +105,116 @@ class ProviderAcquisition:
                     return await fetch_chesscom_page(**common, rated_only=policy.rated is True)
         except TimeoutError:
             raise AcquisitionDeadline(continuation) from None
+
+
+class WorkflowAcquisition:
+    """Translate provider errors to #489's injected AcquisitionFailure class.
+
+    Retry-After is an HTTP header in both providers; the workflow expects seconds.
+    No state mutation/retry policy is placed in this transport translation.
+    """
+    def __init__(self, acquisition: ProviderAcquisition, *,
+                 now: Callable[[], float], failure: Callable[..., Exception] = AcquisitionFailure):
+        self.acquisition, self.failure, self.now = acquisition, failure, now
+
+    def fetch_page(self, *, account: str, window: GameWindow,
+                   continuation: str | None = None) -> GamePage:
+        try:
+            return self.acquisition.fetch_page(account=account, window=window,
+                                               continuation=continuation)
+        except (LichessAcquisitionError, ChesscomAcquisitionError, AcquisitionDeadline) as error:
+            kind = getattr(error, "kind", getattr(error, "code", "transport_error"))
+            retryable = getattr(error, "retryable", kind in {
+                "rate_limited", "http_error", "transport_error", "timeout", "cancelled"})
+            raw_delay = error.retry_after
+            delay = 0.0
+            if raw_delay is not None:
+                if str(raw_delay).isdigit():
+                    delay = float(raw_delay)
+                else:
+                    # Provider validation has already restricted this to HTTP-date.
+                    delay = max(0.0, parsedate_to_datetime(raw_delay).timestamp() - self.now())
+            raise self.failure(f"{self.acquisition.policy.provider}_{kind}",
+                               retry_after=delay, retryable=retryable) from None
+
+
+class WorkflowNormalizer:
+    """Concrete #486 normalizer for #489's documented Normalizer capability."""
+    def normalize(self, record: GameRecord, spec: JobSpec) -> CanonicalGame:
+        return normalize_record(record, provider=spec.provider, account=spec.account,
+                                workspace_id=spec.workspace_id)
+
+
+class WorkflowComparer:
+    """The same index/comparer seam used by #488; no learning writer."""
+    def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
+                record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]:
+        return compare_record(record, provider=spec.provider, account=spec.account,
+            workspace_id=spec.workspace_id, snapshot=snapshot,
+            reentry_lookup=build_index(snapshot), game_id=game.game_id)
+
+
+def sync_job(*, job_id: str, workspace_id: str, account: str, window: GameWindow,
+             repertoire_ids: tuple[str, ...], policy: AcquisitionPolicy) -> JobSpec:
+    """Bind an explicit request to the provider's canonical account/filter facts.
+
+    This creates an owner JobSpec, without enqueueing or changing saved Settings.
+    Both providers return casefolded account identities; a job must bind the same
+    identity or the workflow correctly rejects its page as out of scope.
+    """
+    if not account or account != account.strip():
+        raise ValueError("account must be explicit without surrounding whitespace")
+    speeds = ",".join(sorted(set(policy.speeds)))
+    if policy.provider == "lichess":
+        filters = (("perfType", speeds),) + (() if policy.rated is None else (
+            ("rated", str(policy.rated).lower()),))
+    else:
+        filters = (("speeds", speeds), ("rated_only", str(policy.rated is True).lower()),
+                   ("variant", "standard"))
+    return JobSpec(job_id=job_id, workspace_id=workspace_id, provider=policy.provider,
+        account=account.casefold(), window=window, repertoire_ids=repertoire_ids,
+        filters=filters)
+
+
+class GameSyncRuntime:
+    """Private optional-worker assembly, with no process or timer of its own.
+
+    stop owns only acquisition cancellation and the Games runner. Supplied store,
+    snapshot and Learning capabilities are borrowed and are never closed here.
+    """
+    def __init__(self, runner: FeedbackRunner, stop: Event):
+        self.runner, self._stop = runner, stop
+
+    def run_once(self) -> str:
+        return self.runner.run_once()
+
+    def request_stop(self) -> None:
+        self._stop.set()
+        self.runner.request_stop()
+
+    def close(self) -> None:
+        self.request_stop()
+        self.runner.close()
+
+
+def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesStore,
+                     snapshots: RepertoireSnapshotPort, learning: LearningFeedbackPort,
+                     clock: Clock, max_page_records: int = 100,
+                     max_page_positions: int = 10000,
+                     transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
+    """Wire published concrete seams; the caller selects when bounded units run.
+
+    A caller supplies explicit policies for both providers. The existing #487
+    owner is the sole Learning writer. Nothing starts at construction; no
+    startup/readiness hook is registered with the ordinary Study application.
+    """
+    if len(policies) != 2 or {policy.provider for policy in policies} != {"lichess", "chesscom"}:
+        raise ValueError("explicit policies for both providers are required")
+    stop = Event()
+    providers = {policy.provider: WorkflowAcquisition(ProviderAcquisition(policy,
+        cancelled=stop.is_set, transport_factory=transport_factory), now=clock.now)
+        for policy in policies}
+    coordinator = Coordinator(providers=providers, normalizer=WorkflowNormalizer(),
+        comparer=WorkflowComparer(), snapshots=snapshots, store=store, learning=learning,
+        clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions)
+    return GameSyncRuntime(FeedbackRunner(coordinator), stop)

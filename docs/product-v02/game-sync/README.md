@@ -16,6 +16,23 @@ including Chess.com's original metadata; no projection discards provenance.
 It does not persist, retry, advance a checkpoint, choose a window/account/filter,
 or assign a durable source revision. #489 owns those decisions and state.
 
+`create_game_sync(policies, store, snapshots, learning, clock)` now wires the
+published #489 `Coordinator` / `FeedbackRunner` to these actual providers,
+#486 normalization/comparison, #483 index and the injected #487 Learning owner.
+The returned `GameSyncRuntime` offers `run_once`, `request_stop` and `close`.
+It starts no process or timer and closes no borrowed store/snapshot/Study
+capability. A shared cancellation event connects its stop request to provider
+cooperative cancellation. The worker launcher still needs a separate process.
+
+`WorkflowAcquisition` translates numeric or HTTP-date provider Retry-After headers
+to #489's numeric `AcquisitionFailure.retry_after`; otherwise its retry arithmetic
+cannot consume the header string. `sync_job` creates the actual #489 `JobSpec`
+from explicit caller choices, binding the providers' casefolded account and exact
+filter facts without changing saved Settings. Normalizer/comparer wrappers use
+the original record so provider time precision remains authoritative. Current
+`compare_record` normalizes again internally; this is bounded existing behavior,
+not another comparison policy or writer.
+
 `AcquisitionPolicy(provider, speeds, rated, source_revision)` requires explicit
 filters. `rated=None` means both; `True` means rated-only. Lichess additionally
 supports `False` for casual-only; Chess.com rejects that unsupported choice
@@ -47,23 +64,31 @@ never call acquisition, comparison, admission or retry. Missing/unavailable
 projection handling belongs to the injected owner; no fallback fabricates data.
 The facade is not wired until that implementation exists.
 
+[`createProductGameReviewApi`](../../../app/product-composition/game-review.ts)
+is the private frontend endpoint composition for the published #490 client.
+It maps those exact four operations, percent-encodes game IDs and repertoire
+query context, and performs no I/O at construction. Construct it once in the
+optional shell and mount the actual `GameReviewView` after root reservation.
+
 ## Actual dependency and failure boundary
 
 ```mermaid
 flowchart LR
   Async["#484 Lichess / #485 Chess.com\nimplemented concrete async acquisition"]
   Bridge["#491 ProviderAcquisition\nimplemented private composition"] --> Async
-  Worker["#489 optional runner + coordinator\nimplementation awaited"] -. "inject bridge" .-> Bridge
-  Worker -. "owner storage / checkpoint / delivery" .-> Games["Games-owned durable store\nimplementation awaited"]
-  Worker -. "reuse #488 path" .-> Feedback["#488 snapshot/comparer/Study composition\nimplementation awaited"]
-  Feedback -. "accept_lapse / control_effect" .-> Study["#487 Study owner"]
-  UI["#490 Game Review\npublication awaited"] -.-> HTTP["#491 unregistered HTTP adapter\nimplemented; stored reads / explicit commands"]
-  HTTP -. "injected owner facade awaited" .-> Games
+  Worker["#491 runtime factory\n#489 runner + coordinator"] --> Bridge
+  Worker --> Games["#489 Games-owned durable store\nborrowed; migration activation pending"]
+  Worker --> Compare["#483 index / #486 comparer\nsame source seams as #488"]
+  Worker -->|"accept_lapse / control_effect"| Study["#487 Study owner\nborrowed capability"]
+  UI["#490 Game Review"] --> Client["#491 endpoint composition"]
+  Client -. "root mount pending" .-> HTTP["#491 unregistered HTTP adapter\nstored reads / explicit commands"]
+  HTTP -. "owner facade/projections awaited" .-> Games
   Study --> Queue["ordinary Study queue / review lifecycle"]
 ```
 
 Solid links are implemented here or supplied owner operations; dotted links are
-pending integration. No producer is added to Study's startup, readiness or save
+pending integration. #488's preview/delivery seam is retained unchanged. No
+producer is added to Study's startup, readiness or save
 path. This source checkpoint alone does **not** prove process/host/database
 resource isolation. No Study database connection is acquired by either new file.
 Existing legacy background entry points remain unchanged. The current Compose
@@ -98,8 +123,11 @@ D04 population/time controls remain unset, and repertoire weight storage remains
 with its Study introduction owner. Neither is silently chosen or made a game
 feedback prerequisite. No schema or migration is allocated here.
 
-Proposed new worker bounds are one job at a time, 0.25 CPU, 256 MiB, and existing
-background transaction/lock caps of 250/25 ms. They require concrete launcher and
+Proposed new worker bounds are one job at a time, 0.25 CPU and 256 MiB. The actual
+#489 store currently uses 250 ms statement / 100 ms lock timeouts and requires a
+dedicated, bounded connection context. Connection acquisition and host caps need
+concrete launcher proof. A 25 ms lock budget would require an owner change and
+affected transaction check; it is not an implemented claim. These bounds require concrete launcher and
 disposable lifecycle proof before becoming implemented claims. No connection or
 Study lock may span HTTP or chess work. Host-specific latency remains unmeasured.
 
@@ -113,32 +141,51 @@ TEMPO_PYTHON=/Users/andy/Documents/Codex/2026-10-26/task-14/python-491 \
 ```
 
 The wrapper uses already-installed Python dependencies plus this checkout's
-source paths; no install. At the initial private checkpoint, **6 cases pass**
+source paths; no install. At the current private checkpoint, **9 cases pass**
 using actual provider implementations with `httpx.MockTransport`, shared immutable
-DTOs, and a disposable in-memory FastAPI app with a fake projection/command owner.
+DTOs, actual workflow/index/comparer/Study scheduling policy, reused semantic
+Games/Study fake stores and a disposable in-memory FastAPI app with a fake
+projection/command owner.
 Exact 205 Lichess IDs span three pages; Chess.com spans two months. Every page
 recreates the outer adapter. HTTP checks prove inert GETs, explicit command IDs,
 unchanged receipts, validation and local unavailable projection handling. A
-blocked transport closes on its total budget. This proves neither persisted
-checkpoints nor actual Study processing. Existing advisory validation lock was
+blocked transport closes on its total budget. A concrete coordinator run proves
+HTTP429 delay conversion/provider independence, gap/unintroduced classifications,
+102 genuine miss effects through the existing Study owner and unchanged effect
+count after overlapping jobs and runtime recreation. This proves neither native
+persisted checkpoints nor normal-product Study processing. Existing advisory validation lock was
 opened nontruncating, held for the command and released.
 
-Reused owner evidence (unchanged implementation inputs; not rerun wholesale):
-#482 `e269421b` 29 Python / 27 TypeScript; #483 `7b16e25e` 11 index / 12 snapshot;
-#486 `49995ad2` 30 adapter / 19 pure policy. Provider source checkpoints
-#484 `ae9179eb` and #485 `52e671e4` had not yet claimed runtime completion when
-consumed. #487 `16446623` supplies the receiver interface, with its native proof
-still pending at that published checkpoint. #488 `91b9b2e7` contains preparation
-and early dependencies, not its completed feedback implementation.
+Scoped TypeScript compilation of the private endpoint map and its actual #490
+client / #482 contract inputs passes using the existing TypeScript runtime:
+`node node_modules/typescript/bin/tsc --noEmit --skipLibCheck --target esnext
+--module esnext --moduleResolution bundler --lib esnext,dom --types node
+app/product-composition/game-review.ts app/features/game-review/api.ts
+app/features/product-api/contracts.ts`. The focused product import-boundary guard
+also passes (1 selected, 28 deselected); no whole contract suite was repeated.
 
-Next ready work: inject these acquisitions into #489's published coordinator,
-consume #488's actual feedback path and #490's published mount/API adapter, then
-reserve the exact shared window. Required later checks remain:
+Reused owner evidence (unchanged implementation inputs; not rerun wholesale):
+#482 `e269421b` 29 Python / 27 TypeScript; #483 `75369bb6` 11 index / 16 snapshot;
+#486 `49995ad2` 30 adapter / 19 pure policy. Provider source checkpoints
+#484 `1d80fa45` (17 cases) and #485 `df86c68f` (25 cases) are consumed. #489
+`d5e3068b` supplies the workflow/store with 13 policy and one real disposable
+PostgreSQL rollback/restart case; that transaction evidence is reused, not rerun.
+#487 `16446623` supplies the receiver interface. #488 `a0751c7e` contains its
+preview/delivery source; its four source checks at executable `d4856935` are
+separate from A01/A02. #490 `57739c9f` has 22 focused unit cases. Native
+ordinary-Study/browser acceptance and complete product isolation remain pending.
+
+Next ready work: obtain Games-owned recent/detail projections and durable
+configured-enqueue/current-finding retry facade, activate #489's schema through
+an allocated owner migration, consume #488's current authority/receiver boundary,
+then reserve the exact shared window. The coordinator factory, provider wrappers
+and #490 endpoint mapping are ready. Required later checks remain:
 `make ui-file FILE=product-game-sync.spec.ts` and
 `node --test tests/runner/product-game-worker.test.mjs`, plus changed coordinator
 and real disposable storage boundaries. Those suites are not yet authored or
 passed: real import → finding → card → ordinary Study settlement and stopped/killed
-optional-process independence require the missing implementations. No hollow
+optional-process independence require the remaining owner facade, receiving
+authority boundary and launcher/mount. No hollow
 browser or lifecycle success is substituted for that proof.
 
 No live account, database, settings, service, software installation, deployment,

@@ -7,6 +7,7 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -16,9 +17,15 @@ from pydantic import ValidationError
 from app.contracts.product_v02.games import GameWindow, ProviderSyncStatus, RecentGames
 from app.contracts.product_v02.learning import LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
+from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.games.feedback.http import create_game_review_router
+from app.games.feedback.ports import AcquisitionFailure
 from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError
-from app.product_composition.game_sync import AcquisitionDeadline, AcquisitionPolicy, ProviderAcquisition
+from app.product_composition.game_sync import (AcquisitionDeadline, AcquisitionPolicy, ProviderAcquisition,
+    WorkflowAcquisition, create_game_sync, sync_job)
+from app.study.game_feedback import GameFeedback
+from test_product_feedback_jobs import FakeClock, MemoryStore as GamesMemoryStore
+from test_product_game_lapse import Decisions, MemoryStore as StudyMemoryStore, NOW
 
 ROOT = Path(__file__).resolve().parents[2]
 WINDOW = GameWindow(start_at="2026-09-01T00:00:00Z", end_at="2026-11-01T00:00:00Z", precision="millisecond")
@@ -169,3 +176,104 @@ def test_unavailable_optional_projection_is_local_http_failure():
             response = await client.get("/api/product/game-review/games")
             assert response.status_code == 503
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("header,expected", [("17", 17), ("Mon, 26 Oct 2026 12:00:30 GMT", 30)])
+def test_workflow_receives_numeric_retry_after_from_concrete_provider(header, expected):
+    acquisition = ProviderAcquisition(policy("lichess"), transport_factory=lambda: httpx.MockTransport(
+        lambda request: httpx.Response(429, headers={"Retry-After": header})))
+    adapter = WorkflowAcquisition(acquisition, now=lambda: NOW.timestamp())
+    with pytest.raises(AcquisitionFailure) as failed:
+        adapter.fetch_page(account="learner", window=WINDOW)
+    assert failed.value.retryable and failed.value.retry_after == expected
+    assert str(failed.value) == "lichess_rate_limited"
+
+
+def test_both_provider_workflow_uses_existing_study_owner_and_overlap_has_one_effect():
+    """Concrete source seams with reused semantic fake stores, not PostgreSQL.
+
+    Exercises owner policy and real scheduling through #487, while preserving
+    the distinction between source integration and ordinary-product acceptance.
+    """
+    miss = PGN.replace("1. e4 e5 2. Nf3 Nc6", "1. d4")
+    gap = PGN.replace("1. e4 e5 2. Nf3 Nc6", "1. e4 c5")
+    at = lambda value: int(datetime.fromisoformat(value).timestamp())
+    rows = [{"id": f"miss{i:04d}", "createdAt": at("2026-10-25T12:00:00+00:00") * 1000 + i,
+             "speed": "rapid", "rated": True, "pgn": miss} for i in range(101)]
+    outage = [True]
+    def handle(request):
+        if request.url.host == "lichess.org":
+            if outage[0]:
+                return httpx.Response(429, headers={"Retry-After": "5"})
+            params = request.url.params
+            selected = [row for row in rows if int(params["since"]) <= row["createdAt"] < int(params["until"])]
+            return httpx.Response(200, content="\n".join(json.dumps(row) for row in selected[:int(params["max"])]) + "\n",
+                                  headers={"Content-Type": "application/x-ndjson"})
+        base = "https://api.chess.com/pub/player/learner/games/"
+        if request.url.path.endswith("archives"):
+            return httpx.Response(200, json={"archives": [base + "2026/09", base + "2026/10"]})
+        month = request.url.path[-2:]
+        source_games = [("unintroduced", miss)] if month == "09" else [("miss", miss), ("gap", gap)]
+        return httpx.Response(200, json={"games": [{"uuid": name, "url": "https://www.chess.com/game/live/123",
+            "pgn": text, "end_time": at(f"2026-{month}-25T12:00:00+00:00"),
+            "rules": "chess", "time_class": "rapid", "time_control": "600", "rated": True}
+            for name, text in source_games]})
+
+    payload = fixture("snapshot")
+    payload["membership"]["routes"][0]["moves"] = ["e2e4", "e7e5"]
+    payload["boundaries"][0]["terminal_ply"] = 2
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    games, study, clock = GamesMemoryStore(), StudyMemoryStore(), FakeClock()
+    decisions = Decisions()
+    decisions.mappings = snapshot.decision_presentations
+    owner = GameFeedback(study, decisions, clock=lambda: NOW)
+    def runtime():
+        return create_game_sync(policies=tuple(policy(provider) for provider in ("lichess", "chesscom")),
+            store=games, snapshots=SimpleNamespace(snapshot=lambda repertoire: snapshot),
+            learning=owner, clock=clock, transport_factory=lambda: httpx.MockTransport(handle))
+    runner = runtime()
+    for provider in ("lichess", "chesscom"):
+        job = sync_job(job_id=provider, workspace_id="fixture", account="Learner", window=WINDOW,
+                       repertoire_ids=("white",), policy=policy(provider))
+        assert job.account == "learner"  # Bind the actual provider identity.
+        games.enqueue(job)
+
+    # A provider 429 cannot prevent the other provider's two-month job completing.
+    for _ in range(20):
+        if runner.run_once() == "idle":
+            break
+    assert games.load_job("lichess").status == "retryable"
+    assert games.load_job("lichess").next_attempt_at == clock.now() + 5
+    assert games.load_job("chesscom").status == "complete"
+    assert games.load_job("chesscom").pages_committed == 2
+    findings = [finding for source in games.sources.values() for finding in source.findings]
+    assert {finding.kind for finding in findings} >= {"confirmed_miss", "opponent_gap", "known_unintroduced"}
+
+    outage[0] = False
+    clock.value += 5
+    for _ in range(230):
+        if runner.run_once() == "idle":
+            break
+    else:
+        pytest.fail("bounded fixture workflow failed to drain")
+    assert games.load_job("lichess").status == "complete"
+    assert games.load_job("lichess").pages_committed == 2
+    assert {source.original.source_game_id for source in games.sources.values()} == {
+        *(row["id"] for row in rows), "miss", "gap", "unintroduced"}
+    assert len(study.effects) == len(study.reviews) == 102
+    assert all(delivery.receipt.status == "applied" for delivery in games.deliveries.values())
+
+    # Repeat overlapping jobs and a new runner retain the exact logical effects.
+    for provider in ("lichess", "chesscom"):
+        games.enqueue(sync_job(job_id=provider + "-overlap", workspace_id="fixture", account="Learner",
+            window=WINDOW, repertoire_ids=("white",), policy=policy(provider)))
+    restarted = runtime()
+    for _ in range(20):
+        if restarted.run_once() == "idle":
+            break
+    assert len(study.effects) == len(study.reviews) == 102
+    assert study.history == ["retained-original-review"]
+    assert len(games.deliveries) == 102
+    runner.close()
+    restarted.close()
+    assert runner.run_once() == restarted.run_once() == "stopped"
