@@ -49,7 +49,7 @@ def main():
                 revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type,trained_color)
                 VALUES(%s,%s,'prefix',%s,%s,'mature',%s,%s,1,20,%s,%s,20,'opening','white')""",
                 (card_id,rep,fen,json.dumps([move]),(now+timedelta(days=20)).date().isoformat(),
-                 (now-timedelta(days=6)).isoformat(),state,(now-timedelta(days=5)).isoformat()))
+                 (now-timedelta(days=6)).date().isoformat(),state,(now-timedelta(days=5)).isoformat()))
             database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)", (rep,card_id))
             database.execute("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
                 internal_rating,guided,source_kind,source_ref) VALUES(%s,'correct',%s,10,20,'good',0,'study',%s)""",
