@@ -64,7 +64,8 @@ the older fake fixture's snapshot-digest context. It supplies shared factual
 rankings only. No eligibility callback, SQL or canonical writer is introduced in
 composition. The future Analysis adapter must hold its publication/settings
 fence during the short delivery transaction; foreground Study reads its own
-accepted cache and must not call Analysis. Concrete Analysis persistence,+explicit saved D04 settings and normal-product D acceptance remain pending.
+accepted cache and must not call Analysis. Concrete Analysis persistence,
+explicit saved D04 settings and normal-product D acceptance remain pending.
 
 `prepare_coverage` performs at most 32 sequential requests; overflow fails visibly
 instead of pretending partial acquisition is complete. It calls the actual
