@@ -68,12 +68,14 @@ class PostgresChangeStore:
     def __init__(self, connection, repertoire_id: str,
                  reader: Callable[[object, str], RepertoireSnapshot],
                  publisher: Callable[[object, ValidatedChange], RepertoireSnapshot | None],
-                 before_lock: Callable[[object, str], None] | None = None):
+                 before_lock: Callable[[object, str], None] | None = None,
+                 card_reader: Callable | None = None):
         self.connection = connection
         self.repertoire_id = repertoire_id
         self.reader = reader
         self.publisher = publisher
         self.before_lock = before_lock
+        self.card_reader = card_reader
 
     @contextmanager
     def transaction(self, repertoire_id: str):
@@ -101,6 +103,9 @@ class _Transaction:
 
     def snapshot(self):
         return self.store.reader(self.connection, self.store.repertoire_id)
+
+    def card_definitions(self):
+        return self.store.card_reader(self.connection, self.store.repertoire_id) if self.store.card_reader else ()
 
     def preview(self, proposal_id):
         row = self.connection.execute("SELECT proposal_json FROM product_repertoire_previews "
@@ -142,39 +147,3 @@ class _Transaction:
             (self.store.repertoire_id, receipt.proposal_id, receipt.model_dump_json(),
              self.change.before.model_dump_json() if self.change else None,
              self.change.after.model_dump_json() if self.change else None))
-
-
-def current_source_facts(database, repertoire_id: str) -> dict:
-    """One bounded MVCC read of retained content, without game/clean-scan gate.
-
-    The one statement supplies one database snapshot even for a READ COMMITTED
-    borrower. No row lock, write, cursor lifecycle or implicit connection occurs.
-    """
-    row = database.execute_native("""
-        SELECT repertoire.id,repertoire.scope_source_revision,
-            repertoire.canonical_prefix_moves_json,repertoire.canonical_prefix_revision,
-            COALESCE((SELECT jsonb_agg(to_jsonb(source) ORDER BY source.source_id) FROM (
-                SELECT 'line:' || line.id source_id,line.start_fen,line.moves_json,line.trained_color,
-                    NULL::text presentation_id,NULL::bigint presentation_revision,
-                    NULL::text introduced_at,NULL::bigint pending_validation
-                FROM repertoire_lines line WHERE line.repertoire_id=repertoire.id
-                UNION ALL
-                SELECT 'card:' || card.id,card.start_fen,card.moves_json,
-                    COALESCE(card.trained_color,(SELECT candidate.trained_color
-                        FROM repertoire_lines candidate WHERE candidate.repertoire_id=repertoire.id
-                        ORDER BY candidate.created_at,candidate.id LIMIT 1)),
-                    card.id,COALESCE(card.revision,1),card.introduced_at,card.pending_validation
-                FROM cards card WHERE card.archived=0 AND card.content_type='opening'
-                    AND card.superseded_by IS NULL AND (card.repertoire_id=repertoire.id OR EXISTS(
-                        SELECT 1 FROM repertoire_cards membership
-                        WHERE membership.repertoire_id=repertoire.id AND membership.card_id=card.id))
-                ORDER BY source_id LIMIT 10001
-            ) source),'[]'::jsonb) sources
-        FROM repertoires repertoire WHERE repertoire.id=%s
-        """, (repertoire_id,)).fetchone()
-    if row is None:
-        raise ChangeError("repertoire_missing")
-    facts = dict(row)
-    if len(facts["sources"]) > 10000:
-        raise ChangeError("source_exceeds_bound")
-    return facts
