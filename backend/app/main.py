@@ -603,6 +603,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
                 and path_parts[5] == "queue"))
+        product_feedback_command = (request.method == "POST" and
+            path_parts == ["api", "game-evidence", "product", "feedback"])
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -672,7 +674,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, product_feedback_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -698,6 +700,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
+        or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
