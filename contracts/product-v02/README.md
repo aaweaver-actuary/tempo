@@ -48,6 +48,21 @@ timestamp alone cannot prove current content was introduced before a game. The
 synthetic snapshot proves both facts explicitly so a valid miss can be expressed.
 Position keys use the public `tempo_evidence_math.opening_position_key(fen)`
 legal-en-passant four-field FEN convention, scoped by repertoire and variant.
+`route_id` / zero-based `route_ply` optionally restrict a binding to the proven
+authored response occurrence; they must be paired. Paired nulls mean an explicitly
+global owner binding. A mapping for route A never grants authority for transposed
+route B merely because its position/response matches. Snapshot validation checks
+the referenced route, repertoire, ply and selected response.
+
+When Study supplies an explicit `introduced_before_game` boolean but its stored
+date is only day precision, preserve that boolean with `introduced_at: null` and
+`introduction_game: {provider, game_id, source_revision, source_digest}`. Boolean
+and exact game scope must be supplied together; unknown stays null/null. The
+boolean applies **only** to that captured game source, never to another provider,
+game or corrected revision/digest. It does not replace current-content provenance,
+availability or snapshot revision checks. No date is upgraded into a timestamp.
+`snapshot-route-game-introduction.json` demonstrates two legally transposed routes
+with only route A mapped and an explicit game-scoped chronology assertion.
 
 ## Frozen operation semantics
 

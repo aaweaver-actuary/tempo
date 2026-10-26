@@ -6,18 +6,18 @@ This module acquires nothing and submits no learning command.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, get_args
 
 from tempo_game_classification import classify_response
 from tempo_game_ingestion import BytesInput, PgnGameIngester
 from tempo_game_review_contracts import CanonicalGame, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
-from app.contracts.product_v02.games import Finding, GameRecord
+from app.contracts.product_v02.games import Finding, GameRecord, TimePrecision
 from app.contracts.product_v02.learning import GameEffectKey
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot
 
-__all__ = ["ReentryLookup", "normalize_record", "compare_record", "effect_key"]
+__all__ = ["ReentryLookup", "normalize_record", "compare_record", "compare_game", "effect_key"]
 
 
 class _ReentryOccurrence(Protocol):
@@ -83,11 +83,34 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
     """
     game = normalize_record(record, provider=provider, account=account,
                             workspace_id=workspace_id, game_id=game_id)
+    return compare_game(game, provider=provider, time_precision=record.time_precision,
+                        snapshot=snapshot, reentry_lookup=reentry_lookup)
+
+
+def compare_game(game: CanonicalGame, *, provider: str,
+                 snapshot: RepertoireSnapshot,
+                 time_precision: TimePrecision = "unknown",
+                 reentry_lookup: ReentryLookup | None = None) -> tuple[Finding, ...]:
+    """Compare a retained canonical game without requiring original PGN bytes.
+
+    Preserve the supplied source identity, revision and digest; legal replay
+    validates the canonical history but cannot authenticate unavailable original
+    bytes. The caller supplies retained occurrence precision explicitly. Missing
+    precision stays unknown even when the canonical game contains a timestamp.
+    """
+    if provider not in {"lichess", "chesscom"}:
+        raise ValueError("unsupported_provider")
+    if time_precision not in get_args(TimePrecision):
+        raise ValueError("unsupported_time_precision")
+    if time_precision != "unknown" and game.played_at is None:
+        raise ValueError("known_time_precision_requires_occurrence_time")
+    # The existing canonical contract has a caller-mutable move list.
+    game = CanonicalGame.model_validate(game.model_dump(mode="python"))
     # Existing membership models contain caller-mutable lists despite frozen
     # fields. Revalidate/copy the supplied capture before traversing it.
     snapshot = RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
     membership = snapshot.membership
-    if membership.workspace_id != workspace_id:
+    if membership.workspace_id != game.workspace_id:
         raise ValueError("game_snapshot_workspace_mismatch")
     if snapshot.variant != "standard":
         raise ValueError("unsupported_variant")
@@ -137,7 +160,7 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
                             or traversal[index].position_keys[candidate.ply] != key):
                         continue
                     binding = candidate.binding
-                    if binding is None:
+                    if binding is None or not _mapping_applies(binding, route.route_id, candidate.ply):
                         continue
                     anchors = [item for item in route.reentries if item.ply == candidate.ply
                                and item.authority_id == candidate.reentry_authority_id]
@@ -146,7 +169,8 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
                                 and item.decision_id == binding.decision_id
                                 and item.presentation_id == binding.presentation_id
                                 and item.presentation_revision == binding.presentation_revision
-                                and item.selected_response_uci == route.moves[candidate.ply]]
+                                and item.selected_response_uci == route.moves[candidate.ply]
+                                and _mapping_applies(item, route.route_id, candidate.ply)]
                     if len(anchors) == 1 and len(mappings) == 1:
                         validated.append((index, candidate.ply, anchors[0].authority_id))
             if len(validated) == 1:
@@ -179,17 +203,23 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
                        for index, ply in candidates)
         mappings = tuple({item for item in snapshot.decision_presentations
                           if item.repertoire_id == repertoire_id and item.position_key == key
-                          and item.selected_response_uci in expected})
+                          and item.selected_response_uci in expected
+                          and any(_mapping_applies(item, routes[index].route_id, ply)
+                                  for index, ply in candidates)})
         mapping = mappings[0] if len(mappings) == 1 else None
+        active_occurrences = {(routes[index].route_id, ply) for index, ply in candidates}
+        route_mapping_ambiguous = len(active_occurrences) > 1 and any(
+            item.route_id is not None for item in mappings)
         result = classify_response(
             played_uci=position["move"], expected_uci=expected, learner_turn=learner_turn,
             complete=membership.complete and membership.available, terminal=terminal,
-            ambiguous=len(repertoires) != 1, mapping_count=len(mappings),
+            ambiguous=route_mapping_ambiguous, mapping_count=len(mappings),
             available=mapping is not None and getattr(mapping, "available", False),
             introduced=None if mapping is None or mapping.introduction == "unknown" else mapping.introduction == "introduced",
             introduced_at=_timestamp(None if mapping is None else mapping.introduced_at),
-            occurred_at=_timestamp(record.played_at),
-            occurrence_is_exact=record.time_precision in {"second", "millisecond"},
+            introduced_before_game=_scoped_introduction(mapping, game, provider),
+            occurred_at=_timestamp(game.played_at),
+            occurrence_is_exact=time_precision in {"second", "millisecond"},
             introduction_matches_content=mapping is not None and getattr(mapping, "introduction_matches_current_content", False),
         )
         if result is not None:
@@ -209,6 +239,20 @@ def compare_record(record: GameRecord, *, provider: str, account: str,
 
 def _timestamp(value):
     return None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _mapping_applies(mapping, route_id, route_ply):
+    return mapping.route_id is None or (mapping.route_id, mapping.route_ply) == (route_id, route_ply)
+
+
+def _scoped_introduction(mapping, game, provider):
+    if mapping is None or mapping.introduction_game is None:
+        return None
+    scope = mapping.introduction_game
+    if (scope.provider, scope.game_id, scope.source_revision, scope.source_digest) != (
+            provider, game.game_id, game.source_revision, game.source_digest):
+        return None
+    return mapping.introduced_before_game
 
 
 def _finding(game, provider, membership, position, repertoire_id, expected, kind,
