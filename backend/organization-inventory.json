@@ -6,8 +6,8 @@
   "reviewed_original_modules": 202,
   "review_coverage_is_implementation_completion": false,
   "original_status_counts": {
-    "reviewed-awaiting-owner-closure": 168,
-    "retired-source": 1,
+    "reviewed-awaiting-owner-closure": 160,
+    "retired-source": 9,
     "split-transport-contracts": 1,
     "moved-cohesive-module": 29,
     "partial-contract-extraction": 3
@@ -74,7 +74,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 230,
+  "current_python_module_count": 224,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -661,15 +661,11 @@
     },
     {
       "original_path": "backend/app/opportunity_commands.py",
-      "current_paths": [
-        "backend/app/opportunity_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
-      "owner": "Discovery opportunity state actions and practice admission composition",
-      "responsibility": [
-        "Dismiss/acknowledge/snooze/refresh are coherent opportunity actions; train_opportunity is a cross-owner admission transaction."
-      ],
-      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+      "current_paths": [],
+      "status": "retired-source",
+      "owner": "Retired optional opportunity production and feed/state/train API",
+      "responsibility": "Former gameplay/coverage/finding evidence producer, optional HTTP projection/actions and task publication.",
+      "next_step": "Source retired under #390; last-good source 66d98610924971ea4cce3603c76cd4c330b50ae1. Ordinary Study queue projection and graph/repertoire definitions remain with their existing owners. No data/schema retirement."
     },
     {
       "original_path": "backend/app/pgn_import_commands.py",
@@ -1407,13 +1403,11 @@
     },
     {
       "original_path": "backend/app/services/introduction_priorities.py",
-      "current_paths": [
-        "backend/app/services/introduction_priorities.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Study opening introduction ranking, evidence composition and priority-job lifecycle",
       "responsibility": "Currently combines the existing line-completion/frontier scoring kernel, acquisition of public/personal/miss evidence and refresh/publication/status orchestration.",
-      "next_step": "Split at existing functions: preserve the scoring kernel and four DTOs intact; move evidence acquisition/derivation functions together into priority_evidence.py; keep enqueue/claim/execute/publish/status actions in priority_jobs.py. No scoring-model consolidation or generic lifecycle runner."
+      "next_step": "Adaptive-priority computation, jobs, retention and refresh issuance are retired in source under the fresh-start cut. Saved queue score/frozen readers, current-view invalidation and physical source epochs remain. Last source: 8bcd897d16bb46fa89fef684842bea1559907074."
     },
     {
       "original_path": "backend/app/services/learning_review_adapter.py",
@@ -1794,15 +1788,13 @@
     },
     {
       "original_path": "backend/app/services/postgres_daily_statistics.py",
-      "current_paths": [
-        "backend/app/services/postgres_daily_statistics.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Optional Games daily aggregate and insight publication",
       "responsibility": [
         "Read provider watermarks/game analysis readiness; calculate daily outcome/tactical totals; publish one snapshot and threshold-based insights under a current task lease."
       ],
-      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+      "next_step": "Retired daily statistics producer under graph-preserving fresh start; last implementation source 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf. No schema/data removal."
     },
     {
       "original_path": "backend/app/services/postgres_game_derivation.py",
@@ -1966,13 +1958,11 @@
     },
     {
       "original_path": "backend/app/services/postgres_priority.py",
-      "current_paths": [
-        "backend/app/services/postgres_priority.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Study opening-priority durable worker composition",
       "responsibility": "Prepare one evidence/scoring generation once and atomically publish resumable bounded native slices under task/source/job fences.",
-      "next_step": "Move all six functions intact as postgres_worker.py. Preparation and staging are one coherent resumable publication lifecycle, not separate domains; retain the installed source input/scorer boundary."
+      "next_step": "Adaptive-priority computation, jobs, retention and refresh issuance are retired in source under the fresh-start cut. Saved queue score/frozen readers, current-view invalidation and physical source epochs remain. Last source: 8bcd897d16bb46fa89fef684842bea1559907074."
     },
     {
       "original_path": "backend/app/services/postgres_queue_refresh.py",
@@ -2046,13 +2036,11 @@
     },
     {
       "original_path": "backend/app/services/priority_retention.py",
-      "current_paths": [
-        "backend/app/services/priority_retention.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Clean one bounded slice of superseded/rebuildable opening-priority generations while retaining current publication/preparation authority.",
       "responsibility": "Clean one bounded slice of superseded/rebuildable opening-priority generations while retaining current publication/preparation authority.",
-      "next_step": "Move intact. Native/SQLite deletion branches serve one retention use case and retain their original job\u2192task ordering; do not split because there are two dialects."
+      "next_step": "Adaptive-priority computation, jobs, retention and refresh issuance are retired in source under the fresh-start cut. Saved queue score/frozen readers, current-view invalidation and physical source epochs remain. Last source: 8bcd897d16bb46fa89fef684842bea1559907074."
     },
     {
       "original_path": "backend/app/services/puzzles.py",
@@ -2198,13 +2186,11 @@
     },
     {
       "original_path": "backend/app/services/refresh_requests.py",
-      "current_paths": [
-        "backend/app/services/refresh_requests.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Authored repertoire derived-work refresh coalescing application",
       "responsibility": "One cohesive refresh intent coalescing workflow, with a separable concrete source-version/scoring input provider inside input_version.",
-      "next_step": "Move intact into authored-repertoire refresh-intent application. Extract the existing source/scoring input provider as an explicit owner fact function or inject those facts from outer composition while keeping its source-lock timing. Leave quiet-window/retention decisions together; root refresh storage/publication remains canonical."
+      "next_step": "Adaptive-priority computation, jobs, retention and refresh issuance are retired in source under the fresh-start cut. Saved queue score/frozen readers, current-view invalidation and physical source epochs remain. Last source: 8bcd897d16bb46fa89fef684842bea1559907074."
     },
     {
       "original_path": "backend/app/services/repertoire_comparison.py",
@@ -2364,128 +2350,11 @@
     },
     {
       "original_path": "backend/app/services/repertoire_opportunities.py",
-      "current_paths": [
-        "backend/app/services/repertoire_opportunities.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
-      "owner": "Discoveries / repertoire opportunity evidence and admission composition",
-      "responsibility": [
-        {
-          "symbols": [
-            "_stable_id",
-            "_fingerprint",
-            "_materially_new"
-          ],
-          "lines": [
-            46,
-            74
-          ],
-          "responsibility": "Existing deterministic opportunity/evidence identity and materiality helpers"
-        },
-        {
-          "symbols": [
-            "_calculate_card_evidence",
-            "_calculate_recurring_decisions",
-            "_calculate_node_opportunities",
-            "_calculate_post_gap_opportunity"
-          ],
-          "lines": [
-            174,
-            522
-          ],
-          "responsibility": "Four cohesive evidence/scoring functions at174\u2013220,237\u2013295,393\u2013459,498\u2013522; do not move intervening loaders/apply functions with pure policy"
-        },
-        {
-          "symbols": [
-            "_window_days",
-            "_load_decision_summary",
-            "_publish_decision_summary",
-            "_publish",
-            "_resolve",
-            "_route_keys",
-            "card_evidence",
-            "_load_card_inputs",
-            "refresh_card_opportunity",
-            "_load_recurring_decisions",
-            "_apply_recurring_decisions",
-            "_apply_card_opportunity",
-            "refresh_node_opportunities",
-            "_latest_coverage_node",
-            "_coverage_source_snapshot",
-            "_load_node_inputs",
-            "_load_position_inputs",
-            "_apply_node_opportunities",
-            "refresh_post_gap_opportunity",
-            "_load_post_gap_inputs",
-            "_apply_post_gap_opportunity"
-          ],
-          "lines": [
-            37,
-            533
-          ],
-          "responsibility": "Existing fixed-read/application-publication composition surrounding calculations"
-        },
-        {
-          "symbols": [
-            "enqueue_opportunity_refresh_in_transaction",
-            "enqueue_opportunity_refresh",
-            "_advance_slice",
-            "_cleanup_opportunity",
-            "execute_opportunity_slice"
-          ],
-          "lines": [
-            536,
-            712
-          ],
-          "responsibility": "Debounced durable refresh and one-item phase lifecycle with scope/source/lease guards"
-        },
-        {
-          "symbols": [
-            "_accepted_moves_by_line_snapshot"
-          ],
-          "lines": [
-            716,
-            733
-          ],
-          "responsibility": "Existing cached pure line-snapshot accepted-move calculation; actual keys are tuple transposition keys despite annotation"
-        },
-        {
-          "symbols": [
-            "list_opportunities"
-          ],
-          "lines": [
-            736,
-            860
-          ],
-          "responsibility": "Read feed plus source-game/route/SAN/chess response projection"
-        },
-        {
-          "symbols": [
-            "active_opportunity_for_state_change",
-            "dismiss_opportunity",
-            "acknowledge_opportunity",
-            "snooze_opportunity"
-          ],
-          "lines": [
-            863,
-            898
-          ],
-          "responsibility": "Scoped row-locked action guards and existing state projections"
-        },
-        {
-          "symbols": [
-            "_existing_decision_training_plan",
-            "existing_decision_training_eligibility",
-            "admit_existing_decision"
-          ],
-          "lines": [
-            901,
-            991
-          ],
-          "responsibility": "Explicit reviewed-evidence admission, optional prefix split and Learning queue effect"
-        }
-      ],
-      "next_step": "Keep coherent Discoveries owner; no split just because991lines. A bounded first policy move can relocate the four existing calculation functions plus their scoring constants/identity helpers and the cached accepted-move function unchanged. Keep loaders, scoped publication/cleanup and refresh lifecycle in owning application/composition at same call points. Split the explicit Learning training handoff only by existing semantic capabilities and outer wiring; do not redesign scopes/queries, merge admission models, optimize N+1 reads or consolidate recommendation paths."
+      "current_paths": [],
+      "status": "retired-source",
+      "owner": "Retired optional opportunity production and feed/state/train API",
+      "responsibility": "Former gameplay/coverage/finding evidence producer, optional HTTP projection/actions and task publication.",
+      "next_step": "Source retired under #390; last-good source 66d98610924971ea4cce3603c76cd4c330b50ae1. Ordinary Study queue projection and graph/repertoire definitions remain with their existing owners. No data/schema retirement."
     },
     {
       "original_path": "backend/app/services/repertoire_statistics.py",
@@ -3178,10 +3047,8 @@
     },
     {
       "original_path": "backend/app/statistics_commands.py",
-      "current_paths": [
-        "backend/app/statistics_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Statistics / daily-refresh command composition",
       "responsibility": [
         {
@@ -3205,7 +3072,7 @@
           "responsibility": "Import-time statistics.daily.refresh registration"
         }
       ],
-      "next_step": "First small cohesive move: relocate all32 lines into Statistics outer command composition, update tasks.py:54 and test/static paths. Keep datetime.fromisoformat acceptance exactly; do not tighten day parsing or change task priority120."
+      "next_step": "Retired daily statistics producer under graph-preserving fresh start; last implementation source 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf. No schema/data removal."
     },
     {
       "original_path": "backend/app/studies/__init__.py",

@@ -1,12 +1,12 @@
-"""Primary source work remains usable without optional adaptive-priority effects."""
+"""Primary source work remains usable without optional adaptive-priority or opportunity effects."""
 
-from contextlib import contextmanager
 import json
+from importlib.util import find_spec
 
 from app import canonical_prefix_api
 from app.services import (
-    game_sync_coordinator, introduction_priorities, postgres_coverage_explorer,
-    postgres_coverage_seed, repertoire_opportunities,
+    game_sync_coordinator, postgres_coverage_explorer,
+    postgres_coverage_seed,
 )
 
 
@@ -30,8 +30,6 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
     monkeypatch.setattr(storage, "save_prefix_values", lambda *args: effects.append(("prefix", args)))
     monkeypatch.setattr(canonical_prefix_api, "enqueue_task_in_transaction",
                         lambda *args, **kwargs: effects.append(("graph-refresh", args, kwargs)))
-    monkeypatch.setattr(repertoire_opportunities, "enqueue_opportunity_refresh_in_transaction",
-                        lambda *args: effects.append(("opportunity", args)))
     monkeypatch.setattr(storage, "advance_priority_source_epoch",
                         lambda *args: effects.append(("source-epoch", args)))
     monkeypatch.setattr(postgres_coverage_seed, "request_coverage_seed_in_transaction",
@@ -40,7 +38,7 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
                         lambda *args: effects.append(("invalidate-publication", args)))
     monkeypatch.setattr(storage, "delete_introduction_priorities",
                         lambda *args: effects.append(("invalidate-scores", args)))
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh_in_transaction", unavailable_priority)
+    assert find_spec("app.services.introduction_priorities") is None
 
     result = canonical_prefix_api.save_prefix(database, {"repertoire_id": "rep", "request": {
         "preview_id": "preview", "expected_revision": 2,
@@ -50,7 +48,6 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
     assert effects == [
         ("prefix", (database, json.dumps(["e2e4"]), 3, "preview", "rep")),
         ("graph-refresh", (database, "repertoire_game_refresh", "all", {"after_game_id": ""}), {"priority": 90}),
-        ("opportunity", (database, "rep")),
         ("source-epoch", (database, "rep")),
         ("coverage", (database, "rep"), {"automatic": True, "supersede_active": True}),
         ("invalidate-publication", (database, "rep")),
@@ -79,8 +76,6 @@ def test_native_explorer_publication_preserves_progress_and_cursor_without_optio
     monkeypatch.setattr(explorer, "recalculate_coverage_node",
                         lambda *args: effects.append(("recalculate", args)))
     monkeypatch.setattr(explorer, "enqueue_priority_refresh_in_transaction", unavailable_priority, raising=False)
-    monkeypatch.setattr(explorer, "enqueue_opportunity_refresh_in_transaction",
-                        lambda *args: effects.append(("opportunity", args)))
     monkeypatch.setattr(explorer, "advance_task_slice_in_transaction",
                         lambda *args, **kwargs: effects.append(("cursor", args, kwargs)) or True)
 
@@ -90,7 +85,7 @@ def test_native_explorer_publication_preserves_progress_and_cursor_without_optio
 
     assert [effect[0] for effect in effects] == [
         "prefix-lock", "upsert_cache", "upsert_candidates", "recalculate",
-        "complete_node", "publish_progress", "opportunity", "cursor",
+        "complete_node", "publish_progress", "cursor",
     ]
     assert effects[0] == ("prefix-lock", (database, "rep"), {"lock": True})
     assert json.loads(effects[2][1][1][1]) == [
@@ -99,44 +94,6 @@ def test_native_explorer_publication_preserves_progress_and_cursor_without_optio
     assert effects[3] == ("recalculate", (database, "node", {}, 10))
     assert effects[4] == ("complete_node", (database, (10, "now", "node")))
     assert effects[5] == ("publish_progress", (database, ("run", "run", 2, 4, "now")))
-    assert effects[6] == ("opportunity", (database, "rep"))
-    assert effects[7] == ("cursor", (database, task), {
+    assert effects[6] == ("cursor", (database, task), {
         "next_phase": "explorer", "next_payload": {"run_id": "run", "after_node_id": "node"},
     })
-
-
-def test_local_game_handoff_preserves_opportunities_without_optional_priority(monkeypatch):
-    coordinator = game_sync_coordinator
-    database = object()
-    open_read = False
-    opportunities = []
-    foreground_waits = []
-
-    @contextmanager
-    def background_connection(*, background):
-        nonlocal open_read
-        assert background
-        open_read = True
-        try:
-            yield database
-        finally:
-            open_read = False
-
-    def matching_repertoires(actual_database, game_id):
-        assert open_read and actual_database is database and game_id == "game"
-        return ["white-repertoire", "black-repertoire"]
-
-    def opportunity(repertoire_id, *, background):
-        assert not open_read and background
-        opportunities.append(repertoire_id)
-
-    monkeypatch.setattr(coordinator, "connection", background_connection)
-    monkeypatch.setattr(coordinator.storage, "matching_repertoire_ids", matching_repertoires)
-    monkeypatch.setattr(coordinator, "enqueue_priority_refreshes_for_game", unavailable_priority, raising=False)
-    monkeypatch.setattr(coordinator, "enqueue_opportunity_refresh", opportunity)
-    monkeypatch.setattr(coordinator.activity_gate, "wait_for_foreground", lambda: foreground_waits.append(True))
-
-    coordinator._enqueue_game_repertoire_refreshes("game")
-
-    assert opportunities == ["white-repertoire", "black-repertoire"]
-    assert foreground_waits == [True, True]

@@ -29,7 +29,7 @@ from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferre
 
 
 KINDS = ('opening_graph_rebuild', 'game_derivation_positions',
-         'repertoire_priority', 'opening_segmentation', 'game_sync_record')
+         'discovery_recommendation', 'opening_segmentation', 'game_sync_record')
 
 
 def proof_scheduling_turns(parent_database_url):

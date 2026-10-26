@@ -60,7 +60,6 @@ def _claimed_task(database, kind, *, attempt_count=1):
 
 @pytest.mark.parametrize("kind,handler_name", [
     ("opening_graph_rebuild", "execute_postgres_opening_graph_slice"),
-    ("priority_retention", "execute_priority_retention_slice"),
 ])
 def test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit(
     timeout_database, monkeypatch, caplog, kind, handler_name,
@@ -90,7 +89,6 @@ def test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops
 
 @pytest.mark.parametrize("kind,handler_name,error_type", [
     ("opening_graph_rebuild", "execute_postgres_opening_graph_slice", LockNotAvailable),
-    ("priority_retention", "execute_priority_retention_slice", LockNotAvailable),
 ])
 def test_postgres_other_timeouts_and_target_lock_contention_keep_existing_yield(
     timeout_database, monkeypatch, kind, handler_name, error_type,

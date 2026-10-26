@@ -55,7 +55,6 @@ erDiagram
 | `derivation` | `game_derivation_jobs.game_id` | `derivation_version` | [Game derivation](../../../schema/game-projections-1/README.md) |
 | `integrity` | `repertoire_integrity_jobs.repertoire_id` | `run_id` | [Authored integrity](../../../schema/authored-content-2/README.md) |
 | `coverage` | `repertoire_coverage_runs.id` | `id` | [Coverage](../../../schema/discovery-priority/README.md) |
-| `statistics` | `daily_statistics_jobs.local_day` | No generation query | [Daily statistics](../../../schema/study-queue-review-1/README.md) |
 | `priority` | `repertoire_priority_jobs.repertoire_id` | `generation` | [Repertoire priorities](../../../schema/discovery-priority/README.md) |
 | `game_analysis` | `game_analysis_jobs.game_id` | `analysis_version:analysis_evidence_version`, plus current leased status/lease identity | [Game analysis](../../../schema/game-projections-1/README.md) |
 | `threat_analysis` | `threat_analysis_requests.id` | No generation query | [Threat requests](../../../schema/practice-families-2/README.md) |
@@ -71,3 +70,8 @@ This is existing legacy shared-storage coupling across background work owners. P
 A task-local source reconstruction restores the complete retained non-import application AST from the fixed operations, including exact SQL literal/f-string values, parameters, preparation points, raw cursor iteration, callback/clock order, generation/lease checks and transaction scopes. The nine-source mapping matches exactly; the three existing defensive SQL wrappers were verified before substituting their canonical root builders. The application has no SQL text, direct query/cursor operation or dialect probe after extraction.
 
 Twenty-three existing focused cases pass: six activity/progress cases, sixteen defensive-settings/recommendation activity cases and one idempotent activity-command dispatch case, using task-temporary SQLite or fakes. No tests were edited. Each test command emitted the same existing Starlette/AnyIO deprecation warning. No native PostgreSQL execution/locking, live database, service activation or full-system check is claimed. The existing 1,000-job timing benchmark is outside this bounded relocation check.
+
+Daily statistics no longer has an activity projection or control source in this
+branch. Old day-job rows do not need recovery or drain, and controls for the
+retired source are rejected. Other sources and the shared activity schema remain
+unchanged; no live row or table cleanup is performed.

@@ -13,7 +13,6 @@ from .command_gateway import register_command
 from tempo_legacy_database.adapters.commands import coverage_maia as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
-from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .services.canonical_prefix import read_prefix
 from .services.canonical_scope_freshness import coverage_run_is_current
 
@@ -78,7 +77,6 @@ def fail_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> dic
     now = _now()
     storage.fail_node(database, message, now, row["id"])
     storage.fail_run(database, message, now, row["run_id"])
-    enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
     return {"status": "failed"}
 
 
@@ -96,7 +94,6 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
     recalculate_coverage_node(database, row["id"], settings, int(row["explorer_games"]))
     storage.mark_complete(database, _now(), row["id"])
     storage.record_progress(database, row["run_id"], row["run_id"], _now(), row["run_id"])
-    enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
     return {"status": "complete"}
 
 

@@ -115,17 +115,14 @@ def test_receipt_write_precedes_late_current_revision_and_remediation_settlement
 @pytest.fixture(params=['sqlite', 'borrowed_transaction'])
 def opening_review_without_priority_producer(tmp_path, monkeypatch, request):
     from tempo_legacy_database import connections as database
-    from app.services import game_sync_coordinator, introduction_priorities
+    from app.services import game_sync_coordinator
 
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'opening-review.db')
     database.initialize()
     monkeypatch.setattr(game_sync_coordinator.coordinator, 'wake', lambda: None)
 
-    def unavailable(*_args, **_kwargs):
-        pytest.fail('Ordinary review requested retired adaptive recomputation')
-
-    monkeypatch.setattr(introduction_priorities, 'enqueue_priority_refresh', unavailable)
-    monkeypatch.setattr(introduction_priorities, 'enqueue_priority_refresh_in_transaction', unavailable)
+    from importlib.util import find_spec
+    assert find_spec('app.services.introduction_priorities') is None
     with database.connection() as connection:
         connection.execute(
             "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('review','Review','synthetic',?)",

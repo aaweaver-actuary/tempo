@@ -1,96 +1,37 @@
-"""Offline recovery tool protection for authoritative Tempo records."""
+"""The retained snapshot checksum reader needs no priority cleanup implementation."""
 
-from datetime import datetime, timezone
-import json
+import hashlib
 import sqlite3
+from pathlib import Path
+import subprocess
+import sys
 
-import chess
-
-from tempo_legacy_database import connections as database
-from scripts.reclaim_priority_storage import (
-    compact, fingerprints, open_database, queue_order_checksum, reclaim,
-)
+from database.tooling.reclaim_priority_storage import queue_order_checksum
 
 
-def test_storage_reclaim_preserves_authoritative_fingerprints_and_compacts(tmp_path, monkeypatch):
-    database_path = tmp_path / "tempo.db"
-    monkeypatch.setattr(database, "DB_PATH", database_path)
-    database.initialize()
-    now = datetime.now(timezone.utc).isoformat()
-    repeated_edges = {f"edge-{index}": {"personal": "unknown"} for index in range(200)}
-    evidence = json.dumps({
-        "personal_games": 2,
-        "explorer": "ready",
-        "maia": "unknown",
-        "edge_states": repeated_edges,
-        "real_game_repertoire_miss": None,
-    })
-    with database.connection() as database_connection:
-        database_connection.execute(
-            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('storage','Storage','source',?)",
-            (now,),
-        )
-        database_connection.execute(
-            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date)
-               VALUES('card','storage','prefix',?,'["e2e4"]','2026-01-01')""",
-            (chess.STARTING_FEN,),
-        )
-        database_connection.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,position) VALUES('2026-01-01','card',0)"
-        )
-        database_connection.execute(
-            "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) VALUES('storage',3,?)",
-            (now,),
-        )
-        database_connection.executemany(
-            """INSERT INTO repertoire_card_priority_generations(
-                   repertoire_id,generation,card_id,scoring_version,
-                   completed_line_ids_json,frontier_decisions_json,evidence_json,updated_at)
-               VALUES('storage',?,'card',2,'[]','[]',?,?)""",
-            [(generation, evidence, now) for generation in (1, 2, 3)],
-        )
-
-    with open_database(database_path, read_only=False) as recovery_database:
-        recovery_database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        before_file_bytes = database_path.stat().st_size
-        before = fingerprints(recovery_database)
-        before_queue_order = queue_order_checksum(recovery_database)
-        assert reclaim(recovery_database, batch_rows=1) == 2
-        assert reclaim(recovery_database, batch_rows=1) == 0
-        assert fingerprints(recovery_database) == before
-        assert recovery_database.execute(
-            "SELECT GROUP_CONCAT(generation) FROM repertoire_card_priority_generations"
-        ).fetchone()[0] == "3"
-        surviving_evidence = json.loads(recovery_database.execute(
-            "SELECT evidence_json FROM repertoire_card_priority_generations"
-        ).fetchone()[0])
-        assert "edge_states" not in surviving_evidence
-        assert surviving_evidence["personal_games"] == 2
-        compact(recovery_database)
-        assert fingerprints(recovery_database) == before
-        assert queue_order_checksum(recovery_database) == before_queue_order
-    assert database_path.stat().st_size < before_file_bytes
+def test_visible_queue_checksum_preserves_order_cycle_and_status_without_cleanup():
+    with sqlite3.connect(":memory:") as database:
+        database.execute("""CREATE TABLE daily_queue(
+            id INTEGER PRIMARY KEY,queue_date TEXT,position INTEGER,cycle INTEGER,card_id TEXT,status TEXT)""")
+        database.executemany("INSERT INTO daily_queue VALUES(?,?,?,?,?,?)", [
+            (2, "2026-10-25", 1, 1, "b", "complete"),
+            (1, "2026-10-25", 0, 0, "a", "queued"),
+        ])
+        expected = (b'["2026-10-25",0,0,"a","queued"]\n'
+                    b'["2026-10-25",1,1,"b","complete"]\n')
+        before = queue_order_checksum(database)
+        assert before == hashlib.sha256(expected).hexdigest()
+        assert list(database.execute("SELECT id,position,status FROM daily_queue ORDER BY id")) == [
+            (1, 0, "queued"), (2, 1, "complete"),
+        ]
+        database.execute("UPDATE daily_queue SET position=2 WHERE id=1")
+        assert queue_order_checksum(database) != before
 
 
-def test_settings_schema_upgrade_materializes_path_floor_before_compaction(tmp_path, monkeypatch):
-    database_path = tmp_path / "legacy-tempo.db"
-    with sqlite3.connect(database_path) as legacy_database:
-        legacy_database.execute(
-            """CREATE TABLE settings (
-                   id INTEGER PRIMARY KEY CHECK(id=1),
-                   initial_depth INTEGER NOT NULL DEFAULT 6,
-                   timezone TEXT NOT NULL DEFAULT 'local',
-                   new_cards_per_day INTEGER NOT NULL DEFAULT 10,
-                   lichess_username TEXT NOT NULL DEFAULT '',
-                   chesscom_username TEXT NOT NULL DEFAULT '')"""
-        )
-        legacy_database.execute("INSERT INTO settings(id) VALUES(1)")
-    monkeypatch.setattr(database, "DB_PATH", database_path)
-    database.initialize()
-
-    with open_database(database_path, read_only=False) as recovery_database:
-        assert recovery_database.execute(
-            "SELECT coverage_path_floor FROM settings WHERE id=1"
-        ).fetchone()[0] == 0.0005
-        compact(recovery_database)
-        assert recovery_database.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+def test_retired_priority_cleanup_cli_rejects_before_opening_a_database(tmp_path):
+    target = tmp_path / "must-not-create.sqlite"
+    script = Path(__file__).resolve().parents[2] / "database/tooling/reclaim_priority_storage.py"
+    result = subprocess.run([sys.executable, str(script), "--reclaim", str(target)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "retired" in result.stderr
+    assert not target.exists()
