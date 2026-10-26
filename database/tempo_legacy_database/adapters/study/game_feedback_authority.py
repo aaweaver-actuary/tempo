@@ -67,8 +67,10 @@ class CurrentOwnerDecisions:
         database, source, token, proof = self.database, self.source, self.authority, self.proof
         _require(not database.read_only and database.raw.info.transaction_status.name == 'INTRANS',
                  'borrowed_owner_writer_transaction_required')
+        retained_provider = {'lichess':'lichess', 'chess.com':'chesscom', 'chesscom':'chesscom'}.get(
+            source['game']['provider'])
         _require((lapse.key.workspace_id,lapse.finding.repertoire_id,lapse.key.game_id,lapse.key.provider)
-                 == (token.workspace_id,token.repertoire_id,source['game']['id'],source['game']['provider']),
+                 == (token.workspace_id,token.repertoire_id,source['game']['id'],retained_provider),
                  'retained_owner_command_scope_mismatch')
         ply = lapse.key.occurrence_ply - 1
         _require(ply in proof.scope.decision_plies and proof.scope.game_id == lapse.key.game_id
