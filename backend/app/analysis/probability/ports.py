@@ -70,6 +70,8 @@ class ExplorerResult(Value):
         if self.diagnostic is not None:
             if self.reported_counts or self.from_cache or (evidence is not None and evidence.distribution is not None):
                 raise ValueError("failure cannot claim successful sample evidence")
+            if evidence is not None and evidence.unavailable_reason != self.diagnostic.code:
+                raise ValueError("unavailable evidence must retain diagnostic reason")
         elif evidence is None or evidence.distribution is None:
             raise ValueError("success requires shared probability evidence")
         if evidence is not None and (evidence.position != self.request.position

@@ -208,6 +208,14 @@ def test_complete_distribution_round_trip():
     assert ProbabilityEvidence.model_validate_json(result.evidence.model_dump_json()) == result.evidence
 
 
+def test_reordered_moves_and_decorative_metadata_preserve_evidence_identity():
+    original = payload()
+    reordered = payload()
+    reordered["moves"].reverse()
+    reordered["decorative"] = SECRET
+    assert fetch(original) == fetch(reordered)
+
+
 def test_exact_history_and_all_explicit_filters_reach_http_once():
     calls = []
     board = chess.Board()
@@ -306,6 +314,30 @@ def test_cache_wrong_context_is_rejected_and_failure_is_never_cached():
     cache.values.clear()
     result = fetch(req=req,status=503,cache=cache)
     assert not cache.values and result.diagnostic.code == "provider_unavailable"
+
+
+def test_cache_failure_and_cache_cancellation_are_visible_and_release_work():
+    class FailingCache(Cache):
+        async def get(self,key): raise RuntimeError(SECRET)
+    result = fetch(req=request(cache_max_age_seconds=60),cache=FailingCache())
+    assert result.diagnostic.code == "cache_unavailable" and result.diagnostic.retryable
+    assert SECRET not in result.model_dump_json()
+
+    async def scenario():
+        entered, released, cancel = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        class BlockedCache(Cache):
+            async def get(self,key):
+                entered.set()
+                try: await asyncio.Event().wait()
+                finally: released.set()
+        adapter = client(lambda _: pytest.fail("cache cancellation reached HTTP"),cache=BlockedCache())
+        pending = asyncio.create_task(adapter.fetch(request(cache_max_age_seconds=60),
+            credential=SECRET,cancellation=cancel))
+        await entered.wait()
+        cancel.set()
+        result = await pending
+        assert released.is_set() and result.diagnostic.code == "cancelled"
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("body", [b"not-json", b'{"white":0,"white":1,"moves":[]}',
