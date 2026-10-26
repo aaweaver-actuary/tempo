@@ -39,8 +39,14 @@ Do not catch an initialization/storage error and commit an earlier partial write
   latest five **distinct completed Study attempts** are required. Isolates the
   final learner decision, preserving the legal opponent cue in continuation
   moves. Both fragments have fresh identities/epochs, introduced=true and 0/3.
-  No targeted interior split is claimed. Preview, decline and UI remain with the
-  existing command/TrainingView owners until their reserved integration window.
+  No targeted interior split is claimed. The existing UI carries the exact
+  displayed queue entry through its persisted command intent. An explicit
+  confirmation may retire only that same current, untouched issued head in the
+  split savepoint. Its original origin/manifest and any empty checkpoint metadata
+  remain intact. Any response/assistance, another pending attempt, wrong head,
+  changed definition or busy source holds the operation. Failure rolls retirement
+  back with the split; unrelated active attempts remain unchanged. Callers without
+  attempt context retain the active-attempt guard and their original wire payload.
 
 `ports.py` is the narrow composition contract. `StudyBoundary.try_current`
 must reread/fence actual retained source/publication/conflict/membership rows,
@@ -91,18 +97,19 @@ component due state declines the join. An overdue deadline stays in the past and
 is immediately eligible. This is a complete verification request by the next
 local day, not a copied/averaged FSRS stability or a fabricated combined review.
 Initialization owns no past review count and requests already-introduced work
-without writing an introduction charge. Actual zero-slot acceptance also requires
-the admission-reader adoption below.
+without writing an introduction charge. Actual admission readers exclude its
+explicit generated identity from new-card reconciliation/counts and preserve its
+introduced status across day rollover.
 
 The explicit `regrouped_card_sql(database, qualified_card_id)` read seam proves
 that a physical ID belongs to this owner's persisted presentation history; it
-returns `FALSE` when the optional schema is absent. #495's admission readers
-must exclude those IDs from new-introduction reconciliation/counting, and the
-existing queue classifier must retain review admission. That narrow shared
-adoption is pending its exact file window: the legacy date-based readers alone
-would count a newly generated ID as a fresh introduction. No backdated date,
-invented review or copied FSRS state is used to hide this gap. Private zero-charge
-port tests do not establish that current admission-reader acceptance.
+returns `FALSE` when the optional schema is absent. The current admission reads,
+stale reset, queue classifier and presentation mapping now consume that identity;
+the native test uses the actual QueueAdmissionAdapter and a lost projection/day
+rollover. No backdated date, invented review or copied FSRS state is used. #495's
+separately published opt-in `product_current_queue_facts` addition must retain the
+same exclusion when composing that later branch; it is absent from this current
+source and is not claimed as T01 product acceptance.
 
 `Obligation(logical_id, decision_id, available_by)` carries #487's original
 unresolved effect identity/deadline unchanged. Only obligations whose existing
@@ -295,7 +302,10 @@ The retained UI's first teaching pass on a fresh composite is an actual assisted
 review and earns no clean streak. A08 then requires three fresh whole-sequence
 clean reviews; it seeds no combined first-correct or prior-review facts.
 
-Pending coordinated surfaces: central test/diagram registration, then
-`make ui-file FILE=product-recombination.spec.ts` against the normal source stack.
+Central regression/schema/diagram registration links this owner. The changed
+native split/admission selection passes five cases, and the browser-intent file
+passes three. The previous A08 reached actual AB/ABC and manual confirmation but
+failed on the original active-attempt guard; one A08 rerun after this repair is
+pending the shared validation slot. It is not yet a browser pass.
 No live join/review, history reset, graph migration resumption, deployment or merge
 is performed by this task.
