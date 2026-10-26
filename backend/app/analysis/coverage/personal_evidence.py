@@ -54,6 +54,9 @@ def deduplicate_games(games: tuple[PersonalGame, ...]) -> tuple[PersonalGame, ..
     return tuple(latest[key] for key in sorted(latest))
 
 
-def encounter_sources(games: tuple[PersonalGame, ...], target: PersonalEncounter) -> tuple[tuple[str, str, str, int], ...]:
+def encounter_sources(games: tuple[PersonalGame, ...], target: PersonalEncounter, *,
+                      match_move: bool = True) -> tuple[tuple[str, str, str, int], ...]:
+    """Own decisions were encountered even when the learner played another move."""
     return tuple((*game.source_id, game.source_revision) for game in deduplicate_games(games)
-                 if target in game.encounters)
+                 if any((item.repertoire_id, item.position_key) == (target.repertoire_id, target.position_key)
+                        and (not match_move or item.move_uci == target.move_uci) for item in game.encounters))
