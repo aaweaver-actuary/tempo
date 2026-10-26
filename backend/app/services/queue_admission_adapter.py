@@ -162,7 +162,7 @@ class CurrentEncounterIntroductions:
                     raise ValueError('target route exceeds source row bound')
                 yield ImmutableAuthoredRoute(repertoire_id=repertoire_id, route_id=row['id'],
                     policy_id=repertoire_id, learner_color=row['trained_color'],
-                    starting_fen=row['start_fen'], moves=json.loads(row['moves_json']))
+                    starting_fen=row['start_fen'], moves=tuple(json.loads(row['moves_json'])))
             after = rows[-1]['id']
 
     def admit_encounter(self, day, *, repertoire_id, decision_id, target=None):

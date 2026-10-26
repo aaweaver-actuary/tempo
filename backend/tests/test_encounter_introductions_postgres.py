@@ -42,8 +42,8 @@ def canonical_transaction(owned_postgres):
                 raw.execute(source.decode(),prepare=False)
             raw.execute(path.read_text(),prepare=False)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
-        assert raw.execute("SELECT to_regclass('study_product_introduction_charges')").fetchone()[0] is None
-        assert raw.execute("SELECT to_regclass('study_product_introduction_allocation')").fetchone()[0] is None
+        for table in ('state','periods','charges','rankings'):
+            assert raw.execute('SELECT to_regclass(%s)',('study_product_introduction_'+table,)).fetchone()[0] is None
 
     @contextmanager
     def transaction():
