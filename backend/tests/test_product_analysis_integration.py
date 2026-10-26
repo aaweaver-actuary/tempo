@@ -42,6 +42,7 @@ from app.study.introductions.ports import AllocationState, OwnerFacts
 
 from test_product_repertoire_integration import source, ChangesStore
 from app.product_composition.analysis import accept_current_owner_rankings
+from app.product_composition.analysis import current_introduction_sources
 from app.study.introductions.policy import RankingContext
 
 def request(*, population=True):
@@ -250,6 +251,38 @@ def test_d_concrete_owner_handoff_uses_its_authority_context_without_recomputing
     owner.current=replace(owner.current,context=RankingContext((("rep",2,"changed-authority"),),actual.settings_revision))
     assert accept_current_owner_rankings(day="2026-10-26",results=(publications.accepted,),
         publications=publications,introductions=receiver)=="obsolete"
+
+
+def test_d_game_free_source_uses_public_study_binding_without_a_capture_token():
+    from app.study.introductions.application import repertoire_introduction_binding
+    job=request()
+    member=job.snapshot.membership.model_copy(update={
+        'scope_id':'repertoire:rep','source_revision':job.snapshot.membership.digest})
+    snapshot=job.snapshot.model_copy(update={'membership':member})
+    job=replace(job,snapshot=snapshot,fence=job.fence.model_copy(update={'source_revision':member.source_revision}))
+    class Snapshots:
+        def snapshot(self,identity):
+            assert identity=='rep'
+            return snapshot
+    sources=current_introduction_sources(Snapshots(),('rep',))
+    assert sources[0].snapshot==snapshot and not hasattr(sources[0],'authority')
+    publications=Publications(job.fence)
+    assert run(job,publications).status=='published'
+    owner,ledger=IntroductionFacts(job.fence),IntroductionLedger()
+    actual=RankingContext((('rep',member.revision,repertoire_introduction_binding(snapshot)),),'actual-generic-owner')
+    owner.current=replace(owner.current,context=actual)
+    class Receiver(Introductions):
+        def context(self,day):return self.owner.facts(day).context
+    receiver=Receiver(ledger,owner)
+    assert accept_current_owner_rankings(day='2026-10-26',results=(publications.accepted,),
+        publications=publications,introductions=receiver,sources=sources)=='accepted'
+    assert tuple(ledger.rankings)==(actual,)
+    changed=snapshot.model_copy(update={'membership':member.model_copy(update={'revision':2})})
+    class ChangedSnapshots:
+        def snapshot(self,identity):return changed
+    assert accept_current_owner_rankings(day='2026-10-26',results=(publications.accepted,),
+        publications=publications,introductions=receiver,
+        sources=current_introduction_sources(ChangedSnapshots(),('rep',)))=='obsolete'
 
 
 def engine_fixture():

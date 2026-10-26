@@ -165,22 +165,34 @@ def accept_published_introductions(*, day: str, results: tuple[PreparedAnalysis,
     return introductions.accept_ranking(day, context, rank_candidates(facts))
 
 
-def create_current_introduction_receiver(database, *, sources, settings):
+def current_introduction_sources(snapshots, repertoire_ids):
+    """Read factual game-free sources through the existing public snapshot port."""
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    identities=tuple(repertoire_ids)
+    if not 1<=len(identities)<=32 or len(set(identities))!=len(identities):
+        raise ValueError('unique_bounded_introduction_sources_required')
+    return tuple(RepertoireIntroductionSource(snapshots.snapshot(identity)) for identity in identities)
+
+
+def create_current_introduction_receiver(database, *, sources, settings,
+                                         current_snapshots=None, conflicts=None):
     """Opt-in outer binding: #495 receives its own factual sources/settings.
 
     The caller owns the existing borrowed writer transaction. This function
     adds no eligibility callback, SQL, admission writer or automatic activation.
     """
     from app.services.queue_admission_adapter import current_owner_introductions
-    return current_owner_introductions(database,sources=sources,settings=settings)
+    return current_owner_introductions(database,sources=sources,settings=settings,
+        current_snapshots=current_snapshots,conflicts=conflicts)
 
 
 def accept_current_owner_rankings(*, day: str, results: tuple[PreparedAnalysis, ...],
-                                 publications: AnalysisPublications, introductions) -> str:
+                                 publications: AnalysisPublications, introductions, sources=()) -> str:
     """Use #495's actual current context rather than invent its authority digest.
 
-    Current-owner contexts bind retained authority fingerprints, which are the
-    snapshot source_revision, rather than the snapshot's content digest. The
+    Legacy contexts bind retained authority fingerprints. Game-free sources use
+    the public Study-owned repertoire_introduction_binding, which excludes
+    introduction chronology while retaining actual content/mapping facts. The
     Analysis adapter must hold its current publication/settings fence during
     this short delivery transaction; ordinary Study reads only its own cache.
     """
@@ -192,7 +204,29 @@ def accept_current_owner_rankings(*, day: str, results: tuple[PreparedAnalysis, 
     if any(publications.current(item.repertoire_id)!=item for item in fences):
         return "obsolete"
     context=introductions.context(day)
-    expected=tuple(sorted((item.repertoire_id,item.repertoire_revision,item.source_revision) for item in fences))
+    if sources:
+        from app.study.introductions.application import repertoire_introduction_binding
+        from app.study.introductions.ports import RepertoireIntroductionSource
+        factual={}
+        for source in sources:
+            member=source.snapshot.membership
+            identity=(source.repertoire_id if isinstance(source,RepertoireIntroductionSource)
+                      else source.authority.repertoire_id)
+            if identity in factual:
+                raise ValueError('unique_nonempty_ranking_scopes_required')
+            factual[identity]=(member,repertoire_introduction_binding(source.snapshot)
+                if isinstance(source,RepertoireIntroductionSource) else member.source_revision)
+        if set(factual)!={item.repertoire_id for item in fences}:
+            return 'obsolete'
+        for fence in fences:
+            member,_=factual[fence.repertoire_id]
+            if (member.revision,member.source_revision,member.digest)!=(
+                    fence.repertoire_revision,fence.source_revision,fence.snapshot_digest):
+                return 'obsolete'
+        expected=tuple(sorted((fence.repertoire_id,fence.repertoire_revision,
+            factual[fence.repertoire_id][1]) for fence in fences))
+    else:
+        expected=tuple(sorted((item.repertoire_id,item.repertoire_revision,item.source_revision) for item in fences))
     if context.repertoires!=expected:
         return "obsolete"
     for result in results:

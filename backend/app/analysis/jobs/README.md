@@ -47,25 +47,31 @@ generations. A settings owner must persist the explicit selection before a real
 ranking can be enabled; a missing population returns `setup_required` before I/O.
 No live cohort is guessed. The fixture cohort is synthetic.
 
-`introduction_context(fences)` binds the receiver's exact repertoire revision/
-digest plus source/settings/personal/evidence generations. Outer current-facts
-composition uses that same function; Study's module never imports it. Global
-budget/weight controls advance the explicit settings revision. The actual #495
-receiver rechecks its current context in the borrowed owner transaction and owns
-all selection/charges. A source-only fake proves the handoff, one global slot,
+The fixture helper `introduction_context(fences)` binds its synthetic receiver's
+repertoire revision/digest plus source/settings/personal/evidence generations.
+Global budget/weight controls advance the explicit settings revision. The actual
+#495 receiver supplies/rechecks its own current context in the borrowed owner
+transaction and owns all selection/charges. A source-only fake proves one global slot,
 replay and preservation of an unrelated active attempt; it is not ordinary Study.
 
-The concrete #495 follow-on is consumed unchanged at `29443bda`.
-`create_current_introduction_receiver(database, sources=..., settings=...)`
-passes actual public `IntroductionSource`/`IntroductionSettings` to its canonical
-factory. `accept_current_owner_rankings` obtains the receiver's own current
-context and checks retained authority source revisions, rather than substituting
-the older fake fixture's snapshot-digest context. It supplies shared factual
-rankings only. No eligibility callback, SQL or canonical writer is introduced in
-composition. The future Analysis adapter must hold its publication/settings
+The concrete #495 follow-on is consumed unchanged at `5f87902f`.
+`current_introduction_sources(snapshots, repertoire_ids)` wraps actual public
+repertoire-only snapshots in `RepertoireIntroductionSource`. It creates no game
+or authority token. `create_current_introduction_receiver(database, sources=...,
+settings=..., current_snapshots=..., conflicts=...)` binds that same current
+snapshot port and optional public Study conflict reader to the canonical factory.
+`accept_current_owner_rankings(..., sources=...)` obtains the receiver's own
+context and invokes Study's public `repertoire_introduction_binding` for these
+sources. Legacy captured sources retain their published authority binding. It
+supplies shared factual rankings only. No eligibility callback, SQL or canonical
+writer is introduced in composition. The future Analysis adapter must hold its publication/settings
 fence during the short delivery transaction; foreground Study reads its own
 accepted cache and must not call Analysis. Concrete Analysis persistence,
 explicit saved D04 settings and normal-product D acceptance remain pending.
+The current owner still defers over 64 authored routes, 128 physical cards or
+256 mappings. This source fixture does not establish actual-user repertoire
+support, and composition does not bypass those bounds. Encounter admission and
+its explicit cap/pause decisions remain in the separate Study-owned next release.
 
 `prepare_coverage` performs at most 32 sequential requests; overflow fails visibly
 instead of pretending partial acquisition is complete. It calls the actual
@@ -157,12 +163,11 @@ approval composition test uses separate explicitly synthetic 30CP evidence.
 
 ## Focused verification
 
-`make python-file FILE=backend/tests/test_product_repertoire_integration.py`
+`make python-file FILE=backend/tests/test_product_analysis_integration.py`
 uses synthetic legal sources, real index/Explorer/coverage/change-owner code,
 fake HTTP and semantic fake publication stores. It covers 20%/2% ordering,
 unknown mass, setup-before-I/O, in-flight revision changes, outage fallback,
-stop/timeout/concurrency cleanup, manual approval/replay and unchanged unrelated
-content, in-process owner HTTP/projection, the actual #495 receiver, and the
+stop/timeout/concurrency cleanup, the #495 receiver and its factual source bindings, and the
 actual similarity/proposal/approval policy chain. The changed boundary reuses
 #482's import/cycle guard. This is not native PostgreSQL, ordinary Study, browser
 or real provider evidence. The separate explicit native bridge smoke is above.
