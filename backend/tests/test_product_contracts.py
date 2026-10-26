@@ -224,67 +224,6 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert has_import_cycle({"app.contracts.one": "from .two import value", "app.contracts.two": "from .one import value"})
 
 
-@pytest.mark.parametrize("path", sorted((FIXTURES / "encounters").glob("*.json")), ids=lambda path: path.stem)
-def test_next_release_encounter_values_round_trip_without_changing_lapse_wire(path):
-    document = json.loads(path.read_text())
-    model = {"GameEncounter": GameEncounter, "EncounterReceipt": EncounterReceipt}[document["model"]]
-    value = model.model_validate_json(json.dumps(document["payload"]))
-    assert json.loads(value.model_dump_json()) == document["payload"]
-
-
-@pytest.mark.parametrize("name", ["unintroduced-correct", "unintroduced-missed", "historical-missed"])
-def test_encounter_facts_preserve_frequency_and_historical_importance_without_lapse(name):
-    payload = encounter_fixture(name)
-    value = GameEncounter.model_validate_json(json.dumps(payload))
-    assert value.observation == ("matched" if value.played_uci == value.expected_uci else "missed")
-    assert value.decision.introduced_before_game is False
-    assert value.decision.introduction_game == value.source
-    if name == "historical-missed":
-        assert value.occurred_at < value.decision.introduced_at
-        assert value.observation == "missed"  # Still importance, even when lapse-ineligible.
-    original = fixture("lapse")
-    original["finding"]["introduced_before_game"] = False
-    with pytest.raises(ValidationError): GameLapse.model_validate_json(json.dumps(original))
-    payload["decision"]["presentation_id"] = "changed-caller-input"
-    assert value.decision.presentation_id == "existing-physical-card"
-    with pytest.raises(ValidationError): value.source.source_revision = 2
-
-
-@pytest.mark.parametrize("fault", ["key", "expected", "observation", "source_chronology"])
-def test_encounter_rejects_incoherent_source_and_response_claims(fault):
-    payload = encounter_fixture("unintroduced-missed")
-    if fault == "key": payload["key"]["game_id"] = "different-game"
-    elif fault == "expected": payload["expected_uci"] = "g1f3"
-    elif fault == "observation": payload["observation"] = "matched"
-    else: payload["decision"]["introduction_game"]["source_revision"] = 2
-    with pytest.raises(ValidationError): GameEncounter.model_validate_json(json.dumps(payload))
-
-
-def test_same_encounter_key_and_hold_survive_later_introduction_and_recomparison():
-    payload = encounter_fixture("unintroduced-missed")
-    original = GameEncounter.model_validate_json(json.dumps(payload))
-    payload["decision"].update(introduction="introduced", introduced_at="2026-10-26T13:00:00Z")
-    later = GameEncounter.model_validate_json(json.dumps(payload))
-    assert original.key.logical_id() == later.key.logical_id()
-    assert original.source == later.source and original.detected_at == later.detected_at
-    assert later.decision.introduced_before_game is False  # Admission cannot turn it into a lapse.
-    hold = GameEffectControl(key=original.key, source_revision=2, action="hold", reason="source_corrected")
-    assert hold.withdrawal is None and hold.key == later.key
-
-
-@pytest.mark.parametrize("fault", ["correct_lapse", "held_available", "deferred_available", "paused_deadline", "reasonless_pending", "miss_frequency_only"])
-def test_encounter_receipt_reports_disposition_and_control_deferral_honestly(fault):
-    payload = encounter_fixture("paused-introduction")
-    if fault == "correct_lapse": payload.update(observation="matched", disposition="existing_lapse")
-    elif fault == "held_available": payload.update(status="held", admission_status="available", deferred_reason=None)
-    elif fault == "deferred_available": payload["admission_status"] = "available"
-    elif fault == "paused_deadline": payload["available_by"] = "2026-10-28T12:00:00Z"
-    elif fault == "reasonless_pending": payload.update(deferred_reason=None, reason=None)
-    else: payload.update(disposition="frequency_only", admission_status="not_requested", deferred_reason=None)
-    with pytest.raises(ValidationError): EncounterReceipt.model_validate_json(json.dumps(payload))
-
-
-
 def test_ui_history_status_and_filter_facts_remain_explicit():
     detail = GameDetail.model_validate_json(json.dumps(fixture("game-detail")))
     assert detail.moves == ("d2d4", "d7d5", "c2c4")
@@ -346,3 +285,64 @@ def test_join_plan_preserves_exact_route_cues_lineage_and_zero_streak(fault):
     elif fault == "wrong_connection": payload["connecting_cues"][0]["position_key"] = "other-position"
     else: payload["result"]["lineage"] = []
     with pytest.raises(ValidationError): JoinPlan.model_validate_json(json.dumps(payload))
+
+
+
+@pytest.mark.parametrize("path", sorted((FIXTURES / "encounters").glob("*.json")), ids=lambda path: path.stem)
+def test_next_release_encounter_values_round_trip_without_changing_lapse_wire(path):
+    document = json.loads(path.read_text())
+    model = {"GameEncounter": GameEncounter, "EncounterReceipt": EncounterReceipt}[document["model"]]
+    value = model.model_validate_json(json.dumps(document["payload"]))
+    assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("name", ["unintroduced-correct", "unintroduced-missed", "historical-missed"])
+def test_encounter_facts_preserve_frequency_and_historical_importance_without_lapse(name):
+    payload = encounter_fixture(name)
+    value = GameEncounter.model_validate_json(json.dumps(payload))
+    assert value.observation == ("matched" if value.played_uci == value.expected_uci else "missed")
+    assert value.decision.introduced_before_game is False
+    assert value.decision.introduction_game == value.source
+    if name == "historical-missed":
+        assert value.occurred_at < value.decision.introduced_at
+        assert value.observation == "missed"  # Still importance, even when lapse-ineligible.
+    original = fixture("lapse")
+    original["finding"]["introduced_before_game"] = False
+    with pytest.raises(ValidationError): GameLapse.model_validate_json(json.dumps(original))
+    payload["decision"]["presentation_id"] = "changed-caller-input"
+    assert value.decision.presentation_id == "existing-physical-card"
+    with pytest.raises(ValidationError): value.source.source_revision = 2
+
+
+@pytest.mark.parametrize("fault", ["key", "expected", "observation", "source_chronology"])
+def test_encounter_rejects_incoherent_source_and_response_claims(fault):
+    payload = encounter_fixture("unintroduced-missed")
+    if fault == "key": payload["key"]["game_id"] = "different-game"
+    elif fault == "expected": payload["expected_uci"] = "g1f3"
+    elif fault == "observation": payload["observation"] = "matched"
+    else: payload["decision"]["introduction_game"]["source_revision"] = 2
+    with pytest.raises(ValidationError): GameEncounter.model_validate_json(json.dumps(payload))
+
+
+def test_same_encounter_key_and_hold_survive_later_introduction_and_recomparison():
+    payload = encounter_fixture("unintroduced-missed")
+    original = GameEncounter.model_validate_json(json.dumps(payload))
+    payload["decision"].update(introduction="introduced", introduced_at="2026-10-26T13:00:00Z")
+    later = GameEncounter.model_validate_json(json.dumps(payload))
+    assert original.key.logical_id() == later.key.logical_id()
+    assert original.source == later.source and original.detected_at == later.detected_at
+    assert later.decision.introduced_before_game is False  # Admission cannot turn it into a lapse.
+    hold = GameEffectControl(key=original.key, source_revision=2, action="hold", reason="source_corrected")
+    assert hold.withdrawal is None and hold.key == later.key
+
+
+@pytest.mark.parametrize("fault", ["correct_lapse", "held_available", "deferred_available", "paused_deadline", "reasonless_pending", "miss_frequency_only"])
+def test_encounter_receipt_reports_disposition_and_control_deferral_honestly(fault):
+    payload = encounter_fixture("paused-introduction")
+    if fault == "correct_lapse": payload.update(observation="matched", disposition="existing_lapse")
+    elif fault == "held_available": payload.update(status="held", admission_status="available", deferred_reason=None)
+    elif fault == "deferred_available": payload["admission_status"] = "available"
+    elif fault == "paused_deadline": payload["available_by"] = "2026-10-28T12:00:00Z"
+    elif fault == "reasonless_pending": payload.update(deferred_reason=None, reason=None)
+    else: payload.update(disposition="frequency_only", admission_status="not_requested", deferred_reason=None)
+    with pytest.raises(ValidationError): EncounterReceipt.model_validate_json(json.dumps(payload))

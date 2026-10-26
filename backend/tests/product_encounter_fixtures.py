@@ -88,7 +88,7 @@ class HistoryCase:
 
 
 @contextmanager
-def retained_history_case(transaction, *, state, played="d2d4"):
+def retained_history_case(transaction, *, state, played="d2d4", ordinary_limit=2, study_only=False):
     """Two retained games and existing current cards, with no inferred admission.
 
     unintroduced: no introduction, FSRS state or prior Study review exists.
@@ -107,8 +107,13 @@ def retained_history_case(transaction, *, state, played="d2d4"):
     target_fen = board.fen(en_passant="legal")
     game_day = NOW - timedelta(days=14 if state == "later_learning" else 1)
     case = HistoryCase(transaction, repertoire, target, protected, games, state)
+    saved_controls = None
     try:
         with transaction() as database:
+            saved_controls = tuple(database.execute_native(
+                "SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1").fetchone())
+            database.execute_native("UPDATE settings SET new_cards_per_day=%s,study_only_mode=%s WHERE id=1",
+                (ordinary_limit, int(study_only)))
             for rep, card_id, fen, move in (
                 (repertoire, target, target_fen, "e2e4"),
                 (protected_rep, protected, chess.STARTING_FEN, "d2d4"),
@@ -173,3 +178,6 @@ def retained_history_case(transaction, *, state, played="d2d4"):
             database.execute_native("DELETE FROM cards WHERE id=ANY(%s)", ([target, protected],))
             database.execute_native("DELETE FROM background_tasks WHERE deduplication_key=ANY(%s)", ([repertoire, protected_rep],))
             database.execute_native("DELETE FROM repertoires WHERE id=ANY(%s)", ([repertoire, protected_rep],))
+            if saved_controls is not None:
+                database.execute_native("UPDATE settings SET new_cards_per_day=%s,study_only_mode=%s WHERE id=1",
+                    saved_controls)

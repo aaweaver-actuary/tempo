@@ -4,12 +4,26 @@ No encounter DTO or effect is fabricated while #482/#486/#487 publish their
 additive interfaces. The following tests are not encounter-effect acceptance.
 """
 import pytest
+from datetime import date
 
 from app.product_composition.retained_game import retained_canonical_game
 from app.repertoire import project_capture
 from product_encounter_fixtures import retained_history_case
 from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
+
+
+@pytest.fixture(autouse=True)
+def normal_study_clock(monkeypatch):
+    from app import queue_commands
+    from app.services import learning_review_adapter
+    from test_product_game_lapse import NOW
+    class StudyDate(date):
+        @classmethod
+        def today(cls):
+            return NOW.date()
+    monkeypatch.setattr(queue_commands, "date", StudyDate)
+    monkeypatch.setattr(learning_review_adapter, "date", StudyDate)
 
 
 @pytest.mark.parametrize("state", ["unintroduced", "introduced", "later_learning"])
@@ -87,8 +101,59 @@ def test_historical_priority_reaches_ordinary_study_without_rewinding_later_lear
         assert receipt.disposition == "review_priority" and receipt.admission_status == "available"
         after = case.readback()
         assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]
-        assert after["origins"] == before["origins"]
+        assert tuple(row for row in after["origins"] if row[1] == case.protected_id) == before["origins"]
+        assert len(tuple(row for row in after["origins"] if row[1] == case.card_id)) == 1
         with case.transaction() as database:
             _ordinary_review(database, case.protected_id, protected, "protected:"+case.card_id)
             target = _issue(database, case.card_id)
             assert _ordinary_review(database, case.card_id, target, "priority:"+case.card_id)["persisted"]
+        with case.transaction() as database:
+            replay = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
+                introductions=None, introduction_policy=None, clock=lambda: NOW)
+            assert replay.status == "settled" and replay.admission_status == "settled"
+            assert replay.owner_receipt_id == receipt.owner_receipt_id and replay.detected_at == receipt.detected_at
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                (case.card_id,)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_retained_day_only_history_reaches_the_published_workflow_fact_boundary(owned_postgres, played):
+    from app.games.feedback.comparison import compare_game
+    from app.repertoire import build_index
+    with retained_history_case(owned_postgres, state="later_learning", played=played) as case:
+        capture = case.capture(case.game_ids[0]); game = retained_canonical_game(capture)
+        snapshot = project_capture(capture, comparison_game=game)
+        assert snapshot.decision_presentations[0].introduced_before_game is False
+        findings = compare_game(game, provider="lichess", time_precision="second", snapshot=snapshot,
+            reentry_lookup=build_index(snapshot))
+        # #489's existing consumer admits factual commands from these covered
+        # non-lapse findings. Date-only chronology must not erase old relevance.
+        assert len(findings) == 1 and findings[0].kind == "known_unintroduced"
+        assert not findings[0].lapse_eligible
+
+
+def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgres, monkeypatch):
+    from app.product_composition.encounters import receive_captured_encounter
+    from app.services.queue_application import seed_queue
+    from tempo_legacy_database.adapters import postgres_store
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    with retained_history_case(owned_postgres, state="unintroduced") as case:
+        capture = case.capture(case.game_ids[0]); command = case.command(capture)
+        snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        with case.transaction() as database:
+            _issue(database, case.protected_id)
+            seed_queue(database, NOW.date().isoformat())
+            introduced = database.execute_native("SELECT introduced_at FROM cards WHERE id=%s",
+                (case.card_id,)).fetchone()[0]
+            assert introduced is not None
+        before = case.readback()
+        with case.transaction() as database:
+            first = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
+                introductions=None, introduction_policy=None, clock=lambda: NOW)
+            duplicate = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
+                introductions=None, introduction_policy=None, clock=lambda: NOW)
+            assert first.disposition == "review_priority" and duplicate.owner_receipt_id == first.owner_receipt_id
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+        after = case.readback()
+        assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]

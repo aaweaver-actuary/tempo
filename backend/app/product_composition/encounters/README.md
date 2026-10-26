@@ -52,6 +52,24 @@ published history and workflow checkpoints.
 
 ## Prepared normal-Study fixtures and acceptance
 
+Current focused evidence: four typed-importance adapter cases passed; nine native
+receiver/current-mapping/importance cases passed across the initial eight passes
+and the corrected historical Study-save/settlement rerun. The source fixture now
+includes explicit saved ordinary-cap/Study-only values for the ordinary-admission
+race. One current-source race selection is ready; it previously did not start
+because the validation slot was occupied. The scoped dependency guard passed
+(1 selected/80 deselected). Published #494 combined81 Python/60 TypeScript
+contract evidence is reused after restoring byte-identical published contract
+tests with unchanged AST/test bodies; no leaf-suite/UI build is repeated.
+
+Two additional actual retained date-only historical cases currently FAIL at the
+#486→#489 factual seam: matched play produces no finding; differing play produces
+`known_unavailable` despite source-scoped introduced_before_game=False. The
+published workflow filters both out. This is not a receipt/receiver failure;
+the direct receiving path already preserves old relevance without FSRS rewind.
+These two focused regressions remain required and are not counted as passes.
+
+
 `backend/tests/product_encounter_fixtures.py` reuses the capped disposable
 PostgreSQL owner fixture. It creates two honest synthetic retained games, exact
 approved routes/current physical cards, and a protected unrelated card with an
@@ -84,21 +102,39 @@ schema051 only: no broader introduction charge/rotation/ranking DDL is installed
 or required. The narrow #495 canonical-state capability remains pending. No broad
 suite or browser/UI rebuild is selected.
 
-## Unanswered policy and release boundaries
+## Decided targeted exception and release boundaries
 
-Ordinary introduction allowance versus a bounded encounter reserve/Study-only
-exception remains a user decision. Composition selects no override. Preserve
-saved Study-only, disabled/pause and zero limits, and keep deferred reasons and
-original detection honest; do not promise an unconditional 48-hour deadline.
-Historical importance is not permission to rewind FSRS, fabricate a past review,
-reintroduce an existing card or reopen settled debt as a new lapse.
+Andy explicitly approved targeted real-game first introductions bypassing ordinary
+new-card allowance (including zero/exhausted allowance) and Study-only. Ordinary
+unrelated introductions retain their controls. The owner implementation must still
+honor explicit full Study pause, foreground/maintenance admission, exact current
+source/identity/legality/conflict fences and one actual introduction under races.
+No global cap or Study-only setting is changed. This decision is for the separately
+qualified next release; it is not live activation or a default chosen here.
 
-The current introduction source still defers beyond 64 routes/128 physical
-cards/256 mappings. Small fixtures do not establish real-user support beyond
-those bounds. A larger actual source needs a supported bounded explicit-decision
-owner path or an honest size deferral; alternatives and guards are never dropped.
+The public receiver requires an explicit policy/canonical capability. Existing
+policy-pending fixture cases test honest handling of a missing capability; they
+do not represent the newly approved live policy. Fresh targeted introduction,
+zero/exhausted allowance, Study-only, full-pause and unchanged-unrelated-control
+acceptance await #495/#487's narrow published capability. No broader introduction
+charge/rotation/ranking DDL is installed by this lane.
+
+The current source fencer still limits a supplied source to 64 routes/128 physical
+cards/256 mappings. Small fixtures do not establish real-user support beyond those
+bounds. Larger actual sources need a supported bounded explicit-decision owner
+path or honest size deferral; alternatives/guards are never dropped.
+
+A bounded retained-history product run also needs #491's published canonical
+history entry. The current #489 acquisition page requires nonempty original
+`GameRecord.pgn`; the installed retained-game capture has canonical moves and no
+original PGN. This lane never reconstructs PGN and calls it original, supplies a
+fake record to satisfy that shape, or starts a second backfill/delivery ledger.
+The receiving adapter deliberately authenticates the existing retained canonical
+bytes through their current owning source adapter.
 
 No live scan, activation, deployment, data/settings change or held graph migration
-is authorized for this lane. Runtime/schema registration belongs to the owning
-published checkpoint and #491 root window. The first qualified installation is
-the unchanged fallback until this practical bundle is qualified and coordinated.
+is authorized here. #491 retains root/router/worker/schema-registration ownership.
+The qualified first installation stays unchanged while the practical bundle is
+qualified and coordinated. Optional GitHub ownership/status comments and a push
+of this new branch were rejected by approval review and did not execute; this
+checkpoint remains local, with no retry or alternate publication.
