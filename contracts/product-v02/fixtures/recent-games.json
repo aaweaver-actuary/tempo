@@ -1,0 +1,23 @@
+{
+  "model": "RecentGames",
+  "payload": {
+    "games": [
+      {
+        "provider": "lichess",
+        "game_id": "synthetic-game",
+        "source_revision": 1,
+        "played_at": "2026-10-25T12:00:00Z",
+        "time_precision": "second",
+        "player_color": "white"
+      }
+    ],
+    "sync": [
+      {
+        "provider": "lichess",
+        "status": "failed",
+        "operation_id": "synthetic-sync",
+        "error": "provider_timeout"
+      }
+    ]
+  }
+}
