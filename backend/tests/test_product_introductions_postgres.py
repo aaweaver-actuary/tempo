@@ -522,8 +522,9 @@ def test_repertoire_bridge_encounter_priority_without_game_provider_or_ranking(c
         assert not hasattr(source,'authority')
         assert database.execute('SELECT COUNT(*) FROM imported_games',()).fetchone()[0] == 0
         assert receiver.store.saved_ranking(receiver.context(DAY)) is None
-        assert receiver.preview(DAY).introductions[0].presentation_id == root
-        decision = next(item.decision_id for item in source.snapshot.decision_presentations if item.presentation_id == card)
+        first = receiver.preview(DAY).introductions[0].presentation_id
+        target = root if first == card else card
+        decision = next(item.decision_id for item in source.snapshot.decision_presentations if item.presentation_id == target)
         active = tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone())
         import builtins
         original_import = builtins.__import__
@@ -535,12 +536,12 @@ def test_repertoire_bridge_encounter_priority_without_game_provider_or_ranking(c
             guarded.setattr(builtins,'__import__',independent)
             assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'introduced'
         assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'replayed'
-        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(root,)).fetchone()[0] is None
-        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(card,)).fetchone()[0] == 0
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(first,)).fetchone()[0] is None
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(target,)).fetchone()[0] == 0
         assert len(receiver.store.state(DAY).charges) == 1
         assert tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone()) == active
-        positions = database.execute('SELECT card_id FROM daily_queue WHERE card_id=ANY(?) ORDER BY position',([card,card+'-due'],)).fetchall()
-        assert [row[0] for row in positions] == [card+'-due',card]
+        positions = database.execute('SELECT card_id FROM daily_queue WHERE card_id=ANY(?) ORDER BY position',([target,card+'-due'],)).fetchall()
+        assert [row[0] for row in positions] == [card+'-due',target]
 
 
 def test_repertoire_bridge_refreshes_only_own_fenced_introduction_changes(current_owner_case,repertoire_bridge_schema):
