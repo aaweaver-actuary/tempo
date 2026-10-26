@@ -214,3 +214,49 @@ def test_withdraw_after_apply_preserves_history(owner):
     result = service.control_effect(fixture("withdraw", GameEffectControl))
     assert result.outcome == "historical_preserved" and result.applied_at == applied.applied_at
     assert len(store.reviews) == 1 and store.saved is not None
+
+
+def test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns():
+    from types import SimpleNamespace
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions, CurrentDecisionUnavailable
+
+    # The unchanged native cases own capture validation and all later row locks.
+    # Stop at the next owner fence to isolate provider scope matching here.
+    class BusyOwner:
+        read_only = False
+        raw = SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name='INTRANS')))
+        def __init__(self): self.calls = 0
+        def execute_native(self, *args):
+            self.calls += 1
+            return SimpleNamespace(fetchone=lambda: (False,))
+
+    original = fixture('lapse', GameLapse)
+    for retained, command, permitted in [
+        ('chess.com','chesscom',True), ('chesscom','chesscom',True),
+        ('lichess','lichess',True), ('unknown','chesscom',False),
+        ('Chess.com','chesscom',False), ('chess-com','chesscom',False),
+        ('chess.com','lichess',False),
+    ]:
+        lapse = original.model_copy(update={
+            'key':original.key.model_copy(update={'provider':command}),
+            'finding':original.finding.model_copy(update={'provider':command})})
+        game = dict(id=lapse.key.game_id, provider=retained, played_at=lapse.occurred_at,
+                    moves_json=json.dumps([lapse.finding.played_uci]))
+        source = dict(game=game, export_digest=fingerprint(game))
+        before = json.dumps(source, sort_keys=True)
+        authority = object.__new__(CurrentOwnerDecisions)
+        authority.database = BusyOwner()
+        authority.source = source
+        authority.authority = SimpleNamespace(workspace_id=lapse.key.workspace_id,
+                                              repertoire_id=lapse.finding.repertoire_id)
+        authority.proof = SimpleNamespace(prefix_policies=[[lapse.finding.repertoire_id]],
+            scope=SimpleNamespace(decision_plies=[0], game_id=lapse.key.game_id,
+                                  occurred_at=lapse.occurred_at, moves=[lapse.finding.played_uci]))
+        reason = 'current_owner_graph_busy' if permitted else 'retained_owner_command_scope_mismatch'
+        with pytest.raises(CurrentDecisionUnavailable, match=reason):
+            authority.current(lapse)
+        assert authority.database.calls == int(permitted)
+        assert json.dumps(source, sort_keys=True) == before
+        assert source['game']['provider'] == retained
+        assert source['export_digest'] == fingerprint(source['game'])

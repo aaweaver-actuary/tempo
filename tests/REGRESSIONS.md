@@ -13,6 +13,10 @@
 `test_withdraw_after_apply_preserves_history`. Changed-source coverage includes
 the key/revision/reason-only pre-admission hold followed by delayed original
 delivery; no producer-guessed owner obligation identity is required.
+`test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns`
+accepts retained `chess.com`/`chesscom` at the existing owner scope boundary,
+preserves original capture bytes/digests, and rejects unknown/mismatched providers
+before the next owner fence. Lichess behavior remains covered in that same case.
 
 `backend/tests/test_product_game_lapse_postgres.py` owns source/native retry,
 concurrent same-key delivery, schedule-before-receipt rollback, new-connection
