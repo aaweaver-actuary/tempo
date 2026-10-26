@@ -268,8 +268,34 @@ those raw strings, including clocks.
 
 One opening repertoire has one active publication owner. V1 retains its
 128-definition limit. The Content bridge v2 accepts at most 10,000 definitions in
-one complete 12 MiB bundle; independently active chunks cannot replace it. A
+one complete 16 MiB bundle; independently active chunks cannot replace it. A
 replacement generation is not an append operation: omitted definitions stop serving.
+The same explicit 16,777,216-byte V2 ceiling applies to raw streamed input and
+normalized model JSON after defaults expand. The raw guard rejects a streamed
+chunk that takes accumulated input over the limit before JSON/model/backend processing; normalization can still
+reject a smaller wire document. V1's 128-definition limit, V2's 10,000 definitions
+and 8,192 aliases, authentication and singular activation transaction are
+unchanged. This is one bounded complete source, without chunked activation or
+truncation. Content's independent full-export limit remains 64 MiB.
+
+The receiver bound is not a memory reservation or proof of database admission.
+The offline owning qualification uses the existing runtime under a 512 MiB
+container limit and records semantic-model peak memory separately. Actual stage
+transport and target resource admission remain required for each delivery.
+
+```mermaid
+flowchart LR
+  Operator[Explicit publication operator] --> Auth[Existing operator authentication]
+  Auth --> Raw[API V2 streamed body<br/>16 MiB maximum]
+  Raw --> Model[Existing V2 semantic validation<br/>normalized JSON maximum 16 MiB]
+  Raw -->|over limit| Reject[Reject before staging]
+  Model -->|over limit| Reject
+  Model --> Stage[Existing inactive publication staging]
+  Stage --> Activate[Separate authenticated activation<br/>existing singular transaction owner]
+```
+
+This receiver-resource view describes source, not an installed-target or
+end-to-end delivery claim. Both byte checks use the same `MAX_BUNDLE_BYTES`.
 
 Full historical alias activation locks both physical and Content card identities
 in the existing sorted card-edit protocol. The 6,524-alias real-data rehearsal
