@@ -595,6 +595,26 @@ def test_current_owner_regrouping_admission_read_proves_owned_identity_only(curr
             regrouped_card_sql(database,'untrusted SQL')
 
 
+def test_current_owner_regrouping_costs_zero_actual_introduction_slots(current_owner_transaction,monkeypatch):
+    """Actual legacy admission acceptance; requires its coordinated R11 hook."""
+    from app.services.queue_admission_adapter import QueueAdmissionAdapter
+    transaction=current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    day=datetime.now().astimezone().date().isoformat()
+    with transaction() as database:
+        # An explicit existing earlier due requires verification today. No
+        # introduction, completion or combined review is seeded by this fact.
+        database.execute_native("UPDATE cards SET due_date=%s WHERE id='A'",(day,))
+        result,_=ordinary_current_review(database,'B',monkeypatch)
+        combined=result['recombination']['resulting_presentation_id']
+        owner=QueueAdmissionAdapter(database)
+        counts=owner.introduction_count_page(day,None)
+        unseen={row['card_id'] for row in owner.unseen_openings(day)}
+        assert sum(count for _,count in counts.counts)==0 and combined not in unseen, (
+            'An already-introduced regrouping must not consume allowance or be reset by unseen reconciliation',
+            counts,combined in unseen)
+
+
 def test_current_owner_optional_conflict_guards_recovery_review_and_rebuild(current_owner_transaction,monkeypatch):
     from app.contracts.review_conflicts import ReviewConflict
     from app.contracts.transport.study import ReviewRequest
