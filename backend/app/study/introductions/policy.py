@@ -113,7 +113,8 @@ def select(*, candidates: tuple[Candidate, ...], ranking: RankingOutput | None,
            global_budget: int, weights: tuple[tuple[str, float], ...],
            spent: tuple[tuple[str, str], ...] = (), introduced: frozenset[str] = frozenset(),
            mandatory: tuple[RequiredWork, ...] = (), rotation_after: str | None = None,
-           enabled: bool = False, paused: bool = False, study_only: bool = False) -> Selection:
+           enabled: bool = False, paused: bool = False, study_only: bool = False,
+           priority: tuple[str, str] | None = None) -> Selection:
     """Largest remainder daily quotas, then weighted spillover; never mutates facts.
 
     spent maps unique presentations to their credited membership. rotation_after
@@ -140,7 +141,8 @@ def select(*, candidates: tuple[Candidate, ...], ranking: RankingOutput | None,
 
     def preference(candidate):
         known = (candidate.decision_id, candidate.repertoire_id) in rank_memberships and candidate.decision_id in rank
-        return (0 if known else 1, rank.get(candidate.decision_id, 0) if known else candidate.fallback_order,
+        return (0 if priority == (candidate.repertoire_id, candidate.decision_id) else 1,
+                0 if known else 1, rank.get(candidate.decision_id, 0) if known else candidate.fallback_order,
                 order.get(candidate.repertoire_id, len(order)), candidate.presentation_id, candidate.decision_id)
 
     excluded = introduced | spent_by_id.keys() | {item.presentation_id for item in required}

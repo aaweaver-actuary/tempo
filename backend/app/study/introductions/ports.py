@@ -49,6 +49,17 @@ class IntroductionOwner(Protocol):
     def introduce(self, day: str, candidate: Candidate) -> Literal["introduced", "already_introduced", "stale"]: ...
 
 
+class IntroductionConflicts(Protocol):
+    """Existing Study conflict owner, read on the SAME borrowed transaction.
+
+    PostgresConflictStore.blocked implements this public capability. Admission
+    already holds the shared card-edit reservation at its commit recheck, which
+    serializes it with the conflict owner's synchronize command. The conflict
+    owner retains scoped hold identity, persistence and restoration semantics.
+    """
+    def blocked(self, repertoire_id: str, card_id: str, revision: int) -> bool: ...
+
+
 class IntroductionStore(Protocol):
     def state(self, day: str) -> AllocationState: ...
     def saved_ranking(self, context: RankingContext) -> RankingOutput | None: ...
@@ -93,3 +104,22 @@ class IntroductionSource:
                 or membership.revision != token.graph_generation
                 or membership.source_revision != fingerprint(token.model_dump(mode="json"))):
             raise ValueError("retained source and snapshot bindings disagree")
+
+
+@dataclass(frozen=True)
+class RepertoireIntroductionSource:
+    """Actual repertoire-only shared snapshot; no game/capture authority token."""
+    snapshot: RepertoireSnapshot
+
+    def __post_init__(self):
+        object.__setattr__(self, 'snapshot', RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()))
+        membership = self.snapshot.membership
+        if (self.snapshot.variant != 'standard' or len(membership.scope_repertoire_ids) != 1
+                or not membership.complete or not membership.available or membership.unavailable_reason is not None
+                or membership.scope_id != 'repertoire:' + membership.scope_repertoire_ids[0]
+                or membership.source_revision != membership.digest):
+            raise ValueError('complete current repertoire source required')
+
+    @property
+    def repertoire_id(self):
+        return self.snapshot.membership.scope_repertoire_ids[0]

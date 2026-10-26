@@ -144,6 +144,8 @@ owner must still verify the entire playable route/context at the effect boundary
 flowchart LR
     Publisher[Optional ranking publisher] -->|shared RankingOutput + exact context| App[Introductions application]
     Current[Concrete current Study admission adapter] -->|current facts and borrowed transaction| App
+    Read[Public current Repertoire snapshot port] -->|exact fresh factual source fence| Current
+    Holds[Optional Study conflict owner] -->|blocked scope / card / revision| Current
     App --> Policy[Pure select / integer allocation]
     App -->|cached ranking / charge / rotation| Store[Study private PostgreSQL store]
     App -->|rechecked introduction intent| Current
@@ -224,3 +226,72 @@ tables until the feature is explicitly wired with its schema installed. The
 retained bounded authority may conservatively defer after unrelated catalogue
 generation changes; refresh it through its existing source owner. No migration
 or graph rebuild is started by this module.
+
+## Optional conflict admission and repertoire-only sources
+
+The concrete factory accepts `conflicts=PostgresConflictStore(borrowed_database)`.
+It delegates to the existing Study owner's `blocked(repertoire_id, card_id,
+revision)` capability during candidate reads and again inside the commit-time
+facts check. It copies no conflict SQL or policy. A hold can neither introduce
+nor charge the card. An explicit False is the only release; unknown is closed.
+Absence preserves the prior behavior and requires no conflict table/read.
+Serving, recovery and rebuild guards remain with their assigned owners.
+
+A complete repertoire-only source needs no game or retained capture:
+
+```python
+source = RepertoireIntroductionSource(current_snapshots.snapshot(repertoire_id))
+receiver = current_owner_introductions(
+    borrowed_database, sources=(source,), settings=explicit_settings,
+    current_snapshots=current_snapshots,  # existing public #483 reader on this writer
+    conflicts=study_conflict_store,      # optional existing Study owner
+)
+```
+
+`current_snapshots` implements the existing `RepertoireSnapshotPort.snapshot`
+operation; outer composition binds the published `current_snapshot` database
+adapter to the same borrowed writer. It supplies facts, never an eligibility
+callback. The receiver compares the exact source_revision/revision/digest fence
+from a fresh public snapshot under its current source/card locks. The actual
+reader's revision is `scope_source_revision + 1`; it is not a graph generation
+and is never converted into a game authority token. Exact current membership,
+physical revision/executable, playable route and saved controls remain required.
+
+The content-only introduction binding is only a ranking-cache identity. It never
+waives the exact raw source fence on admission. After this transaction's own
+canonical introduction, the receiver rereads its already-validated sources,
+checks unchanged content and refreshes their raw introduction facts. This permits
+a bounded batch without accepting an independently stale caller snapshot. A
+rollback discards the transaction-bound receiver. Source, route or membership
+changes still close admission. Explicitly over-bound sources defer without
+silently using a prefix of the supplied snapshot.
+
+## Encounter-first introduction without optional ranking
+
+```python
+result = receiver.admit_encounter(
+    local_day, repertoire_id=repertoire_id, decision_id=known_unintroduced_decision,
+)
+```
+
+This small canonical capability prioritizes an actual current approved decision
+within the existing weighted allocation. It requires no Explorer, model, game
+capture or accepted ranking, and never writes a review/lapse/Again. Due work
+retains precedence. The global allowance, positive weight, period quota, saved
+zero limits, study-only/paused/disabled controls and scoped conflicts still
+apply. It does not silently take another repertoire's owed slot. Successful
+admission records one ordinary introduction, budget charge and fairness advance;
+a retry or another decision on the same physical presentation reuses its receipt.
+
+`deferred` means the feedback/command owner retains its existing durable retry
+intent; this module creates no second command queue or priority producer. An
+unmapped/ambiguous decision returns `unavailable`; already introduced material is
+free. The receiver only appends eligible work and leaves an active attempt intact.
+This API is source-only and inactive until the later product wiring is selected.
+
+Changed native source qualification assembles the unchanged published generic
+reader/shared mapping values and conflict owner/DDL with this component. It uses
+the actual current schema, reader, canonical writer and hold read, not installed
+artifact qualification or an optional runtime. Exact dependency hashes and commands
+belong in the handoff evidence. #501 retains migration/registration and visible
+product proof; the first feedback release is not changed by this feature.

@@ -253,3 +253,112 @@ def test_current_owner_settings_require_explicit_boolean_controls(control):
     from app.study.introductions.ports import IntroductionSettings
     with pytest.raises(ValueError):
         IntroductionSettings('explicit',1,(("a",1),),**control)
+
+
+def test_conflict_admission_delegates_exact_scoped_current_revision():
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def __init__(self): self.calls = []
+        def blocked(self, repertoire_id, card_id, revision):
+            self.calls.append((repertoire_id,card_id,revision))
+            return (repertoire_id,card_id,revision) == ('held','shared',3)
+    conflicts = Conflicts()
+    assert introduction_is_held(conflicts,repertoire_id='held',presentation_id='shared',presentation_revision=3)
+    assert not introduction_is_held(conflicts,repertoire_id='other',presentation_id='shared',presentation_revision=3)
+    assert not introduction_is_held(conflicts,repertoire_id='held',presentation_id='shared',presentation_revision=4)
+    assert conflicts.calls == [('held','shared',3),('other','shared',3),('held','shared',4)]
+
+
+def test_conflict_admission_absent_capability_retains_existing_behavior():
+    from app.study.introductions.application import introduction_is_held
+    assert not introduction_is_held(None,repertoire_id='rep',presentation_id='card',presentation_revision=1)
+
+
+@pytest.mark.parametrize('answer',[True,None,'false',0])
+def test_conflict_admission_requires_explicit_release(answer):
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def blocked(self,*args): return answer
+    assert introduction_is_held(Conflicts(),repertoire_id='rep',presentation_id='card',presentation_revision=1)
+
+
+def test_conflict_admission_unknown_physical_revision_is_not_a_release():
+    from app.study.introductions.application import introduction_is_held
+    class Conflicts:
+        def blocked(self,*args): raise AssertionError('unknown identity must not be queried')
+    assert introduction_is_held(Conflicts(),repertoire_id='rep',presentation_id='card',presentation_revision=0)
+
+
+def repertoire_only_snapshot():
+    import json
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    root = Path(__file__).resolve().parents[2]
+    payload = json.loads((root / 'contracts/product-v02/fixtures/snapshot.json').read_text())['payload']
+    payload['membership']['source_revision'] = payload['membership']['digest']
+    payload['membership']['scope_id'] = 'repertoire:white'
+    return RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+
+def test_repertoire_only_source_needs_no_game_capture_authority():
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    source = RepertoireIntroductionSource(repertoire_only_snapshot())
+    assert source.repertoire_id == 'white'
+    assert not hasattr(source,'authority')
+
+
+def test_repertoire_only_binding_ignores_capture_and_introduction_chronology():
+    from app.study.introductions.application import repertoire_introduction_binding
+    source = repertoire_only_snapshot()
+    changed = source.model_copy(update={
+        'membership':source.membership.model_copy(update={'snapshot_id':'new-capture','digest':'d'*64,
+            'source_revision':'d'*64,'captured_at':'2026-10-27T12:00:00Z'}),
+        'decision_presentations':(source.decision_presentations[0].model_copy(update={
+            'introduction':'unintroduced','introduced_at':None,'introduction_matches_current_content':False}),)})
+    assert repertoire_introduction_binding(source) == repertoire_introduction_binding(changed)
+
+
+@pytest.mark.parametrize('change',['route','physical_revision','source_revision'])
+def test_repertoire_only_binding_retains_exact_content_and_source_revision(change):
+    from app.study.introductions.application import repertoire_introduction_binding
+    source = repertoire_only_snapshot()
+    if change == 'route':
+        changed = source.model_copy(update={'membership':source.membership.model_copy(update={
+            'routes':(source.membership.routes[0].model_copy(update={'moves':('d2d4',)}),)})})
+    elif change == 'physical_revision':
+        changed = source.model_copy(update={'decision_presentations':(
+            source.decision_presentations[0].model_copy(update={'presentation_revision':2}),)})
+    else:
+        changed = source.model_copy(update={'membership':source.membership.model_copy(update={'revision':2}),
+            'decision_presentations':(source.decision_presentations[0].model_copy(update={'repertoire_revision':2}),)})
+    assert repertoire_introduction_binding(source) != repertoire_introduction_binding(changed)
+
+
+@pytest.mark.parametrize('change',[dict(complete=False),dict(available=False,unavailable_reason='unavailable')])
+def test_repertoire_only_source_rejects_unproved_current_snapshot(change):
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    source = repertoire_only_snapshot()
+    with pytest.raises(ValueError):
+        RepertoireIntroductionSource(source.model_copy(update={'membership':source.membership.model_copy(update=change)}))
+
+
+def test_encounter_priority_precedes_saved_rank_without_requiring_ranking():
+    encountered, other = candidate('encounter',fallback_order=1), candidate('other')
+    for saved in (None,ranking(('other','a',.2),('encounter','a',.02))):
+        plan = choose((other,encountered),global_budget=1,weights=(('a',1),),ranking=saved,
+                      priority=('a','encounter'))
+        assert plan.introductions == (encountered,)
+
+
+@pytest.mark.parametrize('control',[dict(global_budget=0),dict(paused=True),dict(study_only=True),
+                                   dict(enabled=False),dict(weights=(('a',0),))])
+def test_encounter_priority_cannot_override_budget_weight_or_saved_pause(control):
+    assert not choose((candidate('encounter'),),priority=('a','encounter'),**control).introductions
+
+
+def test_encounter_priority_retains_required_work_and_owed_repertoire_allocation():
+    a,b = candidate('a'),candidate('b','b')
+    required = (RequiredWork('due','due'),RequiredWork('obligation','obligation'))
+    plan = choose((a,b),global_budget=2,priority=('b','b'),mandatory=required)
+    assert plan.ordered_presentations == ('due','obligation','b','a')
+    # A one-slot quota still owed to a is not silently reassigned by a request.
+    assert choose((a,b),global_budget=1,priority=('b','b')).introductions == (a,)

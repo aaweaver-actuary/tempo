@@ -321,8 +321,8 @@ def current_owner_case(legacy_transaction):
         source = IntroductionSource(RepertoireSnapshot.model_validate_json(json.dumps(snapshot)),token)
     yield legacy_transaction, source, IntroductionSettings('synthetic-explicit-settings',1,((repertoire,1),),enabled=True), card
     with legacy_transaction() as database:
-        database.execute('DELETE FROM study_product_introduction_charges WHERE presentation_id=?',(card,))
-        for identity in (card,card + '-due',card + '-active'):
+        database.execute('DELETE FROM study_product_introduction_charges WHERE repertoire_id=?',(repertoire,))
+        for identity in (card,card + '-due',card + '-active',card + '-root'):
             database.execute('DELETE FROM daily_queue WHERE card_id=?',(identity,))
             database.execute('DELETE FROM cards WHERE id=?',(identity,))
         database.execute('DELETE FROM repertoires WHERE id=?',(repertoire,))
@@ -470,3 +470,175 @@ def test_current_owner_unchanged_content_retains_ranking_across_capture_refresh(
         assert app.context(DAY) == context
         assert app.store.saved_ranking(context) == value
         assert not app.store.state(DAY).charges
+
+
+@pytest.fixture(scope='module')
+def repertoire_bridge_schema(legacy_transaction):
+    """Published conflict-owner DDL, required only for the changed bridge proof.
+
+    The leaf's source qualification assembly contains unchanged #483/#487
+    dependency files. Integrated suites use those same normal source imports.
+    No runtime source fallback, downloaded module or duplicate policy is used.
+    """
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_snapshot
+    from tempo_legacy_database.adapters.study.conflicts import PostgresConflictStore
+    with legacy_transaction() as database:
+        database.raw.execute((ROOT/'database/tempo_legacy_database/ddl/study_conflicts.sql').read_text(),prepare=False)
+    return current_snapshot, PostgresConflictStore
+
+
+def repertoire_bridge(database, repertoire_id, settings, *, source=None, conflicts=None):
+    from app.services.queue_admission_adapter import current_owner_introductions
+    from app.study.introductions.ports import RepertoireIntroductionSource
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_snapshot
+    class Snapshots:
+        def snapshot(self, identity): return current_snapshot(database,identity)
+    snapshots = Snapshots()
+    source = source or RepertoireIntroductionSource(snapshots.snapshot(repertoire_id))
+    receiver = current_owner_introductions(database,sources=(source,),settings=settings,
+        current_snapshots=snapshots,conflicts=conflicts)
+    return receiver,source
+
+
+def add_repertoire_bridge_root(database, repertoire_id, child_id):
+    import chess
+    from tempo_evidence_math import opening_position_key
+    root = child_id + '-root'
+    line = database.execute('SELECT line_id FROM opening_graph_steps WHERE card_id=?',(child_id,)).fetchone()[0]
+    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES(?,?,'prefix',?,'[\"e2e4\"]','locked',?,'opening','white')",
+                     (root,repertoire_id,chess.STARTING_FEN,DAY))
+    database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)',(repertoire_id,root))
+    database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES(?,1,?,0,?,?,?,'[\"e2e4\"]','white')",
+                     (repertoire_id,line,root,opening_position_key(chess.STARTING_FEN),chess.STARTING_FEN))
+    return root
+
+
+def test_repertoire_bridge_encounter_priority_without_game_provider_or_ranking(current_owner_case,repertoire_bridge_schema,monkeypatch):
+    transaction, retained, settings, card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    with transaction() as database:
+        root = add_repertoire_bridge_root(database,repertoire_id,card)
+        receiver,source = repertoire_bridge(database,repertoire_id,settings)
+        assert not hasattr(source,'authority')
+        assert database.execute('SELECT COUNT(*) FROM imported_games',()).fetchone()[0] == 0
+        assert receiver.store.saved_ranking(receiver.context(DAY)) is None
+        first = receiver.preview(DAY).introductions[0].presentation_id
+        target = root if first == card else card
+        decision = next(item.decision_id for item in source.snapshot.decision_presentations if item.presentation_id == target)
+        active = tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone())
+        import builtins
+        original_import = builtins.__import__
+        def independent(name,*args,**kwargs):
+            if name == 'app.games' or name.startswith(('app.games.','app.analysis.')):
+                raise AssertionError('optional implementation imported during introduction: '+name)
+            return original_import(name,*args,**kwargs)
+        with monkeypatch.context() as guarded:
+            guarded.setattr(builtins,'__import__',independent)
+            assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'introduced'
+        assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'replayed'
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(first,)).fetchone()[0] is None
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(target,)).fetchone()[0] == 0
+        assert len(receiver.store.state(DAY).charges) == 1
+        assert tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?',(card+'-active',)).fetchone()) == active
+        positions = database.execute('SELECT card_id FROM daily_queue WHERE card_id=ANY(?) ORDER BY position',([target,card+'-due'],)).fetchall()
+        assert [row[0] for row in positions] == [card+'-due',target]
+
+
+def test_repertoire_bridge_refreshes_only_own_fenced_introduction_changes(current_owner_case,repertoire_bridge_schema):
+    transaction, retained, settings, card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    with transaction() as database:
+        add_repertoire_bridge_root(database,repertoire_id,card)
+        receiver,source = repertoire_bridge(database,repertoire_id,replace(settings,global_budget=2))
+        context = receiver.context(DAY)
+        assert len(receiver.admit(DAY,maximum_new=2)) == 2
+        assert receiver.owner.sources[0].snapshot.membership.source_revision != source.snapshot.membership.source_revision
+        assert receiver.context(DAY) == context
+    with transaction() as database:
+        stale,_ = repertoire_bridge(database,repertoire_id,replace(settings,global_budget=2),source=source)
+        assert not stale.preview(DAY).introductions and stale.owner.diagnostics
+        fresh,_ = repertoire_bridge(database,repertoire_id,replace(settings,global_budget=2))
+        assert fresh.context(DAY) == context
+        assert len(fresh.store.state(DAY).charges) == 2
+
+
+def test_repertoire_bridge_real_scoped_conflict_hold_never_charges(current_owner_case,repertoire_bridge_schema):
+    transaction,retained,settings,card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    _,Store = repertoire_bridge_schema
+    from app.study.conflicts import Occurrence,SourceFence
+    from datetime import datetime,timezone
+    with transaction() as database:
+        receiver,source = repertoire_bridge(database,repertoire_id,settings)
+        member = source.snapshot.membership
+        line = source.snapshot.membership.routes[0].route_id
+        target = Occurrence(repertoire_id,line,2,card,1)
+        fence = SourceFence(member.source_revision,member.revision,member.digest)
+        store = Store(database)
+        store.hold(target,fence,True,datetime.now(timezone.utc))
+        receiver,_ = repertoire_bridge(database,repertoire_id,settings,conflicts=store)
+        decision = next(item.decision_id for item in source.snapshot.decision_presentations if item.presentation_id == card)
+        assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'deferred'
+        assert receiver.store.receipt(card) is None
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?',(card,)).fetchone()[0] is None
+        store.hold(target,fence,False,datetime.now(timezone.utc))
+        assert receiver.admit_encounter(DAY,repertoire_id=repertoire_id,decision_id=decision).status == 'introduced'
+
+
+def test_repertoire_bridge_rechecks_real_hold_after_preview(current_owner_case,repertoire_bridge_schema):
+    transaction,retained,settings,card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    _,Store = repertoire_bridge_schema
+    from app.study.conflicts import Occurrence,SourceFence
+    from datetime import datetime,timezone
+    with transaction() as database:
+        receiver,source = repertoire_bridge(database,repertoire_id,settings)
+        choice,context = receiver.preview(DAY).introductions[0],receiver.context(DAY)
+    with transaction() as database:
+        member = source.snapshot.membership
+        Store(database).hold(Occurrence(repertoire_id,member.routes[0].route_id,2,card,1),
+            SourceFence(member.source_revision,member.revision,member.digest),True,datetime.now(timezone.utc))
+    with transaction() as database:
+        receiver,_ = repertoire_bridge(database,repertoire_id,settings,source=source,conflicts=Store(database))
+        assert receiver.commit(DAY,choice,context).status == 'stale'
+        assert receiver.store.receipt(card) is None
+
+
+@pytest.mark.parametrize('change',['route','definition','membership','study_only'])
+def test_repertoire_bridge_retains_source_membership_and_control_fences(current_owner_case,repertoire_bridge_schema,change):
+    transaction,retained,settings,card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    with transaction() as database:
+        receiver,source = repertoire_bridge(database,repertoire_id,settings)
+        choice,context = receiver.preview(DAY).introductions[0],receiver.context(DAY)
+    with transaction() as database:
+        if change == 'route':
+            database.execute("UPDATE repertoire_lines SET moves_json='[\"d2d4\"]' WHERE repertoire_id=?",(repertoire_id,))
+        elif change == 'definition': database.execute('UPDATE cards SET revision=revision+1 WHERE id=?',(card,))
+        elif change == 'study_only': database.execute('UPDATE settings SET study_only_mode=1 WHERE id=1',())
+        else:
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('__retained_cards__','Retained','fixture',?) ON CONFLICT(id) DO NOTHING",(DAY,))
+            database.execute('DELETE FROM repertoire_cards WHERE card_id=?',(card,))
+            database.execute("UPDATE cards SET repertoire_id='__retained_cards__' WHERE id=?",(card,))
+    with transaction() as database:
+        receiver,_ = repertoire_bridge(database,repertoire_id,settings,source=source)
+        assert receiver.commit(DAY,choice,context).status == 'stale'
+        assert receiver.store.receipt(card) is None
+
+
+def test_repertoire_bridge_content_cache_is_not_a_stale_source_grant(current_owner_case,repertoire_bridge_schema):
+    transaction,retained,settings,card = current_owner_case
+    repertoire_id = retained.snapshot.membership.scope_repertoire_ids[0]
+    from app.study.introductions.application import repertoire_introduction_binding
+    with transaction() as database:
+        receiver,source = repertoire_bridge(database,repertoire_id,settings)
+    with transaction() as database:
+        database.execute("UPDATE cards SET introduced_at='2026-10-24' WHERE id=?",(card+'-due',))
+    with transaction() as database:
+        receiver,_ = repertoire_bridge(database,repertoire_id,settings,source=source)
+        fresh = receiver.owner.current_snapshots.snapshot(repertoire_id)
+        assert repertoire_introduction_binding(fresh) == repertoire_introduction_binding(source.snapshot)
+        assert fresh.membership.source_revision != source.snapshot.membership.source_revision
+        assert not receiver.preview(DAY).introductions
+        assert receiver.owner.diagnostics
+        assert receiver.store.receipt(card) is None
