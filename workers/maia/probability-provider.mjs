@@ -98,7 +98,7 @@ export function createProcessExecution({ modelOptions = {} } = {}) {
         else current.resolve(message?.value);
       });
       child.on("error", () => { pending?.reject(failure("worker_crashed")); pending = null; });
-      child.once("exit", () => {
+      child.once("close", () => {
         if (ownedChild === child) ownedChild = null;
         pending?.reject(failure("worker_crashed")); pending = null;
       });
@@ -160,7 +160,9 @@ export function createProbabilityProvider({ createExecution = createProcessExecu
     if (closed) return result(null, "provider_closed");
     if (active) return result(null, "worker_busy");
     if (signal?.aborted) return result(null, "cancelled");
-    const execution = createExecution();
+    let execution;
+    try { execution = createExecution(); }
+    catch (error) { return result(null, error instanceof MaiaError ? error.code : "worker_crashed"); }
     let stopReason = null;
     let rejectStop;
     let timer;

@@ -178,6 +178,16 @@ test("concurrency_and_shutdown_are_bounded", async () => {
   assert.equal(state.terminated, 1);
 });
 
+test("pre_cancel_and_execution_creation_failure_start_no_work", async () => {
+  const { provider, state } = fakeExecution();
+  const controller = new AbortController(); controller.abort();
+  assert.equal((await provider.evidence(request(), { signal: controller.signal })).evidence.unavailable_reason, "cancelled");
+  assert.equal(state.initialized, 0);
+  const unavailable = createProbabilityProvider({ createExecution: () => { throw new MaiaError("worker_crashed", "spawn failed"); } });
+  assert.equal((await unavailable.evidence(request())).evidence.unavailable_reason, "worker_crashed");
+  await unavailable.close();
+});
+
 for (const code of ["worker_crashed", "model_loading_failed", "memory_limit_unavailable"]) test(`unavailable_maia_preserves_explorer_fallback:${code}`, async () => {
   const explorer = Object.freeze(structuredClone(fixture.payload));
   const { provider } = fakeExecution({ infer: async () => { throw new MaiaError(code, code); } });
