@@ -78,3 +78,312 @@ def test_stale_or_unpublished_report_cannot_reopen_target():
     unpublished = RepertoireSnapshot.model_validate_json(json.dumps(raw))
     assert eligibility(unpublished, "a").reason == "unpublished_integrity"
     assert not conflict_report(unpublished).clean
+
+
+from contextlib import contextmanager
+from app.contracts.product_v02.analysis import Proposal, ProposalDecision
+from app.repertoire.changes.application import (RepertoireChanges, manual_resolution,
+    validate_proposal, validate_source_rows)
+
+
+class MemoryStore:
+    """Fake semantic owner; rollback models the all-or-nothing command boundary."""
+    def __init__(self, value):
+        self.source = value
+        self.previews = {}
+        self.receipts = {}
+        self.published = []
+        self.fail_publish = False
+
+    @contextmanager
+    def transaction(self, repertoire_id):
+        before = self.source, dict(self.previews), dict(self.receipts), list(self.published)
+        try: yield self
+        except Exception:
+            self.source, self.previews, self.receipts, self.published = before
+            raise
+
+    def snapshot(self): return self.source
+    def preview(self, key): return self.previews.get(key)
+    def save_preview(self, proposal): self.previews[proposal.proposal_id] = proposal
+    def receipt(self, key): return self.receipts.get(key)
+    def save_receipt(self, receipt): self.receipts[receipt.proposal_id] = receipt
+    def publish(self, change):
+        self.source = change.after
+        self.published.append(change)
+        if self.fail_publish: raise RuntimeError("owner publication failed")
+
+
+def resolve_fixture():
+    value = snapshot(("winner", ["e2e4", "e7e5", "g1f3"], "rep"),
+        ("loser", ["d2d4", "d7d5", "c2c4"], "rep"),
+        ("fork", ["e2e4", "c7c5", "g1f3"], "rep"),
+        ("other", ["d2d4", "d7d5"], "other"))
+    proposal = manual_resolution(value, repertoire_id="rep", position=chess.STARTING_FEN.rsplit(" ", 2)[0],
+        selected_uci="e2e4", proposal_id="manual-492")
+    return value, proposal
+
+
+def decision(proposal, action="accept", edited=None):
+    return ProposalDecision(proposal_id=proposal.proposal_id,
+        expected_proposal_revision=proposal.proposal_revision,
+        expected_source_revision=proposal.source_revision, display_digest=proposal.display_digest,
+        action=action, edited_proposal=edited)
+
+
+def rebind(proposal, **changes):
+    value = proposal.model_copy(update=changes)
+    return Proposal.model_validate_json(value.model_copy(update={"display_digest": value.content_digest()}).model_dump_json())
+
+
+def test_manual_selection_previews_every_replacement_and_preserves_evidence_and_other_memberships():
+    value, proposal = resolve_fixture()
+    plan = validate_proposal(value, proposal)
+    assert [item.route_id for item in proposal.edits] == ["loser"]
+    assert proposal.edits[0].displayed_pgn == "1. e4 *"
+    assert plan.before == value
+    routes = {item.route_id: item.moves for item in plan.after.membership.routes}
+    assert routes["loser"] == ("e2e4",)
+    assert routes["winner"] == ("e2e4", "e7e5", "g1f3")
+    assert routes["fork"] == ("e2e4", "c7c5", "g1f3")
+    assert routes["other"] == ("d2d4", "d7d5")
+    assert conflict_report(plan.after).clean
+    # Original tails are retained, no physical card/history identity changed.
+    assert value.membership.routes[1].moves == ("d2d4", "d7d5", "c2c4")
+
+
+def test_acceptance_replay_has_one_effect_and_changed_payload_cannot_reuse_identity():
+    value, proposal = resolve_fixture(); store = MemoryStore(value); service = RepertoireChanges(store)
+    assert service.preview(proposal).status == "preview"
+    receipt = service.accept_change(decision(proposal))
+    assert service.accept_change(decision(proposal)) == receipt
+    assert receipt.status == "accepted" and len(store.published) == 1
+    changed = rebind(proposal, explanation="Changed displayed content")
+    with pytest.raises(ChangeError, match="stale_or_unapproved_preview"):
+        service.accept_change(decision(changed))
+    with pytest.raises(ChangeError, match="already_decided"): service.preview(changed)
+
+
+def test_edit_revalidates_and_requires_fresh_approval():
+    value, proposal = resolve_fixture(); store = MemoryStore(value); service = RepertoireChanges(store)
+    service.preview(proposal)
+    edited = rebind(proposal, proposal_revision=2, explanation="Explicit edited explanation")
+    assert service.edit_proposal(decision(proposal, "edit", edited)).status == "preview"
+    assert not store.published
+    with pytest.raises(ChangeError, match="stale_or_unapproved_preview"):
+        service.accept_change(decision(proposal))
+    assert service.accept_change(decision(edited)).status == "accepted"
+
+
+def test_stale_source_and_publication_failure_have_no_partial_effect():
+    value, proposal = resolve_fixture(); store = MemoryStore(value); service = RepertoireChanges(store)
+    service.preview(proposal)
+    raw = value.model_dump(mode="json"); raw["membership"]["digest"] = "b"*64
+    store.source = RepertoireSnapshot.model_validate_json(json.dumps(raw))
+    with pytest.raises(ChangeError, match="stale_source"): service.accept_change(decision(proposal))
+    assert not store.receipts and not store.published
+    store.source = value; store.fail_publish = True
+    with pytest.raises(RuntimeError, match="publication failed"): service.accept_change(decision(proposal))
+    assert store.source == value and not store.receipts and not store.published
+
+
+def test_dismissal_has_no_content_or_learning_effect():
+    value, proposal = resolve_fixture(); store = MemoryStore(value); service = RepertoireChanges(store)
+    service.preview(proposal)
+    receipt = service.dismiss_proposal(decision(proposal, "dismiss"))
+    assert receipt.status == "dismissed" and store.source == value and not store.published
+    assert service.dismiss_proposal(decision(proposal, "dismiss")) == receipt
+    with pytest.raises(ChangeError, match="already_decided"): service.accept_change(decision(proposal))
+
+
+def test_display_digest_and_full_route_changes_are_enforced():
+    value, proposal = resolve_fixture()
+    with pytest.raises(ChangeError, match="digest_mismatch"):
+        validate_proposal(value, proposal.model_copy(update={"title": "Hidden changed title"}))
+    changed_edit = proposal.edits[0].model_copy(update={"displayed_pgn": "1. e4 e5 *"})
+    with pytest.raises(ChangeError, match="displayed_route_mismatch"):
+        validate_proposal(value, rebind(proposal, edits=(changed_edit,)))
+
+
+def test_new_conflicting_import_is_held_and_invalid_source_json_is_not_clean():
+    rows = tuple(dict(source_id=name, start_fen=chess.STARTING_FEN,
+        moves_json=json.dumps([move]), trained_color="white") for name, move in [("a", "e2e4"), ("b", "d2d4")])
+    with pytest.raises(ChangeError, match="pending_resolution"): validate_source_rows("rep", rows)
+    with pytest.raises(ChangeError, match="invalid_source"):
+        validate_source_rows("rep", (dict(rows[0], moves_json="broken-json"),))
+
+
+def engine_proposal():
+    value = snapshot(("route-a", ["d2d4"], "white"))
+    raw = json.loads((ROOT / "contracts/product-v02/fixtures/proposal.json").read_text())["payload"]
+    raw["source_digest"] = value.membership.digest
+    proposal = Proposal.model_validate_json(json.dumps(raw))
+    return value, rebind(proposal)
+
+
+def test_explicit_candidate_outside_top_five_uses_supplied_30cp_evidence_only():
+    value, proposal = engine_proposal()
+    assert proposal.edits[0].proposed_response_uci == "a2a3"
+    assert validate_proposal(value, proposal).after.membership.routes[0].moves == ("a2a3",)
+    evidence = proposal.engine_evidence[0]
+    candidate = evidence.candidates[-1]
+    score = candidate.score.model_copy(update={"value": evidence.best.score.value - 31})
+    bad = evidence.model_copy(update={"candidates": evidence.candidates[:-1] + (candidate.model_copy(update={"score": score}),)})
+    with pytest.raises(ChangeError, match="engine_acceptance_unproved"):
+        validate_proposal(value, rebind(proposal, engine_evidence=(bad,)))
+
+
+def test_engine_mate_inconclusive_or_wrong_history_never_manufactures_acceptance():
+    value, proposal = engine_proposal(); evidence = proposal.engine_evidence[0]
+    bad = evidence.model_copy(update={"context": evidence.context.model_copy(update={"history_uci": ("e2e4",)})})
+    with pytest.raises(ChangeError, match="engine_context_mismatch"):
+        validate_proposal(value, rebind(proposal, engine_evidence=(bad,)))
+    raw = evidence.model_dump(mode="json"); raw["candidates"][-1]["score"] = None
+    raw["candidates"][-1]["unavailable_reason"] = "fake_inconclusive"
+    bad = type(evidence).model_validate_json(json.dumps(raw))
+    with pytest.raises(ChangeError, match="engine_acceptance_unproved"):
+        validate_proposal(value, rebind(proposal, engine_evidence=(bad,)))
+
+
+def test_raw_pgn_parser_rejects_illegal_tail_instead_of_importing_recovered_prefix():
+    from app.chess.pgn import parse_pgn
+    with pytest.raises(ValueError, match="invalid_pgn_source"):
+        parse_pgn('[Event "Task 492 invalid"]\n\n1. e4 e5 2. e4 *')
+    games, lines = parse_pgn('[Event "Task 492 legal branches"]\n\n1. e4 (1. d4 d5) e5 2. Nf3 *')
+    assert games == 1 and {tuple(line.moves) for line in lines} == {
+        ("e2e4", "e7e5", "g1f3"), ("d2d4", "d7d5")}
+
+
+def test_engine_free_unapproved_new_move_and_mixed_learner_sources_are_refused():
+    value, proposal = engine_proposal()
+    with pytest.raises(ChangeError, match="engine_evidence_required"):
+        validate_proposal(value, rebind(proposal, engine_evidence=()))
+    rows = tuple(dict(source_id=str(number), start_fen=chess.STARTING_FEN,
+        moves_json='["e2e4"]', trained_color=color) for number, color in enumerate(("white", "black")))
+    with pytest.raises(ChangeError, match="invalid_source"): validate_source_rows("rep", rows)
+
+
+def test_http_routes_are_injected_and_approval_scope_is_enforced():
+    from app.repertoire.changes.http import routes
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    value, proposal = resolve_fixture(); store = MemoryStore(value)
+    class Snapshots:
+        def snapshot(self, repertoire_id): return value
+    api = FastAPI(); api.include_router(routes(lambda rep: RepertoireChanges(store), Snapshots()))
+    with TestClient(api) as client:
+        report = client.get('/api/product/repertoires/rep/conflicts')
+        assert report.status_code == 200 and len(report.json()['conflicts']) == 1
+        assert client.post('/api/product/repertoires/other/changes/preview',
+            json=proposal.model_dump(mode="json")).status_code == 422
+        assert client.post('/api/product/repertoires/rep/changes/preview',
+            json=proposal.model_dump(mode="json")).json()['status'] == 'preview'
+        assert client.post('/api/product/repertoires/rep/changes/decide',
+            json=decision(proposal).model_dump(mode="json")).json()['status'] == 'accepted'
+
+
+def test_resolving_one_conflict_preserves_unrelated_conflict_blocks():
+    value = snapshot(("a", ["e2e4", "e7e5", "g1f3"], "rep"),
+        ("b", ["d2d4"], "rep"), ("c", ["e2e4", "e7e5", "f1c4"], "rep"))
+    proposal = manual_resolution(value, repertoire_id="rep", position=chess.STARTING_FEN.rsplit(" ", 2)[0],
+        selected_uci="e2e4", proposal_id="one-conflict")
+    after = validate_proposal(value, proposal).after
+    assert len(conflict_report(after).conflicts) == 1
+    assert eligibility(after, "b", source_revision=after.membership.source_revision,
+        revision=after.membership.revision, digest=after.membership.digest).eligible
+    assert eligibility(after, "a", ply=2, source_revision=after.membership.source_revision,
+        revision=after.membership.revision, digest=after.membership.digest).reason == "own_response_conflict"
+
+
+def test_engine_mate_and_undisplayed_card_additions_cannot_be_accepted():
+    value, proposal = engine_proposal()
+    evidence = proposal.engine_evidence[0]
+    raw = evidence.model_dump(mode="json")
+    # Reuse the shared published mate shape, rather than inventing a score DTO.
+    mate = json.loads((ROOT / "contracts/product-v02/fixtures/engine-mate.json").read_text())["payload"]
+    raw["candidates"][-1]["score"] = mate["best"]["score"]
+    bad = type(evidence).model_validate_json(json.dumps(raw))
+    with pytest.raises(ChangeError, match="engine_acceptance_unproved"):
+        validate_proposal(value, rebind(proposal, engine_evidence=(bad,)))
+    card = proposal.card_changes[0].model_copy(update={"moves": ("h2h4",)})
+    with pytest.raises(ChangeError, match="card_outside_displayed_routes"):
+        validate_proposal(value, rebind(proposal, card_changes=(card,)))
+
+
+def source_row(source="line:old", move="e2e4"):
+    return dict(source_id=source, start_fen=chess.STARTING_FEN,
+        moves_json=json.dumps([move]), trained_color="white")
+
+
+def test_legacy_import_guard_stops_conflict_before_any_source_write(monkeypatch):
+    from app import pgn_import_commands as command
+    from fastapi import HTTPException
+    monkeypatch.setattr(command.storage, "lock_main_repertoire", lambda *_: None)
+    monkeypatch.setattr(command.storage, "matching_repertoire", lambda *_: ("rep",))
+    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(),))
+    payload = dict(source_name="task492.pgn", trained_color="white", depth=3, games_found=1,
+        unique_lines=1, imported_segments_count=1, decision_segments_count=1, prefix_segments_count=0,
+        segment_ids=[], prefix_segment_ids=[], lines=[dict(starting_fen=chess.STARTING_FEN,
+            moves=["d2d4"], annotations=[])])
+    with pytest.raises(HTTPException) as error:
+        command.admit_pgn_import.__wrapped__(object(), payload)
+    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+
+
+def test_legacy_branch_guard_stops_conflict_before_insert(monkeypatch):
+    from app import branch_commands as command
+    from fastapi import HTTPException
+    monkeypatch.setattr(command.storage, "lock_repertoire_for_add", lambda *_: ("rep",))
+    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(),))
+    with pytest.raises(HTTPException) as error:
+        command.add_repertoire_branch.__wrapped__(object(), dict(repertoire_id="rep", name="task492",
+            trained_color="white", starting_fen=chess.STARTING_FEN, moves=["d2d4"]))
+    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+
+
+def test_legacy_card_edit_guard_keeps_shared_membership_before_writes(monkeypatch):
+    from app import card_commands as command
+    from app.services import canonical_prefix
+    from fastapi import HTTPException
+    monkeypatch.setattr(command.storage, "card_scope", lambda *_: [("rep",)])
+    monkeypatch.setattr(canonical_prefix, "ensure_line_in_scope", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(), source_row("card:card")))
+    with pytest.raises(HTTPException) as error:
+        command.revise_card.__wrapped__(object(), dict(card_id="card", request=dict(
+            starting_fen=chess.STARTING_FEN, moves=["d2d4"], expected_revision=1, history_mode="preserve")))
+    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+
+
+def test_legacy_integrity_repair_cannot_introduce_new_response_conflict(monkeypatch):
+    from app import integrity_repair_commands as command
+    from app.services import canonical_prefix
+    from fastapi import HTTPException
+    monkeypatch.setattr(command, "request_graph_rebuild_in_transaction", lambda *_: {"id": "task"})
+    monkeypatch.setattr(command.storage, "locked_repertoire", lambda *_: ("rep",))
+    monkeypatch.setattr(command.storage, "locked_issue_signature", lambda *_: ("signature",))
+    monkeypatch.setattr(command.storage, "locked_source_line", lambda *_: dict(
+        id="old", repertoire_id="rep", start_fen=chess.STARTING_FEN, moves_json='["e2e4"]'))
+    monkeypatch.setattr(canonical_prefix, "ensure_line_in_scope", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(), source_row("card:card")))
+    with pytest.raises(HTTPException) as error:
+        command.resolve_integrity_issue.__wrapped__(object(), dict(repertoire_id="rep", issue_id="issue",
+            signature="signature", changed_lines={"old": ["d2d4"]}, changed_cards={},
+            expected_line_moves={"old": '["e2e4"]'}, expected_card_moves={}, unsupported_card_ids=[]))
+    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+
+
+def test_approval_for_displayed_addition_passes_exact_cards_to_owner_without_learning_write():
+    value, proposal = engine_proposal(); store = MemoryStore(value); changes = RepertoireChanges(store)
+    changes.preview(proposal); receipt = changes.accept_change(decision(proposal))
+    assert receipt.status == "accepted"
+    assert store.published[0].proposal.card_changes == proposal.card_changes
+    assert len(store.published[0].proposal.card_changes) == 1
+
+
+def test_maximum_proposal_identifier_remains_usable_and_accepts_only_displayed_key():
+    value, proposal = resolve_fixture(); proposal = rebind(proposal, proposal_id="x"*200)
+    store = MemoryStore(value); changes = RepertoireChanges(store)
+    changes.preview(proposal)
+    receipt = changes.accept_change(decision(proposal))
+    assert len(receipt.owner_receipt_id) < 200
+    assert changes.accept_change(decision(proposal)) == receipt

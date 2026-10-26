@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ContextManager, Protocol
 
+from app.contracts.product_v02.analysis import Proposal, RepertoireChangeReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.repertoire.position_index import Diagnostic, PositionKey
 
@@ -54,5 +55,22 @@ class ChangeError(ValueError):
     """Stable owner error code, translated to transport status at the edge."""
 
 
-class AuditReader(Protocol):
-    def snapshot(self, repertoire_id: str) -> RepertoireSnapshot: ...
+
+@dataclass(frozen=True)
+class ValidatedChange:
+    proposal: Proposal
+    before: RepertoireSnapshot
+    after: RepertoireSnapshot
+
+
+class ChangeTransaction(Protocol):
+    def snapshot(self) -> RepertoireSnapshot: ...
+    def preview(self, proposal_id: str) -> Proposal | None: ...
+    def save_preview(self, proposal: Proposal) -> None: ...
+    def receipt(self, proposal_id: str) -> RepertoireChangeReceipt | None: ...
+    def save_receipt(self, receipt: RepertoireChangeReceipt) -> None: ...
+    def publish(self, change: ValidatedChange) -> None: ...
+
+
+class ChangeStore(Protocol):
+    def transaction(self, repertoire_id: str) -> ContextManager[ChangeTransaction]: ...
