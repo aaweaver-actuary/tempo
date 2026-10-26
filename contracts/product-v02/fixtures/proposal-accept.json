@@ -1,0 +1,11 @@
+{
+  "model": "ProposalDecision",
+  "payload": {
+    "proposal_id": "synthetic-proposal",
+    "expected_proposal_revision": 1,
+    "expected_source_revision": 1,
+    "display_digest": "ec2e340f86292d3544b71650749f663b63249b27388dee54f3e0192f16af80d2",
+    "action": "accept",
+    "edited_proposal": null
+  }
+}
