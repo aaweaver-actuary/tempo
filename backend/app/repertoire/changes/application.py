@@ -133,7 +133,8 @@ def _engine_allows(proposal: Proposal, occurrence, edit: RepertoireEdit) -> None
         raise ChangeError("engine_acceptance_unproved")
 
 
-def validate_proposal(snapshot: RepertoireSnapshot, proposal: Proposal) -> ValidatedChange:
+def validate_proposal(snapshot: RepertoireSnapshot, proposal: Proposal, *,
+                      card_definitions: tuple[DisplayedCardChange, ...] = ()) -> ValidatedChange:
     """Bind source, every route delta, cards and explicit supplied engine scores."""
     # Detach/revalidate at this public edge, including callers using model_copy.
     proposal = Proposal.model_validate_json(proposal.model_dump_json())
@@ -214,7 +215,10 @@ def validate_proposal(snapshot: RepertoireSnapshot, proposal: Proposal) -> Valid
         if card.action != "add" and not any(
             item.repertoire_id == proposal.repertoire_id and item.presentation_id == card.presentation_id
             and item.presentation_revision == card.expected_revision
-            for item in snapshot.decision_presentations):
+            for item in snapshot.decision_presentations) and not any(
+                item.action == "reuse" and item.presentation_id == card.presentation_id
+                and item.expected_revision == card.expected_revision
+                for item in card_definitions):
             raise ChangeError("stale_card_mapping")
         matched = False
         for route in after_routes:
@@ -244,7 +248,8 @@ def validate_proposal(snapshot: RepertoireSnapshot, proposal: Proposal) -> Valid
 
 
 def manual_resolution(snapshot: RepertoireSnapshot, *, repertoire_id: str,
-                      position: str, selected_uci: str, proposal_id: str) -> Proposal:
+                      position: str, selected_uci: str, proposal_id: str,
+                      card_definitions: tuple[DisplayedCardChange, ...] = ()) -> Proposal:
     """Preview winner + all losing-route replacements, retaining original source.
 
     Replacement ends after the selected response. Never graft an old losing
@@ -268,15 +273,7 @@ def manual_resolution(snapshot: RepertoireSnapshot, *, repertoire_id: str,
         edits.append(RepertoireEdit(route_id=occurrence.route_id, position_key=position,
             previous_response_uci=occurrence.next_move, proposed_response_uci=selected_uci,
             displayed_pgn=_pgn(occurrence.starting_fen, occurrence.history + (selected_uci,))))
-        if occurrence.route_id.startswith("card:"):
-            binding = occurrence.binding
-            if binding is None or binding.presentation_id != occurrence.route_id[5:]:
-                raise ChangeError("current_card_mapping_unproved")
-            card_changes.append(DisplayedCardChange(action="update",
-                presentation_id=binding.presentation_id,
-                expected_revision=binding.presentation_revision,
-                starting_fen=occurrence.starting_fen,
-                moves=occurrence.history + (selected_uci,), learner_color=occurrence.learner_color))
+    card_changes = list(resolution_card_updates(card_definitions, position=position, selected_uci=selected_uci))
     route_sources = {item.route_id: item for item in snapshot.membership.routes}
     removed_tails = "\n".join(f"{item.route_id}: before {_pgn(route_sources[item.route_id].starting_fen, tuple(route_sources[item.route_id].moves))}; after {item.displayed_pgn}" for item in edits)
     proposal = Proposal(proposal_id=proposal_id, proposal_revision=1, repertoire_id=repertoire_id,
@@ -285,7 +282,7 @@ def manual_resolution(snapshot: RepertoireSnapshot, *, repertoire_id: str,
         explanation="Replace every competing own response with the selected move; the displayed routes end there. Original alternatives and tails remain retained evidence. Other routes and opponent branches are unchanged.\n" + removed_tails,
         edits=tuple(edits), card_changes=tuple(card_changes), engine_evidence=(), supporting_position_keys=(position,))
     proposal = proposal.model_copy(update={"display_digest": proposal.content_digest()})
-    validate_proposal(snapshot, proposal)
+    validate_proposal(snapshot, proposal, card_definitions=card_definitions)
     return proposal
 
 
@@ -312,7 +309,7 @@ class RepertoireChanges:
             current = tx.preview(proposal.proposal_id)
             if current is not None and current != proposal:
                 raise ChangeError("edit_requires_decision")
-            validate_proposal(tx.snapshot(), proposal)
+            validate_proposal(tx.snapshot(), proposal, card_definitions=tx.card_definitions())
             tx.save_preview(proposal)
             return RepertoireChangeReceipt(owner_receipt_id=_receipt_id(proposal, "preview"),
                 proposal_id=proposal.proposal_id, status="preview", source_revision=proposal.source_revision,
@@ -341,13 +338,13 @@ class RepertoireChanges:
                 if (edited.proposal_id != current.proposal_id or edited.repertoire_id != current.repertoire_id
                         or edited.proposal_revision != current.proposal_revision + 1):
                     raise ChangeError("edited_proposal_identity_mismatch")
-                validate_proposal(source, edited)
+                validate_proposal(source, edited, card_definitions=tx.card_definitions())
                 tx.save_preview(edited)
                 return RepertoireChangeReceipt(owner_receipt_id=_receipt_id(edited, "preview"),
                     proposal_id=edited.proposal_id, status="preview", source_revision=edited.source_revision,
                     proposal=edited, reason=None)
             if decision.action == "accept":
-                change = validate_proposal(source, current)
+                change = validate_proposal(source, current, card_definitions=tx.card_definitions())
                 published = tx.publish(change)
                 status, revision = "accepted", published.membership.revision
             else:
@@ -420,3 +417,38 @@ def verify_retained_publication(change: ValidatedChange, published: RepertoireSn
             or published.membership.revision <= change.before.membership.revision
             or published.membership.digest == change.before.membership.digest):
         raise ChangeError("retained_publication_mismatch")
+
+
+def resolution_card_updates(card_definitions: tuple[DisplayedCardChange, ...], *,
+                            position: str, selected_uci: str) -> tuple[DisplayedCardChange, ...]:
+    """Transform explicitly supplied physical definitions; never infer identity.
+
+    The owning reader supplies actual IDs/revisions/memberships. This traversal
+    only finds the affected own response inside that already-identified card.
+    """
+    from tempo_evidence_math import opening_position_key
+    changes = {}
+    for card in card_definitions:
+        try:
+            board = chess.Board(card.starting_fen)
+        except ValueError as error:
+            raise ChangeError("invalid_source_card") from error
+        target, seen = None, False
+        for ply, uci in enumerate(card.moves):
+            try:
+                move = chess.Move.from_uci(uci)
+            except ValueError as error:
+                raise ChangeError("invalid_source_card") from error
+            if not board.is_valid() or move not in board.legal_moves:
+                raise ChangeError("invalid_source_card")
+            if board.turn == (card.learner_color == "white") and opening_position_key(board.fen()) == position:
+                if seen: raise ChangeError("ambiguous_card_occurrence")
+                seen = True
+                if uci != selected_uci: target = card.moves[:ply] + (selected_uci,)
+            board.push(move)
+        if target is not None:
+            changed = card.model_copy(update={"action": "update", "moves": target})
+            if changed.presentation_id in changes and changes[changed.presentation_id] != changed:
+                raise ChangeError("ambiguous_card_definition")
+            changes[changed.presentation_id] = changed
+    return tuple(changes[key] for key in sorted(changes))

@@ -104,6 +104,7 @@ class MemoryStore:
             raise
 
     def snapshot(self): return self.source
+    def card_definitions(self): return ()
     def preview(self, key): return self.previews.get(key)
     def save_preview(self, proposal): self.previews[proposal.proposal_id] = proposal
     def receipt(self, key): return self.receipts.get(key)
@@ -404,3 +405,10 @@ def test_retained_publication_uses_owner_revision_and_requires_exact_approved_co
     wrong = RepertoireSnapshot.model_validate_json(json.dumps(payload))
     with pytest.raises(ChangeError,match='retained_publication_mismatch'):
         verify_retained_publication(change,wrong)
+
+
+def test_retained_reader_is_the_published_snapshot_owner_callable():
+    from app.repertoire.changes import retained
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    assert retained.current_snapshot is product_snapshot.current_snapshot
+    assert retained._shared_snapshot_reader is product_snapshot.current_snapshot

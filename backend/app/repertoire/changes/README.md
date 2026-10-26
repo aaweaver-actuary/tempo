@@ -178,69 +178,67 @@ adapt old storage-split fixtures that currently expect e4/d4 to both be accepted
 The existing #482 scoped product dependency guard covers the new directory.
 A component pass is ready for scoped review, not A05 product completion.
 
-## Retained owner binding follow-up
+## Retained owner binding over the shared read
 
-`retained.py::retained_changes(borrowed_database, repertoire_id)` now constructs
-the actual current-owner service with its retained audit reader and publisher.
-Composition binds this factory and does not implement a source/card mutation.
-An explicitly supplied compatible shared reader remains supported. `publish_validated_change` is the
-public retained operation and requires an enclosing PostgreSQL transaction. C
-supports manual existing-response selection; engine proposals and independent
-card additions are refused at this retained binding until their owner path is
-explicitly adopted.
+`retained.py::current_snapshot` is a direct re-export of snapshot owner #483's
+`database/.../authored_repertoires/product_snapshot.py::current_snapshot` from
+published `4198bfc8`. #511's `668d3af5` chronology alias fix is consumed unchanged.
+The temporary T11 snapshot query/projection was removed. No denied #483 draft-PR
+metadata was reproduced; the source branch is the dependency.
 
-The binding takes the existing graph-task → transition-reservation → graph →
-repertoire locks before current-source/proposal work. Preview only locks/reads;
-it queues no graph work. Acceptance revalidates source label/revision/digest and
-exact source definitions, calls the existing canonical prefix checks and
-`integrity_repair_commands._replace_repertoire_line` /
-`repertoire_integrity._rewrite_card`, retains training depth/history, certifies
-approved routes and invokes the existing integrity invalidator. It requests only
-the normal current-content graph refresh; it neither executes a worker nor
-resumes the held migration. No existing shared command file needed editing.
+`retained_changes(borrowed_database, repertoire_id)` constructs the actual owner
+service using that read and `publish_validated_change`. Composition binds this
+factory and implements no domain mutation. Shared snapshot revision/digest and
+bare authored-line route IDs remain authoritative. Existing graph-task →
+transition-reservation → graph → repertoire lock order is preserved. Preview
+locks/reads and stores its preview only; it queues no graph work.
 
-For a conflicting current physical-card source, manual preview now includes its
-exact `DisplayedCardChange(update, actual identity, expected revision, full new
-executable)`. The existing canonical writer may assign a replacement physical
-ID, with the original history retained. Omitted or additional card changes are
-refused. If the original card is shared, its remaining owner/membership and
-history survive rather than leaving an implicit ownership fallback in the
-resolved repertoire. Unrelated routes and queue attempts are untouched.
+`RetainedChanges.preview_resolution(position=..., selected_uci=...,
+proposal_id=...)` is the production manual-resolution entry. It obtains the
+shared snapshot and current physical definitions from #483's **same public
+`read_repertoire` facts read**, then produces the complete shared Proposal. Card
+facts use existing immutable `DisplayedCardChange(reuse, id, revision, full
+executable)` values as owner-supplied current-content facts; these are not
+inferred learning/decision mappings. This is important when a conflicted source
+has no available graph mapping. The policy still does not infer physical identity
+from equal positions.
 
-Canonical source triggers may advance the revision more than once and canonical
-replacement IDs may coalesce duplicate definitions. The receipt therefore uses
-the actual reread source revision/digest and retains that actual after snapshot.
-The exact approved content set must still match, and the original before snapshot
-and approval digest remain immutable evidence. Old route-local mappings whose
-selected move/tail was replaced are removed from the hypothetical after view;
-they remain in retained before evidence and are never falsely rebound.
+The preview lists every affected authored route and required physical-definition
+update, with actual identity/revision and exact resulting executable. Generic
+preview/edit/accept validate those current definition facts through the owning
+transaction port. Omitting a required update or supplying another update is
+refused by the retained publisher. C adopts only one manual existing-response
+selection at a time; engine proposals and independent additions remain safely
+refused at this retained binding.
 
-The new native cases execute the real current reader, canonical line/card writers
-and actual source-revision trigger on task-owned PostgreSQL. Only graph enqueue
-is a fake capability; no worker, live-source or normal-product proof is claimed.
-The binding accepts `line:<id>` / `card:<id>` source routes and existing bare
-line IDs; source-card identity is never guessed from equal positions.
+Publication requires an enclosing PostgreSQL transaction, rereads the shared
+source fence and exact current line/card definitions, and invokes the existing
+canonical prefix checks, `integrity_repair_commands._replace_repertoire_line`,
+`repertoire_integrity._rewrite_card`, route certification and integrity
+invalidation. The old card/history and other memberships survive; a shared card
+owner is reassigned only to its remaining membership so ownership fallback cannot
+keep the old conflict in the resolved repertoire. Unrelated route/queue/review
+state is untouched. No shared command hook needed editing.
 
-The narrow retained adapter deliberately reuses same-owner legacy root helpers;
-its lazy import still has the old command-registration side effect. Pure policy
-remains independent of this compatibility binding. This is disclosed existing
-Repertoire coupling, not a new sibling-domain or `app.main` dependency.
+Only the existing normal current-content graph refresh is requested; no worker
+or held migration executes. Canonical writers may replace/coalesce IDs and
+advance source revision more than once. The receipt retains the actual shared
+reread revision/digest and after snapshot. Exact approved content still has to
+match, and original before evidence remains immutable. Invalidated route-local
+mappings are removed from the hypothetical after view rather than rebound.
 
-`retained.py::current_snapshot(borrowed_database, repertoire_id)` implements the
-requested conflicted-repertoire read. Its one bounded MVCC SQL statement captures
-current repertoire source/prefix revision, authored lines and current opening-card
-memberships, without a game or clean-integrity prerequisite. A source counter
-plus deterministic digest binds every captured content/mapping/introduction fact;
-wall-clock capture time is excluded. Bounds are 10,000 sources, 1,000 plies per
-route, the public index's 100,000 aggregate plies and 32 MiB encoded facts. Raw
-source failures are explicit errors; illegal legal-format tails remain index
-diagnostics and never grant mappings from their retained prefix.
+Changed native cases use the actual #483 reader, canonical line/card writers and
+source-revision trigger on disposable PostgreSQL. Only graph enqueue is a fake
+capability. The same shared read passes a real READ ONLY transaction through the
+T11 binding; unknown chronology/availability follows #483's law. The binding adds
+no model/query or alternate card-route projection. Its physical-definition
+traversal is bounded to 1,000 plies per card and 100,000 aggregate plies, using
+#483's existing row/byte/source bounds.
 
-A stored card-source route maps its actual stored physical identity and revision.
-Authored-line mappings remain unknown; FEN equality creates no binding. Exact UTC
-introduction timestamps are retained; day-only evidence remains unknown without
-a comparison game. Mapping availability/current-content introduction proof remains
-false: this audit/approval read does not grant game-lapse or normal-Study authority.
-The read passes an actual PostgreSQL READ ONLY transaction. This narrow retained
-read fills C's missing owner operation while #483's broader comparison projection
-remains separate; consumers should share this one C read rather than duplicate it.
+The retained adapter's lazy imports reuse same-owner legacy root helpers and
+still have their existing command-registration side effect. Pure policy stays
+independent of that compatibility binding. No sibling-domain or app.main import
+is introduced. Root/schema/test registration, actual Study suspension and normal
+product/browser acceptance remain integration-owned. Authored-route auditing and
+physical-definition update authority are kept distinct; card-only legacy issues
+still retain the existing integrity-report owner rather than a second snapshot.

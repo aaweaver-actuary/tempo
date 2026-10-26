@@ -104,7 +104,11 @@ boolean can survive a day-only stored date with `introduced_at=None` when
 ID, provider, learner color, normalized root/moves and occurrence time against
 the retained capture. It copies source revision/digest into `introduction_game`;
 callers/comparers must match all four scope fields before using the boolean.
-Missing exact source or nonboolean Study evidence remains null/null. No timestamp
+Missing exact source or nonboolean Study evidence remains null/null. The retained
+`chess.com` importer namespace and product `chesscom` namespace are the only
+Chess.com aliases accepted for chronology scope. Only the scope provider is
+normalized; original source provider, game identity, revision and digest remain
+unchanged. Unknown provider spellings are rejected. No timestamp
 is fabricated. Legacy capture has neither original PGN bytes nor a source
 revision label: composition authenticates those supplied canonical provenance
 facts; this adapter cannot authenticate absent original bytes. `available` is true only after explicit
