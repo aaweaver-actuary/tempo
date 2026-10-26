@@ -121,7 +121,10 @@ def seed_queue(db, day):
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
         seeding_storage.append_due_card(db, day, row[0], maximum + offset)
-    maximum += len(rows)
+    from tempo_legacy_database.adapters.study.game_feedback import resume_available_feedback
+    resume_available_feedback(db, day)
+    # Remediation is an introduced review and consumes no new-card allowance.
+    maximum = seeding_storage.maximum_position(db, day)
     admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
     outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
     for missed_card in outstanding_studied_cards:
@@ -149,6 +152,10 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
     if not rows:
         return rows
     for row in rows:
+        if row['gameplay_priority_reason'] == 'product_game_lapse':
+            from tempo_legacy_database.adapters.study.game_feedback import has_owed_feedback
+            if not has_owed_feedback(database, row['card_id']):
+                row['gameplay_priority_reason'] = None
         from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
         if presentation_storage.is_postgres_connection(database) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
             from .legacy_study_remediation import has_current_miss
