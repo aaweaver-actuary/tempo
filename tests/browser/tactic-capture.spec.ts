@@ -40,15 +40,46 @@ test("FEN capture records a real-board solution and is reviewed through ordinary
   expect(body.moves).toEqual(["f7f8"]);
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".persistent-board-shell .board-frame")).toHaveAttribute("data-fen", solveFen!);
+  // Replay the original capture in this same owned workspace, without resetting
+  // its queue/history between capture, duplicate submission, solve and reload.
+  const replay = await request.post(`${api}/tactics/captures`, {
+    data: body, headers: { "Idempotency-Key": body.capture_id },
+  });
+  expect(replay.ok()).toBe(true);
+  await expect.poll(async () => {
+    const receipt = await (await request.get(`${api}/operations/${body.capture_id}`)).json();
+    expect(receipt.operation_id).toBe(body.capture_id);
+    return receipt.state;
+  }).toBe("complete");
+  const captureReceipt = await (await request.get(`${api}/operations/${body.capture_id}`)).json();
+  expect(captureReceipt.response).toMatchObject({ capture_id: body.capture_id, queued: true });
   await nav(page, "Train");
   await expect(page.getByText("Captured tactic", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Original" })).toHaveCount(0);
   const queue = await (await request.get(`${api}/queue/today`)).json();
   const captured = queue.cards.find((card: { start_fen: string }) => card.start_fen === body.starting_fen);
+  expect(queue.cards.filter((card: { id: string }) => card.id === captureReceipt.response.card_id)).toHaveLength(1);
+  expect(captured.id).toBe(captureReceipt.response.card_id);
   expect(captured?.attempt_state).toBe("guided");
   const reviewed = page.waitForResponse(response => response.url().includes(`/api/cards/${captured.id}/review`) && response.request().method() === "POST");
   await move(page, "f7", "f8");
-  expect((await reviewed).ok()).toBe(true);
+  const reviewResponse = await reviewed;
+  expect(reviewResponse.ok()).toBe(true);
+  const reviewIdentity = reviewResponse.request().headers()["idempotency-key"];
+  expect(reviewIdentity).toBeTruthy();
+  await expect.poll(async () => {
+    const receipt = await (await request.get(`${api}/operations/${encodeURIComponent(reviewIdentity)}`)).json();
+    expect(receipt.operation_id).toBe(reviewIdentity);
+    return receipt.state;
+  }).toBe("complete");
+  const savedReview = await (await request.get(`${api}/operations/${encodeURIComponent(reviewIdentity)}`)).json();
+  expect(savedReview.response.persisted).toBe(true);
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  const reloadedReview = await (await request.get(`${api}/operations/${encodeURIComponent(reviewIdentity)}`)).json();
+  expect(reloadedReview).toMatchObject({ state: "complete", response: savedReview.response });
+  const reloadedCapture = await (await request.get(`${api}/operations/${body.capture_id}`)).json();
+  expect(reloadedCapture).toMatchObject({ state: "complete", response: captureReceipt.response });
 });
 
 test("manual capture places and removes pieces and freely drags an incomplete setup on the real board", async ({ page }) => {

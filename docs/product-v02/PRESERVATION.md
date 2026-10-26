@@ -16,9 +16,10 @@ Paths below are relative to the repository root; titles are literal test names.
 | --- | --- | --- | --- |
 | Opening completion survives uncertain save; retry uses one logical attempt | `TrainingView.rateCard` / `retryReviewSave`; `review-outbox` owns retained delivery, Study owns persistence | `tests/unit/review-outbox-regressions.test.ts`: `retries one phone review identity after an uncertain save and clears it only on confirmation`; `tests/unit/pending-review-recovery-regressions.test.tsx`: `phone review recovery confirms the original receipt after reload without another POST` | Fake transport and fresh test IndexedDB; not PostgreSQL exactly-once proof. |
 | Recovery preserves an unrelated active attempt and board target | Current Home review lifecycle through TrainingView public actions | `tests/unit/review-attempt-confirmation-regressions.test.tsx`: `issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_active_attempt`; `PR105 earlier idle conflict preserves an unrelated active board logical attempt and progress` | Optional-producer process/resource isolation is #488/#491's integration proof. |
+| Unrelated optional load failure retains mounted Study and pending work | Full current Home catches `preloadView("tactics")` rejection; Study retains its attempt and outbox | `tests/unit/opening-evidence-home-lifecycle.test.tsx`: `optional tactics preload failure preserves the mounted Study attempt and retained review` | Deferred fake preload failure; asserts same mounted board, target, attempt, FEN/step and original retained review. Does not prove process/database resource isolation. |
 | Normal board and Tactics share one presentation; phone and desktop remain usable | `TrainingView.onMove`, `TacticsView` and the shared board shell | `tests/unit/shared-board-shell-tactics-regressions.test.tsx`: `Tactics shared board publishes shell ownership and hides local board instance`; `tactics shortcuts stop before the unanswered solution and restore the live attempt`; `tests/browser/layout.spec.ts`: `application navigation retains one Chessground instance`; `tests/browser/phone-opening-study.spec.ts`: `Phone opening More supports keyboard help, restart, and edit without resetting on resize` | Unit board rendering is mocked. Browser geometry/resizing must be selected when that surface changes. |
 | Legal PGN/FEN capture, setup move, retry identity | `parseChessComPuzzlePgn`; `TacticCaptureDialog` → `saveTacticCapture`; backend `capture_tactic` / `validate_tactic_line` | `tests/unit/tactic-capture-pgn.test.ts`: `Chess.com Puzzle Rush PGN advances the setup move and imports only the solver line`; `tests/unit/tactic-capture-regressions.test.tsx`: `capture transport retry and reopened dialog retain exact identity and bytes and lock edits`; `backend/tests/test_tactic_capture.py::test_captured_tactic_create_is_idempotent` and `::test_captured_tactic_rejects_invalid_fen_and_illegal_solution` | Backend fixture uses disposable SQLite, not a PostgreSQL transaction contract. |
-| Personally captured tactic remains trainable with history intact | Existing capture API → current Study queue/review owner | `tests/browser/tactic-capture.spec.ts`: `FEN capture records a real-board solution and is reviewed through ordinary Training`; `Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture`; `backend/tests/test_tactic_capture.py::test_captured_tactic_reuses_existing_tactic_without_erasing_history` | Existing PGN case proves admission, not a complete solve; the FEN case is the ordinary solve boundary. Stock puzzle availability alone does not prove captured-content parity. |
+| Personally captured tactic remains trainable with history intact | Existing capture API → current Study queue/review owner | `tests/browser/tactic-capture.spec.ts`: `FEN capture records a real-board solution and is reviewed through ordinary Training` (extended with original-ID duplicate submission, singleton queue target, ordinary solve, receipt and reload readback); `Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture`; `backend/tests/test_tactic_capture.py::test_captured_tactic_reuses_existing_tactic_without_erasing_history` | PGN case proves admission; FEN case covers the complete solve boundary. Stock puzzle availability alone does not prove captured-content parity. |
 | Pack selection/activation, solve progress and Study admission | `TacticsView.onQueueChanged`; `setPackActivation`; current backend tactical catalog/admission owner | `tests/unit/tactic-activation-pending-regressions.test.ts`: `tactic activation pending command reuses its key across retry`; `backend/tests/test_tactical_catalog.py::test_deactivating_a_tactical_pack_preserves_scheduled_reviews`, `::test_practice_in_an_inactive_pack_still_admits_the_puzzle_to_reviews`, `::test_tactical_completion_counts_distinct_clean_solves_across_practice_and_training` | Disposable SQLite proves owner semantics; actual browser/PostgreSQL availability remains integration evidence. |
 | Accepted repeated-failure prefix split stays reachable | `TrainingView.onAcceptPrefixSplit` / `onRejectPrefixSplit`; current prefix-split commands own mutation | `tests/unit/prefix-split-training-regressions.test.tsx`: `prefix split offer accepts immediately without opening a preview editor`; `tests/browser/prefix-split-training.spec.ts`: `accepting a prefix split skips preview and advances to the next queued card`; `backend/tests/test_prefix_split.py::test_prefix_split_preserves_the_complete_repertoire_line_and_original_reviews` | Offered split shortens the prefix and isolates the final learner decision; it does not target an arbitrary failed decision or prove R11 joins. |
 
@@ -47,6 +48,7 @@ For #488's Study review boundary, the reusable unit selection is:
 npm run test:unit -- tests/unit/review-outbox-regressions.test.ts -t 'retries one phone review identity after an uncertain save and clears it only on confirmation'
 npm run test:unit -- tests/unit/pending-review-recovery-regressions.test.tsx -t 'phone review recovery confirms the original receipt after reload without another POST'
 npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx -t 'issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_active_attempt|PR105 earlier idle conflict preserves an unrelated active board logical attempt and progress'
+npm run test:unit -- tests/unit/opening-evidence-home-lifecycle.test.tsx -t 'optional tactics preload failure preserves the mounted Study attempt and retained review'
 ```
 
 If touching Tactics capture/pack/shared-board wiring, select the corresponding
@@ -70,6 +72,9 @@ make ui-file FILE=prefix-split-training.spec.ts
 make view VIEW='application navigation retains one Chessground instance|Phone opening More supports keyboard help, restart, and edit without resetting on resize'
 ```
 
+When only the complete capture workflow changed, `make view VIEW='FEN capture records a real-board solution and is reviewed through ordinary Training'`
+selects that one case rather than the other capture-editor workflows.
+
 `ui-file` and `view` use the disposable PostgreSQL browser runner. Product fixtures
 first assert `health.test_instance === true` and an owning disposable Compose
 project; their setup resets only that synthetic workspace. Retention assertions
@@ -90,8 +95,10 @@ Initial selection above is source-inspected only. Focused executed checks and
 the exact tested revision will be recorded in the PR / #504 handoff. No live
 probe, installation, deployment or product-state change is part of this work.
 
-The additional bounded gaps are optional-tactics-preload failure while Study has
-an active attempt and a retained review, and duplicate capture plus ordinary
-solve plus reload readback in a single disposable browser workflow. They belong
-in the existing owner suites; runtime fixes, if discovered, stay with the owning
-issue rather than broadening this preservation task.
+T23 adds only the two uncovered boundaries named above to their existing suites:
+optional-tactics-preload failure with an active Study attempt/retained review,
+and duplicate capture/ordinary solve/reload readback within one disposable
+browser fixture. It adds no aggregate runner, registration or runtime changes.
+Actual product evidence, including #488's optional-producer shutdown and real
+game/card correspondence, remains with its integration owner. Runtime fixes, if
+discovered, stay with the owning issue rather than broadening this task.
