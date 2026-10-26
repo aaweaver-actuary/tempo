@@ -1,13 +1,15 @@
 """Study-owned immutable policy values, not shared transport DTOs.
 
-The read protocols accept frozen #482/#483 facts or a task fixture. Composition
-adapts their supplied values; this module imports no sibling implementation.
+Presentation/JoinPlan reuse #482's exact shared values. The route read protocol
+accepts #483-supplied facts or a task fixture; no sibling implementation is used.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
+
+from app.contracts.product_v02.presentation import JoinPlan, Presentation
 
 
 @dataclass(frozen=True)
@@ -70,22 +72,8 @@ class ReviewEvent:
             raise ValueError("only an explicitly admitted failure can invalidate a game streak")
 
 
-class PresentationFacts(Protocol):
-    """Read capability only; #482 owns the factual presentation DTO."""
-    presentation_id: str
-    presentation_revision: int
-    repertoire_id: str
-    learner_color: str
-    variant: str
-    starting_fen: str
-    ending_fen: str
-    moves: tuple[str, ...]
-    introduction: str
-    available: bool
-
-
 class AuthoredRouteFacts(Protocol):
-    """Existing authored-route fields, also exposed by #483's route index."""
+    """Immutable projection of authored route plus snapshot source revision."""
     route_id: str
     repertoire_id: str
     learner_color: str
@@ -109,15 +97,20 @@ class RouteUse:
 
 @dataclass(frozen=True)
 class JoinMember:
-    presentation: PresentationFacts
+    presentation: Presentation
     streak: CleanStreak
     current_revision: int
     route_uses: tuple[RouteUse, ...]
+    starting_fen: str
+    ending_fen: str
+    moves: tuple[str, ...]
+    available: bool = False
     active_attempt: bool = False
     pending_attempt: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "route_uses", tuple(self.route_uses))
+        object.__setattr__(self, "moves", tuple(self.moves))
 
 
 @dataclass(frozen=True, order=True)
@@ -141,12 +134,17 @@ class RouteContext:
     variant: str
     complete: bool
     available: bool
+    expected_study_revision: int
+    plan_id: str
+    result_presentation_id: str
     parent_connections: tuple[ParentConnection, ...] = ()
     authored_routes: tuple[AuthoredRouteFacts, ...] = ()
+    unresolved_obligation_ids: tuple[str, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "parent_connections", tuple(self.parent_connections))
         object.__setattr__(self, "authored_routes", tuple(self.authored_routes))
+        object.__setattr__(self, "unresolved_obligation_ids", tuple(self.unresolved_obligation_ids))
 
 
 @dataclass(frozen=True, order=True)
@@ -157,14 +155,10 @@ class RetainedUse:
 
 
 @dataclass(frozen=True)
-class JoinPlan:
-    repertoire_id: str
-    repertoire_revision: int
+class JoinEvidence:
+    """Local executable proof supplements the exact shared JoinPlan."""
     source_revision: str
-    route_id: str
     policy_id: str
-    learner_color: str
-    variant: str
     route_starting_fen: str
     route_moves: tuple[str, ...]
     components: tuple[ComponentRef, ComponentRef]
@@ -174,9 +168,11 @@ class JoinPlan:
     intervening_opponent_moves: tuple[str, ...]
     retained_uses: tuple[RetainedUse, ...]
     reason: Literal["recorded_parent", "authored_adjacency"]
-    initial_clean_count: Literal[0] = 0
-    introduced: Literal[True] = True
-    introduction_slots: Literal[0] = 0
+
+
+class RouteJoinPlan(JoinPlan):
+    """Shared wire plan reused unchanged, plus Study's local route proof."""
+    evidence: JoinEvidence
 
 
 @dataclass(frozen=True, order=True)
@@ -187,5 +183,5 @@ class JoinHold:
 
 @dataclass(frozen=True)
 class JoinDecision:
-    plan: JoinPlan | None
+    plan: RouteJoinPlan | None
     holds: tuple[JoinHold, ...] = ()
