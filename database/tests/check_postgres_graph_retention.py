@@ -1,4 +1,4 @@
-"""Rehearse graph cleanup and retention only on the runner-owned PostgreSQL stack.
+"""Rehearse graph cleanup only on the runner-owned PostgreSQL stack.
 
 Run ``--mode baseline`` before changing the handlers to capture their actual SQL
 and complete transaction timings. The default mode also checks durable outcomes.
@@ -37,7 +37,7 @@ from psycopg.rows import dict_row
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
-from app.services import postgres_opening_graph as graph, priority_retention, redis_admission_gate
+from app.services import postgres_opening_graph as graph, redis_admission_gate
 from database.tooling.postgres_rehearsal_admission import admitted_call
 
 
@@ -46,7 +46,6 @@ DISPOSABLE_DATABASE_MARKER = "tempo-disposable-postgres-test"
 FIXTURE_SIZE = 64_000
 SETUP_BATCH_SIZE = 1_000
 GRAPH_GENERATION = 7
-PROTECTED_PREPARATION = 10
 OBSOLETE_ORDINALS = (0, 1, 2, 32_000, 63_483, 63_484, 63_485)
 NON_OPENING_START = 63_488
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -151,40 +150,8 @@ class IncidentFixture:
                 "INSERT INTO daily_queue(queue_date,card_id,position,status) "
                 "VALUES(%s,%s,0,'queued')", (now[:10], self.card_id(0)),
             )
-            database.execute(
-                "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) "
-                "VALUES(%s,9,%s)", (self.repertoire_id, now),
-            )
-            database.execute(
-                "INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,next_attempt_at,updated_at) "
-                "VALUES(%s,%s,'running',%s,%s)",
-                (self.repertoire_id, PROTECTED_PREPARATION, now, now),
-            )
-            for generation, row_count in ((1, 4), (PROTECTED_PREPARATION, FIXTURE_SIZE), (20, 20)):
-                database.execute(
-                    "INSERT INTO repertoire_priority_preparations(repertoire_id,generation,"
-                    "source_version,scoring_version,calculated_at,expected_count,status) "
-                    "VALUES(%s,%s,'synthetic',2,%s,%s,'ready')",
-                    (self.repertoire_id, generation, now, row_count),
-                )
-                database.execute(
-                    "INSERT INTO repertoire_priority_prepared_rows(repertoire_id,generation,ordinal,"
-                    "card_id,completed_line_ids_json,completion_mass,frontier_decisions_json,"
-                    "frontier_reach,priority_score,evidence_json) "
-                    "SELECT %s,%s,number,%s||'-card-'||lpad(number::text,5,'0'),"
-                    "'[]',0,'[]',0,0,'{}' FROM generate_series(0,%s) number",
-                    (self.repertoire_id, generation, self.prefix, row_count - 1),
-                )
-            database.execute(
-                "INSERT INTO repertoire_card_priority_generations(repertoire_id,generation,card_id,"
-                "scoring_version,updated_at) SELECT %s,generation,%s||'-card-'||"
-                "lpad(number::text,5,'0'),2,%s FROM generate_series(0,19) number "
-                "CROSS JOIN unnest(ARRAY[9,10,20]) generation", (self.repertoire_id, self.prefix, now),
-            )
-            self.report["setup_stages"].append({"label": "history_and_priority_generations", "seconds": time.perf_counter() - stage_started_at})
-            for table in ("cards", "repertoire_cards", "opening_graph_steps",
-                          "repertoire_priority_preparations", "repertoire_priority_prepared_rows",
-                          "repertoire_card_priority_generations"):
+            self.report["setup_stages"].append({"label": "graph_history", "seconds": time.perf_counter() - stage_started_at})
+            for table in ("cards", "repertoire_cards", "opening_graph_steps"):
                 database.execute("ANALYZE " + table)
         self.report["setup_seconds"] = time.perf_counter() - started_at
 
@@ -362,11 +329,6 @@ class IncidentFixture:
                 self.invoke_worker_slice(self.task("opening_graph_rebuild"))
             except TransactionTimeout:
                 pass
-        with self.capture("retention_full_handler"):
-            try:
-                self.invoke_worker_slice(self.task("priority_retention"))
-            except TransactionTimeout:
-                pass
 
     @staticmethod
     def invoke_worker_slice(task: dict) -> bool:
@@ -393,13 +355,6 @@ class IncidentFixture:
                                      (card_id,)).fetchall()
         return {"card": card, "links": links, "queue": queue}
 
-    def prepared_counts(self) -> dict[int, int]:
-        with psycopg.connect(DATABASE_URL) as database:
-            return dict(database.execute(
-                "SELECT generation,COUNT(*) FROM repertoire_priority_prepared_rows "
-                "WHERE repertoire_id=%s GROUP BY generation ORDER BY generation",
-                (self.repertoire_id,),
-            ).fetchall())
 
     def test_postgres_graph_cleanup_current_pages_restart_and_shared_tail(self) -> None:
         history_before = self.history()
@@ -452,53 +407,7 @@ class IncidentFixture:
         assert self.history() == history_before, "Graph cleanup changed study history"
         self.report["regressions"].append("test_postgres_graph_cleanup_current_pages_restart_and_shared_tail")
 
-    def test_postgres_priority_retention_locked_stale_rows_remain_pending(self) -> None:
-        task = self.task("priority_retention")
-        before = self.prepared_counts()
-        with psycopg.connect(DATABASE_URL) as lock_holder:
-            lock_holder.execute(
-                "SELECT generation,ordinal FROM repertoire_priority_prepared_rows "
-                "WHERE repertoire_id=%s AND generation<>%s FOR UPDATE",
-                (self.repertoire_id, PROTECTED_PREPARATION),
-            ).fetchall()
-            with self.capture("retention_all_stale_prepared_locked"):
-                more_work = self.invoke_worker_slice(task)
-            assert more_work, "SKIP LOCKED empty selection falsely completed retention"
-            assert self.prepared_counts() == before, "Locked preparation rows were deleted"
-            checkpoint = self.state(task["id"])
-            assert checkpoint["state"] == "queued" and checkpoint["generation"] > task["generation"]
-            lock_holder.rollback()
-        postgres_store.close_pools()
-        self.report["regressions"].append("test_postgres_priority_retention_locked_stale_rows_remain_pending")
 
-    def test_postgres_priority_retention_skips_large_current_generation(self) -> None:
-        task_id = self.prefix + "-priority_retention"
-        with self.capture("retention_full_drain"):
-            for _ in range(12):
-                before = self.prepared_counts()
-                task = self.claim(task_id)
-                more_work = self.invoke_worker_slice(task)
-                after = self.prepared_counts()
-                assert after.get(PROTECTED_PREPARATION) == FIXTURE_SIZE, after
-                deleted_prepared = sum(before.values()) - sum(after.values())
-                assert 0 <= deleted_prepared <= priority_retention.ROWS_PER_SLICE, (before, after)
-                if not more_work:
-                    break
-            else:
-                raise AssertionError("Retention failed to drain sparse stale generations")
-        assert self.prepared_counts() == {PROTECTED_PREPARATION: FIXTURE_SIZE}
-        with psycopg.connect(DATABASE_URL) as database:
-            manifests = [row[0] for row in database.execute(
-                "SELECT generation FROM repertoire_priority_preparations "
-                "WHERE repertoire_id=%s ORDER BY generation", (self.repertoire_id,),
-            )]
-            priorities = dict(database.execute(
-                "SELECT generation,COUNT(*) FROM repertoire_card_priority_generations "
-                "WHERE repertoire_id=%s GROUP BY generation", (self.repertoire_id,),
-            ).fetchall())
-        assert manifests == [PROTECTED_PREPARATION], manifests
-        assert priorities == {9: 20, 10: 20}, priorities
-        self.report["regressions"].append("test_postgres_priority_retention_skips_large_current_generation")
 
     def restore_obsolete_head(self) -> None:
         with psycopg.connect(DATABASE_URL) as database:
@@ -508,172 +417,9 @@ class IncidentFixture:
                              (self.repertoire_id, self.card_id(0)))
             database.execute("UPDATE daily_queue SET status='queued' WHERE card_id=%s", (self.card_id(0),))
 
-    def add_stale_preparation(self, generation: int, *, row_count: int = 20) -> None:
-        with psycopg.connect(DATABASE_URL) as database:
-            database.execute(
-                "INSERT INTO repertoire_priority_preparations(repertoire_id,generation,source_version,"
-                "scoring_version,calculated_at,expected_count,status) "
-                "VALUES(%s,%s,'synthetic',2,%s,%s,'ready') ON CONFLICT DO NOTHING",
-                (self.repertoire_id, generation, datetime.now(timezone.utc).isoformat(), row_count),
-            )
-            database.execute(
-                "INSERT INTO repertoire_priority_prepared_rows(repertoire_id,generation,ordinal,card_id,"
-                "completed_line_ids_json,completion_mass,frontier_decisions_json,frontier_reach,priority_score,evidence_json) "
-                "SELECT %s,%s,number,%s||'-card-'||lpad(number::text,5,'0'),'[]',0,'[]',0,0,'{}' "
-                "FROM generate_series(0,%s) number ON CONFLICT DO NOTHING",
-                (self.repertoire_id, generation, self.prefix, row_count - 1),
-            )
 
-    def test_postgres_priority_retention_foreground_job_lock_yields_and_replays(self) -> None:
-        self.add_stale_preparation(20)
-        task = self.task("priority_retention")
-        before = self.prepared_counts()
-        with psycopg.connect(DATABASE_URL) as foreground_database:
-            foreground_database.execute("SELECT generation FROM repertoire_priority_jobs "
-                                        "WHERE repertoire_id=%s FOR UPDATE", (self.repertoire_id,)).fetchone()
-            with self.capture("retention_foreground_job_lock_contention"):
-                assert self.invoke_worker_slice(task)
-            checkpoint = self.state(task["id"])
-            assert checkpoint["state"] == "retrying" and checkpoint["attempt_count"] == 0, checkpoint
-            assert checkpoint["phase"] == task["phase"] and checkpoint["payload"] == task["payload"]
-            assert checkpoint["last_error"] is None and checkpoint["lease_token"] is None
-            assert self.prepared_counts() == before, "Foreground contention changed preparation rows"
-            foreground_database.rollback()
-        postgres_store.close_pools()
-        task = self.claim_retry_when_due(task["id"])
-        with self.capture("retention_replay_after_foreground_lock_release"):
-            assert self.invoke_worker_slice(task)
-        after = self.prepared_counts()
-        assert after == {PROTECTED_PREPARATION: FIXTURE_SIZE, 20: 4}, after
-        with psycopg.connect(DATABASE_URL) as database:
-            database.execute("DELETE FROM repertoire_priority_preparations WHERE repertoire_id=%s AND generation=20",
-                             (self.repertoire_id,))
-        self.report["regressions"].append("test_postgres_priority_retention_foreground_job_lock_yields_and_replays")
 
-    def test_postgres_priority_retention_generation_transition_is_serialized(self) -> None:
-        from concurrent.futures import ThreadPoolExecutor
-        from threading import Event
 
-        self.add_stale_preparation(20)
-        task = self.task("priority_retention")
-        connected = Event()
-        updater_finished = Event()
-        updater_pid: list[int] = []
-        original_execute = postgres_store.PostgresConnection.execute
-        update_future = None
-
-        def replace_active_generation():
-            try:
-                with psycopg.connect(DATABASE_URL) as updater:
-                    updater_pid.append(updater.execute("SELECT pg_backend_pid()").fetchone()[0])
-                    connected.set()
-                    updater.execute("UPDATE repertoire_priority_jobs SET generation=20,status='running' "
-                                    "WHERE repertoire_id=%s", (self.repertoire_id,))
-                    # Publish replacement preparation rows only after the job
-                    # lock becomes available, in the same new-generation txn.
-                    updater.execute(
-                        "INSERT INTO repertoire_priority_preparations(repertoire_id,generation,source_version,"
-                        "scoring_version,calculated_at,expected_count,status) "
-                        "VALUES(%s,20,'replacement',2,%s,20,'ready') ON CONFLICT DO NOTHING",
-                        (self.repertoire_id, datetime.now(timezone.utc).isoformat()),
-                    )
-                    updater.execute(
-                        "INSERT INTO repertoire_priority_prepared_rows(repertoire_id,generation,ordinal,card_id,"
-                        "completed_line_ids_json,completion_mass,frontier_decisions_json,frontier_reach,priority_score,evidence_json) "
-                        "SELECT %s,20,number,%s||'-card-'||lpad(number::text,5,'0'),'[]',0,'[]',0,0,'{}' "
-                        "FROM generate_series(0,19) number ON CONFLICT DO NOTHING",
-                        (self.repertoire_id, self.prefix),
-                    )
-            finally:
-                updater_finished.set()
-
-        def observe_generation_lock(database, statement, parameters=()):
-            nonlocal update_future
-            cursor = original_execute(database, statement, parameters)
-            if statement.lstrip().upper().startswith("SELECT") and "FROM repertoire_priority_jobs" in statement:
-                assert update_future is None
-                update_future = executor.submit(replace_active_generation)
-                assert connected.wait(0.1), "Replacement producer did not connect"
-                deadline = time.monotonic() + 0.1
-                with psycopg.connect(DATABASE_URL) as observer:
-                    while time.monotonic() < deadline:
-                        waiting = observer.execute("SELECT wait_event_type FROM pg_stat_activity WHERE pid=%s",
-                                                   (updater_pid[0],)).fetchone()
-                        if waiting is not None and waiting[0] == "Lock":
-                            break
-                        assert not updater_finished.is_set(), "Active generation changed before retention committed"
-                    else:
-                        raise AssertionError("Generation replacement did not wait on retention's job lock")
-                assert "FOR UPDATE" in statement.upper(), "Retention did not lock the active generation"
-            return cursor
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            with patch.object(postgres_store.PostgresConnection, "execute", observe_generation_lock), \
-                    self.capture("retention_concurrent_generation_transition"):
-                assert admitted_call(priority_retention.execute_priority_retention_slice, task)
-            assert update_future is not None
-            update_future.result(timeout=2)
-        assert self.prepared_counts().get(20) == 20, "Replacement active preparation lost rows"
-        # A transition committed before the next slice must be read afresh; it
-        # keeps generation 20 while generation 10 becomes legitimately stale.
-        task = self.claim(task["id"])
-        with self.capture("retention_transition_committed_before_slice"):
-            assert admitted_call(priority_retention.execute_priority_retention_slice, task)
-        assert self.prepared_counts().get(20) == 20
-        with psycopg.connect(DATABASE_URL) as database:
-            database.execute("UPDATE repertoire_priority_jobs SET generation=%s WHERE repertoire_id=%s",
-                             (PROTECTED_PREPARATION, self.repertoire_id))
-            # This scenario deliberately removed a legitimate 16-row stale
-            # page; rebuild only those owned rows before other independent cases.
-            database.execute(
-                "INSERT INTO repertoire_priority_prepared_rows(repertoire_id,generation,ordinal,card_id,"
-                "completed_line_ids_json,completion_mass,frontier_decisions_json,frontier_reach,priority_score,evidence_json) "
-                "SELECT %s,%s,number,%s||'-card-'||lpad(number::text,5,'0'),'[]',0,'[]',0,0,'{}' "
-                "FROM generate_series(0,15) number ON CONFLICT DO NOTHING",
-                (self.repertoire_id, PROTECTED_PREPARATION, self.prefix),
-            )
-            database.execute("DELETE FROM repertoire_priority_preparations WHERE repertoire_id=%s AND generation=20",
-                             (self.repertoire_id,))
-        assert self.prepared_counts() == {PROTECTED_PREPARATION: FIXTURE_SIZE}
-        self.report["regressions"].append("test_postgres_priority_retention_generation_transition_is_serialized")
-
-    def test_postgres_priority_retention_timeout_rolls_back_and_replays(self) -> None:
-        from app import tasks
-
-        self.add_stale_preparation(20)
-        task = self.task("priority_retention", max_attempts=2)
-        before = self.prepared_counts()
-        original_enqueue = priority_retention.enqueue_task_in_transaction
-
-        def timeout_after_deletion(database, *arguments, **options):
-            remaining = database.execute_native(
-                "SELECT COUNT(*) FROM repertoire_priority_prepared_rows "
-                "WHERE repertoire_id=%s AND generation=20", (self.repertoire_id,),
-            ).fetchone()[0]
-            assert remaining == 4, "Expected a real 16-row retention mutation before timeout"
-            database.execute_native("SELECT pg_sleep(0.075)")
-            return original_enqueue(database, *arguments, **options)
-
-        with patch.object(tasks.celery_app, "send_task"):
-            os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "50"
-            try:
-                with patch.object(priority_retention, "enqueue_task_in_transaction", timeout_after_deletion), \
-                        self.capture("retention_timeout_after_partial_deletion"):
-                    assert tasks.execute_background_slice.run(task)
-            finally:
-                os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "250"
-            checkpoint = self.state(task["id"])
-            assert checkpoint["state"] == "retrying" and checkpoint["attempt_count"] == 1, checkpoint
-            assert checkpoint["payload"] == task["payload"] and checkpoint["phase"] == task["phase"]
-            assert checkpoint["last_error"] and checkpoint["lease_token"] is None
-            assert self.prepared_counts() == before, "Timed-out retention mutation escaped rollback"
-            postgres_store.close_pools()
-            task = self.claim_retry_when_due(task["id"])
-            with self.capture("retention_successful_replay_after_timeout"):
-                assert tasks.execute_background_slice.run(task)
-            assert self.prepared_counts() == {PROTECTED_PREPARATION: FIXTURE_SIZE, 20: 4}
-            assert self.state(task["id"])["last_error"] is None
-        self.report["regressions"].append("test_postgres_priority_retention_timeout_rolls_back_and_replays")
 
     def test_postgres_graph_cleanup_generation_replacement_rejects_stale_page(self) -> None:
         self.restore_obsolete_head()
@@ -786,11 +532,6 @@ class IncidentFixture:
             if ordinal == FIXTURE_SIZE - 1:
                 assert prepared.obsolete_card_ids == () and prepared.checkpoint_card_id is None
         self.test_postgres_graph_cleanup_current_pages_restart_and_shared_tail()
-        self.test_postgres_priority_retention_locked_stale_rows_remain_pending()
-        self.test_postgres_priority_retention_skips_large_current_generation()
-        self.test_postgres_priority_retention_foreground_job_lock_yields_and_replays()
-        self.test_postgres_priority_retention_generation_transition_is_serialized()
-        self.test_postgres_priority_retention_timeout_rolls_back_and_replays()
         self.test_postgres_graph_cleanup_generation_replacement_rejects_stale_page()
         self.test_postgres_transaction_timeout_preserves_checkpoint_and_uses_failure_backoff()
         self.test_postgres_transaction_timeout_exhaustion_stops_repeated_attempts()
@@ -938,7 +679,7 @@ def run(*, mode: str = "candidate", report_path: str | None = None) -> None:
         fixture.report["revision"] = None
         fixture.report["dirty_paths"] = None
     source_paths = ("database/tests/check_postgres_graph_retention.py", "backend/app/services/postgres_opening_graph.py",
-                    "backend/app/services/priority_retention.py", "backend/app/tasks.py")
+                    "backend/app/tasks.py")
     fixture.report["source_sha256"] = {source_path: hashlib.sha256(
         (repository_root / source_path).read_bytes()).hexdigest() for source_path in source_paths}
     try:

@@ -37,6 +37,15 @@ it.each(regressionGroups)("Tempo lifecycle CLI safety regressions run in the reg
   expect(result.stdout, "The selected CLI group must execute at least one passing case").toMatch(/# pass [1-9]\d*\b/);
 }, 60_000);
 
+it("Study-only CLI routing regressions run in the regular suite", () => {
+  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-cli-study-routing.test.mjs"], { encoding: "utf8" });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout, "The Study-only routing suite must execute passing cases").toMatch(/# pass [1-9]\d*\b/);
+  expect(result.stdout).toMatch(/# fail 0\b/);
+  expect(result.stdout).toMatch(/# cancelled 0\b/);
+  expect(result.stdout).toMatch(/# skipped 0\b/);
+}, 60_000);
+
 it("Installed Study authority regressions run in the regular suite", () => {
   const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "tests/runner/tempo-study-authority.test.mjs"], { encoding: "utf8" });
   expect(result.status, result.stdout + result.stderr).toBe(0);

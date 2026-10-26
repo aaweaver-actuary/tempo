@@ -14,7 +14,7 @@ Existing explicit maintenance commands, physically relocated from `scripts/`. No
 | [verify_postgres_cli_state.py](verify_postgres_cli_state.py) | Existing CLI migration guard snapshots and comparison. |
 | [provision_postgres_roles.py](provision_postgres_roles.py) | Existing explicit owner provisioning utility; no provisioning was run. |
 | [repair_verified_game_tactics.py](repair_verified_game_tactics.py) | Existing verified legacy game-tactic cutover repair. |
-| [reclaim_priority_storage.py](reclaim_priority_storage.py) | Existing explicit offline derived-priority cleanup utility; no cleanup was run. |
+| [reclaim_priority_storage.py](reclaim_priority_storage.py) | Retained read-only queue checksum imported by the snapshot reader; adaptive-priority cleanup/compaction CLI is retired and rejects direct execution. No cleanup or snapshot was run. |
 | [upgrade-postgres-schema.sh](upgrade-postgres-schema.sh) | Existing wrapper delegating to the root Tempo CLI. |
 | [tempo-schema-update.sh](tempo-schema-update.sh) | Existing operator-specific interactive wrapper; its existing live path/stop behavior is preserved. Do not use for source checks. |
 

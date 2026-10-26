@@ -45,9 +45,9 @@ def command_database():
         yield CommandSqlite(connection)
 
 
-def test_six_command_handlers_delegate_all_sql_execution_to_database_owner():
+def test_remaining_command_handlers_delegate_all_sql_execution_to_database_owner():
     application = Path(__file__).resolve().parents[1] / "app"
-    for module in ("account", "activity", "annotation", "statistics", "endgame", "teaching"):
+    for module in ("account", "activity", "annotation", "endgame", "teaching"):
         path = application / f"{module}_commands.py"
         calls = [node for node in ast.walk(ast.parse(path.read_text()))
                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

@@ -6,8 +6,7 @@ import { fileURLToPath } from "node:url";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, sourceFingerprint, sourceMatchesFingerprint, targetKey, validateTarget } from "./tempo-deployment.mjs";
-import { assessMigrationRecovery, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
-import { probeDiagnosticRedis, readMigrationLedger } from "../database/tooling/cli/probes.mjs";
+import { runRegisteredStudyCommand } from "./tempo-study-launcher.mjs";
 
 const help = `Tempo — manage the existing Docker/PostgreSQL installation
 
@@ -105,6 +104,8 @@ async function ensureDocker(target, run, allowLaunch, log) {
 }
 
 async function reportDiagnostics({ options, target, run, runtime, previous, stateDirectory, secrets, log }) {
+  const { probeDiagnosticRedis, readMigrationLedger } = await import("../database/tooling/cli/probes.mjs");
+  const { assessMigrationRecovery } = await import("./tempo-runtime.mjs");
   if (options.command === "logs") {
     const service = options.services[0];
     if (service && !runtime.configuration.services[service]) throw new Error(`Unknown service: ${service}`);
@@ -239,7 +240,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   if (options.flags.has("--verbose")) for (const message of evidence) emit(message);
 }
 
-export async function main(argumentsList = process.argv.slice(2), log = console.log, { verificationWaitOptions = {} } = {}) {
+export async function main(argumentsList = process.argv.slice(2), log = console.log, { verificationWaitOptions = {}, studyLauncher } = {}) {
   const options = parseArguments(argumentsList);
   if (options.command === "help") { log(help); return 0; }
   const sourceRoot = realpathSync(fileURLToPath(new URL("../", import.meta.url)));
@@ -247,11 +248,15 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 13)) throw new Error("Tempo CLI requires Node.js 22.13 or newer.");
   if (options.command === "install") { await install(options, sourceRoot, log); return 0; }
   const target = readJson(options.configPath);
-  if (!target || target.version !== 1) throw new Error("Tempo is not registered. Run ./tempo install from the main checkout once.");
-  if (process.env.TEMPO_UPGRADE_EXPECTED_PROJECT && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT !== target.project)
+  if (target && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT !== target.project)
     throw new Error("Registered target differs from TEMPO_UPGRADE_EXPECTED_PROJECT; maintenance was not started.");
+  // Select the public Study boundary before loading any legacy runtime, schema,
+  // backup or Redis adapter. A blocked v2 target never falls back to v1.
+  if (target?.version === 2) return runRegisteredStudyCommand({ options, registration: target, log }, studyLauncher);
+  if (!target || target.version !== 1) throw new Error("Tempo is not registered. Run ./tempo install from the main checkout once.");
   if (!existsSync(target.root) || !target.context || !target.daemonId || !target.project || !target.composeFiles?.length || !target.postgresVolumeKey)
     throw new Error("Tempo registration is incomplete; inspect the config file before proceeding.");
+  const { assessMigrationRecovery, createRuntime, executeLifecycle } = await import("./tempo-runtime.mjs");
   const secrets = Object.entries(process.env).filter(([key]) => /TOKEN|PASSWORD|SECRET/i.test(key)).map(([, value]) => value);
   const commandEnvironment = { ...process.env };
   const execute = commandExecutor({ root: target.root, environment: commandEnvironment, output: log, secretValues: secrets });

@@ -56,18 +56,8 @@ def ensure_analysis_job(database, game_id, now):
     )
 
 
-def invalidate_day_snapshot(database, local_day):
-    database.execute(
-        "DELETE FROM daily_chess_snapshots WHERE local_day=?",
-        (local_day,),
-    )
 
 
-def invalidate_day_insights(database, local_day):
-    database.execute(
-        "DELETE FROM daily_chess_insights WHERE local_day=?",
-        (local_day,),
-    )
 
 
 def lock_sync_progress(database, job_id):

@@ -51,4 +51,4 @@ Schema/storage relationship changes must update the affected directory README di
 
 ## Reducing the schema
 
-The [initial 163-table breakdown and simplification recommendation](SIMPLIFICATION.md) separates feature storage, legacy generations and operational state. Andy's 20–30 table goal is a future design target, not permission to drop tables, migrate live data or implement the pending canonical model here.
+There is **no target live table count**. The [initial source breakdown](SIMPLIFICATION.md) separates component-owned storage; it does not establish the live installation. The current [#362 disposition](PERSISTENCE-DISPOSITION.md) follows the user's graph-preserving fresh start: retain a usable opening graph, necessary repertoire definitions and any new verified graph recovery copy. Old reviews, schedules, receipts, background work, browser envelopes, scratch and old backups need not migrate or drain. They are disposal candidates only after exact graph separation; every irreversible action still requires its exact target and final confirmation. No reset, DROP, file deletion, migration or cutover has run.
