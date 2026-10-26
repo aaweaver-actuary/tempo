@@ -152,3 +152,68 @@ def resolve_opportunity(database, resolved_at, updated_at, repertoire_id, card_i
             (resolved_at, updated_at,
              repertoire_id, card_id),
         )
+
+
+def product_source_facts(database, repertoire_id, card_ids, line_ids, *, fence=False):
+    """Bounded exact current source rows; no eligibility decision or new writer."""
+    if len(card_ids) > 128 or len(line_ids) > 64:
+        raise ValueError('product introduction source exceeds current-owner bound')
+    suffix = ' FOR SHARE SKIP LOCKED' if fence else ''
+    if fence and not database.execute_native(
+        'SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))',
+        ('tempo:opening-graph:' + repertoire_id,)).fetchone()[0]:
+        return None, (), (), ()
+    header = database.execute_native("""SELECT repertoire.scope_source_revision,
+        repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
+        publication.generation graph_generation,publication.state graph_state,
+        identity.target_id,identity.workspace_id
+        FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
+        CROSS JOIN legacy_learning_identity identity
+        JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
+        WHERE repertoire.id=%s AND scope.id=1 AND identity.id=1""" + suffix,
+        (repertoire_id,)).fetchone()
+    lines = database.execute_native('SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines '
+        'WHERE repertoire_id=%s AND id=ANY(%s) ORDER BY id' + suffix, (repertoire_id, list(line_ids))).fetchall()
+    cards = database.execute_native("""SELECT card.*, EXISTS(
+        SELECT 1 FROM repertoire_integrity_card_blocks block WHERE block.repertoire_id=%s AND block.card_id=card.id) blocked,
+        EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id) deleted,
+        (card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards membership
+            WHERE membership.repertoire_id=%s AND membership.card_id=card.id)) member
+        FROM cards card WHERE card.id=ANY(%s) ORDER BY card.id""" + suffix,
+        (repertoire_id, repertoire_id, repertoire_id, list(card_ids))).fetchall()
+    graphs = database.execute_native('SELECT * FROM opening_graph_steps WHERE repertoire_id=%s '
+        'AND generation=(SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s) '
+        'AND card_id=ANY(%s) ORDER BY line_id,decision_index LIMIT 257' + suffix,
+        (repertoire_id, repertoire_id, list(card_ids))).fetchall()
+    return header, lines, cards, graphs
+
+
+def product_current_queue_facts(database, day, *, fence=False):
+    suffix = ' FOR SHARE SKIP LOCKED' if fence else ''
+    controls = database.execute_native('SELECT study_only_mode FROM settings WHERE id=1' + suffix, ()).fetchone()
+    introduced = database.execute_native("""SELECT card.id,card.introduced_at,
+        COALESCE((SELECT admission_repertoire_id FROM daily_queue WHERE card_id=card.id
+            AND cycle=0 AND queue_date=card.introduced_at ORDER BY id LIMIT 1),card.repertoire_id)
+        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s""", (day,)).fetchall()
+    required = database.execute_native("""SELECT c.id,q.gameplay_priority_reason
+        FROM cards c LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=%s AND q.cycle=0
+        WHERE c.content_type='opening' AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
+        AND c.introduced_at IS NOT NULL AND (q.gameplay_priority_reason IS NOT NULL
+            OR (c.state IN ('learning','mature') AND c.due_date<=%s))
+        ORDER BY CASE WHEN q.gameplay_priority_reason IS NOT NULL THEN 0 ELSE 1 END,c.due_date,c.id""", (day, day)).fetchall()
+    queued = database.execute_native("""SELECT DISTINCT card_id FROM daily_queue WHERE queue_date=%s
+        OR (status='queued' AND attempt_state NOT IN ('clean','unstarted'))""", (day,)).fetchall()
+    return controls, introduced, required, frozenset(row[0] for row in queued)
+
+
+def lock_product_admission(database, day, card_id):
+    from tempo_legacy_database.adapters.real_game_feedback import lock_queue_day
+    # A bounded batch may already own the day; never wait backwards for a card
+    # held by a foreground review waiting for that day. Retry leaves it intact.
+    if not database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                                   ('tempo:card-edit:' + card_id,)).fetchone()[0]:
+        return False
+    if not database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED', (card_id,)).fetchone():
+        return False
+    lock_queue_day(database, day)
+    return True

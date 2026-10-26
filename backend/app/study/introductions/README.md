@@ -1,13 +1,14 @@
 # Study introduction allocation (#495)
 
-Implemented source, **unwired and inactive**. No setting, provider request,
+Implemented source, **explicit opt-in and inactive by default**. No setting, provider request,
 schema migration, runtime activation or live operation is performed here.
 
 `policy.select` replaces only introduction selection when explicitly adopted by
-the current Study admission owner. Existing `queue_admission.py` remains the
-queue authority; existing due reviews, game obligations, review completion,
-attempt issuance and FSRS remain with their current owners. The integration
-owner supplies the typed `IntroductionOwner` on the existing writer transaction.
+the current Study admission owner. The concrete bridge in
+[`queue_admission_adapter.py`](../../services/queue_admission_adapter.py) now
+implements `IntroductionOwner`; existing due reviews, game obligations, review
+completion, attempt issuance and FSRS retain their current owners. #501 supplies
+existing factual values and wires this factory on the borrowed writer transaction.
 
 ## Usable interface
 
@@ -19,6 +20,59 @@ if plan.introductions:
     result = service.commit(local_day, plan.introductions[0], exact_context)
 # caller commits/rolls back the whole owner transaction
 ```
+
+Concrete current-owner composition (no SQL or eligibility callback in #501):
+
+```python
+from app.services.queue_admission_adapter import current_owner_introductions
+from app.study.introductions.ports import IntroductionSettings, IntroductionSource
+from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
+
+source = IntroductionSource(public_snapshot, LegacyAuthorityToken.model_validate(capture["authority"]))
+receiver = current_owner_introductions(
+    borrowed_database, sources=(source,),
+    settings=IntroductionSettings(settings_revision, global_budget, explicit_weights,
+                                  enabled=explicitly_enabled, paused=explicitly_paused),
+)
+context = receiver.context(local_day)
+receiver.accept_ranking(local_day, context, shared_ranking_output)
+# At ordinary Study seeding; omitted keyword retains the legacy path:
+seed_queue(borrowed_database, local_day, introductions=receiver)
+```
+
+`capture` is the existing retained-owner read supplied to #483, not a producer
+callback during Study. `IntroductionSource` checks shared snapshot/authority
+bindings and detaches input values; the concrete receiver rereads actual current
+rows. The configured weight set must exactly match the supplied repertoire set.
+Source bounds are 32 repertoires, 64 routes/128 mapped physical cards/256 graph
+occurrences per repertoire, 40 moves per presentation and 1000 per route.
+
+The receiver itself checks current source/catalogue/prefix/graph revisions,
+published ready graph rows, exact source route and executable, physical revision,
+membership, conflict/deletion/validation/archive/supersession blocks and legal
+learner history. Explicit route-local bindings are respected when supplied by the
+newer compatible contract. It does not infer physical identity from a position.
+Stale source scopes lose ranking compatibility and cannot introduce; source
+busy/missing/oversized states return `deferred` with `receiver.owner.diagnostics`.
+The saved installation `study_only_mode` is reread independently of caller
+settings, and participates in the context fingerprint.
+
+`commit` obtains the existing card-edit reservation and day-position lock before
+the allocation row. Card/source fences are nonblocking where waiting backwards
+could interfere with foreground reviews. Busy admission returns `deferred`, with
+no charge or fairness advance; retries remain safe. Source/definition/settings
+rows are held in the same transaction through the sole existing
+`QueueAdmissionAdapter.introduce_opening` writer. Due cards are appended by their
+existing canonical writer before the introduction, and current issued rows are
+never moved, removed or relabeled.
+
+The optional `seed_queue(..., introductions=receiver)` hook bypasses only legacy
+opening reset/per-repertoire reconciliation/admission for this explicitly
+selected path. Already committed product introductions are not refunded or reset
+by a later budget/pause change. The ordinary due/obligation, Tactics and authored
+Study phases retain their owners. `receiver.admit(day, maximum_new=16)` admits a
+bounded batch (hard maximum 64); another ordinary refresh may continue a larger
+explicit allowance. No existing caller supplies the keyword automatically.
 
 Public definitions: [application.py](application.py), [policy.py](policy.py),
 [ports.py](ports.py). `RankingOutput` is the unchanged
@@ -81,7 +135,7 @@ owner must still verify the entire playable route/context at the effect boundary
 ```mermaid
 flowchart LR
     Publisher[Optional ranking publisher] -->|shared RankingOutput + exact context| App[Introductions application]
-    Current[Current Study admission owner] -->|current facts and borrowed transaction| App
+    Current[Concrete current Study admission adapter] -->|current facts and borrowed transaction| App
     App --> Policy[Pure select / integer allocation]
     App -->|cached ranking / charge / rotation| Store[Study private PostgreSQL store]
     App -->|rechecked introduction intent| Current
@@ -149,12 +203,16 @@ real-transaction/reload/concurrency/rollback proof. Pure checks use synthetic
 facts; native checks use a small task-owned SQL owner to exercise the application
 transaction, not a claim that normal Study has been wired.
 
-#495 still owns the later concrete current-owner eligibility/fence/canonical
-writer adapter and any exactly reserved admission/reconciliation hook changes;
-this private checkpoint does not claim those are implemented. #501/T20 owns
-outer normal-product wiring, explicit settings selection, migration allocation,
-central suite registration and visible ranking acceptance. It can consume this
-accept/read capability with typed fake owner facts now. The existing fallback/
-planner evidence remains unchanged. No current admission hook was edited. #503
-can proceed without this feature; neither R11 nor existing Study depends on the
-new tables.
+#495 owns the concrete current-owner eligibility/fence/canonical
+writer adapter, now implemented in the concrete factory above. The three narrow
+reserved hooks are `queue_admission_adapter.py`, `queue_application.py::seed_queue`
+and the existing admission SQL owner. #501/T20 owns outer normal-product wiring,
+explicit settings selection, migration allocation, central suite registration and
+visible ranking acceptance; no eligibility callbacks or queue SQL belong in that
+composition. The original 31 policy/6 private PostgreSQL results remain valid;
+the follow-on adds only changed concrete-owner/native and opt-in seeding proof.
+#503 can proceed independently; neither R11 nor existing Study depends on the new
+tables until the feature is explicitly wired with its schema installed. The
+retained bounded authority may conservatively defer after unrelated catalogue
+generation changes; refresh it through its existing source owner. No migration
+or graph rebuild is started by this module.

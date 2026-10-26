@@ -107,22 +107,26 @@ _QUEUE_ELIGIBILITY_PHASES = (
 )
 
 
-def seed_queue(db, day):
+def seed_queue(db, day, *, introductions=None):
     for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
         apply_phase(db, day)
     seed_tactical_introductions(db, day)
-    _reset_unintroduced_opening_cards(db, day)
-    _reset_stale_opening_introductions(db, day)
-    limit = seeding_storage.opening_allowance(db)
-    from ..repertoire_settings import effective_opening_limits
-    repertoire_limits = effective_opening_limits(db)
-    reconcile_unseen_queue(db, day, limit, repertoire_limits)
+    if introductions is None:
+        _reset_unintroduced_opening_cards(db, day)
+        _reset_stale_opening_introductions(db, day)
+        limit = seeding_storage.opening_allowance(db)
+        from ..repertoire_settings import effective_opening_limits
+        repertoire_limits = effective_opening_limits(db)
+        reconcile_unseen_queue(db, day, limit, repertoire_limits)
     maximum = seeding_storage.maximum_position(db, day)
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
         seeding_storage.append_due_card(db, day, row[0], maximum + offset)
     maximum += len(rows)
-    admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
+    if introductions is None:
+        admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
+    else:
+        introductions.admit(day)
     outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
     for missed_card in outstanding_studied_cards:
         promote_real_game_card(db, missed_card["card_id"], day)
