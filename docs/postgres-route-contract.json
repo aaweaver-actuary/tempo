@@ -638,20 +638,6 @@
   },
   {
     "method": "GET",
-    "path": "/api/repertoires/{identifier}/opportunities",
-    "handler": "repertoire_opportunities",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/discoveries",
-    "handler": "discoveries_feed",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
     "path": "/api/discoveries/{opportunity_id}/recommendations",
     "handler": "discovery_recommendations",
     "treatment": "reader",
@@ -669,48 +655,6 @@
     "path": "/api/discovery-admissions/{intent_id}",
     "handler": "discovery_admission_status",
     "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/repertoires/{identifier}/opportunities/refresh",
-    "handler": "refresh_repertoire_opportunities",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss",
-    "handler": "dismiss_repertoire_opportunity",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge",
-    "handler": "acknowledge_repertoire_opportunity",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze",
-    "handler": "snooze_repertoire_opportunity",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/training-eligibility",
-    "handler": "repertoire_opportunity_training_eligibility",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/train",
-    "handler": "train_repertoire_opportunity",
-    "treatment": "foreground_command",
     "state": "staged"
   },
   {
@@ -1138,13 +1082,6 @@
     "path": "/api/games/{game_id:path}",
     "handler": "game_detail",
     "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/statistics/daily/{local_day}/refresh",
-    "handler": "refresh_chess_statistics_day",
-    "treatment": "foreground_command",
     "state": "staged"
   },
   {

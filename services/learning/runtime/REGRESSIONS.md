@@ -1,5 +1,23 @@
 # Learning runtime regression ownership
 
+`tests/test_decision_projection.py::test_known_projected_binding_accepts_counter_only_fen_variants_without_rewriting_raw_facts`
+requires the same explicitly identified exercise/binding to accept normalized
+legal-position equality despite different FEN clocks. Raw full route/definition
+FEN strings and immutable digests remain distinct; input is not rewritten.
+The adjacent position/path/color/unknown-card and legal-en-passant controls keep
+piece placement, turn, castling, current legal-EP normalization, legal moves and
+explicit binding identity strict. Equal FEN alone never establishes identity.
+
+
+`test_complete_9612_definition_publication_fits_public_ceiling_without_truncation`
+and `test_complete_10001_definition_publication_rejected_without_truncation` in
+`test_content_bridge.py` align the existing V2 facts limit to the public
+Publication definition ceiling of 10,000. The complete constructed within-limit
+input retains every definition/fact; oversized input fails. The existing
+`test_C3_publication_bundle_capacity_is_bounded_after_default_expansion` retains
+the independent 12 MiB expanded-payload bound. These pure model checks do not
+claim target activation throughput or real graph acceptance.
+
 ## Accepted repertoire display titles
 
 `tests/test_decision_projection.py::test_optional_repertoire_title_absent_preserves_prior_route_bytes`

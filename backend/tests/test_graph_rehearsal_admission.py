@@ -90,7 +90,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
 def test_native_graph_direct_entry_calls_use_shared_admission_protocol(filename):
     path = Path(__file__).resolve().parents[2] / 'database' / 'tests' / filename
     tree = ast.parse(path.read_text())
-    targets = {'prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice', 'execute_priority_retention_slice'}
+    targets = {'prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice'}
 
     def operation_name(operation):
         return operation.attr if isinstance(operation, ast.Attribute) else operation.id if isinstance(operation, ast.Name) else None

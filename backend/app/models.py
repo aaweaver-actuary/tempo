@@ -73,7 +73,6 @@ from .contracts.transport.defense import (
     DefenseRecognitionRequest,
 )
 from .contracts.transport.discovery import (
-    DiscoveryTrainingRequest,
     DiscoveryAcceptanceRequest,
 )
 from .contracts.transport.game_findings import (
@@ -148,7 +147,6 @@ __all__ = [
     'ThreatAnalysisFailureRequest',
     'DefenseAttemptRequest',
     'DefenseRecognitionRequest',
-    'DiscoveryTrainingRequest',
     'DiscoveryAcceptanceRequest',
     'GameFindingDecisionRequest',
     'GameExclusionRequest',

@@ -12,6 +12,7 @@ from typing import Literal
 import chess
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
+from tempo_content_publication_contracts.v1 import Publication
 
 from .publications import PublicationBundle, ExecutionFacts, lock_opening_repertoires
 from .gateway import request_digest
@@ -19,7 +20,8 @@ from .durable_tasks import enqueue_task_in_transaction
 from .clock import date
 from tempo_learning_database.adapters import publication_bridge as storage
 
-MAX_DEFINITIONS = 8192
+MAX_DEFINITIONS = Publication.model_json_schema()['properties']['definitions']['maxItems']
+MAX_LEGACY_ALIASES = 8192
 MAX_BUNDLE_BYTES = 12 * 1024 * 1024
 prepared_activation = ContextVar('prepared_content_activation',default=None)
 
@@ -112,7 +114,7 @@ class PublicationBundleV2(PublicationBundle):
     facts: list[ExecutionFacts] = Field(min_length=1, max_length=MAX_DEFINITIONS)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     routes: list[Route] = Field(min_length=1, max_length=10000)
-    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=MAX_DEFINITIONS)
+    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=MAX_LEGACY_ALIASES)
 
     @field_validator('schema_version',mode='before')
     @classmethod
@@ -177,7 +179,8 @@ class PublicationBundleV2(PublicationBundle):
                     if identity in decision_projections and decision_projections[identity]!=projection:
                         raise ValueError('Decision identity has ambiguous projections')
                     decision_projections[identity]=projection
-                    if board.turn != (route.learner_color == "white") or board.fen() != chess.Board(projected_fen).fen():
+                    if (board.turn != (route.learner_color == "white") or
+                            board.fen().split()[:4] != chess.Board(projected_fen).fen().split()[:4]):
                         raise ValueError("Binding position/color mismatch")
                     if ply == len(route.moves) or route.moves[ply] not in accepted_moves:
                         raise ValueError("Route conflicts with accepted alternatives")

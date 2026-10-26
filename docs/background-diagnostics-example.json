@@ -43,7 +43,7 @@
           }
         },
         {
-          "kind": "repertoire_priority",
+          "kind": "discovery_recommendation",
           "useful_completion_unit": "published_priority_generation",
           "counts": {
             "priority_calculator_calls": 0,
@@ -119,7 +119,7 @@
           }
         },
         {
-          "kind": "repertoire_priority",
+          "kind": "discovery_recommendation",
           "useful_completion_unit": "published_priority_generation",
           "counts": {
             "priority_calculator_calls": 3,
@@ -149,7 +149,7 @@
         "retention_seconds": 15,
         "workers": [
           {
-            "kind": "repertoire_priority",
+            "kind": "discovery_recommendation",
             "stage": "foreground_admission",
             "observed_at": "2026-10-02T12:10:00+00:00",
             "process_started_at": "2026-10-02T11:00:00+00:00",
@@ -206,7 +206,7 @@
           }
         },
         {
-          "kind": "repertoire_priority",
+          "kind": "discovery_recommendation",
           "useful_completion_unit": "published_priority_generation",
           "counts": {
             "priority_calculator_calls": 3,

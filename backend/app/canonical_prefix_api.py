@@ -53,8 +53,6 @@ def save_prefix(database, payload: dict) -> dict:
     storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
     if moves != current["moves"]:
         enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
-    from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-    enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     if not storage.postgres_is_configured():
         storage.fail_active_local_coverage(database, repertoire_id)
     if storage.postgres_is_configured():

@@ -4,10 +4,9 @@
 
 | Database module | Stored facts / effects | Application owner |
 | --- | --- | --- |
-| [prefix_commands.py](prefix_commands.py) | Existing repertoire presence, preview row, empty-prefix preview reference, prefix JSON/revision/reference update, local active-coverage failure, priority source epoch increment and priority projection invalidation. Reuses existing [repertoire presence](../projections/repertoire_statistics.py) and [configured-probe](../repertoire_scope/game_refresh.py) operations. | [canonical_prefix_api.py](../../../../backend/app/canonical_prefix_api.py) retains input/HTTP validation, ready/current preview and source checks, empty-prefix fast path, revision calculation, game/opportunity/coverage/priority task calls, idempotent dispatch and response projection. |
+| [prefix_commands.py](prefix_commands.py) | Existing repertoire presence, preview row, empty-prefix preview reference, prefix JSON/revision/reference update, local active-coverage failure, priority source epoch increment and priority projection invalidation. Reuses existing [repertoire presence](../projections/repertoire_statistics.py) and [configured-probe](../repertoire_scope/game_refresh.py) operations. | [canonical_prefix_api.py](../../../../backend/app/canonical_prefix_api.py) retains input/HTTP validation, ready/current preview and source checks, empty-prefix fast path, revision calculation, game/coverage task calls, idempotent dispatch and response projection. |
 | [branches.py](branches.py) | Existing repertoire row locks, idempotent line insert, initial/training depth facts/write, locked source-gap lookup and covered flag, ordered stored-line projection and matching-ID deletion. | [branch_commands.py](../../../../backend/app/branch_commands.py) retains legal move normalization, deterministic identity, prefix-scope validation, gap ownership/response checks, matching-line selection, route certification, integrity/graph/coverage calls and response construction. |
 | [analysis_paste.py](analysis_paste.py) | Exact repertoire/line snapshot, gap facts, SQLite conditional begin, saved-line/depth insert and covered flag; borrowed transaction, no cursor escapes. | [services/analysis_paste.py](../../../../backend/app/services/analysis_paste.py) retains SAN/PGN/chess/cache/hash/preview/duplicate/conflict/scope/certification/clock and response decisions. |
-| [discovery_commands.py](discovery_commands.py) | Exact opportunity dismiss/seen/snooze mutations, locked opportunity/card facts, prefix split/card membership reads and repertoire presence. Linked rows execute eagerly and iterate lazily on the same transaction. | [opportunity_commands.py](../../../../backend/app/opportunity_commands.py) retains HTTP/evidence validation, seven-day snooze policy, clock/day evaluation, queue-lock/admission calls, prefix-split checks and sorted integrity/graph refresh callbacks. |
 | [integrity_commands.py](integrity_commands.py) | Existing issue/source/card row locks and membership facts; replacement-line insert, training-depth carry-forward and old-line deletion. Reuses the existing repertoire row lock in `branches.py`. | [integrity_repair_commands.py](../../../../backend/app/integrity_repair_commands.py) retains prepared signature/expected-source checks, deterministic line identity, chess/route validation, graph-task-before-card lock ordering, rewrite/archive/certification and refresh callbacks. |
 
 ```mermaid
@@ -49,7 +48,6 @@ The pasted-line extraction preserves all eight statement strings. Snapshot mappi
 
 [Integrity scan/repair persistence](integrity/README.md) now owns all original query/batch and fixed scan-target construction. Application source grouping, issue/repair/lease/generation/time/queue decisions remain outside; two local fixed target closures preserve placeholder preparation before connection entry without accepting arbitrary SQL.
 
-[Repertoire opportunity storage](opportunities/README.md) holds every current discovery-feed/scoring-input/refresh/training query, native/compatibility driver details and fixed lock/filter preparation. Scoring/chess/evidence/windows/admission/queue/task/clock decisions remain outside; existing direct legacy card/queue coupling stays explicitly disclosed.
 
 [PGN import/discard persistence](pgn_import/README.md) owns complete repertoire/line/depth/annotation/receipt/tombstone queries and original RETURNING/batch cursor scope. Parsing/models, identity/time/UUID, line annotation preparation, source certification, deletion counts and graph/integrity/receipt responses remain outside. Existing Games refresh decorator is preserved and disclosed.
 
@@ -58,3 +56,12 @@ The pasted-line extraction preserves all eight statement strings. Snapshot mappi
 [Discovery admission persistence](discovery_admission/README.md) holds existing recommendation, request, materialization and source/coverage/card/task operations. Existing validation, ranking, freshness, lease/admission/queue decisions and acceptance composition remain outside; complete queries and caller transaction authority remain unchanged.
 
 [Card and repertoire deletion persistence](card_deletion/README.md) owns original tombstone, cancellation/recheck, purge, retention and occurrence-aware graph queries. Existing cancellation JSON matching, shared/learned ownership, evidence aggregation, ancestor selection and clock/callback decisions stay outside. Cross-feature destructive coupling is retained and explicitly inventoried.
+
+
+The optional repertoire-opportunity producer, feed/state/train command storage and
+its capability-specific drawing are source-retired. [Historical source and query
+ownership](https://github.com/aaweaver-actuary/tempo/tree/66d98610924971ea4cce3603c76cd4c330b50ae1/database/tempo_legacy_database/adapters/authored_repertoires/opportunities)
+remain inspectable. The exact repertoire-existence query used by retained
+segmentation now belongs to [its segmentation projection](opening_advisory/segmentation.py);
+it still borrows the caller's connection and has no new writer or commit authority.
+Ordinary Study's saved-opportunity eligibility SQL and stored schema remain intact.
