@@ -136,11 +136,21 @@ owner `disposition` (review_priority / first_introduction / existing_lapse /
 frequency_only / unresolved), actual `admission_status`, and explicit deferral.
 Recorded importance/frequency does not claim admission or a review. A receipt's
 existing `admitted_at` is owner command acceptance, not a manufactured introduction
-or Study attempt. Pending reasons preserve disabled/paused/Study-only/zero-limit,
-allowance, active-attempt and unknown-authority cases. Disabled controls cannot
-promise an availability deadline. The ordinary allowance versus bounded encounter
-reserve/exception remains undecided; this contract selects no override or universal
-48-hour promise while such controls apply.
+or Study attempt. The approved next-release policy is a **targeted exception**:
+real-game encounter first introductions bypass the ordinary new-card cap,
+including exhausted/zero allowance, and Study-only. The owner keeps the global
+cap and Study-only settings unchanged, and ordinary unrelated introductions retain
+their existing controls. A first-introduction receipt cannot claim those ordinary
+controls as its deferral reason. Their reason labels remain wire-compatible for
+other owner contexts; this does not alter the ordinary introduction interface.
+
+Explicit full Study pause/disable and foreground/maintenance, active-attempt,
+source/identity/legality/conflict guards still apply. Disabled/full-paused controls
+remain visibly pending and cannot promise an availability deadline. This targeted
+exception is implemented/qualified only by the separate next-release Study owner;
+the installed/qualified first release and live settings are untouched.
+The existing owner `reason` field preserves foreground/maintenance explanations;
+no new transport labels or global settings changes are needed.
 
 The owner persists one logical key and original observation/disposition through
 replay, later admission and recomparison. Later introduced-state projections must
@@ -155,7 +165,8 @@ controls and races; #489 owns durable delivery/retry. No state mutation is here.
 Synthetic next-release examples live in [`fixtures/encounters`](fixtures/encounters)
 and are tested in the existing Python product-contract suite. They cover matched
 and missed unintroduced encounters, a historical miss, paused first introduction,
-and owner review priority without a lapse. Nested fixtures leave existing v0.2.0
+owner review priority without a lapse, and an admitted encounter introduction
+under the targeted exception. Nested fixtures leave existing v0.2.0
 Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
 native persistence and normal-Study acceptance remain with their owning tasks.
 
