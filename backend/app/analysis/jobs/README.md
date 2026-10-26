@@ -6,9 +6,9 @@ The working Study/Tactics shell remains with #488/#491's shared-root windows.
 
 | Checkpoint | Usable source now | Remaining product proof |
 | --- | --- | --- |
-| C audit | [Composition router factory](../../product_composition/repertoire.py) delegates to #492's actual conflict/preview/decision router; shared commands pass unchanged to the approval owner. | Current retained-source projection/publication, affected Study suspension without lapse, persistent conflicting-import preview, #500 mount and A05 browser/PG proof. |
-| D introductions | [CoverageRequest / prepare_coverage](../../product_composition/analysis.py) joins #483 index, #493 Explorer and #494 coverage; this runner fences publication against current source/settings/personal/evidence generations. | Concrete Analysis store/cache, explicit saved settings, #495 accepted-ranking/current-facts/canonical-writer binding, A06 ordinary introduction and PG/browser proof. |
-| E repairs | C's shared approval command accepts the same exact #482 Proposal/ProposalDecision. | #496/#497/#499 evidence orchestration, exact displayed changes and #500 UI, real bounded Stockfish request, existing-card Study practice command, A07 product proof. |
+| C audit | [Composition router/projection](../../product_composition/repertoire.py) delegates to #492's actual conflict/preview/decision owner; complete alternatives feed #500's [HTTP client](../../../../../app/features/product-api/repertoire-review-api.ts). Read/choice generation is inert and Study block defaults to unknown. | Current retained-source publication callback, affected Study suspension without lapse, persistent conflicting-import preview, root mount and A05 browser/PG proof. |
+| D introductions | [CoverageRequest / prepare_coverage](../../product_composition/analysis.py) joins #483/#493/#494; this runner fences publication. `accept_published_introductions` submits merged factual rankings to actual #495 acceptance/preview/commit. | Concrete Analysis store/cache, explicit saved settings, #495's retained current-facts/canonical-writer bridge, A06 ordinary introduction and PG/browser proof. |
+| E repairs | `create_proposal_coordinator` wires actual #496 retrieval and #499 policy to the [#497 Python bridge](stockfish.py). `preview_repair` delegates proposed changes to #492 and never accepts them. | Full result/frequency projection into #500, confirmed existing-card Study practice command, explicit approval through retained publication, A07 product proof. |
 
 These are independently reviewable checkpoints; no row claims A05/A06/A07 is
 complete. C has no probability/engine dependency. D has no similarity/engine
@@ -33,6 +33,14 @@ The context also carries separate source, settings, personal-game and evidence
 generations. A settings owner must persist the explicit selection before a real
 ranking can be enabled; a missing population returns `setup_required` before I/O.
 No live cohort is guessed. The fixture cohort is synthetic.
+
+`introduction_context(fences)` binds the receiver's exact repertoire revision/
+digest plus source/settings/personal/evidence generations. Outer current-facts
+composition uses that same function; Study's module never imports it. Global
+budget/weight controls advance the explicit settings revision. The actual #495
+receiver rechecks its current context in the borrowed owner transaction and owns
+all selection/charges. A source-only fake proves the handoff, one global slot,
+replay and preservation of an unrelated active attempt; it is not ordinary Study.
 
 `prepare_coverage` performs at most 32 sequential requests; overflow fails visibly
 instead of pretending partial acquisition is complete. It calls the actual
@@ -70,9 +78,14 @@ flowchart LR
   Work --> Explorer["#493 Explorer: finite request / transport cleanup"]
   Work --> Ranking["#494 pure coverage policy"]
   Work --> Store["AnalysisPublications: atomic current-fence publication"]
-  Store -. "next D binding: advisory ranking only" .-> Intro["#495 Study introductions owner"]
+  Store --> Acceptance["#501 exact-context advisory handoff"]
+  Acceptance --> Intro["#495 Study introductions owner"]
   Study["normal Study"] --> Intro
   Repertoire -. "pending concrete owning publication callback" .-> Content["Existing content / Study publication owners"]
+  Root --> Repairs["#499 ProposalCoordinator"]
+  Repairs --> Similarity["#496 bounded supplied-index retrieval"]
+  Repairs --> Engine["#497 one-shot worker via Python bridge"]
+  Repairs --> C
 ```
 
 Source paths: [application](application.py), [capabilities](ports.py),
@@ -86,6 +99,37 @@ bindings. Study imports/calls/waits for none of these optional producers. Shared
 host/database contention and deployed stop/isolation behavior remain unverified.
 No new schema, migration, pool, process or state owner is activated here.
 
+## E transport and policy preparation
+
+`StockfishBridge(node=..., script=..., executable=..., timeout_seconds=18)`
+implements the shared synchronous `EngineEvaluationPort`. All three paths are
+explicit trusted existing files. It launches #497's one-shot JSON worker in a
+fresh owned process group with only its required environment, never a shell,
+download or foreground engine. One bridge permits one active request. Outer
+optional scheduling must retain that single-run allocation and run blocking
+evaluation outside the foreground/asynchronous serving path.
+
+The bridge checks request/response correlation, the exact shared context and
+every explicit candidate. #497 retains all CP/mate/bound/depth/version/baseline
+decisions. Failures expose stable safe reasons, with no raw output or configured
+paths. Stop/timeout sends SIGTERM, allows 800ms for worker-owned engine cleanup,
+then terminates its own process group and verifies the bridge exits within 500ms.
+Normal completion also clears any abnormal orphan in that same owned group.
+The 32KiB request/response protocol is #497's unchanged bound; its trusted worker
+also caps UCI output. This is not a general arbitrary subprocess runner.
+
+`create_proposal_coordinator` supplies #496's actual bounded read capability and
+translates expected bridge failure to #499's `CapabilityUnavailable`. The policy
+owns the unchanged 30CP decision. `preview_repair` saves only an owner-validated
+preview; an existing-card result remains an intent with no fabricated game miss,
+Again, review, admission or new card. Explicit acceptance remains separate.
+
+One actual installed Stockfish19 request traversed Python → #497 JSON worker →
+native engine at depth2, one thread, 16MiB, two explicit legal candidates. One
+shallow candidate retained `baseline_inconsistent`; this was truthful transport
+evidence, not proof of a repair's quality. The familiar-missing-reply policy/
+approval composition test uses separate explicitly synthetic 30CP evidence.
+
 ## Focused verification
 
 `make python-file FILE=backend/tests/test_product_repertoire_integration.py`
@@ -93,8 +137,15 @@ uses synthetic legal sources, real index/Explorer/coverage/change-owner code,
 fake HTTP and semantic fake publication stores. It covers 20%/2% ordering,
 unknown mass, setup-before-I/O, in-flight revision changes, outage fallback,
 stop/timeout/concurrency cleanup, manual approval/replay and unchanged unrelated
-content. The changed boundary reuses #482's import/cycle guard. This is not native
-PostgreSQL, ordinary Study, browser, real provider or engine evidence.
+content, in-process owner HTTP/projection, the actual #495 receiver, and the
+actual similarity/proposal/approval policy chain. The changed boundary reuses
+#482's import/cycle guard. This is not native PostgreSQL, ordinary Study, browser
+or real provider evidence. The separate explicit native bridge smoke is above.
+
+`make unit-file FILE=tests/unit/product-repertoire-integration.test.ts` checks
+the concrete #500 client mapping, exact approval payload/transport identity,
+abort propagation and safe optional failure. Shared strict schemas validate
+approval-bearing proposals/receipts. It does not rerun #500's unchanged UI suite.
 
 Run under the existing nontruncating advisory validation lock and yield to the
 first milestone; never unlink it. Reuse unchanged leaf receipts rather than rerun

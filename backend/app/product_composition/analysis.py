@@ -9,12 +9,18 @@ from tempo_evidence_math import LearnerPolicy, move_universe
 
 from app.analysis.coverage.personal_evidence import PersonalGame
 from app.analysis.coverage.ports import AnalysisLimits
-from app.analysis.coverage.ranking import rank_coverage
-from app.analysis.jobs.ports import AnalysisFence, Cancellation, PreparedAnalysis
+from app.analysis.coverage.ranking import rank_candidates, rank_coverage
+from app.analysis.jobs.ports import AnalysisFence, AnalysisPublications, Cancellation, PreparedAnalysis
+from app.analysis.jobs.stockfish import EngineBridgeUnavailable
+from app.analysis.proposals.coordinator import ProposalCoordinator
+from app.analysis.proposals.ports import CapabilityUnavailable
 from app.analysis.probability.ports import ExplorerProbabilityProvider, ExplorerRequest
-from app.contracts.product_v02.analysis import PopulationSelection
+from app.analysis.similarity.retrieval import RetrievalRequest, retrieve
+from app.contracts.product_v02.analysis import PopulationSelection, RankingInput
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.repertoire import build_index
+from app.study.introductions.application import Introductions
+from app.study.introductions.policy import RankingContext
 
 
 def coverage_settings_digest(*, population, since, until, policy, root_fen,
@@ -111,3 +117,74 @@ async def prepare_coverage(request: CoverageRequest, *, explorer: ExplorerProbab
     if ranking.introductions.unavailable_reason is not None:
         return unavailable(ranking.introductions.unavailable_reason)
     return PreparedAnalysis(request.fence, "ready", ranking)
+
+
+def introduction_context(fences: tuple[AnalysisFence, ...]) -> RankingContext:
+    """Outer current-facts adapter uses this same binding for the Study receiver.
+
+    No Study module imports this function. The composition-owned facts adapter
+    must read the current owner revisions inside the borrowed Study transaction.
+    A global controls edit increments settings_revision for affected scopes.
+    """
+    ordered = sorted(fences, key=lambda fence: fence.repertoire_id)
+    if not ordered or len({item.repertoire_id for item in ordered}) != len(ordered):
+        raise ValueError("unique_nonempty_ranking_scopes_required")
+    generations = [(item.repertoire_id, item.source_revision, item.settings_revision,
+                    item.settings_digest, item.personal_revision, item.evidence_revision)
+                   for item in ordered]
+    binding = hashlib.sha256(json.dumps(generations, separators=(",", ":")).encode()).hexdigest()
+    return RankingContext(tuple((item.repertoire_id, item.repertoire_revision, item.snapshot_digest)
+                                for item in ordered), binding)
+
+
+def accept_published_introductions(*, day: str, results: tuple[PreparedAnalysis, ...],
+                                  publications: AnalysisPublications,
+                                  introductions: Introductions) -> str:
+    """Submit current advisory facts through #495; never call its queue writer.
+
+    Analysis reads release before the caller enters Study acceptance. #495's
+    accept_ranking rechecks its current exact context. Owning transactions and
+    current-facts generation reads are injected by product composition.
+    """
+    if not results or any(item.status != "ready" or item.ranking is None for item in results):
+        return "unavailable"
+    fences = tuple(item.fence for item in results)
+    context = introduction_context(fences)
+    if any(publications.current(item.repertoire_id) != item for item in fences):
+        return "obsolete"
+    for result in results:
+        ranking, fence = result.ranking, result.fence
+        if (ranking.source_revision != fence.source_revision or ranking.snapshot_digest != fence.snapshot_digest
+                or ranking.introductions.based_on.repertoire_revisions != (
+                    (fence.repertoire_id, fence.repertoire_revision),)):
+            return "obsolete"
+    facts = RankingInput(repertoire_revisions=tuple((name, revision) for name, revision, _ in context.repertoires),
+        candidates=tuple(candidate for item in results for candidate in item.ranking.introductions.based_on.candidates),
+        evidence_ids=tuple(sorted({identity for item in results
+                                  for identity in item.ranking.introductions.based_on.evidence_ids})))
+    return introductions.accept_ranking(day, context, rank_candidates(facts))
+
+
+def create_proposal_coordinator(snapshot: RepertoireSnapshot, engine, *, cancellation=None):
+    """Wire unchanged #496 retrieval and #497 evidence to #499's pure policy."""
+    index = build_index(snapshot)
+
+    class SimilarityAdapter:
+        def retrieve(self, **request):
+            return retrieve(index, RetrievalRequest(**request))
+
+    class EngineAdapter:
+        def evaluate(self, context, candidates):
+            try:
+                return engine.evaluate(context, candidates, cancellation=cancellation)
+            except EngineBridgeUnavailable:
+                raise CapabilityUnavailable("engine_unavailable") from None
+
+    return ProposalCoordinator(SimilarityAdapter(), EngineAdapter())
+
+
+def preview_repair(target, *, coordinator: ProposalCoordinator, changes):
+    """Optional preparation may save an owner-validated preview; never accepts it."""
+    result = coordinator.propose(target)
+    receipt = changes.preview(result.proposal) if result.proposal is not None else None
+    return result, receipt
