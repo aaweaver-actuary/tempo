@@ -54,11 +54,15 @@ It creates no certificate, captures no new catalogue, and never calls Games.
 T07 authenticates and fences the canonical imported game in its own boundary;
 the factory requires that canonical game ID, not a provider-ID alias.
 
-The initial concrete adapter supports original physical revision 1 with exact
-stored UTC introduction evidence. Date-only introduction or changed-content
-revision without explicit owner evidence is rejected with an exact reason;
-neither a timestamp nor historical introduction is inferred. Later compatible
-shared introduction facts can extend that owner boundary without a new effect.
+The concrete adapter supports original physical revision 1 with exact stored UTC
+introduction, or #516's explicit `introduced_before_game=True` proof scoped to
+the exact canonical provider/game ID/source revision/source digest. For a
+date-only value, the current locked card must still match the retained capture,
+its stored day must precede the game day, and the owner capture must independently
+report pre-game introduction. The mapping timestamp remains `None`; the stored
+date is preserved. Another source's boolean, missing proof, or changed-content
+revision without owner evidence grants no effect. No historical timestamp is
+invented and source/current-content fences remain unchanged.
 
 The caller starts/commits/rolls back the transaction. `accept_lapse` acquires
 existing card-edit/card-row/day locks before the effect lock. The schedule,
@@ -164,3 +168,10 @@ The first uses immutable shared fixtures, frozen time, explicit FSRS and semanti
 fake capabilities; the second requires the documented task-owned native fixture.
 Unavailable native infrastructure is unverified, never a mock pass. Existing
 scheduler policy is unchanged; its unchanged regressions are reused.
+
+`test_native_day_only_introduction_requires_exact_current_game_proof` reproduces
+#488's retained date-only capture through the owning port, proves actual Again
+application without an invented timestamp, and rejects each mismatched canonical
+source field. Run just that case with
+`PYTEST_ADDOPTS='--tb=short -k day_only_introduction_requires_exact_current_game_proof'`
+on the native command above; unrelated native cases retain their evidence.
