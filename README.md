@@ -1,5 +1,11 @@
 # Tempo
 
+## Product specification
+
+**[Read SPEC.md](SPEC.md)** for the current product requirements, decided policies, delivery slices, and specific reuse map. It includes real-game feedback, probability-driven introductions, a 30 CP repair tolerance, and adaptive card recombination after three consecutive clean reviews.
+
+Keep working Study and Tactics in place; selectively restart unfinished workflows when faster. Replacement-runtime adoption, full history migration, and broad cleanup are not prerequisites for the next useful feature. The spec governs product scope where older plans or the implementation notes below conflict; it is not a claim that all target behavior is already available.
+
 Tempo is a functional local-first chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, guided corrections, compact progress, and a fixed daily queue.
 
 ## Local product
@@ -115,7 +121,9 @@ This compiles `tempo-core` to WebAssembly and emits an offline-capable static si
 
 The public practice demo is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions runs the complete local-product suite before publishing the limited `pages-dist/` demonstration. Rust identity/validation/prefix fixtures are shared with Python; scheduling remains Python-authoritative until full parity is proven.
 
-## Settled product decisions
+## Earlier implementation decisions
+
+These notes describe earlier behavior. [SPEC.md](SPEC.md) governs the target product, particularly the strict per-repertoire own-response rule, introductions, and connected practice. This documentation update does not change runtime behavior.
 
 - Initial depth is six **user moves**. Opponent replies are included as needed but do not count toward the six.
 - “Again” stays in today’s fixed session and is reinserted after four other cards rather than repeated immediately.
@@ -132,7 +140,9 @@ The Lichess puzzle database is public domain and provides FEN, UCI solution move
 
 Lichess now requires authentication for Opening Explorer requests. Interactive Explorer requests use Lichess's PKCE flow and keep the access token in browser session storage. Unattended repertoire-coverage work uses `TEMPO_LICHESS_EXPLORER_TOKEN` in the analysis worker environment. The token is not stored with queued work or Explorer cache entries. Interactive Stockfish 19 and Maia 3 analysis runs in browser workers; durable Stockfish and Maia analysis runs in Docker workers with the same packaged models.
 
-## Recommended maturity and depth policy
+## Earlier maturity and depth policy
+
+This earlier proposal is retained for context, not as an additional prerequisite. The current target is [probability-driven introductions](SPEC.md#s02--probability-driven-introductions) and [adaptive card recombination](SPEC.md#6-r11--adaptive-card-recombination).
 
 The optimization target is practical recall from the beginning of a playable line, not maximum theoretical depth. A child card unlocks only when its parent has:
 
