@@ -1,5 +1,28 @@
 # Maia inference core
 
+## Product probability capability (#498, unmerged source)
+
+The small [probability boundary](PROBABILITY.md) reuses this model behind shared
+ProbabilityEvidence 0.2.0. Composition owns later activation; this diagram does
+not claim product adoption or deployment qualification.
+
+```mermaid
+flowchart LR
+  Composition[Optional analysis composition - activation pending] -->|explicit position population two ratings limits| Provider[probability-provider.mjs]
+  Provider -->|one child - deadline cancellation hard memory cap| Child[probability-stdio.mjs private IPC]
+  Child --> Model[model.mjs createModel / infer]
+  Model --> Core[core.mjs preparePosition / decodePredictions]
+  Model --> Assets[Existing hash-verified ONNX and vocabularies]
+  Provider -->|shared ProbabilityEvidence plus provenance or unavailable| Composition
+  Composition -->|supplied evidence - later integration| Ranking[Ranking policy]
+  Study[Normal Study - no import call wait or lifecycle edge]
+```
+
+The adapter owns child admission/termination and no durable state. The model
+owns inference and ordered tensor inputs; shared contracts own evidence shape.
+Ranking/Study effects remain outside Maia. Native macOS has no supported hard
+memory cap and returns unavailable; deployed isolation remains unverified.
+
 This package retains offline model computation used by the root `Dockerfile.maia`
 and `scripts/maia-inference.mjs`. The unused standalone `MaiaWorker` supervisor,
 JSON-lines CLI, child process, resource admission and container qualification are
