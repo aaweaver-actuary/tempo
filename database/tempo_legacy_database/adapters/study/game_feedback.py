@@ -23,6 +23,7 @@ class PostgresGameFeedbackStore:
         self.database = database
         self.scheduling = OwnedConnectionSchedulingReviewStore(database)
         self._promote = promote
+        self.targeting = self
 
     def _writer(self):
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
@@ -78,6 +79,7 @@ class PostgresGameFeedbackStore:
 
     def save(self, effect, now):
         self._writer()
+        previous = self.get(effect.key)
         lapse = effect.lapse
         self.database.execute_native("""INSERT INTO study_game_feedback(
             effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,card_revision,
@@ -97,6 +99,9 @@ class PostgresGameFeedbackStore:
              effect.status, effect.reason, effect.applied_at, effect.review_id, effect.settled_at,
              effect.settlement_review_id, str(effect.control.source_revision) if effect.control else None,
              effect.control.model_dump_json() if effect.control else None, effect.conflict_json, now))
+        if effect.applied_at is not None and (previous is None or previous.applied_at is None):
+            from .recombination import record_admitted_failure
+            record_admitted_failure(self.database, effect)
 
     def card_facts(self, card_id, day):
         row = self.database.execute_native("""SELECT c.revision,c.introduced_at,
@@ -154,9 +159,41 @@ class PostgresGameFeedbackStore:
         return tuple(self._effect(row) for row in rows)
 
     def card_effects(self, card_id):
+        from .recombination import installed as recombination_installed
+        if recombination_installed(self.database):
+            rows = self.database.execute_native("""SELECT effect.* FROM study_game_feedback effect
+                WHERE effect.status IN ('pending','applied') AND (effect.card_id=%s OR EXISTS(
+                    SELECT 1 FROM study_recombination_current current
+                    JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
+                    WHERE current.presentation_id=%s AND current.decision_id=effect.decision_id
+                      AND p.result_json->'presentation'->>'repertoire_id'=effect.payload_json::jsonb->'finding'->>'repertoire_id'))
+                ORDER BY effect.effect_key""", (card_id,card_id)).fetchall()
+            return tuple(self._effect(row) for row in rows)
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback
             WHERE card_id=%s AND status IN ('pending','applied') ORDER BY effect_key""", (card_id,)).fetchall()
         return tuple(self._effect(row) for row in rows)
+
+    def promote_effect(self, effect, day):
+        from .recombination import effect_target, current_presentation_available
+        target = effect_target(self.database,effect)
+        if target!=effect.card_id:
+            if not self.try_lock_target(target,day) or not current_presentation_available(self.database,target):
+                return False
+            facts = self.card_facts(target,day)
+            if not facts or not facts.available or facts.active_attempt or facts.buried:
+                return False
+        self.promote(target,day)
+        return True
+
+    def completion_matches(self, effect, completion):
+        from .recombination import effect_target, current_presentation_available
+        target = effect_target(self.database,effect)
+        if target!=completion.card_id:
+            return False
+        if target==effect.card_id:
+            return effect.card_revision==completion.revision
+        facts = self.card_facts(target,completion.reviewed_at.date().isoformat())
+        return facts is not None and facts.revision==completion.revision and current_presentation_available(self.database,target)
 
 
 def installed(database):
@@ -166,8 +203,7 @@ def installed(database):
 
 
 def has_owed_feedback(database, card_id):
-    return bool(database.execute_native("""SELECT 1 FROM study_game_feedback
-        WHERE card_id=%s AND status IN ('pending','applied') LIMIT 1""", (card_id,)).fetchone())
+    return bool(PostgresGameFeedbackStore(database).card_effects(card_id))
 
 
 def settle_saved_review(database, card_id, review_id, revision):
@@ -195,8 +231,8 @@ def invalidate_saved_review(database, card_id, review_id):
     database.execute_native("""UPDATE study_game_feedback SET
         status=CASE WHEN applied_at IS NULL THEN 'pending' ELSE 'applied' END,
         settled_at=NULL,settlement_review_id=NULL,reason='settling_review_invalidated',updated_at=%s
-        WHERE card_id=%s AND settlement_review_id=%s AND status='settled'""",
-        (datetime.now(timezone.utc), card_id, review_id))
+        WHERE settlement_review_id=%s AND status='settled'""",
+        (datetime.now(timezone.utc), review_id))
 
 
 def resume_available_feedback(database, day, *, limit=16):
@@ -226,4 +262,4 @@ def resume_available_feedback(database, day, *, limit=16):
             store.save(replace(effect, status="held", reason="current_card_unavailable"),
                        datetime.now(timezone.utc))
         elif not facts.active_attempt and not facts.buried:
-            store.promote(effect.card_id, day)
+            store.promote_effect(effect, day)

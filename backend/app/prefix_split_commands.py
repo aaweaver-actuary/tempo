@@ -36,6 +36,10 @@ def accept_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -
     _lock_prefix_card(database, card_id)
     lock_queue_date_for_position(database, date.today().isoformat())
     try:
+        from tempo_legacy_database.adapters.study.recombination import accept_current_split
+        regrouped = accept_current_split(database, card_id, request.expected_revision)
+        if regrouped is not None:
+            return {**regrouped, **_shared_usage(database, card_id)}
         result = apply_prefix_split(database, card_id, request.expected_revision)
     except KeyError as error:
         raise HTTPException(404, str(error)) from error

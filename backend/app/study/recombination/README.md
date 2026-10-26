@@ -1,12 +1,13 @@
-# Study recombination application — #503
+# Study recombination owner — #503
 
-Private implementation checkpoint for SPEC v0.2 C01–C04 / A08. It consumes
+Study-owned implementation for SPEC v0.2 C01–C04 / A08. It consumes
 [#502's pure policy](POLICY.md) at `86debb32` and #482's immutable
 [`Presentation` / `JoinPlan`](../../contracts/product_v02/presentation.py).
-It does not install a migration or connect the normal Study path. Retained
-review/admission hooks, concrete current-owner capture, scheduler initialization,
-#487 obligation routing/settlement and browser acceptance remain integration work.
-There is no additional service, scheduler, producer call or content mutation.
+The retained normal-Study save, queue recovery and confirmed-split paths now
+consume `CurrentStudyRecombination` in the owning database adapter. New rows require
+additive source migration 053; this is not a claim of live schema or deployment.
+Migration/readiness coordination and browser acceptance are recorded below. There
+is no additional service, scheduler, producer call or source content mutation.
 
 ## Public application and transaction contract
 
@@ -50,13 +51,22 @@ return unavailable. `saved_review` must read actual owning immutable receipts an
 hold their existing locks. `identity_available` checks all retained physical and
 historical presentation IDs, including old generations.
 
-`StudyBoundary.apply(PresentationChange)` is an explicit missing integration
-capability. It must initialize fresh scheduling through the existing Study
-owner, replace only the specified route occurrences in its queue, preserve all
-other memberships/active attempts, and retain source moves and original review
-identities. The private adapter alone cannot make a product join happen. The
-native fixture supplies a deliberately named fake boundary over real PostgreSQL;
-its initialization row does not establish a real FSRS/queue integration pass.
+`CurrentStudyRecombination.apply(PresentationChange)` initializes an actual fresh
+`cards` row: learning, zero repetitions/stability/interval, no FSRS state or first
+correct/review history, explicit already-introduced timestamp, generated source
+provenance (`canonical_route_source=0`). It uses the existing
+`ensure_card_queued_after` writer with review admission. Source cards and their
+memberships are retained. Only verified unissued duplicate queue occurrences are
+blocked; no original queue identity or saved review is reassigned. The normal
+`scheduling_review_application` remains the sole review transition authority.
+
+The saved-review wrapper runs after immutable evidence completion and prepared
+continuation issuance. A member that is issued/pending is held. It persists its
+actual review-derived streak, then attempts one join inside a savepoint of the
+same writer: an initialization failure rolls back the entire join while keeping
+the genuine saved review and evidence. The response reports the hold/error; it
+does not call a partial join applied. Direct application callers retain their
+existing all-or-nothing outer transaction contract.
 
 The application takes a nonblocking route lock and sorted evidence identity
 locks. Current-owner capture must use nonblocking locks when it cannot follow
@@ -86,11 +96,18 @@ unresolved effect identity/deadline unchanged. Only obligations whose existing
 decision occurs in the combined sequence are included. The adapter updates a
 route/decision → current-presentation projection; the immutable obligation row,
 its lapse receipt, occurrence/detection time and settlement history stay with
-#487. Its owner must consume the projection for current queue targeting and
-settlement. This checkpoint deliberately neither writes nor settles
-`study_game_feedback`. Original game effects must never be resubmitted merely
-to change their queue target. #487 `994499f3` remains the authority/maintenance
-reference, with its current exact-UTC-introduction limitations unchanged.
+#487. The existing #487 store now explicitly supplies `GameFeedbackTargets` for
+current queue targeting and genuine settlement. It resolves the exact original
+decision ID/repertoire to one current presentation; zero/ambiguous mappings retain
+the original target. Effect `card_id`, original lapse review/provenance and
+`available_by` never change. A genuine combined review settles matching effects
+through #487, and invalidating that settlement reopens the same owed effect.
+Combining itself neither settles nor creates a lapse. A newly admitted lapse
+invalidates current joining eligibility once under its stable effect identity.
+Applied-obligation recovery promotes the current target through the same Study
+queue writer without a producer. Original effects are never resubmitted just to
+change their queue target. #487 `994499f3` remains the authority/maintenance
+reference, with its exact-UTC-introduction limitations unchanged.
 
 The existing split donor reassigns `reviews.card_id`, rekeys old queue entries,
 deletes memberships and archives the source globally. Those mutations are not
@@ -102,20 +119,20 @@ or introductions. No source repertoire edit is made.
 
 ```mermaid
 flowchart LR
-    Saved["Retained Study saved review / between-attempt hook\nNOT WIRED"] --> App["Recombination application"]
+    Saved["Retained Study saved review / between-attempt hook\nsource implemented"] --> App["Recombination application"]
     App --> Policy["#502 reduce_clean_streak / plan_join\nimmutable shared #482 values"]
-    App --> Boundary["StudyBoundary\ncurrent authority + normal schedule/queue\nconcrete product adapter PENDING"]
+    App --> Boundary["StudyBoundary\nCurrentStudyRecombination\nactual current authority + normal schedule/queue"]
     App --> Store["PostgresRecombinationStore\nborrowed writer; private facts/projection"]
     Boundary --> Owned["Existing Study owner\ncard/day locks; immutable attempts/history"]
-    Store --> Private[("Study recombination tables\nfixture/source DDL only")]
+    Store --> Private[("Study recombination tables\nsource migration 053; live schema unverified")]
     Obligations["#487 unresolved identity + deadline\nread-only injected facts"] --> Boundary
 ```
 
 ```mermaid
 sequenceDiagram
-    participant Hook as Retained Study hook (pending)
+    participant Hook as Retained Study hook
     participant App as Recombination
-    participant Current as StudyBoundary (concrete pending)
+    participant Current as CurrentStudyRecombination
     participant Policy as #502 pure policy
     participant Store as Private store
     Hook->>App: after saved review, same writer
@@ -134,11 +151,12 @@ sequenceDiagram
 
 ## Private storage shape
 
-[`recombination.py`](../../../../../database/tempo_legacy_database/adapters/study/recombination.py)
-contains source DDL `SCHEMA` for task fixtures. It runs no DDL, opens no connection
-and commits nothing. Integration must allocate an additive migration number,
-readiness/registry entry and relevant database owner README before merge/activation;
-none is silently selected here. Columns are the source proposal, not live schema.
+[`recombination.py`](../../../../database/tempo_legacy_database/adapters/study/recombination.py)
+contains source DDL `SCHEMA`, also frozen in
+[`053_study_recombination.sql`](../../../../database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql).
+The store/adapter runs no DDL, opens no connection and commits nothing. 053 follows
+#491's allocated 052; readiness/registry coordination must complete before normal
+installation qualification. Columns are checked-in source, not a live-schema claim.
 
 ```mermaid
 erDiagram
@@ -205,19 +223,52 @@ make python-file FILE=backend/tests/test_product_recombination_postgres.py
 
 The native file requires an explicitly task-owned database named
 `tempo_task503_*` via `TEMPO_RECOMBINATION_TEST_DSN`; unavailable infrastructure is
-a failed required check, never a skip/pass. It creates/drops only unique private
-fixture schemas. The external task runner bounds the existing disposable image,
-uses a loopback ephemeral port, verifies exact container ownership, removes its
-container/anonymous volumes and releases the nontruncating advisory validation
-lock. It installs nothing. Native current/scheduler boundaries remain fake;
-transactions, constraints, locks, rollback, reconnect/readback and persistence
-are real PostgreSQL. Unchanged #502 policy evidence is reused.
+a failed required check, never a skip/pass. The six original private-store cases
+use explicit fake current/scheduling capabilities over real PostgreSQL. They are
+retained evidence, not ordinary Study proof. The new `-k current_owner` cases use
+the actual retained source, source/publication/integrity fences, actual queue
+issuance, immutable manifest/evidence completion, normal review controller,
+existing FSRS scheduler, saved review/attempt receipts, current queue writer,
+#487 target/settlement adapter and confirmed split command. Only the task database
+connection/policy read is injected. The synthetic source fixture includes retained
+unknown-assistance history; every qualifying success is performed through the
+normal controller. There is no Games/provider implementation in the Study path.
 
-Remaining #503 acceptance: reserve exact completion/admission/split/queue adapter
-hooks after #487/#495's current window; add the concrete retained source/schedule
-and obligation projection adapter; allocate private DDL through integration;
-register these exact tests centrally; prove normal Study A08 in
-`make ui-file FILE=product-recombination.spec.ts`. That browser spec is not yet
-created because there is no installed normal-Study route to exercise. Separate
-private-file work is ready without occupying a shared hook. An unsupported or
-ambiguous route safely continues its separate presentations; no join is guessed.
+The concrete adapter materializes at most 64 authored routes, 256 graph steps,
+128 physical/current generated members and 128 obligations. It refuses larger,
+unproved, changed-content, unsupported and ambiguous scopes with diagnostics.
+Current client evidence supports at most 40 moves / 20 learner decisions; larger
+proposed results are held without interrupting the saved review. Each clean event
+requires complete persisted evidence, all actual expected first responses and no
+assistance/reveal/correction/manual-failure signal anywhere in that attempt.
+Counted original review/receipt/origin rows are rechecked against invalidation and
+held nonblockingly. Legacy aggregate correct ratings with unknown assistance do
+not become clean evidence. Explicit retained split parent/lineage is projected;
+new fragments always use fresh identities/epochs.
+
+The old queue cannot represent all shared route occurrences independently.
+Concrete shared/ambiguous members stay unjoined (`shared_occurrence_queue_unavailable`)
+and retain their separate original memberships and normal Study. Private policy
+and application ports still preserve retained uses for a future richer queue;
+there is no global archive/delete fallback. Foreground Study priority is retained:
+all added source/evidence/member lock acquisition is nonblocking, and join errors
+are isolated by the savepoint after the actual review has saved.
+
+The external task runner bounds the existing disposable image, uses a loopback
+ephemeral port, verifies exact container ownership, removes its container/anonymous
+volumes, and releases the nontruncating validation lock. It installs nothing.
+Deployment/resource isolation on the live host remains unverified.
+
+The A08 browser file uses the real Study board and HTTP endpoints, then accepts
+the retained split control. A guarded disposable source/readback fixture stages
+explicit extra same-day practice through the existing queue writer; it never
+seeds qualifying reviews, clean streaks or settlements. Another actually issued
+unrelated attempt and all original card/history identities are checked throughout.
+No Study API is intercepted. Exact browser/migration results are in the PR; a
+prepared but unrun browser spec is not a pass.
+
+Pending coordinated surfaces: publication of independent #491 migration 052,
+serialized readiness/version/database index and central test registration, then
+`make ui-file FILE=product-recombination.spec.ts` against the normal source stack.
+No live join/review, history reset, graph migration resumption, deployment or merge
+is performed by this task.

@@ -13,6 +13,9 @@ import json
 import os
 from threading import Barrier
 from uuid import uuid4
+from pathlib import Path
+import hashlib
+import importlib.util
 
 import psycopg
 from psycopg import sql
@@ -297,3 +300,261 @@ def test_native_shared_evidence_identity_serializes_different_routes_without_wai
         _, store, _ = service(database)
         assert store.streak(CleanStreak("A",1,"initial")).count == 2
         assert database.execute_native("SELECT count(*) FROM study_recombination_completions").fetchone()[0] == 2
+
+
+@pytest.fixture
+def current_owner_transaction(monkeypatch):
+    """Actual retained owner schema on a separate DB in the task's own server.
+
+    Until independent #491/052 is published, apply <=051 plus the exact proposed
+    T22 source DDL. No installed/readiness or browser claim is made by this case.
+    """
+    from tempo_legacy_database.adapters import postgres_store
+    monkeypatch.setattr(postgres_store,"configured",lambda:True)
+    dsn = os.environ.get("TEMPO_RECOMBINATION_TEST_DSN")
+    if not dsn:
+        pytest.fail("explicit task-owned native DSN required")
+    options = psycopg.conninfo.conninfo_to_dict(dsn)
+    assert options["dbname"].startswith("tempo_task503_")
+    name = "tempo_task503_owner_" + uuid4().hex
+    with psycopg.connect(dsn,autocommit=True) as raw:
+        raw.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    owner_dsn = psycopg.conninfo.make_conninfo(dsn,dbname=name)
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location("recombination_migration_owner",root/"database/tooling/apply_postgres_migrations.py")
+    migration_owner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration_owner)
+    try:
+        with psycopg.connect(owner_dsn) as raw:
+            for path in sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
+                if int(path.name[:3])>51:
+                    continue
+                registration = migration_owner.MODULE_MIGRATIONS.get(path.name)
+                if registration:
+                    source = (root/"database"/registration[2]).read_bytes()
+                    assert hashlib.sha256(source).hexdigest()==registration[3]
+                    raw.execute(source.decode(),prepare=False)
+                raw.execute(path.read_text(),prepare=False)
+            raw.execute(SCHEMA,prepare=False)
+            raw.execute("INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'UTC',0,0,0)")
+        @contextmanager
+        def connect():
+            with psycopg.connect(owner_dsn,row_factory=tempo_row_factory) as raw:
+                raw.execute("SET LOCAL lock_timeout='2s'")
+                raw.execute("SET LOCAL statement_timeout='5s'")
+                yield PostgresConnection(raw)
+        with connect() as database:
+            seed_current_owner(database)
+        yield connect
+    finally:
+        with psycopg.connect(dsn,autocommit=True) as raw:
+            raw.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def seed_current_owner(database):
+    from fixtures.product_recombination import seed_current_owner as seed
+    return seed(database)
+
+
+def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False):
+    """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
+    from app.queue_commands import issue_queue_head
+    from app.services.review_service import ensure_card_queued_after
+    from app.services.opening_decision_evidence import decision_manifest
+    from app.services import learning_review_adapter
+    from tempo_legacy_database.adapters.opening_evidence.storage import queue_context_rows
+    now, attempt = datetime.now().astimezone(), attempt_id or "r11-"+uuid4().hex
+    day = now.date().isoformat()
+    ensure_card_queued_after(database,card_id,0,attempt_state="clean",queue_date=day,preserve_order=False)
+    entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued' ORDER BY cycle DESC LIMIT 1",(card_id,day)).fetchone()[0]
+    assert issue_queue_head(database,dict(entry_id=entry,card_id=card_id,expected_revision=1,queue_date=day))["issued"]
+    snapshot = dict(queue_context_rows(database,([entry],))[0])
+    manifest = decision_manifest(snapshot,snapshot["repertoire_id"])
+    events = []
+    for index,decision in enumerate(manifest["decisions"]):
+        events.append(dict(sequence=index+1,decision_index=index,decision_id=decision["decision_id"],
+            expected_uci=decision["expected_uci"],kind="first_response",observed_at=now.isoformat(),
+            response_uci=decision["expected_uci"],assistance=None,disposition="expected"))
+    if hint_after_response:
+        decision = manifest["decisions"][-1]
+        events.append(dict(sequence=len(events)+1,decision_index=decision["decision_index"],decision_id=decision["decision_id"],
+            expected_uci=decision["expected_uci"],kind="assistance",observed_at=now.isoformat(),response_uci=None,assistance="hint",disposition=None))
+    checkpoint = dict(attempt_id=attempt,manifest=manifest,origin_queue_entry_id=entry,queue_entry_id=entry,
+        started_at=now.isoformat(),study_timezone="UTC",events=events,
+        terminal=dict(state="complete",final_sequence=len(events),ended_at=now.isoformat()))
+    # Only inject the task DB's actual policy read; no authority, grade, scheduler
+    # result, review receipt, completion proof or queue operation is faked.
+    from contextlib import nullcontext
+    monkeypatch.setattr(learning_review_adapter,"read_connection",lambda:nullcontext(database))
+    payload = dict(card_id=card_id,prepared_manifest=manifest,review=dict(outcome=outcome,guided=False,
+        queue_entry_id=entry,expected_revision=1,attempt_id=attempt,opening_evidence_completion=checkpoint))
+    return learning_review_adapter.submit_legacy_review(database,payload),payload
+
+
+def test_current_owner_normal_reviews_join_after_save_and_require_fresh_combined_evidence(current_owner_transaction,monkeypatch):
+    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination
+    transaction = current_owner_transaction
+    for identifier in ("A","C","B"):
+        for _ in range(3):
+            with transaction() as database:
+                result,_ = ordinary_current_review(database,identifier,monkeypatch)
+    assert result["recombination"]["status"]=="applied"
+    combined = result["recombination"]["resulting_presentation_id"]
+    with transaction() as database:
+        row = database.execute_native("SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",(combined,)).fetchone()
+        assert row[0] is None and row[1]==0 and row[2] is not None and row[3]==0
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==0
+        assert database.execute_native("SELECT count(*) FROM cards WHERE id IN ('A','B','C') AND archived=0 AND superseded_by IS NULL").fetchone()[0]==3
+        boundary = CurrentStudyRecombination(database)
+        current = boundary.try_current("r11-route")
+        assert current is not None,boundary.reason
+        app,_,_ = fixture(PostgresRecombinationStore(database),boundary)
+        assert app.propose("r11-route").plan is None
+    for _ in range(3):
+        with transaction() as database:
+            result,_ = ordinary_current_review(database,combined,monkeypatch)
+    assert result["recombination"]["status"]=="applied"
+    assert result["recombination"]["resulting_presentation_id"]!=combined
+    with transaction() as database:
+        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==2
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==3
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE source_ref='unknown-historical-assistance'").fetchone()[0]==1
+
+
+def qualify_before_final_review(transaction,monkeypatch):
+    for identifier,count in (("A",3),("C",3),("B",2)):
+        for _ in range(count):
+            with transaction() as database:
+                ordinary_current_review(database,identifier,monkeypatch)
+
+
+def test_current_owner_join_failure_rolls_back_only_regrouping_and_keeps_saved_attempt(current_owner_transaction,monkeypatch):
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    original = PostgresRecombinationStore.save_change
+    def fail_after_all_writes(self,*args):
+        original(self,*args)
+        raise RuntimeError("injected_after_real_owner_initialization")
+    with monkeypatch.context() as patch:
+        patch.setattr(PostgresRecombinationStore,"save_change",fail_after_all_writes)
+        with transaction() as database:
+            result,payload = ordinary_current_review(database,"B",monkeypatch)
+            assert result["persisted"] and result["recombination"]["reason"]=="join_rolled_back:RuntimeError"
+    with transaction() as database:
+        assert database.execute_native("SELECT count(*) FROM cards WHERE source_ref LIKE %s",('recombination:%',)).fetchone()[0]==0
+        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
+        assert database.execute_native("SELECT card_id FROM review_attempt_receipts WHERE attempt_id=%s",(payload["review"]["attempt_id"],)).fetchone()[0]=="B"
+        from app.services.learning_review_adapter import submit_legacy_review
+        from contextlib import nullcontext
+        monkeypatch.setattr("app.services.learning_review_adapter.read_connection",lambda:nullcontext(database))
+        replay = submit_legacy_review(database,payload)
+        assert replay["review_id"]==result["review_id"] and replay["recombination"]["status"]=="applied"
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id='B'").fetchone()[0]==3
+
+
+def test_current_owner_active_member_defers_without_changing_original_attempt(current_owner_transaction,monkeypatch):
+    from app.queue_commands import issue_queue_head
+    from app.services.review_service import ensure_card_queued_after
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    day = datetime.now().astimezone().date().isoformat()
+    with transaction() as database:
+        # Make C a genuinely shared member. Its other membership must remain
+        # valid; the retained queue cannot safely join that occurrence. This
+        # leaves only the planned A+B pair, whose A is actually issued below.
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-shared','Other use','fixture',%s)",(datetime.now().astimezone().isoformat(),))
+        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-shared','C',0)")
+        ensure_card_queued_after(database,"A",0,queue_date=day,preserve_order=False)
+        entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id='A' AND status='queued' ORDER BY cycle DESC LIMIT 1").fetchone()[0]
+        assert issue_queue_head(database,dict(entry_id=entry,card_id="A",expected_revision=1,queue_date=day))["issued"]
+        before = tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())
+    with transaction() as database:
+        result,_ = ordinary_current_review(database,"B",monkeypatch)
+        assert result["recombination"]["status"]=="held"
+    with transaction() as database:
+        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
+        assert tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())==before
+        assert database.execute_native("SELECT status FROM daily_queue WHERE id=%s",(entry,)).fetchone()[0]=="queued"
+        assert database.execute_native("SELECT 1 FROM repertoire_cards WHERE repertoire_id='r11-shared' AND card_id='C'").fetchone()
+
+
+def test_current_owner_obligation_target_split_and_offday_readback_preserve_original_history(current_owner_transaction,monkeypatch):
+    """Seed an existing owed receipt at the join boundary, then use real owners.
+
+    Its previously applied lapse is an explicit synthetic source fixture; lapse
+    scheduling is unchanged #487 evidence. No Study success/settlement is seeded.
+    """
+    from app.study.game_feedback import effect_id
+    from app.contracts.product_v02.learning import GameLapse
+    from test_product_game_lapse import fixture as lapse_fixture
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, resume_available_feedback
+    from app.services.queue_application import seed_queue
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    now = datetime.now().astimezone()
+    lapse = lapse_fixture("lapse",GameLapse)
+    decision = decision_identity("A",0,[])
+    lapse = lapse.model_copy(update={"key":lapse.key.model_copy(update={"decision_id":decision}),
+        "finding":lapse.finding.model_copy(update={"decision_id":decision,"presentation_id":"A","repertoire_id":"r11-repertoire"})})
+    logical, deadline = effect_id(lapse.key),now-timedelta(hours=1)
+    with transaction() as database:
+        review_id = database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+            source_kind,source_ref) VALUES('A','again',%s,10,0,'game_lapse',%s) RETURNING id""",
+            ((now-timedelta(days=2)).isoformat(),logical)).fetchone()[0]
+        database.execute_native("""INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
+            card_id,card_revision,decision_id,received_at,detected_at,available_by,status,applied_at,review_id,updated_at)
+            VALUES(%s,%s,'1',%s,%s,'A',1,%s,%s,%s,%s,'applied',%s,%s,%s)""", (logical,lapse.key.model_dump_json(),
+            lapse.model_dump_json(),"a"*64,decision,now-timedelta(days=2),now-timedelta(days=2),deadline,now-timedelta(days=2),review_id,now))
+        result,_ = ordinary_current_review(database,"B",monkeypatch)
+        assert result["recombination"]["status"]=="applied"
+        combined = result["recombination"]["resulting_presentation_id"]
+        original = PostgresGameFeedbackStore(database).get(lapse.key)
+        assert original.card_id=="A" and original.available_by==deadline and original.status=="applied"
+    with transaction() as database:
+        day = now.date().isoformat()
+        seed_queue(database,day)
+        resume_available_feedback(database,day)
+        assert database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()
+        assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id IN ('A','B') AND status='queued'").fetchone()
+        assert PostgresGameFeedbackStore(database).get(lapse.key).available_by==deadline
+    with transaction() as database:
+        reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
+        settled = PostgresGameFeedbackStore(database).get(lapse.key)
+        assert settled.status=="settled" and settled.settlement_review_id==reviewed["review_id"] and settled.available_by==deadline
+    for _ in range(3):
+        with transaction() as database:
+            ordinary_current_review(database,combined,monkeypatch,outcome="again")
+    with transaction() as database:
+        from app.prefix_split_commands import accept_prefix_split
+        before = tuple(tuple(r) for r in database.execute_native("SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id").fetchall())
+        split = accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1)))
+        assert split["applied"]
+        assert accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1)))["idempotent"]
+        assert tuple(tuple(r) for r in database.execute_native("SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id").fetchall())==before
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse'").fetchone()[0]==1
+        for fragment in (split["parent"]["card_id"],split["continuation"]["card_id"]):
+            row = database.execute_native("SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",(fragment,)).fetchone()
+            assert row[0] is None and row[1]==0 and row[2] is not None and row[3]==0
+        assert tuple(database.execute_native("SELECT generation,state FROM background_tasks WHERE id='r11-graph'").fetchone())==(1,"complete")
+
+
+def test_current_owner_any_saved_assistance_resets_and_invalidated_success_cannot_qualify(current_owner_transaction,monkeypatch):
+    transaction = current_owner_transaction
+    for _ in range(2):
+        with transaction() as database:
+            ordinary_current_review(database,"A",monkeypatch)
+    with transaction() as database:
+        result,_ = ordinary_current_review(database,"A",monkeypatch,hint_after_response=True)
+        assert result["recombination"]["clean_streak"]==0
+        state = PostgresRecombinationStore(database).streak(CleanStreak("A",1,"physical:A:1"))
+        assert state.count==0
+    for _ in range(3):
+        with transaction() as database:
+            ordinary_current_review(database,"A",monkeypatch)
+    with transaction() as database:
+        database.execute_native("UPDATE reviews SET invalidated_at=%s WHERE id=(SELECT max(id) FROM reviews WHERE card_id='A')",
+            (datetime.now().astimezone().isoformat(),))
+        assert PostgresRecombinationStore(database,validate_reviews=True).streak(CleanStreak("A",1,"physical:A:1")).count==0
+        result,_ = ordinary_current_review(database,"A",monkeypatch)
+        assert result["recombination"]["clean_streak"]==1
