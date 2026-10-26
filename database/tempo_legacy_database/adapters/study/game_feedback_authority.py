@@ -7,6 +7,7 @@ Every use rereads/fences actual source rows in the same borrowed transaction.
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import chess
 from tempo_chess_core import canonical_fen_key
@@ -14,7 +15,7 @@ from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken, decision_
 from tempo_game_evidence_contracts.legacy_scope import LegacyIntegrityCertificate, LegacyScopedCatalogueProof
 
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
-from app.study.game_feedback import GameFeedback, instant
+from app.study.game_feedback import GameFeedback, game_scoped_introduction, instant
 from .game_feedback import PostgresGameFeedbackStore
 
 CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
@@ -170,8 +171,22 @@ class CurrentOwnerDecisions:
         _require(len(matching) == 1, 'current_owner_decision_not_in_executable')
         mappings = tuple(item for item in self.snapshot.decision_presentations
             if item.decision_id == lapse.key.decision_id and item.presentation_id == card_id)
-        _require(len(mappings) == 1 and mappings[0].introduced_at == actual['introduced_at'],
-                 'current_owner_exact_introduction_time_unproved')
+        _require(len(mappings) == 1, 'current_owner_exact_introduction_time_unproved')
+        mapping=mappings[0]
+        if mapping.introduced_at is None:
+            _require(game_scoped_introduction(mapping,lapse), 'current_owner_introduction_game_scope_mismatch')
+            recorded=actual['introduced_at']
+            try:
+                before=(isinstance(recorded,str) and len(recorded)==10
+                        and date.fromisoformat(recorded)<instant(lapse.occurred_at).date())
+            except ValueError:
+                before=False
+            _require(before and captured[0].get('introduced_before_game') is True
+                     and mapping.introduction=='introduced' and mapping.introduction_matches_current_content,
+                     'current_owner_day_only_introduction_unproved')
+        else:
+            _require(mapping.introduced_at == actual['introduced_at'],
+                     'current_owner_exact_introduction_time_unproved')
         return mappings
 
 

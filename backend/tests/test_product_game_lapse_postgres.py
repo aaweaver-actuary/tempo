@@ -387,3 +387,49 @@ def test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_a
         with ThreadPoolExecutor(max_workers=1) as executor:
             assert executor.submit(concurrent_source_edit).result(timeout=5) == 'fenced'
         assert service.effect_status(lapse.key).status == 'applied'
+
+
+def test_native_day_only_introduction_requires_exact_current_game_proof(case):
+    """Reproduce #488's date-only retained capture through the actual owner port."""
+    from app.legacy_game_observation import capture_game
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_game_feedback, CurrentDecisionUnavailable
+    _, capture, snapshot, lapse = retained_owner_case(case, False)
+    introduced_day=(NOW-timedelta(days=6)).date().isoformat()
+    with case.transaction() as database:
+        database.execute_native('UPDATE cards SET introduced_at=%s WHERE id=%s',(introduced_day,case.card_id))
+    metadata={**capture['authority'],'integrity_current':True,
+              'integrity_certificate':capture['catalogue_scope']['integrity_certificate']}
+    with case.transaction() as database:
+        def reader(statement,parameters=()):
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+        capture=capture_game(capture['authority']['repertoire_id'],capture['game']['id'],(0,),
+            reader=reader,metadata=lambda _:metadata,now=NOW)
+    payload=snapshot.model_dump(mode='json')
+    payload['membership'].update(digest=capture['export_digest'],source_revision=fingerprint(capture['authority']))
+    payload['decision_presentations'][0].update(introduced_at=None,introduced_before_game=True,
+        introduction_game=dict(provider=lapse.key.provider,game_id=lapse.key.game_id,
+                               source_revision=lapse.finding.source_revision,source_digest=lapse.finding.source_digest))
+    snapshot=RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    assert snapshot.decision_presentations[0].introduced_at is None
+    assert capture['tables']['cards'][0]['introduced_before_game'] is True
+    with case.transaction() as database:
+        service=current_owner_game_feedback(database,retained_owner_capture=capture,snapshot=snapshot,clock=lambda:NOW)
+        assert service.accept_lapse(lapse).status=='applied'
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0]==introduced_day
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0]==1
+    # A boolean from any different source is not chronology for this effect.
+    for field,value in [('provider','chesscom'),('game_id','another-game'),
+                        ('source_revision',lapse.finding.source_revision+1),('source_digest','e'*64)]:
+        altered=snapshot.model_dump(mode='json')
+        altered['decision_presentations'][0]['introduction_game'][field]=value
+        wrong=RepertoireSnapshot.model_validate_json(json.dumps(altered))
+        with case.transaction() as database:
+            store=PostgresGameFeedbackStore(database)
+            store.lock_target(case.card_id,NOW.date().isoformat())
+            owner=current_owner_game_feedback(database,retained_owner_capture=capture,snapshot=wrong,clock=lambda:NOW)
+            with pytest.raises(CurrentDecisionUnavailable,match='introduction_game_scope_mismatch'):
+                owner.decisions.current(lapse)
+            assert store.get(lapse.key).status=='applied'
+    assert snapshot.decision_presentations[0].introduced_at is None
