@@ -182,7 +182,7 @@ def retained_database(database, monkeypatch):
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
     connection, _, schema, _, _ = database
     connection.row_factory = tempo_row_factory
-    connection.execute("ALTER TABLE repertoires ADD scope_source_revision bigint NOT NULL DEFAULT 0, "
+    connection.execute("ALTER TABLE repertoires ADD name text, ADD scope_source_revision bigint NOT NULL DEFAULT 0, "
         "ADD canonical_prefix_moves_json text NOT NULL DEFAULT '[]', ADD canonical_prefix_revision bigint NOT NULL DEFAULT 0, "
         "ADD canonical_prefix_preview_id text")
     connection.execute("INSERT INTO repertoires(id) VALUES('other')")
@@ -197,6 +197,13 @@ def retained_database(database, monkeypatch):
     connection.execute("CREATE TABLE daily_queue(id text PRIMARY KEY,card_id text,status text,admission_repertoire_id text)")
     connection.execute("CREATE TABLE background_tasks(id text,kind text,deduplication_key text)")
     connection.execute("CREATE TABLE opening_segmentation_state(repertoire_id text PRIMARY KEY,content_version bigint,state text)")
+    connection.execute("CREATE TABLE legacy_learning_identity(id integer PRIMARY KEY,workspace_id text)")
+    connection.execute("INSERT INTO legacy_learning_identity VALUES(1,'task492')")
+    connection.execute("CREATE TABLE opening_graph_publications(repertoire_id text PRIMARY KEY,generation bigint,state text)")
+    connection.execute("INSERT INTO opening_graph_publications VALUES('rep',3,'ready')")
+    connection.execute("CREATE TABLE opening_graph_steps(repertoire_id text,generation bigint,line_id text,decision_index bigint,card_id text,starting_fen text,moves_json text,trained_color text)")
+    connection.execute("CREATE TABLE repertoire_integrity_card_blocks(repertoire_id text,card_id text)")
+    connection.execute("CREATE TABLE deleted_cards(card_id text PRIMARY KEY)")
     connection.execute("CREATE TABLE repertoire_integrity_state(repertoire_id text PRIMARY KEY,status text,checked_at text,scan_status text,scan_generation text,scan_completed_sources bigint,scan_total_sources bigint,scan_error text)")
     # Use the actual relevant source-revision trigger, not a hand-rolled counter.
     from pathlib import Path
@@ -213,6 +220,8 @@ def retained_database(database, monkeypatch):
         "VALUES(%s,'rep','response',%s,'[\"d2d4\",\"d7d5\",\"c2c4\"]','white',3,'2026-10-01T00:00:00Z')", (losing,chess.STARTING_FEN))
     connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',%s),('other',%s)", (losing,losing))
     connection.execute("INSERT INTO reviews VALUES('history',%s,'again')", (losing,))
+    connection.execute("INSERT INTO opening_graph_steps VALUES('rep',3,'loser',0,%s,%s,'[\"d2d4\",\"d7d5\",\"c2c4\"]','white')",(losing,chess.STARTING_FEN))
+    connection.execute("INSERT INTO repertoire_integrity_card_blocks VALUES('rep',%s)",(losing,))
     connection.execute("INSERT INTO daily_queue VALUES('other-active',%s,'active','other')", (losing,))
     database_adapter = PostgresConnection(connection)
     graph_requests = []
@@ -241,8 +250,10 @@ def test_retained_current_owner_replaces_only_approved_sources_and_preserves_sha
     from app.repertoire.changes.retained import retained_changes
     database, losing, graph_requests = retained_database
     current = retained_reader(database, 'rep')
-    proposal = manual_resolution(current,repertoire_id='rep',position=chess.STARTING_FEN.rsplit(' ',2)[0],selected_uci='e2e4',proposal_id='retained-approval')
-    assert {item.route_id for item in proposal.edits} == {'line:loser','card:'+losing}
+    owner = retained_changes(database,'rep')
+    preview = owner.preview_resolution(position=chess.STARTING_FEN.rsplit(' ',2)[0],selected_uci='e2e4',proposal_id='retained-approval')
+    proposal = preview.proposal
+    assert {item.route_id for item in proposal.edits} == {'loser'}
     assert len(proposal.card_changes) == 1 and proposal.card_changes[0].presentation_id == losing
     owner = retained_changes(database,'rep')
     owner.preview(proposal)
@@ -263,8 +274,9 @@ def test_retained_current_owner_replaces_only_approved_sources_and_preserves_sha
 def retained_proposal(database, proposal_id):
     import chess
     from app.repertoire.changes.application import manual_resolution
+    from app.repertoire.changes.retained import current_card_definitions
     return manual_resolution(retained_reader(database,'rep'), repertoire_id='rep',
-        position=chess.STARTING_FEN.rsplit(' ',2)[0], selected_uci='e2e4', proposal_id=proposal_id)
+        position=chess.STARTING_FEN.rsplit(' ',2)[0], selected_uci='e2e4', proposal_id=proposal_id,card_definitions=current_card_definitions(database,'rep'))
 
 
 def test_retained_owner_requires_displayed_card_definition_and_stale_source_is_rejected(retained_database):
@@ -309,7 +321,8 @@ def test_retained_public_operation_refuses_an_unenclosed_connection(retained_dat
     database, _, graph_requests = retained_database
     current = retained_reader(database,'rep')
     proposal = retained_proposal(database,'no-outer-transaction')
-    plan = validate_proposal(current,proposal)
+    from app.repertoire.changes.retained import current_card_definitions
+    plan = validate_proposal(current,proposal,card_definitions=current_card_definitions(database,'rep'))
     with pytest.raises(ChangeError,match='borrowed_transaction_required'):
         publish_validated_change(database,plan,current_snapshot=retained_reader)
     assert not graph_requests and same_retained_source(retained_reader(database,'rep'),current)
@@ -320,11 +333,11 @@ def test_retained_snapshot_is_stable_bounded_read_without_game_or_clean_integrit
     database, losing, graph_requests = retained_database
     initial = retained_reader(database,'rep')
     assert conflict_report(initial).conflicts
-    assert {route.route_id for route in initial.membership.routes} == {'line:winner','line:loser','line:fork','card:'+losing}
+    assert {route.route_id for route in initial.membership.routes} == {'winner','loser','fork'}
     mapped = [item for item in initial.decision_presentations if item.presentation_id == losing]
     assert mapped and all(not item.available and not item.introduction_matches_current_content for item in mapped)
     assert all(item.introduction=='introduced' and item.introduced_at=='2026-10-01T00:00:00Z' for item in mapped)
-    assert all(item.route_id=='card:'+losing for item in mapped)
+    assert all(item.route_id=='loser' for item in mapped)
     assert not graph_requests
     # Native PostgreSQL enforces read-only execution, including no row-lock writes.
     with database.raw.transaction():
@@ -340,7 +353,7 @@ def test_retained_snapshot_is_stable_bounded_read_without_game_or_clean_integrit
 def test_retained_snapshot_invalid_tail_remains_diagnostic_without_mapping(retained_database):
     from app.repertoire.changes.application import conflict_report
     database, losing, _ = retained_database
-    database.execute_native("UPDATE cards SET moves_json='[\"d2d4\",\"d7d5\",\"d2d3\"]' WHERE id=%s",(losing,))
+    database.execute_native("UPDATE repertoire_lines SET moves_json='[\"d2d4\",\"d7d5\",\"d2d3\"]' WHERE id='loser'")
     value = retained_reader(database,'rep')
     report = conflict_report(value)
     assert not report.clean and any(item.code=='illegal_move' for item in report.diagnostics)
