@@ -45,17 +45,25 @@ callback during Study. `IntroductionSource` checks shared snapshot/authority
 bindings and detaches input values; the concrete receiver rereads actual current
 rows. The configured weight set must exactly match the supplied repertoire set.
 Source bounds are 32 repertoires, 64 routes/128 mapped physical cards/256 graph
-occurrences per repertoire, 40 moves per presentation and 1000 per route.
+occurrences and decision mappings per repertoire, 40 moves per presentation and
+1000 per route. Legal route replay is cached within each facts read.
 
 The receiver itself checks current source/catalogue/prefix/graph revisions,
 published ready graph rows, exact source route and executable, physical revision,
 membership, conflict/deletion/validation/archive/supersession blocks and legal
 learner history. Explicit route-local bindings are respected when supplied by the
 newer compatible contract. It does not infer physical identity from a position.
+Its content binding uses the existing authority fingerprint, which excludes
+schedules/reviews and game-specific capture metadata; receiving a new capture of
+unchanged content does not discard a compatible saved ranking.
 Stale source scopes lose ranking compatibility and cannot introduce; source
 busy/missing/oversized states return `deferred` with `receiver.owner.diagnostics`.
 The saved installation `study_only_mode` is reread independently of caller
-settings, and participates in the context fingerprint.
+settings, and participates in the context fingerprint. Existing zero global or
+per-repertoire introduction limits remain explicit pauses; positive legacy
+per-repertoire allowances do not multiply or replace the new global budget.
+New settings require actual Boolean enable/pause values; truthy strings cannot
+activate this path.
 
 `commit` obtains the existing card-edit reservation and day-position lock before
 the allocation row. Card/source fences are nonblocking where waiting backwards

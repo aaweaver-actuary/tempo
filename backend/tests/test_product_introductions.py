@@ -246,3 +246,10 @@ def test_new_product_modules_reuse_scoped_import_boundary():
     assert not any(name == "app.analysis" or name.startswith("app.analysis.")
                    for module, source in sources.items() for name in import_targets(source, module))
     assert not has_import_cycle(sources)
+
+
+@pytest.mark.parametrize('control',[dict(enabled='false'),dict(paused=1)])
+def test_current_owner_settings_require_explicit_boolean_controls(control):
+    from app.study.introductions.ports import IntroductionSettings
+    with pytest.raises(ValueError):
+        IntroductionSettings('explicit',1,(("a",1),),**control)

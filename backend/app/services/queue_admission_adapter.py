@@ -137,7 +137,7 @@ class CurrentIntroductionUnavailable(RuntimeError):
     pass
 
 
-def _playable_introduction(mapping, card, graphs, routes, *, learner_color):
+def _playable_introduction(mapping, card, graphs, routes, *, learner_color, route_cache):
     """Recheck exact physical definition inside an explicitly published route."""
     import json
     import chess
@@ -153,6 +153,8 @@ def _playable_introduction(mapping, card, graphs, routes, *, learner_color):
         if not 1 <= len(moves) <= 40:
             return False
         board = chess.Board(card['start_fen'])
+        if not board.is_valid():
+            return False
         matching = []
         for offset, uci in enumerate(moves):
             move = chess.Move.from_uci(uci)
@@ -173,19 +175,24 @@ def _playable_introduction(mapping, card, graphs, routes, *, learner_color):
                 continue
             if getattr(mapping, 'route_id', None) not in (None, graph['line_id']):
                 continue
-            route_board = chess.Board(route['start_fen'])
-            route_moves = json.loads(route['moves_json'])
-            if not 1 <= len(route_moves) <= 1000 or route['trained_color'] != learner_color:
-                continue
-            roots = []
-            for ply, uci in enumerate(route_moves):
-                if (opening_position_key(route_board.fen()) == opening_position_key(card['start_fen'])
-                        and route_moves[ply:ply + len(moves)] == moves):
-                    roots.append(ply)
-                move = chess.Move.from_uci(uci)
-                if move not in route_board.legal_moves:
+            if route['id'] not in route_cache:
+                route_board = chess.Board(route['start_fen'])
+                route_moves = json.loads(route['moves_json'])
+                if (not route_board.is_valid() or not 1 <= len(route_moves) <= 1000
+                        or route['trained_color'] != learner_color):
                     return False
-                route_board.push(move)
+                frames = []
+                for uci in route_moves:
+                    frames.append(opening_position_key(route_board.fen()))
+                    move = chess.Move.from_uci(uci)
+                    if move not in route_board.legal_moves:
+                        return False
+                    route_board.push(move)
+                route_cache[route['id']] = route_moves, frames
+            route_moves, frames = route_cache[route['id']]
+            roots = [ply for ply, position in enumerate(frames)
+                     if position == opening_position_key(card['start_fen'])
+                     and route_moves[ply:ply + len(moves)] == moves]
             if len(roots) == 1 and (getattr(mapping, 'route_ply', None) is None
                     or any(roots[0] + offset == mapping.route_ply for offset in matching)):
                 return True
@@ -215,12 +222,20 @@ class CurrentStudyIntroductionOwner:
         from app.study.introductions.ports import OwnerFacts
         controls, today, required, queued = admission_storage.product_current_queue_facts(
             self.database, day, fence=self.fencing)
+        diagnostics = []
         if controls is None:
-            raise CurrentIntroductionUnavailable('current_study_controls_busy_or_missing')
-        candidates, bindings, introduced, definitions, diagnostics = [], [], {row[0] for row in today}, {}, []
+            # New optional admissions defer; ordinary due work may still commit.
+            controls = (True, 0)
+            diagnostics.append(('settings', 'current_study_controls_busy_or_missing'))
+        candidates, bindings, introduced, definitions, paused_repertoires = [], [], {row[0] for row in today}, {}, []
+        route_cache = {}
         for source in self.sources:
             token, snapshot = source.authority, source.snapshot
             mappings = [item for item in snapshot.decision_presentations if item.repertoire_id == token.repertoire_id]
+            if len(mappings) > 256:
+                diagnostics.append((token.repertoire_id, 'current_source_mapping_bound_exceeded'))
+                bindings.append((token.repertoire_id, token.graph_generation, 'oversized:' + fingerprint(token.model_dump(mode='json'))))
+                continue
             expected_routes = {route.route_id: route for route in snapshot.membership.routes if route.repertoire_id == token.repertoire_id}
             header, lines, cards, graphs = admission_storage.product_source_facts(
                 self.database, token.repertoire_id, sorted({item.presentation_id for item in mappings}),
@@ -229,9 +244,12 @@ class CurrentStudyIntroductionOwner:
                       'graph_generation', 'graph_state', 'target_id', 'workspace_id')
             valid = header is not None and all(header[key] == getattr(token, key) for key in fields) and token.graph_state == 'ready'
             bindings.append((token.repertoire_id, token.graph_generation,
-                             snapshot.membership.digest if valid else 'stale:' + fingerprint(tuple(header) if header else None)))
+                             fingerprint(token.model_dump(mode='json')) if valid else 'stale:' + fingerprint(tuple(header) if header else None)))
             if not valid or len(graphs) > 256:
                 diagnostics.append((token.repertoire_id, 'current_source_busy_missing_changed_or_oversized'))
+                continue
+            if header['legacy_repertoire_limit'] == 0:
+                paused_repertoires.append(token.repertoire_id)
                 continue
             routes = {}
             for row in lines:
@@ -249,7 +267,8 @@ class CurrentStudyIntroductionOwner:
                 card = by_id.get(mapping.presentation_id)
                 if (card is None or card['introduced_at'] is not None or card['id'] in queued
                         or card['state'] not in ('new', 'locked')
-                        or not _playable_introduction(mapping, card, graphs, routes, learner_color=snapshot.learner_color)):
+                        or not _playable_introduction(mapping, card, graphs, routes,
+                            learner_color=snapshot.learner_color, route_cache=route_cache)):
                     continue
                 # This is the agreed deep-introduction path: no ancestor review
                 # or stability condition. The whole actual route was checked.
@@ -268,12 +287,12 @@ class CurrentStudyIntroductionOwner:
                            for item in candidates)
         settings = self.settings
         context = RankingContext(tuple(bindings), fingerprint([settings.revision, settings.global_budget,
-            settings.weights, settings.enabled, settings.paused, bool(controls[0])]))
+            settings.weights, settings.enabled, settings.paused, bool(controls[0]), controls[1], sorted(paused_repertoires)]))
         self.diagnostics = tuple(diagnostics)
         return OwnerFacts(context, candidates, settings.global_budget, settings.weights,
             tuple((row[0], row[2]) for row in today), frozenset(introduced),
             tuple(RequiredWork(row[0], 'obligation' if row[1] else 'due') for row in required),
-            enabled=settings.enabled, paused=settings.paused, study_only=bool(controls[0]))
+            enabled=settings.enabled, paused=settings.paused or controls[1] == 0, study_only=bool(controls[0]))
 
     def introduce(self, day, candidate):
         facts = self.facts(day)

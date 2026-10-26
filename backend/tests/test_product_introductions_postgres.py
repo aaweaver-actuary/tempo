@@ -290,7 +290,7 @@ def current_owner_case(legacy_transaction):
     board.push_uci('e7e5')
     start = board.fen()
     with legacy_transaction() as database:
-        database.execute('UPDATE settings SET study_only_mode=0 WHERE id=1', ())
+        database.execute('UPDATE settings SET study_only_mode=0,new_cards_per_day=10 WHERE id=1', ())
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire,'Synthetic','fixture',DAY))
         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,'white',?,?,?)",
                          (line,repertoire,line,chess.STARTING_FEN,json.dumps(['e2e4','e7e5','g1f3']),DAY))
@@ -307,7 +307,7 @@ def current_owner_case(legacy_transaction):
         header, _, _, _ = product_source_facts(database,repertoire,[card],[line])
         token = LegacyAuthorityToken(kind='legacy_graph',repertoire_id=repertoire,
             source_digest='a'*64,catalogue_digest='b'*64,graph_digest='c'*64,
-            **{key:header[key] for key in header.keys()})
+            **{key:header[key] for key in header.keys() if key in LegacyAuthorityToken.model_fields})
         snapshot = json.loads((ROOT / 'contracts/product-v02/fixtures/snapshot.json').read_text())['payload']
         snapshot['membership'].update(workspace_id=token.workspace_id,revision=1,
             source_revision=fingerprint(token.model_dump(mode='json')),scope_repertoire_ids=[repertoire],scope_id=repertoire)
@@ -326,7 +326,7 @@ def current_owner_case(legacy_transaction):
             database.execute('DELETE FROM daily_queue WHERE card_id=?',(identity,))
             database.execute('DELETE FROM cards WHERE id=?',(identity,))
         database.execute('DELETE FROM repertoires WHERE id=?',(repertoire,))
-        database.execute('UPDATE settings SET study_only_mode=0 WHERE id=1',())
+        database.execute('UPDATE settings SET study_only_mode=0,new_cards_per_day=10 WHERE id=1',())
 
 
 def test_current_owner_deep_introduction_uses_actual_canonical_writer(current_owner_case):
@@ -349,7 +349,7 @@ def test_current_owner_deep_introduction_uses_actual_canonical_writer(current_ow
         assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(card,)).fetchone()[0] == 0
 
 
-@pytest.mark.parametrize('change',['source','definition','study_only','blocked','membership','illegal_route'])
+@pytest.mark.parametrize('change',['source','definition','study_only','blocked','membership','illegal_route','legacy_global_pause','legacy_repertoire_pause'])
 def test_current_owner_fences_changed_eligibility_and_saved_controls(current_owner_case,change):
     transaction, source, settings, card = current_owner_case
     from app.services.queue_admission_adapter import current_owner_introductions
@@ -361,6 +361,8 @@ def test_current_owner_fences_changed_eligibility_and_saved_controls(current_own
             database.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?',(source.authority.repertoire_id,))
         elif change == 'definition': database.execute('UPDATE cards SET revision=revision+1 WHERE id=?',(card,))
         elif change == 'study_only': database.execute('UPDATE settings SET study_only_mode=1 WHERE id=1',())
+        elif change == 'legacy_global_pause': database.execute('UPDATE settings SET new_cards_per_day=0 WHERE id=1',())
+        elif change == 'legacy_repertoire_pause': database.execute('UPDATE repertoires SET new_cards_per_day=0 WHERE id=?',(source.authority.repertoire_id,))
         elif change == 'blocked': database.execute('UPDATE cards SET pending_validation=1 WHERE id=?',(card,))
         elif change == 'membership':
             database.execute('DELETE FROM repertoire_cards WHERE card_id=?',(card,))
@@ -438,3 +440,33 @@ def test_current_owner_source_fence_holds_through_canonical_write(current_owner_
     with transaction() as database:
         database.execute('UPDATE repertoire_lines SET moves_json=moves_json WHERE id=?',(line,))
         assert PostgresIntroductionStore(database).receipt(card) is not None
+
+
+def test_current_owner_seed_queue_default_keeps_legacy_writer(current_owner_case):
+    transaction, _, _, card = current_owner_case
+    from app.services.queue_application import seed_queue
+    with transaction() as database:
+        seed_queue(database,DAY)
+        assert PostgresIntroductionStore(database).receipt(card) is None
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=?',(card,)).fetchone()) == ('learning',DAY)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == 1
+
+
+def test_current_owner_unchanged_content_retains_ranking_across_capture_refresh(current_owner_case):
+    transaction, source, settings, _ = current_owner_case
+    from app.services.queue_admission_adapter import current_owner_introductions
+    mapping = source.snapshot.decision_presentations[0]
+    value = ranking((mapping.decision_id,source.authority.repertoire_id,.2))
+    value = value.model_copy(update={'based_on':value.based_on.model_copy(update={
+        'repertoire_revisions':((source.authority.repertoire_id,1),)})})
+    with transaction() as database:
+        app = current_owner_introductions(database,sources=(source,),settings=settings)
+        context = app.context(DAY)
+        assert app.accept_ranking(DAY,context,value) == 'accepted'
+    refreshed = replace(source,snapshot=source.snapshot.model_copy(update={'membership':
+        source.snapshot.membership.model_copy(update={'digest':'d'*64,'snapshot_id':'refreshed-capture'})}))
+    with transaction() as database:
+        app = current_owner_introductions(database,sources=(refreshed,),settings=settings)
+        assert app.context(DAY) == context
+        assert app.store.saved_ranking(context) == value
+        assert not app.store.state(DAY).charges

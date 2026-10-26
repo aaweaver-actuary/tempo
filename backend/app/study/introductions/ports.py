@@ -68,8 +68,10 @@ class IntroductionSettings:
 
     def __post_init__(self):
         from .policy import validated_weights
+        object.__setattr__(self, 'weights', tuple(tuple(pair) for pair in self.weights))
         validated_weights(self.weights)
-        if not self.revision or type(self.global_budget) is not int or self.global_budget < 0:
+        if (not self.revision or type(self.global_budget) is not int or self.global_budget < 0
+                or type(self.enabled) is not bool or type(self.paused) is not bool):
             raise ValueError("explicit settings revision and nonnegative global budget required")
 
 

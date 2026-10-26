@@ -166,7 +166,7 @@ def product_source_facts(database, repertoire_id, card_ids, line_ids, *, fence=F
     header = database.execute_native("""SELECT repertoire.scope_source_revision,
         repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
         publication.generation graph_generation,publication.state graph_state,
-        identity.target_id,identity.workspace_id
+        identity.target_id,identity.workspace_id,repertoire.new_cards_per_day legacy_repertoire_limit
         FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
         CROSS JOIN legacy_learning_identity identity
         JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
@@ -190,7 +190,7 @@ def product_source_facts(database, repertoire_id, card_ids, line_ids, *, fence=F
 
 def product_current_queue_facts(database, day, *, fence=False):
     suffix = ' FOR SHARE SKIP LOCKED' if fence else ''
-    controls = database.execute_native('SELECT study_only_mode FROM settings WHERE id=1' + suffix, ()).fetchone()
+    controls = database.execute_native('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1' + suffix, ()).fetchone()
     introduced = database.execute_native("""SELECT card.id,card.introduced_at,
         COALESCE((SELECT admission_repertoire_id FROM daily_queue WHERE card_id=card.id
             AND cycle=0 AND queue_date=card.introduced_at ORDER BY id LIMIT 1),card.repertoire_id)
