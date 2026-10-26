@@ -90,7 +90,9 @@ timezone/day boundary; it must be an aware instant strictly after now and within
 component due state declines the join. An overdue deadline stays in the past and
 is immediately eligible. This is a complete verification request by the next
 local day, not a copied/averaged FSRS stability or a fabricated combined review.
-Initialization owns no past review count and charges zero introduction slots.
+Initialization owns no past review count and requests already-introduced work
+without writing an introduction charge. Actual zero-slot acceptance also requires
+the admission-reader adoption below.
 
 The explicit `regrouped_card_sql(database, qualified_card_id)` read seam proves
 that a physical ID belongs to this owner's persisted presentation history; it
