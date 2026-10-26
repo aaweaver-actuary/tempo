@@ -5,6 +5,13 @@ Issue [#482](https://github.com/aaweaver-actuary/tempo/issues/482), under
 `6885b942`. These are proposed/unmerged source interfaces, **not live behavior**.
 The initial slice is usable independently; probability, engine, proposal and
 rejoining values will be additive checkpoints and do not gate game feedback.
+The second compatible checkpoint adds provider `filters` facts and the isolated
+Game Review screen's `GameSummary`, `ProviderSyncStatus`, `RecentGames` and
+original-history `GameDetail` projections. These are read models, not a new
+canonical game or receiver. The UI renders receipt statuses verbatim; `applied`
+does not mean `available`. Failed sync requires an error and operation identity.
+`GameReviewApi` adds `recentGames`, `gameDetail`, `sync` and `retryFeedback` with
+request-local AbortSignal/operation/repertoire context; no transport starts here.
 
 ## Public seams and owners
 
@@ -49,6 +56,9 @@ legal-en-passant four-field FEN convention, scoped by repertoire and variant.
   null/unknown. Saturated or continuing pages cannot claim completeness. A page
   cannot contain two revisions of one stable provider game ID. Continuations are
   opaque; provider adapters own completeness and checkpoint interpretation.
+  `GamePage.filters` retains exact requested key/value facts (default empty).
+  Provider-specific raw metadata may live in an immutable owner envelope around
+  the shared page/record; it does not justify a competing canonical game DTO.
 - Finding `ply` is **one-based**. Existing membership route offsets and v3
   encounters remain **zero-based**, so adapters must convert explicitly.
   Only `confirmed_miss` with one selected own response, proven introduction and

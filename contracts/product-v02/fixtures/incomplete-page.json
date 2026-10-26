@@ -22,6 +22,16 @@
     "rejections": [],
     "continuation": "opaque/provider/checkpoint",
     "complete": false,
-    "saturated": true
+    "saturated": true,
+    "filters": [
+      [
+        "rated",
+        "false"
+      ],
+      [
+        "perfType",
+        "rapid"
+      ]
+    ]
   }
 }
