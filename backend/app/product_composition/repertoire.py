@@ -2,7 +2,7 @@
 import hashlib
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from tempo_evidence_math import opening_position_key
 
 from app.contracts.product_v02.analysis import (
@@ -54,7 +54,9 @@ def audit_projection(snapshot, *, study_block=None):
             proposal_id="resolve:"+hashlib.sha256((identity+move).encode()).hexdigest()).model_dump(mode="json"))
             for move in conflict.responses_uci]
         affected = tuple(sorted({item.route_id for item in conflict.occurrences}))
-        block = study_block(conflict.position.repertoire_id, affected) if study_block else None
+        block = study_block(conflict.position.repertoire_id, affected,
+            source_revision=source.source_revision, revision=source.revision,
+            digest=source.digest) if study_block else None
         # Callback returns actual owning facts; unknown is a safe default.
         status = "blocked" if block == "blocked" else "unknown"
         conflicts.append(dict(conflict_id=identity, repertoire_id=conflict.position.repertoire_id,
@@ -72,7 +74,7 @@ def audit_projection(snapshot, *, study_block=None):
 
 
 def create_repertoire_review_router(changes, snapshots: RepertoireSnapshotPort, *, study_block=None,
-                                    proposals=lambda _: (), evidence=lambda _rep, _position: ()):
+                                    proposals=lambda _: (), evidence=lambda _rep, _position: (), audit=None):
     """Unregistered C router; optional E reads are injected, never called by Study."""
     router = APIRouter()
     router.include_router(create_repertoire_router(changes, snapshots))
@@ -91,6 +93,12 @@ def create_repertoire_review_router(changes, snapshots: RepertoireSnapshotPort, 
     @router.get("/api/product/repertoires/{repertoire_id}/evidence")
     def probability(repertoire_id: str, position_key: str):
         return evidence(repertoire_id, position_key)
+
+    @router.post("/api/product/repertoires/{repertoire_id}/audit")
+    def enforce(repertoire_id: str, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        if audit is None:
+            raise HTTPException(503, "Current Study conflict enforcement is unavailable")
+        return audit(repertoire_id, idempotency_key)
 
     return router
 
