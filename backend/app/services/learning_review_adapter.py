@@ -155,6 +155,8 @@ class LearningReviewAdapter:
 
     def settle_remediation(self, command, review_id, *, revision):
         if review_id is None: return
+        from tempo_legacy_database.adapters.study.game_feedback import settle_saved_review
+        settle_saved_review(self.database, command.card_id, review_id, revision)
         from .legacy_study_remediation import settle_review
         settle_review(self.database, command.card_id, review_id, queue_entry_id=command.queue_entry_id,
                       revision=revision, source_attempt_id=command.attempt_id)
