@@ -92,7 +92,7 @@ flowchart LR
   UI["#490 view + #491 explicit Settings"] --> HTTP["#491 lazy HTTP facade"]
   HTTP --> Games
   HTTP -->|"read owner status / explicit replay"| Receiver
-  Root["retained root mount / registration"] -. "window requested" .-> HTTP
+  Root["retained optional root mount / background request admission"] --> HTTP
   Generic["bounded repertoire-only projection for new imports"] -. "owner seam requested" .-> Snapshot
 ```
 
@@ -105,13 +105,17 @@ signals, I/O cancellation and runner only.
 
 ## Exact root window
 
-The requested mount window is limited to `backend/app/main.py`,
-`app/components/navbar.tsx`, `app/views/legacy-workspace.tsx`,
+The released mount window is limited to `backend/app/main.py`,
+`app/components/Navbar.tsx`, `app/views/legacy-workspace.tsx`,
 `app/views/settings_view.tsx`, plus the exact `tests/REGRESSIONS.md` and central
 architecture-index appends. Reuse the existing Games view enum with the Game
 Review label and remove only that view's obsolete redirect. Home/Study remains
 mounted. No ViewEnum/types/workspace-preload/Study navigation-policy change is
-needed. No root file is edited until #488 explicitly releases the window.
+needed. The published C Repertoire wrapper is preserved. Game Review is lazy in
+the legacy workspace; the independent Study workspace still excludes it. The
+explicit Games Settings panel is loaded only when that tab is opened. API reads
+and the three exact command paths use background admission, and router
+construction starts no provider, capture, connection or worker.
 
 Legacy `useGameSync` has no current consumer; no duplicate active producer is
 removed speculatively. D04 likelihood population/time settings remain unset and
@@ -169,8 +173,8 @@ actual adapters with fake HTTP. Two genuine synthetic misses cross the actual
 Study factory. The browser chooses explicit settings, preserves an unrelated
 issued attempt while Game Review fails/loads, reviews at the actual original ply,
 completes normal Study and reloads owner settlement. It fabricates no API save
-response. This browser source is **prepared/typechecked, not executed** until the
-root mount window is released.
+response. This browser source is **prepared/typechecked, not executed**; root
+registration alone is not browser acceptance.
 
 That bounded fixture's sole complete approved route is shared by all its games,
 with exact UTC introduction. It does not certify generic snapshot coverage for
@@ -180,5 +184,5 @@ bounded repertoire-only snapshot can drive pre-commit comparison; canonical
 library mirror plus source/checkpoint/delivery must then commit atomically before
 #487 performs fresh game-specific capture/fencing at admission. No synthetic
 capture or pre-checkpoint library write is used to bypass this ordering seam.
-Full A03/A04 acceptance and worker activation remain open until that source seam,
-root integration and actual browser run are complete.
+Full A03/A04 acceptance and worker activation remain open until that source seam
+and the actual browser run are complete.

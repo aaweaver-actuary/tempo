@@ -5,7 +5,7 @@ import { RepertoireDailyLimits } from "../components/repertoire-daily-limits";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
-import { useRef, useState, useEffect, useCallback } from "react";
+import { lazy, Suspense, useRef, useState, useEffect, useCallback } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
 import {
@@ -21,9 +21,11 @@ import { migrateSqliteToBrowser } from "../../database/browser/sqlite-migration"
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";
+import { independentStudy } from "../lib/study-connection";
 import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
+const GameSyncSettings = lazy(() => import("../product-composition/GameSyncSettings").then(module => ({ default: module.CurrentGameSyncSettings })));
 
 type SettingsValues = {
   initial_depth: number;
@@ -706,41 +708,7 @@ export default function SettingsView({
         </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
-          <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
-          <label>
-            <span>Lichess username</span>
-            <TextInput disabled={!settingsLoaded}
-              value={values.lichess_username}
-              onChange={(event) =>
-                update("lichess_username", event.target.value)
-              }
-              placeholder="Optional"
-            />
-          </label>
-          <label>
-            <span>Chess.com username</span>
-            <TextInput disabled={!settingsLoaded}
-              value={values.chesscom_username}
-              onChange={(event) =>
-                update("chesscom_username", event.target.value)
-              }
-              placeholder="Optional"
-            />
-          </label>
-          <label>
-            <span>
-              Automatic sync<small>Minutes while Tempo is open</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="2"
-              max="60"
-              value={values.auto_sync_minutes}
-              onChange={(event) =>
-                update("auto_sync_minutes", Number(event.target.value))
-              }
-            />
-          </label>
+          {usesLocalApi() && !independentStudy && activeSection === "games" && <Suspense fallback={<p>Loading game sync settings…</p>}><GameSyncSettings /></Suspense>}
           <label>
             <span>
               Major mistake threshold<small>Centipawn loss</small>

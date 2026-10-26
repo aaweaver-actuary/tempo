@@ -1,3 +1,26 @@
+## Product v0.2 continuous provider / Game Review composition
+
+`backend/tests/test_product_game_sync_integration.py` owns concrete two-provider
+HTTP/checkpoint joins, explicit filters and bounded cancellation, cold lazy API
+construction, durable configured commands/read projections, and the current
+Study factory with a committed canonical Games source fence. Its native stopped
+and killed worker cases are invoked by
+`node --test tests/runner/product-game-worker.test.mjs`; they retain actual normal
+Study issuance/review both during blocked optional HTTP and after termination.
+`tests/unit/product-game-sync-settings.test.tsx` owns explicit choices, UTC
+serialization and revision-conflict reload. The prepared
+`tests/browser/product-game-sync.spec.ts` is the full source-to-normal-review
+product check; registration is not a passing browser receipt.
+
+The [canonical integration view](../docs/product-v02/game-sync/README.md) names
+resource/transaction owners, source evidence and pending deployment limits.
+Game Review mounts only in the optional legacy workspace. Settings loads its
+Games panel lazily, and HTTP construction starts no provider or worker.
+`backend/tests/test_product_game_review_mount.py` executes the actual root
+admission function for exact read/command URLs with no live app import;
+`tests/unit/product-game-review-mount.test.tsx` owns legacy navigation while
+retaining the independent Study exclusion.
+
 ## Product v0.2 game-feedback composition
 
 `backend/tests/test_product_feedback_integration.py` owns the T07 source and

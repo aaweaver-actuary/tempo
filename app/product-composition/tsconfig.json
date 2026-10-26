@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": { "incremental": false },
-  "files": ["GameSyncSettings.tsx", "game-review.ts", "../../tests/unit/product-game-sync-settings.test.tsx", "../../tests/browser/product-game-sync.spec.ts", "../../tests/browser/product-game-sync-fixture.ts"],
+  "files": ["GameSyncSettings.tsx", "game-review.ts", "../components/Navbar.tsx", "../views/legacy-workspace.tsx", "../views/settings_view.tsx", "../../tests/unit/product-game-sync-settings.test.tsx", "../../tests/unit/product-game-review-mount.test.tsx", "../../tests/browser/product-game-sync.spec.ts", "../../tests/browser/product-game-sync-fixture.ts"],
   "include": [],
   "exclude": []
 }

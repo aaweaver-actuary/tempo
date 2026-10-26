@@ -16,12 +16,14 @@ import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import { View } from "../types";
 import { RepertoireAuditMount } from "../features/product-api/RepertoireAuditMount";
+import { createProductGameReviewApi } from "../product-composition/game-review";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
 const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 const CardEditor = lazy(() => import("./card_editor"));
 const RepertoireView = lazy(() => import("./repertoire_view"));
 const SettingsView = lazy(() => import("./settings_view"));
 const StudiesView = lazy(() => import("./studies_view"));
+const GameReviewView = lazy(() => import("../features/game-review/GameReviewView").then(module => ({ default: module.GameReviewView })));
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
 const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
@@ -29,13 +31,14 @@ const PendingDiscoverySaves = lazy(() => import("../components/pending-discovery
 import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
-  return view === "analysis" || view === "builder" || view === "compare" || view === "games" || view === "insights" || view === "progress" || view === "statistics"
+  return view === "analysis" || view === "builder" || view === "compare" || view === "insights" || view === "progress" || view === "statistics"
     ? "train"
     : view;
 }
 
 /** Full workspace owner for authoring and integrity repair. */
 export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
+  const [gameReviewApi] = useState(() => createProductGameReviewApi());
   const { currentView, changeWorkspace, boardTheme, pieceSet, soundOn, changeBoardTheme,
     changePieceSet, changeSound, studyOnlyMode, incrementSafeBreak,
     reviewed, cardsLeft, totalCards,
@@ -220,6 +223,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
+        {currentView === "games" && <GameReviewView api={gameReviewApi} />}
         {currentView === "settings" && (
           <SettingsView
             theme={boardTheme}
