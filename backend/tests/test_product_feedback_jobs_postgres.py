@@ -14,8 +14,9 @@ from psycopg import sql
 import pytest
 
 from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore, SCHEMA_SQL
-from test_product_feedback_jobs import harness, page, record, spec
+from test_product_feedback_jobs import encounter_harness, harness, page, record, spec
 from app.games.feedback.jobs import FeedbackRunner
+from app.contracts.product_v02.learning import EncounterReceipt, GameEncounter
 
 
 @pytest.fixture
@@ -114,3 +115,61 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback(postgres_wor
     assert restored.pending_delivery(h2.clock.now()).control is not None
     assert count("product_feedback_captures") == 2
     assert count("product_feedback_deliveries") == 2
+
+
+def test_encounter_lost_ack_restart_and_recomparison_preserve_original_effect(postgres_workflow):
+    store = PostgresGamesStore(postgres_workflow.connections)
+    h = encounter_harness(store)
+    store.enqueue(spec())
+    h.runner.run_once()
+    pending = store.pending_delivery(h.clock.now())
+    assert isinstance(pending.encounter, GameEncounter)
+    original = pending.encounter
+    h.receiver.uncertain = True
+    h.coordinator.deliver(pending)
+    assert h.receiver.first_introductions == 1 and store.delivery(pending.operation_id).state == "pending"
+    postgres_workflow.restart()
+    restored = PostgresGamesStore(postgres_workflow.connections)
+    h.store = h.coordinator.store = restored
+    h.clock.value += 10
+    replay = restored.pending_delivery(h.clock.now())
+    assert replay.encounter == original
+    h.coordinator.deliver(replay)
+    saved = restored.delivery(replay.operation_id)
+    assert isinstance(saved.receipt, EncounterReceipt)
+    assert saved.receipt.disposition == "first_introduction" and saved.receipt.outcome == "duplicate"
+    assert saved.receipt.detected_at == original.detected_at and h.receiver.first_introductions == 1
+    h.encounter_state.introduced = True
+    h.coordinator.comparer = harness(kinds=("confirmed_miss",)).coordinator.comparer
+    restored.enqueue(spec("after-introduction"))
+    FeedbackRunner(h.coordinator).run_once()
+    source = restored.source(replay.source_key)
+    assert source.effects == (original,) and source.encounters[0].decision.introduction == "introduced"
+    assert not source.quarantined and postgres_workflow.count("product_feedback_deliveries") == 1
+
+
+@pytest.mark.parametrize("reason", ["paused", "introduction_allowance"])
+def test_encounter_deferred_receipt_and_correction_hold_are_durable(postgres_workflow, reason):
+    store = PostgresGamesStore(postgres_workflow.connections)
+    h = encounter_harness(store)
+    h.receiver.deferred_reason = reason
+    store.enqueue(spec())
+    h.runner.run_once()
+    pending = store.pending_delivery(h.clock.now())
+    h.coordinator.deliver(pending)
+    restored = PostgresGamesStore(postgres_workflow.connections)
+    saved = restored.delivery(pending.operation_id)
+    assert isinstance(saved.receipt, EncounterReceipt)
+    assert saved.receipt.deferred_reason == reason and saved.receipt.admission_status == "pending"
+    assert saved.receipt.available_by is None and h.receiver.first_introductions == 0
+    h.store = h.coordinator.store = restored
+    h.page[0] = page(records=(record(2, "corrected"),))
+    restored.enqueue(spec("corrected-before-admission"))
+    FeedbackRunner(h.coordinator).run_once()
+    control = restored.pending_delivery(h.clock.now())
+    assert control.control is not None and control.control.key == pending.encounter.key
+    assert restored.source(pending.source_key).quarantined
+    h.coordinator.deliver(control)
+    assert restored.delivery(control.operation_id).receipt.status == "held"
+    assert h.receiver.accept_encounter(pending.encounter).status == "held"
+    assert h.receiver.first_introductions == 0
