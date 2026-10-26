@@ -339,3 +339,26 @@ def test_repertoire_only_source_rejects_unproved_current_snapshot(change):
     source = repertoire_only_snapshot()
     with pytest.raises(ValueError):
         RepertoireIntroductionSource(source.model_copy(update={'membership':source.membership.model_copy(update=change)}))
+
+
+def test_encounter_priority_precedes_saved_rank_without_requiring_ranking():
+    encountered, other = candidate('encounter',fallback_order=1), candidate('other')
+    for saved in (None,ranking(('other','a',.2),('encounter','a',.02))):
+        plan = choose((other,encountered),global_budget=1,weights=(('a',1),),ranking=saved,
+                      priority=('a','encounter'))
+        assert plan.introductions == (encountered,)
+
+
+@pytest.mark.parametrize('control',[dict(global_budget=0),dict(paused=True),dict(study_only=True),
+                                   dict(enabled=False),dict(weights=(('a',0),))])
+def test_encounter_priority_cannot_override_budget_weight_or_saved_pause(control):
+    assert not choose((candidate('encounter'),),priority=('a','encounter'),**control).introductions
+
+
+def test_encounter_priority_retains_required_work_and_owed_repertoire_allocation():
+    a,b = candidate('a'),candidate('b','b')
+    required = (RequiredWork('due','due'),RequiredWork('obligation','obligation'))
+    plan = choose((a,b),global_budget=2,priority=('b','b'),mandatory=required)
+    assert plan.ordered_presentations == ('due','obligation','b','a')
+    # A one-slot quota still owed to a is not silently reassigned by a request.
+    assert choose((a,b),global_budget=1,priority=('b','b')).introductions == (a,)

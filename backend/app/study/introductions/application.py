@@ -70,7 +70,7 @@ class Introductions:
         if date.fromisoformat(day).isoformat() != day:
             raise ValueError("explicit local Study day required")
 
-    def preview(self, day: str) -> Selection:
+    def preview(self, day: str, *, priority: tuple[str, str] | None = None) -> Selection:
         self._day(day)
         facts = self.owner.facts(day)
         state = self.store.state(day)
@@ -87,9 +87,10 @@ class Introductions:
                       spent=tuple(spent.items()), introduced=facts.introduced,
                       mandatory=facts.mandatory,
                       rotation_after=state.period_rotation_after if state.period_started else state.rotation_after,
-                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only)
+                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only, priority=priority)
 
-    def commit(self, day: str, candidate: Candidate, context: RankingContext) -> CommitResult:
+    def commit(self, day: str, candidate: Candidate, context: RankingContext, *,
+               priority: tuple[str, str] | None = None) -> CommitResult:
         """Borrow one transaction: owner introduction + receipt + charge + rotation.
 
         Roll back the entire caller transaction on any exception. This method
@@ -102,7 +103,7 @@ class Introductions:
             return CommitResult("replayed", previous)
         if self.owner.facts(day).context != context:
             return CommitResult("stale")
-        plan = self.preview(day)
+        plan = self.preview(day, priority=priority)
         # Enforce the published next allocation: a stale UI/rebuild cannot skip
         # ahead and consume another membership's fairness credit.
         if not plan.introductions or plan.introductions[0] != candidate:
