@@ -1,0 +1,61 @@
+"""Pure classification policy; callers supply facts, never live capabilities."""
+from datetime import datetime
+from typing import Literal, Sequence
+
+
+FindingKind = Literal[
+    "confirmed_miss", "opponent_gap", "missing_own_continuation",
+    "known_unintroduced", "known_unavailable", "conflict", "ambiguous", "coverage_end",
+]
+
+
+def classify_response(
+    *, played_uci: str, expected_uci: Sequence[str], learner_turn: bool,
+    complete: bool = True, terminal: bool = False, ambiguous: bool = False,
+    mapping_count: int = 0, available: bool = False,
+    introduced: bool | None = None, introduced_at: datetime | None = None,
+    occurred_at: datetime | None = None, occurrence_is_exact: bool = False,
+    introduction_matches_content: bool = False,
+) -> tuple[FindingKind, str] | None:
+    """Classify one authoritative covered occurrence; None means correct.
+
+    Route selection, exact identity, and decision/card mapping belong to the
+    supplied index. This function cannot infer them from a FEN or current card.
+    An incomplete snapshot cannot prove absence. Own-response conflicts remain
+    conflicts even when the played move is one of the competing responses.
+    """
+    expected = frozenset(expected_uci)
+    if ambiguous:
+        return "ambiguous", "repertoire_or_decision_identity_ambiguous"
+    if learner_turn and len(expected) > 1:
+        return "conflict", "multiple_own_responses_in_one_repertoire"
+    if not complete:
+        return "known_unavailable", "snapshot_incomplete_or_unavailable"
+    if not expected:
+        if terminal:
+            return "coverage_end", "deliberate_authored_coverage_end"
+        return ("missing_own_continuation", "own_continuation_not_authored") if learner_turn else (
+            "opponent_gap", "opponent_reply_not_authored")
+    if played_uci in expected:
+        return None
+    if terminal:
+        return "coverage_end", "terminal_route_cannot_prove_missing_continuation"
+    if not learner_turn:
+        return "opponent_gap", "opponent_reply_not_authored"
+    if mapping_count > 1:
+        return "ambiguous", "current_presentation_mapping_ambiguous"
+    if mapping_count != 1 or not available:
+        return "known_unavailable", "current_presentation_unavailable"
+    if introduced is False:
+        return "known_unintroduced", "decision_not_introduced"
+    if introduced is not True or introduced_at is None:
+        return "known_unavailable", "introduction_evidence_unavailable"
+    if not occurrence_is_exact or occurred_at is None:
+        return "known_unavailable", "game_occurrence_time_not_exact"
+    if introduced_at.tzinfo is None or occurred_at.tzinfo is None:
+        return "known_unavailable", "chronology_requires_timezone"
+    if introduced_at >= occurred_at:
+        return "known_unintroduced", "introduction_not_before_game"
+    if not introduction_matches_content:
+        return "known_unavailable", "introduced_content_identity_unproved"
+    return "confirmed_miss", "unique_introduced_response_not_played"
