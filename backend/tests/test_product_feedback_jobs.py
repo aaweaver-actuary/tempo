@@ -34,6 +34,7 @@ class MemoryStore:
     def __init__(self):
         self.jobs, self.sources, self.deliveries, self.captures = {}, {}, {}, {}
         self.fail_commit = False
+        self.pages = {}
     def enqueue(self, spec):
         prior = self.jobs.setdefault(spec.job_id, JobState(spec=spec))
         assert prior.spec == spec
@@ -62,6 +63,8 @@ class MemoryStore:
         for source in commit.sources:
             assert (self.sources[source.source_key].version if source.source_key in self.sources else 0) == source.version
         self.save_job(commit.job)
+        if commit.provider_page_json is not None:
+            self.pages.setdefault((commit.job.spec.job_id, commit.input_continuation), commit.provider_page_json)
         for source in commit.sources:
             self.sources[source.source_key] = source.model_copy(update={"version": source.version + 1})
         for capture in commit.captures:
@@ -147,7 +150,8 @@ def harness(store=None, *, kinds=("confirmed_miss",)):
             game_revision=value.source_revision, source_id=value.source_game_id,
             source_revision=value.source_revision, source_digest=value.source_digest,
             starting_fen="start", moves=["d2d4"], learner_color="white", played_at=value.played_at)
-    def compare(game, _snapshot):
+    def compare(game, _snapshot, *, record, spec):
+        assert record.source_digest == game.source_digest and spec.workspace_id == game.workspace_id
         result = []
         for ply, kind in enumerate(kinds, 1):
             fixture = "confirmed-introduced-miss.json" if kind == "confirmed_miss" else (
@@ -176,6 +180,7 @@ def test_page_and_checkpoint_commit_together():
     assert len(h.store.sources) == len(h.store.captures) == len(h.store.deliveries) == 1
     assert job.last_checkpoint_at == h.clock.utc_now()
     assert not h.receiver.calls
+    assert len(h.store.pages) == 1
 
 
 def test_crash_before_checkpoint_replays_without_duplicates():
@@ -214,9 +219,11 @@ def test_recomparison_keeps_single_lapse():
     h.runner.run_once()
     original = next(iter(h.store.deliveries.values())).lapse
     h.clock.value += 1000
+    h.page[0] = page(records=(record(2, "original"),))
     h.store.enqueue(spec("overlap"))
     h.runner.run_once()
     h.runner.run_once()
+    assert not next(iter(h.store.sources.values())).quarantined
     assert len(h.store.deliveries) == 1
     assert next(iter(h.store.deliveries.values())).lapse == original
 
@@ -273,7 +280,7 @@ def test_changed_source_is_quarantined_without_history_reversal():
     h.runner.run_once()
     original = next(iter(h.store.deliveries.values())).lapse
     h.page[0] = page(records=(record(2, "corrected"),))
-    h.coordinator.comparer = SimpleNamespace(compare=lambda *_: ())  # No remaining confirmed miss.
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *_, **__: ())  # No remaining confirmed miss.
     h.store.enqueue(spec("changed"))
     FeedbackRunner(h.coordinator).run_once()
     assert h.store.load_job("changed").status == "quarantined"
@@ -341,3 +348,20 @@ def test_rejection_does_not_advance_past_parsing_boundary():
     job = h.store.load_job("job")
     assert job.status == "quarantined" and job.continuation is None and not job.window_complete
     assert job.rejections[0].reason == "parse_failure"
+
+
+def test_provider_extension_provenance_survives_base_projection():
+    class ProviderRecord(GameRecord):
+        source_metadata: tuple[tuple[str, str], ...]
+    class ProviderPage(GamePage):
+        records: tuple[ProviderRecord, ...]
+        filters: tuple[tuple[str, str], ...]
+    h = harness()
+    request = spec().model_copy(update={"filters": (("rated", "true"),)})
+    h.store.enqueue(request)
+    extended = ProviderRecord(**record().model_dump(), source_metadata=(("source_fingerprint", "raw-provider-json-hash"),))
+    h.page[0] = ProviderPage(**page(records=()).model_dump(exclude={"records"}), records=(extended,), filters=request.filters)
+    h.runner.run_once()
+    capture = next(iter(h.store.captures.values()))
+    assert json.loads(capture.provider_record_json)["source_metadata"] == [["source_fingerprint", "raw-provider-json-hash"]]
+    assert json.loads(next(iter(h.store.pages.values())))["filters"] == [["rated", "true"]]

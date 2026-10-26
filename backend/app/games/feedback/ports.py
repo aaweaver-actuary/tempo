@@ -18,6 +18,7 @@ class JobSpec(Value):
     account: str
     window: GameWindow
     repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=8)
+    filters: tuple[tuple[str, str], ...] = ()
 
 
 class JobState(Value):
@@ -39,6 +40,7 @@ class SourceState(Value):
     source_key: str
     version: int = 0
     original: GameRecord
+    record_fingerprint: str
     normalized: CanonicalGame | None
     findings: tuple[Finding, ...]
     comparison_revision: str
@@ -51,6 +53,7 @@ class Capture(Value):
     source_key: str
     account: str
     record: GameRecord
+    provider_record_json: str
     normalized: CanonicalGame | None
     findings: tuple[Finding, ...]
     comparison_revision: str
@@ -84,6 +87,8 @@ class PageCommit(Value):
     sources: tuple[SourceState, ...]
     captures: tuple[Capture, ...]
     deliveries: tuple[Delivery, ...]
+    provider_page_json: str | None = None
+    input_continuation: str | None = None
 
 
 class ConcurrentUpdate(RuntimeError):
@@ -112,7 +117,8 @@ class Normalizer(Protocol):
 
 
 class Comparer(Protocol):
-    def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot) -> tuple[Finding, ...]: ...
+    def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
+                record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]: ...
 
 
 class GamesStore(Protocol):

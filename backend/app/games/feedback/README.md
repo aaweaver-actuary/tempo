@@ -19,7 +19,13 @@ capabilities. [`ports.py`](ports.py) contains only workflow-owned facts and loca
 capabilities; `GamePage`, `CanonicalGame`, `Finding`, snapshot, lapse/control,
 `EvidenceWithdrawal`, and actual Learning receipts come from public contracts.
 The local adapter protocols bridge independently published provider/comparison
-APIs; no concrete sibling implementation is imported.
+APIs; no concrete sibling implementation is imported. #486's `normalize_record`
+implements normalization through a composition wrapper. Its `compare_record`
+accepts the original record/provider/account/workspace/snapshot and supplied
+reentry lookup; that wrapper receives the same record and can reuse that public
+entry without inferring precision from CanonicalGame. #484/#485 expose async
+one-page functions; composition owns awaiting/cancellation, error translation to
+`AcquisitionFailure`, provider Retry-After and the dedicated HTTP client's close.
 
 ```python
 # Outer composition owns every concrete adapter and its finite timeout.
@@ -37,7 +43,8 @@ runner.close()
 
 The normalizer accepts `(GameRecord, JobSpec)` and returns existing
 `CanonicalGame`; the comparer accepts `(CanonicalGame, RepertoireSnapshot)` and
-returns shared `Finding` values. Composition may wrap async provider APIs with a
+returns shared `Finding` values, with keyword-only original `record` and `spec`
+context so provider time precision and provenance are never lost. Composition may wrap async provider APIs with a
 bounded execution adapter. No event bus, polling loop, Celery registration,
 HTTP route, or application-root change is included here.
 
@@ -60,10 +67,12 @@ owner delivery happens after that transaction has released its connection.
   without a fresh continuation is quarantined, never reported complete.
 - Source identity is a hash of workspace/provider/provider-game ID. Account,
   original raw PGN, supplied source revision/digest/time precision and comparison
-  revision remain captured. Overlapping imports preserve one logical
+  revision remain captured. Full provider page and per-record JSON preserve
+  provider-local metadata/filter extension fields through base-type projection. Overlapping imports preserve one logical
   workspace/provider/game/decision/ply effect. Recomparison preserves its
-  original detected-at timestamp and command, rather than moving the deadline.
-- Changed payload/revision preserves original and new captures and enters D08
+  original detected-at timestamp and command, rather than moving the deadline. A
+  new source revision label with otherwise identical payload does not create a correction.
+- Changed payload/provenance fingerprint preserves original and new captures and enters D08
   quarantine. Every existing effect gets a durable **hold**, including when the
   new classification has no miss. Atomic commit supersedes unsent lapse commands.
   Controls take delivery priority. A hold retries the same key/revision after an
@@ -128,7 +137,12 @@ connection before returning. Lock and statement timeouts are 100 ms / 250 ms.
 Failures remain retryable without losing a checkpoint. Page sizes default to
 100 records / 8 MiB total raw PGN / 10,000 replay positions; snapshots are limited to eight requested
 repertoires. Integration must supply a bounded snapshot implementation and
-connection acquisition timeout, and preserve Study's resource allocation.
+connection acquisition timeout, and preserve Study's resource allocation. Explicit
+record/position limits may increase up to 1,000 / 100,000 when the optional worker's
+budget supports that page. An oversized provider month/page fails visibly without
+advancing its cursor; T10 must configure an appropriate bounded acquisition/page
+policy before claiming continuous imports. Full serialized page provenance is
+limited to twice the raw-PGN byte budget.
 
 `SCHEMA_SQL` in that new adapter is the exact disposable/source schema contract.
 **T10 must reserve an additive migration number, place this DDL in the owning
@@ -147,6 +161,12 @@ erDiagram
     DOUBLE lease_until
     INTEGER attempts
     JSONB payload
+  }
+  product_feedback_pages {
+    TEXT job_id PK,FK
+    TEXT page_key PK
+    TEXT input_continuation
+    JSONB page_json
   }
   product_feedback_sources {
     TEXT source_key PK
@@ -169,12 +189,14 @@ erDiagram
     DOUBLE next_attempt_at
     JSONB payload
   }
+  product_feedback_jobs ||--o{ product_feedback_pages : "enforced FK"
   product_feedback_sources ||--o{ product_feedback_captures : "enforced FK"
   product_feedback_sources ||--o{ product_feedback_deliveries : "enforced FK"
 ```
 
 `payload` is the JSON serialization of the corresponding typed workflow value:
-JobState, SourceState, Capture or Delivery. Capture's composite key preserves
+JobState, SourceState, Capture or Delivery. The page row preserves the returned
+provider JSON and input continuation under a deterministic page hash. Capture's composite key preserves
 conflicting payloads even under the same supplied source revision. The job has
 no FK to source facts: overlapping jobs share source identities. A Delivery's
 stable operation ID hashes command kind/logical effect key/source revision;

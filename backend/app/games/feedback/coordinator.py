@@ -29,9 +29,9 @@ class Coordinator:
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
                  learning: LearningFeedbackPort, clock: Clock, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
-        if not 1 <= max_page_records <= 100 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
+        if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
             raise ValueError("page bounds exceed optional workflow budget")
-        if not 1 <= max_page_positions <= 10000:
+        if not 1 <= max_page_positions <= 100000:
             raise ValueError("position batch exceeds optional workflow budget")
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
@@ -49,6 +49,11 @@ class Coordinator:
             raise AcquisitionFailure("provider_page_scope_mismatch", retryable=False)
         if len(page.records) > self.max_page_records or sum(len(r.pgn.encode()) for r in page.records) > self.max_page_bytes:
             raise AcquisitionFailure("provider_page_exceeds_budget", retryable=False)
+        page_json = page.model_dump_json()  # Preserve provider subtype fields before base projection.
+        if len(page_json.encode()) > 2 * self.max_page_bytes:
+            raise AcquisitionFailure("provider_page_provenance_exceeds_budget", retryable=False)
+        if spec.filters and tuple(getattr(page, "filters", ())) != spec.filters:
+            raise AcquisitionFailure("provider_page_filter_mismatch", retryable=False)
         snapshots = tuple(self.snapshots.snapshot(item) for item in spec.repertoire_ids)
         for repertoire_id, snapshot in zip(spec.repertoire_ids, snapshots):
             if snapshot.membership.workspace_id != spec.workspace_id or repertoire_id not in snapshot.membership.scope_repertoire_ids:
@@ -73,18 +78,22 @@ class Coordinator:
                 positions += len(normalized.moves)
                 if positions > self.max_page_positions:
                     raise AcquisitionFailure("page_position_budget_exceeded", retryable=False)
-                findings = tuple(f for snapshot in snapshots for f in self.comparer.compare(normalized, snapshot))
+                findings = tuple(f for snapshot in snapshots for f in self.comparer.compare(normalized, snapshot, record=record, spec=spec))
                 if len(findings) > 1000 * len(snapshots):
                     raise AcquisitionFailure("comparison_finding_budget_exceeded", retryable=False)
                 for finding in findings:
                     if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
                             spec.provider, normalized.game_id, record.source_revision, record.source_digest):
                         raise ValueError("comparison provenance differs from captured source")
+                    if finding.repertoire_id not in spec.repertoire_ids or not any(
+                            finding.repertoire_id in snapshot.membership.scope_repertoire_ids
+                            and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
+                        raise ValueError("comparison repertoire scope differs from captured snapshot")
             except ValueError:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
                 boundary = True
-            changed = previous is not None and (record.source_digest != previous.original.source_digest
-                                                or record.source_revision != previous.original.source_revision)
+            fingerprint = stable_id(record.model_dump(mode="json", exclude={"source_revision"}))
+            changed = previous is not None and fingerprint != previous.record_fingerprint
             held = changed or bool(previous and previous.quarantined) or diagnostic is not None
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
@@ -110,9 +119,10 @@ class Coordinator:
             diagnostic = diagnostic or ("changed_source_requires_D08_resolution" if held else None)
             sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
+                record_fingerprint=previous.record_fingerprint if previous else fingerprint,
                 normalized=previous.normalized if changed else normalized, findings=findings,
                 comparison_revision=comparison_revision, effects=tuple(effects), quarantined=held, diagnostic=diagnostic))
-            captures.append(Capture(source_key=key, account=spec.account, record=record, normalized=normalized,
+            captures.append(Capture(source_key=key, account=spec.account, record=record, provider_record_json=record.model_dump_json(), normalized=normalized,
                 findings=findings, comparison_revision=comparison_revision, diagnostic=diagnostic))
             quarantined = quarantined or held
         resumable = page.continuation is not None and page.continuation != job.continuation
@@ -128,7 +138,8 @@ class Coordinator:
             "window_complete": complete, "last_checkpoint_at": self.clock.utc_now() if safe else job.last_checkpoint_at,
             "pages_committed": job.pages_committed + 1, "next_attempt_at": 0, "lease_until": 0,
             "error": error, "rejections": page.rejections})
-        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(deliveries)))
+        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(deliveries),
+            provider_page_json=page_json, input_continuation=job.continuation))
 
     def deliver(self, delivery: Delivery) -> None:
         """Persist the owner receipt; transport success alone is never evidence."""

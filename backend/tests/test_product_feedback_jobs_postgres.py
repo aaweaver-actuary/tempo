@@ -55,7 +55,7 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
         with pytest.raises(psycopg.errors.RaiseException, match="task_fault_before_pending_delivery"):
             h.coordinator.capture_page(claimed)
         assert store.load_job("job").continuation is None
-        assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == 0
+        assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == count("product_feedback_pages") == 0
         with connections() as database:
             database.execute("DROP TRIGGER task_fault ON product_feedback_deliveries")
         h.coordinator.capture_page(claimed)
@@ -64,6 +64,7 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
         assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == 1
         pending = store.pending_delivery(h.clock.now())
         assert pending and pending.receipt is None
+        assert count("product_feedback_pages") == 1
 
         # Restart only this verified disposable server, then recreate the application store.
         subprocess.run(["docker", "restart", container], check=True, capture_output=True, text=True, timeout=30)
@@ -85,9 +86,7 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
         assert source.findings[0].kind == "confirmed_miss"
         h2 = harness(restored)
         h2.coordinator.deliver(restored.pending_delivery(h2.clock.now()))
-        with connections() as database:
-            saved = database.execute("SELECT payload::text FROM product_feedback_deliveries").fetchone()[0]
-        assert '"owner_receipt_id": "owner-receipt-1"' in saved
+        assert restored.delivery(pending.operation_id).receipt.owner_receipt_id == "owner-receipt-1"
         assert restored.pending_delivery(h2.clock.now()) is None
 
         # An overlapping import updates comparison facts without another command.
@@ -96,7 +95,7 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
         assert count("product_feedback_deliveries") == 1
         # Correction with no remaining miss still atomically persists a hold/fence command.
         h2.page[0] = page(records=(record(2, "corrected"),))
-        h2.coordinator.comparer.compare = lambda *_: ()
+        h2.coordinator.comparer.compare = lambda *_, **__: ()
         restored.enqueue(spec("correction"))
         FeedbackRunner(h2.coordinator).run_once()
         assert restored.pending_delivery(h2.clock.now()).control is not None

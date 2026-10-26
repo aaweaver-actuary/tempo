@@ -16,6 +16,11 @@ CREATE TABLE product_feedback_jobs (
     next_attempt_at DOUBLE PRECISION NOT NULL, lease_until DOUBLE PRECISION NOT NULL,
     attempts INTEGER NOT NULL, payload JSONB NOT NULL
 );
+CREATE TABLE product_feedback_pages (
+    job_id TEXT NOT NULL REFERENCES product_feedback_jobs(job_id),
+    page_key TEXT NOT NULL, input_continuation TEXT, page_json JSONB NOT NULL,
+    PRIMARY KEY (job_id, page_key)
+);
 CREATE TABLE product_feedback_sources (
     source_key TEXT PRIMARY KEY, version BIGINT NOT NULL, payload JSONB NOT NULL
 );
@@ -101,6 +106,13 @@ class PostgresGamesStore:
     def commit_page(self, commit: PageCommit) -> None:
         with self._transaction() as database:
             self._save_job(database, commit.job)
+            if commit.provider_page_json is not None:
+                import hashlib
+                identity = (commit.input_continuation or "") + "\0" + commit.provider_page_json
+                page_key = hashlib.sha256(identity.encode()).hexdigest()
+                database.execute("""INSERT INTO product_feedback_pages(job_id,page_key,input_continuation,page_json)
+                    VALUES(%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
+                    (commit.job.spec.job_id, page_key, commit.input_continuation, commit.provider_page_json))
             # Stable ordering keeps overlapping import writers from reversing lock order.
             for source in sorted(commit.sources, key=lambda item: item.source_key):
                 saved = source.model_copy(update={"version": source.version + 1})
