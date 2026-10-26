@@ -9,7 +9,10 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
+
+if TYPE_CHECKING:
+    from app.contracts.product_v02.learning import GameEncounter
 
 from app.contracts.product_v02.learning import (
     GameEffectControl, GameEffectKey, GameLapse, LearningReceipt,
@@ -44,6 +47,14 @@ def semantic_digest(lapse: GameLapse) -> str:
     )).encode()).hexdigest()
 
 
+def game_scoped_introduction(mapping: DecisionPresentation, lapse: GameLapse) -> bool:
+    """Explicit owner chronology for this exact canonical source, never an instant."""
+    scope = mapping.introduction_game
+    return bool(mapping.introduced_before_game is True and scope is not None
+        and (scope.provider,scope.game_id,scope.source_revision,scope.source_digest) == (
+            lapse.key.provider,lapse.key.game_id,lapse.finding.source_revision,lapse.finding.source_digest))
+
+
 @dataclass(frozen=True)
 class Effect:
     key: GameEffectKey
@@ -62,6 +73,13 @@ class Effect:
     settlement_review_id: int | None = None
     control: GameEffectControl | None = None
     conflict_json: str | None = None
+    # The next-release command shares this ledger and control tombstones. Its
+    # original source/observation is immutable; owner admission facts may advance.
+    encounter: GameEncounter | None = None
+    disposition: str | None = None
+    admission_status: str | None = None
+    deferred_reason: str | None = None
+    observation_recorded: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,11 +201,14 @@ class GameFeedback:
             return replace(effect, status="held", reason="stale_current_mapping")
         facts = self.store.card_facts(effect.card_id, day)
         occurred = instant(lapse.occurred_at) if lapse.occurred_at else None
+        mapping_before_game = occurred is not None and (
+            (mapping.introduced_at is not None and instant(mapping.introduced_at) <= occurred)
+            or game_scoped_introduction(mapping,lapse))
         if (facts is None or facts.revision != effect.card_revision or not facts.available
                 or not mapping.available or not mapping.introduction_matches_current_content
-                or mapping.introduction != "introduced" or mapping.introduced_at is None
+                or mapping.introduction != "introduced" or not mapping_before_game
                 or facts.introduced_at is None or occurred is None
-                or facts.introduced_at > occurred or instant(mapping.introduced_at) > occurred):
+                or facts.introduced_at > occurred):
             return replace(effect, status="held", reason="unavailable_or_unintroduced")
         # D10: a genuine later clean review already satisfies old evidence. Never
         # insert a backdated FSRS event or invent a successful Study completion.

@@ -21,6 +21,21 @@ the shared validated DTOs. Primary key is the hash of the stable logical identit
 `identity_json` retains its lossless original. Source/control revisions are opaque
 text in storage and positive integer values at the public boundary.
 
+The additive next-release encounter uses the same schema051 row. `payload_json`
+is either the unchanged shared `GameLapse`, or an envelope with `kind=encounter`,
+immutable shared `GameEncounter` in `command`, and small `owner` admission facts.
+On conflict, SQL can update only the envelope's `owner` section; original command,
+semantic hash, detection, target and logical identity remain unchanged. There is
+no new table or DDL here. An applied encounter has no fabricated review ID;
+`applied_at` records actual queue/introduction priority, while observation and
+miss/frequency provenance remain distinguishable in the original command.
+
+`current_owner_encounter_feedback` adds priority-only validation. It permits only
+the current introduction field to race delivery while preserving all existing
+definition/source/membership fences. Its injected #495 introduction capability
+retains the sole canonical writer and its own existing private storage dependency;
+that dependency is documented by the [receiving owner](../../../../backend/app/study/README.md#next-release-encounter-importance-and-first-introduction).
+
 There are deliberately no foreign keys to cards/reviews/queue: deletion or future
 presentation rebinding must not cascade away owed evidence. Card and review IDs
 are logical Study-owned relationships, revalidated at use. Scheduling/history
@@ -34,7 +49,7 @@ erDiagram
         text effect_key PK
         text identity_json
         text source_revision
-        text payload_json "nullable shared GameLapse"
+        text payload_json "nullable GameLapse or encounter command/owner envelope"
         text payload_hash "nullable semantic digest"
         text card_id "nullable logical card reference"
         bigint card_revision "nullable"
@@ -46,7 +61,7 @@ erDiagram
         text status "pending held applied settled"
         text reason "nullable"
         timestamptz applied_at "nullable"
-        bigint review_id "nullable logical game review"
+        bigint review_id "nullable logical game review; no fake encounter review"
         timestamptz settled_at "nullable"
         bigint settlement_review_id "nullable logical Study review"
         text hold_revision "nullable"

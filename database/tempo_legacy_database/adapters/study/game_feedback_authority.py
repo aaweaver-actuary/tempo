@@ -7,6 +7,7 @@ Every use rereads/fences actual source rows in the same borrowed transaction.
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import chess
 from tempo_chess_core import canonical_fen_key
@@ -14,7 +15,8 @@ from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken, decision_
 from tempo_game_evidence_contracts.legacy_scope import LegacyIntegrityCertificate, LegacyScopedCatalogueProof
 
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
-from app.study.game_feedback import GameFeedback, instant
+from app.study.game_feedback import GameFeedback, game_scoped_introduction, instant
+from app.study.encounter_feedback import EncounterAuthorityUnavailable
 from .game_feedback import PostgresGameFeedbackStore
 
 CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
@@ -22,7 +24,7 @@ GRAPH_COLUMNS = "repertoire_id,generation,line_id,decision_index,card_id,startin
 LINE_COLUMNS = "id,repertoire_id,trained_color,start_fen,moves_json"
 
 
-class CurrentDecisionUnavailable(RuntimeError):
+class CurrentDecisionUnavailable(EncounterAuthorityUnavailable):
     """Truthful retry/hold reason; caller rolls back this command transaction."""
     def __init__(self, reason):
         self.reason = reason
@@ -64,22 +66,32 @@ class CurrentOwnerDecisions:
                  and len(source['tables']['cards']) <= 128, 'retained_owner_scope_exceeds_bound')
 
     def current(self, lapse):
+        return self._current(lapse)
+
+    def current_encounter(self, encounter):
+        return self._current(encounter, priority_only=True)
+
+    def _current(self, command, *, priority_only=False):
+        key = command.key
+        finding = command.decision if priority_only else command.finding
+        expected_uci = (command.expected_uci,) if priority_only else finding.expected_uci
+        played_uci = command.played_uci if priority_only else finding.played_uci
         database, source, token, proof = self.database, self.source, self.authority, self.proof
         _require(not database.read_only and database.raw.info.transaction_status.name == 'INTRANS',
                  'borrowed_owner_writer_transaction_required')
         retained_provider = {'lichess':'lichess', 'chess.com':'chesscom', 'chesscom':'chesscom'}.get(
             source['game']['provider'])
-        _require((lapse.key.workspace_id,lapse.finding.repertoire_id,lapse.key.game_id,lapse.key.provider)
+        _require((key.workspace_id,finding.repertoire_id,key.game_id,key.provider)
                  == (token.workspace_id,token.repertoire_id,source['game']['id'],retained_provider),
                  'retained_owner_command_scope_mismatch')
-        ply = lapse.key.occurrence_ply - 1
-        _require(ply in proof.scope.decision_plies and proof.scope.game_id == lapse.key.game_id
+        ply = key.occurrence_ply - 1
+        _require(ply in proof.scope.decision_plies and proof.scope.game_id == key.game_id
                  and proof.prefix_policies[ply] == [token.repertoire_id]
                  and instant(proof.scope.occurred_at) == instant(source['game']['played_at'])
-                 and lapse.occurred_at is not None
-                 and instant(lapse.occurred_at) == instant(proof.scope.occurred_at)
+                 and command.occurred_at is not None
+                 and instant(command.occurred_at) == instant(proof.scope.occurred_at)
                  and proof.scope.moves == json.loads(source['game']['moves_json'])
-                 and proof.scope.moves[ply] == lapse.finding.played_uci,
+                 and proof.scope.moves[ply] == played_uci,
                  'retained_owner_occurrence_unproved')
         # Card/day locks already belong to the receiver. Never wait backwards
         # for graph/source locks; busy/missing authority grants no mutation.
@@ -127,12 +139,16 @@ class CurrentOwnerDecisions:
         actual_lines = database.execute_native('SELECT ' + LINE_COLUMNS +
             ' FROM repertoire_lines WHERE id=ANY(%s) ORDER BY id FOR SHARE SKIP LOCKED', (identifiers,)).fetchall()
         _require(_rows(actual_lines,LINE_COLUMNS) == _rows(lines,LINE_COLUMNS), 'current_owner_routes_changed')
-        card_id = lapse.finding.presentation_id
+        card_id = finding.presentation_id
         actual = database.execute_native('SELECT ' + CARD_COLUMNS +
             ' FROM cards WHERE id=%s FOR SHARE SKIP LOCKED', (card_id,)).fetchone()
         captured = [row for row in source['tables']['cards'] if row['id'] == card_id]
+        # Introduction can legitimately race priority delivery. Only that field
+        # is omitted for an encounter; definition/revision/membership stay exact.
+        compared = ','.join(field for field in CARD_COLUMNS.split(',')
+                            if not priority_only or field != 'introduced_at')
         _require(actual is not None and len(captured) == 1
-                 and _rows([actual],CARD_COLUMNS) == _rows(captured,CARD_COLUMNS), 'current_owner_card_changed')
+                 and _rows([actual],compared) == _rows(captured,compared), 'current_owner_card_changed')
         memberships = database.execute_native("""SELECT repertoire_id,card_id,canonical_route_source
             FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id LIMIT 101 FOR SHARE SKIP LOCKED""",
             (card_id,)).fetchall()
@@ -151,7 +167,7 @@ class CurrentOwnerDecisions:
         blocked = database.execute_native("""SELECT 1 FROM repertoire_integrity_card_blocks
             WHERE repertoire_id=%s AND card_id=%s UNION ALL SELECT 1 FROM deleted_cards WHERE card_id=%s LIMIT 1""",
             (token.repertoire_id,card_id,card_id)).fetchone()
-        _require(not blocked and actual['revision'] == 1 and not any(actual[k] for k in
+        _require(not blocked and (priority_only or actual['revision'] == 1) and not any(actual[k] for k in
                  ('archived','pending_validation','superseded_by')) and actual['content_type'] == 'opening',
                  'current_owner_card_unavailable_or_changed_content_introduction_unproved')
         moves = json.loads(actual['moves_json'])
@@ -161,17 +177,40 @@ class CurrentOwnerDecisions:
                  'current_owner_learner_color_changed')
         for offset, uci in enumerate(moves):
             _require(chess.Move.from_uci(uci) in board.legal_moves, 'current_owner_illegal_executable')
-            if (decision_identity(card_id,offset,moves[:offset]) == lapse.key.decision_id
+            if (decision_identity(card_id,offset,moves[:offset]) == key.decision_id
                     and board.turn == (actual['trained_color'] == 'white')
-                    and canonical_fen_key(board.fen(en_passant='legal')) == lapse.finding.position_key
-                    and lapse.finding.expected_uci == (uci,)):
+                    and canonical_fen_key(board.fen(en_passant='legal')) == finding.position_key
+                    and expected_uci == (uci,)):
                 matching.append(offset)
             board.push_uci(uci)
         _require(len(matching) == 1, 'current_owner_decision_not_in_executable')
         mappings = tuple(item for item in self.snapshot.decision_presentations
-            if item.decision_id == lapse.key.decision_id and item.presentation_id == card_id)
-        _require(len(mappings) == 1 and mappings[0].introduced_at == actual['introduced_at'],
-                 'current_owner_exact_introduction_time_unproved')
+            if item.decision_id == key.decision_id and item.presentation_id == card_id)
+        _require(len(mappings) == 1, 'current_owner_exact_introduction_time_unproved')
+        mapping=mappings[0]
+        if priority_only:
+            _require(mapping.presentation_revision == actual['revision'], 'current_owner_card_revision_changed')
+            # Priority makes no chronology assertion. The original command stays
+            # immutable; current introduction determines fresh admission only.
+            introduced = actual['introduced_at']
+            return (mapping.model_copy(update=dict(
+                introduction='introduced' if introduced is not None else 'unintroduced',
+                introduced_at=introduced if introduced and len(introduced) > 10 else None,
+                introduced_before_game=None,introduction_game=None)),)
+        if mapping.introduced_at is None:
+            _require(game_scoped_introduction(mapping,command), 'current_owner_introduction_game_scope_mismatch')
+            recorded=actual['introduced_at']
+            try:
+                before=(isinstance(recorded,str) and len(recorded)==10
+                        and date.fromisoformat(recorded)<instant(command.occurred_at).date())
+            except ValueError:
+                before=False
+            _require(before and captured[0].get('introduced_before_game') is True
+                     and mapping.introduction=='introduced' and mapping.introduction_matches_current_content,
+                     'current_owner_day_only_introduction_unproved')
+        else:
+            _require(mapping.introduced_at == actual['introduced_at'],
+                     'current_owner_exact_introduction_time_unproved')
         return mappings
 
 
@@ -185,3 +224,16 @@ def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, c
     return GameFeedback(PostgresGameFeedbackStore(database),
         CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot),
         clock=clock, light_first_interval_days=light_first_interval_days)
+
+
+def current_owner_encounter_feedback(database, *, retained_owner_capture, snapshot, clock,
+                                     introductions, introduction_policy):
+    """Additive next-release factory on the same borrowed writer transaction.
+
+    Compose #495's current_owner_introductions capability externally. No new
+    schema, connection, commit, live policy default or producer lifecycle.
+    """
+    from app.study.encounter_feedback import EncounterFeedback
+    return EncounterFeedback(PostgresGameFeedbackStore(database),
+        CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot),
+        clock=clock,introductions=introductions,introduction_policy=introduction_policy)

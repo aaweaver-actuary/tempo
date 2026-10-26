@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+import json
 
 import psycopg
 
@@ -16,6 +17,7 @@ from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnecti
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 
 PRIORITY_REASON = "product_game_lapse"
+ENCOUNTER_PRIORITY_REASON = "product_game_encounter"
 
 
 class PostgresGameFeedbackStore:
@@ -58,17 +60,26 @@ class PostgresGameFeedbackStore:
 
     @staticmethod
     def _effect(row):
+        payload = json.loads(row["payload_json"]) if row["payload_json"] else None
+        encounter, owner = None, {}
+        if payload and payload.get("kind") == "encounter":
+            from app.contracts.product_v02.learning import GameEncounter
+            encounter = GameEncounter.model_validate_json(json.dumps(payload["command"]))
+            owner = payload["owner"]
         return Effect(
             key=GameEffectKey.model_validate_json(row["identity_json"]),
             source_revision=int(row["source_revision"]), received_at=row["received_at"],
             status=row["status"],
-            lapse=GameLapse.model_validate_json(row["payload_json"]) if row["payload_json"] else None,
+            lapse=GameLapse.model_validate_json(row["payload_json"]) if payload and encounter is None else None,
             payload_hash=row["payload_hash"], available_by=row["available_by"],
             card_id=row["card_id"], card_revision=row["card_revision"], reason=row["reason"],
             applied_at=row["applied_at"], review_id=row["review_id"],
             settled_at=row["settled_at"], settlement_review_id=row["settlement_review_id"],
             control=GameEffectControl.model_validate_json(row["hold_json"]) if row["hold_json"] else None,
             conflict_json=row["conflict_json"],
+            encounter=encounter, disposition=owner.get("disposition"),
+            admission_status=owner.get("admission_status"), deferred_reason=owner.get("deferred_reason"),
+            observation_recorded=owner.get("observation_recorded", False),
         )
 
     def get(self, key):
@@ -78,29 +89,44 @@ class PostgresGameFeedbackStore:
 
     def save(self, effect, now):
         self._writer()
-        lapse = effect.lapse
+        lapse, command = effect.lapse, effect.encounter or effect.lapse
+        payload = lapse.model_dump_json() if lapse else None
+        if effect.encounter is not None:
+            payload = json.dumps(dict(kind="encounter", command=effect.encounter.model_dump(mode="json"),
+                owner=dict(disposition=effect.disposition, admission_status=effect.admission_status,
+                           deferred_reason=effect.deferred_reason, observation_recorded=effect.observation_recorded)))
         self.database.execute_native("""INSERT INTO study_game_feedback(
             effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,card_revision,
             decision_id,occurred_at,detected_at,received_at,available_by,status,reason,applied_at,
             review_id,settled_at,settlement_review_id,hold_revision,hold_json,conflict_json,updated_at)
             VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT(effect_key) DO UPDATE SET
+            payload_json=CASE WHEN study_game_feedback.payload_json::jsonb->>'kind'='encounter'
+                THEN jsonb_set(study_game_feedback.payload_json::jsonb,'{owner}',
+                     EXCLUDED.payload_json::jsonb->'owner')::text
+                ELSE study_game_feedback.payload_json END,
             status=EXCLUDED.status,reason=EXCLUDED.reason,applied_at=EXCLUDED.applied_at,
             review_id=EXCLUDED.review_id,settled_at=EXCLUDED.settled_at,
             settlement_review_id=EXCLUDED.settlement_review_id,hold_revision=EXCLUDED.hold_revision,
             hold_json=EXCLUDED.hold_json,conflict_json=EXCLUDED.conflict_json,updated_at=EXCLUDED.updated_at""",
             (effect_id(effect.key), effect.key.model_dump_json(), str(effect.source_revision),
-             lapse.model_dump_json() if lapse else None, effect.payload_hash, effect.card_id,
+             payload, effect.payload_hash, effect.card_id,
              effect.card_revision, effect.key.decision_id,
-             instant(lapse.occurred_at) if lapse and lapse.occurred_at else None,
-             instant(lapse.detected_at) if lapse else None, effect.received_at, effect.available_by,
+             instant(command.occurred_at) if command and command.occurred_at else None,
+             instant(command.detected_at) if command else None, effect.received_at, effect.available_by,
              effect.status, effect.reason, effect.applied_at, effect.review_id, effect.settled_at,
              effect.settlement_review_id, str(effect.control.source_revision) if effect.control else None,
              effect.control.model_dump_json() if effect.control else None, effect.conflict_json, now))
 
     def card_facts(self, card_id, day):
+        return self._card_facts(card_id, day, states=['learning','mature'])
+
+    def encounter_card_facts(self, card_id, day):
+        return self._card_facts(card_id, day, states=['new','locked','learning','mature'])
+
+    def _card_facts(self, card_id, day, *, states):
         row = self.database.execute_native("""SELECT c.revision,c.introduced_at,
-            (c.archived=0 AND c.pending_validation=0 AND c.state IN ('learning','mature')
+            (c.archived=0 AND c.pending_validation=0 AND c.state=ANY(%s)
              AND NOT EXISTS(SELECT 1 FROM deleted_cards d WHERE d.card_id=c.id)
              AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks b WHERE b.card_id=c.id)) available,
             EXISTS(SELECT 1 FROM daily_queue q JOIN queue_attempt_origins o
@@ -110,7 +136,7 @@ class PostgresGameFeedbackStore:
               AND q.queue_date=%s AND q.status='buried') buried,
             (SELECT MAX(reviewed_at::timestamptz) FROM reviews r
               WHERE r.card_id=c.id AND r.invalidated_at IS NULL) latest_review_at
-            FROM cards c WHERE c.id=%s""", (day, card_id)).fetchone()
+            FROM cards c WHERE c.id=%s""", (states, day, card_id)).fetchone()
         introduced = row["introduced_at"] if row else None
         if introduced and len(introduced) == 10:
             # A legacy day is not an exact timestamp. Use the end of that day
@@ -145,6 +171,11 @@ class PostgresGameFeedbackStore:
             return self._promote(card_id, day)
         from app.services.review_service import ensure_card_queued_after
         ensure_card_queued_after(self.database, card_id, 0, priority_reason=PRIORITY_REASON,
+                                 queue_date=day, protect_presented=True, preserve_order=False)
+
+    def promote_encounter(self, card_id, day):
+        from app.services.review_service import ensure_card_queued_after
+        ensure_card_queued_after(self.database, card_id, 0, attempt_state="clean", priority_reason=ENCOUNTER_PRIORITY_REASON,
                                  queue_date=day, protect_presented=True, preserve_order=False)
 
     def owed_page(self, after, limit):
@@ -211,7 +242,7 @@ def resume_available_feedback(database, day, *, limit=16):
     rows = database.execute_native("""SELECT * FROM study_game_feedback
         WHERE status='applied' AND card_id NOT IN
           (SELECT card_id FROM daily_queue WHERE queue_date=%s AND status='queued'
-           AND gameplay_priority_reason='product_game_lapse')
+           AND gameplay_priority_reason IN ('product_game_lapse','product_game_encounter'))
         ORDER BY available_by,effect_key LIMIT %s""", (day, limit)).fetchall()
     for row in rows:
         observed = store._effect(row)
@@ -226,4 +257,7 @@ def resume_available_feedback(database, day, *, limit=16):
             store.save(replace(effect, status="held", reason="current_card_unavailable"),
                        datetime.now(timezone.utc))
         elif not facts.active_attempt and not facts.buried:
-            store.promote(effect.card_id, day)
+            if effect.encounter is None:
+                store.promote(effect.card_id, day)
+            else:
+                store.promote_encounter(effect.card_id, day)

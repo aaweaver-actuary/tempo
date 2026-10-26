@@ -54,11 +54,15 @@ It creates no certificate, captures no new catalogue, and never calls Games.
 T07 authenticates and fences the canonical imported game in its own boundary;
 the factory requires that canonical game ID, not a provider-ID alias.
 
-The initial concrete adapter supports original physical revision 1 with exact
-stored UTC introduction evidence. Date-only introduction or changed-content
-revision without explicit owner evidence is rejected with an exact reason;
-neither a timestamp nor historical introduction is inferred. Later compatible
-shared introduction facts can extend that owner boundary without a new effect.
+The concrete adapter supports original physical revision 1 with exact stored UTC
+introduction, or #516's explicit `introduced_before_game=True` proof scoped to
+the exact canonical provider/game ID/source revision/source digest. For a
+date-only value, the current locked card must still match the retained capture,
+its stored day must precede the game day, and the owner capture must independently
+report pre-game introduction. The mapping timestamp remains `None`; the stored
+date is preserved. Another source's boolean, missing proof, or changed-content
+revision without owner evidence grants no effect. No historical timestamp is
+invented and source/current-content fences remain unchanged.
 
 The caller starts/commits/rolls back the transaction. `accept_lapse` acquires
 existing card-edit/card-row/day locks before the effect lock. The schedule,
@@ -164,3 +168,92 @@ The first uses immutable shared fixtures, frozen time, explicit FSRS and semanti
 fake capabilities; the second requires the documented task-owned native fixture.
 Unavailable native infrastructure is unverified, never a mock pass. Existing
 scheduler policy is unchanged; its unchanged regressions are reused.
+
+`test_native_day_only_introduction_requires_exact_current_game_proof` reproduces
+#488's retained date-only capture through the owning port, proves actual Again
+application without an invented timestamp, and rejects each mismatched canonical
+source field. Run just that case with
+`PYTEST_ADDOPTS='--tb=short -k day_only_introduction_requires_exact_current_game_proof'`
+on the native command above; unrelated native cases retain their evidence.
+
+## Next release: encounter importance and first introduction
+
+[`EncounterFeedback`](encounter_feedback.py) consumes #533's published additive
+`GameEncounter`/`EncounterReceipt` at `46f07e9a`. Its explicit constructor takes
+the same borrowed store/current owner/clock plus `introductions` and
+`introduction_policy`. `accept_encounter` and `encounter_status` share the
+existing stable effect key, pre-delivery hold, immutable source/detection and
+receipt ledger with `accept_lapse`; no second delivery queue or scheduler exists.
+The qualified first-release factory remains separately selectable.
+
+The concrete additive factory is
+`current_owner_encounter_feedback(database, retained_owner_capture=..., snapshot=...,
+clock=..., introductions=..., introduction_policy=...)` in the same database
+adapter. Compose #495's published `current_owner_introductions` / `admit_encounter`
+capability on that exact borrowed writer. Only the actual current introduction
+field may differ from the retained capture during priority validation; definition,
+revision, legal executable, route, source generations and membership remain fenced.
+Neither a producer's snapshot nor a FEN match authorizes mutation.
+
+An unintroduced current card requests genuine canonical introduction for either
+matched or missed play. A current introduced miss receives queue priority without
+calling Again or changing its schedule/history, including evidence predating
+introduction or later learning. Correct introduced play records frequency only.
+These are per-observation factual receipts; the pure importance calculation stays
+with #494. Study imports no Analysis implementation or copied score formula.
+Original command and disposition survive replay, reload, ordinary introduction
+races and recomparison; a later `GameLapse` for the same semantic event receives
+the original receipt instead of converting it to Again. Genuine later Study
+completion can settle queue debt without deleting the retained observation.
+
+`EncounterIntroductionPolicy` requires an explicit `ordinary` or `limited_reserve`
+input. No live default is chosen. The published capability currently implements
+ordinary allowance; an absent policy or unsupported reserve remains pending.
+Disabled/pause/Study-only/zero controls remain with #495. Pending admission never
+claims an availability deadline; original detection stays in the receipt/storage.
+#495 currently returns a generic `deferred` result, so its actual disabled-control
+subreason remains generic unless that owner supplies a typed reason. No override
+or unconditional 48-hour promise is implied.
+
+The receiver adds **no DDL**: schema051 `payload_json` carries the immutable shared
+encounter command and a small mutable owner admission section. #495's broader
+`5f87902f` capability needs unregistered charge/period/rotation/ranking tables;
+this branch does not consume that full feature. A narrow admission capability
+using existing canonical state and this effect transaction is being supplied by
+that owner. Actual first-introduction/native composition remains pending its
+published checkpoint. No migration is allocated here. Larger-than-bound current
+sources still defer; small fixtures do not establish support for an arbitrary
+installed repertoire.
+
+`product_game_encounter` is a distinct queue priority label, with a clean attempt
+state. The shared `queue_ordering._priority_projection` needs to recognize it
+before product adoption; its exact shared-file reservation/publication remains
+pending. Current source does not claim the later normal-Study priority proof or
+live activation. Integration retains admission/serving composition ownership.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller transaction
+    participant S as Study EncounterFeedback
+    participant O as Current owner fences
+    participant I as Existing introduction owner
+    participant D as Study schema051 receipt / ordinary queue
+    C->>S: accept_encounter(shared GameEncounter)
+    S->>D: card/day lock, effect lock, original receipt
+    S->>O: exact current content / source / mapping
+    alt currently unintroduced
+        S->>I: admit_encounter(explicit local day / decision)
+        I->>D: canonical fresh introduction + owned charge
+    else historical missed response
+        S->>D: current queue priority, unchanged FSRS/history
+    else correctly played introduced response
+        S->>D: frequency observation, no fabricated failure
+    end
+    S->>D: immutable original command + owner admission facts
+    S-->>C: provisional receipt / honest pending reason
+    C->>C: commit all effects or roll back all
+```
+
+Changed owner checks remain in the two existing test files above; use `-k encounter`
+for the next-release cases. No first-release deployment or broad suite rerun is
+part of this extension.
