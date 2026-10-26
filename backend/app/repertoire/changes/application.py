@@ -9,7 +9,7 @@ import chess
 import chess.pgn
 
 from app.contracts.product_v02.analysis import (
-    Proposal, ProposalDecision, RepertoireChangeReceipt, RepertoireEdit,
+    DisplayedCardChange, Proposal, ProposalDecision, RepertoireChangeReceipt, RepertoireEdit,
 )
 from .ports import ChangeStore, ValidatedChange
 
@@ -195,6 +195,10 @@ def validate_proposal(snapshot: RepertoireSnapshot, proposal: Proposal) -> Valid
     payload["membership"]["source_revision"] = f"approved:{proposal.display_digest}"
     payload["membership"]["snapshot_id"] = f"approved:{proposal.display_digest}"
     changed_positions = {item.position_key for item in proposal.edits}
+    payload["decision_presentations"] = [mapping for mapping in payload["decision_presentations"]
+        if mapping.get("route_id") not in updates or (
+            mapping["route_ply"] < len(updates[mapping["route_id"]])
+            and updates[mapping["route_id"]][mapping["route_ply"]] == mapping["selected_response_uci"])]
     for mapping in payload["decision_presentations"]:
         mapping["repertoire_revision"] = next_revision
         if mapping["repertoire_id"] == proposal.repertoire_id and mapping["position_key"] in changed_positions:
@@ -253,6 +257,7 @@ def manual_resolution(snapshot: RepertoireSnapshot, *, repertoire_id: str,
     if len(nodes) != 1 or selected_uci not in nodes[0].own_responses:
         raise ChangeError("unknown_conflict_or_winner")
     edits = []
+    card_changes = []
     seen = set()
     for occurrence in nodes[0].occurrences:
         if not occurrence.learner_turn or occurrence.next_move == selected_uci:
@@ -263,13 +268,22 @@ def manual_resolution(snapshot: RepertoireSnapshot, *, repertoire_id: str,
         edits.append(RepertoireEdit(route_id=occurrence.route_id, position_key=position,
             previous_response_uci=occurrence.next_move, proposed_response_uci=selected_uci,
             displayed_pgn=_pgn(occurrence.starting_fen, occurrence.history + (selected_uci,))))
+        if occurrence.route_id.startswith("card:"):
+            binding = occurrence.binding
+            if binding is None or binding.presentation_id != occurrence.route_id[5:]:
+                raise ChangeError("current_card_mapping_unproved")
+            card_changes.append(DisplayedCardChange(action="update",
+                presentation_id=binding.presentation_id,
+                expected_revision=binding.presentation_revision,
+                starting_fen=occurrence.starting_fen,
+                moves=occurrence.history + (selected_uci,), learner_color=occurrence.learner_color))
     route_sources = {item.route_id: item for item in snapshot.membership.routes}
     removed_tails = "\n".join(f"{item.route_id}: before {_pgn(route_sources[item.route_id].starting_fen, tuple(route_sources[item.route_id].moves))}; after {item.displayed_pgn}" for item in edits)
     proposal = Proposal(proposal_id=proposal_id, proposal_revision=1, repertoire_id=repertoire_id,
         source_revision=snapshot.membership.revision, source_digest=snapshot.membership.digest,
         display_digest="0"*64, title=f"Select {selected_uci}",
         explanation="Replace every competing own response with the selected move; the displayed routes end there. Original alternatives and tails remain retained evidence. Other routes and opponent branches are unchanged.\n" + removed_tails,
-        edits=tuple(edits), card_changes=(), engine_evidence=(), supporting_position_keys=(position,))
+        edits=tuple(edits), card_changes=tuple(card_changes), engine_evidence=(), supporting_position_keys=(position,))
     proposal = proposal.model_copy(update={"display_digest": proposal.content_digest()})
     validate_proposal(snapshot, proposal)
     return proposal
@@ -334,8 +348,8 @@ class RepertoireChanges:
                     proposal=edited, reason=None)
             if decision.action == "accept":
                 change = validate_proposal(source, current)
-                tx.publish(change)
-                status, revision = "accepted", change.after.membership.revision
+                published = tx.publish(change)
+                status, revision = "accepted", published.membership.revision
             else:
                 status, revision = "dismissed", source.membership.revision
             receipt = RepertoireChangeReceipt(owner_receipt_id=_receipt_id(current, status),
@@ -387,3 +401,22 @@ def validate_source_rows(repertoire_id: str, rows: tuple[dict, ...]) -> None:
     except ValueError as error:
         raise ChangeError("invalid_source") from error
     require_valid_change(value)
+
+
+def verify_retained_publication(change: ValidatedChange, published: RepertoireSnapshot) -> None:
+    """Compare approved content after canonical owner IDs/revisions are assigned.
+
+    Existing line/card canonicalization can replace route IDs and coalesce an
+    identical replacement. Approval covers exact content; unchanged source IDs
+    are additionally fenced by the retained publisher before its bounded writes.
+    The current-source reader, not a synthetic +1, owns actual source revision.
+    """
+    def content(snapshot):
+        return {(route.repertoire_id, route.learner_color, route.starting_fen, tuple(route.moves))
+                for route in snapshot.membership.routes}
+    if (published.membership.scope_repertoire_ids != change.before.membership.scope_repertoire_ids
+            or published.variant != change.before.variant
+            or content(published) != content(change.after)
+            or published.membership.revision <= change.before.membership.revision
+            or published.membership.digest == change.before.membership.digest):
+        raise ChangeError("retained_publication_mismatch")

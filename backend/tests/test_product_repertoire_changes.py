@@ -112,6 +112,7 @@ class MemoryStore:
         self.source = change.after
         self.published.append(change)
         if self.fail_publish: raise RuntimeError("owner publication failed")
+        return change.after
 
 
 def resolve_fixture():
@@ -387,3 +388,19 @@ def test_maximum_proposal_identifier_remains_usable_and_accepts_only_displayed_k
     receipt = changes.accept_change(decision(proposal))
     assert len(receipt.owner_receipt_id) < 200
     assert changes.accept_change(decision(proposal)) == receipt
+
+
+def test_retained_publication_uses_owner_revision_and_requires_exact_approved_content():
+    from app.repertoire.changes.application import verify_retained_publication
+    value, proposal = resolve_fixture(); change = validate_proposal(value, proposal)
+    payload = change.after.model_dump(mode='json')
+    payload['membership']['revision'] = 9
+    payload['membership']['routes'][0]['route_id'] = 'canonical-replacement-id'
+    payload['boundaries'][0]['route_id'] = 'canonical-replacement-id'
+    published = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    verify_retained_publication(change,published)
+    payload['membership']['routes'][0]['moves'] = ['h2h4']
+    payload['boundaries'][0]['terminal_ply'] = 1
+    wrong = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    with pytest.raises(ChangeError,match='retained_publication_mismatch'):
+        verify_retained_publication(change,wrong)
