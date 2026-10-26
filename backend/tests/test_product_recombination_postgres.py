@@ -580,6 +580,21 @@ def test_current_owner_existing_review_continues_when_a_join_neighbour_is_busy(c
         assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==1
 
 
+def test_current_owner_regrouping_admission_read_proves_owned_identity_only(current_owner_transaction,monkeypatch):
+    from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
+    transaction=current_owner_transaction
+    qualify_before_final_review(transaction,monkeypatch)
+    with transaction() as database:
+        result,_=ordinary_current_review(database,'B',monkeypatch)
+        combined=result['recombination']['resulting_presentation_id']
+        database.execute_native("UPDATE cards SET source_ref='recombination:untrusted-prefix' WHERE id='A'")
+        predicate=regrouped_card_sql(database,'c.id')
+        assert [row[0] for row in database.execute_native('SELECT c.id FROM cards c WHERE '+predicate).fetchall()]==[combined]
+        assert regrouped_card_sql(object(),'card.id')=='FALSE'
+        with pytest.raises(ValueError,match='unsupported_regrouping_card_reference'):
+            regrouped_card_sql(database,'untrusted SQL')
+
+
 def test_current_owner_optional_conflict_guards_recovery_review_and_rebuild(current_owner_transaction,monkeypatch):
     from app.contracts.review_conflicts import ReviewConflict
     from app.contracts.transport.study import ReviewRequest

@@ -92,6 +92,16 @@ is immediately eligible. This is a complete verification request by the next
 local day, not a copied/averaged FSRS stability or a fabricated combined review.
 Initialization owns no past review count and charges zero introduction slots.
 
+The explicit `regrouped_card_sql(database, qualified_card_id)` read seam proves
+that a physical ID belongs to this owner's persisted presentation history; it
+returns `FALSE` when the optional schema is absent. #495's admission readers
+must exclude those IDs from new-introduction reconciliation/counting, and the
+existing queue classifier must retain review admission. That narrow shared
+adoption is pending its exact file window: the legacy date-based readers alone
+would count a newly generated ID as a fresh introduction. No backdated date,
+invented review or copied FSRS state is used to hide this gap. Private zero-charge
+port tests do not establish that current admission-reader acceptance.
+
 `Obligation(logical_id, decision_id, available_by)` carries #487's original
 unresolved effect identity/deadline unchanged. Only obligations whose existing
 decision occurs in the combined sequence are included. The adapter updates a

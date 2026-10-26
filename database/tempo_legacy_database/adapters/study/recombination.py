@@ -196,6 +196,22 @@ def installed(database):
         "SELECT to_regclass('study_recombination_current') IS NOT NULL").fetchone()[0]
 
 
+def regrouped_card_sql(database, qualified_card_id):
+    """Explicit already-introduced material for the admission owner's reads.
+
+    Source prefixes, FEN and a new card's creation date are not identity proof.
+    The caller owns its query and allowance policy; this owner supplies only
+    membership in its persisted generated-presentation history. FALSE preserves
+    existing readers when this optional schema is absent, including SQLite.
+    """
+    if qualified_card_id not in {'c.id','card.id','cards.id','daily_queue.card_id'}:
+        raise ValueError('unsupported_regrouping_card_reference')
+    if not installed(database):
+        return 'FALSE'
+    return ('EXISTS(SELECT 1 FROM study_recombination_presentations regrouped '
+            'WHERE regrouped.presentation_id='+qualified_card_id+')')
+
+
 @dataclass(frozen=True)
 class _Route:
     route_id: str
