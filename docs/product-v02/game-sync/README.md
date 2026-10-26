@@ -136,11 +136,11 @@ Study lock may span HTTP or chess work. Host-specific latency remains unmeasured
 Named owning command:
 
 ```sh
-TEMPO_PYTHON=/Users/andy/Documents/Codex/2026-10-26/task-14/python-491 \
+TEMPO_PYTHON="$TEMPO_TASK_PYTHON" \
   make python-file FILE=backend/tests/test_product_game_sync_integration.py
 ```
 
-The wrapper uses already-installed Python dependencies plus this checkout's
+`TEMPO_TASK_PYTHON` names the task-owned wrapper, using already-installed Python dependencies plus this checkout's
 source paths; no install. At the current private checkpoint, **9 cases pass**
 using actual provider implementations with `httpx.MockTransport`, shared immutable
 DTOs, actual workflow/index/comparer/Study scheduling policy, reused semantic
