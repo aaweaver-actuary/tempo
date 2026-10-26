@@ -221,3 +221,53 @@ PostgreSQL test requires explicit `TEMPO_489_TEST_DSN` (loopback database name
 `tempo.task=issue-489-disposable` label). It never guesses a live URL and fails if
 the fixture is absent; a missing fixture is not a pass. Acquire the shared
 nontruncating advisory validation lock before either command; do not unlink it.
+
+## Immediately next release: encounter-priority delivery (#489 addendum)
+
+**Prepared boundary; implementation/acceptance awaits the published #482/#487
+command checkpoint.** The first-release branch and its qualified installed path
+remain unchanged. This extension uses the same captured page, normalized game,
+exact repertoire occurrence, original detection time, GameEffectKey, pending
+command row, retry and hold/withdraw operations. There is no second ingestion
+workflow, live backfill, UI/synchronization prerequisite or producer scheduler.
+
+An optional factual encounter capability at the existing comparison boundary
+must preserve correct versus different play, original provider/account/source
+revision/digest/time precision, exact mapped decision/presentation/route and
+one-based occurrence ply. `known_unintroduced` alone cannot authorize a fresh
+introduction: that finding can also describe a card introduced after the game.
+The producer consumes the shared encounter value, never fabricates lapse proof.
+
+Study's new semantic owner command decides priority-only review versus genuine
+first introduction, revalidating current mapping/content/admission state. Only
+the existing proven introduced-before-game miss path may apply a lapse. Historical
+misses remain relevance even when introduction or later learning makes an FSRS
+lapse inappropriate; correctly played encounters remain frequency facts, never
+fabricated recall failures. No introduction allowance, Study-only/pause control
+or <=48h exception is chosen by Games. The actual owner disposition/reason must
+be persisted verbatim, including paused/deferred pending receipts.
+
+The first persisted semantic effect for a logical GameEffectKey remains the
+original event across subsequent admission, overlaps and recomparison. An
+unintroduced encounter can never later be converted into a new GameLapse or a
+second first-introduction charge. Changed/withdrawn evidence fences either
+pending disposition; a delayed original cannot reactivate it or reverse history.
+
+```mermaid
+flowchart LR
+  Existing["Existing page capture / normalized game"] --> Facts["Shared exact encounter facts"]
+  Facts --> Durable["Existing Games pending-delivery row / stable GameEffectKey"]
+  Durable -->|"same-command retry"| Study["Study owner: accept_encounter"]
+  Study --> Receipt["actual priority / fresh-introduction / paused / deferred receipt"]
+  Control["Existing key + source-revision hold/withdraw"] --> Durable
+  Control --> Study
+```
+
+The Games database layout needs no new table or column: the existing typed JSON
+source/capture/delivery payloads gain the shared encounter value and receipt;
+`command_kind` is a text fact. Production schema ownership remains #491's current
+Games migration. Only the existing workflow/native files gain focused regression
+cases for uncertain acknowledgment, later admission/recomparison, restart,
+pre-admission correction, and explicit paused/deferred readback. A fake receiver
+proves producer semantics; actual Study first-introduction atomicity belongs to
+#487 and the next-release normal-Study integration owner.

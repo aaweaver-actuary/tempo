@@ -137,12 +137,12 @@ class PostgresGamesStore:
                 if delivery.control is not None:
                     database.execute("""UPDATE product_feedback_deliveries SET state='superseded',
                         payload=jsonb_set(payload,'{state}','"superseded"'::jsonb)
-                        WHERE effect_key=%s AND command_kind='lapse' AND state='pending'""", (command.key.logical_id(),))
+                        WHERE effect_key=%s AND command_kind IN ('lapse','encounter') AND state='pending'""", (command.key.logical_id(),))
                 database.execute("""INSERT INTO product_feedback_deliveries
                     (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
                     VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb) ON CONFLICT(operation_id) DO NOTHING""",
                     (delivery.operation_id, delivery.source_key, command.key.logical_id(),
-                     "control" if delivery.control else "lapse", delivery.model_dump_json()))
+                     delivery.command_kind, delivery.model_dump_json()))
 
     def delivery(self, operation_id: str) -> Delivery | None:
         with self._transaction() as database:

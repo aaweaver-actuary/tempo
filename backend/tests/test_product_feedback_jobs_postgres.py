@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 from urllib.parse import urlparse
+from types import SimpleNamespace
 import uuid
 
 import psycopg
@@ -17,7 +18,8 @@ from test_product_feedback_jobs import harness, page, record, spec
 from app.games.feedback.jobs import FeedbackRunner
 
 
-def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
+@pytest.fixture
+def postgres_workflow():
     dsn = os.environ.get("TEMPO_489_TEST_DSN", "")
     container = os.environ.get("TEMPO_489_TEST_CONTAINER", "")
     parsed = urlparse(dsn)
@@ -42,31 +44,7 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
         with connections() as database:
             return database.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0]
 
-    try:
-        store = PostgresGamesStore(connections)
-        h = harness(store)
-        store.enqueue(spec())
-        h.page[0] = page(continuation="safe-page-2", complete=False)
-        claimed = store.claim_job(h.clock.now(), h.clock.now() + 120)
-        # A real server-side failure after checkpoint/source writes must roll them all back.
-        with connections() as database:
-            database.execute("CREATE FUNCTION reject_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'task_fault_before_pending_delivery'; END $$")
-            database.execute("CREATE TRIGGER task_fault BEFORE INSERT ON product_feedback_deliveries FOR EACH ROW EXECUTE FUNCTION reject_delivery()")
-        with pytest.raises(psycopg.errors.RaiseException, match="task_fault_before_pending_delivery"):
-            h.coordinator.capture_page(claimed)
-        assert store.load_job("job").continuation is None
-        assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == count("product_feedback_pages") == 0
-        with connections() as database:
-            database.execute("DROP TRIGGER task_fault ON product_feedback_deliveries")
-        h.coordinator.capture_page(claimed)
-        checkpoint = store.load_job("job")
-        assert checkpoint.continuation == "safe-page-2" and not checkpoint.window_complete
-        assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == 1
-        pending = store.pending_delivery(h.clock.now())
-        assert pending and pending.receipt is None
-        assert count("product_feedback_pages") == 1
-
-        # Restart only this verified disposable server, then recreate the application store.
+    def restart():
         subprocess.run(["docker", "restart", container], check=True, capture_output=True, text=True, timeout=30)
         deadline = time.monotonic() + 30
         while True:
@@ -78,29 +56,61 @@ def test_checkpoint_pending_delivery_atomicity_and_restart_readback():
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.2)
-        restored = PostgresGamesStore(connections)
-        assert restored.load_job("job") == checkpoint
-        assert restored.pending_delivery(h.clock.now()).operation_id == pending.operation_id
-        source = restored.source(pending.source_key)
-        assert source.original.pgn == "original" and source.normalized.game_id == "provider-game"
-        assert source.findings[0].kind == "confirmed_miss"
-        h2 = harness(restored)
-        h2.coordinator.deliver(restored.pending_delivery(h2.clock.now()))
-        assert restored.delivery(pending.operation_id).receipt.owner_receipt_id == "owner-receipt-1"
-        assert restored.pending_delivery(h2.clock.now()) is None
 
-        # An overlapping import updates comparison facts without another command.
-        restored.enqueue(spec("overlap"))
-        FeedbackRunner(h2.coordinator).run_once()
-        assert count("product_feedback_deliveries") == 1
-        # Correction with no remaining miss still atomically persists a hold/fence command.
-        h2.page[0] = page(records=(record(2, "corrected"),))
-        h2.coordinator.comparer.compare = lambda *_, **__: ()
-        restored.enqueue(spec("correction"))
-        FeedbackRunner(h2.coordinator).run_once()
-        assert restored.pending_delivery(h2.clock.now()).control is not None
-        assert count("product_feedback_captures") == 2
-        assert count("product_feedback_deliveries") == 2
+    try:
+        yield SimpleNamespace(connections=connections, count=count, restart=restart)
     finally:
         with psycopg.connect(dsn, autocommit=True, connect_timeout=3) as database:
             database.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
+def test_checkpoint_pending_delivery_atomicity_and_restart_readback(postgres_workflow):
+    connections, count = postgres_workflow.connections, postgres_workflow.count
+    store = PostgresGamesStore(connections)
+    h = harness(store)
+    store.enqueue(spec())
+    h.page[0] = page(continuation="safe-page-2", complete=False)
+    claimed = store.claim_job(h.clock.now(), h.clock.now() + 120)
+    # A real server-side failure after checkpoint/source writes must roll them all back.
+    with connections() as database:
+        database.execute("CREATE FUNCTION reject_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'task_fault_before_pending_delivery'; END $$")
+        database.execute("CREATE TRIGGER task_fault BEFORE INSERT ON product_feedback_deliveries FOR EACH ROW EXECUTE FUNCTION reject_delivery()")
+    with pytest.raises(psycopg.errors.RaiseException, match="task_fault_before_pending_delivery"):
+        h.coordinator.capture_page(claimed)
+    assert store.load_job("job").continuation is None
+    assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == count("product_feedback_pages") == 0
+    with connections() as database:
+        database.execute("DROP TRIGGER task_fault ON product_feedback_deliveries")
+    h.coordinator.capture_page(claimed)
+    checkpoint = store.load_job("job")
+    assert checkpoint.continuation == "safe-page-2" and not checkpoint.window_complete
+    assert count("product_feedback_sources") == count("product_feedback_captures") == count("product_feedback_deliveries") == 1
+    pending = store.pending_delivery(h.clock.now())
+    assert pending and pending.receipt is None
+    assert count("product_feedback_pages") == 1
+
+    # Restart only this verified disposable server, then recreate the application store.
+    postgres_workflow.restart()
+    restored = PostgresGamesStore(connections)
+    assert restored.load_job("job") == checkpoint
+    assert restored.pending_delivery(h.clock.now()).operation_id == pending.operation_id
+    source = restored.source(pending.source_key)
+    assert source.original.pgn == "original" and source.normalized.game_id == "provider-game"
+    assert source.findings[0].kind == "confirmed_miss"
+    h2 = harness(restored)
+    h2.coordinator.deliver(restored.pending_delivery(h2.clock.now()))
+    assert restored.delivery(pending.operation_id).receipt.owner_receipt_id == "owner-receipt-1"
+    assert restored.pending_delivery(h2.clock.now()) is None
+
+    # An overlapping import updates comparison facts without another command.
+    restored.enqueue(spec("overlap"))
+    FeedbackRunner(h2.coordinator).run_once()
+    assert count("product_feedback_deliveries") == 1
+    # Correction with no remaining miss still atomically persists a hold/fence command.
+    h2.page[0] = page(records=(record(2, "corrected"),))
+    h2.coordinator.comparer.compare = lambda *_, **__: ()
+    restored.enqueue(spec("correction"))
+    FeedbackRunner(h2.coordinator).run_once()
+    assert restored.pending_delivery(h2.clock.now()).control is not None
+    assert count("product_feedback_captures") == 2
+    assert count("product_feedback_deliveries") == 2

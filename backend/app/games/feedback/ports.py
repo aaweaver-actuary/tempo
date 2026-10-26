@@ -78,6 +78,10 @@ class Delivery(Value):
         return self
 
     @property
+    def command_kind(self) -> str:
+        return "control" if self.control is not None else "lapse"
+
+    @property
     def command(self) -> GameLapse | GameEffectControl:
         return self.control if self.control is not None else self.lapse
 
