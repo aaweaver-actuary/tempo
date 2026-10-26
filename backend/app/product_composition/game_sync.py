@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from email.utils import parsedate_to_datetime
-from threading import Event
+from threading import Event, Lock
 from typing import Literal
 
 import httpx
@@ -18,7 +18,7 @@ from app.contracts.product_v02 import Revision, Value
 from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameWindow
 from app.contracts.product_v02.learning import LearningFeedbackPort
 from app.contracts.product_v02.repertoire import RepertoireSnapshot, RepertoireSnapshotPort
-from app.games.feedback.comparison import compare_record, normalize_record
+from app.games.feedback.comparison import compare_game, normalize_record
 from app.games.feedback.coordinator import Coordinator
 from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import AcquisitionFailure, Clock, GamesStore, JobSpec
@@ -74,6 +74,17 @@ class ProviderAcquisition:
         self.policy = policy
         self.cancelled = cancelled
         self.transport_factory = transport_factory
+        self._unit = Lock()
+        self._active = None
+
+    def cancel(self) -> None:
+        active = self._active
+        if active is not None:
+            loop, task = active
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                pass  # The owned loop has already closed its response/client.
 
     def fetch_page(self, *, account: str, window: GameWindow,
                    continuation: str | None = None) -> GamePage:
@@ -89,8 +100,11 @@ class ProviderAcquisition:
     async def fetch_page_async(self, *, account: str, window: GameWindow,
                               continuation: str | None = None) -> GamePage:
         policy = self.policy
-        transport = self.transport_factory() if self.transport_factory is not None else None
+        if not self._unit.acquire(blocking=False):
+            raise RuntimeError("provider page is already running")
+        self._active = (asyncio.get_running_loop(), asyncio.current_task())
         try:
+            transport = self.transport_factory() if self.transport_factory is not None else None
             async with asyncio.timeout(policy.total_timeout_seconds):
                 async with httpx.AsyncClient(transport=transport, trust_env=False,
                         follow_redirects=False, timeout=policy.timeout_seconds,
@@ -105,6 +119,9 @@ class ProviderAcquisition:
                     return await fetch_chesscom_page(**common, rated_only=policy.rated is True)
         except TimeoutError:
             raise AcquisitionDeadline(continuation) from None
+        finally:
+            self._active = None
+            self._unit.release()
 
 
 class WorkflowAcquisition:
@@ -122,11 +139,11 @@ class WorkflowAcquisition:
         try:
             return self.acquisition.fetch_page(account=account, window=window,
                                                continuation=continuation)
-        except (LichessAcquisitionError, ChesscomAcquisitionError, AcquisitionDeadline) as error:
-            kind = getattr(error, "kind", getattr(error, "code", "transport_error"))
+        except (LichessAcquisitionError, ChesscomAcquisitionError, AcquisitionDeadline, asyncio.CancelledError) as error:
+            kind = "cancelled" if isinstance(error, asyncio.CancelledError) else getattr(error, "kind", getattr(error, "code", "transport_error"))
             retryable = getattr(error, "retryable", kind in {
                 "rate_limited", "http_error", "transport_error", "timeout", "cancelled"})
-            raw_delay = error.retry_after
+            raw_delay = getattr(error, "retry_after", None)
             delay = 0.0
             if raw_delay is not None:
                 if str(raw_delay).isdigit():
@@ -140,18 +157,21 @@ class WorkflowAcquisition:
 
 class WorkflowNormalizer:
     """Concrete #486 normalizer for #489's documented Normalizer capability."""
+    def __init__(self, resolve_game_id=None):
+        self.resolve_game_id = resolve_game_id
+
     def normalize(self, record: GameRecord, spec: JobSpec) -> CanonicalGame:
+        game_id = self.resolve_game_id(spec.provider, record.source_game_id) if self.resolve_game_id else None
         return normalize_record(record, provider=spec.provider, account=spec.account,
-                                workspace_id=spec.workspace_id)
+                                workspace_id=spec.workspace_id, game_id=game_id)
 
 
 class WorkflowComparer:
     """The same index/comparer seam used by #488; no learning writer."""
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]:
-        return compare_record(record, provider=spec.provider, account=spec.account,
-            workspace_id=spec.workspace_id, snapshot=snapshot,
-            reentry_lookup=build_index(snapshot), game_id=game.game_id)
+        return compare_game(game, provider=spec.provider, time_precision=record.time_precision,
+                            snapshot=snapshot, reentry_lookup=build_index(snapshot))
 
 
 def sync_job(*, job_id: str, workspace_id: str, account: str, window: GameWindow,
@@ -182,8 +202,9 @@ class GameSyncRuntime:
     stop owns only acquisition cancellation and the Games runner. Supplied store,
     snapshot and Learning capabilities are borrowed and are never closed here.
     """
-    def __init__(self, runner: FeedbackRunner, stop: Event):
+    def __init__(self, runner: FeedbackRunner, stop: Event, cancel_acquisitions=()):
         self.runner, self._stop = runner, stop
+        self._cancel_acquisitions = tuple(cancel_acquisitions)
 
     def run_once(self) -> str:
         return self.runner.run_once()
@@ -191,6 +212,8 @@ class GameSyncRuntime:
     def request_stop(self) -> None:
         self._stop.set()
         self.runner.request_stop()
+        for cancel in self._cancel_acquisitions:
+            cancel()
 
     def close(self) -> None:
         self.request_stop()
@@ -201,6 +224,7 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
                      snapshots: RepertoireSnapshotPort, learning: LearningFeedbackPort,
                      clock: Clock, max_page_records: int = 100,
                      max_page_positions: int = 10000,
+                     normalizer=None,
                      transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
     """Wire published concrete seams; the caller selects when bounded units run.
 
@@ -214,7 +238,8 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
     providers = {policy.provider: WorkflowAcquisition(ProviderAcquisition(policy,
         cancelled=stop.is_set, transport_factory=transport_factory), now=clock.now)
         for policy in policies}
-    coordinator = Coordinator(providers=providers, normalizer=WorkflowNormalizer(),
+    coordinator = Coordinator(providers=providers, normalizer=normalizer or WorkflowNormalizer(),
         comparer=WorkflowComparer(), snapshots=snapshots, store=store, learning=learning,
         clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions)
-    return GameSyncRuntime(FeedbackRunner(coordinator), stop)
+    return GameSyncRuntime(FeedbackRunner(coordinator), stop,
+                           (provider.acquisition.cancel for provider in providers.values()))

@@ -3,17 +3,20 @@ import {
   createGameReviewApi,
   type GameReviewEndpoints,
 } from "../features/game-review/api";
+import { API_URL } from "../const";
+
+export const gameReviewBase = `${API_URL}/api/product/game-review`;
 
 export const gameReviewEndpoints: GameReviewEndpoints = {
-  recentGames: "/api/product/game-review/games",
+  recentGames: `${gameReviewBase}/games`,
   gameDetail: ({ provider, game_id, repertoire_id }) => {
-    const path = `/api/product/game-review/games/${encodeURIComponent(provider)}/${encodeURIComponent(game_id)}`;
+    const path = `${gameReviewBase}/games/${encodeURIComponent(provider)}/${encodeURIComponent(game_id)}`;
     return repertoire_id === undefined
       ? path
       : `${path}?${new URLSearchParams({ repertoire_id })}`;
   },
-  sync: "/api/product/game-review/sync",
-  retryFeedback: "/api/product/game-review/feedback/retry",
+  sync: `${gameReviewBase}/sync`,
+  retryFeedback: `${gameReviewBase}/feedback/retry`,
 };
 
 /** Construct once in optional-shell composition; construction performs no I/O. */

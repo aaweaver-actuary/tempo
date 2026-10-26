@@ -1,194 +1,184 @@
-# Continuous game feedback — #491 preparation checkpoint
+# Continuous game feedback — #491
 
-This is unmerged source preparation under [#491](https://github.com/aaweaver-actuary/tempo/issues/491)
-and the pinned [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/6885b9420320517ac74df47e631ed796da96c94a/SPEC.md).
-The complete A03/A04 product workflow is **pending**, not installed or deployed.
-#488 retains the entire first shared-root editing window and does not depend on
-this checkpoint. No root, Settings, Compose or central registration is changed.
+Source integration under [#491](https://github.com/aaweaver-actuary/tempo/issues/491),
+[SPEC v0.2](../../../SPEC.md) and #481. Draft PR #519 is unmerged. The first
+installation candidate remains separate: this branch does not deploy, restart
+Study, modify live data or resume the held graph migration.
 
-## Usable private interfaces
+## Implemented private interfaces
 
-[`ProviderAcquisition`](../../../backend/app/product_composition/game_sync.py)
-adapts the concrete async #484/#485 operations to the frozen synchronous
-`GameAcquisitionPort.fetch_page(account, window, continuation)` seam. Async worker
-callers can use `fetch_page_async`. It returns the actual `GamePage` subtype,
-including Chess.com's original metadata; no projection discards provenance.
-It does not persist, retry, advance a checkpoint, choose a window/account/filter,
-or assign a durable source revision. #489 owns those decisions and state.
-
-`create_game_sync(policies, store, snapshots, learning, clock)` now wires the
-published #489 `Coordinator` / `FeedbackRunner` to these actual providers,
-#486 normalization/comparison, #483 index and the injected #487 Learning owner.
-The returned `GameSyncRuntime` offers `run_once`, `request_stop` and `close`.
-It starts no process or timer and closes no borrowed store/snapshot/Study
-capability. A shared cancellation event connects its stop request to provider
-cooperative cancellation. The worker launcher still needs a separate process.
-
-`WorkflowAcquisition` translates numeric or HTTP-date provider Retry-After headers
-to #489's numeric `AcquisitionFailure.retry_after`; otherwise its retry arithmetic
-cannot consume the header string. `sync_job` creates the actual #489 `JobSpec`
-from explicit caller choices, binding the providers' casefolded account and exact
-filter facts without changing saved Settings. Normalizer/comparer wrappers use
-the original record so provider time precision remains authoritative. Current
-`compare_record` normalizes again internally; this is bounded existing behavior,
-not another comparison policy or writer.
-
-`AcquisitionPolicy(provider, speeds, rated, source_revision)` requires explicit
-filters. `rated=None` means both; `True` means rated-only. Lichess additionally
-supports `False` for casual-only; Chess.com rejects that unsupported choice
-instead of widening it. The default resource bounds are 100 Lichess rows,
-8 MiB response, 10-second socket budget and 30-second total I/O budget. Hard
-caps are 1000 Lichess rows, 8 MiB Lichess / 32 MiB Chess.com, 15-second socket
-and 30-second total I/O. Each call owns a credential-free client with one
-connection, redirects and ambient environment configuration disabled. Errors
-retain provider Retry-After/checkpoint facts; `AcquisitionDeadline` retains the
-input continuation. The caller supplies cancellation. No retry or sleep occurs.
-
-[`create_game_review_router(operations)`](../../../backend/app/games/feedback/http.py)
-constructs an **unregistered** FastAPI router. `GameReviewOperations` lists the
-minimal synchronous consumer capability for an injected owner facade:
-
-| Method | HTTP route | Effect |
+| Source | Public seam | Ownership |
 | --- | --- | --- |
-| `recent_games` | GET `/api/product/game-review/games` | Stored `RecentGames` only |
-| `game_detail` | GET `/api/product/game-review/games/{provider}/{game_id}?repertoire_id=...` | Stored `GameDetail` only |
-| `sync` | POST `/api/product/game-review/sync` | Enqueue configured provider job with explicit operation ID |
-| `retry_feedback` | POST `/api/product/game-review/feedback/retry` | Resolve current stored Finding and replay its logical command |
+| [game_sync.py](../../../backend/app/product_composition/game_sync.py) | AcquisitionPolicy, ProviderAcquisition, WorkflowAcquisition, WorkflowNormalizer, WorkflowComparer, sync_job, create_game_sync | Outer wiring only; provider clients are call-owned, Games owns persisted workflow state. |
+| [review.py](../../../backend/app/games/feedback/review.py) | SyncConfiguration, GameReview, ReviewStore | Games settings, stored reads and explicit configured commands. |
+| [http.py](../../../backend/app/games/feedback/http.py) | create_game_review_router | GET projections; explicit POST sync/retry/configure. No import on reads. |
+| [game_review.py](../../../backend/app/product_composition/game_review.py) | create_game_review, CurrentStudyFeedback, current_game_review_router | Lazy API assembly and #487 public factory; no connection or worker at construction. |
+| [game_worker.py](../../../backend/app/product_composition/game_worker.py) | run_optional_worker | Separate-process loop, bounded units, signal/cancellation ownership. |
+| [game-review.ts](../../../app/product-composition/game-review.ts) | createProductGameReviewApi | #490 endpoint map using the configured legacy API origin, independently of a connected Study origin. |
+| [GameSyncSettings.tsx](../../../app/product-composition/GameSyncSettings.tsx) | CurrentGameSyncSettings / GameSyncSettings | Explicit account, UTC window, repertoire, speed/rated choices and opt-in fixed-window recurrence. |
 
-The two POST request envelopes use the shared provider/Finding values, not a new
-game or learning DTO. Extra account/filter fields are rejected. The concrete
-owner must validate current stored evidence and durable operation replay; a
-well-formed client Finding is never authority. Responses preserve exact owner
-`LearningReceipt` values: `applied` is not changed to `available`. Router reads
-never call acquisition, comparison, admission or retry. Missing/unavailable
-projection handling belongs to the injected owner; no fallback fabricates data.
-The facade is not wired until that implementation exists.
+Shared CanonicalGame, GamePage, Finding and LearningReceipt are reused. There is
+no competing game DTO, second learning writer, Study controller copy or engine
+requirement. `compare_game` consumes the actual normalized history and supplied
+provider precision; no PGN reconstruction or repeated normalization is needed.
+A canonical identity resolver can be injected into WorkflowNormalizer. The
+existing-library adapter resolves the actual stored game ID, including the
+retained Chess.com provider alias; it never guesses an ID or manufactures a row.
 
-[`createProductGameReviewApi`](../../../app/product-composition/game-review.ts)
-is the private frontend endpoint composition for the published #490 client.
-It maps those exact four operations, percent-encodes game IDs and repertoire
-query context, and performs no I/O at construction. Construct it once in the
-optional shell and mount the actual `GameReviewView` after root reservation.
+Provider policies require explicit filters. Chess.com casual-only is rejected
+rather than widened. Default bounds are 100 Lichess rows, 8 MiB response,
+10-second socket and 30-second total I/O budgets. Hard caps are 1000 Lichess rows,
+8 MiB Lichess / 32 MiB Chess.com, 15-second socket / 30-second total I/O. One
+adapter page runs at a time. Each call closes its credential-free client with
+one connection, redirects and ambient environment configuration disabled.
+Retry-After numeric/HTTP-date headers become numeric workflow delays. Stop owns
+only the current acquisition task and Games runner; it does not close borrowed
+Study/database resources. Task cancellation interrupts blocked I/O.
 
-## Actual dependency and failure boundary
+## HTTP and state semantics
+
+All routes start at `/api/product/game-review`:
+
+- GET `/games` and `/games/{provider}/{game_id}?repertoire_id=...` read stored
+  original history/findings and actual receiving-owner status.
+- GET `/configuration/{provider}` reads explicit configuration or null.
+- POST `/configuration` requires configuration plus expected_revision. A stale
+  revision cannot overwrite an account; active imports prevent changing a cursor's
+  bound policy.
+- POST `/sync` requires provider and operation_id. It enqueues the saved request,
+  not client-supplied account/filter overrides. Retry preserves the original job.
+- POST `/feedback/retry` requires a current stored eligible Finding and operation_id.
+  Games durably binds it to the existing command. A forged, changed, quarantined,
+  superseded or failed command cannot create a replacement lapse.
+
+Acquisition completeness and learning admission are separate facts. A captured
+window can be complete with an owner receipt still pending. Read status renders
+pending/held/applied/settled verbatim. An exact retry can return the owner's
+`duplicate` outcome while preserving its receipt identity and original deadline.
+Reads do not acquire an attempt, compare a game, import, retry or apply a lapse.
+Changed evidence stays quarantined under D08; original captures are retained and
+new findings are not drawn over old original moves. Other games remain usable.
+
+[Games storage ownership and transaction details](../../../database/tempo_legacy_database/adapters/games/product_review/README.md)
+and the [complete source ER/dictionary](../../../database/tempo_legacy_database/schema/product-game-sync/README.md)
+cover the actual tables. Migration **052** follows #487's 051. The standalone
+five-file schema checkpoint is `f137d970ac4b36b36d9d644e2c71e22e7d34e845`; it is
+published for #503's independent following 053. Readiness editing is released;
+this branch must not overwrite a later owner's readiness increment back to 52.
+No migration has been applied to live infrastructure.
+
+The optional connection factory owns one connection, 250 ms acquisition wait,
+2 s connect timeout and PostgreSQL 250 ms transaction/statement plus 100 ms lock
+limits. No foreground Study pool is borrowed. The retained backend capture uses
+its existing bounded background reader before opening the receiving writer;
+that legacy read dependency is disclosed. Games fences the actual canonical
+import plus committed provider source in the receiver transaction, then #487's
+public factory validates actual repertoire/card authority and applies Study.
+No HTTP/chess work is held inside a Games commit. Process CPU/memory deployment
+bounds and host latency remain unmeasured; there is no deployment claim.
+
+## Actual dependency and failure view
 
 ```mermaid
 flowchart LR
-  Async["#484 Lichess / #485 Chess.com\nimplemented concrete async acquisition"]
-  Bridge["#491 ProviderAcquisition\nimplemented private composition"] --> Async
-  Worker["#491 runtime factory\n#489 runner + coordinator"] --> Bridge
-  Worker --> Games["#489 Games-owned durable store\nborrowed; migration activation pending"]
-  Worker --> Compare["#483 index / #486 comparer\nsame source seams as #488"]
-  Worker -->|"accept_lapse / control_effect"| Study["#487 Study owner\nborrowed capability"]
-  UI["#490 Game Review"] --> Client["#491 endpoint composition"]
-  Client -. "root mount pending" .-> HTTP["#491 unregistered HTTP adapter\nstored reads / explicit commands"]
-  HTTP -. "owner facade/projections awaited" .-> Games
-  Study --> Queue["ordinary Study queue / review lifecycle"]
+  Providers["#484 / #485 actual adapters"] --> Bridge["#491 bounded acquisition adapters"]
+  Bridge --> Workflow["#489 coordinator / runner"]
+  Snapshot["#483 immutable index/snapshot"] --> Compare["#486 compare_game"]
+  Workflow --> Compare
+  Workflow --> Games["Games-owned capture/checkpoint/delivery"]
+  Games --> Fence["Games canonical-source fence"]
+  Fence --> Receiver["#487 current_owner_game_feedback"]
+  Receiver --> Study["ordinary Study schedule / queue / settlement"]
+  UI["#490 view + #491 explicit Settings"] --> HTTP["#491 lazy HTTP facade"]
+  HTTP --> Games
+  HTTP -->|"read owner status / explicit replay"| Receiver
+  Root["retained root mount / registration"] -. "window requested" .-> HTTP
+  Generic["bounded repertoire-only projection for new imports"] -. "owner seam requested" .-> Snapshot
 ```
 
-Solid links are implemented here or supplied owner operations; dotted links are
-pending integration. #488's preview/delivery seam is retained unchanged. No
-producer is added to Study's startup, readiness or save
-path. This source checkpoint alone does **not** prove process/host/database
-resource isolation. No Study database connection is acquired by either new file.
-Existing legacy background entry points remain unchanged. The current Compose
-`background-worker` uses Celery `app.celery_app`, queue `background`, concurrency
-1, 0.35 CPU and 448 MiB; that is a legacy launch fact, not proof of the new worker's
-independence. A separate optional process must use #489's public run-once/stop
-interface without importing the HTTP application root or Study lifecycle.
+Solid arrows are source implementations or published owner seams. Dashed arrows
+are pending integration. Study imports/calls/waits for no optional producer.
+`current_game_review_router()` starts neither a worker nor a database connection;
+missing Games configuration fails its own request and leaves the serving app's
+health path usable. The worker has no HTTP-root import and owns its own process,
+signals, I/O cancellation and runner only.
 
-## Exact later shared changes — proposed, not reserved or edited
+## Exact root window
 
-After #488 releases its window, publish a short #481 reservation before editing:
+The requested mount window is limited to `backend/app/main.py`,
+`app/components/navbar.tsx`, `app/views/legacy-workspace.tsx`,
+`app/views/settings_view.tsx`, plus the exact `tests/REGRESSIONS.md` and central
+architecture-index appends. Reuse the existing Games view enum with the Game
+Review label and remove only that view's obsolete redirect. Home/Study remains
+mounted. No ViewEnum/types/workspace-preload/Study navigation-policy change is
+needed. No root file is edited until #488 explicitly releases the window.
 
-- `backend/app/main.py`: register the factory-created router using the concrete
-  Games facade; no optional job starts or blocks readiness there.
-- `app/types.ts`, `app/components/navbar.tsx`,
-  `app/lib/study-workspace-policy.ts`, `app/lib/workspace-data.ts`, and
-  `app/views/legacy-workspace.tsx`: add the Game Review view and lazy #490 mount
-  in the retained optional shell. Preserve the existing Home/Study controller
-  instance and active attempt; selecting Game Review cannot issue Study commands.
-- `backend/app/contracts/transport/settings.py`,
-  `backend/app/settings_commands.py`, `app/views/settings_view.tsx`,
-  `app/utils/settings.ts`: inspect the current owner contract before adding any
-  field. Existing provider usernames and `auto_sync_minutes` are reusable; do not
-  overwrite an account or infer window/speed/rated filters. Games-owned persistent
-  window/filter/checkpoint settings require #489's store contract first.
-- Central dependency/test/Compose registration only for the concrete new worker
-  and exact three #491 suites. Add a central diagram-index link to this canonical
-  drawing, rather than copying it. #488 owns its own dependency registrations.
+Legacy `useGameSync` has no current consumer; no duplicate active producer is
+removed speculatively. D04 likelihood population/time settings remain unset and
+the Study introduction owner retains repertoire weight storage. Neither blocks
+Game Review or feedback. A separate optional worker launcher/profile still needs
+actual resource/registration wiring; the function and process fixture are not an
+installed command or a claim that the old Celery background runtime was revived.
 
-Existing coverage settings reject updates while their analysis owner is held.
-D04 population/time controls remain unset, and repertoire weight storage remains
-with its Study introduction owner. Neither is silently chosen or made a game
-feedback prerequisite. No schema or migration is allocated here.
+## Evidence
 
-Proposed new worker bounds are one job at a time, 0.25 CPU and 256 MiB. The actual
-#489 store currently uses 250 ms statement / 100 ms lock timeouts and requires a
-dedicated, bounded connection context. Connection acquisition and host caps need
-concrete launcher proof. A 25 ms lock budget would require an owner change and
-affected transaction check; it is not an implemented claim. These bounds require concrete launcher and
-disposable lifecycle proof before becoming implemented claims. No connection or
-Study lock may span HTTP or chess work. Host-specific latency remains unmeasured.
-
-## Evidence and remaining acceptance
-
-Named owning command:
+Using existing dependencies and task source paths under the nontruncating shared
+advisory validation lock:
 
 ```sh
 TEMPO_PYTHON="$TEMPO_TASK_PYTHON" \
+  PYTEST_ADDOPTS='-k "not native_optional_worker_http_stop"' \
   make python-file FILE=backend/tests/test_product_game_sync_integration.py
+TEMPO_PYTHON="$TEMPO_TASK_PYTHON" \
+  node --test tests/runner/product-game-worker.test.mjs
+npm run test:unit -- tests/unit/product-game-sync-settings.test.tsx --configLoader runner --no-cache
+node node_modules/typescript/bin/tsc --project app/product-composition/tsconfig.json
 ```
 
-`TEMPO_TASK_PYTHON` names the task-owned wrapper, using already-installed Python dependencies plus this checkout's
-source paths; no install. At the current private checkpoint, **9 cases pass**
-using actual provider implementations with `httpx.MockTransport`, shared immutable
-DTOs, actual workflow/index/comparer/Study scheduling policy, reused semantic
-Games/Study fake stores and a disposable in-memory FastAPI app with a fake
-projection/command owner.
-Exact 205 Lichess IDs span three pages; Chess.com spans two months. Every page
-recreates the outer adapter. HTTP checks prove inert GETs, explicit command IDs,
-unchanged receipts, validation and local unavailable projection handling. A
-blocked transport closes on its total budget. A concrete coordinator run proves
-HTTP429 delay conversion/provider independence, gap/unintroduced classifications,
-102 genuine miss effects through the existing Study owner and unchanged effect
-count after overlapping jobs and runtime recreation. This proves neither native
-persisted checkpoints nor normal-product Study processing. Existing advisory validation lock was
-opened nontruncating, held for the command and released.
+- Backend: 12 selected cases pass; the two unchanged native process cases are
+  owned by the passing named Node runner. Changed canonical-ID/cold-router cases
+  are checked separately after the last source-fence refinement.
+- Worker runner: 1 Node test invokes **2 native cases**, with zero skips. A real
+  child process blocks in local provider HTTP while actual ordinary Study
+  issuance/save commits, then graceful stop or forced kill is followed by another
+  ordinary Study issuance/save without a Study restart. The earlier passing
+  process evidence is retained, not rerun for later read/UI work.
+- Settings: **3 cases pass**, including no inferred filters, explicit UTC inputs,
+  off-by-default recurrence and revision-safe concurrent account changes. The
+  cache-free config loader avoids writes through the shared dependency symlink;
+  no dependency installation or assertion bypass occurs.
+- Scoped TypeScript compilation includes the new endpoint/settings code and the
+  prepared browser fixture/spec. Diff/conflict and scoped product boundary checks
+  are retained. Owner native/provider/UI receipts are reused, not rerun wholesale.
 
-Scoped TypeScript compilation of the private endpoint map and its actual #490
-client / #482 contract inputs passes using the existing TypeScript runtime:
-`node node_modules/typescript/bin/tsc --noEmit --skipLibCheck --target esnext
---module esnext --moduleResolution bundler --lib esnext,dom --types node
-app/product-composition/game-review.ts app/features/game-review/api.ts
-app/features/product-api/contracts.ts`. The focused product import-boundary guard
-also passes (1 selected, 28 deselected); no whole contract suite was repeated.
+The backend suite uses actual provider/workflow/index/comparison/Study scheduling
+code with fake HTTP/semantic stores for pure source cases, plus actual disposable
+PostgreSQL for new facade/configuration/current-authority boundaries. Migration
+registry/readiness through 52 is actually applied. Every native fixture is capped,
+unique and removed; its nonsecret cleanup report is retained. No live account,
+PGN, review, setting, service or software installation is touched.
 
-Reused owner evidence (unchanged implementation inputs; not rerun wholesale):
-#482 `e269421b` 29 Python / 27 TypeScript; #483 `75369bb6` 11 index / 16 snapshot;
-#486 `49995ad2` 30 adapter / 19 pure policy. Provider source checkpoints
-#484 `1d80fa45` (17 cases) and #485 `df86c68f` (25 cases) are consumed. #489
-`d5e3068b` supplies the workflow/store with 13 policy and one real disposable
-PostgreSQL rollback/restart case; that transaction evidence is reused, not rerun.
-#487 `16446623` supplies the receiver interface. #488 `a0751c7e` contains its
-preview/delivery source; its four source checks at executable `d4856935` are
-separate from A01/A02. #490 final `d55dd02a` has 23 focused unit cases; its
-endpoint/client contract inputs are unchanged from the compiled checkpoint. Native
-ordinary-Study/browser acceptance and complete product isolation remain pending.
+## Browser fixture and remaining source seam
 
-Next ready work: obtain Games-owned recent/detail projections and durable
-configured-enqueue/current-finding retry facade, activate #489's schema through
-an allocated owner migration, consume #488's current authority/receiver boundary,
-then reserve the exact shared window. The coordinator factory, provider wrappers
-and #490 endpoint mapping are ready. Required later checks remain:
-`make ui-file FILE=product-game-sync.spec.ts` and
-`node --test tests/runner/product-game-worker.test.mjs`, plus changed coordinator
-and real disposable storage boundaries. Those suites are not yet authored or
-passed: real import → finding → card → ordinary Study settlement and stopped/killed
-optional-process independence require the remaining owner facade, receiving
-authority boundary and launcher/mount. No hollow
-browser or lifecycle success is substituted for that proof.
+The prepared named `product-game-sync.spec.ts` uses only a verified disposable
+PostgreSQL runner. Its helper is a one-off source-mounted container in that exact
+Compose project; health, Docker ownership and DB identity are verified first.
+It seeds synthetic existing canonical library records/current card authority,
+then drives 205 Lichess records across three pages and two Chess.com months via
+actual adapters with fake HTTP. Two genuine synthetic misses cross the actual
+Study factory. The browser chooses explicit settings, preserves an unrelated
+issued attempt while Game Review fails/loads, reviews at the actual original ply,
+completes normal Study and reloads owner settlement. It fabricates no API save
+response. This browser source is **prepared/typechecked, not executed** until the
+root mount window is released.
 
-No live account, database, settings, service, software installation, deployment,
-GitHub merge or graph migration is touched. Safe current fallback is the retained
-Study/Tactics and #488's independent first-milestone path.
+That bounded fixture's sole complete approved route is shared by all its games,
+with exact UTC introduction. It does not certify generic snapshot coverage for
+arbitrary brand-new imports. A new provider game cannot be used for a retained
+*game-specific* capture before its canonical row/page commit. #483's requested
+bounded repertoire-only snapshot can drive pre-commit comparison; canonical
+library mirror plus source/checkpoint/delivery must then commit atomically before
+#487 performs fresh game-specific capture/fencing at admission. No synthetic
+capture or pre-checkpoint library write is used to bypass this ordering seam.
+Full A03/A04 acceptance and worker activation remain open until that source seam,
+root integration and actual browser run are complete.
