@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from itertools import islice
-from typing import Mapping, Protocol
+from typing import Iterable, Protocol
 
 import chess
 from tempo_evidence_math import opening_position_key
@@ -12,30 +12,53 @@ from .features import Comparison, compare
 
 
 class KeyFacts(Protocol):
-    repertoire_id: str
-    variant: str
-    position: str
+    @property
+    def repertoire_id(self) -> str: ...
+    @property
+    def variant(self) -> str: ...
+    @property
+    def position(self) -> str: ...
 
 
 class OccurrenceFacts(Protocol):
-    route_id: str
-    policy_id: str
-    source_revision: str
-    learner_color: str
-    ply: int
-    full_fen: str
-    starting_fen: str
-    history: tuple[str, ...]
-    next_move: str | None
-    learner_turn: bool
-    route_complete: bool
+    @property
+    def route_id(self) -> str: ...
+    @property
+    def policy_id(self) -> str: ...
+    @property
+    def source_revision(self) -> str: ...
+    @property
+    def learner_color(self) -> str: ...
+    @property
+    def ply(self) -> int: ...
+    @property
+    def full_fen(self) -> str: ...
+    @property
+    def starting_fen(self) -> str: ...
+    @property
+    def history(self) -> tuple[str, ...]: ...
+    @property
+    def next_move(self) -> str | None: ...
+    @property
+    def learner_turn(self) -> bool: ...
+    @property
+    def route_complete(self) -> bool: ...
 
 
 class NodeFacts(Protocol):
-    key: KeyFacts
-    selected_response: str | None
-    conflict: bool
-    occurrences: tuple[OccurrenceFacts, ...]
+    @property
+    def key(self) -> KeyFacts: ...
+    @property
+    def selected_response(self) -> str | None: ...
+    @property
+    def conflict(self) -> bool: ...
+    @property
+    def occurrences(self) -> tuple[OccurrenceFacts, ...]: ...
+
+
+class NodeInventory(Protocol):
+    def __len__(self) -> int: ...
+    def values(self) -> Iterable[NodeFacts]: ...
 
 
 class IndexFacts(Protocol):
@@ -44,14 +67,22 @@ class IndexFacts(Protocol):
     Nodes/occurrences use #483's deterministic exact-key/route/ply ordering.
     No schema, physical mapping, reentry or lifecycle authority is imported.
     """
-    snapshot_id: str
-    source_revision: str
-    revision: int
-    digest: str
-    scope_id: str
-    available: bool
-    complete: bool
-    nodes: Mapping[KeyFacts, NodeFacts]
+    @property
+    def snapshot_id(self) -> str: ...
+    @property
+    def source_revision(self) -> str: ...
+    @property
+    def revision(self) -> int: ...
+    @property
+    def digest(self) -> str: ...
+    @property
+    def scope_id(self) -> str: ...
+    @property
+    def available(self) -> bool: ...
+    @property
+    def complete(self) -> bool: ...
+    @property
+    def nodes(self) -> NodeInventory: ...
 
     def lookup(self, repertoire_id: str, fen: str, variant: str = "standard") -> NodeFacts | None: ...
 
@@ -253,6 +284,11 @@ class OutlierCandidate:
 
 @dataclass(frozen=True)
 class OutlierScanResult:
+    request: RetrievalRequest
+    max_targets: int
+    max_outliers: int
+    min_support: int
+    max_comparison_nodes: int
     snapshot_id: str
     source_revision: str
     revision: int
@@ -281,7 +317,8 @@ def scan_outliers(index: IndexFacts, request: RetrievalRequest, *, max_targets: 
         if type(value) is not int or not 1 <= value <= upper:
             raise ValueError(f"invalid_{name}")
     def result(status, outliers=(), scanned=0, examined=0, comparisons=0, truncation=()):
-        return OutlierScanResult(index.snapshot_id, index.source_revision, index.revision,
+        return OutlierScanResult(request, max_targets, max_outliers, min_support, max_comparison_nodes,
+            index.snapshot_id, index.source_revision, index.revision,
             index.digest, index.scope_id, index.complete, status, outliers,
             scanned, examined, comparisons, truncation)
     if request.variant != "standard":
@@ -309,15 +346,18 @@ def scan_outliers(index: IndexFacts, request: RetrievalRequest, *, max_targets: 
     comparisons = examined = 0
     for fen in targets[:max_targets]:
         if comparisons >= max_comparison_nodes:
-            truncation.append("comparison_nodes")
+            if "comparison_nodes" not in truncation:
+                truncation.append("comparison_nodes")
             break
-        target_request = replace(request, target_fen=fen,
-            max_nodes=min(request.max_nodes, max_comparison_nodes - comparisons))
+        remaining = max_comparison_nodes - comparisons
+        target_request = replace(request, target_fen=fen, max_nodes=min(request.max_nodes, remaining))
         retrieved = retrieve(index, target_request)
         examined += 1
         comparisons += retrieved.scanned_nodes
         if retrieved.truncation and "neighbourhoods" not in truncation:
             truncation.append("neighbourhoods")
+        if remaining < request.max_nodes and "nodes" in retrieved.truncation and "comparison_nodes" not in truncation:
+            truncation.append("comparison_nodes")
         if retrieved.exact is None:
             continue
         current = retrieved.exact.selected_response_uci

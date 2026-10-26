@@ -167,18 +167,81 @@ def test_deterministic_bounded_output_and_unchanged_inputs():
     value = source(*routes)
     before = value.model_dump_json()
     index = build_index(value)
+    index_before = repr(index)
     req = request(max_nodes=4, max_neighbours=1, max_candidates=1)
     result = retrieve(index, req)
     assert result == retrieve(index, req) == retrieve(build_index(source(*reversed(routes))), req)
     assert result.scanned_nodes == 4 and len(result.neighbours) == len(result.candidates) == 1
     assert {"nodes", "neighbours"} <= set(result.truncation)
     assert value.model_dump_json() == before
+    assert repr(index) == index_before
     with pytest.raises(FrozenInstanceError): result.status = "changed"
     with pytest.raises(FrozenInstanceError): result.neighbours[0].occurrences[0].route_id = "changed"
     scan = scan_outliers(index, request(), max_targets=3, max_comparison_nodes=1)
     assert scan.comparison_nodes == 1 and "comparison_nodes" in scan.truncation
     for field in ("max_nodes", "max_neighbours", "max_candidates", "max_occurrences", "max_provenance"):
         with pytest.raises(ValueError): replace(req, **{field: 0})
+
+
+def test_conflicting_and_incomplete_sources_never_select_a_winner():
+    value = source(route("a", move="d2d4"), route("b"), route("familiar", shifted(("a7", "a6"))))
+    result = retrieve(build_index(value), request())
+    assert result.exact is None and result.exact_reason == "conflicting_own_responses"
+    assert result.candidates[0].move_uci == "e2e4" and not result.candidates[0].exact_continuation
+    assert not result.source_complete
+    incomplete = source(route("partial", shifted(("a7", "a6"))))
+    incomplete = incomplete.model_copy(update={"boundaries":
+        (RouteBoundary(route_id="partial", terminal_ply=1, deliberate=False),)})
+    result = retrieve(build_index(incomplete), request())
+    assert result.status == "empty_neighbourhood" and not result.source_complete
+
+
+def test_provenance_and_candidate_limits_are_explicit():
+    duplicate = shifted(("a7", "a6"))
+    index = build_index(source(route("a", duplicate), route("b", duplicate), route("c", duplicate),
+        route("other", shifted(("b7", "b6")), "d2d4")))
+    result = retrieve(index, request(max_candidates=1, max_provenance=1))
+    assert result.legal_candidate_count == 2 and len(result.candidates) == 1
+    assert {"candidates", "provenance"} <= set(result.truncation)
+    support = next(item for item in result.neighbours if item.selected_response_uci == "e2e4")
+    assert len(support.occurrences) == 1 and support.provenance_truncated
+    assert result.candidates[0].distinct_support == 1  # Copies cannot win a lexical tie.
+    # The occurrence scan cap is reported even when it hides the only complete route.
+    value = source(route("a", duplicate), route("b", duplicate))
+    value = value.model_copy(update={"boundaries": (RouteBoundary(route_id="a", terminal_ply=1, deliberate=False),
+        RouteBoundary(route_id="b", terminal_ply=1, deliberate=True))})
+    limited = retrieve(build_index(value), request(max_occurrences=1))
+    assert limited.status == "empty_neighbourhood" and "provenance" in limited.truncation
+
+
+def test_exact_clocks_and_irrelevant_ep_keep_full_context():
+    board = chess.Board(); board.push_uci("e2e4")
+    source_fen = board.fen(en_passant="fen")
+    target_fen = board.fen().rsplit(" ", 2)[0] + " 19 50"
+    index = build_index(source(route("black-exact", source_fen, "e7e5", learner="black")))
+    result = retrieve(index, RetrievalRequest("rep", target_fen, "black"))
+    assert result.exact.full_fen == source_fen
+    assert not result.neighbours and result.exact.position_key == result.target_position_key
+    assert result.candidates[0].target_san == "e5"
+    assert result.exact.occurrences[0].full_fen.endswith("e3 0 1")
+    assert any("en passant" in difference for difference in result.exact.comparison.differences)
+    black_source = shifted(("b1", "c3"), fen=board.fen())
+    approximate = retrieve(build_index(source(route("black-similar", black_source, "e7e5", learner="black"))),
+        RetrievalRequest("rep", board.fen(), "black"))
+    assert approximate.exact is None and approximate.candidates[0].move_uci == "e7e5"
+
+
+def test_check_context_and_last_target_comparison_budget_are_visible():
+    source_fen = "r6k/8/8/8/8/8/8/3QK1N1 w - - 0 1"
+    target_fen = "4r2k/8/8/8/8/8/8/3QK1N1 w - - 0 1"
+    result = retrieve(build_index(source(route("check-context", source_fen, "e1f1"))), request(target_fen))
+    assert any("king attack/check" in difference for difference in result.neighbours[0].comparison.differences)
+    # One covered target, multiple index nodes: even the last target cannot hide budget truncation.
+    index = build_index(source(route("target")))
+    scan = scan_outliers(index, request(), max_targets=1, max_comparison_nodes=1)
+    assert scan.examined_positions == 1 and scan.comparison_nodes == 1
+    assert {"neighbourhoods", "comparison_nodes"} <= set(scan.truncation)
+    assert scan.max_comparison_nodes == 1 and scan.request == request()
 
 
 def test_tactically_different_neighbour_is_never_marked_sound():

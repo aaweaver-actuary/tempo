@@ -19,7 +19,7 @@ Import from [retrieval.py](retrieval.py):
   already-covered positions of the requested repertoire/learner. The request's
   target FEN is unused here; its scope, feature and resource settings apply.
 - Frozen `SupportingPosition`, `SourceOccurrence`, `FamiliarCandidate` and
-  `OutlierCandidate` explain local retrieval results. `IndexFacts` and its three
+  `OutlierCandidate` explain local retrieval results. `IndexFacts` and its four
   smaller Protocols describe only read-only #483 capabilities, not new snapshot,
   Proposal, EngineEvidence or physical-card DTOs.
 
@@ -126,7 +126,7 @@ outliers = scan_outliers(index, RetrievalRequest("white", target_fen, "white"))
 ## Focused validation and regular regression ownership
 
 `make python-file FILE=backend/tests/test_product_similarity.py` owns all eleven
-named issue acceptance cases plus a legal-but-losing tactical counterexample.
+named issue acceptance cases plus tactical, partial-source and bounded-output cases.
 It uses actual shared snapshots/#483 build_index with task-owned legal fixtures,
 reuses #482's scoped import/cycle guard on this new directory, and verifies import
 with database/HTTP/engine/Study/repertoire implementations denied. Unchanged #483
