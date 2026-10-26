@@ -1,0 +1,58 @@
+{
+  "model": "RepertoireSnapshot",
+  "payload": {
+    "interface_version": "0.2.0",
+    "membership": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "snapshot_id": "owner-capture",
+      "revision": 1,
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "source_revision": "owner-source-1",
+      "captured_at": "2026-10-26T12:00:00Z",
+      "basis": "current_repertoire",
+      "scope_id": "white",
+      "scope_repertoire_ids": [
+        "white"
+      ],
+      "complete": true,
+      "available": true,
+      "unavailable_reason": null,
+      "routes": [
+        {
+          "repertoire_id": "white",
+          "route_id": "route-a",
+          "policy_id": "white-policy",
+          "learner_color": "white",
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "moves": [
+            "e2e4"
+          ],
+          "reentries": []
+        }
+      ]
+    },
+    "variant": "standard",
+    "learner_color": "white",
+    "boundaries": [
+      {
+        "route_id": "route-a",
+        "terminal_ply": 1,
+        "deliberate": true
+      }
+    ],
+    "decision_presentations": [
+      {
+        "decision_id": "existing-decision",
+        "repertoire_id": "white",
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "selected_response_uci": "e2e4",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "repertoire_revision": 1,
+        "introduction": "introduced",
+        "introduced_at": "2026-10-20T12:00:00Z"
+      }
+    ]
+  }
+}
