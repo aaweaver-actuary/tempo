@@ -260,3 +260,144 @@ def test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns():
         assert json.dumps(source, sort_keys=True) == before
         assert source['game']['provider'] == retained
         assert source['export_digest'] == fingerprint(source['game'])
+
+
+@pytest.fixture
+def encounter_owner():
+    from types import SimpleNamespace
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.study.encounter_feedback import EncounterFeedback, EncounterIntroductionPolicy
+
+    command = fixture('encounters/unintroduced-missed', GameEncounter)
+
+    class Store(MemoryStore):
+        def encounter_card_facts(self, card_id, day): return self.facts
+        def promote_encounter(self, card_id, day): self.queue[(day, card_id)] = 'encounter-priority'
+
+    class Current:
+        mappings = (command.decision,)
+        def current_encounter(self, command): return self.mappings
+
+    class Introductions:
+        reason = None
+        charges = 0
+        def admit_encounter(self, day, *, repertoire_id, decision_id):
+            if self.reason:
+                return SimpleNamespace(status='deferred', reason=self.reason)
+            if store.facts.introduced_at is None:
+                self.charges += 1
+                store.facts = replace(store.facts, introduced_at=clock[0])
+            return SimpleNamespace(status='introduced', reason=None)
+
+    store, decisions, clock, introductions = Store(), Current(), [NOW], Introductions()
+    store.facts = replace(store.facts, introduced_at=None)
+    service = EncounterFeedback(store, decisions, clock=lambda:clock[0], introductions=introductions,
+        introduction_policy=EncounterIntroductionPolicy('ordinary'))
+    return store, decisions, clock, introductions, service, command
+
+
+@pytest.mark.parametrize('observation', ['matched','missed'])
+def test_encounter_first_introduction_once_without_review_or_again(encounter_owner, observation):
+    store, _, clock, introductions, service, command = encounter_owner
+    command = command.model_copy(update=dict(observation=observation,
+        played_uci=command.expected_uci if observation=='matched' else command.played_uci))
+    before = store.card
+    receipt = service.accept_encounter(command)
+    clock[0] += timedelta(days=1)
+    duplicate = service.accept_encounter(command.model_copy(update={'detected_at':clock[0].isoformat()}))
+    assert receipt.disposition == 'first_introduction' and receipt.admission_status == 'available'
+    assert receipt.observation_recorded and receipt.observation == observation
+    assert duplicate.owner_receipt_id == receipt.owner_receipt_id and duplicate.detected_at == command.detected_at
+    assert introductions.charges == 1 and store.facts.introduced_at == NOW
+    assert store.saved is None and store.card == before and store.reviews == []
+    assert store.history == ['retained-original-review']
+
+
+def test_encounter_later_recomparison_cannot_become_lapse(encounter_owner):
+    from app.contracts.product_v02.learning import GameEncounter
+    store, _, _, introductions, service, command = encounter_owner
+    first = service.accept_encounter(command)
+    lapse = fixture('lapse', GameLapse).model_dump(mode='json')
+    lapse.update(key=command.key.model_dump(mode='json'),detected_at=command.detected_at,occurred_at=command.occurred_at)
+    lapse['finding'].update(provider=command.key.provider,game_id=command.key.game_id,
+        source_revision=command.source.source_revision,source_digest=command.source.source_digest,
+        decision_id=command.key.decision_id,position_key=command.decision.position_key,
+        expected_uci=[command.expected_uci],played_uci=command.played_uci,
+        repertoire_id=command.decision.repertoire_id,repertoire_revision=command.decision.repertoire_revision,
+        presentation_id=command.decision.presentation_id,presentation_revision=command.decision.presentation_revision)
+    duplicate = service.accept_lapse(GameLapse.model_validate_json(json.dumps(lapse)))
+    assert duplicate.owner_receipt_id == first.owner_receipt_id and duplicate.outcome == 'duplicate'
+    assert store.reviews == [] and store.saved is None and introductions.charges == 1
+    assert store.get(command.key).encounter == GameEncounter.model_validate_json(command.model_dump_json())
+
+
+def test_historical_missed_encounter_retains_priority_after_later_learning(encounter_owner):
+    store, _, _, introductions, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW-timedelta(hours=2))
+    store.clean_reviews.append(Completion(77,CARD,1,NOW-timedelta(hours=1),True,'study'))
+    before = store.card
+    receipt = service.accept_encounter(command)
+    assert receipt.disposition == 'review_priority' and receipt.admission_status == 'available'
+    assert receipt.observation_recorded and receipt.observation == 'missed'
+    assert (NOW.date().isoformat(),CARD) in store.queue
+    assert store.saved is None and store.card == before and not store.reviews and introductions.charges == 0
+
+
+def test_correct_introduced_encounter_is_frequency_without_failure(encounter_owner):
+    store, _, _, introductions, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW-timedelta(days=1))
+    receipt = service.accept_encounter(command.model_copy(update=dict(observation='matched',played_uci=command.expected_uci)))
+    assert receipt.disposition == 'frequency_only' and receipt.admission_status == 'not_requested'
+    assert receipt.observation_recorded and receipt.available_by is None
+    assert not store.reviews and not store.queue and store.saved is None and introductions.charges == 0
+    service.control_effect(GameEffectControl(key=command.key,source_revision=2,action='hold',reason='source_excluded'))
+    assert service.encounter_status(command.key).admission_status == 'not_requested'
+
+
+def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_original_intent(encounter_owner):
+    store, _, clock, introductions, service, command = encounter_owner
+    introductions.reason = 'introduction_allowance'
+    first = service.accept_encounter(command)
+    assert first.admission_status == 'pending' and first.available_by is None
+    clock[0] += timedelta(days=1)
+    store.facts = replace(store.facts, introduced_at=clock[0]-timedelta(hours=1))
+    before = store.card
+    service.maintain()
+    current = service.encounter_status(command.key)
+    assert current.disposition == first.disposition == 'first_introduction'
+    assert current.admission_status == 'available' and current.detected_at == first.detected_at
+    assert introductions.charges == 0 and store.card == before and store.saved is None and not store.reviews
+
+
+@pytest.mark.parametrize('reason', ['study_only','disabled','paused','zero_limit','introduction_allowance'])
+def test_encounter_explicit_controls_remain_pending_without_deadline(encounter_owner, reason):
+    store, _, _, introductions, service, command = encounter_owner
+    introductions.reason = reason
+    receipt = service.accept_encounter(command)
+    assert receipt.admission_status == 'pending' and receipt.deferred_reason == reason
+    assert receipt.available_by is None and receipt.detected_at == command.detected_at
+    assert receipt.observation_recorded and introductions.charges == 0 and not store.reviews and not store.queue
+
+
+def test_encounter_hold_before_delivery_fences_both_command_kinds(encounter_owner):
+    store, _, _, introductions, service, command = encounter_owner
+    service.control_effect(GameEffectControl(key=command.key,source_revision=1,action='hold',reason='reanalysis'))
+    receipt = service.accept_encounter(command)
+    assert receipt.status == 'held' and not receipt.observation_recorded
+    service.maintain()
+    assert not store.queue and not store.reviews and introductions.charges == 0
+
+
+def test_encounter_active_attempt_and_unknown_policy_do_not_mutate(encounter_owner):
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    store, _, _, introductions, service, command = encounter_owner
+    store.facts = replace(store.facts, active_attempt=True)
+    assert service.accept_encounter(command).deferred_reason == 'active_attempt'
+    store.facts = replace(store.facts, active_attempt=False)
+    service.introduction_policy = None
+    service.maintain()
+    assert service.encounter_status(command.key).reason == 'encounter_introduction_policy_pending'
+    service.introduction_policy = EncounterIntroductionPolicy('limited_reserve',1)
+    service.maintain()
+    assert service.encounter_status(command.key).reason == 'encounter_reserve_capability_pending'
+    assert introductions.charges == 0 and not store.reviews and not store.queue
