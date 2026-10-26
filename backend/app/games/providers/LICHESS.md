@@ -53,7 +53,9 @@ timestamps with different IDs remain distinct. A changed overlapping ID produces
 A normally ended short response proves exhaustion of the remaining requested
 window and returns `complete=True`, with no continuation. Rejections with reliable
 ID/time are accounted in `rejections`, including local filter mismatches and
-invalid PGNs; they count toward saturation. Unreliable identity/timestamp/order,
+invalid PGNs; they count toward saturation. Identical duplicate source rows are
+accounted as `duplicate_source_id`; conflicting rows with one ID fail the page.
+Unreliable identity/timestamp/order,
 invalid NDJSON, byte overflow, interrupted streams, HTTP errors and timeouts fail
 the entire operation, preserve the input checkpoint and return no partial page.
 Persist output and its continuation atomically in the coordinator before moving on.

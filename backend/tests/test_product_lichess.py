@@ -114,6 +114,15 @@ def test_equal_timestamp_boundary_keeps_all_ids():
     assert pages[-1].complete
 
 
+def test_last_millisecond_is_retained_and_end_is_excluded():
+    rows = [source(0, timestamp=START), source(1, timestamp=START + 86400000 - 1),
+            source(2, timestamp=START + 86400000)]
+    pages = asyncio.run(consume(Export(rows), page_size=1))
+    records = [record for page in pages for record in page.records]
+    assert [record.source_game_id for record in records] == ["game0000", "game0001"]
+    assert records[-1].played_at == "2026-10-01T23:59:59.999+00:00"
+
+
 def test_retry_replays_same_page():
     export = Export([source(number) for number in range(205)])
     first = asyncio.run(acquire(export))
@@ -166,6 +175,14 @@ def test_filtered_or_rejected_records_are_accounted():
         "game0001": "filtered_speed", "game0002": "invalid_pgn", "game0003": "filtered_rated"}
     assert len(page.records) + len(page.rejections) == len(rows)
     assert dict(page.filters) == {"perfType": "rapid", "rated": "true"}
+
+
+def test_duplicate_source_rows_are_accounted_and_conflicting_rows_fail_closed():
+    page = asyncio.run(acquire(lambda request: response([source(0), source(0), source(1)])))
+    assert len(page.records) == 2 and page.complete
+    assert [(item.source_game_id, item.reason) for item in page.rejections] == [("game0000", "duplicate_source_id")]
+    with pytest.raises(LichessAcquisitionError, match="changed_boundary"):
+        asyncio.run(acquire(lambda request: response([source(0), source(0, rated=False)])))
 
 
 def test_429_preserves_retry_after():

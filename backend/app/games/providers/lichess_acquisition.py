@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -57,7 +57,7 @@ def _milliseconds(value: str) -> int:
 
 
 def _timestamp(value: int) -> str:
-    return datetime.fromtimestamp(value / 1000, timezone.utc).isoformat(timespec="milliseconds")
+    return (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=value)).isoformat(timespec="milliseconds")
 
 
 def _cursor(key: str, since: int, seen: dict[str, str]) -> str:
@@ -194,6 +194,8 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
         if game_id in page_ids:
             if page_ids[game_id] != row_digest:
                 raise LichessAcquisitionError("changed_boundary", continuation=continuation)
+            rejections.append(GameRejection(source_game_id=game_id,
+                source_revision=source_revision, reason="duplicate_source_id"))
             continue
         page_ids[game_id] = row_digest
         if timestamp != previous:
@@ -232,9 +234,12 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
     saturated = len(rows) == limit
     if saturated and len(boundary) > MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
+    next_token = _cursor(key, previous, boundary) if saturated else None
+    if saturated and next_token == continuation:
+        raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
     return GamePage(provider="lichess", account=account, window=window,
         records=tuple(records), rejections=tuple(rejections), filters=filters,
-        continuation=_cursor(key, previous, boundary) if saturated else None,
+        continuation=next_token,
         complete=not saturated, saturated=saturated)
 
 
