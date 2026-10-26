@@ -20,7 +20,7 @@ flowchart TD
     A[Normal launcher: admitted target and original lock] --> C[Public serving configuration validator]
     C --> M[Runtime adapter: daemon, images, volumes, mounts and network]
     M --> S{Requested operation}
-    S -->|status; stopped target| R[Cold metadata: no schema or health claim]
+    S -->|authority inspection for every command| R[Exact target metadata and service state; no schema or health claim]
     S -->|start or restart under lock| H[Public DB verifier availability; no network]
     H --> P[Read-only PG_VERSION and pg_controldata of selected existing volume]
     P --> D[Start only pinned PostgreSQL if stopped]
@@ -46,11 +46,21 @@ resources. The data path is explicit; no PostgreSQL image/layout default is
 guessed. Source-volume disjointness and completed admission belong to the
 authority/configuration owners.
 
-`inspectRuntime(request, observation?)` uses read-only metadata. A stopped or
-incomplete service set returns `state: cold` with `clusterIdentityVerified`,
-`schemaVerified` and `healthVerified` false. It creates no inspection container
-and makes no claim that an offline database is currently healthy. A running
-target receives the complete concrete readback below.
+`inspectRuntime(request, observation?)` uses only read-only Docker metadata for
+every command. It validates the selected daemon, images, persistent ownership,
+mounts, runtime configuration, network and actual ingress. All three containers
+running returns `state: running`; a stopped or incomplete service set returns
+`state: cold`. Both retain `clusterIdentityVerified`, `schemaVerified` and
+`healthVerified` false. Running process state is not proof of application health.
+Inspection creates no helper container and performs no physical, DB or HTTP
+probe. Thus an unhealthy but correctly identified target can still be stopped,
+have its logs read or enter restart preparation. Identity mismatches still block
+all commands. Normal status/doctor report schema and health as unverified.
+
+The stricter live checks below belong to start/restart preparation and post-start
+outcome verification. A restart still fails if its selected database cannot pass
+preparation or its application remains unhealthy after startup; inspection does
+not turn that failure into success.
 
 Only `prepareDatabase(request, observation)` for start/restart may create bounded
 disposable inspection containers or start PostgreSQL. Its caller must already
