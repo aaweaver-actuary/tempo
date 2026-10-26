@@ -27,11 +27,20 @@ The Python `CanonicalGame` is the existing `tempo_game_review_contracts` model,
 not a new canonical game. Product `RepertoireSnapshot.membership` is the existing
 public membership snapshot; the wrapper adds variant/color, explicit route ends,
 selected decision/current physical presentation mappings and introduction evidence.
-Its `membership` is deep-copied on validation; that existing model's nested lists
-remain mutable, so persist a serialized snapshot. New containers use tuples.
+Its `membership` uses wire-compatible immutable subclasses of the existing owner
+models: routes, moves, reentries and repertoire scope are tuples, and nested
+models forbid assignment. Donor behavior is unchanged. `EvidenceWithdrawal` is
+likewise adapted with frozen assignment inside the new control seam. TypeScript
+public parsers return recursively readonly/frozen snapshots, including arrays.
 The TypeScript membership schema is that owner's wire mirror for the new screens.
 No physical card identity is invented: `presentation_id` names the actual existing
 card/current presentation. Position equality cannot establish it or introduction.
+`DecisionPresentation.available` and `introduction_matches_current_content` are
+explicit owner-supplied facts; both default false when absent. An introduction
+timestamp alone cannot prove current content was introduced before a game. The
+synthetic snapshot proves both facts explicitly so a valid miss can be expressed.
+Position keys use the public `tempo_evidence_math.opening_position_key(fen)`
+legal-en-passant four-field FEN convention, scoped by repertoire and variant.
 
 ## Frozen operation semantics
 
@@ -64,13 +73,20 @@ card/current presentation. Position equality cannot establish it or introduction
   remains unresolved. Applied historical learning effects are preserved; a
   withdrawal never reverses history. `settled` means no remaining actionable
   obligation, with the owner receipt/outcome explaining why.
-- `GameEffectControl.withdrawal` reuses public v2 `EvidenceWithdrawal`, also used
-  unchanged by v3. `withdrawal_only_delivery` validates an existing v3 envelope
+- Pre-admission `GameEffectControl` requires only its stable `key`, changed
+  `source_revision`, `action` and `reason`. Producers never guess a Study-owned
+  obligation identity/revision. Study persists the tombstone by logical key;
+  receipt/admission need not have happened. Optional `withdrawal` reuses public
+  v2 `EvidenceWithdrawal` when the existing owner reference is already known
+  (also used unchanged by v3); otherwise the Study adapter resolves it. Legacy
+  explicit-withdrawal commands may omit `reason` and retain the existing reason
+  inside `withdrawal`; if both are supplied they must agree.
+  `withdrawal_only_delivery` validates an existing v3 envelope
   with empty observation/obligation arrays and the supplied withdrawal. The caller
   supplies fresh envelope identity/revision and actual captured authority. The
-  adapter performs no database lookup and fabricates no graph authority. A hold
-  can be applied before an original receipt exists; Study must retain the key,
-  source revision and expected obligation revision. Null `effect_status` is not
+  adapter performs no database lookup and fabricates no graph authority. Study
+  retains the key/source revision/reason, plus an existing obligation revision
+  when available. Null `effect_status` is not
   proof that an original delivery may bypass a stored fence.
 
 These requirements describe the receiver contract. Tests here prove wire shapes,
