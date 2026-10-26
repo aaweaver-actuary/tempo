@@ -1,18 +1,31 @@
 # Bounded repertoire composition — #501 private checkpoint
 
-Unmerged source preparation for SPEC v0.2 C/D/E. Nothing here mounts a route,
-starts a worker, writes live settings, creates cards, or activates introductions.
+Unmerged source preparation for SPEC v0.2 C/D/E. C's optional audit tab is mounted
+inside the retained Repertoire workspace; backend registration still awaits its
+short root window and the actual current-owner callbacks. Nothing starts a
+worker, writes live settings, creates cards, or activates introductions.
 The working Study/Tactics shell remains with #488/#491's shared-root windows.
 
 | Checkpoint | Usable source now | Remaining product proof |
 | --- | --- | --- |
-| C audit | [Composition router/projection](../../product_composition/repertoire.py) delegates to #492's actual conflict/preview/decision owner; complete alternatives feed #500's [HTTP client](../../../../app/features/product-api/repertoire-review-api.ts). Read/choice generation is inert and Study block defaults to unknown. | Current retained-source publication callback, affected Study suspension without lapse, persistent conflicting-import preview, root mount and A05 browser/PG proof. |
+| C audit | [Composition router/projection](../../product_composition/repertoire.py) delegates to #492's actual conflict/preview/decision owner; complete alternatives feed #500's [HTTP client](../../../../app/features/product-api/repertoire-review-api.ts). The retained workspace mounts the optional audit tab. Read/choice generation is inert and Study block defaults to unknown. | Current retained-source publication callback, affected Study suspension without lapse, persistent conflicting-import preview, backend root registration and A05 browser/PG proof. |
 | D introductions | [CoverageRequest / prepare_coverage](../../product_composition/analysis.py) joins #483/#493/#494; this runner fences publication. `accept_published_introductions` submits merged factual rankings to actual #495 acceptance/preview/commit. | Concrete Analysis store/cache, explicit saved settings, #495's retained current-facts/canonical-writer bridge, A06 ordinary introduction and PG/browser proof. |
 | E repairs | `create_proposal_coordinator` wires actual #496 retrieval and #499 policy to the [#497 Python bridge](stockfish.py). `preview_repair` delegates proposed changes to #492 and never accepts them. | Full result/frequency projection into #500, confirmed existing-card Study practice command, explicit approval through retained publication, A07 product proof. |
 
 These are independently reviewable checkpoints; no row claims A05/A06/A07 is
 complete. C has no probability/engine dependency. D has no similarity/engine
 dependency. Maia and R11 do not gate this lane.
+
+C transport [command handlers](../../product_composition/repertoire_commands.py)
+borrow the existing foreground gateway transaction and delegate every effect to
+the supplied owning factory. Stable payload-bound command identities survive
+remount/retry; a 202 remains pending rather than being parsed as an approval.
+GETs are inert. The separate explicit audit POST requires an actual Study-owned
+block/suspend/restore command; absent capability returns 503. The mounted audit
+keeps the existing Repertoire library available, has an explicit repertoire
+selection and retains the proposal session across tab changes. The independent
+Study shell is unchanged. Actual backend callbacks are never replaced by fakes
+for product acceptance.
 
 ## Public use and ownership
 

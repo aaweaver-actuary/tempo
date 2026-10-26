@@ -28,6 +28,7 @@ export function createProductRepertoireReviewApi({ endpoints, fetch: request = g
         ...(operationId ? { "Idempotency-Key": operationId } : {}),
       },
     });
+    if (response.status === 202) throw new Error("Repertoire save is still pending. Retry to check the same operation.");
     if (!response.ok) throw new Error(`Repertoire request failed (${response.status})`);
     return response.json();
   }
