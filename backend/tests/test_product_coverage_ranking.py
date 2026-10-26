@@ -16,7 +16,9 @@ from app.contracts.product_v02.analysis import PopulationSelection, ProbabilityE
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.analysis.coverage.ranking import rank_candidates, rank_coverage
 from app.analysis.coverage.ports import AnalysisLimits
-from app.analysis.coverage.personal_evidence import PersonalEncounter, PersonalGame, deduplicate_games
+from app.analysis.coverage.personal_evidence import (
+    PersonalEncounter, PersonalGame, deduplicate_games, decision_importance,
+)
 from app.repertoire import build_index
 from tempo_evidence_math import (
     LearnerPolicy, LearnerPolicyAction, MoveProbability, MoveProbabilityDistribution,
@@ -396,3 +398,76 @@ def test_non_deliberate_boundary_and_unknown_introduction_are_not_silently_eligi
     result = compute(source, (probability(values={"e2e4": 1.}),))
     assert result.introductions.ordered == ()
     assert any(item.code == "non_deliberate_boundary" for item in result.diagnostics)
+
+
+def test_importance_covers_introduced_and_unintroduced_current_approved_decisions():
+    source = snapshot(route("a", ("e2e4", "e7e5")), route("b", ("d2d4", "d7d5")),
+        mapped=(("a", 1, "a", "introduced"), ("b", 1, "b", "unintroduced")))
+    games = (personal("old-a", key("e2e4"), "c7c5"), personal("old-b", key("d2d4"), "g8f6"))
+    result = decision_importance(current_approved_decisions=source.decision_presentations, games=games)
+    assert [item.decision.introduction for item in result] == ["introduced", "unintroduced"]
+    assert [item.facts.personal_encounters for item in result] == [1, 1]
+    assert [len(item.differing_response_sources) for item in result] == [1, 1]
+    assert all(item.facts.reach_probability is None for item in result)
+
+
+def test_importance_duplicate_recomparison_and_transposed_mapping_count_once():
+    source = snapshot(route("a", ("e2e4", "e7e5")), mapped=(("a", 1, "a", "introduced"),))
+    decision = source.decision_presentations[0]
+    game = personal("stable-game", key("e2e4"), "c7c5")
+    original = decision_importance(current_approved_decisions=(decision,), games=(game,))
+    repeated = decision_importance(current_approved_decisions=(decision, decision), games=(game, game))
+    assert repeated == original
+    assert repeated[0].encounter_sources == (("synthetic-chesscom", "synthetic-player", "stable-game", 1),)
+    # A newer comparison of the same game replaces observations, without another contribution.
+    recomparison = replace(game, source_revision=2)
+    refreshed = decision_importance(current_approved_decisions=(decision,), games=(game, recomparison))
+    assert refreshed[0].facts.personal_encounters == 1
+    assert len(refreshed[0].differing_response_sources) == 1
+    assert refreshed[0].encounter_sources[0][-1] == 2
+
+
+def test_historical_importance_survives_later_introduction_and_learning_without_lapse():
+    source = snapshot(route("a", ("e2e4", "e7e5")), mapped=(("a", 1, "a", "unintroduced"),))
+    decision = source.decision_presentations[0]
+    old_miss = personal("before-introduction", key("e2e4"), "c7c5")
+    before = decision_importance(current_approved_decisions=(decision,), games=(old_miss,))[0]
+    # Current owner facts change after admission/reviews; game evidence does not.
+    learned = decision.model_copy(update={"introduction": "introduced", "introduced_at": "2026-10-26T18:00:00Z",
+                                          "presentation_revision": 2})
+    after = decision_importance(current_approved_decisions=(learned,), games=(old_miss,))[0]
+    assert after.encounter_sources == before.encounter_sources
+    assert after.differing_response_sources == before.differing_response_sources
+    assert after.facts.personal_encounters == before.facts.personal_encounters == 1
+    assert after.dependency_digest != before.dependency_digest  # Fence changed current mapping/state.
+    assert after.decision == learned
+    assert not hasattr(after, "lapse_eligible") and not hasattr(after, "schedule")
+
+
+def test_correct_personal_encounter_is_frequency_not_a_fabricated_miss():
+    source = snapshot(route("a", ("e2e4", "e7e5")), mapped=(("a", 1, "a", "unintroduced"),))
+    decision = source.decision_presentations[0]
+    correct = personal("correct", key("e2e4"), "e7e5")
+    result = decision_importance(current_approved_decisions=(decision,), games=(correct,))[0]
+    assert result.facts.personal_encounters == 1
+    assert result.differing_response_sources == ()
+    # Repeated visits of the same decision in a game still give one encounter,
+    # with one differing-game support if any visit differed from the current response.
+    also_different = replace(correct, encounters=correct.encounters + (
+        PersonalEncounter("rep", key("e2e4"), "c7c5"),))
+    mixed = decision_importance(current_approved_decisions=(decision,), games=(also_different,))[0]
+    assert mixed.facts.personal_encounters == len(mixed.differing_response_sources) == 1
+
+
+def test_importance_new_source_revision_retracts_obsolete_facts_and_fences_current_mapping():
+    source = snapshot(route("a", ("e2e4", "e7e5")), mapped=(("a", 1, "a", "introduced"),))
+    decision = source.decision_presentations[0]
+    old = personal("corrected", key("e2e4"), "c7c5")
+    removed = replace(old, source_revision=2, encounters=())
+    result = decision_importance(current_approved_decisions=(decision,), games=(old, removed))[0]
+    assert result.facts.personal_encounters == 0 and result.differing_response_sources == ()
+    unavailable = decision.model_copy(update={"available": False})
+    assert decision_importance(current_approved_decisions=(unavailable,), games=(old,)) == ()
+    conflict = decision.model_copy(update={"selected_response_uci": "c7c5", "decision_id": "other"})
+    with pytest.raises(ValueError, match="conflicting_current_approved_responses"):
+        decision_importance(current_approved_decisions=(decision, conflict), games=(old,))

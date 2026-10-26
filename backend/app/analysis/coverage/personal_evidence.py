@@ -2,9 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 
 import chess
 from tempo_evidence_math import opening_position_key
+
+from app.contracts.product_v02.analysis import RankingCandidate
+from app.contracts.product_v02.repertoire import DecisionPresentation
+
+IMPORTANCE_VERSION = "current-decision-personal-importance-v1"
+SourceGame = tuple[str, str, str, int]
 
 
 @dataclass(frozen=True, order=True)
@@ -55,8 +63,60 @@ def deduplicate_games(games: tuple[PersonalGame, ...]) -> tuple[PersonalGame, ..
 
 
 def encounter_sources(games: tuple[PersonalGame, ...], target: PersonalEncounter, *,
-                      match_move: bool = True) -> tuple[tuple[str, str, str, int], ...]:
+                      match_move: bool = True) -> tuple[SourceGame, ...]:
     """Own decisions were encountered even when the learner played another move."""
     return tuple((*game.source_id, game.source_revision) for game in deduplicate_games(games)
                  if any((item.repertoire_id, item.position_key) == (target.repertoire_id, target.position_key)
                         and (not match_move or item.move_uci == target.move_uci) for item in game.encounters))
+
+
+@dataclass(frozen=True)
+class DecisionImportance:
+    """Calculation detail, not an admission command or lapse eligibility proof."""
+    decision: DecisionPresentation
+    facts: RankingCandidate
+    encounter_sources: tuple[SourceGame, ...]
+    differing_response_sources: tuple[SourceGame, ...]
+    dependency_digest: str
+    policy_version: str = IMPORTANCE_VERSION
+
+
+def decision_importance(*, current_approved_decisions: tuple[DecisionPresentation, ...],
+                        games: tuple[PersonalGame, ...]) -> tuple[DecisionImportance, ...]:
+    """Project unique source-game importance for either current introduction state.
+
+    The caller supplies exact owner-mapped approved decisions and the existing
+    comparison's repertoire-scoped observations, never arbitrary FEN matches.
+    Study must revalidate that authority when consuming the factual result.
+    Differing play concerns the supplied current response, not historical recall.
+    """
+    decisions = {}
+    positions = {}
+    for decision in current_approved_decisions:
+        identity = decision.repertoire_id, decision.decision_id
+        position = decision.repertoire_id, decision.position_key
+        if identity in decisions and decisions[identity] != decision:
+            raise ValueError("ambiguous_current_decision_mapping")
+        if position in positions and positions[position] != decision.selected_response_uci:
+            raise ValueError("conflicting_current_approved_responses")
+        positions[position] = decision.selected_response_uci
+        decisions[identity] = decision
+    observations = deduplicate_games(games)
+    results = []
+    for identity in sorted(decisions):
+        decision = decisions[identity]
+        if not decision.available or decision.introduction not in {"introduced", "unintroduced"}:
+            continue
+        target = PersonalEncounter(decision.repertoire_id, decision.position_key, decision.selected_response_uci)
+        sources = encounter_sources(observations, target, match_move=False)
+        differing = tuple((*game.source_id, game.source_revision) for game in observations
+            if any(item.repertoire_id == target.repertoire_id and item.position_key == target.position_key
+                   and item.move_uci != target.move_uci for item in game.encounters))
+        facts = RankingCandidate(decision_id=decision.decision_id, repertoire_id=decision.repertoire_id,
+            reach_probability=None, evidence_support=None, uncertainty=None,
+            personal_encounters=len(sources))
+        digest = hashlib.sha256(json.dumps(dict(policy_version=IMPORTANCE_VERSION,
+            decision=decision.model_dump(mode="json"), encounters=sources, differing=differing),
+            sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        results.append(DecisionImportance(decision, facts, sources, differing, digest))
+    return tuple(results)
