@@ -76,9 +76,20 @@ earlier gap/miss; mere FEN coincidence cannot restart coverage.
 
 Current card existence, a matching FEN and introduction time alone are insufficient
 historical authority. Availability and unchanged introduced-content proof must
-be explicit; missing proof produces `known_unavailable`. Only second/millisecond
-occurrence precision can qualify. The receiving Study owner still revalidates
-authority before mutation; these findings are evidence, not a scheduling effect.
+be explicit; missing proof produces `known_unavailable`. A route-local binding
+applies only to its paired route ID / zero-based authored ply. It never covers
+an unbound transposed occurrence or selects one of several active routes. Paired
+nulls preserve an explicitly global owner binding.
+
+An explicit Study `introduced_before_game` assertion can preserve chronology when
+the introduction timestamp is unavailable, only if its provider, game ID, source
+revision and digest all match the compared canonical source. Mismatched assertions
+remain unknown; no timestamp is invented. This assertion still requires unchanged
+content and current availability. Only second/millisecond game occurrence
+precision can qualify; an unknown game timestamp/precision is never upgraded.
+Contradictory positive assertion/timestamp evidence cannot produce a lapse. The
+receiving Study owner still revalidates authority before mutation; these findings
+are evidence, not a scheduling effect.
 
 ## Focused verification
 

@@ -14,13 +14,16 @@ def classify_response(
     complete: bool = True, terminal: bool = False, ambiguous: bool = False,
     mapping_count: int = 0, available: bool = False,
     introduced: bool | None = None, introduced_at: datetime | None = None,
+    introduced_before_game: bool | None = None,
     occurred_at: datetime | None = None, occurrence_is_exact: bool = False,
     introduction_matches_content: bool = False,
 ) -> tuple[FindingKind, str] | None:
     """Classify one authoritative covered occurrence; None means correct.
 
     Route selection, exact identity, and decision/card mapping belong to the
-    supplied index. This function cannot infer them from a FEN or current card.
+    supplied index. Any introduced_before_game assertion must already be scoped
+    to this exact game source by the adapter. This function cannot infer it from
+    a FEN or current card.
     An incomplete snapshot cannot prove absence. Own-response conflicts remain
     conflicts even when the played move is one of the competing responses.
     """
@@ -48,14 +51,20 @@ def classify_response(
         return "known_unavailable", "current_presentation_unavailable"
     if introduced is False:
         return "known_unintroduced", "decision_not_introduced"
-    if introduced is not True or introduced_at is None:
+    if introduced is not True:
         return "known_unavailable", "introduction_evidence_unavailable"
+    if introduced_before_game is False:
+        return "known_unintroduced", "introduction_not_before_game"
     if not occurrence_is_exact or occurred_at is None:
         return "known_unavailable", "game_occurrence_time_not_exact"
-    if introduced_at.tzinfo is None or occurred_at.tzinfo is None:
+    if occurred_at.tzinfo is None or (introduced_at is not None and introduced_at.tzinfo is None):
         return "known_unavailable", "chronology_requires_timezone"
-    if introduced_at >= occurred_at:
+    if introduced_at is not None and introduced_at >= occurred_at:
+        if introduced_before_game is True:
+            return "known_unavailable", "conflicting_introduction_chronology"
         return "known_unintroduced", "introduction_not_before_game"
+    if introduced_at is None and introduced_before_game is not True:
+        return "known_unavailable", "introduction_evidence_unavailable"
     if not introduction_matches_content:
         return "known_unavailable", "introduced_content_identity_unproved"
     return "confirmed_miss", "unique_introduced_response_not_played"
