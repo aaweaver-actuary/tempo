@@ -9,7 +9,10 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
+
+if TYPE_CHECKING:
+    from app.contracts.product_v02.learning import GameEncounter
 
 from app.contracts.product_v02.learning import (
     GameEffectControl, GameEffectKey, GameLapse, LearningReceipt,
@@ -70,6 +73,13 @@ class Effect:
     settlement_review_id: int | None = None
     control: GameEffectControl | None = None
     conflict_json: str | None = None
+    # The next-release command shares this ledger and control tombstones. Its
+    # original source/observation is immutable; owner admission facts may advance.
+    encounter: GameEncounter | None = None
+    disposition: str | None = None
+    admission_status: str | None = None
+    deferred_reason: str | None = None
+    observation_recorded: bool = False
 
 
 @dataclass(frozen=True)
