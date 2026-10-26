@@ -34,3 +34,12 @@ Acceptance preserves the existing imported-game advisory lock, shared prefix/gra
 `read_rows`, `Stream`, the four column definitions and `BorrowedTupleConnection` moved once and remain available through their existing application import aliases. The generic reader/DBAPI seams already existed; fixed operations now contain their SQL, and this extraction introduces no new generic execution interface. The four original authority/capture/observation/command files contain no SQL-bearing literals or direct SQL/driver/cursor operations. Other legacy integrity/remediation/reader consumers remain at their existing seams and retain their separately coordinated extraction owners.
 
 Existing source/catalogue/card/remediation coupling is preserved explicitly. This physical move does not prove a new clean domain boundary, resource isolation or independent Games/Study shutdown behavior; Study gains no Games dependency. All 101 focused synthetic authority, finite capture, command and read-only observation cases pass. Native PostgreSQL locking/collation/rollback, deployment and live schema remain unverified; no live database or provider was used.
+
+## Bounded candidate discovery
+
+[`candidate_lookup.py`](candidate_lookup.py) adds a read-only one-position
+physical-binding lead query through the existing short reader. It retains
+conflicting and ineligible alternatives and refuses the 65th binding; it grants
+no capture or write authority. The [owning view and focused proof](candidate_lookup/README.md)
+show its explicit relationship to unchanged complete authority capture. No schema,
+transaction, certificate, capture budget or Study dependency changes.
