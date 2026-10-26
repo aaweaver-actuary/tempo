@@ -1,0 +1,160 @@
+{
+  "model": "ProbabilityEvidence",
+  "payload": {
+    "interface_version": "0.2.0",
+    "evidence_id": "synthetic-personal-evidence",
+    "position": {
+      "fen_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "legal_moves": [
+        "a2a3",
+        "a2a4",
+        "b1a3",
+        "b1c3",
+        "b2b3",
+        "b2b4",
+        "c2c3",
+        "c2c4",
+        "d2d3",
+        "d2d4",
+        "e2e3",
+        "e2e4",
+        "f2f3",
+        "f2f4",
+        "g1f3",
+        "g1h3",
+        "g2g3",
+        "g2g4",
+        "h2h3",
+        "h2h4"
+      ]
+    },
+    "provider": "personal_games",
+    "model": null,
+    "basis": "personal",
+    "population": null,
+    "personal_account": "synthetic-player",
+    "observed_at": "2026-10-26T12:00:00Z",
+    "distribution": {
+      "contract_version": 1,
+      "position": {
+        "fen_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "legal_moves": [
+          "a2a3",
+          "a2a4",
+          "b1a3",
+          "b1c3",
+          "b2b3",
+          "b2b4",
+          "c2c3",
+          "c2c4",
+          "d2d3",
+          "d2d4",
+          "e2e3",
+          "e2e4",
+          "f2f3",
+          "f2f4",
+          "g1f3",
+          "g1h3",
+          "g2g3",
+          "g2g4",
+          "h2h3",
+          "h2h4"
+        ]
+      },
+      "moves": [
+        {
+          "move_uci": "a2a3",
+          "probability": null
+        },
+        {
+          "move_uci": "a2a4",
+          "probability": null
+        },
+        {
+          "move_uci": "b1a3",
+          "probability": null
+        },
+        {
+          "move_uci": "b1c3",
+          "probability": null
+        },
+        {
+          "move_uci": "b2b3",
+          "probability": null
+        },
+        {
+          "move_uci": "b2b4",
+          "probability": null
+        },
+        {
+          "move_uci": "c2c3",
+          "probability": null
+        },
+        {
+          "move_uci": "c2c4",
+          "probability": null
+        },
+        {
+          "move_uci": "d2d3",
+          "probability": null
+        },
+        {
+          "move_uci": "d2d4",
+          "probability": null
+        },
+        {
+          "move_uci": "e2e3",
+          "probability": null
+        },
+        {
+          "move_uci": "e2e4",
+          "probability": 0.6
+        },
+        {
+          "move_uci": "f2f3",
+          "probability": null
+        },
+        {
+          "move_uci": "f2f4",
+          "probability": null
+        },
+        {
+          "move_uci": "g1f3",
+          "probability": null
+        },
+        {
+          "move_uci": "g1h3",
+          "probability": null
+        },
+        {
+          "move_uci": "g2g3",
+          "probability": null
+        },
+        {
+          "move_uci": "g2g4",
+          "probability": null
+        },
+        {
+          "move_uci": "h2h3",
+          "probability": null
+        },
+        {
+          "move_uci": "h2h4",
+          "probability": null
+        }
+      ],
+      "unknown_mass": 0.4
+    },
+    "counts": {
+      "kind": "counts",
+      "total_count": 10,
+      "moves": [
+        {
+          "move_uci": "e2e4",
+          "count": 6
+        }
+      ]
+    },
+    "unavailable_reason": null
+  }
+}
