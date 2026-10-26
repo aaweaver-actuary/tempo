@@ -68,6 +68,11 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       if (!data || !owned.current()) return;
       setRecent({ data, loading: false, error: null });
       setSync(data.sync);
+      setSelected(previous => {
+        if (!previous) return null;
+        const current = data.games.find(game => game.provider === previous.provider && game.game_id === previous.game_id);
+        return current && gameKey(current) === gameKey(previous) ? previous : current ?? null;
+      });
       for (const status of data.sync) if (status.status === "complete") operations.current.complete(`sync:${status.provider}`);
     }).catch(error => {
       if (owned.current()) setRecent(previous => ({ ...previous, loading: false, error: errorMessage(error) }));

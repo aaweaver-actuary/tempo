@@ -5,6 +5,10 @@ mounting, provider installation and browser acceptance, which belong to #491.
 The pinned [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/6885b9420320517ac74df47e631ed796da96c94a/SPEC.md)
 and #481 govern scope.
 
+Consumes #482/#506's additive UI checkpoint
+`e269421bddfeed9d00d868af085bbe0adda14e51`, interface 0.2.0. No shared contract
+file or root application surface is owned by this feature.
+
 ## Public interface and ownership
 
 `GameReviewView({ api, repertoireId?, onReviewGap? })` accepts a typed injected
@@ -82,3 +86,19 @@ retains its existing shared button/token styles.
 API and the real Board UI public renderer. The selected component boundary needs
 no backend, provider, model or database. Use the shared nontruncating advisory
 validation lock; #491 owns actual product/browser acceptance.
+
+`node node_modules/typescript/bin/tsc --project app/features/game-review/tsconfig.json`
+checks this screen, adapter, state helper and the typed fake-port test against
+the existing root compiler settings. This local file adds no central registration.
+
+The 23 cases cover all eight finding labels, uncertain times, exact original and
+custom-FEN replay, invalid-history refusal, read-only loading, empty/error/retry
+states, owner receipt states, operation-key retention/double-click guards, stale
+game/repertoire/revision/feedback results, cancellation on unmount, navigation-only
+gap actions, local keyboard handling, validated HTTP and a scoped import guard.
+Typed fake-provider failure preserves the actual existing Study store object.
+
+The focused test is discovered by the existing unit glob. #491 coordinates the
+central regression inventory entry with #488's current `tests/REGRESSIONS.md`
+reservation. This component check does not establish hosted merge qualification,
+pixel layout, installed endpoints, live imports or receiving-owner persistence.
