@@ -99,6 +99,8 @@ def create_current_repertoire_http(*, reader, current_snapshot, dispatch, curren
     snapshots = CurrentSnapshots(reader,current_snapshot)
 
     def block(repertoire_id,routes,**source_fence):
+        if current_study_block is None:
+            return None
         with reader() as database:
             return current_study_block(database,repertoire_id,routes,**source_fence)
 

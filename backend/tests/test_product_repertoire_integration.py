@@ -17,6 +17,7 @@ from app.contracts.product_v02.analysis import ProposalDecision
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.product_composition.repertoire import RepertoireCommands,create_repertoire_review_router
 from app.product_composition.repertoire_commands import CurrentSnapshots,DispatchedChanges,command_handlers
+from app.product_composition import repertoire_runtime
 from app.repertoire.changes.application import RepertoireChanges,conflict_report,manual_resolution,study_eligibility
 
 
@@ -189,3 +190,21 @@ def test_c_current_snapshot_read_releases_borrowed_reader_before_returning():
         return snapshot
     assert CurrentSnapshots(reader,current).snapshot("rep") == snapshot
     assert events == ["opened","closed"]
+
+
+def test_c_runtime_refuses_publication_without_actual_study_reconciliation(monkeypatch):
+    from fastapi import HTTPException
+    snapshot,_=source(conflict=True)
+    store=ChangesStore(snapshot)
+    monkeypatch.setattr(repertoire_runtime,"retained_changes",lambda database,repertoire:RepertoireChanges(store))
+    owner=repertoire_runtime.retained_changes_factory(after_publication=None)(object(),"rep")
+    conflict=conflict_report(snapshot).conflicts[0]
+    proposal=manual_resolution(snapshot,repertoire_id="rep",position=conflict.position.position,
+        selected_uci="e7e5",proposal_id="unavailable-study")
+    assert owner.preview(proposal).status=="preview"
+    decision=ProposalDecision(proposal_id=proposal.proposal_id,expected_proposal_revision=proposal.proposal_revision,
+        expected_source_revision=proposal.source_revision,display_digest=proposal.display_digest,
+        action="accept",edited_proposal=None)
+    with pytest.raises(HTTPException) as failure:
+        owner.decide(decision)
+    assert failure.value.status_code==503 and not store.publications

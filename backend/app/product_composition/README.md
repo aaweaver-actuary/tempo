@@ -216,24 +216,33 @@ approval receipts. Stable payload-bound command identities preserve uncertain
 acknowledgments across retry/remount. No SQL, second writer, conflict decision,
 queue policy or automatic job is owned by composition.
 
+[repertoire_runtime.py](repertoire_runtime.py) now binds the actual #492 retained
+`current_snapshot` and `retained_changes` at `e5bc95a0`, with the existing read
+connection and durable dispatch resources. After an accepted publication the
+actual Study reconciliation must enlist in that same borrowed transaction;
+failure propagates to the gateway rollback. Missing reconciliation refuses
+acceptance with 503. The scoped Study callback and final main/tasks registration
+remain pending, rather than being filled with a fake block/restore operation.
+
 ```mermaid
 flowchart LR
   Library["Retained Repertoire library"] --> Mount["Optional C audit tab"]
   Mount --> View["#500 RepertoireReviewView"]
   View --> HTTP["#501 C read / command router"]
   HTTP --> Read["CurrentSnapshots: one released read"]
-  Read -. "current generic projection pending" .-> Snapshot["#483 current repertoire snapshot"]
+  Read --> Snapshot["#492 retained conflicted-repertoire snapshot"]
   HTTP --> Gateway["Existing foreground command gateway"]
   Gateway --> Binding["#501 borrowed transaction bindings"]
-  Binding -. "actual factory pending" .-> Changes["#492 current changes / approved publisher"]
+  Binding --> Changes["#492 current changes / approved publisher"]
   Binding -. "actual scoped command pending" .-> Blocks["Study owner: conflict blocks / affected attempt suspension"]
   Blocks --> Local["Study-owned persisted eligibility"]
   Study["ordinary Study"] --> Local
   Changes --> Content["Repertoire source / preview / approval evidence"]
 ```
 
-Solid edges describe this source increment. Dotted operations are exact owner
-handoffs still being implemented; **no fake callback is registered as product
+Solid edges describe this source increment; HTTP/worker registration is still
+pending. Dotted operations are exact owner handoffs still being implemented;
+**no fake callback is registered as product
 acceptance**. #492's current publication must enlist displayed source/card effects
 and receipt in the same transaction and preserve unrelated history/memberships.
 Study owns affected attempt suspension without Again and valid eligibility
