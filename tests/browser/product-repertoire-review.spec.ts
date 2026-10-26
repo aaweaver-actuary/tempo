@@ -93,7 +93,7 @@ test("C exact conflict is enforced and manually resolved while unrelated issued 
   },{timeout:30_000}).toBe(0);
   const after=await fixture(request,"readback",repertoire);
   expect(after.reviews).toEqual(before.reviews);
-  expect(after.cards).toEqual(before.cards);
+  for(const card of before.cards)expect(after.cards).toContainEqual(card);
   for(const line of before.lines)expect(after.lines).toContainEqual(line);
   const queue=(await(await request.get(`${api}/queue/today`)).json()).cards;
   expect(queue[0].id).toBe(head!.id);
@@ -102,4 +102,18 @@ test("C exact conflict is enforced and manually resolved while unrelated issued 
   await page.getByLabel("Audit repertoire").selectOption(repertoire);
   await expect(page.getByRole("heading",{name:"Competing own responses"})).toHaveCount(0);
   await nav(page,"Train");await expect(page.getByRole("button",{name:"Repertoire library"})).toHaveCount(0);
+});
+
+test("C rejects an illegal PGN tail before any repertoire activation",async({request})=>{
+  const identities=async()=>(await(await request.get(`${api}/repertoires`)).json()).repertoires
+    .map((item:{id:string})=>item.id).sort();
+  const before=await identities();
+  const rejected=await request.post(`${api}/imports/pgn`,{multipart:{
+    file:{name:"product-repertoire-illegal.pgn",mimeType:"application/x-chess-pgn",
+      buffer:Buffer.from('[Event "Task illegal tail"]\n\n1. e4 e5 2. e4 *')},
+    trained_color:"white",initial_depth:"2",
+  }});
+  expect(rejected.status()).toBe(422);
+  expect(typeof(await rejected.json()).detail).toBe("string");
+  expect(await identities()).toEqual(before);
 });

@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+from datetime import date, timedelta
 
 from tempo_legacy_database.adapters import postgres_store
 
@@ -29,12 +30,27 @@ with postgres_store.connection(read_only=action=="readback") as database:
         first = database.execute_native("SELECT name,trained_color,start_fen,created_at FROM repertoire_lines "
             "WHERE repertoire_id=%s ORDER BY id LIMIT 1", (repertoire_id,)).fetchone()
         assert first[1] == "white"
+        graph = database.execute_native("SELECT generation FROM opening_graph_publications "
+            "WHERE repertoire_id=%s AND state='ready'", (repertoire_id,)).fetchone()
+        assert graph, "Legacy fixture requires an existing ready graph"
         identity = hashlib.sha256(("task501:legacy-conflict:"+repertoire_id).encode()).hexdigest()
         database.execute_native("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
             "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",
             (identity,repertoire_id,first[0],first[1],first[2],json.dumps(["d2d4","d7d5"]),first[3]))
+        card = hashlib.sha256(("task501:legacy-conflict-card:"+repertoire_id).encode()).hexdigest()
+        database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,"
+            "state,due_date,introduced_at,content_type) VALUES(%s,%s,'prefix',%s,%s,'white','learning',%s,%s,'opening') "
+            "ON CONFLICT(id) DO NOTHING", (card,repertoire_id,first[2],json.dumps(["d2d4"]),
+                                          (date.today()+timedelta(days=2)).isoformat(),first[3]))
+        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                                (repertoire_id,card))
+        database.execute_native("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,"
+            "card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,"
+            "last_decision_index,decision_fen_keys_json) VALUES(%s,%s,%s,0,%s,%s,%s,%s,'white','prefix',0,0,'[]') "
+            "ON CONFLICT DO NOTHING", (repertoire_id,graph[0],identity,card,' '.join(first[2].split()[:4]),
+                                       first[2],json.dumps(["d2d4"])))
     else:
-        cards = database.execute_native("SELECT card.id,card.revision,card.start_fen,card.moves_json FROM cards card "
+        cards = database.execute_native("SELECT card.id,card.revision,card.start_fen,card.moves_json,card.state,card.introduced_at FROM cards card "
             "WHERE card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards membership "
             "WHERE membership.repertoire_id=%s AND membership.card_id=card.id) ORDER BY card.id",
             (repertoire_id,repertoire_id)).fetchall()
