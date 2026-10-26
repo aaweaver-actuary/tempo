@@ -3,7 +3,13 @@
 `await fetch_chesscom_page(account, window, client, *, continuation=None,
 speeds=("bullet", "blitz", "rapid", "classical"), rated_only=False,
 source_revision=1, timeout_seconds=10, cancelled=None,
-max_response_bytes=33554432) -> GamePage` uses #482's immutable v0.2 games DTOs.
+max_response_bytes=33554432) -> ChesscomGamePage` returns #482's immutable v0.2
+`GamePage` through a provider-local subtype. `ChesscomSourceRecord` extends only
+the shared `GameRecord` with `source_metadata`; `ChesscomGamePage` specializes
+only its records field so `model_dump_json()` preserves provider provenance.
+No canonical game/effect facts or shared DTO fields are duplicated. Consumers
+can use the base GamePage interface; persist the provider page serialization
+before projecting it into another model that may drop provider extension fields.
 The client is an injected `httpx.AsyncClient`, including `MockTransport` for tests.
 The caller owns its lifetime and must supply a public, credential-free transport.
 No client, credential, connection, queue or worker is created at import time.

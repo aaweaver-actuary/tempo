@@ -26,6 +26,18 @@ _MAX_MONTHS = 1200
 _MAX_CURSOR_BYTES = 32768
 
 
+class ChesscomSourceRecord(GameRecord):
+    """Shared acquisition record plus immutable provider-owned raw provenance."""
+
+    source_metadata: tuple[tuple[str, str], ...] = ()
+
+
+class ChesscomGamePage(GamePage):
+    """GamePage extension that retains provider metadata during serialization."""
+
+    records: tuple[ChesscomSourceRecord, ...]
+
+
 class ChesscomAcquisitionError(ProviderRequestError):
     """Sanitized incomplete result. Retry the unchanged continuation, if retryable."""
 
@@ -110,7 +122,7 @@ async def fetch_chesscom_page(
     continuation: str | None = None, speeds: tuple[str, ...] = ("bullet", "blitz", "rapid", "classical"),
     rated_only: bool = False, source_revision: int = 1, timeout_seconds: float = 10,
     cancelled: Callable[[], bool] | None = None, max_response_bytes: int = 32 * 1024 * 1024,
-) -> GamePage:
+) -> ChesscomGamePage:
     """Read the listing plus at most one complete month, or resume that month.
 
     UTC range is [start_at, end_at), using the provider's actual end_time.
@@ -183,7 +195,7 @@ async def fetch_chesscom_page(
     else:
         months, index = _decode_cursor(continuation, scope, account, start, end)
 
-    records: list[GameRecord] = []
+    records: list[ChesscomSourceRecord] = []
     rejections: list[GameRejection] = []
     if months:
         # Once the listing is frozen, a failure can retry without redoing earlier months.
@@ -247,18 +259,18 @@ async def fetch_chesscom_page(
                                                 reason="malformed_record"))
                 continue
             # DTO/programming failures are not misreported as rejected provider records.
-            records.append(GameRecord(source_game_id=source_id, source_revision=source_revision,
-                                      source_digest=digest, pgn=pgn, played_at=played_at.isoformat(),
-                                      time_precision="second", source_metadata=tuple(
-                                          (key, json.dumps(value, ensure_ascii=False))
-                                          for key, value in sorted(metadata.items()))))
+            records.append(ChesscomSourceRecord(source_game_id=source_id, source_revision=source_revision,
+                                                source_digest=digest, pgn=pgn, played_at=played_at.isoformat(),
+                                                time_precision="second", source_metadata=tuple(
+                                                    (key, json.dumps(value, ensure_ascii=False))
+                                                    for key, value in sorted(metadata.items()))))
         records.sort(key=lambda record: (record.played_at, record.source_game_id))
         index += 1
     check_cancelled()
     next_cursor = _encode_cursor(scope, months, index) if index < len(months) else None
-    return GamePage(provider="chesscom", account=account, window=window, records=tuple(records),
-                    rejections=tuple(rejections), continuation=next_cursor, complete=next_cursor is None,
-                    saturated=False, filters=filters)
+    return ChesscomGamePage(provider="chesscom", account=account, window=window, records=tuple(records),
+                            rejections=tuple(rejections), continuation=next_cursor, complete=next_cursor is None,
+                            saturated=False, filters=filters)
 
 
 def _source_id(raw: dict) -> str:

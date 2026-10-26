@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from app.contracts.product_v02.games import GamePage, GameWindow
-from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
+from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, ChesscomGamePage, fetch_chesscom_page
 
 
 ROOT = "https://api.chess.com/pub/player/learner/games/"
@@ -85,6 +85,7 @@ def test_two_month_range_returns_all_game_ids():
         assert records[-1].pgn == october["pgn"]
         assert records[-1].source_digest == hashlib.sha256(october["pgn"].encode()).hexdigest()
         assert json.loads(dict(records[-1].source_metadata)["archive_url"]) == ROOT + "2026/10"
+        assert ChesscomGamePage.model_validate_json(pages[-1].model_dump_json()) == pages[-1]
         assert len(requests) == 3  # Frozen listing, then one request for each month.
     run(scenario())
 
