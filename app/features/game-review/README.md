@@ -87,6 +87,10 @@ API and the real Board UI public renderer. The selected component boundary needs
 no backend, provider, model or database. Use the shared nontruncating advisory
 validation lock; #491 owns actual product/browser acceptance.
 
+`node node_modules/typescript/bin/tsc --project app/features/game-review/tsconfig.json`
+checks this screen, adapter, state helper and the typed fake-port test against
+the existing root compiler settings. This local file adds no central registration.
+
 The 23 cases cover all eight finding labels, uncertain times, exact original and
 custom-FEN replay, invalid-history refusal, read-only loading, empty/error/retry
 states, owner receipt states, operation-key retention/double-click guards, stale
