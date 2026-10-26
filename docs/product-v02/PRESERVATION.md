@@ -20,7 +20,7 @@ Paths below are relative to the repository root; titles are literal test names.
 | Normal board and Tactics share one presentation; phone and desktop remain usable | `TrainingView.onMove`, `TacticsView` and the shared board shell | `tests/unit/shared-board-shell-tactics-regressions.test.tsx`: `Tactics shared board publishes shell ownership and hides local board instance`; `tactics shortcuts stop before the unanswered solution and restore the live attempt`; `tests/browser/layout.spec.ts`: `application navigation retains one Chessground instance`; `tests/browser/phone-opening-study.spec.ts`: `Phone opening More supports keyboard help, restart, and edit without resetting on resize` | Unit board rendering is mocked. Browser geometry/resizing must be selected when that surface changes. |
 | Legal PGN/FEN capture, setup move, retry identity | `parseChessComPuzzlePgn`; `TacticCaptureDialog` → `saveTacticCapture`; backend `capture_tactic` / `validate_tactic_line` | `tests/unit/tactic-capture-pgn.test.ts`: `Chess.com Puzzle Rush PGN advances the setup move and imports only the solver line`; `tests/unit/tactic-capture-regressions.test.tsx`: `capture transport retry and reopened dialog retain exact identity and bytes and lock edits`; `backend/tests/test_tactic_capture.py::test_captured_tactic_create_is_idempotent` and `::test_captured_tactic_rejects_invalid_fen_and_illegal_solution` | Backend fixture uses disposable SQLite, not a PostgreSQL transaction contract. |
 | Personally captured tactic remains trainable with history intact | Existing capture API → current Study queue/review owner | `tests/browser/tactic-capture.spec.ts`: `FEN capture records a real-board solution and is reviewed through ordinary Training` (extended with original-ID duplicate submission, singleton queue target, ordinary solve, receipt and reload readback); `Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture`; `backend/tests/test_tactic_capture.py::test_captured_tactic_reuses_existing_tactic_without_erasing_history` | PGN case proves admission; FEN case covers the complete solve boundary. Stock puzzle availability alone does not prove captured-content parity. |
-| Pack selection/activation, solve progress and Study admission | `TacticsView.onQueueChanged`; `setPackActivation`; current backend tactical catalog/admission owner | `tests/unit/tactic-activation-pending-regressions.test.ts`: `tactic activation pending command reuses its key across retry`; `backend/tests/test_tactical_catalog.py::test_deactivating_a_tactical_pack_preserves_scheduled_reviews`, `::test_practice_in_an_inactive_pack_still_admits_the_puzzle_to_reviews`, `::test_tactical_completion_counts_distinct_clean_solves_across_practice_and_training` | Disposable SQLite proves owner semantics; actual browser/PostgreSQL availability remains integration evidence. |
+| Pack selection/activation, solve progress and Study admission | `TacticsView.onQueueChanged`; `setPackActivation`; current backend tactical catalog/admission owner | `tests/unit/tactic-activation-pending-regressions.test.ts`: `tactic activation pending command reuses its key across retry`; `tests/unit/background-workspace-regressions.test.tsx`: `real hanging-piece packs contain 100 validated playable cards after their setup move`; `backend/tests/test_tactical_catalog.py::test_deactivating_a_tactical_pack_preserves_scheduled_reviews`, `::test_practice_in_an_inactive_pack_still_admits_the_puzzle_to_reviews`, `::test_tactical_completion_counts_distinct_clean_solves_across_practice_and_training` | Static assets prove pack availability. SQLite owner semantics and actual browser/PostgreSQL behavior require their distinct checks. |
 | Accepted repeated-failure prefix split stays reachable | `TrainingView.onAcceptPrefixSplit` / `onRejectPrefixSplit`; current prefix-split commands own mutation | `tests/unit/prefix-split-training-regressions.test.tsx`: `prefix split offer accepts immediately without opening a preview editor`; `tests/browser/prefix-split-training.spec.ts`: `accepting a prefix split skips preview and advances to the next queued card`; `backend/tests/test_prefix_split.py::test_prefix_split_preserves_the_complete_repertoire_line_and_original_reviews` | Offered split shortens the prefix and isolates the final learner decision; it does not target an arbitrary failed decision or prove R11 joins. |
 
 ## Runtime distinction
@@ -59,8 +59,10 @@ make unit-file FILE=tests/unit/shared-board-shell-tactics-regressions.test.tsx
 make unit-file FILE=tests/unit/tactic-capture-pgn.test.ts
 npm run test:unit -- tests/unit/tactic-capture-regressions.test.tsx -t 'capture transport retry and reopened dialog retain exact identity and bytes and lock edits'
 make unit-file FILE=tests/unit/tactic-activation-pending-regressions.test.ts
-make python-file FILE=backend/tests/test_tactic_capture.py
-make python-file FILE=backend/tests/test_tactical_catalog.py
+npm run test:unit -- tests/unit/background-workspace-regressions.test.tsx -t 'real hanging-piece packs contain 100 validated playable cards after their setup move'
+make python-file FILE=backend/tests/test_tactic_capture.py::test_captured_tactic_create_is_idempotent
+make python-file FILE=backend/tests/test_tactic_capture.py::test_captured_tactic_reuses_existing_tactic_without_erasing_history
+make python-file FILE=backend/tests/test_tactical_catalog.py::test_deactivating_a_tactical_pack_preserves_scheduled_reviews
 ```
 
 For split changes, use `make unit-file FILE=tests/unit/prefix-split-training-regressions.test.tsx`
@@ -91,9 +93,18 @@ executable source, contracts, fixtures, dependencies and toolchain.
 
 ## Evidence and gaps
 
-Initial selection above is source-inspected only. Focused executed checks and
-the exact tested revision will be recorded in the PR / #504 handoff. No live
-probe, installation, deployment or product-state change is part of this work.
+[PR #507 validation receipt](https://github.com/aaweaver-actuary/tempo/pull/507#issuecomment-6427048504)
+records exact commands and outcomes at runtime-tested revision
+`c118d2e9199dcf7de94b8f489a81efc533369e27`: 6 changed-owner unit cases,
+10 named existing cases, 1 real-pack availability case, 1 pure backend
+corpus-preservation case, and the single PostgreSQL capture/replay/solve/reload
+browser case passed. All disposable runner stages, including cleanup, passed.
+The later edits to this document change no executable test inputs.
+
+Six additional capture/history/pack/split backend cases did not collect because
+the existing Python environment lacks `redis`; they remain unverified, not
+passed. No dependencies were installed to repair that environment. No live
+probe, deployment or live product-state change is part of this work.
 
 T23 adds only the two uncovered boundaries named above to their existing suites:
 optional-tactics-preload failure with an active Study attempt/retained review,
