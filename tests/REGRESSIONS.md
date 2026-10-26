@@ -1,3 +1,27 @@
+## Product v0.2 game-feedback composition
+
+`backend/tests/test_product_feedback_integration.py` owns the bounded T07 source
+join: `test_imported_game_maps_to_existing_card`,
+`test_duplicate_pipeline_has_one_lapse`,
+`test_missing_mapping_cannot_prepare_a_lapse`, and
+`test_preview_is_private_read_only_and_never_overwrites_retry_payload`.
+Synthetic supplied snapshots bind the actual fixture presentation identity;
+PGN/position equality cannot create a card. The real index, comparison adapter,
+and Study policy execute; the owner store is fake. These cases do not establish
+PostgreSQL transactions, an actual private game mapping, ordinary browser review,
+restart/off-day behavior or deployed producer isolation.
+
+`backend/tests/test_product_contracts.py` and
+`tests/unit/product-contracts.test.ts` own shared synthetic fixture round trips,
+invalid/unproved findings, saturated pages, revision conflicts, caller isolation,
+pre-admission control without invented owner IDs, withdrawal-only compatibility,
+immutable returned containers and scoped import/boundary guards. Repertoire
+index/snapshot source cases live in `test_product_position_index.py` and
+`test_product_snapshot.py`; comparer cases are listed in the
+[classification owner inventory](../packages/game-classification/REGRESSIONS.md).
+Study lapse/deadline/hold/settlement cases are listed in its
+[owner README](../backend/app/study/README.md#focused-checks).
+
 ## T06 Study-owned game lapse and durable withdrawal fence
 
 `backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:

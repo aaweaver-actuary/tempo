@@ -1,0 +1,28 @@
+.game-review { color: var(--text-primary, #e8e8ed); padding: clamp(12px, 2vw, 28px); max-width: 1500px; margin: auto; }
+.game-review h1, .game-review h2, .game-review h3 { margin: 0 0 12px; }
+.game-review p { line-height: 1.5; }
+.game-review-header, .game-review-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.game-review-header { justify-content: space-between; margin-bottom: 20px; }
+.game-review-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 20px; }
+.game-review-games, .game-review-findings { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.game-review-game { width: 100%; text-align: left; display: grid; gap: 6px; padding: 12px; height: auto; white-space: normal; }
+.game-review-game[aria-pressed="true"] { outline: 2px solid var(--accent, #93bbff); outline-offset: 2px; }
+.game-review-detail { min-width: 0; }
+.game-review-board { max-width: 700px; width: 100%; margin: 0 auto 12px; }
+.game-review-controls { justify-content: center; margin: 12px 0 20px; }
+.game-review-finding { border: 1px solid var(--border, #464650); border-radius: 10px; padding: 14px; overflow-wrap: anywhere; }
+.game-review-finding[data-current="true"] { border-color: var(--accent, #93bbff); }
+.game-review-finding dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 12px 0; }
+.game-review-finding dd { margin: 0; }
+.game-review-muted { color: var(--text-secondary, #b8b8c6); font-size: .9rem; }
+.game-review-error { border-left: 3px solid #ef9c92; padding: 8px 12px; }
+.game-review-sync { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.game-review-sync > div { border: 1px solid var(--border, #464650); padding: 10px; border-radius: 8px; }
+.game-review button:focus-visible { outline: 3px solid var(--accent, #93bbff); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .game-review-layout { grid-template-columns: minmax(0, 1fr); }
+  .game-review-games { display: flex; overflow-x: auto; padding: 3px; }
+  .game-review-games > li { min-width: min(240px, 80vw); }
+  .game-review-finding dl { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .game-review-finding dd { margin-bottom: 8px; }
+}

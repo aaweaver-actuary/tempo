@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "files": [
+    "GameReviewView.tsx",
+    "api.ts",
+    "state.ts",
+    "../../../tests/unit/product-game-review.test.tsx"
+  ],
+  "include": [],
+  "exclude": []
+}
