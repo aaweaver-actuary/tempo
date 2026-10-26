@@ -11,6 +11,7 @@ class IndexedOccurrence(Protocol):
     route_id: str
     ply: int
     bindings: tuple[DecisionPresentation, ...]
+    route_complete: bool
 
 
 class IndexedPosition(Protocol):
