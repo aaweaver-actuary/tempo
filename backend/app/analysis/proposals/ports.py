@@ -12,6 +12,7 @@ from app.contracts.product_v02.analysis import (
     DisplayedCardChange, EngineContext, EngineEvidence, Proposal,
 )
 from app.contracts.product_v02.repertoire import DecisionPresentation
+from .acceptability import QualityDecision
 
 
 class ComparisonFacts(Protocol):
@@ -67,6 +68,13 @@ class SimilarityPort(Protocol):
                  variant: str, max_candidates: int) -> RetrievalFacts: ...
 
 
+class CapabilityUnavailable(RuntimeError):
+    """Composition translates an optional adapter failure to a stable reason.
+
+    Cancellation/programming errors are not caught or retried by this policy.
+    """
+
+
 @dataclass(frozen=True)
 class ProposalTarget:
     proposal_id: str
@@ -86,7 +94,7 @@ class ProposalTarget:
 
 @dataclass(frozen=True)
 class ProposalLimits:
-    max_candidates: int = 32
+    max_candidates: int = 16
     max_targets: int = 8
     min_outlier_support: int = 2
 
@@ -117,7 +125,7 @@ class ProposalResult:
     selected_move_uci: str | None = None
     proposal: Proposal | None = None
     existing_card: ExistingCardCandidate | None = None
-    quality: tuple[object, ...] = ()
+    quality: tuple[QualityDecision, ...] = ()
     engine_evidence: tuple[EngineEvidence, ...] = ()
     truncation: tuple[str, ...] = ()
 
