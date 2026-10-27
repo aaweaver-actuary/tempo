@@ -15,7 +15,7 @@ or full-history migration. It does not activate a live history pass.
   failure is an unavailable preview, never a successful empty result.
 - [Composition](../../../backend/app/product_composition/game_history.py) reuses
   `capture_game` and #488's public `prepare_captured_encounters` assembly from
-  the qualified first path. That owner supplies the current source-domain
+  the qualified first path. That owner supplies the current validated
   snapshot, findings and shared encounters. Stored moves are never
   re-exported as supposedly original PGN. No `product_feedback_sources` row is
   required for a retained game.
@@ -37,7 +37,7 @@ the entire requested window was exhausted.
 ## Execution and existing durability
 
 `current_retained_history_comparer()` explicitly binds #488's qualified
-`prepare_captured_encounters(capture, detected_at=...)`. Its returned source-domain
+`prepare_captured_encounters(capture, detected_at=...)`. Its returned validated
 snapshot, findings and shared encounters are consumed unchanged; this binding
 does not rebuild the snapshot or reinterpret retained chronology. The older
 explicit `project_retained_encounters` injection remains for focused pure-source
@@ -82,37 +82,111 @@ the effect; retry uses the saved original key, source, command and detection.
 Completion means the bounded observation-processing run is complete, not that a
 pending first introduction is already available. Subsequent admission/maintenance
 and actual pause/authority deferral remain with Study.
-`history_run_status` reads saved progress, preview and actual owner admission
-counts/receipts; it never starts or retries a pass.
+`history_run_status` reads saved progress, preview and the actual committed
+delivery receipt snapshots; it never starts or retries a pass. Admission counts
+describe those delivery snapshots. They are not a fresh query of later Study
+settlement or a promise that a queued card is still available now.
 
 ```mermaid
 flowchart LR
-  Operator["Explicit bounded preview / start"] --> Read["Games imported-history read"]
+  Operator["Explicit local HTTP preview / start / bounded resume"] --> Guard["Opt-in PostgreSQL/Celery qualification\ncurrent controls + foreground admission\none operator slot"]
+  Guard --> Read["Games imported-history read"]
   Read --> Existing[("Existing imported_games")]
   Read --> First["First retained canonical / capture / comparison path"]
   First --> Preview["Counts + explicit unknown / lower-bound facts"]
   First -. "injected public projection required" .-> Encounter["Shared GameEncounter"]
   Encounter --> Task[("Existing background_tasks\nfrozen manifest + cursor + actual receipts")]
   Task --> Fence["Games source + task lease fence"]
+  Guard --> Claim["Existing kind-scoped claim\ndurable per-work pause"]
+  Claim --> Fence
   Fence --> Owner["Injected current Study encounter owner\nexplicit published policy"]
   Owner --> Study[("Study-owned effects / introduction / queue")]
 ```
 
-## Qualification and exact remaining joins
+## Operator activation and one bounded pass
 
-Only static syntax/marker/newline and relative-link checks have run. No test,
-database, image build or live operation has run for this private preparation.
-The proposed focused application check (including the real shared projection
-binding and frozen-scope compatibility cases) is:
+The release owner, rather than Andy using a terminal, performs these local HTTP
+operations after a separately qualified installation. Source is disabled by
+default. Activation requires both `TEMPO_RETAINED_HISTORY_ENABLED=1` and
+`TEMPO_RETAINED_HISTORY_QUEUE_MODE=postgres-celery`. Before setting them, verify
+that the old unfiltered `app.background_worker` / `GameSyncCoordinator` is absent.
+The PostgreSQL API lifespan and the ordinary Celery poller do not claim this kind;
+only explicit operator calls do. No new daemon or dispatcher registration exists.
+These values qualify the selected deployment, not a change to global Study policy.
+
+The root binding uses current `study_priority.control_snapshot()` availability,
+foreground state and readable Boolean Study-only evidence; Study-only does not
+stop this approved exception. There is no distinct full-Study-pause field in the
+retained settings/control source. Unknown evidence defers. The actual kind-scoped
+claim checks durable per-work pause, and the next writer fences its current lease
+and generation. Only that admitted claimed unit supplies `paused=False` to the
+receiving owner. Existing background database, canonical source, current mapping,
+legality/conflict and maintenance fences remain in force.
+
+All routes use prefix `/api/product/game-history`, and the entire prefix receives
+background admission, including callers without a special work-class header.
+
+1. `POST /preview` with a unique `run_id` and explicit `selection`: workspace
+   `legacy`, provider `lichess` or `chesscom`, actual account, half-open UTC
+   `window` (`start_at`, `end_at`, `precision`), selected `repertoire_ids`,
+   `speeds`, nullable `rated`, and game/position bounds. Defaults are 25 games
+   and 10,000 played-position/repertoire slots; maximums are 100 and 10,000.
+   This POST is query-only. It returns counts, diagnostics, page continuation,
+   the exact selection and `manifest_digest`; no executable commands are exposed.
+2. Review the counts/unknowns, then `POST /start` with the same run ID, selection
+   and digest. The server freezes its own original plan, not client commands.
+   A repeated start of the same plan reuses its task; changed manifests conflict.
+3. `POST /run-ready` with `maximum_units` (default 16, maximum 100) performs that
+   many ready encounter units, yielding to controls between units. It processes
+   the approved history queue, not a named run. `POST /resume` has the same bounded
+   behavior and retains all original keys, detection, policy and checkpoints.
+4. `GET /runs/{run_id}` returns stored progress and full receipt snapshots without
+   performing work. A new process can resume started tasks without the preview
+   cache. Unstarted previews require another preview after restart/eviction.
+5. If `more_available` is true, use the returned `next_game_id` as the next
+   selection's `after_game_id`, with a new run ID and the same explicit window.
+   Neither paging nor overlapping windows manufacture another game/decision ID.
+
+The private preview cache holds at most eight plans, each at most 1 MiB. No source
+table, migration, synthetic PGN, provider fetch, automatic full-history scheduling
+or live kickoff is part of this path.
+
+## Qualification and remaining release boundary
+
+At local executable **`38693c6da56a140938f4e0cf5412e222395f3f08`**:
+
+- The two application/HTTP files passed **35 cases in 0.55s**.
+- `test_product_game_history_postgres.py` passed **4 cases in 5.22s** on the
+  capped disposable schema051 fixture. It used the actual root middleware/router,
+  public claim/control, receiver and ordinary Study controller; only database
+  transport and clocks were bound to the task fixture.
+- The actual window selected 3 games, compared 2 games/2 positions, reported 1
+  known match, 1 differing response, 2 unintroduced encounters, 1 excluded and 0
+  unknown. Saved zero allowance and Study-only remained unchanged.
+- Durable pause prevented claim; first-introduction/frequency-only receipts and
+  cursor committed together. A new composition resumed without preview cache.
+  A checkpoint failure after the real owner effect rolled back both, then an
+  expired-lease restart used the original detection/key. Normal Study saved its
+  first genuine target review without a fabricated Again. Unknown control and
+  foreground states deferred before work; unrelated optional tasks stayed paused.
+- Fixture removal is verified; the advisory validation lock was released.
+
+Exact scoped commands:
 
 ```sh
-TEMPO_PYTHON="$TEMPO_TASK_PYTHON" make python-file FILE=backend/tests/test_product_game_history.py
+python -m pytest backend/tests/test_product_game_history.py backend/tests/test_product_game_history_http.py -q --rootdir=.
+make python-file FILE=backend/tests/test_product_game_history_postgres.py
 ```
 
-Before activation, the parent integration owner must bind the actual admitted
-operation control and qualified receiving owner, register only this optional
-task kind in its dispatcher, and prove actual native task/effect/receipt rollback
-and restart with a disposable fixture. Ordinary Study must not depend on that
-dispatcher or producer. Existing 64-route/128-physical capture guards are retained;
+The dependency assembly is #488's local `fb4db3d4` / native-qualified `cf777b52`,
+including its explicitly held receiving and day-only corrections. This practical
+branch remains local while those publication holds remain; it must not publish
+the held work through another branch. The wider provider/UI draft remains #519.
+Source/native evidence does not qualify an installed image or deployment resource
+isolation. Pure analysis-jobs contract packaging must be present in a later image;
+the native check used the explicit source path. No image build or live action ran.
+
+Ordinary Study has no dependency on this optional operator. Existing
+64-route/128-physical capture guards are retained;
 an oversized actual source is reported unknown, never bypassed or certified by
 small synthetic fixtures. No provider/UI/C/D/R11 completion is a prerequisite.
