@@ -18,6 +18,12 @@ def boundary_facts(root, files):
         tree = ast.parse(path.read_text())
         parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
         imported, aliases, constants = [], {}, {}
+        def module_binding(node):
+            while node in parents:
+                node = parents[node]
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                    return False
+            return True
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -25,7 +31,9 @@ def boundary_facts(root, files):
                     aliases[alias.asname or alias.name.split('.')[0]] = alias.name if alias.asname else alias.name.split('.')[0]
             elif isinstance(node, ast.ImportFrom):
                 imported.append(dict(module=node.module or '', level=node.level,
-                                     names=[alias.name for alias in node.names], line=node.lineno))
+                                     names=[alias.name for alias in node.names], line=node.lineno,
+                                     bindings=[dict(name=alias.name, local=alias.asname or alias.name,
+                                                    module_level=module_binding(node)) for alias in node.names]))
                 for alias in node.names:
                     aliases[alias.asname or alias.name] = '.' * node.level + '.'.join(filter(None, [node.module, alias.name]))
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -33,6 +41,54 @@ def boundary_facts(root, files):
                 for target in targets:
                     if isinstance(target, ast.Name):
                         constants.setdefault(target.id, []).append(node.value)
+
+        def type_names(annotation):
+            if annotation is None:
+                return set()
+            if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+                try: annotation = ast.parse(annotation.value, mode='eval')
+                except SyntaxError: return set()
+            def qualified(node):
+                if isinstance(node, ast.Name): return aliases.get(node.id, node.id)
+                if isinstance(node, ast.Attribute): return qualified(node.value) + '.' + node.attr
+                return ''
+            if isinstance(annotation, (ast.Name, ast.Attribute)):
+                return {qualified(annotation)}
+            if isinstance(annotation, ast.Subscript):
+                arguments = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
+                kind = qualified(annotation.value).split('.')[-1]
+                # Annotated metadata/validators and Literal values are not
+                # unpublished parameter/return types.
+                arguments = arguments[:1] if kind == 'Annotated' else [] if kind == 'Literal' else arguments
+                return type_names(annotation.value) | set().union(*(type_names(item) for item in arguments))
+            if isinstance(annotation, ast.Call):
+                return type_names(annotation.func)
+            return set().union(*(type_names(child) for child in ast.iter_child_nodes(annotation)))
+
+        def signature_types(node):
+            annotations = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                annotations = [arg.annotation for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)]
+                annotations += [node.returns, node.args.vararg.annotation if node.args.vararg else None,
+                                node.args.kwarg.annotation if node.args.kwarg else None]
+            elif isinstance(node, ast.ClassDef):
+                annotations = list(node.bases) + [child.annotation for child in node.body if isinstance(child, ast.AnnAssign)]
+                return sorted(set().union(*(type_names(annotation) for annotation in annotations),
+                    *(set(signature_types(child)) for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                      and (not child.name.startswith('_') or child.name == '__init__'))))
+            elif isinstance(node, ast.AnnAssign):
+                annotations = [node.annotation]
+            elif isinstance(node, ast.Assign) and isinstance(node.value, (ast.Name, ast.Subscript, ast.BinOp, ast.Attribute)):
+                annotations = [node.value]
+            return sorted(set().union(*(type_names(annotation) for annotation in annotations)))
+
+        symbols = {}
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                symbols[node.name] = dict(types=signature_types(node))
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                    if isinstance(target, ast.Name): symbols[target.id] = dict(types=signature_types(node))
 
         def string_value(node, seen=()):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -93,7 +149,7 @@ def boundary_facts(root, files):
                 exports = ast.literal_eval(constants['__all__'][0]) if len(constants['__all__']) == 1 else None
             except (ValueError, TypeError): pass
         results.append(dict(path=name, imports=imported, calls=calls, functions=functions,
-                            references=references, exports=exports, loaders=sorted(set(loaders))))
+                            references=references, exports=exports, symbols=symbols, loaders=sorted(set(loaders))))
     return results
 
 

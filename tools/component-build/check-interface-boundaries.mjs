@@ -23,21 +23,58 @@ function filesUnder(path) {
 function typescriptFacts(source, path) {
   const syntax = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   if (syntax.parseDiagnostics.length) throw new Error("Invalid source syntax: " + path + ": " + ts.flattenDiagnosticMessageText(syntax.parseDiagnostics[0].messageText, " "));
-  const aliases = new Map(), constants = new Map(), calls = [], references = [], functions = [], exported = [];
+  const aliases = new Map(), constants = new Map(), calls = [], references = [], functions = [], exported = [], symbols = {};
   const line = node => syntax.getLineAndCharacterOfPosition(node.getStart(syntax)).line + 1;
   const found = typescriptImports(source, path).map(module => ({ module, names: [], level: 0, line: 1 }));
   function binding(node) {
     if (ts.isImportDeclaration(node)) {
       const module = node.moduleSpecifier.text, names = node.importClause?.namedBindings;
+      const imported = found.find(item => item.module === module && !item.bound);
+      imported.bound = true;
       if (names && ts.isNamedImports(names)) {
         for (const item of names.elements) aliases.set(item.name.text, module + "#" + (item.propertyName ?? item.name).text);
-        found.find(item => item.module === module).names = names.elements.map(item => (item.propertyName ?? item.name).text);
+        imported.names = names.elements.map(item => (item.propertyName ?? item.name).text);
+        imported.bindings = names.elements.map(item => ({ name: (item.propertyName ?? item.name).text, local: item.name.text, module_level: true }));
       } else if (names && ts.isNamespaceImport(names)) aliases.set(names.name.text, module + "#");
+    }
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier && node.exportClause && ts.isNamedExports(node.exportClause)) {
+      const imported = found.find(item => item.module === node.moduleSpecifier.text && !item.bound);
+      imported.bound = true;
+      imported.names = node.exportClause.elements.map(item => (item.propertyName ?? item.name).text);
+      imported.bindings = node.exportClause.elements.map(item => ({ name: (item.propertyName ?? item.name).text, local: item.name.text, module_level: true }));
+    }
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
+      found.push({ module: node.argument.literal.text, names: node.qualifier ? [node.qualifier.getText(syntax).split(".")[0]] : [], level: 0, line: line(node), bound: true });
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) constants.set(node.name.text, node.initializer);
     ts.forEachChild(node, binding);
   }
   binding(syntax);
+  function typeNames(nodes) {
+    const names = new Set();
+    function visit(node) {
+      if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal) && node.qualifier) names.add(node.argument.literal.text + "#" + node.qualifier.getText(syntax));
+      if (ts.isTypeReferenceNode(node) || ts.isTypeQueryNode(node) || ts.isExpressionWithTypeArguments(node)) {
+        const [head, ...tail] = (node.typeName ?? node.exprName ?? node.expression).getText(syntax).split(".");
+        names.add([aliases.get(head) ?? head, ...tail].join("."));
+      }
+      ts.forEachChild(node, visit);
+    }
+    for (const node of nodes.filter(Boolean)) visit(node);
+    return [...names];
+  }
+  function signature(node) {
+    const types = [node.type, ...(node.parameters ?? []).map(parameter => parameter.type), ...(node.heritageClauses ?? [])];
+    for (const member of node.members ?? []) {
+      if (member.modifiers?.some(modifier => [ts.SyntaxKind.PrivateKeyword, ts.SyntaxKind.ProtectedKeyword].includes(modifier.kind))) continue;
+      types.push(member.type, ...(member.parameters ?? []).map(parameter => parameter.type));
+    }
+    return { types: typeNames(types) };
+  }
+  for (const node of syntax.statements) {
+    if (node.name && [ts.isFunctionDeclaration, ts.isClassDeclaration, ts.isInterfaceDeclaration, ts.isTypeAliasDeclaration, ts.isEnumDeclaration].some(is => is(node))) symbols[node.name.text] = signature(node);
+    if (ts.isVariableStatement(node)) for (const item of node.declarationList.declarations) if (ts.isIdentifier(item.name)) symbols[item.name.text] = signature(item);
+  }
   function stringValue(node, seen = new Set()) {
     if (ts.isStringLiteralLike(node)) return node.text;
     if (ts.isIdentifier(node) && constants.has(node.text) && !seen.has(node.text)) return stringValue(constants.get(node.text), new Set([...seen, node.text]));
@@ -80,7 +117,7 @@ function typescriptFacts(source, path) {
     ts.forEachChild(node, child => visit(child, next));
   }
   visit(syntax);
-  return { path, imports: found, functions, calls, references, exports: exported, loaders: [] };
+  return { path, imports: found, functions, calls, references, exports: exported, symbols, loaders: [] };
 }
 
 /** Small declarative ownership input supplied by the integration owner, not a runtime registry. */
@@ -174,11 +211,47 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
     }
     return {};
   }
+  function symbolAt(file, name, seen = new Set()) {
+    const identity = file + "#" + name, fact = facts.get(file);
+    if (!fact || seen.has(identity)) return null;
+    seen = new Set([...seen, identity]);
+    if (fact.symbols?.[name]) return { path: file, name, identity, ...fact.symbols[name] };
+    if (name.includes(".") || name.includes("#")) {
+      const target = resolveMember(name, file);
+      if (target.path) return symbolAt(target.path, target.member, seen);
+    }
+    for (const imported of fact.imports) for (const binding of imported.bindings ?? []) {
+      if (binding.local !== name || !binding.module_level || binding.name === "*") continue;
+      const target = resolveImport(imported.module, file, imported.level);
+      if (target.external) return { external: true };
+      if (target.path) return symbolAt(target.path, binding.name, seen);
+    }
+    return null;
+  }
+  // Stable public bindings, including a facade's unchanged own implementation
+  // values. Cross-owner private imports are still checked at every source edge.
+  const publicSymbols = new Map(components.map(owner => [owner.id, new Set()]));
+  for (const [file, fact] of facts) {
+    const owner = ownerOf(file);
+    if (owner.publicRoots.some(path => inside(path, file))) for (const name of fact.exports ?? []) {
+      const symbol = symbolAt(file, name);
+      if (symbol?.identity) publicSymbols.get(owner.id).add(symbol.identity);
+    }
+  }
+  const lifecycle = ["open", "read_text", "read_bytes", "write_text", "write_bytes", "connect", "listen", "spawn", "execFile", "Worker", "ConnectionPool", "AsyncConnectionPool", "create_engine"];
   for (const [file, fact] of facts) {
     const owner = ownerOf(file), isPublic = owner.publicRoots.some(path => inside(path, file));
     const report = (line, message) => problems.push(relative(root, file) + ":" + line + ": " + message);
     if (fact.loaders.length) report(fact.loaders[0], "Unresolved dynamic loader can bypass component boundaries");
     if (isPublic && (!Array.isArray(fact.exports) || fact.exports.some(name => typeof name !== "string" || name === "*" || name.startsWith("_")))) report(1, "Interface requires explicit non-private exports; no wildcard/implicit barrel");
+    if (isPublic) for (const name of fact.exports ?? []) {
+      const symbol = symbolAt(file, name);
+      if (!symbol) { report(1, "Unavailable interface export binding: " + name); continue; }
+      for (const type of symbol.types ?? []) {
+        const referenced = symbolAt(symbol.path, type), typeOwner = referenced?.path && ownerOf(referenced.path);
+        if (typeOwner && !publicSymbols.get(typeOwner.id).has(referenced.identity)) report(1, "Unexposed private type in interface signature: " + name + " -> " + type);
+      }
+    }
     for (const imported of fact.imports) {
       const base = resolveImport(imported.module, file, imported.level);
       const children = imported.names.map(name => resolveImport([imported.module, name].filter(Boolean).join("."), file, imported.level)).filter(item => item.path);
@@ -191,7 +264,13 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
       }
       const targetOwner = ownerOf(target.path);
       if (!targetOwner) { report(imported.line, "Local dependency has no declared owner"); continue; }
-      if (isPublic && targetOwner.id === owner.id && !owner.publicRoots.some(path => inside(path, target.path))) report(imported.line, "Interface imports private implementation: " + imported.module);
+      if (isPublic && targetOwner.id === owner.id && !owner.publicRoots.some(path => inside(path, target.path))) {
+        const bindings = imported.bindings ?? [];
+        if (!bindings.length || bindings.some(binding => !binding.module_level || binding.name.startsWith("_") || !fact.exports?.includes(binding.local) || !symbolAt(target.path, binding.name))) report(imported.line, "Interface imports private implementation without an explicit public re-export: " + imported.module);
+        const implementation = facts.get(target.path);
+        for (const call of implementation?.calls ?? []) if (!implementation.functions.includes(call.function) && (Object.hasOwn(call, "sql") || lifecycle.includes(call.callee.split(".").at(-1)))) report(imported.line, "Interface re-export starts implementation I/O: " + imported.module);
+        for (const call of fact.calls) if (!fact.functions.includes(call.function) && bindings.some(binding => call.callee === ".".repeat(imported.level) + [imported.module, binding.name].filter(Boolean).join(".") || call.callee === imported.module + "#" + binding.name)) report(call.line, "Interface executes a re-export during import: " + imported.module);
+      }
       if (targetOwner.id !== owner.id) {
         edges.get(owner.id).add(targetOwner.id);
         if (targetOwner.composition) report(imported.line, "Domain imports composition: " + targetOwner.id);
@@ -209,7 +288,7 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
         else if (!facts.get(target.path)?.exports?.includes(target.member)) report(reference.line, "Unavailable/private interface member: " + reference.callee);
       }
     }
-    if (isPublic) for (const call of fact.calls) if (["open", "read_text", "read_bytes", "write_text", "write_bytes", "connect", "listen", "spawn", "execFile", "Worker"].includes(call.callee.split(".").at(-1))) report(call.line, "Public interface contains lifecycle/I/O implementation: " + call.callee);
+    if (isPublic) for (const call of fact.calls) if (lifecycle.includes(call.callee.split(".").at(-1))) report(call.line, "Public interface contains lifecycle/I/O implementation: " + call.callee);
     for (const call of fact.calls) if (Object.hasOwn(call, "sql")) {
       if (call.sql === null) { report(call.line, "Unresolved SQL target; ownership cannot be verified"); continue; }
       for (const table of writtenTables(call.sql)) {
