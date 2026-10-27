@@ -201,6 +201,29 @@ def has_owed_feedback(database, card_id):
         WHERE card_id=%s AND status IN ('pending','applied') LIMIT 1""", (card_id,)).fetchone())
 
 
+def retained_encounter_introduction_query():
+    """Complete Study-owned read projection for the legacy admission adapter.
+
+    An actual same-definition introduction must survive ordinary budget rebuilds.
+    A later evidence hold does not refund or reverse that historical admission.
+    Pending/unapplied observations and changed physical revisions grant nothing.
+    Callers check installed() before using this PostgreSQL-only projection.
+    """
+    return """SELECT DISTINCT effect.card_id FROM study_game_feedback effect
+        JOIN cards current_card ON current_card.id=effect.card_id
+          AND current_card.revision=effect.card_revision
+        WHERE effect.applied_at IS NOT NULL AND current_card.introduced_at IS NOT NULL
+          AND effect.payload_json::jsonb->>'kind'='encounter'"""
+
+
+def retains_encounter_introduction(database, card_id):
+    """Read an existing material admission fact; never introduce or restore it."""
+    if not installed(database):
+        return False
+    return bool(database.execute_native('SELECT 1 FROM (' + retained_encounter_introduction_query() +
+        ') retained WHERE retained.card_id=%s LIMIT 1', (card_id,)).fetchone())
+
+
 def settle_saved_review(database, card_id, review_id, revision):
     if not installed(database):
         return

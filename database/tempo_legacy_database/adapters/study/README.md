@@ -48,6 +48,17 @@ tables and canonical queue remain existing owners; no second queue is created.
 `study_game_feedback_owed(card_id,effect_key)` partially indexes pending/applied
 work. No producer can write these rows through this interface.
 
+`retains_encounter_introduction(database, card_id)` and the complete
+`retained_encounter_introduction_query()` expose an existing same-revision material
+admission fact to Study's legacy admission/rebuild adapter. They grant no new
+introduction. Pending observations, missing/currently unintroduced cards and
+changed revisions are excluded; a later source hold cannot refund historical
+admission. The caller checks `installed()` for the PostgreSQL query projection.
+Ordinary unseen-card reconciliation and stale-introduction resets must preserve
+this fact while keeping their usual controls for unrelated cards. The next-release
+native normal-seeding regression currently exposes that missing adoption; this
+source checkpoint is not normal-Study acceptance until the owning adapter uses it.
+
 ```mermaid
 erDiagram
     study_game_feedback {

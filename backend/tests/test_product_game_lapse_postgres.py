@@ -680,3 +680,21 @@ def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case
         assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND status='queued'",
             (case.card_id,)).fetchone()[0]==1
         assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+
+
+def test_native_encounter_retention_fact_requires_actual_current_introduction(case):
+    from tempo_legacy_database.adapters.study.game_feedback import retains_encounter_introduction
+    capture,snapshot,command=current_encounter_case(case)
+    with case.transaction() as database:
+        assert not retains_encounter_introduction(database,case.card_id)
+        service=current_encounter_service(database,capture,snapshot)
+        assert service.accept_encounter(command).admission_status=='available'
+        assert retains_encounter_introduction(database,case.card_id)
+        before=tuple(database.execute_native('SELECT introduced_at,state,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        service.control_effect(GameEffectControl(key=command.key,source_revision=2,action='hold',reason='source_excluded'))
+        assert retains_encounter_introduction(database,case.card_id)  # No automatic historical reversal.
+        assert tuple(database.execute_native('SELECT introduced_at,state,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())==before
+        database.execute_native('UPDATE cards SET revision=revision+1 WHERE id=%s',(case.card_id,))
+        assert not retains_encounter_introduction(database,case.card_id)
