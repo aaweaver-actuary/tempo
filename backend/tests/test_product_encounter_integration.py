@@ -1,8 +1,4 @@
-"""Next-release normal-Study composition; current cases qualify fixture facts.
-
-No encounter DTO or effect is fabricated while #482/#486/#487 publish their
-additive interfaces. The following tests are not encounter-effect acceptance.
-"""
+"""Retained-history composition through real source, Study and receipt owners."""
 import pytest
 from datetime import date
 
@@ -157,3 +153,84 @@ def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgr
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
         after = case.readback()
         assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_targeted_zero_allowance_study_only_encounter_reaches_first_real_study_once(
+    owned_postgres, monkeypatch, played,
+):
+    from threading import Event
+    from app.product_composition.encounters import receive_admitted_encounter
+    from app.services.queue_application import seed_queue
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    from tempo_legacy_database.adapters import postgres_store
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    policy, stopped = EncounterIntroductionPolicy("encounter_exception"), Event()
+    with retained_history_case(owned_postgres, state="unintroduced", played=played,
+            ordinary_limit=0, study_only=True) as case:
+        capture = case.capture(case.game_ids[0]); command = case.command(capture)
+        snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        with case.transaction() as database:
+            protected = _issue(database, case.protected_id)
+        before = case.readback()
+        def receive(database):
+            return receive_admitted_encounter(database, capture=capture, snapshot=snapshot,
+                command=command, operation_stopped=stopped.is_set,
+                introduction_policy=policy, clock=lambda: NOW)
+        with case.transaction() as database:
+            first = receive(database)
+            assert first.disposition == "first_introduction" and first.admission_status == "available"
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+            assert tuple(database.execute_native("SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1").fetchone()) == (0, 1)
+            assert database.execute_native("SELECT introduced_at FROM cards WHERE id=%s", (case.card_id,)).fetchone()[0] == NOW.date().isoformat()
+            # The ordinary seed/refresh must keep the targeted introduction and
+            # protect the already presented unrelated head under saved controls.
+            seed_queue(database, NOW.date().isoformat())
+        introduced = case.readback()
+        assert introduced["reviews"] == before["reviews"]
+        assert tuple(row for row in introduced["origins"] if row[1] == case.protected_id) == before["origins"]
+        with case.transaction() as database:
+            assert receive(database).owner_receipt_id == first.owner_receipt_id
+            _ordinary_review(database, case.protected_id, protected, "protected-first:"+case.card_id)
+            target = _issue(database, case.card_id)
+            assert _ordinary_review(database, case.card_id, target, "first-real:"+case.card_id)["persisted"]
+        learned = case.readback()
+        with case.transaction() as database:
+            replay = receive(database)
+            assert replay.owner_receipt_id == first.owner_receipt_id and replay.admission_status == "settled"
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'", (case.card_id,)).fetchone()[0] == 0
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 1
+        assert case.readback() == learned
+
+
+def test_stopped_operation_defers_before_first_introduction_and_resumes_once(owned_postgres, monkeypatch):
+    from threading import Event
+    from app.product_composition.encounters import receive_admitted_encounter
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    from tempo_legacy_database.adapters import postgres_store
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    stopped = Event(); stopped.set()
+    with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
+        capture = case.capture(case.game_ids[0]); command = case.command(capture)
+        snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        policy = EncounterIntroductionPolicy("encounter_exception")
+        before = case.readback()
+        def receive(database):
+            return receive_admitted_encounter(database, capture=capture, snapshot=snapshot,
+                command=command, operation_stopped=stopped.is_set,
+                introduction_policy=policy, clock=lambda: NOW)
+        with pytest.raises(BackgroundAdmissionDeferred, match="operation is stopped"):
+            with case.transaction() as database:
+                receive(database)
+        assert case.readback() == before
+        with case.transaction() as database:
+            assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+        stopped.clear()
+        with case.transaction() as database:
+            first = receive(database)
+            assert first.admission_status == "available"
+            assert receive(database).owner_receipt_id == first.owner_receipt_id
+            assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 1
