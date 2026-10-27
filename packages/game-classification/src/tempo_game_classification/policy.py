@@ -56,10 +56,10 @@ def classify_response(
         return "known_unavailable", "current_presentation_unavailable"
     if introduced is False:
         return "known_unintroduced", "decision_not_introduced"
-    if introduced is not True:
-        return None if matched else ("known_unavailable", "introduction_evidence_unavailable")
     if introduced_before_game is False:
         return "known_unintroduced", "introduction_not_before_game"
+    if introduced is not True:
+        return None if matched else ("known_unavailable", "introduction_evidence_unavailable")
     if not occurrence_is_exact or occurred_at is None:
         return None if matched else ("known_unavailable", "game_occurrence_time_not_exact")
     if occurred_at.tzinfo is None or (introduced_at is not None and introduced_at.tzinfo is None):

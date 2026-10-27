@@ -122,6 +122,63 @@ def test_introduction_assertion_applies_only_to_its_exact_game_source(scope_chan
         assert unknown.kind == "known_unavailable" and not unknown.lapse_eligible
 
 
+@pytest.mark.parametrize("source_provider,provider", [
+    pytest.param("lichess", "lichess", id="lichess"),
+    pytest.param("chess.com", "chesscom", id="chesscom-retained-alias"),
+    pytest.param("chesscom", "chesscom", id="chesscom-product-alias"),
+])
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_retained_day_only_negative_proof_preserves_source_and_fact(source_provider, provider, played):
+    game = CanonicalGame(workspace_id="workspace", game_id=f"{source_provider}:retained-history",
+                         game_revision=2, source_id=source_provider, source_revision=7,
+                         source_digest="d" * 64, starting_fen=START, moves=[played],
+                         learner_color="white", played_at=TIME)
+    scope = IntroductionGameScope(provider=provider, game_id=game.game_id,
+                                  source_revision=game.source_revision, source_digest=game.source_digest)
+    captured = snapshot(route(("e2e4",)), mapping_changes={
+        "introduction": "unknown", "introduced_at": None,
+        "route_id": "route", "route_ply": 0,
+        "introduced_before_game": False, "introduction_game": scope,
+    })
+    finding, = compare_game(game, provider=provider, time_precision="second", snapshot=captured)
+    assert finding.kind == "known_unintroduced" and finding.diagnostic == "introduction_not_before_game"
+    assert not finding.lapse_eligible and finding.introduced_before_game is False
+    assert (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) == (
+        provider, game.game_id, 7, "d" * 64)
+    assert finding.played_uci == played and finding.expected_uci == ("e2e4",)
+    decision, = captured.decision_presentations
+    encounter = GameEncounter(
+        key=effect_key(finding, workspace_id=game.workspace_id), source=scope, decision=decision,
+        expected_uci="e2e4", played_uci=played, observation="matched" if played == "e2e4" else "missed",
+        detected_at=TIME, occurred_at=game.played_at, payload_digest="e" * 64,
+    )
+    assert encounter.decision.introduction == "unknown" and encounter.decision.introduced_at is None
+    assert encounter.source == scope and encounter.key.game_id == game.game_id
+    assert game.source_id == source_provider
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+@pytest.mark.parametrize("scope_changes", [
+    {"provider": "chesscom"}, {"game_id": "different-game"},
+    {"source_revision": 2}, {"source_digest": "b" * 64},
+])
+def test_retained_day_only_negative_proof_rejects_changed_source(played, scope_changes):
+    source = record((played,))
+    scope = dict(provider="lichess", game_id=source.source_game_id,
+                 source_revision=source.source_revision, source_digest=source.source_digest)
+    scope.update(scope_changes)
+    captured = snapshot(mapping_changes={"introduction": "unknown", "introduced_at": None,
+                                          "introduced_before_game": False,
+                                          "introduction_game": IntroductionGameScope(**scope)})
+    findings = compare(source, captured)
+    if played == "e2e4":
+        assert findings == ()
+    else:
+        finding, = findings
+        assert finding.kind == "known_unavailable" and not finding.lapse_eligible
+        assert finding.introduced_before_game is None
+
+
 @pytest.mark.parametrize("changes,kind", [
     ({"introduction": "unintroduced", "introduced_at": None}, "known_unintroduced"),
     ({"introduction": "unknown", "introduced_at": None}, "known_unavailable"),

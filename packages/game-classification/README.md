@@ -39,6 +39,15 @@ effect. Study must revalidate current state and own priority, review versus firs
 introduction, scheduling and receipts without rewinding later learning. Ordinary
 cap and Study-only exceptions remain unresolved and are not inferred here.
 
+The separate next-release day-only correction honors an exact-source-scoped
+`introduced_before_game=false` before requiring a precise current introduction
+timestamp. A retained day-only card may honestly report `introduction='unknown'`
+and `introduced_at=null`; this negative proof still yields a non-lapse historical
+encounter for correct or different play. It does not infer current first-introduction
+eligibility, invent a timestamp or establish positive lapse proof. Missing or
+mismatched source proof stays unknown. Retained `lichess`, `chess.com` and `chesscom`
+source namespaces remain unchanged under the caller's canonical product provider.
+
 All existing route, source, mapping, conflict, ambiguity, coverage-end and chronology
 guards remain. Unmapped or unavailable correct play never invents an authoritative
 encounter. The pure classifier issues no learning command and changes no state.
