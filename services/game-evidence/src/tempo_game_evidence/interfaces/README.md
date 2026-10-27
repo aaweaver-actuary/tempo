@@ -13,6 +13,8 @@ existing wire contracts. Their values may appear in snapshot fields; this surfac
 does not re-export their implementations. In particular `EvidenceStore` and the
 foreign ingestion alias `normalize_pgn` are intentionally absent. Storage belongs
 to its adapter owner; byte normalization belongs to `tempo_game_ingestion.interfaces`.
+The owned `source.py` caller now imports that public ingestion surface directly;
+the normalizer identity and import/write preparation order remain unchanged.
 
 The old package initializer still eagerly imports its legacy database store class
 without opening a connection. This exact pre-existing edge is not decoupling or
