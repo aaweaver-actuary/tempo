@@ -1,5 +1,13 @@
 ## Product v0.2 game-feedback composition
 
+`backend/tests/test_product_game_history.py` owns bounded retained-library preview,
+truthful lower-bound matches/unresolved positions, immutable source/detection and
+execution scope. `test_product_game_history_http.py` owns opaque server-preview
+transport and bounded start/run/status. `test_product_game_history_postgres.py`
+owns the schema051 window selection, actual root controls, durable pause/resume,
+receipt/cursor rollback and normal Study boundary on disposable synthetic data.
+These checks neither enable live history nor qualify an installed release.
+
 `backend/tests/test_product_feedback_integration.py` owns the T07 source and
 actual disposable PostgreSQL join: supplied existing physical identity, missing
 mapping rejection, canonical moves without reconstructed PGN, one lapse/replay,
