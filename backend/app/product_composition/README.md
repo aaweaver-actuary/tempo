@@ -1,5 +1,44 @@
 # One imported game to ordinary Study (#488)
 
+## Continuous-provider canonical identity candidate (#489 / #491)
+
+The separately held continuous-sync branch supplies `PostgresCanonicalGamesStore`
+as the coordinator's optional `SourceIdentity` port. `WorkflowNormalizer` first
+verifies the original PGN digest, then the source owner binds the exact verified
+history to the existing imported-game ID and retained capture projection. A new
+row uses the same projection its atomic publication will store. Existing source
+bytes, provider aliases, timestamp spelling, and JSON spelling remain unchanged;
+different player/history/result/occurrence is quarantined instead of overwriting
+canonical evidence. Non-source metadata can still be enriched by the existing
+writer. The page transaction locks/rereads that source and refuses a changed
+binding before publishing its checkpoint and commands.
+
+Provider and retained replay therefore share `GameEffectKey`, canonical source
+revision/digest and semantic payload while raw PGN proof/acquisition revision stay
+in the original provider capture. No queued finding is relabeled. No Study
+receiver, stored schema, global control or live configuration changes. The default
+factory still requires a qualified receiver; this candidate does not activate
+continuous synchronization. Native source/publication and final receiver binding
+are separate acceptance boundaries.
+
+```mermaid
+sequenceDiagram
+  participant Provider as Optional provider worker
+  participant Verify as Existing strict PGN normalizer
+  participant Source as Games canonical source owner
+  participant Compare as Pure comparer / coordinator
+  participant Study as Injected Study owner
+  Provider->>Verify: Raw PGN + original digest / time precision
+  Verify->>Source: Verified history; bind_source (read only)
+  Source-->>Compare: Canonical ID / source revision / retained-row digest
+  Compare->>Source: Atomic page publication
+  Source->>Source: Lock / reread source; match binding or roll back
+  Source-->>Compare: Source + captures + command + checkpoint committed
+  Compare->>Study: Original frozen command after Games transaction closes
+```
+
+## First-release evidence
+
 This unmerged integration under [#481](https://github.com/aaweaver-actuary/tempo/issues/481)
 implements the first game-feedback slice of [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/5d5673e43c722786a101c12d26a214649a909502/SPEC.md).
 It has not been installed by this lane. The focused native and ordinary-Study

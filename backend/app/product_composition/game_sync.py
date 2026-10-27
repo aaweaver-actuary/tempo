@@ -233,6 +233,7 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
                      clock: Clock, max_page_records: int = 100,
                      max_page_positions: int = 10000,
                      normalizer=None,
+                     source_identity=None,
                      encounter_feedback=False,
                      admission=None,
                      transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
@@ -250,6 +251,7 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
         for policy in policies}
     coordinator = Coordinator(providers=providers, normalizer=normalizer or WorkflowNormalizer(),
         comparer=WorkflowComparer(), snapshots=snapshots, store=store, learning=learning,
+        source_identity=source_identity,
         clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions,
         encounter_feedback=encounter_feedback)
     return GameSyncRuntime(FeedbackRunner(coordinator), stop,

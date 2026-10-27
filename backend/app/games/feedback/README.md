@@ -48,6 +48,16 @@ context so provider time precision and provenance are never lost. Composition ma
 bounded execution adapter. No event bus, polling loop, Celery registration,
 HTTP route, or application-root change is included here.
 
+An optional [`SourceIdentity`](ports.py) capability binds **already verified PGN
+history** to the canonical library source before comparison. Its returned
+`CanonicalGame` uses the retained row's ID, revision, source digest and exact
+stored occurrence spelling; the coordinator checks that history/player/time
+were not changed. `Capture.record` and `provider_record_json` keep the original
+PGN digest, acquisition revision and precision unchanged. Without this capability
+the existing standalone PGN behavior remains. Recomparison never rewrites an
+existing command. Canonical source changes preserve captures and hold the original
+effect; date-only encounters keep `occurred_at=null`.
+
 Games alone owns import/comparison facts, source quarantine, checkpoints, retry
 state, and pending-delivery records. Learning alone owns receipt/fence validation,
 schedules, admission, review settlement and availability deadlines. A persisted
@@ -113,6 +123,8 @@ flowchart LR
   Runtime["T10 outer composition / optional runner"] --> C["Coordinator + injected clock"]
   C --> Provider["Acquisition capability: finite timeout"]
   C --> Pure["Normalizer / comparer / supplied snapshot"]
+  Pure -->|"verified PGN history"| Identity["Optional SourceIdentity binding"]
+  Identity -->|"canonical source before comparison"| C
   C --> Store["GamesStore semantic operations"]
   Store --> PG["Games-owned PostgreSQL facts"]
   C -->|"after Games commit: stable lapse / hold / withdrawal"| Owner["LearningFeedbackPort"]

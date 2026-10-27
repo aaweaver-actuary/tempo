@@ -3,7 +3,6 @@
 Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
-from app.games.feedback.comparison import normalize_record
 from app.games.feedback.review import ReviewUnavailable
 from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_published_snapshot
 from tempo_legacy_database.adapters.games.product_review import (
@@ -58,16 +57,6 @@ class CurrentRepertoireSnapshots:
             return current_published_snapshot(database, repertoire_id)
 
 
-class CurrentCanonicalNormalizer:
-    def __init__(self, store):
-        self.store = store
-
-    def normalize(self, record, spec):
-        game_id = self.store.canonical_game_id(record, spec)
-        return normalize_record(record, provider=spec.provider, account=spec.account,
-                                workspace_id=spec.workspace_id, game_id=game_id)
-
-
 def create_current_game_sync(*, workspace, connections, clock=None,
                              learning=None, forward_window=None, transport_factory=None):
     """Build one opted-in worker using both explicitly saved provider policies.
@@ -90,7 +79,7 @@ def create_current_game_sync(*, workspace, connections, clock=None,
     store = PostgresCanonicalGamesStore(connections)
     runtime = create_game_sync(policies=tuple(configuration_policy(value) for value in configurations),
         store=store, snapshots=CurrentRepertoireSnapshots(connections), learning=learning,
-        clock=clock, normalizer=CurrentCanonicalNormalizer(store),
+        clock=clock, source_identity=store,
         transport_factory=transport_factory,encounter_feedback=True,admission=current_sync_admission)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)

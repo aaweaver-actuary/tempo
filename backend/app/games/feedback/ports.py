@@ -123,6 +123,16 @@ class Normalizer(Protocol):
     def normalize(self, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
 
 
+class SourceIdentity(Protocol):
+    """Bind verified PGN history to its canonical storage identity, without writes.
+
+    Raw acquisition provenance stays in Capture.record. The returned game's
+    digest/revision/time spelling are the canonical source owner's facts;
+    commit_page must fence the same identity before publishing any command.
+    """
+    def bind_source(self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
+
+
 class Comparer(Protocol):
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]: ...
