@@ -46,7 +46,8 @@
           "backend/app/chess",
           "packages/chess-core",
           "packages/chess-line",
-          "tempo-core/src"
+          "tempo-core/src",
+          "app/utils/canonical-line.ts"
         ],
         "modules": {
           "app.chess": "backend/app/chess",
@@ -98,7 +99,8 @@
         "sources": [
           "backend/app/contracts",
           "contracts",
-          "packages/game-review-contracts"
+          "packages/game-review-contracts",
+          "app/features/product-api/contracts.ts"
         ],
         "modules": {
           "app.contracts": "backend/app/contracts",
@@ -868,7 +870,9 @@
           "app/views/tactics_view.tsx",
           "packages/study-session",
           "app/features/study/interfaces",
-          "app/features/tactics/interfaces"
+          "app/features/tactics/interfaces",
+          "app/lib/review-outbox.ts",
+          "app/lib/study-session-runtime.ts"
         ],
         "modules": {},
         "tables": []
@@ -1010,6 +1014,9 @@
         "backend/tests/test_public_surface_composition.py"
       ],
       "depends_on": [
+        "chess",
+        "wire-contracts",
+        "scheduling",
         "study",
         "introductions",
         "presentations",
@@ -1021,6 +1028,7 @@
         "lichess",
         "chesscom",
         "game-sync",
+        "evidence-math",
         "probability",
         "coverage",
         "similarity",
