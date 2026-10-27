@@ -10,7 +10,7 @@ comparison `ab402547`, #532 typed importance `cc6937aa`, #487 receiver
 `9af90d08`, #483 current reader `4198bfc8`, and #495 introduction source
 `bebdc5f6` (narrow canonical capability). Shared values are
 `GameEncounter`, `EncounterReceipt`, `GameEffectKey`, `IntroductionGameScope` and
-`DecisionPresentation`. No substitute DTO or scheduling policy is defined here.
+`DecisionPresentation`. Local preparation retains those exact values and unresolved findings; it defines no substitute semantic DTO or scheduling policy.
 
 [`importance_from_encounters`](importance.py) reexports #494's frozen
 `GameEncounter` consumer directly. No translation/scoring/dedup copy remains. That owner
@@ -38,8 +38,11 @@ flowchart LR
     Study --> Introduction["#495 canonical first introduction when permitted"]
     Study --> Queue["Normal Study queue/controller"]
     Introduction --> Queue
+    Maintenance["Existing Study durable one-effect maintenance"] --> Study
   end
 ```
+
+[`prepare_captured_encounters`](capture.py) wires the exact retained canonical game and #483 projection/index/comparer into #489 `project_encounters` at `17291652`. It retains all original findings for honest unresolved counts, returns the original shared commands, and performs no I/O, progress write, PGN reconstruction or effect. The #491 bounded history caller still owns source selection and durable progress.
 
 The pure output retains `source_encounters` as the original shared commands;
 #489's same durable sender consumes these commands rather than a new aggregate
@@ -121,6 +124,33 @@ from cap or Study-only. The existing caller still owns background database and
 maintenance admission, transaction and durable retry. No new pause setting,
 service, schema or UI is added. The #491 root binding is still pending; the
 composition boundary alone does not claim an installed manual-pause feature.
+
+
+The existing Study-owned [`feedback_maintenance.py`](../feedback_maintenance.py)
+now reads encounter source/repertoire facts without assuming a lapse payload.
+It reuses the same one-effect cursor, canonical source fence, Study owner and
+caller receipt transaction. A positive existing task-generation/lease fence,
+following the durable claim pause predicate and background database admission,
+supplies the explicit canonical `paused` Boolean. No global pause field is
+inferred. Normal task pause acts between admitted bounded units; the exact
+current lease still fences publication. Maintenance imports no Games module.
+
+At `8197e310`, the existing lapse-maintenance/native and cold no-Games-import
+preservation cases passed (2 selected, 2.44s). The new encounter maintenance
+case passed with ordinary task admission (1 selected, 2.19s): actual durable
+pause denied claim; resume advanced once; stale lease did nothing; Games
+imports were denied. The same Study-only case currently fails at the existing
+public resume control with 409 because `task_admission_sql` admits only
+`daily_queue` under Study-only. It requires an exact owner predicate extension
+for `study_game_feedback`, preserving durable pause and unrelated task controls.
+
+A separate pure presentation regression currently fails: an admitted
+`product_game_encounter` remains behind ordinary movable work, although the
+issued head remains protected. The required hook is
+`queue_ordering.py::_priority_projection`. These two shared-file edits await
+recorded reservation; no setting override or guard bypass is used. The prepared
+two-retained-game projection/Study/recomparison case also awaits #486's exact
+day-only repair. No passing full bounded-history run is claimed yet.
 
 ## Decided targeted exception and release boundaries
 
