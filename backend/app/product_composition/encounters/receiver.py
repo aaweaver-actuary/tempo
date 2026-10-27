@@ -4,6 +4,7 @@ The workflow supplies the shared command; this module creates no alternate
 delivery ledger, ingestion path, endpoint, policy or canonical introduction.
 """
 from app.contracts.product_v02.learning import GameEncounter, EncounterReceipt
+from app.services.queue_admission_adapter import current_owner_encounter_introductions
 from tempo_game_evidence_contracts.legacy import fingerprint
 from tempo_legacy_database.adapters.games.authority import acceptance as source_owner
 from tempo_legacy_database.adapters.study.game_feedback_authority import (
@@ -22,7 +23,6 @@ def receive_admitted_encounter(database, *, capture, snapshot, command: GameEnco
     """
     from app.services.activity_gate import activity_gate
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-    from app.services.queue_admission_adapter import current_owner_encounter_introductions
 
     paused = operation_stopped()
     if type(paused) is not bool:

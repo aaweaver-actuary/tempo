@@ -9,6 +9,8 @@ grading, recall, scheduling, queue policy, receipt or transaction rule changed.
 flowchart LR
   caller[Existing caller owns transaction] --> app[Review and requeue application]
   app --> policy[Existing scheduling and queue ordering]
+  app --> projection[Current presentation facts only]
+  projection --> facts[Root presentation reads in borrowed transaction]
   app -->|same borrowed database| storage[Fixed review and queue operations]
   storage --> database[Legacy cards reviews and daily queue]
   app -. existing study review followup .-> feedback[Legacy real_game_feedback_adapter]
@@ -67,3 +69,14 @@ physical literals reduce from 15 to 14 by sharing the identical position update.
 Runtime invocation count/order is unchanged. No native, SQLite integration,
 full-system or application startup check ran; these fakes do not establish
 live lock, rollback, timing or resource-isolation guarantees.
+
+## Short receiving transactions
+
+Protected requeue reads [queue_presentation.py](../../../../../backend/app/services/queue_presentation.py)
+directly, without importing the queue-seeding/task orchestration facade. The
+[queue application](../../../../../backend/app/services/queue_application.py)
+keeps its public compatibility entry. Review/presentation dependencies load when
+the receiving store is constructed, before a retained-history writer opens; all
+current eligibility, issuance, attempt and queue reads still run in that borrowed
+writer. No prepared mutable snapshot, alternate writer, schema or timeout change
+is introduced. The existing priority ordering protects exactly the same slots.

@@ -13,6 +13,7 @@ import psycopg
 
 from app.contracts.product_v02.learning import GameEffectControl, GameEffectKey, GameLapse
 from app.study.game_feedback import CardFacts, Completion, Effect, GameFeedback, effect_id, instant
+from app.services.review_service import ensure_card_queued_after
 from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 
@@ -169,12 +170,10 @@ class PostgresGameFeedbackStore:
     def promote(self, card_id, day):
         if self._promote:
             return self._promote(card_id, day)
-        from app.services.review_service import ensure_card_queued_after
         ensure_card_queued_after(self.database, card_id, 0, priority_reason=PRIORITY_REASON,
                                  queue_date=day, protect_presented=True, preserve_order=False)
 
     def promote_encounter(self, card_id, day):
-        from app.services.review_service import ensure_card_queued_after
         ensure_card_queued_after(self.database, card_id, 0, attempt_state="clean", priority_reason=ENCOUNTER_PRIORITY_REASON,
                                  queue_date=day, protect_presented=True, preserve_order=False)
 

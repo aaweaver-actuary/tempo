@@ -138,3 +138,9 @@ in this lane. Optional GitHub metadata and the new integration branch push were
 denied before execution and have not been retried or routed elsewhere. The local
 checkout, source checkpoints and verified bundle are retained until publication
 and dependent integration are resolved.
+
+The canonical introduction factory is a declared module dependency, loaded during
+receiver/capture preparation before the short history writer opens. This moves
+code loading only: operation-stop/foreground checks, source and current-mapping
+fences, canonical introduction, priority promotion and command receipt/cursor
+still share the existing transaction. There is no cache warmup or extra task.
