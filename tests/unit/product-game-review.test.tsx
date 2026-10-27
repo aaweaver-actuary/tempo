@@ -197,22 +197,20 @@ it.each(encounterLabelCases)("labels owner encounter receipt: $name", ({ fields,
   expect(label).not.toContain("scheduled");
 });
 
-it("renders the shared encounter/legacy receipt union and retains subtype fields on HTTP retry", async () => {
+it("renders the shared encounter/legacy receipt union from the HTTP detail read", async () => {
   const introduced = finding("confirmed_miss");
   const unintroduced = finding("known_unintroduced", 2);
   const pending = encounterReceipt({}, unintroduced);
-  const retried = encounterReceipt({ disposition: "review_priority", deferred_reason: "active_attempt", reason: null }, introduced);
   const fetchRequest = vi.fn<typeof fetch>()
     .mockResolvedValueOnce(new Response(JSON.stringify({ games: [firstSummary], sync: idleSync }), { status: 200 }))
-    .mockResolvedValueOnce(new Response(JSON.stringify(detail({ findings: [introduced, unintroduced], receipts: [receipt("applied"), pending] })), { status: 200 }))
-    .mockResolvedValueOnce(new Response(JSON.stringify(retried), { status: 200 }));
+    .mockResolvedValueOnce(new Response(JSON.stringify(detail({ findings: [introduced, unintroduced], receipts: [receipt("applied"), pending] })), { status: 200 }));
   const api = createGameReviewApi({ endpoints: { recentGames: "/games", gameDetail: () => "/detail", sync: "/sync", retryFeedback: "/feedback" }, fetch: fetchRequest });
   render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
   expect(screen.getByText("Study feedback: applied")).toBeTruthy();
   expect(screen.getByText(receiptLabel(pending))).toBeTruthy();
   expect(screen.getByText("Card not introduced").closest("li")?.textContent).not.toContain("available for Study");
-  const returned = await api.retryFeedback({ finding: introduced, operation_id: "same-operation", signal: new AbortController().signal });
-  expect(returned).toEqual(retried);
+  expect(fetchRequest).toHaveBeenCalledTimes(2);
+  expect(fetchRequest.mock.calls.every(([, options]) => options?.method === "GET")).toBe(true);
 });
 
 it("preserves provider operation identity on retry and isolates failure from Study", async () => {

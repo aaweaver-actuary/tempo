@@ -29,7 +29,8 @@ Study; a UI UUID never authorizes a second lapse. Error and pending states stay
 in this feature. `LearningReceipt` is displayed verbatim: `applied` does not prove
 queue availability, and `available_by` is a deadline rather than completion.
 
-The separate next-release encounter display accepts #482's shared receipt union.
+The separate next-release encounter display accepts #482/#536's shared receipt
+union at `59b07fcea6eee9ef5c281d953dd86023e372bdd4`.
 Legacy `LearningReceipt` labels remain unchanged. `EncounterReceipt` additionally
 shows whether the encounter was recorded, the Study owner's disposition, actual
 admission status and explicit deferral reason. Recorded importance, `status=applied`
@@ -105,6 +106,11 @@ states, owner receipt states, operation-key retention/double-click guards, stale
 game/repertoire/revision/feedback results, cancellation on unmount, navigation-only
 gap actions, local keyboard handling, validated HTTP and a scoped import guard.
 Typed fake-provider failure preserves the actual existing Study store object.
+
+The encounter-display follow-on adds only seven focused owner receipt-label
+cases and one mixed legacy/encounter HTTP detail-read case (31 cases total).
+Legacy retry commands and their response validator remain unchanged; the detail
+read preserves the actual encounter subtype through the shared union.
 
 The focused test is discovered by the existing unit glob. #491 coordinates the
 central regression inventory entry with #488's current `tests/REGRESSIONS.md`
