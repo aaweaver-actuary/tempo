@@ -247,6 +247,7 @@ export function intakeProblems(facts, intakes, resolveImport, root) {
       if (!current?.functions.includes(fn)) throw new Error("Unavailable guarded intake entry: " + fn);
       seen.add(identity);
       for (const call of [...current.calls, ...current.references].filter(call => call.function === fn)) {
+        if (Object.hasOwn(call, "sql")) problems.push(relative(root, currentFile) + ":" + call.line + ": Intake contains direct SQL execution; use its owner capability");
         if ((["getattr", "Reflect.get"].includes(call.callee) && !call.data_access) || intake.forbiddenCalls.some(pattern => glob(pattern).test(call.callee) || glob(pattern).test(call.callee.split(".").at(-1)))) problems.push(relative(root, currentFile) + ":" + call.line + ": Intake references prohibited queue work: " + call.callee);
         if (current.functions.includes(call.callee)) pending.push([currentFile, call.callee]);
         else if (call.callee.includes("#")) {
@@ -273,6 +274,7 @@ export function checkPythonIntake(path, functions, forbiddenCalls, root = reposi
   const result = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), "boundary-facts", root], { input: JSON.stringify(files), encoding: "utf8", timeout: 20000 });
   if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stderr);
   const facts = new Map(JSON.parse(result.stdout).map(fact => [resolve(root, fact.path), fact]));
+  for (const fact of facts.values()) if (fact.loaders.length) throw new Error(fact.path + ": Unresolved dynamic loader in intake source boundary");
   const resolveImport = (module, importer, level = 0) => {
     const packagePath = level ? resolve(dirname(importer), ...Array(level - 1).fill(".."), ...module.split(".").filter(Boolean)) : resolve(root, "backend", ...module.split("."));
     return { path: [packagePath + ".py", resolve(packagePath, "__init__.py")].find(path => facts.has(path)) };

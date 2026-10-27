@@ -86,6 +86,14 @@ node tools/component-build/check-interface-boundaries.mjs <owner-map.json>
 node --test --test-concurrency=1 tools/component-build/tests/interface-boundaries.test.mjs
 ```
 
+Before the global owner map is joined, the same call walker also supports
+`--intake <source.py> <entry-functions comma-list> <forbidden-call-patterns comma-list> [source-root]`.
+This checks the named function and statically resolved helpers in its source
+directory, rejects direct SQL and opaque loaders, and permits frozen-field
+comparisons that do not invoke dynamic capabilities. The functional Study
+selection uses it through `backend/tests/test_study_priority_interface.py`;
+this does not create a competing component ownership map.
+
 The optional second checker argument is a disposable source root for negative
 controls. `TEMPO_COMPONENT_PYTHON` selects the existing Python interpreter;
 the Python source reader uses only the standard library. The regular

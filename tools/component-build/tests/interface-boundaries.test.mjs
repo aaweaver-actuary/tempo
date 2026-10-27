@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { checkInterfaceBoundaries, writtenTables } from "../check-interface-boundaries.mjs";
+import { checkInterfaceBoundaries, checkPythonIntake, writtenTables } from "../check-interface-boundaries.mjs";
 import { repository } from "../check-components.mjs";
 import { testFiles } from "../test-node.mjs";
 
@@ -206,4 +206,13 @@ test("Interfaces negative controls belong to the existing required component-che
   assert.ok(testFiles(resolve(repository, "tools/component-build/tests")).includes(resolve(repository, "tools/component-build/tests/interface-boundaries.test.mjs")));
   const scripts = JSON.parse(readFileSync(resolve(repository, "package.json"), "utf8")).scripts;
   assert.equal(scripts["test:components"], "node tools/component-build/test-node.mjs tools/component-build/tests");
+});
+
+for (const [kind, source, failure] of [
+  ["dynamic loader", "def accept(store, command):\n    hidden = eval\n    return hidden(command)\n", /dynamic loader/],
+  ["inline SQL", "def accept(store, command):\n    store.execute_native('UPDATE daily_queue SET position=0')\n", /Intake contains direct SQL/],
+]) test(`Narrow actual-source intake mode rejects ${kind}`, t => {
+  const f = fixture(t);
+  f.write("backend/app/study/intake.py", source);
+  assert.throws(() => checkPythonIntake("backend/app/study/intake.py", ["accept"], ["eligible*", "prepare*", "promote*"], f.root, python), failure);
 });
