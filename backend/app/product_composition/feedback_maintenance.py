@@ -56,6 +56,10 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
             # Keep the obligation. The durable sweep exposes this hold reason
             # and proceeds fairly; its next generation retries missing facts.
             reason = getattr(error, "reason", None) or "current_source_unavailable"
+    prepared_priority = None
+    if observed is not None and observed.encounter is not None and captured is not None:
+        from app.services.queue_priority_promotion import prepare_priority_promotion
+        prepared_priority = prepare_priority_promotion(clock().date().isoformat(),observed.card_id,read=read)
     with write() as database:
         slice_admitted = lock_current_slice(database, task)
         if not slice_admitted:
@@ -90,7 +94,8 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
                     allowance="encounter_exception", paused=not slice_admitted)
                 current_owner_encounter_feedback(database, retained_owner_capture=captured,
                     snapshot=snapshot, clock=clock, introductions=introductions,
-                    introduction_policy=EncounterIntroductionPolicy("encounter_exception")
+                    introduction_policy=EncounterIntroductionPolicy("encounter_exception"),
+                    prepared_priority=prepared_priority
                 ).maintain(after=after, limit=1)
         advance_task_slice_in_transaction(database, task, next_phase="scan",
             next_payload={"after": effect_id(observed.key), "hold_reason": reason})

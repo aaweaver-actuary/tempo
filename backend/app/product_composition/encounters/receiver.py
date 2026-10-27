@@ -13,7 +13,7 @@ from tempo_legacy_database.adapters.study.game_feedback_authority import (
 
 
 def receive_admitted_encounter(database, *, capture, snapshot, command: GameEncounter,
-                               operation_stopped, introduction_policy, clock) -> EncounterReceipt:
+                               operation_stopped, introduction_policy, clock, prepared_priority=None) -> EncounterReceipt:
     """Use the existing operation stop and foreground gates before any effect.
 
     The runtime binds its actual stop/control decision; there is no permissive
@@ -34,11 +34,11 @@ def receive_admitted_encounter(database, *, capture, snapshot, command: GameEnco
         allowance="encounter_exception", paused=paused)
     return receive_captured_encounter(database, capture=capture, snapshot=snapshot,
         command=command, introductions=introductions,
-        introduction_policy=introduction_policy, clock=clock)
+        introduction_policy=introduction_policy, clock=clock, prepared_priority=prepared_priority)
 
 
 def receive_captured_encounter(database, *, capture, snapshot, command: GameEncounter,
-                               introductions, introduction_policy, clock) -> EncounterReceipt:
+                               introductions, introduction_policy, clock, prepared_priority=None) -> EncounterReceipt:
     """Fence retained canonical bytes, then delegate every effect to Study.
 
     Explicit missing policy/capability stays pending in Study. The admitted
@@ -53,5 +53,5 @@ def receive_captured_encounter(database, *, capture, snapshot, command: GameEnco
         raise CurrentDecisionUnavailable("canonical_imported_source_changed")
     receiver = current_owner_encounter_feedback(database, retained_owner_capture=capture,
         snapshot=snapshot, clock=clock, introductions=introductions,
-        introduction_policy=introduction_policy)
+        introduction_policy=introduction_policy, prepared_priority=prepared_priority)
     return receiver.accept_encounter(command)

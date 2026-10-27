@@ -242,7 +242,7 @@ def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, c
 
 
 def current_owner_encounter_feedback(database, *, retained_owner_capture, snapshot, clock,
-                                     introductions, introduction_policy):
+                                     introductions, introduction_policy, prepared_priority=None):
     """Additive next-release factory on the same borrowed writer transaction.
 
     Compose #495's current_owner_encounter_introductions externally. No new
@@ -262,6 +262,6 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture, snapsh
             return introductions.admit_encounter(day,repertoire_id=repertoire_id,
                                                 decision_id=decision_id,target=current)
 
-    return EncounterFeedback(PostgresGameFeedbackStore(database), decisions,
+    return EncounterFeedback(PostgresGameFeedbackStore(database, prepared_priority=prepared_priority), decisions,
         clock=clock,introductions=RetainedIntroductionTarget() if introductions is not None else None,
         introduction_policy=introduction_policy)

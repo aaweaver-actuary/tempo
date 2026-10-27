@@ -9,10 +9,13 @@ grading, recall, scheduling, queue policy, receipt or transaction rule changed.
 flowchart LR
   caller[Existing caller owns transaction] --> app[Review and requeue application]
   app --> policy[Existing scheduling and queue ordering]
-  app --> projection[Current presentation facts only]
+  prepare[Outside writer: finite presentation pages and immutable priority plan] --> plan[Expected presentation state and changed positions]
+  plan --> app
+  app --> projection[Inside writer: current presentation and protected-attempt recheck]
   projection --> facts[Root presentation reads in borrowed transaction]
   app -->|same borrowed database| storage[Fixed review and queue operations]
-  storage --> database[Legacy cards reviews and daily queue]
+  storage --> batch[One guarded batch for changed positions only]
+  batch --> database[Legacy cards reviews and daily queue]
   app -. existing study review followup .-> feedback[Legacy real_game_feedback_adapter]
 ```
 
@@ -80,3 +83,38 @@ the receiving store is constructed, before a retained-history writer opens; all
 current eligibility, issuance, attempt and queue reads still run in that borrowed
 writer. No prepared mutable snapshot, alternate writer, schema or timeout change
 is introduced. The existing priority ordering protects exactly the same slots.
+
+## Actual-scale protected promotion
+
+[queue_priority_promotion.py](../../../../../backend/app/services/queue_priority_promotion.py)
+prepares one immutable existing-target priority overlay before the command writer
+opens, using finite16-row reads and the existing pure ordering policy. It carries
+an expected presentation-state digest, target entry and changed-position tuples;
+it grants no source, control, introduction or scheduling authority. Preparation
+is bounded to4096queued rows and defers beyond that bound. An absent queued target
+keeps canonical introduction's existing writer path.
+
+`ensure_card_queued_after(..., prepared_priority=...)` rechecks the **complete current**
+presentation state in the borrowed writer, including membership, card revision,
+eligibility, teaching, issued/presented and attempt/result state. A stale plan
+raises the existing background-admission deferral type, aborting the provisional
+effect and sender cursor; the next supported retry prepares again. The original
+card/day locks and protected-slot policy remain. First delivery's accepted target
+priority is included before its new receipt exists; historical-priority cleanup
+cannot erase that provisional owner intent.
+
+Native presentation reads use constant-shape array bindings and immutable query
+compilation outside the writer. `apply_priority_positions` writes only changed
+positions in one native update, guards prior positions and current attempt
+protection, and rejects any affected-row mismatch. SQLite retains its prior
+per-position writes. There is no new schema, transaction, scheduler, timeout or
+live setting change. History source/current mapping, chronology, full pause and
+foreground/maintenance admission remain their current owners' responsibilities.
+
+The permanent owning regression is
+[test_scaled_game_priority_postgres.py](../../../../../backend/tests/test_scaled_game_priority_postgres.py):
+805/1005queued rows,25protected attempts, nine real reviews, one priority effect
+and replay, plus stale position/issuance/eligibility rollback of receipt and cursor.
+The canonical writer/adapter cases remain in their existing files. This source
+proof is distinct from installation/live acceptance and its separately recorded
+constrained-worker check.

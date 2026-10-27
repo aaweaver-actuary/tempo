@@ -22,10 +22,11 @@ ENCOUNTER_PRIORITY_REASON = "product_game_encounter"
 
 
 class PostgresGameFeedbackStore:
-    def __init__(self, database, *, promote=None):
+    def __init__(self, database, *, promote=None, prepared_priority=None):
         self.database = database
         self.scheduling = OwnedConnectionSchedulingReviewStore(database)
         self._promote = promote
+        self.prepared_priority = prepared_priority
 
     def _writer(self):
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
@@ -175,7 +176,8 @@ class PostgresGameFeedbackStore:
 
     def promote_encounter(self, card_id, day):
         ensure_card_queued_after(self.database, card_id, 0, attempt_state="clean", priority_reason=ENCOUNTER_PRIORITY_REASON,
-                                 queue_date=day, protect_presented=True, preserve_order=False)
+                                 queue_date=day, protect_presented=True, preserve_order=False,
+                                 prepared_priority=self.prepared_priority)
 
     def owed_page(self, after, limit):
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback

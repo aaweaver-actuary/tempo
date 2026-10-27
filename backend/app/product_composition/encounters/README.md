@@ -144,3 +144,11 @@ receiver/capture preparation before the short history writer opens. This moves
 code loading only: operation-stop/foreground checks, source and current-mapping
 fences, canonical introduction, priority promotion and command receipt/cursor
 still share the existing transaction. There is no cache warmup or extra task.
+
+
+Retained-history and pending-maintenance composition prepare the Study-owned
+priority overlay before opening the short command writer. The optional immutable
+value is passed through to Study; no queue policy or query is implemented here.
+Actual operation-stop/foreground admission and source/current-task fences still
+run in their original units. Study's canonical writer rechecks current presentation
+facts before atomically changing only the planned positions with its receipt.

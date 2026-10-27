@@ -299,3 +299,17 @@ sequenceDiagram
 Changed owner checks remain in the two existing test files above; use `-k encounter`
 for the next-release cases. No first-release deployment or broad suite rerun is
 part of this extension.
+
+
+### Protected priority at actual queue size
+
+The retained-history receiving root and pending maintenance may pass an optional
+Study-owned `PreparedPriorityPromotion` to `current_owner_encounter_feedback`.
+It is an immutable local preparation value, never a producer DTO or alternate
+source certificate. Finite presentation reads and ordering happen before the
+writer; the existing canonical writer rechecks complete current presentation
+facts and all current source/identity/content/admission fences remain mandatory.
+Only changed queue positions are batched. Stale preparation aborts the effect
+and cursor together; replay keeps the original command and receipt. No historical
+review is generated or rewound. See the canonical
+[transaction and regression view](../../../database/tempo_legacy_database/adapters/study/review/README.md#actual-scale-protected-promotion).
