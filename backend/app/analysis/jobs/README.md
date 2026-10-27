@@ -85,8 +85,13 @@ invocation and never enter persisted result/fence/cache keys.
 `publish_if_current(prepared)` that compares **every fence field** inside its own
 short transaction. The [Analysis-owned publication adapter](../../../../database/tempo_legacy_database/adapters/analysis/README.md)
 now supplies bounded public-value JSON storage, atomic upsert and separate current
-versus historical reads. Its actual owner reservations, numbered migration and
-native proof remain pending; synthetic checks establish the semantic boundary.
+versus historical reads. The opt-in [current-fence composition](../../product_composition/analysis_publications.py)
+now consumes #483's published `reserve_current_snapshot` on the exact borrowed
+writer transaction. The required Analysis settings/personal/evidence capability
+has no default implementation. Source native qualification, the changed native
+publication boundary and remaining generation reservations are explicitly
+pending. The existing three SQL cases use private generation facts; they do not
+qualify this source binding. Numbered migration/product activation remain pending.
 It must never hold a DB
 connection across HTTP/engine work or write Study state. A prepared result is
 advisory, not an introduction or permission to publish cards. #495 owns final
@@ -113,7 +118,9 @@ flowchart LR
   Work --> Ranking["#494 pure coverage policy"]
   Work --> Store["AnalysisPublications: atomic current-fence publication"]
   Adapter["Analysis-owned SQL adapter: unregistered"] --> Store
-  Adapter -. "pending actual binding" .-> OwnerFence["Source/settings/personal/evidence reservations"]
+  Adapter --> OwnerFence["Opt-in current-fence composition"]
+  OwnerFence --> SourceFence["#483 reserve_current_snapshot: source consumed, native proof pending"]
+  OwnerFence -. "required capability pending" .-> AnalysisFence["Actual settings/personal/evidence reservations"]
   Store --> Acceptance["#501 exact-context advisory handoff"]
   Acceptance --> Intro["#495 Study introductions owner"]
   Study["normal Study"] --> Intro

@@ -33,7 +33,24 @@ owners' reservations through publication **commit**, even for a first insert.
 All corresponding writers must honor those reservations and their established
 lock order, with owner locks before the Analysis publication row lock. An
 unlocked facts query, transaction snapshot or second later comparison does not
-satisfy this contract. No real reservation implementation is supplied here.
+satisfy this contract. The opt-in [source composition](../../../../backend/app/product_composition/analysis_publications.py)
+now calls #483's published `reserve_current_snapshot` for the source portion.
+Its native concurrency qualification and the actual Analysis generation
+capabilities remain pending; the complete guarantee is not yet established.
+
+`CurrentRepertoireAnalysisFence(generations)` first invokes that public source
+operation, then passes its existing `RepertoireSnapshot` and the **same borrowed
+database** to the required `ReservedAnalysisGenerations` callable. The callable
+must reserve actual settings/personal/evidence facts until this caller commits;
+no implementation or default generation is supplied. The returned existing
+`AnalysisFence` must exactly match the reserved source ID/revision/digest. A
+scope/source mismatch or missing capability fails explicitly. Even
+`reserve=False` current reads take these short reservations, preserving one
+coherent source while the other owner facts are read. The transaction must
+already be a Read Committed writer; no connection, commit, SQL, source policy,
+provider or Study mutation moves into composition. Busy source work yields
+through the owner's `SnapshotReservationUnavailable`; the caller rolls back
+partial reservations, and the existing optional runner reports unavailable.
 
 The transaction factory commits before returning success, rolls back on failure,
 and releases its connection and reservations on every exit. It must not borrow
@@ -104,12 +121,16 @@ sequenceDiagram
   participant Runner as Bounded AnalysisRunner
   participant Adapter as Analysis publication adapter
   participant Tx as Injected owning transaction
-  participant Facts as Actual owner reservations (not wired)
+  participant Facts as Opt-in source + required Analysis generation binding
+  participant Source as Published #483 source reservation
   participant Store as Analysis publication table (not installed)
   Runner->>Adapter: publish_if_current(public PreparedAnalysis)
   Adapter->>Adapter: Validate, detach, bound and encode before DB
   Adapter->>Tx: Open short owning transaction
   Adapter->>Facts: Same borrowed DB; reserve current fence
+  Facts->>Source: reserve_current_snapshot (native proof pending)
+  Source-->>Facts: Existing snapshot; source locks held to caller commit
+  Facts->>Facts: Reserve actual Analysis generations (capability pending)
   Facts-->>Adapter: Actual fence; reservations held to commit
   alt Every fence field matches
     Adapter->>Store: Lock/read own row; upsert changed payload only
@@ -151,3 +172,18 @@ evidence reservations and their writer agreement, allocate the schema in its
 authorized migration window, and exercise that real cross-owner fence plus
 product wiring, saved settings and ordinary Study acceptance through its owner.
 No such product pass is claimed by these storage checks.
+
+The changed [source composition checks](../../../../backend/tests/test_product_analysis_source_fence.py)
+exercise exact borrowed-database forwarding/order, both read modes, mismatched
+source refusal, contention propagation and last-result preservation with typed
+fake owner effects. They are not native locking proof. The new
+[native source/publication boundary file](../../../../backend/tests/test_product_analysis_source_fence_postgres.py)
+is **prepared, not run**. It uses the actual #483 reservation and Analysis SQL
+with the existing capped disposable PostgreSQL fixture, including source-held
+publication, introduction-only invalidation, contention rollback and failed
+commit release. Its other Analysis generations are explicitly synthetic.
+
+After prioritized Study repair and browser validation, run this boundary only
+after the source owner's own native qualification, under the advisory lock:
+
+`make python-file FILE=backend/tests/test_product_analysis_source_fence_postgres.py`
