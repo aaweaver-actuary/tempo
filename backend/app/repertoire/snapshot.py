@@ -1,7 +1,7 @@
-"""Read-only projection of an existing backend-owned bounded game capture.
+"""Pure repertoire projections over supplied bounded owner facts.
 
-Composition supplies capture_game bound to the selected game. This adapter has no
-SQL, connection, transaction, graph migration or provider lifecycle authority.
+Game capture and repertoire-only reads retain separate scopes. SQL, connection,
+transaction, graph migration and provider lifecycle authority stay in adapters.
 """
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from typing import Callable, Mapping
 import chess
 from tempo_evidence_math import opening_position_key
 from tempo_game_evidence_contracts.legacy import authority_source_digest, authority_graph_digest, decision_identity, fingerprint
-from tempo_game_review_contracts import AuthoredRoute, RepertoireSnapshot as MembershipSnapshot
+from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, RepertoireSnapshot as MembershipSnapshot
 
 from app.contracts.product_v02.repertoire import (
-    DecisionPresentation, RepertoireSnapshot, RouteBoundary,
+    DecisionPresentation, IntroductionGameScope, RepertoireSnapshot, RouteBoundary,
 )
 
 MAX_CAPTURE_BYTES = 32 * 1024 * 1024
@@ -38,6 +38,22 @@ def _introduction(card):
     return "unknown", None
 
 
+def _comparison_scope(capture, comparison_game):
+    if comparison_game is None:
+        return None
+    game = CanonicalGame.model_validate(comparison_game.model_dump(mode="python"))
+    raw = capture["game"]
+    if (game.game_id != raw.get("id") or game.source_id != raw.get("provider")
+            or game.learner_color != raw.get("color")
+            or list(game.moves) != json.loads(raw["moves_json"])
+            or opening_position_key(game.starting_fen) != opening_position_key(raw["start_fen"])
+            or game.played_at is None or datetime.fromisoformat(game.played_at.replace("Z", "+00:00"))
+            != datetime.fromisoformat(raw["played_at"].replace("Z", "+00:00"))):
+        raise ValueError("snapshot_comparison_game_mismatch")
+    return IntroductionGameScope(provider=raw["provider"], game_id=game.game_id,
+        source_revision=game.source_revision, source_digest=game.source_digest)
+
+
 def _frames(starting_fen, moves):
     board = chess.Board(starting_fen)
     if not board.is_valid():
@@ -52,13 +68,12 @@ def _frames(starting_fen, moves):
     return frames
 
 
-def _mappings(capture, routes, revision, scope_proof=None):
+def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None, *, include_unavailable=False):
     cards = capture["tables"]["cards"]
     counts = Counter(row["id"] for row in cards)
     cards_by_id = {row["id"]: row for row in cards if counts[row["id"]] == 1}
     memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
-    bound_occurrences = {}
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
         route = routes.get((graph["repertoire_id"], graph["line_id"]))
@@ -68,8 +83,11 @@ def _mappings(capture, routes, revision, scope_proof=None):
                 or graph["trained_color"] != route.learner_color
                 or card.get("trained_color") != route.learner_color
                 or card.get("content_type") != "opening"
-                or not {"archived", "pending_validation", "superseded_by"} <= card.keys()
-                or any(card.get(flag) for flag in ("archived", "pending_validation", "superseded_by", "integrity_blocked", "deleted"))):
+                or not {"archived", "pending_validation", "superseded_by"} <= card.keys()):
+            continue
+        available = not any(card.get(flag) for flag in (
+            "archived", "pending_validation", "superseded_by", "integrity_blocked", "deleted"))
+        if not available and not include_unavailable:
             continue
         try:
             executable = json.loads(graph["moves_json"])
@@ -89,6 +107,10 @@ def _mappings(capture, routes, revision, scope_proof=None):
         except (ValueError, TypeError, KeyError):
             continue
         introduction, introduced_at = _introduction(card)
+        before = card.get("introduced_before_game")
+        known_before = before if type(before) is bool and comparison_scope is not None else None
+        if known_before is True:
+            introduction = "introduced"
         for offset, uci in enumerate(executable):
             frame = card_frames[offset]
             if frame.turn != (route.learner_color == "white"):
@@ -106,37 +128,27 @@ def _mappings(capture, routes, revision, scope_proof=None):
                 position_key=opening_position_key(frame.fen()), selected_response_uci=uci,
                 presentation_id=card["id"], presentation_revision=card["revision"],
                 repertoire_revision=revision, introduction=introduction, introduced_at=introduced_at,
-                available=True,
+                route_id=route.route_id, route_ply=roots[0] + offset,
+                introduced_before_game=known_before,
+                introduction_game=comparison_scope if known_before is not None else None,
+                available=available,
                 # Retain the donor's original-revision compatibility rule;
                 # changed physical content needs explicit owner introduction proof.
                 introduction_matches_current_content=(
                     card["introduction_matches_current_content"] is True
                     if "introduction_matches_current_content" in card else card["revision"] == 1))
             mappings.append(mapping)
-            key = route.repertoire_id, mapping.position_key, uci
-            bound_occurrences.setdefault(key, set()).add((route.route_id, roots[0] + offset))
-    # The first T01 freeze has position-wide mappings. Until the owner adds
-    # route occurrence scope, withhold a mapping if any transposed occurrence
-    # lacks explicit graph evidence. FEN coincidence cannot bind another route.
-    required_occurrences = {}
-    for route in routes.values():
-        try:
-            frames = _frames(route.starting_fen, route.moves)
-        except (ValueError, TypeError):
-            continue
-        for ply, uci in enumerate(route.moves):
-            if frames[ply].turn == (route.learner_color == "white"):
-                key = route.repertoire_id, opening_position_key(frames[ply].fen()), uci
-                required_occurrences.setdefault(key, set()).add((route.route_id, ply))
-    mappings = [item for item in mappings if bound_occurrences.get(
-        (item.repertoire_id, item.position_key, item.selected_response_uci)) == required_occurrences.get(
-        (item.repertoire_id, item.position_key, item.selected_response_uci))]
     # Repeated graph uses of one explicitly mapped decision are not extra cards.
     return tuple({item.model_dump_json(): item for item in mappings}.values())
 
 
-def project_capture(capture: Mapping) -> RepertoireSnapshot:
-    """Project a retained owner capture; stale/oversized evidence is rejected."""
+def project_capture(capture: Mapping, *, comparison_game: CanonicalGame | None = None) -> RepertoireSnapshot:
+    """Project owner capture; optionally retain its exact comparison chronology.
+
+    Composition supplies authenticated CanonicalGame source revision/digest;
+    the legacy capture itself retains no original PGN bytes or revision label.
+    Identity, normalized execution, color and occurrence time must still agree.
+    """
     encoded = json.dumps(capture, separators=(",", ":"), sort_keys=True)
     if len(encoded.encode()) > MAX_CAPTURE_BYTES:
         raise ValueError("snapshot_capture_exceeds_bound")
@@ -149,6 +161,7 @@ def project_capture(capture: Mapping) -> RepertoireSnapshot:
         raise ValueError("snapshot_graph_unavailable")
     if authority != source["observed_after"]:
         raise ValueError("snapshot_revision_changed")
+    comparison_scope = _comparison_scope(source, comparison_game)
     tables = source["tables"]
     if (len(tables["repertoire_lines"]) > 64 or len(tables["cards"]) > 128
             or len(source["graphs"]) > 256):
@@ -164,6 +177,8 @@ def project_capture(capture: Mapping) -> RepertoireSnapshot:
         if (validated.scope.game_id != game.get("id")
                 or validated.scope.content_hash != game.get("content_hash")
                 or validated.scope.learner_color != game.get("color")
+                or datetime.fromisoformat(validated.scope.occurred_at.replace("Z", "+00:00"))
+                != datetime.fromisoformat(game["played_at"].replace("Z", "+00:00"))
                 or list(validated.scope.moves) != json.loads(game["moves_json"])
                 or validated.scope.starting_position_key != opening_position_key(game["start_fen"])):
             raise ValueError("snapshot_game_scope_mismatch")
@@ -203,16 +218,113 @@ def project_capture(capture: Mapping) -> RepertoireSnapshot:
         boundaries=tuple(RouteBoundary(route_id=route.route_id, terminal_ply=len(route.moves), deliberate=True)
                          for route in routes),
         decision_presentations=_mappings(source,
-            {(route.repertoire_id, route.route_id): route for route in routes}, revision, validated))
+            {(route.repertoire_id, route.route_id): route for route in routes}, revision, validated, comparison_scope))
 
 
 class CapturedSnapshotAdapter:
     """Implement RepertoireSnapshotPort with one injected owner capture call."""
-    def __init__(self, capture: Callable[[str], Mapping]):
+    def __init__(self, capture: Callable[[str], Mapping], *, comparison_game: CanonicalGame | None = None):
         self._capture = capture
+        self._comparison_game = (CanonicalGame.model_validate(comparison_game.model_dump(mode="python"))
+                                 if comparison_game is not None else None)
 
     def snapshot(self, repertoire_id: str) -> RepertoireSnapshot:
         captured = self._capture(repertoire_id)
         if captured["authority"]["repertoire_id"] != repertoire_id:
             raise ValueError("snapshot_scope_mismatch")
-        return project_capture(captured)
+        return project_capture(captured, comparison_game=self._comparison_game)
+
+
+def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, published: bool = False) -> RepertoireSnapshot:
+    """Project the complete bounded repertoire-only owner read, including conflicts.
+
+    No game/clean-integrity prerequisite and no inferred date-only chronology.
+    The source digest excludes capture time and every schedule/review/queue field.
+    """
+    encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if len(encoded.encode()) > MAX_CAPTURE_BYTES:
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    source = json.loads(encoded)
+    header = source["repertoire"]
+    repertoire_id = header["id"]
+    if not header.get("workspace_id"):
+        raise ValueError("repertoire_workspace_unknown")
+    if json.loads(header.get("canonical_prefix_moves_json", "[]")):
+        raise ValueError("canonical_prefix_snapshot_unsupported")
+    if (len(source["lines"]) > 10000 or len(source["cards"]) > 10000
+            or len(source["memberships"]) > 10000 or len(source["graphs"]) > 20000):
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    if any(row["repertoire_id"] != repertoire_id for name in ("lines", "memberships", "graphs")
+           for row in source[name]):
+        raise ValueError("repertoire_snapshot_scope_mismatch")
+    routes = tuple(AuthoredRoute(repertoire_id=repertoire_id, route_id=row["id"],
+        policy_id=repertoire_id, learner_color=row["trained_color"], starting_fen=row["start_fen"],
+        moves=json.loads(row["moves_json"])) for row in sorted(source["lines"], key=lambda row: row["id"]))
+    if sum(len(route.moves) for route in routes) > 100000:
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    colors = {route.learner_color for route in routes}
+    if len(colors) != 1:
+        raise ValueError("repertoire_color_unknown" if not colors else "repertoire_color_ambiguous")
+    source["lines"].sort(key=lambda row: row["id"])
+    source["cards"].sort(key=lambda row: row["id"])
+    source["memberships"].sort(key=lambda row: (row["repertoire_id"], row["card_id"]))
+    source["graphs"].sort(key=lambda row: (row["line_id"], row["decision_index"]))
+    if published:
+        generation = header.get("graph_generation")
+        if header.get("graph_state") != "ready" or type(generation) is not int or generation < 1:
+            raise ValueError("repertoire_publication_unavailable")
+        revision = generation
+    else:
+        revision = header["scope_source_revision"] + 1
+    kind = "current_published_repertoire_snapshot" if published else "current_repertoire_snapshot"
+    digest = fingerprint({"kind": kind, "schema_version": 1, "facts": source})
+    moment = captured_at or datetime.now(timezone.utc).isoformat()
+    membership = MembershipSnapshot(workspace_id=header["workspace_id"],
+        snapshot_id=("publication:" if published else "repertoire:") + digest,
+        revision=revision, digest=digest, source_revision=digest, captured_at=moment,
+        scope_id=("publication:" if published else "repertoire:") + repertoire_id,
+        scope_repertoire_ids=[repertoire_id], complete=True, routes=list(routes))
+    # Retain the existing exact graph/executable/card mapping law. A missing or
+    # non-ready graph leaves physical mapping unknown but never hides source routes.
+    mapping_source = {"tables": {"cards": source["cards"], "repertoire_cards": source["memberships"]},
+        "graphs": source["graphs"] if header.get("graph_state") == "ready" else [],
+        "authority": {"graph_generation": header.get("graph_generation")}}
+    return RepertoireSnapshot(membership=membership, variant="standard", learner_color=next(iter(colors)),
+        boundaries=tuple(RouteBoundary(route_id=route.route_id, terminal_ply=len(route.moves), deliberate=True)
+                         for route in routes),
+        decision_presentations=_mappings(mapping_source,
+            {(route.repertoire_id, route.route_id): route for route in routes}, revision,
+            include_unavailable=True))
+
+
+def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+    """Audit source view: positive authored counter, independent of publication."""
+    return _project_repertoire(facts, captured_at=captured_at)
+
+
+def project_published_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+    """Feedback comparison view: explicit ready graph generation, never a guess.
+
+    Current source facts remain in the freshness digest. This is detector input,
+    not mutation authority; Study still captures/fences its current owner state.
+    """
+    return _project_repertoire(facts, captured_at=captured_at, published=True)
+
+
+class CurrentSnapshotAdapter:
+    """RepertoireSnapshotPort over an injected bounded repertoire-only read."""
+    projection = staticmethod(project_repertoire)
+
+    def __init__(self, read: Callable[[str], Mapping]):
+        self._read = read
+
+    def snapshot(self, repertoire_id: str) -> RepertoireSnapshot:
+        facts = self._read(repertoire_id)
+        if facts["repertoire"]["id"] != repertoire_id:
+            raise ValueError("repertoire_snapshot_scope_mismatch")
+        return self.projection(facts)
+
+
+class PublishedSnapshotAdapter(CurrentSnapshotAdapter):
+    """Feedback comparison port; unavailable publication grants no view."""
+    projection = staticmethod(project_published_repertoire)
