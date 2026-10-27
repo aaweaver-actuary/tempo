@@ -12,8 +12,8 @@ import pytest
 
 from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameRejection, GameWindow
 from app.contracts.product_v02.learning import EncounterReceipt, GameEncounter, GameLapse, LearningReceipt
-from app.contracts.product_v02.repertoire import RepertoireSnapshot
-from app.games.feedback.coordinator import Coordinator, delivery_for, stable_id
+from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot
+from app.games.feedback.coordinator import Coordinator, delivery_for, project_encounters, stable_id
 from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import AcquisitionFailure, ConcurrentUpdate, JobSpec, JobState
 
@@ -491,7 +491,7 @@ def test_corrected_encounter_is_held_before_admission_and_delayed_retry():
     assert restarted.first_introductions == 0
 
 
-@pytest.mark.parametrize("reason", ["paused", "introduction_allowance"])
+@pytest.mark.parametrize("reason", ["paused", "active_attempt"])
 def test_encounter_owner_deferral_receipt_is_preserved(reason):
     h = encounter_harness()
     h.receiver.deferred_reason = reason
@@ -534,3 +534,67 @@ def test_distinct_encounters_keep_provenance_without_reintroducing_one_card():
     assert len(h.store.deliveries) == 2 and len(h.store.captures) == 2
     assert {item.encounter.key.game_id for item in h.store.deliveries.values()} == {"provider-game", "another-game"}
     assert pending.encounter.observation == "missed" and h.store.delivery(pending.operation_id).receipt.disposition == "review_priority"
+
+
+@pytest.mark.parametrize("ordinary_limit,ordinary_used,study_only", [
+    (0, 0, False), (4, 4, False), (0, 0, True), (4, 4, True),
+])
+def test_encounter_transport_does_not_apply_ordinary_admission_controls(ordinary_limit, ordinary_used, study_only):
+    """The owner fake grants the exception; Games only dispatches and preserves it.
+
+    Actual Study cap/Study-only/canonical writer proofs stay with #487/#495.
+    """
+    h = encounter_harness()
+    controls = {"ordinary_limit": ordinary_limit, "ordinary_used": ordinary_used, "study_only": study_only}
+    original_controls = dict(controls)
+    h.receiver.ordinary_controls = controls
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    h.runner.run_once()
+    delivery = next(iter(h.store.deliveries.values()))
+    assert delivery.receipt.disposition == "first_introduction"
+    assert delivery.receipt.admission_status == "available" and h.receiver.first_introductions == 1
+    assert delivery.lapse is None and controls == original_controls
+    assert h.receiver.ordinary_controls is controls
+
+
+def test_encounter_transport_accepts_racing_ordinary_introduction_receipt():
+    """An owner may observe ordinary admission after the producer captured facts."""
+    h = encounter_harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original = next(iter(h.store.deliveries.values()))
+    h.receiver.introduced_cards.add(original.encounter.decision.presentation_id)
+    h.runner.run_once()
+    delivery = h.store.delivery(original.operation_id)
+    assert delivery.receipt.disposition == "review_priority" and delivery.receipt.admission_status == "available"
+    assert h.receiver.first_introductions == 0 and delivery.encounter == original.encounter
+    assert not any(isinstance(command, GameLapse) for command in h.receiver.calls)
+
+
+def test_canonical_history_projection_needs_no_pgn_or_acquisition():
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(json.loads((FIXTURES / "snapshot.json").read_text())["payload"]))
+    mapping = snapshot.decision_presentations[0].model_copy(update={"introduction": "unintroduced",
+        "introduced_at": None, "introduced_before_game": None, "introduction_game": None})
+    snapshot = snapshot.model_copy(update={"decision_presentations": (mapping,)})
+    game = CanonicalGame(workspace_id="fixture", game_id="retained-history", game_revision=1,
+        source_id="retained-observed-source", source_revision=3, source_digest="a" * 64,
+        starting_fen=snapshot.membership.routes[0].starting_fen, moves=["d2d4"],
+        learner_color="white", played_at=None)
+    source = IntroductionGameScope(provider="lichess", game_id=game.game_id,
+        source_revision=game.source_revision, source_digest=game.source_digest)
+    payload = json.loads((FIXTURES / "unintroduced.json").read_text())["payload"]
+    payload.update(game_id=game.game_id, source_revision=game.source_revision, source_digest=game.source_digest)
+    finding = Finding.model_validate_json(json.dumps(payload))
+    detected_at = "2026-10-26T12:00:00Z"
+    result = project_encounters(game, findings=(finding,), snapshots=(snapshot,), source=source,
+        detected_at=detected_at, occurred_at=None, payload_digest="b" * 64)
+    assert len(result) == 1
+    encounter = result[0]
+    assert encounter.key.game_id == game.game_id and encounter.source == source and encounter.decision == mapping
+    assert encounter.detected_at == detected_at and encounter.occurred_at is None
+    assert encounter.payload_digest == "b" * 64 and encounter.observation == "missed"
+    assert (encounter.expected_uci, encounter.played_uci) == ("e2e4", "d2d4")
+    with pytest.raises(ValueError, match="source differs"):
+        project_encounters(game, findings=(finding,), snapshots=(snapshot,),
+            source=source.model_copy(update={"source_digest": "c" * 64}), detected_at=detected_at, occurred_at=None)
