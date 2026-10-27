@@ -21,6 +21,7 @@ import hashlib
 from pathlib import Path
 import secrets
 import subprocess
+import sys
 from threading import Barrier
 import time
 import uuid
@@ -509,6 +510,9 @@ def test_native_encounter_current_owner_introduces_once_and_persists_original_wi
         service=current_encounter_service(database,capture,snapshot,include_introductions=True)
         receipt=service.accept_encounter(command)
         assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
+        assert not {'app.study.introductions.application','app.study.introductions.policy',
+            'app.contracts.product_v02.analysis',
+            'tempo_legacy_database.adapters.study.product_introductions'} & sys.modules.keys()
         state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
         assert state[0]==NOW.date().isoformat() and state[1]=='learning'

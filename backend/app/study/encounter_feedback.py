@@ -16,7 +16,7 @@ from app.contracts.product_v02.repertoire import DecisionPresentation
 from app.study.game_feedback import CardFacts, CurrentDecisionPort, Effect, GameFeedback, GameFeedbackStore, encoded, instant
 
 if TYPE_CHECKING:
-    from app.study.introductions.application import CommitResult
+    from app.study.introductions.results import CommitResult
 
 
 class EncounterAuthorityUnavailable(RuntimeError):
