@@ -5,13 +5,15 @@ introduction facts. It returns `(kind, diagnostic)`, or `None` when there is no
 reportable finding. Correct unintroduced encounters are factual non-lapse output.
 It has no provider, database, engine, scheduling or Study dependency. The transport
 adapter owns conversion from the shared product contracts and supplied index.
-Only a unique response with one available mapping, exact occurrence chronology,
+Only a unique response with one available semantic mapping, exact occurrence chronology,
 and introduction of unchanged content before the game can be a confirmed miss.
 Different own responses are a conflict even if the played move is one of them.
 
 ```mermaid
 flowchart LR
   Facts["Supplied immutable membership / introduction facts"] --> Policy["classify_response\nclassification policy owner"]
+  Mappings["All supplied exact decision / target facts\nroute ID and ply retained as provenance"] --> Equivalence["resolve_equivalent_mapping\nall other fields must agree"]
+  Equivalence --> Policy
   Policy --> Result["kind + diagnostic / no finding"]
 ```
 
@@ -130,6 +132,22 @@ be explicit; missing proof produces `known_unavailable`. A route-local binding
 applies only to its paired route ID / zero-based authored ply. It never covers
 an unbound transposed occurrence or selects one of several active routes. Paired
 nulls preserve an explicitly global owner binding.
+
+Multiple route-local bindings can prove one semantic mapping only when every
+field other than route ID/ply agrees and every active authored occurrence has
+applicable mapping evidence. `resolve_equivalent_mapping` checks that exact value
+agreement and returns a deterministic original member, retaining its route
+provenance. It establishes neither authority nor route coverage; the adapter
+proves coverage before classification. All snapshot rows and traversal alternatives
+remain intact. Different decisions, responses, targets, revisions, repertoires,
+availability or introduction/source facts stay held. Reentry still requires its
+existing explicit index authority. This correction does not change reentry rules.
+
+Games command projection and Study's current-owner authority must each handle
+equivalent provenance under their own fences before this can produce a learning
+effect. The pure mapping helper does not grant either authority. Study must retain
+its independent source, current-content, membership, graph and executable-content
+checks, without acquiring a dependency on this optional Games package.
 
 An explicit Study `introduced_before_game` assertion can preserve chronology when
 the introduction timestamp is unavailable, only if its provider, game ID, source

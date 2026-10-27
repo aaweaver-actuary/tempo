@@ -28,6 +28,16 @@ input values, and keeps unspecified occurrence precision unavailable for lapses.
 
 Route-scoped mapping tests cover an unmapped transposed occurrence, attempted
 reentry with another route's binding, and multiple active authored occurrences.
+`test_equivalent_route_aliases_resolve_once_and_preserve_all_provenance` covers
+two and 62 exact route aliases for correct and different play, with all source
+rows unchanged. `test_equivalent_route_resolution_holds_differing_facts` keeps
+different responses, decisions, targets, revisions, repertoires, availability,
+source proof and uncovered positions held. The other-opponent-branch regression
+proves resolving one target does not discard a live traversal alternative.
+The equivalent-route replay regression proves one stable logical effect key
+under source-row reordering; the introduced-miss regression preserves positive
+exact-source chronology. Actual receipt/learning-effect idempotency remains the
+receiving owner's integration proof, rather than a claim from pure key equality.
 `test_introduction_assertion_applies_only_to_its_exact_game_source` rejects scoped
 proof reused across providers, games, source revisions or digests. The pure policy
 test `test_explicit_game_scoped_introduction_preserves_missing_timestamp` covers

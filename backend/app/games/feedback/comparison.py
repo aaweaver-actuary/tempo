@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, get_args
 
-from tempo_game_classification import classify_response
+from tempo_game_classification import classify_response, resolve_equivalent_mapping
 from tempo_game_ingestion import BytesInput, PgnGameIngester
 from tempo_game_review_contracts import CanonicalGame, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
@@ -206,14 +206,16 @@ def compare_game(game: CanonicalGame, *, provider: str,
                           and item.selected_response_uci in expected
                           and any(_mapping_applies(item, routes[index].route_id, ply)
                                   for index, ply in candidates)})
-        mapping = mappings[0] if len(mappings) == 1 else None
+        mapping = resolve_equivalent_mapping(mappings)
         active_occurrences = {(routes[index].route_id, ply) for index, ply in candidates}
-        route_mapping_ambiguous = len(active_occurrences) > 1 and any(
-            item.route_id is not None for item in mappings)
+        route_mapping_ambiguous = (learner_turn and len(expected) == 1 and len(active_occurrences) > 1
+            and any(item.route_id is not None for item in mappings)
+            and (mapping is None or any(not any(_mapping_applies(item, route_id, ply) for item in mappings)
+                                       for route_id, ply in active_occurrences)))
         result = classify_response(
             played_uci=position["move"], expected_uci=expected, learner_turn=learner_turn,
             complete=membership.complete and membership.available, terminal=terminal,
-            ambiguous=route_mapping_ambiguous, mapping_count=len(mappings),
+            ambiguous=route_mapping_ambiguous, mapping_count=1 if mapping is not None else len(mappings),
             available=mapping is not None and getattr(mapping, "available", False),
             introduced=None if mapping is None or mapping.introduction == "unknown" else mapping.introduction == "introduced",
             introduced_at=_timestamp(None if mapping is None else mapping.introduced_at),

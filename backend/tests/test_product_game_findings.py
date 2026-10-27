@@ -14,6 +14,7 @@ from app.contracts.product_v02.learning import GameEncounter
 from app.contracts.product_v02.repertoire import DecisionPresentation, IntroductionGameScope, RepertoireSnapshot, RouteBoundary
 from app.games.feedback.comparison import compare_game, compare_record, effect_key, normalize_record
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, ReentryAuthority, RepertoireSnapshot as MembershipSnapshot, replay_line
+from tempo_game_classification import resolve_equivalent_mapping
 
 START = chess.STARTING_FEN
 TIME = "2026-10-20T12:00:00Z"
@@ -70,6 +71,110 @@ def compare(source=None, captured=None, **kwargs):
     return compare_record(record() if source is None else source,
                           snapshot=snapshot() if captured is None else captured,
                           provider="lichess", account="Learner", workspace_id="workspace", **kwargs)
+
+
+def equivalent_routes(source, count=2, changed=None):
+    scope = IntroductionGameScope(provider="lichess", game_id=source.source_game_id,
+                                  source_revision=source.source_revision, source_digest=source.source_digest)
+    authored, mappings = [], []
+    for index in range(count):
+        fields = dict(decision_id="shared-decision", repertoire_id="rep", position_key=" ".join(START.split()[:4]),
+                      selected_response_uci="e2e4", presentation_id="shared-card", presentation_revision=1,
+                      repertoire_revision=1, introduction="unknown", introduced_at=None, available=True,
+                      introduction_matches_current_content=True, route_id=f"alias-{index:02d}", route_ply=0,
+                      introduced_before_game=False, introduction_game=scope)
+        if index == count - 1:
+            fields.update(changed or {})
+        authored.append(route((fields["selected_response_uci"],), route_id=fields["route_id"],
+                              repertoire_id=fields["repertoire_id"]))
+        mappings.append(DecisionPresentation(**fields))
+    return snapshot(*reversed(authored), mappings=list(reversed(mappings)))
+
+
+@pytest.mark.parametrize("count", [2, 62])
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_equivalent_route_aliases_resolve_once_and_preserve_all_provenance(count, played):
+    source = record((played,))
+    captured = equivalent_routes(source, count)
+    before = deepcopy(captured.model_dump())
+    selected = resolve_equivalent_mapping(captured.decision_presentations)
+    assert selected is not None and selected.route_id == "alias-00"
+    finding, = compare(source, captured)
+    assert finding.kind == "known_unintroduced" and not finding.lapse_eligible
+    assert (finding.decision_id, finding.presentation_id, finding.presentation_revision) == ("shared-decision", "shared-card", 1)
+    assert finding.played_uci == played and finding.expected_uci == ("e2e4",)
+    assert len(captured.membership.routes) == len(captured.decision_presentations) == count
+    assert captured.model_dump() == before
+
+
+@pytest.mark.parametrize("changed,kind", [
+    ({"selected_response_uci": "d2d4"}, "conflict"),
+    ({"presentation_id": "different-card"}, "ambiguous"),
+    ({"presentation_revision": 2}, "ambiguous"),
+    ({"decision_id": "different-decision"}, "ambiguous"),
+    ({"repertoire_id": "different-repertoire"}, "ambiguous"),
+    ({"available": False}, "ambiguous"),
+    ({"introduced_before_game": None, "introduction_game": None}, "ambiguous"),
+    ({"position_key": "different-exact-position"}, "ambiguous"),
+])
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_equivalent_route_resolution_holds_differing_facts(changed, kind, played):
+    source = record((played,))
+    captured = equivalent_routes(source, changed=changed)
+    assert resolve_equivalent_mapping(captured.decision_presentations) is None
+    findings = compare(source, captured)
+    assert findings and all(item.kind == kind for item in findings)
+    assert all(item.presentation_id is None and item.decision_id is None and not item.lapse_eligible for item in findings)
+
+
+def test_equivalent_route_resolution_cannot_unify_different_repertoire_revisions():
+    captured = equivalent_routes(record())
+    first, second = captured.decision_presentations
+    second = second.model_copy(update={"repertoire_revision": 2})
+    assert resolve_equivalent_mapping((first, second)) is None
+    with pytest.raises(ValueError, match="mapping conflicts with supplied repertoire revision/scope"):
+        snapshot(*captured.membership.routes, mappings=[first, second])
+
+
+def test_equivalent_route_resolution_keeps_the_other_opponent_branch():
+    authored = route(("e2e4", "e7e5", "g1f3"), route_id="alias-a")
+    other = route(("e2e4", "c7c5", "g1f3"), route_id="alias-b")
+    captured = snapshot(authored, other, mapping_changes={"introduction": "unintroduced", "introduced_at": None})
+    mappings = [item.model_copy(update={"decision_id": "shared-decision", "presentation_id": "shared-card",
+                                        "route_id": name, "route_ply": 0}) if item.position_key == " ".join(START.split()[:4])
+                else item.model_copy(update={"route_id": name, "route_ply": 2})
+                for name in ("alias-a", "alias-b") for item in captured.decision_presentations
+                if item.decision_id.startswith(f"decision-{name}-")]
+    captured = snapshot(authored, other, mappings=mappings)
+    findings = compare(record(("e2e4", "c7c5", "g1f3")), captured)
+    assert [(item.kind, item.ply) for item in findings] == [("known_unintroduced", 1), ("known_unintroduced", 3)]
+    assert findings[1].presentation_id == "card-alias-b-2"
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_equivalent_route_replay_keeps_one_logical_effect(played):
+    source = record((played,))
+    captured = equivalent_routes(source, 62)
+    replay = captured.model_copy(update={"membership": captured.membership.model_copy(
+        update={"routes": tuple(reversed(captured.membership.routes))}),
+        "decision_presentations": tuple(reversed(captured.decision_presentations))})
+    first, = compare(source, captured)
+    repeated, = compare(source, replay)
+    assert first == repeated
+    assert {effect_key(item, workspace_id="workspace").logical_id() for item in (first, repeated)} == {
+        effect_key(first, workspace_id="workspace").logical_id()}
+    assert resolve_equivalent_mapping(captured.decision_presentations) == resolve_equivalent_mapping(replay.decision_presentations)
+
+
+def test_equivalent_routes_preserve_one_proven_introduced_miss():
+    source = record(("d2d4",))
+    captured = equivalent_routes(source, 62)
+    captured = captured.model_copy(update={"decision_presentations": tuple(
+        item.model_copy(update={"introduction": "introduced", "introduced_before_game": True})
+        for item in captured.decision_presentations)})
+    finding, = compare(source, captured)
+    assert finding.kind == "confirmed_miss" and finding.lapse_eligible
+    assert finding.introduced_before_game is True and finding.decision_id == "shared-decision"
 
 
 def test_one_known_introduced_miss():
