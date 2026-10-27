@@ -2,7 +2,7 @@
 
 Version 0.2 · October 26, 2026 · Single-user, local-first product
 
-Next-release encounter amendment · October 26, 2026 · Approved targets, not installation claims.
+Next-release encounter amendment · October 27, 2026 · Approved targets, not installation claims.
 
 ## 1. Purpose and authority
 

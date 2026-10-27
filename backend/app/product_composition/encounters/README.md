@@ -8,7 +8,7 @@ there is no separate encounter-only endpoint or second historical ingestion.
 Published inputs consumed: #533 encounter contracts `46f07e9a`, #486 factual
 comparison `ab402547`, #532 typed importance `cc6937aa`, #487 receiver
 `d7fccbe8`, #483 current reader `4198bfc8`, and #495 introduction source
-`5f87902f`. Shared values are
+`bebdc5f6` (narrow canonical capability). Shared values are
 `GameEncounter`, `EncounterReceipt`, `GameEffectKey`, `IntroductionGameScope` and
 `DecisionPresentation`. No substitute DTO or scheduling policy is defined here.
 
@@ -45,7 +45,7 @@ The pure output retains `source_encounters` as the original shared commands;
 #489's same durable sender consumes these commands rather than a new aggregate
 score DTO. [`receive_captured_encounter`](receiver.py) fences retained canonical
 source bytes and borrows #487's actual factory/transaction. Its introduction
-capability and policy are explicit arguments, with no live default. Receipts
+capability and policy are explicit arguments, with no live default. [`receive_admitted_encounter`](receiver.py) binds the approved targeted canonical capability only after the existing operation and foreground gates. Receipts
 remain provisional until the existing command transaction commits. #491 retains
 root/router/worker ownership; actual bounded-run binding remains pending its
 published history and workflow checkpoints.
@@ -98,11 +98,30 @@ acceptance is not claimed by these fixture preparations.
 Effect acceptance will extend the same narrow integration file using the real
 owner receiver, canonical introduction and existing ordinary Study controller.
 The four-case pure file verifies the published typed importance API without a
-fake Study receipt. Source syntax checks pass; runtime selections have not yet
-started because the advisory slot is occupied. The native receiver uses existing
+fake Study receipt. Source syntax checks pass; the completed selected native results above are the available runtime evidence. The native receiver uses existing
 schema051 only: no broader introduction charge/rotation/ranking DDL is installed
-or required. The narrow #495 canonical-state capability remains pending. No broad
+or required. The narrow #495 canonical-state capability is consumed as a preparation checkpoint; its new exception checks are not yet qualified by its owner. No broad
 suite or browser/UI rebuild is selected.
+
+## Existing pause and admission source
+
+The retained settings schema and `study_priority.control_snapshot()` have no
+separate global full-Study-pause field. Zero new-card allowance and Study-only
+are ordinary introduction controls, not proof of full pause. Per-work durable
+pause controls do exist; their owning claim/run-once path must still admit the
+operation. `GameSyncRuntime.request_stop()` also sets the existing runtime stop
+Event and stops its sender. The root must bind its actual current stop/control
+decision to the required `operation_stopped` callback; no default is supplied.
+
+The admitted wrapper rejects stopped or non-Boolean/unknown operation control
+before any source lock or Study write, then calls the existing
+`activity_gate.check_background_admission()`. That gate defers for foreground
+requests and unavailable configured Redis/HTTP admission. Only positive
+whole-operation admission supplies `paused=False` to #495; this is not inferred
+from cap or Study-only. The existing caller still owns background database and
+maintenance admission, transaction and durable retry. No new pause setting,
+service, schema or UI is added. The #491 root binding is still pending; the
+composition boundary alone does not claim an installed manual-pause feature.
 
 ## Decided targeted exception and release boundaries
 
