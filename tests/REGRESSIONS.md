@@ -5353,3 +5353,10 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | Exact monitor GETs do not mint learner activity or starve background work, while genuine foreground, input, queue and review guards remain | `backend/tests/test_foreground_admission_http.py` |
 | Encounter projection preserves equivalent-route provenance and differing availability/chronology while emitting one deterministic target | `backend/tests/test_product_encounter_projection.py` |
 | 62 equivalent route bindings persist one Study effect/receipt/queue entry across a fresh history recomparison | `backend/tests/test_product_game_history_postgres.py::test_equivalent_route_history_persists_one_effect_and_receipt_under_recomparison` |
+
+## Continuous provider synchronization preparation (#491)
+
+| Behavior | Owning test |
+| --- | --- |
+| Explicit contiguous forward windows keep stable restart identity, unfinished cursor/backoff, provider independence and configured filters | `backend/tests/test_product_continuous_sync.py` |
+| Current publication owner and reader/writer separation are enforced; missing qualified receiver or real admission prevents work | `backend/tests/test_product_continuous_sync.py` |
