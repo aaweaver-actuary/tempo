@@ -255,6 +255,7 @@ def history_run_status(database, *, workspace_id, run_id):
         raise ValueError("retained_history_manifest_changed")
     admissions = Counter(receipt["admission_status"] for receipt in payload["receipts"])
     return dict(run_id=run_id, state=row["state"], policy_identity=plan.policy_identity,
+        selection=plan.selection.model_dump(mode="json"),
         processed_encounters=payload["next_index"], planned_encounters=len(plan.encounters),
         admission_counts=dict(admissions), receipts=payload["receipts"],
         preview=plan.preview.model_dump(mode="json"))

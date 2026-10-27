@@ -53,6 +53,10 @@ def root_history(owned_postgres, monkeypatch):
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
     monkeypatch.setenv("TEMPO_RETAINED_HISTORY_ENABLED", "1")
     monkeypatch.setenv("TEMPO_RETAINED_HISTORY_QUEUE_MODE", "postgres-celery")
+    # This native harness supplies a borrowed writer transport without running
+    # API lifespan. Packaged tests separately prove reader HTTP rejects writes
+    # and that these same operations run only in the established worker profile.
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "postgresql://tempo_writer@owned-fixture/unused")
     # Importing the actual root constructs only a lazy history router. The
     # TestClient does not run lifespan/start Redis, Celery or a legacy worker.
     from app import main

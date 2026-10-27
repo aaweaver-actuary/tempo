@@ -156,11 +156,36 @@ or live kickoff is part of this path.
 
 ## Qualification and remaining release boundary
 
+The focused packaged check at `0840fa21` built the backend image, imported the
+installed modules without a source overlay, bootstrapped schema 051, reached
+actual API/Celery health and returned a truthful synthetic HTTP preview. HTTP
+start then failed 500 before a writer connection: the standard API intentionally
+has only reader credentials, while the current start/run-ready facade calls a
+writer directly. Activation remains blocked until those commands use the
+existing writer/command owner. Supplying API writer credentials is not a fix.
+The disposable stack/image/builder/secrets were removed and locks released.
+
+The missing published #487 `abfacd08` material-introduction correction is now
+consumed at runtime checkpoint `5865882c77ce44c0aa9e6b0c082afd78021d569a`.
+Only the owning retention projection, ordinary reconciliation/presentation and
+native PostgreSQL stale-reset hooks changed; existing equivalent ordering stays.
+Its same-day/next-day native selection passed **2 cases, 20 deselected, 2.10s**.
+This preserves a real current-revision encounter introduction during ordinary
+seeding without admitting unapplied facts or manufacturing another review.
+
+Pending encounter maintenance is connected: the existing Celery beat/foreground
+route calls `maintain_game_feedback`, kind-claims `study_game_feedback`, then
+uses the encounter-aware sweep on the writer worker. Its original command/source,
+durable per-work pause, current lease/generation and explicit encounter allowance
+are retained. The unchanged #488 pending-maintenance proofs for Study-only false
+and true are reused; that source connection is not a remaining gap. Actual
+packaged history admission is blocked by the API writer-owner defect above.
+
 At local executable **`38693c6da56a140938f4e0cf5412e222395f3f08`**:
 
 - The two application/HTTP files passed **35 cases in 0.55s**.
 - `test_product_game_history_postgres.py` passed **4 cases in 5.22s** on the
-  capped disposable schema051 fixture. It used the actual root middleware/router,
+  capped disposable schema 051 fixture. It used the actual root middleware/router,
   public claim/control, receiver and ordinary Study controller; only database
   transport and clocks were bound to the task fixture.
 - The actual window selected 3 games, compared 2 games/2 positions, reported 1

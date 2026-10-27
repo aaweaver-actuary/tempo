@@ -79,17 +79,23 @@ class CurrentHistoryOperations:
                 from .game_history_runtime import current_retained_history_operations
                 self._operations = current_retained_history_operations(
                     workspace_id=LEGACY_WORKSPACE_ID, admission=current_history_admission,
-                    receiver_factory=_receiver)
+                    receiver_factory=_receiver if os.getenv("TEMPO_DATABASE_WRITE_URL") else None)
             return self._operations
+
+    def _writer(self):
+        _configured()
+        if not os.getenv("TEMPO_DATABASE_WRITE_URL"):
+            raise HistoryUnavailable("retained_history_writer_operator_required")
+        return self._current()
 
     def preview(self, **arguments):
         return self._current().preview(**arguments)
 
     def start(self, **arguments):
-        return self._current().start(**arguments)
+        return self._writer().start(**arguments)
 
     def run_ready(self, **arguments):
-        return self._current().run_ready(**arguments)
+        return self._writer().run_ready(**arguments)
 
     def status(self, **arguments):
         return self._current().status(**arguments)
