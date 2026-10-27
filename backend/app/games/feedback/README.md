@@ -336,3 +336,20 @@ canonical admission/control/race proofs belong to #487/#495. Games receipt-readb
 safety deferrals. The shared EncounterReceipt now rejects ordinary cap/zero
 allowance/Study-only deferral for first introduction. Owner full-pause/safety
 deferrals remain pending and must never be reported available by the producer.
+
+
+### Pure canonical-history projection
+
+`coordinator.project_encounters(game: CanonicalGame, *, findings, snapshots,
+source: IntroductionGameScope, detected_at, occurred_at, payload_digest=None)`
+returns immutable shared `GameEncounter` values. `capture_page` calls this same
+implementation. Already-imported-history callers can reuse it without constructing
+a GameRecord/PGN, running acquisition, opening storage or copying conversion.
+
+Supply exact current snapshots/findings and the original source scope, detection,
+occurrence and payload-digest claim. Source game/revision/digest, workspace and
+finding scope must agree; wrong input is refused. Missing/ambiguous mappings
+produce no command and remain the caller's unresolved findings. The helper does
+not infer occurrence precision, invent a timestamp or interpret an empty output
+as all-correct/complete coverage. It does not select admission, apply a lapse,
+score importance or write history; Study retains those decisions/guards.
