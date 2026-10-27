@@ -52,15 +52,17 @@ published history and workflow checkpoints.
 
 ## Prepared normal-Study fixtures and acceptance
 
-Current focused evidence: four typed-importance adapter cases passed; nine native
-receiver/current-mapping/importance cases passed across the initial eight passes
-and the corrected historical Study-save/settlement rerun. The source fixture now
-includes explicit saved ordinary-cap/Study-only values for the ordinary-admission
-race. One current-source race selection is ready; it previously did not start
-because the validation slot was occupied. The scoped dependency guard passed
-(1 selected/80 deselected). Published #494 combined81 Python/60 TypeScript
-contract evidence is reused after restoring byte-identical published contract
-tests with unchanged AST/test bodies; no leaf-suite/UI build is repeated.
+Current focused evidence: four typed-importance adapter cases passed. At
+`3e779dfb`, the current receiver/race selection passed 10 cases with the two known
+factual regressions deselected (3.58s). It uses real retained captures, current
+mapping/importance, honest pending receipts, historical ordinary-Study
+save/settlement and an ordinary canonical-admission race with no reset/fake lapse.
+The scoped dependency guard passed (1 selected/80 deselected) after #489 adoption.
+Published #494 combined81 Python/60 TypeScript contract evidence is reused after
+restoring byte-identical published contract tests with unchanged AST/test bodies.
+The later SPEC amendment is documentation only; #482's approved-policy checkpoint
+`092b574d` is consumed without repeating unchanged positive boundary evidence.
+No leaf-suite or UI build is repeated.
 
 Two additional actual retained date-only historical cases currently FAIL at the
 #486→#489 factual seam: matched play produces no finding; differing play produces
