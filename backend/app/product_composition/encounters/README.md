@@ -1,188 +1,140 @@
-# Encounter importance to normal Study: next practical release
+# Retained encounters to normal Study: next practical release
 
-This separate #488 lane starts at qualified first-feedback `ab2e5e6e`. It does
-not change that installation. The practical entry is #491's bounded retained
-history preview/run-once workflow using #489's durable source/delivery identity;
-there is no separate encounter-only endpoint or second historical ingestion.
+Local executable candidate **`cf777b5250a9d2c32f289f58377d635cb8e79504`**
+passes the named 18-case native integration file. This separate #488 branch
+starts at qualified first-feedback `ab2e5e6e`; it has not been published,
+installed or activated. The original first candidate is unchanged.
 
-Published inputs consumed: #533 encounter contracts `46f07e9a`, #486 factual
-comparison `ab402547`, #532 typed importance `cc6937aa`, #487 receiver
-`9af90d08`, #483 current reader `4198bfc8`, and #495 introduction source
-`bebdc5f6` (narrow canonical capability). Shared values are
-`GameEncounter`, `EncounterReceipt`, `GameEffectKey`, `IntroductionGameScope` and
-`DecisionPresentation`. Local preparation retains those exact values and unresolved findings; it defines no substitute semantic DTO or scheduling policy.
+## Consumed owner checkpoints
 
-[`importance_from_encounters`](importance.py) reexports #494's frozen
-`GameEncounter` consumer directly. No translation/scoring/dedup copy remains. That owner
-deduplicates source-game/revision supports and retains historical differing-play
-importance separately from correct-play frequency for both current introduction
-states. Composition does not filter relevance by old-lapse eligibility or later
-learning. A supplied current approved mapping remains subject to Study's current
-transaction fence; importance calculation grants no effect/admission authority.
+| Owner | Exact input |
+| --- | --- |
+| #482 encounter values and approved targeted exception, PR #533 | `092b574d` |
+| #483 current repertoire reader | `4198bfc8` |
+| #486 encounter facts and exact retained day-only correction | published `ab402547` plus local-only `24819dfa` |
+| #487 current Study receiver and targeted disposition | `9af90d08` |
+| #489 same canonical command projection/delivery, PR #535 | `17291652` |
+| #494 typed historical importance, PR #532 | `cc6937aa` |
+| #495 narrow canonical introduction, PR #527 | `bebdc5f6` |
 
-The #487 receiver must own one semantic disposition/receipt per original event:
-existing eligible lapse, priority without schedule rewind, or genuine first
-introduction with fresh scheduling. #495 supplies only the needed canonical
-introduction capability. #489 retains the original observation, detection and
-source identity through lost acknowledgments, retries, later admission and
-recomparison. A correctly played encounter never becomes an invented failure.
+The #486 correction is tested locally but its publication was denied. This
+candidate must remain local while either publication hold remains. No alternate
+branch or tool may publish the held work.
+
+## Existing path and ownership
+
+[`prepare_captured_encounters`](capture.py) wires the exact retained canonical
+source, #483 snapshot/index and #486 comparer into #489's existing
+`project_encounters`. It retains unresolved findings and original shared
+`GameEncounter` values, source identity and detection facts. Its local preparation
+bundle is not a new transport contract. It performs no I/O, acquisition, progress
+write, PGN reconstruction or effect. #491 retains bounded history selection,
+durable progress, root/router/worker and activation ownership.
+
+[`importance_from_encounters`](importance.py) reexports #494's typed function
+unchanged. Historical misses remain importance before introduction and after
+later learning. Correct encounters supply frequency. Composition duplicates no
+scoring/dedup policy and never reinterprets historical importance as a new lapse.
+
+[`receive_admitted_encounter`](receiver.py) first checks the current operation
+stop decision and existing foreground admission. It then selects #495's approved
+`encounter_exception` and delegates to [`receive_captured_encounter`](receiver.py):
+the source owner locks/rereads the canonical imported bytes, and #487 fences
+current exact repertoire/card facts and owns disposition, first introduction,
+queue and receipt. All writes borrow the caller's existing receipt transaction.
+Only Study can choose lapse, priority without rewind, first introduction or
+frequency-only disposition. No alternate ledger, queue writer or scheduler is
+introduced here.
+
+The existing [`feedback_maintenance.py`](../feedback_maintenance.py) also handles
+pending encounter payloads. One current effect, canonical source fence, Study
+owner, durable cursor and task receipt commit together. It imports no Games
+module. Applied recovery and real-review settlement retain their existing Study
+hooks, independent of optional producers.
 
 ```mermaid
 flowchart LR
-  subgraph pending["Separate next-release composition: prepared / not activated"]
-    History["#491 bounded retained-history preview/run-once"] --> Workflow["#489 original normalized game + durable delivery"]
-    Workflow --> Facts["#486 factual encounters + #482 immutable values"]
-    Facts --> Importance["#494 existing pure personal importance"]
-    Facts --> Study["#487 current owner: priority/disposition + receipt"]
-    Importance --> Study
-    Study --> Introduction["#495 canonical first introduction when permitted"]
-    Study --> Queue["Normal Study queue/controller"]
-    Introduction --> Queue
-    Maintenance["Existing Study durable one-effect maintenance"] --> Study
-  end
+  History["#491 bounded retained-history selection and durable progress"] --> Capture["Exact owner capture; canonical game; snapshot/index"]
+  Capture --> Facts["#486 factual comparison"]
+  Facts --> Commands["#489 existing project_encounters and delivery"]
+  Commands --> Importance["#494 pure historical importance"]
+  Commands --> Gate["Existing operation and foreground admission"]
+  Gate --> Fence["Canonical source fence; borrowed receipt transaction"]
+  Fence --> Study["#487 Study current disposition and receipt"]
+  Study --> Intro["#495 canonical introduction when needed"]
+  Intro --> Queue["Ordinary Study queue/controller"]
+  Study --> Queue
+  Queue --> Review["First genuine attempt and saved review"]
+  Review --> Study
+  Sweep["Existing Study one-effect durable maintenance"] --> Fence
 ```
 
-[`prepare_captured_encounters`](capture.py) wires the exact retained canonical game and #483 projection/index/comparer into #489 `project_encounters` at `17291652`. It retains all original findings for honest unresolved counts, returns the original shared commands, and performs no I/O, progress write, PGN reconstruction or effect. The #491 bounded history caller still owns source selection and durable progress.
+## Actual control source
 
-The pure output retains `source_encounters` as the original shared commands;
-#489's same durable sender consumes these commands rather than a new aggregate
-score DTO. [`receive_captured_encounter`](receiver.py) fences retained canonical
-source bytes and borrows #487's actual factory/transaction. Its introduction
-capability and policy are explicit arguments, with no live default. [`receive_admitted_encounter`](receiver.py) binds the approved targeted canonical capability only after the existing operation and foreground gates. Receipts
-remain provisional until the existing command transaction commits. #491 retains
-root/router/worker ownership; actual bounded-run binding remains pending its
-published history and workflow checkpoints.
+The retained settings schema and `study_priority.control_snapshot()` contain no
+separate global full-Study-pause field. Zero allowance and Study-only are ordinary
+introduction controls, not proof of full pause. Per-work durable pause controls
+and the Games runtime stop Event do exist. The root must supply its actual
+current operation stop/control decision to the required `operation_stopped`
+callback; no permissive default is provided. Unknown/non-Boolean or stopped
+control defers before a source lock or Study write.
 
-## Prepared normal-Study fixtures and acceptance
+Positive operation admission then calls the existing
+`activity_gate.check_background_admission()`, which defers for foreground work
+or unavailable configured Redis/HTTP admission. The caller still owns background
+database/maintenance admission. The maintenance path uses the existing durable
+claim pause predicate and current task-generation/lease fence; pause prevents the
+next bounded unit, and stale deliveries cannot publish. That actual admission
+supplies the narrow capability's explicit `paused` Boolean. No new pause
+service, setting, schema or UI exists or is claimed.
 
-Current focused evidence: four typed-importance adapter cases passed. At
-`3e779dfb`, the current receiver/race selection passed 10 cases with the two known
-factual regressions deselected (3.58s). It uses real retained captures, current
-mapping/importance, honest pending receipts, historical ordinary-Study
-save/settlement and an ordinary canonical-admission race with no reset/fake lapse.
-The scoped dependency guard passed (1 selected/80 deselected) after #489 adoption.
-Published #494 combined81 Python/60 TypeScript contract evidence is reused after
-restoring byte-identical published contract tests with unchanged AST/test bodies.
-The later SPEC amendment is documentation only; #482's approved-policy checkpoint
-`092b574d` is consumed without repeating unchanged positive boundary evidence.
-No leaf-suite or UI build is repeated.
+Andy approved targeted encounters bypassing ordinary caps, including zero or
+exhausted allowance, and Study-only. Global settings and unrelated ordinary
+introductions retain their controls. The exact Study-owned
+`study_game_feedback` task now shares `daily_queue`'s Study-only admission;
+unknown/unrelated optional kinds retain their prior restrictions and durable
+pause remains. `queue_ordering._priority_projection` recognizes
+`product_game_encounter` through the existing protected ordering policy.
+The two exact shared editing windows ended at `e0764c24`.
 
-Two additional actual retained date-only historical cases currently FAIL at the
-#486→#489 factual seam: matched play produces no finding; differing play produces
-`known_unavailable` despite source-scoped introduced_before_game=False. The
-published workflow filters both out. This is not a receipt/receiver failure;
-the direct receiving path already preserves old relevance without FSRS rewind.
-These two focused regressions remain required and are not counted as passes.
+## Focused evidence
 
+At executable **`cf777b52`**, `make python-file
+FILE=backend/tests/test_product_encounter_integration.py` passed **18 cases in
+5.32s**, using the capped task-owned schema051 PostgreSQL fixture:
 
-`backend/tests/product_encounter_fixtures.py` reuses the capped disposable
-PostgreSQL owner fixture. It creates two honest synthetic retained games, exact
-approved routes/current physical cards, and a protected unrelated card with an
-ordinary issued queue origin. An unintroduced target has no introduction, FSRS
-state or prior Study review. The later-learning target has actual introduction
-and a saved review after the old game. Captures use the existing bounded owner,
-current integrity facts and #483 projection, never original-PGN reconstruction.
+- Real retained canonical captures/current mappings and protected issued heads.
+- Correct and missed first introductions with zero allowance plus Study-only;
+  first actual ordinary Study review, no fake Again/review/backdating.
+- Bounded explicitly selected two-game fixture: **2 scanned, 2 matched,
+  0 unresolved, 0 remaining; 1 correct and 1 missed**. Both re-compared after
+  learning retained original game/decision/source identity and receipts.
+- Historical relevance and priority preserve later learning; ordinary admission
+  winning the race is not reset or charged again.
+- Stop/resume, actual durable task pause, stale lease and repeat delivery safety;
+  unrelated optional task admission retains its Study-only restriction.
+- Pending encounter maintenance proceeds independently of Games; existing lapse
+  maintenance and cold no-Games-import preservation separately passed (2 cases).
 
-| Required result | Prepared scenario |
-| --- | --- |
-| Useful bounded history result | Two retained source games: differing move and correct expected move |
-| First introduction once | Never-introduced target; both played responses; first real Study attempt |
-| Historical priority without lapse | Both games predate actual introduction and later saved learning |
-| Current-state race | Capture while unintroduced; ordinary canonical admission wins before delivery |
-| Duplicate/recomparison safety | Same source/key after acknowledgment loss and later introduction |
-| Full-pause protection | Persist evidence/deferred reason; no availability claim or scheduling/admission mutation |
-| Preserve working Study | Keep unrelated issued origin, history, schedule and first pipeline behavior |
+The previously failing two retained date-only cases now pass with #486's exact
+local correction; no precise timestamp/current introduction fact is fabricated.
+One queue presentation case passed (0.14s), four pre-write admission cases passed
+(0.29s), four typed importance cases passed (0.33s), and the scoped dependency
+guard passed (1 selected/89 deselected, 0.17s). Unchanged owner evidence is reused,
+including #495's 21 policy/import plus 26 schema051 native cases and #489's
+persistence/delivery checks. No broad leaf suite or UI/image rebuild was run.
+Owned PostgreSQL cleanup is verified and the validation lock is released.
 
-The prepared nine-case native selection covers six exact source/current-owner
-mapping/importance cases, two honest pending unintroduced receipts without a
-chosen policy, and one historical-priority path through ordinary Study without
-rewinding later learning. The later three-case result above qualifies direct first-introduction and operation stop/resume receiving integration. Full bounded-history-run acceptance remains pending #491 and #486; a distinct installed global full-pause feature is not claimed.
-Effect acceptance will extend the same narrow integration file using the real
-owner receiver, canonical introduction and existing ordinary Study controller.
-The four-case pure file verifies the published typed importance API without a
-fake Study receipt. Source syntax checks pass; the completed selected native results above are the available runtime evidence. The native receiver uses existing
-schema051 only: no broader introduction charge/rotation/ranking DDL is installed
-or required. The narrow #495 canonical-state capability is qualified at `bebdc5f6`: its owner reports 21 policy/import and 26 schema051 native cases passed. Those owner checks are reused. No broad
-suite or browser/UI rebuild is selected.
+These are honest synthetic retained fixtures, not private live-game evidence.
+The full #491 selected-window operator entry/durable progress/root binding still
+needs its own final composition evidence. No full synchronization, new UI,
+engine evaluation or full D storage is required by this receiving slice.
+Existing capture/current-source size guards remain; tiny fixtures do not prove
+unbounded real-user source support. Larger sources require a supported bounded
+owner path or explicit deferral, never dropped alternatives or waived guards.
 
-## Existing pause and admission source
-
-The retained settings schema and `study_priority.control_snapshot()` have no
-separate global full-Study-pause field. Zero new-card allowance and Study-only
-are ordinary introduction controls, not proof of full pause. Per-work durable
-pause controls do exist; their owning claim/run-once path must still admit the
-operation. `GameSyncRuntime.request_stop()` also sets the existing runtime stop
-Event and stops its sender. The root must bind its actual current stop/control
-decision to the required `operation_stopped` callback; no default is supplied.
-
-The admitted wrapper rejects stopped or non-Boolean/unknown operation control
-before any source lock or Study write, then calls the existing
-`activity_gate.check_background_admission()`. That gate defers for foreground
-requests and unavailable configured Redis/HTTP admission. Only positive
-whole-operation admission supplies `paused=False` to #495; this is not inferred
-from cap or Study-only. The existing caller still owns background database and
-maintenance admission, transaction and durable retry. No new pause setting,
-service, schema or UI is added. The #491 root binding is still pending; the
-composition boundary alone does not claim an installed manual-pause feature.
-
-
-The existing Study-owned [`feedback_maintenance.py`](../feedback_maintenance.py)
-now reads encounter source/repertoire facts without assuming a lapse payload.
-It reuses the same one-effect cursor, canonical source fence, Study owner and
-caller receipt transaction. A positive existing task-generation/lease fence,
-following the durable claim pause predicate and background database admission,
-supplies the explicit canonical `paused` Boolean. No global pause field is
-inferred. Normal task pause acts between admitted bounded units; the exact
-current lease still fences publication. Maintenance imports no Games module.
-
-At `8197e310`, the existing lapse-maintenance/native and cold no-Games-import
-preservation cases passed (2 selected, 2.44s). The new encounter maintenance
-case passed with ordinary task admission (1 selected, 2.19s): actual durable
-pause denied claim; resume advanced once; stale lease did nothing; Games
-imports were denied. The same Study-only case currently fails at the existing
-public resume control with 409 because `task_admission_sql` admits only
-`daily_queue` under Study-only. It requires an exact owner predicate extension
-for `study_game_feedback`, preserving durable pause and unrelated task controls.
-
-A separate pure presentation regression currently fails: an admitted
-`product_game_encounter` remains behind ordinary movable work, although the
-issued head remains protected. The required hook is
-`queue_ordering.py::_priority_projection`. These two shared-file edits await
-recorded reservation; no setting override or guard bypass is used. The prepared
-two-retained-game projection/Study/recomparison case also awaits #486's exact
-day-only repair. No passing full bounded-history run is claimed yet.
-
-## Decided targeted exception and release boundaries
-
-Andy explicitly approved targeted real-game first introductions bypassing ordinary
-new-card allowance (including zero/exhausted allowance) and Study-only. Ordinary
-unrelated introductions retain their controls. The owner implementation must still
-honor explicit full Study pause, foreground/maintenance admission, exact current
-source/identity/legality/conflict fences and one actual introduction under races.
-No global cap or Study-only setting is changed. This decision is for the separately
-qualified next release; it is not live activation or a default chosen here.
-
-The public receiver requires an explicit policy/canonical capability. Existing
-policy-pending fixture cases test honest handling of a missing capability; they
-do not represent the newly approved live policy. The three selected receiving/native cases at `c5896509` passed (2.65s): correct and missed zero-allowance/Study-only introductions reached the first real ordinary Study review once; a stopped operation wrote nothing and resumed once. #495's owner evidence covers exhausted allowance, explicit full pause, guards and unchanged ordinary controls. The #491 runtime control binding remains pending. No broader introduction
-charge/rotation/ranking DDL is installed by this lane.
-
-The current source fencer still limits a supplied source to 64 routes/128 physical
-cards/256 mappings. Small fixtures do not establish real-user support beyond those
-bounds. Larger actual sources need a supported bounded explicit-decision owner
-path or honest size deferral; alternatives/guards are never dropped.
-
-A bounded retained-history product run also needs #491's published canonical
-history entry. The current #489 acquisition page requires nonempty original
-`GameRecord.pgn`; the installed retained-game capture has canonical moves and no
-original PGN. This lane never reconstructs PGN and calls it original, supplies a
-fake record to satisfy that shape, or starts a second backfill/delivery ledger.
-The receiving adapter deliberately authenticates the existing retained canonical
-bytes through their current owning source adapter.
-
-No live scan, activation, deployment, data/settings change or held graph migration
-is authorized here. #491 retains root/router/worker/schema-registration ownership.
-The qualified first installation stays unchanged while the practical bundle is
-qualified and coordinated. Optional GitHub ownership/status comments and a push
-of this new branch were rejected by approval review and did not execute; this
-checkpoint remains local, with no retry or alternate publication.
+No live reads, data/settings changes, merge, deployment or activation occurred
+in this lane. Optional GitHub metadata and the new integration branch push were
+denied before execution and have not been retried or routed elsewhere. The local
+checkout, source checkpoints and verified bundle are retained until publication
+and dependent integration are resolved.
