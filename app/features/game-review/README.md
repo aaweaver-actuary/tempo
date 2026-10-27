@@ -42,11 +42,41 @@ no admission/retry policy and is independent of operator history-to-Study proof.
 it grants no content mutation. The injected API has no Study reset/start/save,
 card-creation, SQL, browser-storage or engine capability.
 
+## Practical review and refresh
+
+Refreshing games/status re-reads the selected game's detail even when its source
+revision is unchanged. The game-only refresh uses the same read capability. Both
+preserve the selected board ply; a changed game/repertoire/source still gets its
+own position identity and cancels stale requests. During refresh the last result
+remains visible, and a failed refresh explicitly labels it as the previous result.
+A completed manual sync refreshes the read projections; opening or refreshing the
+screen never imports games or applies feedback.
+
+Owner receipts without a matching finding are shown separately, including their
+actual pending/applied/deferred/admission facts, source game and decision. Jumping
+to their ply is allowed only for the displayed source revision and available move
+history. Another revision does not borrow the current moves. Missing expected
+moves remain explicitly unsupplied. An empty findings array is not a full-coverage
+claim, and receipts naming a different game fail closed in this screen.
+
+Opponent gaps and missing own continuations retain their coverage labels, source
+game, played move and any supplied expected moves. A missing navigation callback
+leaves the gap action visible but disabled with a manual Repertoire fallback.
+
+Parent/#491 integration needs observed at `cbc221218a9235ec23ee6441a6f5ac4edf031b4c`:
+`LegacyWorkspace` mounts this view with only `api`. Supply its existing `onReviewGap`
+callback to enable exact repertoire navigation; no root file is edited here.
+The public summary/detail currently supplies provider/game identity but no verified
+source URL, and an unmatched receipt supplies no expected move. If clickable
+provider links or those expected moves are needed, the parent should request small
+factual read-projection additions from the API owner. The UI does not guess a
+Chess.com live/daily URL or reconstruct repertoire policy from game moves.
+
 ## Dependency and lifecycle view
 
 ```mermaid
 flowchart LR
-  Composition["#491 composition: mount + endpoints"] --> View["GameReviewView: local state"]
+  Composition["#491 composition: mount + endpoints"] --> View["GameReviewView: local state + read refresh"]
   Composition --> HTTP["api.ts: injected fetch adapter"]
   View --> Port["GameReviewClient: read / explicit sync / retry"]
   HTTP -. implements .-> Port
@@ -111,6 +141,13 @@ The encounter-display follow-on adds only seven focused owner receipt-label
 cases and one mixed legacy/encounter HTTP detail-read case (31 cases total).
 Legacy retry commands and their response validator remain unchanged; the detail
 read preserves the actual encounter subtype through the shared union.
+
+The practical-review follow-on adds eight focused cases for same-revision owner
+status refresh, preserved cursor/stale-result retry, explicit-sync readback,
+unmatched and source-mismatched receipts, and coverage-gap navigation fallbacks
+(39 cases total, passed). The selected unit file and scoped static checks used a
+free nonblocking advisory slot. No database/browser/full-product qualification
+or release-owner checkout was used; installed UI acceptance remains #491's work.
 
 The focused test is discovered by the existing unit glob. #491 coordinates the
 central regression inventory entry with #488's current `tests/REGRESSIONS.md`

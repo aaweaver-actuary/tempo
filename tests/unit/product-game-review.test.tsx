@@ -258,6 +258,93 @@ it("refreshing to a newer game revision replaces the selection and fences obsole
   expect(boards.at(-1)?.positionIdentity).toContain("2");
 });
 
+it("refreshes selected-game receipts at the same source revision without moving the board", async () => {
+  const refreshed = deferred<GameDetail>();
+  const available = encounterReceipt({ status: "applied", disposition: "review_priority", admission_status: "available", deferred_reason: null, reason: null });
+  const api = fakeApi({ gameDetail: vi.fn().mockResolvedValueOnce(detail({ receipts: [receipt()] })).mockImplementationOnce(() => refreshed.promise) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh games and status" }));
+  await waitFor(() => expect(api.gameDetail).toHaveBeenCalledTimes(2));
+  expect(screen.getByText("Refreshing game…")).toBeTruthy();
+  expect(boards.at(-1)?.positionRevision).toBe(1);
+  await act(async () => refreshed.resolve(detail({ receipts: [available] })));
+  expect(await screen.findByText(receiptLabel(available))).toBeTruthy();
+  expect(boards.at(-1)?.positionRevision).toBe(1);
+  expect(api.sync).not.toHaveBeenCalled(); expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+it("keeps the previous board visibly stale after a failed game refresh and retries only the read", async () => {
+  const api = fakeApi({ gameDetail: vi.fn().mockResolvedValueOnce(detail({ receipts: [receipt()] })).mockRejectedValueOnce(new Error("Status read unavailable")).mockResolvedValue(detail({ receipts: [receipt("applied")] })) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh this game" }));
+  expect(await screen.findByText(/Status read unavailable/)).toBeTruthy();
+  expect(screen.getByText("Showing the previous result because this game could not be refreshed.")).toBeTruthy();
+  expect(boards.at(-1)?.positionRevision).toBe(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry game" }));
+  expect(await screen.findByText("Study feedback: applied")).toBeTruthy();
+  expect(screen.queryByText("Showing the previous result because this game could not be refreshed.")).toBeNull();
+  expect(boards.at(-1)?.positionRevision).toBe(1);
+  expect(api.recentGames).toHaveBeenCalledTimes(1);
+  expect(api.sync).not.toHaveBeenCalled(); expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+it("refreshes current owner feedback after an explicit sync completes", async () => {
+  const api = fakeApi({ gameDetail: vi.fn().mockResolvedValueOnce(detail({ receipts: [receipt()] })).mockResolvedValue(detail({ receipts: [receipt("applied")] })), sync: vi.fn<GameReviewClient["sync"]>(async ({ provider, operation_id }) => ({ provider, operation_id, status: "complete", error: null })) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  fireEvent.click(screen.getByRole("button", { name: "Sync Lichess" }));
+  expect(await screen.findByText("Study feedback: applied")).toBeTruthy();
+  expect(api.sync).toHaveBeenCalledTimes(1); expect(api.gameDetail).toHaveBeenCalledTimes(2);
+  expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+it("shows owner feedback without a matching finding and can navigate its original game ply", async () => {
+  const pending = encounterReceipt({}, finding("known_unintroduced", 3));
+  const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [], receipts: [pending] })) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  const feedback = screen.getByRole("region", { name: "Other feedback receipts" });
+  expect(within(feedback).getByText(receiptLabel(pending))).toBeTruthy();
+  expect(within(feedback).getByText("Source game: Lichess · synthetic-game · Ply 3")).toBeTruthy();
+  expect(within(feedback).getByText("c2c4")).toBeTruthy();
+  expect(within(feedback).getByText("Not supplied for this receipt")).toBeTruthy();
+  expect(feedback.textContent).not.toContain("available for Study");
+  expect(screen.getByText(/Full coverage is not established by an empty result/)).toBeTruthy();
+  fireEvent.click(within(feedback).getByRole("button", { name: "Show feedback position before ply 3" }));
+  expect(boards.at(-1)?.positionRevision).toBe(2);
+  expect(api.sync).not.toHaveBeenCalled(); expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+it("does not substitute current moves for a receipt from another source revision", async () => {
+  const otherRevision = encounterReceipt({ source_revision: 2 }, finding("known_unintroduced", 3));
+  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [], receipts: [otherRevision] })) })} />);
+  await selectFirst(); await readyBoard();
+  const feedback = screen.getByRole("region", { name: "Other feedback receipts" });
+  expect(within(feedback).getByText(receiptLabel(otherRevision))).toBeTruthy();
+  expect(within(feedback).getByText("Not supplied for this source revision")).toBeTruthy();
+  expect(within(feedback).getByText("This receipt does not identify a position in the displayed source revision.")).toBeTruthy();
+  expect(within(feedback).queryByRole("button", { name: /Show feedback position/ })).toBeNull();
+});
+
+it("refuses feedback receipts belonging to a different source game", async () => {
+  const foreign = encounterReceipt({ key: { ...receipt().key, game_id: "different-game" } });
+  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [foreign] })) })} />);
+  await selectFirst();
+  expect(await screen.findByText(/Feedback receipts do not match this source game/)).toBeTruthy();
+  expect(screen.queryByRole("group", { name: /Original game board/ })).toBeNull();
+});
+
+it.each(["opponent_gap", "missing_own_continuation"] as const)("keeps a %s visible when repertoire navigation is not wired", async kind => {
+  const gap = FindingSchema.parse({ ...finding(kind, 2), expected_uci: [], decision_id: null, presentation_id: null, presentation_revision: null });
+  const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [gap] })) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  expect(screen.getByText("No repertoire continuation recorded")).toBeTruthy();
+  expect(screen.getByText("Source game: Lichess · synthetic-game · Ply 2")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Review repertoire gap at ply 2" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("Open Repertoire from the main navigation to review this coverage gap.")).toBeTruthy();
+  expect(api.sync).not.toHaveBeenCalled(); expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
 it("reuses an original failed provider operation supplied by the receiving owner", async () => {
   const api = fakeApi({ recentGames: vi.fn<GameReviewClient["recentGames"]>(async () => ({ games: [firstSummary], sync: [{ provider: "lichess", status: "failed", operation_id: "original-provider-operation", error: "Try again" }] })) });
   render(<GameReviewView api={api} />);

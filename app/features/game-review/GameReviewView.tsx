@@ -31,9 +31,13 @@ function gameTime(game: GameSummary): string {
   return `${iso.slice(0, length).replace("T", " ")} UTC (${game.time_precision} precision)`;
 }
 
+function matchesFinding(receipt: GameDetail["receipts"][number], finding: Finding) {
+  return receipt.key.provider === finding.provider && receipt.key.game_id === finding.game_id
+    && receipt.key.occurrence_ply === finding.ply && receipt.key.decision_id === finding.decision_id && receipt.source_revision === finding.source_revision;
+}
+
 function receiptFor(receipts: GameDetail["receipts"], finding: Finding) {
-  return receipts.find(receipt => receipt.key.provider === finding.provider && receipt.key.game_id === finding.game_id
-    && receipt.key.occurrence_ply === finding.ply && receipt.key.decision_id === finding.decision_id && receipt.source_revision === finding.source_revision);
+  return receipts.find(receipt => matchesFinding(receipt, finding));
 }
 
 export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewViewProps) {
@@ -48,7 +52,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
   const [syncSubmitting, setSyncSubmitting] = useState(0);
   const [reload, setReload] = useState(0);
   const [detailReload, setDetailReload] = useState(0);
-  const [ply, setPly] = useState(0);
+  const [position, setPosition] = useState<{ identity: string; ply: number } | null>(null);
   const [feedback, setFeedback] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const selectionIdentity = selected ? JSON.stringify([gameKey(selected), repertoireId ?? null]) : "";
 
@@ -71,7 +75,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       setSelected(previous => {
         if (!previous) return null;
         const current = data.games.find(game => game.provider === previous.provider && game.game_id === previous.game_id);
-        return current && gameKey(current) === gameKey(previous) ? previous : current ?? null;
+        return current ? { ...current } : null;
       });
       for (const status of data.sync) if (status.status === "complete") operations.current.complete(`sync:${status.provider}`);
     }).catch(error => {
@@ -88,8 +92,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       if (!owned.current()) return;
       feedbackBusy.current = false;
       setFeedback({ busy: false, error: null });
-      setDetail({ data: null, loading: true, error: null, identity: selectionIdentity });
-      setPly(0);
+      setDetail(previous => ({ data: previous.identity === selectionIdentity ? previous.data : null, loading: true, error: null, identity: selectionIdentity }));
       return api.gameDetail({ provider: selected.provider, game_id: selected.game_id, repertoire_id: repertoireId, signal: owned.signal });
     }).then(data => {
       if (!data || !owned.current()) return;
@@ -99,20 +102,27 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
         if (data.findings.some(finding => finding.provider !== data.provider || finding.game_id !== data.game_id
           || finding.source_revision !== data.source_revision || finding.ply > data.moves.length || data.moves[finding.ply - 1] !== finding.played_uci
           || repertoireId !== undefined && finding.repertoire_id !== repertoireId)) throw new Error("Findings do not match this game history or repertoire. Refresh before reviewing.");
+        if (data.receipts.some(receipt => receipt.key.provider !== data.provider || receipt.key.game_id !== data.game_id)) throw new Error("Feedback receipts do not match this source game. Refresh before reviewing.");
         setDetail({ data, loading: false, error: null, identity: selectionIdentity });
-        setPly(data.findings[0] ? Math.max(0, data.findings[0].ply - 1) : 0);
       } catch (error) {
-        setDetail({ data: null, loading: false, error: errorMessage(error), identity: selectionIdentity });
+        setDetail(previous => ({ data: previous.identity === selectionIdentity ? previous.data : null, loading: false, error: errorMessage(error), identity: selectionIdentity }));
       }
     }).catch(error => {
-      if (owned.current()) setDetail({ data: null, loading: false, error: errorMessage(error), identity: selectionIdentity });
+      if (owned.current()) setDetail(previous => ({ data: previous.identity === selectionIdentity ? previous.data : null, loading: false, error: errorMessage(error), identity: selectionIdentity }));
     });
     return () => { owner.cancel("detail"); owner.cancel("feedback"); };
   }, [api, selected, repertoireId, selectionIdentity, detailReload]);
 
   const currentDetail = detail.identity === selectionIdentity ? detail.data : null;
   const positions = useMemo(() => currentDetail ? gamePositions(currentDetail.starting_fen, currentDetail.moves) : [], [currentDetail]);
-  const cursor = Math.max(0, Math.min(ply, positions.length - 1));
+  const initialPly = currentDetail?.findings[0] ? currentDetail.findings[0].ply - 1 : 0;
+  const cursor = Math.max(0, Math.min(position?.identity === selectionIdentity ? position.ply : initialPly, positions.length - 1));
+  const otherReceipts = currentDetail ? currentDetail.receipts.filter(receipt => !currentDetail.findings.some(finding => matchesFinding(receipt, finding))) : [];
+  const setPly = (ply: number) => setPosition({ identity: selectionIdentity, ply });
+
+  function refreshGamesAndStatus() {
+    setReload(value => value + 1);
+  }
 
   async function syncProvider(provider: GameSummary["provider"]) {
     const scope = `sync:${provider}`;
@@ -131,7 +141,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       if (!owned.current()) return;
       if (status.provider !== provider || status.operation_id !== operation_id) throw new Error("Sync receipt does not match the original operation.");
       update(status);
-      if (status.status === "complete") { operations.current.complete(scope); setReload(value => value + 1); }
+      if (status.status === "complete") { operations.current.complete(scope); refreshGamesAndStatus(); }
     } catch (error) {
       if (owned.current()) update({ provider, status: "failed", operation_id, error: errorMessage(error) });
     } finally {
@@ -169,7 +179,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
 
   return <section className="game-review" aria-label="Game Review">
     <header className="game-review-header"><div><h1>Game review</h1><p className="game-review-muted">Review original games and repertoire findings.</p></div>
-      <Button onClick={() => setReload(value => value + 1)} pending={recent.loading || syncSubmitting > 0}>Refresh games and status</Button>
+      <Button onClick={refreshGamesAndStatus} pending={recent.loading || syncSubmitting > 0 || feedback.busy}>Refresh games and status</Button>
     </header>
     <div className="game-review-sync" aria-label="Provider synchronization">
       {(["lichess", "chesscom"] as const).map(provider => {
@@ -190,30 +200,42 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       </Button></li>)}
     </ul></aside><article className="game-review-detail" aria-label="Selected game">
       {!selected && <p>Select a game to review its original move history.</p>}
-      {selected && (detail.loading || detail.identity !== selectionIdentity) && <p role="status">Loading game…</p>}
+      {selected && (detail.loading || detail.identity !== selectionIdentity) && <p role="status">{currentDetail ? "Refreshing game…" : "Loading game…"}</p>}
       {detail.identity === selectionIdentity && detail.error && <div role="alert" className="game-review-error">{detail.error} <Button onClick={() => setDetailReload(value => value + 1)}>Retry game</Button></div>}
-      {currentDetail && <><h2>{providerLabel(currentDetail.provider)} · {currentDetail.game_id}</h2><p className="game-review-muted">{gameTime(currentDetail)}</p>
+      {currentDetail && <><header className="game-review-header"><div><h2>{providerLabel(currentDetail.provider)} · {currentDetail.game_id}</h2><p className="game-review-muted">{gameTime(currentDetail)}</p></div><Button pending={detail.loading || feedback.busy} onClick={() => setDetailReload(value => value + 1)}>Refresh this game</Button></header>
+        {detail.error && <p role="status">Showing the previous result because this game could not be refreshed.</p>}
         <div role="region" aria-label="Original game history" tabIndex={0} onKeyDown={historyKeys}>
           <div className="game-review-board"><Board {...boardPosition(selectionIdentity, positions, currentDetail.moves, cursor, currentDetail.player_color)} /></div>
           <div className="game-review-controls"><Button disabled={cursor === 0} onClick={() => setPly(0)}>First</Button><Button disabled={cursor === 0} onClick={() => setPly(cursor - 1)}>Previous</Button>
             <span role="status">Ply {cursor} of {currentDetail.moves.length}</span><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(cursor + 1)}>Next</Button><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(currentDetail.moves.length)}>Last</Button></div>
         </div>
-        <h3>Repertoire findings</h3>{!currentDetail.findings.length && <p>No repertoire findings for this game.</p>}
+        <h3>Repertoire findings</h3>{!currentDetail.findings.length && <p>No repertoire findings for this game. Full coverage is not established by an empty result.</p>}
         {feedback.error && <p role="alert" className="game-review-error">{feedback.error}</p>}
         <ul className="game-review-findings">{currentDetail.findings.map(finding => {
           const receipt = receiptFor(currentDetail.receipts, finding);
           const gap = finding.kind === "opponent_gap" || finding.kind === "missing_own_continuation";
           const retryable = !receipt || receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome);
           return <li key={findingKey(finding)} className="game-review-finding" data-current={cursor === finding.ply - 1 || cursor === finding.ply}>
-            <strong>{findingLabels[finding.kind]}</strong><p>Ply {finding.ply}{finding.diagnostic ? ` · ${finding.diagnostic}` : ""}</p>
-            <dl><dt>Played</dt><dd>{finding.played_uci}</dd><dt>Expected</dt><dd>{finding.expected_uci.join(", ") || "Not known"}</dd><dt>Repertoire</dt><dd>{finding.repertoire_id}</dd><dt>Decision</dt><dd>{finding.decision_id ?? "Not mapped"}</dd><dt>Card / presentation</dt><dd>{finding.presentation_id ?? "Not mapped"}</dd></dl>
+            <strong>{findingLabels[finding.kind]}</strong><p>Source game: {providerLabel(finding.provider)} · {finding.game_id} · Ply {finding.ply}</p>{finding.diagnostic && <p>{finding.diagnostic}</p>}
+            {gap && <p>{finding.kind === "opponent_gap" ? "This opponent reply is outside the compared repertoire." : "No own continuation is recorded at this repertoire position."}</p>}
+            <dl><dt>Played</dt><dd>{finding.played_uci}</dd><dt>Expected</dt><dd>{finding.expected_uci.join(", ") || (gap ? "No repertoire continuation recorded" : "Not known")}</dd><dt>Repertoire</dt><dd>{finding.repertoire_id}</dd><dt>Decision</dt><dd>{finding.decision_id ?? "Not mapped"}</dd><dt>Card / presentation</dt><dd>{finding.presentation_id ?? "Not mapped"}</dd></dl>
             <p role="status">{receiptLabel(receipt)}</p>{receipt?.available_by && <p>Availability deadline: {receipt.available_by}</p>}
             <div className="game-review-header"><Button onClick={() => setPly(finding.ply - 1)}>Show position before ply {finding.ply}</Button>
-              {gap && onReviewGap && <Button onClick={() => onReviewGap({ kind: "review_repertoire_gap", provider: finding.provider, game_id: finding.game_id, source_revision: finding.source_revision, repertoire_id: finding.repertoire_id, repertoire_revision: finding.repertoire_revision, position_key: finding.position_key, ply: finding.ply })}>Review repertoire gap at ply {finding.ply}</Button>}
+              {gap && <Button disabled={!onReviewGap} onClick={() => onReviewGap?.({ kind: "review_repertoire_gap", provider: finding.provider, game_id: finding.game_id, source_revision: finding.source_revision, repertoire_id: finding.repertoire_id, repertoire_revision: finding.repertoire_revision, position_key: finding.position_key, ply: finding.ply })}>Review repertoire gap at ply {finding.ply}</Button>}
               {finding.kind === "confirmed_miss" && retryable && <Button pending={feedback.busy} onClick={() => void retryFeedback(finding)}>Retry feedback at ply {finding.ply}</Button>}
             </div>
+            {gap && !onReviewGap && <p className="game-review-muted">Open Repertoire from the main navigation to review this coverage gap.</p>}
           </li>;
         })}</ul>
+        {otherReceipts.length > 0 && <section aria-label="Other feedback receipts"><h3>Other feedback receipts</h3><ul className="game-review-findings">{otherReceipts.map(receipt => {
+          const canShowPosition = receipt.source_revision === currentDetail.source_revision && receipt.key.occurrence_ply <= currentDetail.moves.length;
+          return <li key={JSON.stringify([receipt.owner_receipt_id, receipt.source_revision, receipt.key.decision_id, receipt.key.occurrence_ply])} className="game-review-finding">
+            <p>Source game: {providerLabel(receipt.key.provider)} · {receipt.key.game_id} · Ply {receipt.key.occurrence_ply}</p>
+            <dl><dt>Decision</dt><dd>{receipt.key.decision_id}</dd><dt>Played</dt><dd>{canShowPosition ? currentDetail.moves[receipt.key.occurrence_ply - 1] : "Not supplied for this source revision"}</dd><dt>Expected</dt><dd>Not supplied for this receipt</dd></dl>
+            <p role="status">{receiptLabel(receipt)}</p>{receipt.available_by && <p>Availability deadline: {receipt.available_by}</p>}
+            {canShowPosition ? <Button onClick={() => setPly(receipt.key.occurrence_ply - 1)}>Show feedback position before ply {receipt.key.occurrence_ply}</Button> : <p className="game-review-muted">This receipt does not identify a position in the displayed source revision.</p>}
+          </li>;
+        })}</ul></section>}
       </>}
     </article></div>
   </section>;
