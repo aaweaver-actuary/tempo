@@ -820,7 +820,7 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 @app.get("/api/health")
 def health():
     if postgres_store.configured():
-        from .operations.postgres_readiness import postgres_health
+        from .product_composition.readiness import postgres_health
         response = postgres_health()
         from app.study.openings.frozen_math import READER_VERSION
         response["frozen_opening_reader_version"] = READER_VERSION

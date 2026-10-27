@@ -22,5 +22,6 @@ This checkpoint routes the qualified #483 repertoire surface. Other concrete
 Analysis/Study/wire imports await the allocated owners' exact compatible public
 surfaces. Games, HTTP, worker and frontend entry points are not exported until
 their qualified source is integrated. In particular, the legacy background
-worker→`main.coordinator` edge and operational health composition remain explicit
-#501 follow-up work; this barrel does not disguise them as completed isolation.
+worker→`main.coordinator` edge remains explicit #501 follow-up work. Operational
+health now binds immutable observations through `app.operations.interfaces` in
+the private readiness root; this barrel does not disguise them as completed isolation.

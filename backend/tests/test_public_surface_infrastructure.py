@@ -82,7 +82,61 @@ def test_infrastructure_configuration_remains_explicit_and_does_not_open_a_pool(
     assert implementation._pools == before
 
 
-def test_readiness_contract_does_not_hide_the_legacy_celery_implementation():
+def test_readiness_public_operation_is_the_pure_application():
     public = importlib.import_module("app.operations.interfaces")
-    assert public.__all__ == ["ReadinessProbe"]
-    assert not hasattr(public, "postgres_health")
+    assert public.__all__ == ["ReadinessProbe", "ReadinessSnapshot", "ReadinessUnavailable", "evaluate_readiness"]
+    assert public.evaluate_readiness is importlib.import_module("app.operations.postgres_readiness").postgres_health
+
+
+def test_readiness_application_imports_without_runtime_or_frameworks():
+    import ast
+    tree = ast.parse((ROOT / "backend/app/operations/postgres_readiness.py").read_text())
+    names = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+    assert not any(name.startswith(("app.celery_app", "tempo_legacy_database", "fastapi")) for name in names)
+    module = importlib.import_module("app.operations.postgres_readiness")
+    assert module.postgres_health.__module__ == "app.operations.postgres_readiness"
+
+
+@pytest.mark.parametrize("change,workers,message", [
+    ({"schema_version": None}, frozenset(), "schema is not version"),
+    ({"settings_present": False}, frozenset(), "settings are missing"),
+    ({"queue_state": "failed", "queue_last_error": "synthetic failure"}, frozenset({"foreground"}), "background"),
+    ({"queue_state": "failed", "queue_last_error": "synthetic failure"}, frozenset({"foreground", "background"}), "synthetic failure"),
+    ({"queue_state": None}, frozenset({"foreground", "background"}), "queue cannot progress"),
+])
+def test_readiness_keeps_existing_failure_order_without_selecting_clients(change, workers, message):
+    from dataclasses import replace
+    from datetime import date
+    from app.operations.interfaces import ReadinessSnapshot, ReadinessUnavailable
+    from app.operations.interfaces import evaluate_readiness as postgres_health
+    facts = ReadinessSnapshot(51, True, "ready", False, None, None, None)
+    observed = []
+    def queues():
+        observed.append(True)
+        return workers
+    with pytest.raises(ReadinessUnavailable, match=message):
+        postgres_health(read_snapshot=lambda: replace(facts, **change), worker_queues=queues,
+            today=lambda: date(2026, 10, 27), expected_schema_version=51)
+    assert bool(observed) == ("schema_version" not in change and "settings_present" not in change)
+
+
+def test_readiness_accepts_ready_and_in_progress_facts_and_preserves_failure_boundaries():
+    from dataclasses import FrozenInstanceError, replace
+    from datetime import date
+    from app.operations.interfaces import ReadinessSnapshot, ReadinessUnavailable
+    from app.operations.interfaces import evaluate_readiness as postgres_health
+    facts = ReadinessSnapshot(51, True, "ready", False, None, None, None)
+    options = dict(worker_queues=lambda: frozenset({"foreground", "background"}),
+                   today=lambda: date(2026, 10, 27), expected_schema_version=51)
+    assert postgres_health(read_snapshot=lambda: facts, **options)["status"] == "ok"
+    pending = replace(facts, queue_state="refreshing", queue_refresh_pending=True,
+                      queue_task_state="leased", queue_task_payload_json='{"queue_date":"2026-10-27"}')
+    assert postgres_health(read_snapshot=lambda: pending, **options)["status"] == "ok"
+    with pytest.raises(FrozenInstanceError):
+        facts.queue_state = "failed"
+    def failed():
+        raise RuntimeError("synthetic unavailable transport")
+    with pytest.raises(ReadinessUnavailable, match="PostgreSQL reader unavailable"):
+        postgres_health(read_snapshot=failed, **options)
+    with pytest.raises(ReadinessUnavailable, match="Redis or Celery control is unavailable"):
+        postgres_health(read_snapshot=lambda: facts, **(options | {"worker_queues": failed}))

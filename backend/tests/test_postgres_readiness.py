@@ -10,7 +10,7 @@ from fastapi import HTTPException
 import pytest
 
 from app import command_dispatch, main
-from app.operations import postgres_readiness
+from app.product_composition import readiness as postgres_readiness
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 

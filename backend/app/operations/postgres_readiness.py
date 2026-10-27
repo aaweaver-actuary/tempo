@@ -1,56 +1,45 @@
-"""Actionable readiness checks for the PostgreSQL Docker product."""
-
+"""Readiness decisions over supplied facts/capabilities; no runtime selection."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 import json
 
-from fastapi import HTTPException
-
-from app.celery_app import celery_app
-from tempo_legacy_database.connections import read_connection
-from tempo_legacy_database.adapters.postgres_readiness import read_health_facts
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from .interfaces.readiness import ReadinessSnapshot, ReadinessUnavailable
 
 
-def postgres_health() -> dict[str, object]:
+def postgres_health(*, read_snapshot: Callable[[], ReadinessSnapshot],
+                    worker_queues: Callable[[], frozenset[str]],
+                    today: Callable[[], date], expected_schema_version: int) -> dict[str, object]:
+    """Retain existing readiness order/messages without selecting infrastructure."""
     try:
-        version_row, settings_row, queue_row, queue_task = read_health_facts(read_connection, lambda: date.today())
+        snapshot = read_snapshot()
     except Exception as error:
-        raise HTTPException(
-            503, "PostgreSQL reader unavailable; check the database, reader role, and migrations"
+        raise ReadinessUnavailable(
+            "PostgreSQL reader unavailable; check the database, reader role, and migrations"
         ) from error
-    if version_row is None or version_row[0] != POSTGRES_SCHEMA_VERSION:
-        raise HTTPException(503, f"PostgreSQL schema is not version {POSTGRES_SCHEMA_VERSION}; "
-                            "stop writers, verify a backup, then apply the documented schema upgrade")
-    if settings_row is None:
-        raise HTTPException(503, "PostgreSQL settings are missing; verify the SQLite import")
+    if snapshot.schema_version != expected_schema_version:
+        raise ReadinessUnavailable(
+            f"PostgreSQL schema is not version {expected_schema_version}; "
+            "stop writers, verify a backup, then apply the documented schema upgrade")
+    if not snapshot.settings_present:
+        raise ReadinessUnavailable("PostgreSQL settings are missing; verify the SQLite import")
     try:
-        active_queues = celery_app.control.inspect(timeout=1.0).active_queues() or {}
+        available_queues = worker_queues()
     except Exception as error:
-        raise HTTPException(503, "Redis or Celery control is unavailable; check the broker and workers") from error
-    available_queues = {
-        queue["name"] for worker_queues in active_queues.values()
-        for queue in worker_queues
-    }
+        raise ReadinessUnavailable(
+            "Redis or Celery control is unavailable; check the broker and workers") from error
     missing = {"foreground", "background"} - available_queues
     if missing:
-        raise HTTPException(
-            503, "Required Celery workers are unavailable: " + ", ".join(sorted(missing))
-        )
-    if queue_row is not None and queue_row["state"] == "failed":
-        raise HTTPException(503, "Today's queue failed: " + (queue_row["last_error"] or "inspect the background worker"))
-    queue_ready = (queue_row is not None and queue_row["state"] == "ready"
-                   and not queue_row["refresh_pending"])
+        raise ReadinessUnavailable("Required Celery workers are unavailable: " + ", ".join(sorted(missing)))
+    if snapshot.queue_state == "failed":
+        raise ReadinessUnavailable("Today's queue failed: " +
+            (snapshot.queue_last_error or "inspect the background worker"))
+    queue_ready = snapshot.queue_state == "ready" and not snapshot.queue_refresh_pending
     queue_progressing = (
-        queue_task is not None and queue_task["state"] in {"queued", "leased", "retrying"}
-        and json.loads(queue_task["payload_json"]).get("queue_date") == date.today().isoformat()
-    )
+        snapshot.queue_task_state in {"queued", "leased", "retrying"}
+        and json.loads(snapshot.queue_task_payload_json).get("queue_date") == today().isoformat())
     if not queue_ready and not queue_progressing:
-        raise HTTPException(
-            503, "Today's PostgreSQL queue cannot progress; check its durable task and worker logs"
-        )
-    return {
-        "status": "ok", "storage": "postgresql", "scheduler": "FSRS 6",
-        "test_instance": False,
-    }
+        raise ReadinessUnavailable(
+            "Today's PostgreSQL queue cannot progress; check its durable task and worker logs")
+    return {"status": "ok", "storage": "postgresql", "scheduler": "FSRS 6", "test_instance": False}

@@ -1,15 +1,5 @@
-"""Readiness capability contract; no HTTP, Celery, database or root imports."""
-from typing import Protocol
+"""Operational facts and supported read-only readiness evaluation."""
+from .readiness import ReadinessProbe, ReadinessSnapshot, ReadinessUnavailable
+from ..postgres_readiness import postgres_health as evaluate_readiness
 
-
-class ReadinessProbe(Protocol):
-    """Read-only operational observation; raise on unavailable dependencies.
-
-    Composition supplies the implementation and owns its resource/lifecycle
-    budgets. A status result grants no queue, content or learning write authority.
-    """
-
-    def __call__(self) -> dict[str, object]: ...
-
-
-__all__ = ["ReadinessProbe"]
+__all__ = ["ReadinessProbe", "ReadinessSnapshot", "ReadinessUnavailable", "evaluate_readiness"]
