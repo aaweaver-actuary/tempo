@@ -5,6 +5,8 @@ import hashlib
 import json
 from typing import Mapping
 
+from tempo_game_classification import resolve_equivalent_mapping
+
 from app.contracts.product_v02.games import CanonicalGame, Finding
 from app.contracts.product_v02.learning import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
@@ -65,17 +67,17 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
             continue
         mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
             for mapping in snapshot.decision_presentations
-            if mapping.available and (mapping.repertoire_id, mapping.repertoire_revision,
+            if (mapping.repertoire_id, mapping.repertoire_revision,
                 mapping.decision_id, mapping.position_key, mapping.selected_response_uci,
                 mapping.presentation_id, mapping.presentation_revision) == (
                 finding.repertoire_id, finding.repertoire_revision, finding.decision_id,
                 finding.position_key, finding.expected_uci[0], finding.presentation_id,
                 finding.presentation_revision)}
-        if len(mappings) != 1:
-            continue  # Retain the finding; never guess a current presentation.
+        decision = resolve_equivalent_mapping(mappings.values())
+        if decision is None or not decision.available:
+            continue  # Retain conflicting facts; equivalent route provenance is one target.
         if finding.ply > len(game.moves) or finding.played_uci != game.moves[finding.ply - 1]:
             raise ValueError("encounter played move differs from captured game")
-        decision = next(iter(mappings.values()))
         candidates.append(GameEncounter(key=GameEffectKey(workspace_id=game.workspace_id,
             provider=source.provider, game_id=game.game_id, decision_id=decision.decision_id,
             occurrence_ply=finding.ply), source=source, decision=decision,

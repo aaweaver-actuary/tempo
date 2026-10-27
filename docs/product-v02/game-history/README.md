@@ -81,6 +81,16 @@ tests. Generic comparer instances without either capability remain preview-only.
 No GameEncounter builder or raw provenance is copied, and constructing the
 binding starts no read or worker.
 
+Equivalent route aliases remain complete source facts. The comparer proves that
+every active authored occurrence has mapping coverage; the shared pure
+`resolve_equivalent_mapping` helper then selects one deterministic original
+member only when every non-route mapping field agrees exactly. The shared
+encounter projector consumes that same resolver and does not discard differing
+availability evidence. Route rows, mappings, alternatives and genuine conflicts
+are retained. Multiple route provenance rows alone are not multiple physical
+Study targets or game/decision effects. The current Study owner independently
+rechecks/fences the retained complete source before accepting that command.
+
 Routine monitor GETs (`/api/health`, `/api/system/foreground-active`,
 `/api/system/foreground-requests-active`, `/api/system/tasks`) use the existing
 background request classification even when an older caller omits the header.

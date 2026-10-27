@@ -333,3 +333,65 @@ def test_later_ply_capture_keeps_authored_conflict_and_produces_no_effect(root_h
         assert summary["unintroduced_encounters"]==summary["matches"]==summary["eligible_lapses"]==0
         plan=next(plan for (run,_),plan in root._operations._plans.items() if run=="conflict-later")
         assert not plan.encounters and case.readback()==before
+
+
+def test_equivalent_route_history_persists_one_effect_and_receipt_under_recomparison(root_history,owned_postgres):
+    """62 complete route bindings to one exact card remain one logical effect."""
+    client,root,priority=root_history
+    with retained_history_case(owned_postgres,state="unintroduced",ordinary_limit=0,study_only=True) as case:
+        with owned_postgres() as database:
+            for index in range(61):
+                alias=case.repertoire_id+f"-alias-{index:02d}"
+                database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,
+                    start_fen,moves_json,created_at) SELECT %s,repertoire_id,name,trained_color,
+                    start_fen,moves_json,created_at FROM repertoire_lines WHERE id=%s""",
+                    (alias,case.repertoire_id+"-route"))
+                database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,
+                    decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,
+                    first_decision_index,last_decision_index,decision_fen_keys_json)
+                    SELECT repertoire_id,generation,%s,decision_index,card_id,decision_fen_key,starting_fen,
+                    moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json
+                    FROM opening_graph_steps WHERE repertoire_id=%s AND line_id=%s""",
+                    (alias,case.repertoire_id,case.repertoire_id+"-route"))
+        assert priority.refresh_policy()
+        request=body(case,"equivalent-route-history",maximum_games=1,start_ply=0,maximum_plies=1)
+        response=client.post(PREFIX+"/preview",json=request)
+        assert response.status_code==200,response.text
+        preview=response.json()
+        assert preview["preview"]["unintroduced_encounters"]==1
+        plan=next(value for (run,_),value in root._operations._plans.items() if run==request["run_id"])
+        command,=plan.encounters
+        capture=case.capture(command.key.game_id)
+        from app.product_composition.encounters import prepare_captured_encounters
+        prepared=prepare_captured_encounters(capture,detected_at=plan.detected_at)
+        assert len(capture["tables"]["repertoire_lines"])==62
+        assert len(capture["graphs"])==len(prepared.snapshot.decision_presentations)==62
+        assert prepared.encounters==(command,)
+        assert client.post(PREFIX+"/start",json=dict(request,manifest_digest=preview["manifest_digest"])).status_code==202
+        run=client.post(PREFIX+"/run-ready",json=dict(maximum_units=2))
+        assert run.status_code==200,run.text
+        first=status(client,request["run_id"])
+        assert first["state"]=="complete" and first["processed_encounters"]==1
+        receipt,=first["receipts"]
+        assert receipt["disposition"]=="first_introduction" and receipt["admission_status"]=="available"
+        original=case.readback()
+        # Recomparison has a new run, but still the same genuine historical key.
+        repeated=dict(request,run_id="equivalent-route-recomparison")
+        root._operations=None
+        preview=client.post(PREFIX+"/preview",json=repeated)
+        assert preview.status_code==200,preview.text
+        assert client.post(PREFIX+"/start",json=dict(repeated,
+            manifest_digest=preview.json()["manifest_digest"])).status_code==202
+        assert client.post(PREFIX+"/resume",json=dict(maximum_units=2)).status_code==200
+        second=status(client,repeated["run_id"])
+        assert second["processed_encounters"]==1 and second["state"]=="complete"
+        assert second["receipts"][0]["owner_receipt_id"]==receipt["owner_receipt_id"]
+        assert case.readback()==original
+        with owned_postgres() as database:
+            assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s",
+                (case.card_id,)).fetchone()[0]==1
+            assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s",
+                (case.card_id,)).fetchone()[0]==1
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s",
+                (case.card_id,)).fetchone()[0]==0
+            assert tuple(database.execute_native("SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1").fetchone())==(0,1)
