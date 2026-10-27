@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Chess } from "chess.js";
-import { Board } from "@tempo/board-ui";
+import { Board } from "@tempo/board-ui/interfaces";
 import "../../../packages/board-ui/styles/board.css";
 import { Button } from "../../components/buttons/BaseButton";
 import { positionsFromMoves } from "../../hooks/use-board-history";

@@ -1,5 +1,5 @@
 import { Chess } from "chess.js";
-import type { BoardProps, Square } from "@tempo/board-ui";
+import type { BoardProps, Square } from "@tempo/board-ui/interfaces";
 import { positionsFromMoves } from "../../hooks/use-board-history";
 import type { Finding, GameDetail } from "../product-api/contracts";
 

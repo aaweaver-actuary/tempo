@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Board } from "@tempo/board-ui";
+import { Board } from "@tempo/board-ui/interfaces";
 // The package's exported stylesheet; root package registration belongs to #491.
 import "../../../packages/board-ui/styles/board.css";
 import { Button } from "../../components/buttons/BaseButton";

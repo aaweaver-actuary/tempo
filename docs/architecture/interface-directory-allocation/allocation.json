@@ -1326,7 +1326,13 @@
     "backend/app/analysis/jobs/stockfish.py",
     "backend/app/product_composition/encounters/capture.py",
     "backend/app/product_composition/game_sync_current.py",
-    "backend/tests/test_product_analysis_integration.py"
+    "backend/tests/test_product_analysis_integration.py",
+    "app/utils/canonical-line.ts",
+    "app/features/game-review/state.ts",
+    "app/features/game-review/GameReviewView.tsx",
+    "app/features/repertoire-review/PositionViewer.tsx",
+    "app/lib/review-outbox.ts",
+    "app/lib/study-session-runtime.ts"
   ],
   "boundary_status": "Source map registered for all 26 logical groups; missing owner surfaces and legacy import/table ownership violations fail closed. Empty tables grant no mutation authority. This is not a passing whole-repository guard claim."
 }

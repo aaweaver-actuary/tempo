@@ -1,6 +1,6 @@
 import { readRejectedOpeningReviews, writeRejectedOpeningReviews } from "../../database/browser/adapters/practice/review-archive";
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
-import type { StudySession } from "@tempo/study-session";
+import type { StudySession } from "@tempo/study-session/interfaces";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import type { IntentRecord } from "@tempo/browser-intents";
 import { studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "../../database/browser/study-intent-storage";

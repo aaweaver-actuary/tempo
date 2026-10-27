@@ -1,6 +1,6 @@
-import { canonicalizeMoves as canonicalizePackageMoves } from "@tempo/chess-line";
+import { canonicalizeMoves as canonicalizePackageMoves } from "@tempo/chess-line/interfaces";
 import { asUciMove, type AnalysisLine, type CanonicalLine } from "../types";
-export { canonicalFenKey, sanForUci } from "@tempo/chess-line";
+export { canonicalFenKey, sanForUci } from "@tempo/chess-line/interfaces";
 
 export function canonicalizeMoves(startingFen: string, inputMoves: readonly string[]) {
   const result = canonicalizePackageMoves(startingFen, inputMoves);

@@ -1,4 +1,4 @@
-import { createStudySession, type LearningClient } from "@tempo/study-session";
+import { createStudySession, type LearningClient } from "@tempo/study-session/interfaces";
 import { studyIntentStore } from "../../database/browser/study-intent-storage";
 
 // The composition registers protocol adapters; this is the only session/settlement owner.
