@@ -296,6 +296,10 @@ the retained split control. A guarded disposable source/readback fixture stages
 explicit extra same-day practice through the existing queue writer; it never
 seeds qualifying reviews, clean streaks or settlements. Another actually issued
 unrelated attempt and all original card/history identities are checked throughout.
+All three original cards retain synthetic old history with explicitly unknown
+assistance, so ordinary refresh does not reclaim them as abandoned, unreviewed
+introductions. That history earns no R11 evidence. The native recorded-review /
+prepared-head case runs actual queue refresh between each new qualifying review.
 No Study API is intercepted. Exact browser/migration results are in the PR; a
 prepared but unrun browser spec is not a pass.
 The retained UI's first teaching pass on a fresh composite is an actual assisted
@@ -306,6 +310,9 @@ Central regression/schema/diagram registration links this owner. The changed
 native split/admission selection passes five cases, and the browser-intent file
 passes three. The previous A08 reached actual AB/ABC and manual confirmation but
 failed on the original active-attempt guard; one A08 rerun after this repair is
-pending the shared validation slot. It is not yet a browser pass.
+not yet passing. Its later no-join was reproduced as the correct
+`unintroduced_member` hold after refresh reclaimed inconsistent legacy fixture
+introductions. The fixture correction and actual-refresh regression preserve
+that guard. A08 remains unqualified until the next authorized run passes.
 No live join/review, history reset, graph migration resumption, deployment or merge
 is performed by this task.

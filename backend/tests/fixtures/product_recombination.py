@@ -45,6 +45,22 @@ def seed_current_owner(database):
         VALUES('A','correct',%s,0,1,0,'study','unknown-historical-assistance')""", ((now-timedelta(days=3)).isoformat(),))
 
 
+def seed_legacy_introduction_history(database):
+    """Retained original-card history; never known-assistance R11 evidence.
+
+    An unreviewed introduction from an earlier day is intentionally reclaimed by
+    the ordinary owner. These original cards represent already studied material,
+    so their old introductions need matching retained-history fixture rows.
+    No completion receipt, clean streak or generated presentation is seeded.
+    """
+    past=(datetime.now().astimezone()-timedelta(days=10)).isoformat()
+    for identifier in ('B','C'):
+        database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+            guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study',%s)""",
+            (identifier,past,'unknown-historical-assistance:'+identifier))
+    database.execute_native("UPDATE cards SET first_correct_at=%s WHERE id IN ('A','B','C')",(past,))
+
+
 def main():
     if os.environ.get("TEMPO_TEST_INSTANCE")!="disposable":
         raise RuntimeError("R11 fixture requires the owning disposable test instance")
@@ -61,10 +77,7 @@ def main():
         if action=="seed":
             assert not database.execute_native("SELECT 1 FROM cards WHERE id IN ('A','B','C')").fetchone(), "fixture identity already exists"
             seed_current_owner(database)
-            # Legacy first-correct facts keep the already-introduced fixture in
-            # recall mode. They supply no R11 event or known-assistance proof.
-            database.execute_native("UPDATE cards SET first_correct_at=%s WHERE id IN ('A','B','C')",
-                ((now-timedelta(days=10)).isoformat(),))
+            seed_legacy_introduction_history(database)
             database.execute_native("UPDATE repertoires SET source_name=%s,name='Connected practice fixture' WHERE id='r11-repertoire'",(identity,))
             database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Protected unrelated',%s,%s)",(protected,identity,now.isoformat()))
             database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,trained_color,
@@ -114,7 +127,7 @@ def main():
             components=len(r[1]["presentation"]["components"]),lineage=r[1]["presentation"]["lineage"]) for r in generations],
             changes=database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0],
             original_cards=database.execute_native("SELECT count(*) FROM cards WHERE id IN ('A','B','C') AND archived=0 AND superseded_by IS NULL").fetchone()[0],
-            unknown_history=database.execute_native("SELECT count(*) FROM reviews WHERE source_ref='unknown-historical-assistance'").fetchone()[0],
+            unknown_history=database.execute_native("SELECT count(*) FROM reviews WHERE card_id IN ('A','B','C') AND source_ref LIKE %s",('unknown-historical-assistance%',)).fetchone()[0],
             study_counts=dict(tuple(row) for row in database.execute_native("""SELECT c.id,count(r.id) FROM cards c
                 LEFT JOIN reviews r ON r.card_id=c.id AND r.source_kind='study'
                 WHERE c.repertoire_id='r11-repertoire' GROUP BY c.id""").fetchall()),

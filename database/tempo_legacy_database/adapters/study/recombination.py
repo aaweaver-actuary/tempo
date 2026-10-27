@@ -584,8 +584,11 @@ def after_saved_review(database, attempt_id, *, clock=None):
         # same outer writer; its source/streak fact above is already retained.
         with database.raw.transaction():
             proposed = application.propose(routes[0])
-            if proposed is None or proposed.plan is None:
+            if proposed is None:
                 return {"status":"held","reason":boundary.reason,"clean_streak":state.count}
+            if proposed.plan is None:
+                return {"status":"held","reason":';'.join(sorted({hold.code for hold in proposed.holds})) or 'no_valid_join',
+                    "clean_streak":state.count}
             if len(proposed.plan.evidence.moves)>40 or len(proposed.plan.result.components)>20:
                 return {"status":"held","reason":"presentation_exceeds_current_evidence_bound","clean_streak":state.count}
             receipt = application.apply_join(proposed.plan)

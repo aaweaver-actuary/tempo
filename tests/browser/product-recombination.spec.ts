@@ -93,7 +93,7 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
   expect(state.generations.filter(generation => generation.lineage.includes(abc.presentation_id)))
     .toEqual(expect.arrayContaining([expect.objectContaining({ clean_count: 0, review_count: 0 })]));
   expect(state.original_cards).toBe(3);
-  expect(state.unknown_history).toBe(1);
+  expect(state.unknown_history).toBe(3);
   expect(state.protected).toEqual(protectedOrigin);
   const queue = await (await request.get(`${api}/queue/window?limit=50`)).json();
   expect(queue.cards.some((card: { id: string }) => card.id === abc.presentation_id)).toBe(false);

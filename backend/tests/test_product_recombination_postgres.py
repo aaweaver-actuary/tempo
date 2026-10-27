@@ -17,6 +17,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 
+import chess
 import psycopg
 from psycopg import sql
 import pytest
@@ -336,7 +337,7 @@ def current_owner_transaction(monkeypatch):
                     raw.execute(source.decode(),prepare=False)
                 raw.execute(path.read_text(),prepare=False)
                 assert raw.execute("SELECT max(version) FROM tempo_schema_migrations").fetchone()[0]==int(path.name[:3])
-            raw.execute("INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'UTC',0,0,0)")
+            raw.execute("INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'local',0,0,0)")
         @contextmanager
         def connect():
             with psycopg.connect(owner_dsn,row_factory=tempo_row_factory) as raw:
@@ -356,7 +357,7 @@ def seed_current_owner(database):
     return seed(database)
 
 
-def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False):
+def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None):
     """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
@@ -388,6 +389,10 @@ def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct"
     monkeypatch.setattr(learning_review_adapter,"read_connection",lambda:nullcontext(database))
     payload = dict(card_id=card_id,prepared_manifest=manifest,review=dict(outcome=outcome,guided=False,
         queue_entry_id=entry,expected_revision=1,attempt_id=attempt,opening_evidence_completion=checkpoint))
+    if recorded:
+        payload['review']['recorded_at']=now.isoformat()
+    if prepared_next:
+        payload['review']['prepared_next']=prepared_next
     return learning_review_adapter.submit_legacy_review(database,payload),payload
 
 
@@ -426,6 +431,35 @@ def qualify_before_final_review(transaction,monkeypatch):
         for _ in range(count):
             with transaction() as database:
                 ordinary_current_review(database,identifier,monkeypatch)
+
+
+def test_current_owner_recorded_review_with_unrelated_prepared_head_can_join(current_owner_transaction,monkeypatch):
+    from app.queue_commands import issue_queue_head
+    from app.services.queue_application import seed_queue
+    from app.services.review_service import ensure_card_queued_after
+    from fixtures.product_recombination import seed_legacy_introduction_history
+    transaction=current_owner_transaction
+    identifier='product-recombination-native-protected'
+    now=datetime.now().astimezone()
+    day=now.date().isoformat()
+    with transaction() as database:
+        seed_legacy_introduction_history(database)
+        assert database.execute_native('SELECT count(*) FROM study_recombination_completions').fetchone()[0]==0
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-protected','Other','fixture',%s)",(now.isoformat(),))
+        database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+            introduced_at,trained_color,canonical_route_source) VALUES(%s,'r11-protected','response',%s,
+            '["d2d4"]','learning',%s,%s,'white',0)""",(identifier,chess.STARTING_FEN,day,(now-timedelta(days=10)).date().isoformat()))
+        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-protected',%s,0)",(identifier,))
+        ensure_card_queued_after(database,identifier,0,queue_date=day,preserve_order=False)
+        entry=database.execute_native('SELECT id FROM daily_queue WHERE card_id=%s',(identifier,)).fetchone()[0]
+        assert issue_queue_head(database,dict(entry_id=entry,card_id=identifier,expected_revision=1,queue_date=day))['issued']
+    candidate=dict(queue_entry_id=entry,card_id=identifier,revision=1,cycle=0,local_date=day)
+    for card in ('A','C','B'):
+        for _ in range(3):
+            with transaction() as database:
+                seed_queue(database,day)
+                result,_=ordinary_current_review(database,card,monkeypatch,recorded=True,prepared_next=candidate)
+    assert result['recombination']['status']=='applied',result['recombination']
 
 
 def test_current_owner_join_failure_rolls_back_only_regrouping_and_keeps_saved_attempt(current_owner_transaction,monkeypatch):
