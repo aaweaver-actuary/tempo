@@ -188,8 +188,9 @@ class Coordinator:
             if not held:
                 prior_plies = {effect.key.occurrence_ply for effect in effects}
                 occupied_keys = {(effect.key.decision_id, effect.key.occurrence_ply) for effect in effects}
+                # Encounter intake receives facts; Study owns even a confirmed miss's disposition.
                 for finding in findings:
-                    if finding.kind != "confirmed_miss" or (finding.decision_id, finding.ply) in occupied_keys or finding.ply in prior_plies:
+                    if self.encounter_feedback or finding.kind != "confirmed_miss" or (finding.decision_id, finding.ply) in occupied_keys or finding.ply in prior_plies:
                         continue
                     effect_key = GameEffectKey(workspace_id=spec.workspace_id, provider=spec.provider,
                         game_id=finding.game_id, decision_id=finding.decision_id, occurrence_ply=finding.ply)

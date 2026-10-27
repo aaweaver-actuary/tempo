@@ -451,6 +451,84 @@ def test_unintroduced_encounter_delivery_is_not_a_lapse(observation):
     assert not any(isinstance(command, GameLapse) for command in h.receiver.calls)
 
 
+@pytest.mark.parametrize("lose_ack", [False, True])
+def test_confirmed_introduced_miss_uses_immutable_pending_intake_without_lapse_or_queue(lose_ack):
+    """A genuine miss remains a fact; acceptance does not require Study refresh."""
+    h = harness()
+    h.coordinator.encounter_feedback = True
+    calls, accepted = [], {}
+    def accept_encounter(command):
+        nonlocal lose_ack
+        calls.append(command)
+        key = command.key.logical_id()
+        if key in accepted:
+            original, receipt = accepted[key]
+            assert command == original
+            return receipt.model_copy(update={"outcome": "duplicate"})
+        receipt = EncounterReceipt(key=command.key, source_revision=command.source.source_revision,
+            status="pending", outcome="accepted", owner_receipt_id="public-intake-receipt",
+            admitted_at=None, available_by=None, applied_at=None, reason="priority_refresh_pending",
+            detected_at=command.detected_at, source_digest=command.source.source_digest,
+            observation=command.observation, observation_recorded=True,
+            disposition=None, admission_status="pending", deferred_reason=None)
+        accepted[key] = command, receipt
+        if lose_ack:
+            lose_ack = False
+            raise TimeoutError("accepted_but_ack_lost")
+        return receipt
+    # No lapse, scheduling, queue, refresh or availability operation is supplied.
+    h.coordinator.learning = SimpleNamespace(accept_encounter=accept_encounter)
+    h.store.enqueue(spec())
+    assert h.runner.run_once() == "page"
+    original, = h.store.deliveries.values()
+    command = original.encounter
+    assert isinstance(command, GameEncounter) and original.lapse is None
+    captured, = h.store.captures.values()
+    finding, = captured.findings
+    assert finding.kind == "confirmed_miss" and finding.lapse_eligible
+    assert command.decision.introduction == "introduced"
+    assert command.decision == h.coordinator.snapshots.snapshot("white").decision_presentations[0]
+    assert command.decision.introduction_matches_current_content
+    assert command.decision.introduced_at < command.occurred_at
+    assert command.observation == "missed" and command.played_uci == finding.played_uci == "d2d4"
+    assert command.expected_uci == finding.expected_uci[0] == "e2e4"
+    assert command.key.decision_id == finding.decision_id and command.key.occurrence_ply == finding.ply
+    assert command.source.source_digest == finding.source_digest == captured.record.source_digest
+    assert command.occurred_at == captured.record.played_at
+    assert h.runner.run_once() == "delivery"
+    delivered = h.store.delivery(original.operation_id)
+    if delivered.state == "pending":
+        h.clock.value += 10
+        assert FeedbackRunner(h.coordinator).run_once() == "delivery"
+        delivered = h.store.delivery(original.operation_id)
+        assert delivered.receipt.outcome == "duplicate" and calls == [command, command]
+    else:
+        assert calls == [command] and delivered.receipt.outcome == "accepted"
+    assert delivered.state == "acknowledged" and delivered.encounter == command
+    assert delivered.receipt.status == delivered.receipt.admission_status == "pending"
+    assert delivered.receipt.disposition is delivered.receipt.available_by is delivered.receipt.applied_at is None
+    # Later owner progress/missing comparison proof cannot manufacture a new event.
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: ())
+    h.store.enqueue(spec("later-owner-progress"))
+    h.coordinator.capture_page(h.store.load_job("later-owner-progress"))
+    assert len(h.store.deliveries) == len(accepted) == 1
+    assert next(iter(h.store.sources.values())).effects == (command,)
+    assert FeedbackRunner(h.coordinator).run_once() == "idle"
+
+
+def test_encounter_mode_does_not_relabel_or_duplicate_frozen_legacy_lapse():
+    h = harness()
+    h.store.enqueue(spec())
+    assert h.runner.run_once() == "page"
+    original, = h.store.deliveries.values()
+    assert isinstance(original.lapse, GameLapse)
+    h.coordinator.encounter_feedback = True
+    h.store.enqueue(spec("encounter-recomparison"))
+    h.coordinator.capture_page(h.store.load_job("encounter-recomparison"))
+    assert tuple(h.store.deliveries.values()) == (original,)
+    assert next(iter(h.store.sources.values())).effects == (original.lapse,)
+
+
 @pytest.mark.parametrize("later_finding", ["confirmed_miss", "unavailable"])
 def test_encounter_lost_ack_and_later_introduction_keep_original_effect(later_finding):
     h = encounter_harness()
