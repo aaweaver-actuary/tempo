@@ -17,8 +17,8 @@ from app.analysis.proposals.ports import CapabilityUnavailable
 from app.analysis.probability.ports import ExplorerProbabilityProvider, ExplorerRequest
 from app.analysis.similarity.retrieval import RetrievalRequest, retrieve
 from app.contracts.product_v02.analysis import PopulationSelection, RankingInput
-from app.contracts.product_v02.repertoire import RepertoireSnapshot
-from app.repertoire import build_index
+from app.repertoire.interfaces import RepertoireSnapshot
+from app.repertoire.interfaces import build_index
 from app.study.introductions.application import Introductions
 from app.study.introductions.policy import RankingContext
 

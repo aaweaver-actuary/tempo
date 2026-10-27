@@ -12,7 +12,7 @@ from app.contracts.product_v02.repertoire import RepertoireSnapshotPort
 from app.repertoire.changes.http import routes
 from app.repertoire.changes.application import conflict_report, manual_resolution
 from app.repertoire.changes.ports import ChangeError
-from app.repertoire import build_index
+from app.repertoire.interfaces import build_index
 
 
 def create_repertoire_router(changes, snapshots: RepertoireSnapshotPort):

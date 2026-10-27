@@ -17,7 +17,7 @@ from tempo_legacy_database.adapters.commands.receipts.storage import (
 )
 from fastapi import HTTPException
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database import interfaces as postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 
 

@@ -11,7 +11,7 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    from app.repertoire.interfaces import RepertoireSnapshot
 
 MAX_SOURCE_ROWS = 10000
 MAX_GRAPH_ROWS = 20000
@@ -121,7 +121,7 @@ def read_repertoire(database, repertoire_id: str) -> dict:
 
 def current_snapshot(database, repertoire_id: str):
     """Concrete RepertoireSnapshot reader for composition/current change stores."""
-    from app.repertoire.snapshot import project_repertoire
+    from app.repertoire.interfaces import project_repertoire
     return project_repertoire(read_repertoire(database, repertoire_id))
 
 
@@ -131,7 +131,7 @@ def current_published_snapshot(database, repertoire_id: str):
     A missing/non-ready generation fails instead of borrowing an authored counter.
     Current Study capture/fencing remains mandatory before any learning effect.
     """
-    from app.repertoire.snapshot import project_published_repertoire
+    from app.repertoire.interfaces import project_published_repertoire
     return project_published_repertoire(read_repertoire(database, repertoire_id))
 
 
@@ -175,7 +175,7 @@ def reserve_current_snapshot(database, repertoire_id: str) -> RepertoireSnapshot
         if scalar("isolation", "SELECT current_setting('transaction_isolation')") != "read committed":
             raise SnapshotReservationUnavailable("borrowed_read_committed_transaction_required")
         before = read_repertoire(database, repertoire_id)
-        from app.repertoire.snapshot import project_repertoire
+        from app.repertoire.interfaces import project_repertoire
         prepared = project_repertoire(before)
 
         # Same graph-task -> prefix reservation -> graph -> repertoire order as
