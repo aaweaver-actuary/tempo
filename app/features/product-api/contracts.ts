@@ -13,7 +13,7 @@ const version = z.literal(INTERFACE_VERSION).default(INTERFACE_VERSION);
 
 const RawGameWindowSchema = z.strictObject({ start_at: utc, end_at: utc, precision }).refine(value => Date.parse(value.start_at) < Date.parse(value.end_at), "window must be nonempty");
 const RawGameRecordSchema = z.strictObject({ source_game_id: id, source_revision: revision, source_digest: digest, pgn: z.string().min(1), played_at: utc.nullable(), time_precision: precision }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "unknown source time remains null");
-const RawGamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: RawGameWindowSchema, records: z.array(RawGameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean() }).superRefine((value, ctx) => {
+const RawGamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: RawGameWindowSchema, records: z.array(RawGameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean(), filters: z.array(z.tuple([z.string(), z.string()])).default([]) }).superRefine((value, ctx) => {
   if (value.complete && (value.saturated || value.continuation !== null)) ctx.addIssue({ code: "custom", message: "saturated/continuing page cannot be complete" });
   if (new Set(value.records.map(item => item.source_game_id)).size !== value.records.length) ctx.addIssue({ code: "custom", message: "conflicting game revisions in page" });
 });
@@ -61,6 +61,16 @@ const RawEvidenceWithdrawalSchema = z.strictObject({ obligation_id: id, expected
 const controlReason = z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]);
 const RawGameEffectControlSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, action: z.enum(["hold", "withdraw"]), reason: controlReason.nullable().default(null), withdrawal: RawEvidenceWithdrawalSchema.nullable().default(null) }).refine(value => (value.reason !== null || value.withdrawal !== null) && !(value.reason !== null && value.withdrawal !== null && value.reason !== value.withdrawal.reason), "control requires a reason; optional existing withdrawal must agree");
 const RawLearningReceiptSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, status: z.enum(["pending", "held", "applied", "settled"]), outcome: z.enum(["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]), owner_receipt_id: id, admitted_at: utc.nullable(), available_by: utc.nullable(), applied_at: utc.nullable(), reason: id.nullable() });
+// Wire mirror of the existing frozen learning.EncounterReceipt; no new effect type.
+const RawEncounterReceiptSchema = RawLearningReceiptSchema.safeExtend({ interface_version: z.literal("0.2.1").default("0.2.1"), detected_at: utc, source_digest: digest, observation: z.enum(["matched", "missed"]), observation_recorded: z.boolean(), disposition: z.enum(["review_priority", "first_introduction", "existing_lapse", "frequency_only"]).nullable(), admission_status: z.enum(["pending", "available", "settled", "not_requested"]), deferred_reason: z.enum(["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"]).nullable() }).superRefine((value, ctx) => {
+  if (value.observation === "matched" && value.disposition === "existing_lapse") ctx.addIssue({ code: "custom", message: "correct play cannot produce a lapse" });
+  if (value.disposition === "frequency_only" && (value.admission_status !== "not_requested" || value.observation !== "matched")) ctx.addIssue({ code: "custom", message: "frequency-only cannot claim admission or discard missed-response importance" });
+  if (value.admission_status === "available" && (value.disposition === null || value.status === "held")) ctx.addIssue({ code: "custom", message: "unresolved/held evidence cannot claim availability" });
+  if (value.deferred_reason !== null && value.admission_status !== "pending") ctx.addIssue({ code: "custom", message: "deferred work remains pending" });
+  if (value.admission_status === "pending" && value.deferred_reason === null && value.reason === null) ctx.addIssue({ code: "custom", message: "pending admission requires an owner reason" });
+  if (value.disposition === "first_introduction" && ["study_only", "zero_limit", "introduction_allowance"].includes(value.deferred_reason ?? "")) ctx.addIssue({ code: "custom", message: "encounter first introduction uses the targeted exception" });
+  if (["disabled", "paused"].includes(value.deferred_reason ?? "") && value.available_by !== null) ctx.addIssue({ code: "custom", message: "full-pause controls cannot promise an availability deadline" });
+});
 
 
 export type DeepReadonly<T> = T extends object ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> } : T;
@@ -85,6 +95,7 @@ export const GameLapseSchema = immutable(RawGameLapseSchema);
 export const EvidenceWithdrawalSchema = immutable(RawEvidenceWithdrawalSchema);
 export const GameEffectControlSchema = immutable(RawGameEffectControlSchema);
 export const LearningReceiptSchema = immutable(RawLearningReceiptSchema);
+export const EncounterReceiptSchema = immutable(RawEncounterReceiptSchema);
 
 export type GamePage = z.infer<typeof GamePageSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
@@ -93,6 +104,7 @@ export type GameEffectKey = z.infer<typeof GameEffectKeySchema>;
 export type GameLapse = z.infer<typeof GameLapseSchema>;
 export type GameEffectControl = z.infer<typeof GameEffectControlSchema>;
 export type LearningReceipt = z.infer<typeof LearningReceiptSchema>;
+export type EncounterReceipt = z.infer<typeof EncounterReceiptSchema>;
 export function logicalEffectId(key: GameEffectKey): string {
   return JSON.stringify([key.workspace_id, key.provider, key.game_id, key.decision_id, key.occurrence_ply]);
 }
@@ -105,8 +117,25 @@ export interface LearningFeedbackPort {
 
 /** Read/query screen boundary only; Repertoire/Study owners apply commands. */
 export interface GameReviewApi {
+  recentGames(request?: { signal?: AbortSignal }): Promise<RecentGames>;
+  gameDetail(request: { provider: GameSummary["provider"]; game_id: string; repertoire_id?: string; signal?: AbortSignal }): Promise<GameDetail>;
+  sync(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<ProviderSyncStatus>;
+  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<LearningReceipt>;
   findings(gameId: string): Promise<readonly Finding[]>;
   feedbackStatus(key: GameEffectKey): Promise<LearningReceipt | null>;
 }
 
-export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema } as const;
+const RawGameSummarySchema = z.strictObject({ provider, game_id: id, source_revision: revision, played_at: utc.nullable(), time_precision: precision, player_color: z.enum(["white", "black"]) }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "preserve unknown source time");
+const RawProviderSyncStatusSchema = z.strictObject({ provider, status: z.enum(["idle", "pending", "complete", "failed"]), operation_id: id.nullable(), error: id.nullable() }).refine(value => (value.status === "failed") === (value.error !== null) && (value.status === "idle" || value.operation_id !== null), "status must preserve failure and operation identity");
+const RawRecentGamesSchema = z.strictObject({ games: z.array(RawGameSummarySchema), sync: z.array(RawProviderSyncStatusSchema) });
+const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])) });
+export const GameSummarySchema = immutable(RawGameSummarySchema);
+export const ProviderSyncStatusSchema = immutable(RawProviderSyncStatusSchema);
+export const RecentGamesSchema = immutable(RawRecentGamesSchema);
+export const GameDetailSchema = immutable(RawGameDetailSchema);
+export type GameSummary = z.infer<typeof GameSummarySchema>;
+export type ProviderSyncStatus = z.infer<typeof ProviderSyncStatusSchema>;
+export type RecentGames = z.infer<typeof RecentGamesSchema>;
+export type GameDetail = z.infer<typeof GameDetailSchema>;
+
+export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema } as const;

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
+import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, GameDetailSchema, ProviderSyncStatusSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
 
 const directory = resolve("contracts/product-v02/fixtures");
 function fixture(name: string) { return JSON.parse(readFileSync(resolve(directory, `${name}.json`), "utf8")).payload; }
@@ -81,5 +81,33 @@ describe("product v0.2 shared wire", () => {
     const payload = fixture("snapshot-route-game-introduction");
     payload.decision_presentations[0][field as string] = value;
     expect(() => RepertoireSnapshotSchema.parse(payload)).toThrow();
+  });
+  it("keeps original game moves separate from findings and preserves provider errors/filters", () => {
+    const detail = GameDetailSchema.parse(fixture("game-detail"));
+    expect(detail.moves).toEqual(["d2d4", "d7d5", "c2c4"]);
+    expect(detail.findings[0].played_uci).toBe("d2d4");
+    expect(() => (detail.moves as unknown as string[]).push("c7c6")).toThrow();
+    expect(() => ProviderSyncStatusSchema.parse({ ...fixture("provider-sync-failed"), error: null })).toThrow();
+    expect(GamePageSchema.parse(fixture("incomplete-page")).filters).toEqual([["rated", "false"], ["perfType", "rapid"]]);
+  });
+  it.each(["paused-introduction", "encounter-exception-introduction", "historical-review-priority"])("retains %s receipt fields alongside the legacy wire", name => {
+    const payload = fixture("game-detail-encounter-receipt");
+    payload.receipts[payload.receipts.length - 1] = fixture(`encounters/${name}`);
+    const value = GameDetailSchema.parse(payload);
+    expect(JSON.parse(JSON.stringify(value))).toEqual(payload);
+    expect("disposition" in value.receipts[0]).toBe(false);
+    expect("disposition" in value.receipts[1]).toBe(true);
+    if (!("disposition" in value.receipts[1])) throw new Error("encounter receipt was downcast");
+    expect(value.receipts[1].disposition).toBe(payload.receipts[1].disposition);
+    expect(value.receipts[1].admission_status).toBe(payload.receipts[1].admission_status);
+    expect(value.receipts[1].deferred_reason).toBe(payload.receipts[1].deferred_reason);
+    expect(() => Object.assign(value.receipts[1].key, { game_id: "changed" })).toThrow();
+  });
+  it.each(["invalid_admission", "unsupported_version", "missing_disposition"])("rejects %s instead of dropping encounter fields", fault => {
+    const payload = fixture("game-detail-encounter-receipt");
+    if (fault === "invalid_admission") payload.receipts[1].admission_status = "assumed_available";
+    else if (fault === "unsupported_version") payload.receipts[1].interface_version = "unsupported";
+    else delete payload.receipts[1].disposition;
+    expect(() => GameDetailSchema.parse(payload)).toThrow();
   });
 });

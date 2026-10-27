@@ -5,6 +5,13 @@ Issue [#482](https://github.com/aaweaver-actuary/tempo/issues/482), under
 `6885b942`. These are proposed/unmerged source interfaces, **not live behavior**.
 The initial slice is usable independently; probability, engine, proposal and
 rejoining values will be additive checkpoints and do not gate game feedback.
+The second compatible checkpoint adds provider `filters` facts and the isolated
+Game Review screen's `GameSummary`, `ProviderSyncStatus`, `RecentGames` and
+original-history `GameDetail` projections. These are read models, not a new
+canonical game or receiver. The UI renders receipt statuses verbatim; `applied`
+does not mean `available`. Failed sync requires an error and operation identity.
+`GameReviewApi` adds `recentGames`, `gameDetail`, `sync` and `retryFeedback` with
+request-local AbortSignal/operation/repertoire context; no transport starts here.
 
 ## Public seams and owners
 
@@ -64,6 +71,9 @@ with only route A mapped and an explicit game-scoped chronology assertion.
   null/unknown. Saturated or continuing pages cannot claim completeness. A page
   cannot contain two revisions of one stable provider game ID. Continuations are
   opaque; provider adapters own completeness and checkpoint interpretation.
+  `GamePage.filters` retains exact requested key/value facts (default empty).
+  Provider-specific raw metadata may live in an immutable owner envelope around
+  the shared page/record; it does not justify a competing canonical game DTO.
 - Finding `ply` is **one-based**. Existing membership route offsets and v3
   encounters remain **zero-based**, so adapters must convert explicitly.
   Only `confirmed_miss` with one selected own response, proven introduction and
@@ -169,6 +179,19 @@ owner review priority without a lapse, and an admitted encounter introduction
 under the targeted exception. Nested fixtures leave existing v0.2.0
 Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
 native persistence and normal-Study acceptance remain with their owning tasks.
+
+### Truthful Game Detail receipt reads
+
+The additive read projection accepts `EncounterReceipt | LearningReceipt` in
+`GameDetail.receipts`, with the more specific encounter subtype first. Python
+reuses the existing frozen receipt directly; the TypeScript parser mirrors that
+same wire type and deep-freezes its result. Both JSON and native-instance Python
+serialization retain disposition, actual admission, original detection/source,
+recorded observation and deferral fields. Legacy receipt JSON remains unchanged.
+An invalid/partial encounter receipt is rejected, never stripped/downcast into an
+apparently valid legacy result. `game-detail-encounter-receipt.json` is the shared
+mixed-receipt example. This changes no UI controller, admission policy, transport
+or broader analysis runtime; #490/#491 own adoption of the truthful read value.
 
 ## Synthetic examples and verification
 
