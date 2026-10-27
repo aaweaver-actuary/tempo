@@ -7,7 +7,7 @@ there is no separate encounter-only endpoint or second historical ingestion.
 
 Published inputs consumed: #533 encounter contracts `46f07e9a`, #486 factual
 comparison `ab402547`, #532 typed importance `cc6937aa`, #487 receiver
-`d7fccbe8`, #483 current reader `4198bfc8`, and #495 introduction source
+`9af90d08`, #483 current reader `4198bfc8`, and #495 introduction source
 `bebdc5f6` (narrow canonical capability). Shared values are
 `GameEncounter`, `EncounterReceipt`, `GameEffectKey`, `IntroductionGameScope` and
 `DecisionPresentation`. No substitute DTO or scheduling policy is defined here.
@@ -93,14 +93,13 @@ current integrity facts and #483 projection, never original-PGN reconstruction.
 The prepared nine-case native selection covers six exact source/current-owner
 mapping/importance cases, two honest pending unintroduced receipts without a
 chosen policy, and one historical-priority path through ordinary Study without
-rewinding later learning. Full bounded-run/first-introduction/race/full-pause
-acceptance is not claimed by these fixture preparations.
+rewinding later learning. The later three-case result above qualifies direct first-introduction and operation stop/resume receiving integration. Full bounded-history-run acceptance remains pending #491 and #486; a distinct installed global full-pause feature is not claimed.
 Effect acceptance will extend the same narrow integration file using the real
 owner receiver, canonical introduction and existing ordinary Study controller.
 The four-case pure file verifies the published typed importance API without a
 fake Study receipt. Source syntax checks pass; the completed selected native results above are the available runtime evidence. The native receiver uses existing
 schema051 only: no broader introduction charge/rotation/ranking DDL is installed
-or required. The narrow #495 canonical-state capability is consumed as a preparation checkpoint; its new exception checks are not yet qualified by its owner. No broad
+or required. The narrow #495 canonical-state capability is qualified at `bebdc5f6`: its owner reports 21 policy/import and 26 schema051 native cases passed. Those owner checks are reused. No broad
 suite or browser/UI rebuild is selected.
 
 ## Existing pause and admission source
@@ -135,9 +134,7 @@ qualified next release; it is not live activation or a default chosen here.
 
 The public receiver requires an explicit policy/canonical capability. Existing
 policy-pending fixture cases test honest handling of a missing capability; they
-do not represent the newly approved live policy. Fresh targeted introduction,
-zero/exhausted allowance, Study-only, full-pause and unchanged-unrelated-control
-acceptance await #495/#487's narrow published capability. No broader introduction
+do not represent the newly approved live policy. The three selected receiving/native cases at `c5896509` passed (2.65s): correct and missed zero-allowance/Study-only introductions reached the first real ordinary Study review once; a stopped operation wrote nothing and resumed once. #495's owner evidence covers exhausted allowance, explicit full pause, guards and unchanged ordinary controls. The #491 runtime control binding remains pending. No broader introduction
 charge/rotation/ranking DDL is installed by this lane.
 
 The current source fencer still limits a supplied source to 64 routes/128 physical
