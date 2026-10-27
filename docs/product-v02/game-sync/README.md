@@ -74,6 +74,30 @@ flowchart LR
 
 ## Prepared receiving binding and remaining qualification
 
+### New owner direction: durable acceptance before independent Study refresh
+
+The next integration must bind only the public idempotent encounter priority
+intake. Its accepted/pending receipt acknowledges immutable evidence; it does
+not establish queue availability. Games must neither rebuild/promote Study inline
+nor poll private queue state. Study owns durable accepted obligations and its
+independent refresh. The current default CLI remains blocked, so the earlier
+prepared inline concrete helper is not an approved activation binding for this
+direction. The prepared native file below describes that earlier receiving seam;
+it must be aligned with #487's published decoupled intake before execution or
+acceptance claims. No duplicate receiving store or refresh framework is added.
+
+`test_product_priority_intake_boundary.py` exercises the unchanged producer via
+the public port only: accepted/pending is acknowledged without availability or
+queue access; a lost acceptance ack retries the exact original command and reads
+the duplicate receipt without a refresh dependency. This semantic check is not
+proof of the receiver's durable storage/refresh implementation.
+
+One remaining producer-contract mismatch is owned by #489: in encounter mode,
+new confirmed introduced misses still enter its existing `GameLapse` branch.
+The newly requested encounter-evidence-only intake must cover that case as well;
+#491 does not convert or relabel an already-frozen lapse command. Existing
+qualified first-release interfaces and the frozen release branch stay unchanged.
+
 Activation currently fails before any acquisition/source read with
 `qualified_provider_encounter_receiver_required`, unless an explicit qualified
 receiving capability is injected. There is deliberately no lapse-only fallback.
