@@ -271,3 +271,31 @@ def test_ui_history_status_and_filter_facts_remain_explicit():
     assert ProviderSyncStatus.model_validate(failed).status == "failed"
     with pytest.raises(ValidationError): ProviderSyncStatus.model_validate(failed | {"error": None})
     assert GamePage.model_validate_json(json.dumps(fixture("incomplete-page"))).filters == (("rated", "false"), ("perfType", "rapid"))
+
+
+@pytest.mark.parametrize("name", ["paused-introduction", "encounter-exception-introduction", "historical-review-priority"])
+def test_game_detail_round_trip_retains_encounter_receipt_and_legacy_wire(name):
+    payload = fixture("game-detail-encounter-receipt")
+    payload["receipts"][-1] = encounter_fixture(name)
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert type(value.receipts[0]) is LearningReceipt
+    assert type(value.receipts[-1]) is EncounterReceipt
+    assert json.loads(value.model_dump_json()) == payload
+    with pytest.raises(ValidationError): value.receipts[-1].key.game_id = "changed"
+
+
+def test_game_detail_serializing_native_encounter_instance_does_not_downcast():
+    value = GameDetail.model_validate_json(json.dumps(fixture("game-detail-encounter-receipt")))
+    encounter = EncounterReceipt.model_validate_json(json.dumps(encounter_fixture("paused-introduction")))
+    direct = GameDetail(**(value.model_dump(exclude={"receipts"}) | {"receipts": (encounter, value.receipts[0])}))
+    assert direct.receipts[0] is encounter
+    assert json.loads(direct.model_dump_json())["receipts"][0] == json.loads(encounter.model_dump_json())
+
+
+@pytest.mark.parametrize("fault", ["invalid_admission", "unsupported_version", "missing_disposition"])
+def test_game_detail_rejects_invalid_encounter_instead_of_dropping_fields(fault):
+    payload = fixture("game-detail-encounter-receipt")
+    if fault == "invalid_admission": payload["receipts"][-1]["admission_status"] = "assumed_available"
+    elif fault == "unsupported_version": payload["receipts"][-1]["interface_version"] = "unsupported"
+    else: del payload["receipts"][-1]["disposition"]
+    with pytest.raises(ValidationError): GameDetail.model_validate_json(json.dumps(payload))

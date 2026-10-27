@@ -61,6 +61,16 @@ const RawEvidenceWithdrawalSchema = z.strictObject({ obligation_id: id, expected
 const controlReason = z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]);
 const RawGameEffectControlSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, action: z.enum(["hold", "withdraw"]), reason: controlReason.nullable().default(null), withdrawal: RawEvidenceWithdrawalSchema.nullable().default(null) }).refine(value => (value.reason !== null || value.withdrawal !== null) && !(value.reason !== null && value.withdrawal !== null && value.reason !== value.withdrawal.reason), "control requires a reason; optional existing withdrawal must agree");
 const RawLearningReceiptSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, status: z.enum(["pending", "held", "applied", "settled"]), outcome: z.enum(["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]), owner_receipt_id: id, admitted_at: utc.nullable(), available_by: utc.nullable(), applied_at: utc.nullable(), reason: id.nullable() });
+// Wire mirror of the existing frozen learning.EncounterReceipt; no new effect type.
+const RawEncounterReceiptSchema = RawLearningReceiptSchema.safeExtend({ interface_version: z.literal("0.2.1").default("0.2.1"), detected_at: utc, source_digest: digest, observation: z.enum(["matched", "missed"]), observation_recorded: z.boolean(), disposition: z.enum(["review_priority", "first_introduction", "existing_lapse", "frequency_only"]).nullable(), admission_status: z.enum(["pending", "available", "settled", "not_requested"]), deferred_reason: z.enum(["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"]).nullable() }).superRefine((value, ctx) => {
+  if (value.observation === "matched" && value.disposition === "existing_lapse") ctx.addIssue({ code: "custom", message: "correct play cannot produce a lapse" });
+  if (value.disposition === "frequency_only" && (value.admission_status !== "not_requested" || value.observation !== "matched")) ctx.addIssue({ code: "custom", message: "frequency-only cannot claim admission or discard missed-response importance" });
+  if (value.admission_status === "available" && (value.disposition === null || value.status === "held")) ctx.addIssue({ code: "custom", message: "unresolved/held evidence cannot claim availability" });
+  if (value.deferred_reason !== null && value.admission_status !== "pending") ctx.addIssue({ code: "custom", message: "deferred work remains pending" });
+  if (value.admission_status === "pending" && value.deferred_reason === null && value.reason === null) ctx.addIssue({ code: "custom", message: "pending admission requires an owner reason" });
+  if (value.disposition === "first_introduction" && ["study_only", "zero_limit", "introduction_allowance"].includes(value.deferred_reason ?? "")) ctx.addIssue({ code: "custom", message: "encounter first introduction uses the targeted exception" });
+  if (["disabled", "paused"].includes(value.deferred_reason ?? "") && value.available_by !== null) ctx.addIssue({ code: "custom", message: "full-pause controls cannot promise an availability deadline" });
+});
 
 
 export type DeepReadonly<T> = T extends object ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> } : T;
@@ -85,6 +95,7 @@ export const GameLapseSchema = immutable(RawGameLapseSchema);
 export const EvidenceWithdrawalSchema = immutable(RawEvidenceWithdrawalSchema);
 export const GameEffectControlSchema = immutable(RawGameEffectControlSchema);
 export const LearningReceiptSchema = immutable(RawLearningReceiptSchema);
+export const EncounterReceiptSchema = immutable(RawEncounterReceiptSchema);
 
 export type GamePage = z.infer<typeof GamePageSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
@@ -93,6 +104,7 @@ export type GameEffectKey = z.infer<typeof GameEffectKeySchema>;
 export type GameLapse = z.infer<typeof GameLapseSchema>;
 export type GameEffectControl = z.infer<typeof GameEffectControlSchema>;
 export type LearningReceipt = z.infer<typeof LearningReceiptSchema>;
+export type EncounterReceipt = z.infer<typeof EncounterReceiptSchema>;
 export function logicalEffectId(key: GameEffectKey): string {
   return JSON.stringify([key.workspace_id, key.provider, key.game_id, key.decision_id, key.occurrence_ply]);
 }
@@ -116,7 +128,7 @@ export interface GameReviewApi {
 const RawGameSummarySchema = z.strictObject({ provider, game_id: id, source_revision: revision, played_at: utc.nullable(), time_precision: precision, player_color: z.enum(["white", "black"]) }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "preserve unknown source time");
 const RawProviderSyncStatusSchema = z.strictObject({ provider, status: z.enum(["idle", "pending", "complete", "failed"]), operation_id: id.nullable(), error: id.nullable() }).refine(value => (value.status === "failed") === (value.error !== null) && (value.status === "idle" || value.operation_id !== null), "status must preserve failure and operation identity");
 const RawRecentGamesSchema = z.strictObject({ games: z.array(RawGameSummarySchema), sync: z.array(RawProviderSyncStatusSchema) });
-const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(RawLearningReceiptSchema) });
+const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])) });
 export const GameSummarySchema = immutable(RawGameSummarySchema);
 export const ProviderSyncStatusSchema = immutable(RawProviderSyncStatusSchema);
 export const RecentGamesSchema = immutable(RawRecentGamesSchema);
@@ -126,4 +138,4 @@ export type ProviderSyncStatus = z.infer<typeof ProviderSyncStatusSchema>;
 export type RecentGames = z.infer<typeof RecentGamesSchema>;
 export type GameDetail = z.infer<typeof GameDetailSchema>;
 
-export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema } as const;
+export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema } as const;
