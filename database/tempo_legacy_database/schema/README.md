@@ -25,6 +25,12 @@ The 12 included remediation tables have their canonical charts/dictionary in the
 
 ## Read projections
 
+The additive [Study recombination owner chart](../../../backend/app/study/recombination/README.md#private-storage-shape)
+documents migration 053's six tables: streaks, events, distinct completions,
+immutable changes/receipts, generated presentations and route/decision current
+targets. Original card, attempt, review and obligation references remain logical
+and noncascading. Source readiness 53 follows 052; this is not a live-schema claim.
+
 The additive T06 [Study game-feedback owner chart](../adapters/study/README.md)
 documents `study_game_feedback` from migration 051: stable effect identity,
 original deadline, pre-delivery hold, application and settlement provenance.

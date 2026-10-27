@@ -139,6 +139,10 @@ def seed_queue(db, day):
         study_rows = seeding_storage.new_study_cards(db, day, remaining_studies)
         for offset, study_row in enumerate(study_rows):
             seeding_storage.append_study_card(db, day, study_row["id"], next_position + offset)
+    from tempo_legacy_database.adapters.study.recombination import project_current_presentations
+    project_current_presentations(db, day)
+    from tempo_legacy_database.adapters.study.conflicts import reconcile_current_queue
+    reconcile_current_queue(db, day)
 
 
 from tempo_legacy_database.adapters.queue_refresh import presentation as presentation_storage
@@ -151,6 +155,8 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
     )
     if not rows:
         return rows
+    from tempo_legacy_database.adapters.study.recombination import regrouped_presentation_ids
+    regrouped = regrouped_presentation_ids(database,(row['card_id'] for row in rows))
     for row in rows:
         if row['gameplay_priority_reason'] == 'product_game_lapse':
             from tempo_legacy_database.adapters.study.game_feedback import has_owed_feedback
@@ -161,7 +167,7 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
             from .legacy_study_remediation import has_current_miss
             if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
         row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
-                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
+                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed or row['card_id'] in regrouped else 'new')
         row['eligible'] = row['id'] in eligible
     return rows
 

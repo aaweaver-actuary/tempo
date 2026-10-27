@@ -1590,7 +1590,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
                 if (!prefixCard.backendId)
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
                 if (pendingReviews().length) await flushPendingReviews();
-                await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1);
+                await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1, prefixCard.queueEntryId);
                 invalidateBranchEvidence();
                 invalidateTrainingQueueCache();
                 setSuggestShorter(false);

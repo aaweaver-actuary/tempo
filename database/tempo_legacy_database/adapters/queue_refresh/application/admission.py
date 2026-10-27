@@ -1,6 +1,7 @@
 """Fixed legacy admission queries on the caller connection; no admission policy."""
 
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query
+from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
 from tempo_legacy_database.adapters.queue_refresh.capacity import capacity_priority_statement, read_capacity_route_rows
 
 
@@ -56,6 +57,7 @@ def unseen_opening_page(database, day, after, batch_size):
                      AND COALESCE(q.admission_kind,'')!='explicit'
                      AND (c.introduced_at IS NULL OR c.introduced_at=?)
                      AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
+                + " AND NOT (" + regrouped_card_sql(database, "c.id") + ")"
                 + cursor + " ORDER BY q.position,q.id LIMIT ?",
                 (day, day, *((after[0], after[0], after[1]) if after is not None else ()), batch_size),
             ).fetchall()
@@ -70,6 +72,7 @@ def introduction_count_rows(database, day, after_repertoire_id, reviewed_only, b
             """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
             FROM daily_queue q JOIN cards c ON c.id=q.card_id
             WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?""")
+    statement += " AND NOT (" + regrouped_card_sql(database, "c.id") + ")"
     parameters = (day,) if reviewed_only else (day, day)
     if after_repertoire_id is not None:
         statement += " AND COALESCE(q.admission_repertoire_id,c.repertoire_id)>?"
