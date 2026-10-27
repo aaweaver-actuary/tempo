@@ -39,6 +39,67 @@ test("Interfaces permit typed public intake and do not mutate the owner map", t 
   assert.equal(report.files, 7);
 });
 
+test("Interfaces permit explicit same-owner facades with unchanged public value and operation types", t => {
+  const f = fixture(t);
+  f.write("backend/app/__init__.py", "");
+  f.write("backend/app/study/private.py", "from dataclasses import dataclass\nfrom typing import Annotated\ndef _metadata(value): return value\n@dataclass(frozen=True)\nclass Record:\n    revision: Annotated[int, _metadata]\ndef operation(command: Record) -> Record:\n    return command\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import Record, operation as accept_record\n__all__ = ['Record', 'accept_record']\n");
+  f.write("backend/app/games/consumer.py", "from app.study.interfaces import Record, accept_record\n");
+  assert.doesNotThrow(f.check);
+  const proof = spawnSync(python, ["-B", "-c", "from app.study.interfaces import Record, accept_record; from app.study.private import Record as original, operation; assert Record is original and accept_record is operation; assert accept_record(Record(1)).revision == 1"], { encoding: "utf8", env: { ...process.env, PYTHONPATH: join(f.root, "backend") } });
+  assert.equal(proof.status, 0, proof.stderr);
+});
+
+test("Interfaces reject a same-owner facade leaking unpublished signature types", t => {
+  const f = fixture(t);
+  f.write("backend/app/study/private.py", "class InternalState: pass\ndef operation(command: InternalState) -> 'InternalState':\n    return command\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import operation\n__all__ = ['operation']\n");
+  f.write("backend/app/games/consumer.py", "from app.study.interfaces import operation\n");
+  assert.throws(f.check, /Unexposed private type in interface signature/);
+});
+
+test("Interfaces never launder a cross-owner private dependency through an own facade", t => {
+  const f = fixture(t);
+  f.manifest.components[0].dependencies = [];
+  f.manifest.components[1].dependencies = ["games"];
+  f.write("backend/app/games/consumer.py", "");
+  f.write("backend/app/games/private.py", "hidden = 'fixture'\n");
+  f.write("backend/app/study/private.py", "from app.games.private import hidden\ndef operation() -> str:\n    return hidden\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import operation\n__all__ = ['operation']\n");
+  assert.throws(f.check, /Private cross-component import: app.games.private/);
+});
+
+test("Interfaces permit named TypeScript facades and preserve signature/export bypass guards", t => {
+  const f = fixture(t);
+  f.write("backend/app/study/private.ts", "export type Record = { readonly revision: number }; export function operation(command: Record): Record { return command; }\n");
+  f.write("backend/app/study/interfaces/index.ts", 'export { operation as acceptRecord } from "../private.js"; export type { Record } from "../private.js";');
+  f.write("backend/app/games/consumer.ts", 'import { acceptRecord, type Record } from "../study/interfaces/index.js";');
+  assert.doesNotThrow(f.check);
+  f.write("backend/app/study/private.ts", "export type Record = { readonly revision: number }; type InternalState = { privateValue: string }; export function operation(command: InternalState): InternalState { return command; }\n");
+  assert.throws(f.check, /Unexposed private type in interface signature/);
+  f.write("backend/app/study/private-types.ts", "export type InternalState = { privateValue: string };\n");
+  f.write("backend/app/study/private.ts", 'export type Record = { readonly revision: number }; export function operation(command: import("./private-types.js").InternalState): Record { return { revision: 1 }; }');
+  assert.throws(f.check, /Unexposed private type in interface signature/);
+  f.manifest.components[0].dependencies = [];
+  f.manifest.components[1].dependencies = ["games"];
+  f.write("backend/app/games/consumer.py", "");
+  f.write("backend/app/games/consumer.ts", "");
+  f.write("backend/app/games/interfaces/index.ts", "export type Visible = { revision: number };\n");
+  f.write("backend/app/study/interfaces/index.ts", 'export { HiddenStore as PublicStore } from "../../games/interfaces/index.js";');
+  assert.throws(f.check, /Unavailable\/private interface export: HiddenStore/);
+});
+
+test("Interfaces reject import-time I/O behind an own facade and eager invocation of its exports", t => {
+  const f = fixture(t);
+  f.write("backend/app/study/private.py", "def operation(command: int) -> int:\n    return command\nopened = open('never-created')\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import operation\n__all__ = ['operation']\n");
+  f.write("backend/app/games/consumer.py", "from app.study.interfaces import operation\n");
+  assert.throws(f.check, /Interface re-export starts implementation I\/O/);
+  f.write("backend/app/study/private.py", "def operation(command: int) -> int:\n    return command\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import operation\ncached = operation(1)\n__all__ = ['operation']\n");
+  assert.throws(f.check, /Interface executes a re-export during import/);
+});
+
 for (const [name, source] of [
   ["direct", "from app.study.private import hidden"],
   ["aliased", "import app.study.private as disguised"],

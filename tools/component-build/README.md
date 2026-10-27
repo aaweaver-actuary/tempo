@@ -120,11 +120,20 @@ lazy/conditional/type-only imports), unavailable public exports and namespace
 member bypass, interface-to-private/infrastructure leaks, known lifecycle/I/O
 calls, source symlinks/escapes, direct dependency cycles, and known SQL write
 primitives crossing table ownership. Unknown targets at recognized database
-execution sites fail closed. An interface cannot expose an implementation by
-renaming its private import. Old compatibility modules may forward **to** the new
-interface; the new interface must not back-import its compatibility wrapper.
+execution sites fail closed. A public facade may explicitly re-export its own
+owner's stable named values/operations from private implementation files.
+Python uses literal `__all__`; TypeScript uses explicit named exports. Bindings
+must resolve to declarations, and named parameter/return/field types must also
+have public bindings. Private helper/module/wildcard imports, unpublished types,
+cross-owner private imports behind the facade, and common import-time I/O remain
+rejected. Python aliases preserve the original value/type identity; TypeScript
+named re-export source symbols receive the same export checks as imports.
+Old compatibility modules may forward **to** the new interface; a reverse
+forwarding cycle does not provide a resolvable stable public binding.
 
-This is not a SQL engine or a whole-program semantic effect proof. Computed
+This is not a type checker, SQL engine or whole-program semantic effect proof.
+Component declaration/type and cold-import tests still qualify inferred/dynamic
+types and implementation initialization. Computed
 capability dispatch, callbacks supplied at runtime, SQL stored procedures and
 unsupported languages require their existing owner/compiler/runtime checks.
 Do not claim static success proves bounded admission or failure isolation.

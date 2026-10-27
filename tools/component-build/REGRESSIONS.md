@@ -12,6 +12,10 @@ purity checks, source ownership/escape rejection, dependency cycles, table-write
 ownership, and intake eligibility/preparation/promotion checks through direct
 calls, aliases, helper chains and method references. Disposable negative controls
 prove an intentional violation exits nonzero and the corrected source passes.
+Explicit same-owner Python/TypeScript facades retain named operation/value type
+identity. Counterexamples retain rejection of unpublished signature types,
+cross-owner private export laundering, unavailable named TypeScript re-exports,
+and implementation import-time I/O/eager calls. No owner-wide exception is used.
 The tests start no application, native database, worker or engine. Actual
 acceptance/refresh-failure/producer-absent/replay/attempt behavior remains with
 the runtime owner and must be registered in its required affected-component suite.
