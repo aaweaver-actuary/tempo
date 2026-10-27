@@ -88,7 +88,7 @@ with partial-start cleanup and explicit process entry points. Its legacy HTTP
 readiness wait and mixed coordinator remain; this is not deployed lifecycle
 isolation. Operational readiness evaluates immutable supplied observations;
 concrete SQL/Celery/HTTP selection belongs to composition. See the canonical
-[composition boundary](../../../../backend/app/product_composition/interfaces/README.md).
+[composition boundary](../../../backend/app/product_composition/interfaces/README.md).
 
 `node scripts/check-interface-allocation.mjs` feeds this single allocation map
 to #482's existing guard. Missing surfaces fail closed. `boundary.sources`

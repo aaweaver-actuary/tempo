@@ -12,6 +12,10 @@ Database table/key/field views live in the [database directory index](../../../d
 
 The [current backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; reviewing or relocating source does not establish deployment isolation.
 
+## Interface-directory integration source
+
+**UNMERGED / #501:** the [26-group allocation and allowed dependency DAG](../interface-directory-allocation/README.md) records explicit public-surface ownership and the actual adopted caller scope. The canonical [composition view](../../../backend/app/product_composition/interfaces/README.md) shows the extracted worker handler assembly, immutable readiness observation boundary and retained mixed-coordinator/HTTP-startup exception. Missing owner surfaces, package compiler failures and whole-graph qualification remain explicit; neither this source nor its focused checks establish deployed isolation.
+
 ## Source and status
 
 **PROPOSED / #487:** [Study game feedback](../../../backend/app/study/README.md)
