@@ -207,4 +207,8 @@ def _reset_stale_opening_introductions(database, queue_date: str) -> None:
     from tempo_legacy_database.adapters.study.game_feedback import installed, retained_encounter_introduction_query
     if installed(database):
         statement += ' AND cards.id NOT IN (' + retained_encounter_introduction_query() + ')'
+        # Keep this owned PostgreSQL projection native: the legacy SQLite
+        # translator would rewrite its JSONB operator into a JSON-only function.
+        database.execute_native(statement.replace('?', '%s'), (queue_date, queue_date))
+        return
     database.execute(statement, (queue_date, queue_date))
