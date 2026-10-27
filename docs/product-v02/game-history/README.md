@@ -81,6 +81,16 @@ tests. Generic comparer instances without either capability remain preview-only.
 No GameEncounter builder or raw provenance is copied, and constructing the
 binding starts no read or worker.
 
+Routine monitor GETs (`/api/health`, `/api/system/foreground-active`,
+`/api/system/foreground-requests-active`, `/api/system/tasks`) use the existing
+background request classification even when an older caller omits the header.
+They observe activity without creating a learner foreground lease. This matters
+for the standard Docker health probe, which runs every three seconds. Their
+existing read handlers, reader permissions and query-only request context stay
+unchanged. They cannot clear a genuine foreground request or browser-input lease;
+unknown control state still denies history work. Queue/attempt reads, review/save
+commands and browser-input pulses retain their existing foreground safeguards.
+
 `current_retained_history_receiver` requires the explicit owner policy identity,
 actual `operation_stopped` callback, Study introduction policy and clock. It binds
 #488's public `receive_admitted_encounter`; that wrapper supplies the current
@@ -126,6 +136,7 @@ settlement or a promise that a queued card is still available now.
 ```mermaid
 flowchart LR
   Operator["HTTP reader preview/status; bounded writer-profile operator"] --> Guard["Opt-in PostgreSQL/Celery qualification\ncurrent controls + foreground admission\none operator slot"]
+  Poll["Exact monitor GETs; existing background request class"] -. "observe; never mint learner lease" .-> Guard
   Guard --> Read["Games imported-history read"]
   Read --> Existing[("Existing imported_games")]
   Read --> Select["Bounded ply interval + unfiltered published physical leads"]

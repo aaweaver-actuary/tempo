@@ -699,6 +699,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
     )
     is_background = (
         prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        # Monitoring observes learner activity; it must not mint a learner
+        # lease itself. Older clients and Docker health probes omit headers.
+        or (request.method == "GET" and request.url.path in {
+            "/api/health", "/api/system/foreground-active",
+            "/api/system/foreground-requests-active", "/api/system/tasks",
+        })
         or (request.method == 'POST' and len(request_path_parts) == 5
             and request_path_parts[:2] == ['api', 'repertoires']
             and request_path_parts[3:] == ['prefix-transition', 'apply'])

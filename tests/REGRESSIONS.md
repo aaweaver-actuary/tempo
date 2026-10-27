@@ -5350,3 +5350,4 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | A later authored conflicting response remains in complete capture and cannot produce an effect | `backend/tests/test_product_game_history_postgres.py::test_later_ply_capture_keeps_authored_conflict_and_produces_no_effect` |
 | Discovery forwards missing/blocked leads to complete capture and discards a slice when the actual game or current publication changes | `backend/tests/test_product_history_capture.py` |
 | Bounded preview shows unresolved/remaining positions and saved version-1 manifests retain their digest | `backend/tests/test_product_game_history.py::test_bounded_ply_preview_retains_unknowns_and_exposes_same_page_continuation` |
+| Exact monitor GETs do not mint learner activity or starve background work, while genuine foreground, input, queue and review guards remain | `backend/tests/test_foreground_admission_http.py` |
