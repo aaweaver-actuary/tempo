@@ -51,6 +51,12 @@ class QueueAdmissionAdapter:
                                      rows[-1][0] if len(rows) == READ_BATCH_SIZE else None)
 
     def has_outstanding_miss(self, card_id):
+        # Legacy reconciliation uses this predicate to retain required work; it
+        # is not a miss classifier. Preserve an actual same-definition encounter
+        # introduction without manufacturing a failure or introducing anything.
+        from tempo_legacy_database.adapters.study.game_feedback import retains_encounter_introduction
+        if retains_encounter_introduction(self.database, card_id):
+            return True
         return has_outstanding_real_game_miss(self.database, card_id)
 
     def retain_unseen(self, day, card_id):

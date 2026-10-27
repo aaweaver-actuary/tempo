@@ -54,10 +54,10 @@ admission fact to Study's legacy admission/rebuild adapter. They grant no new
 introduction. Pending observations, missing/currently unintroduced cards and
 changed revisions are excluded; a later source hold cannot refund historical
 admission. The caller checks `installed()` for the PostgreSQL query projection.
-Ordinary unseen-card reconciliation and stale-introduction resets must preserve
-this fact while keeping their usual controls for unrelated cards. The next-release
-native normal-seeding regression currently exposes that missing adoption; this
-source checkpoint is not normal-Study acceptance until the owning adapter uses it.
+Ordinary unseen-card reconciliation and stale-introduction resets consume this
+fact while keeping their usual controls for unrelated cards. The receiving owner's
+native normal-seeding regression covers both the admission day and the next day.
+This source wiring does not claim product activation or a live schema change.
 
 ```mermaid
 erDiagram

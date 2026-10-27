@@ -18,7 +18,7 @@ def _priority_projection(rows):
     """Normalize the backend's separate bridge label into shared presentation."""
     from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
     return [{**row, "gameplay_priority_reason": MISS_REASON}
-            if row.get("gameplay_priority_reason") in {BRIDGE_MISS_REASON, "product_game_lapse"} else row for row in rows]
+            if row.get("gameplay_priority_reason") in {BRIDGE_MISS_REASON, "product_game_lapse", "product_game_encounter"} else row for row in rows]
 
 
 def _priority_queue_order(rows):

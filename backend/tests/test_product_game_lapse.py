@@ -433,3 +433,16 @@ def test_encounter_status_reuses_existing_lapse_ledger_without_another_effect(ow
     assert status.owner_receipt_id==first.owner_receipt_id and status.disposition=='existing_lapse'
     assert status.observation=='missed' and status.observation_recorded
     assert len(store.effects)==len(store.reviews)==1
+
+
+def test_encounter_priority_overlay_preserves_issued_attempt_and_distinct_reason():
+    from app.services.queue_ordering import _priority_queue_order
+    common=dict(content_type='opening',admission_kind='new',attempt_state='clean',cycle=0,
+                taught=False,frozen_valid=True,gameplay_priority_reason=None)
+    rows=[dict(common,id=1,card_id='issued-head',position=0,issued=True),
+          dict(common,id=2,card_id='ordinary-new',position=1),
+          dict(common,id=3,card_id='encounter-new',position=2,gameplay_priority_reason='product_game_encounter')]
+    ordered=_priority_queue_order(rows)
+    assert [row['id'] for row in ordered]==[1,3,2]
+    assert ordered[0]==rows[0]
+    assert ordered[1]['gameplay_priority_reason']=='product_game_encounter'

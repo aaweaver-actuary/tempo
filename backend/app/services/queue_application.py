@@ -152,7 +152,7 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
     if not rows:
         return rows
     for row in rows:
-        if row['gameplay_priority_reason'] == 'product_game_lapse':
+        if row['gameplay_priority_reason'] in {'product_game_lapse','product_game_encounter'}:
             from tempo_legacy_database.adapters.study.game_feedback import has_owed_feedback
             if not has_owed_feedback(database, row['card_id']):
                 row['gameplay_priority_reason'] = None

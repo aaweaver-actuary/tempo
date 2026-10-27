@@ -663,7 +663,8 @@ def test_native_encounter_targeted_exception_preserves_ordinary_settings(case, o
         assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==1
 
 
-def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case):
+@pytest.mark.parametrize('day_offset',[0,1])
+def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case, day_offset):
     capture,snapshot,command=current_encounter_case(case)
     with case.transaction() as database:
         database.execute_native('UPDATE settings SET new_cards_per_day=0,study_only_mode=1 WHERE id=1')
@@ -673,12 +674,15 @@ def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case
         assert service.accept_encounter(command).admission_status=='available'
         before=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
-        from app.services.queue_application import seed_queue
-        seed_queue(database,NOW.date().isoformat())
+        from app.services.queue_application import seed_queue,presentation_rows
+        study_day=(NOW+timedelta(days=day_offset)).date().isoformat()
+        seed_queue(database,study_day)
         assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())==before
-        assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND status='queued'",
-            (case.card_id,)).fetchone()[0]==1
+        assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'",
+            (case.card_id,study_day)).fetchone()[0]==1
+        current=next(row for row in presentation_rows(database,study_day) if row['card_id']==case.card_id)
+        assert current['admission_kind']=='new' and current['gameplay_priority_reason']=='product_game_encounter'
         assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
 
 
