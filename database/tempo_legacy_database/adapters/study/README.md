@@ -7,6 +7,18 @@ rechecks current stored rows/generations and existing completed scan facts in
 the mutation transaction, and returns no authority on missing/busy/stale facts.
 No new certificate, source migration, catalogue capture or Games call is added.
 
+Equivalent route aliases can bind one exact approved decision/physical target.
+Only route ID/ply may differ: every other shared mapping fact, including physical
+and repertoire revision, availability and introduction/source chronology, must
+agree. The complete mapping route set must equal the already fenced current
+card's graph route set. Encounter delivery retains and proves its supplied
+original route member; the lapse path selects a deterministic existing member
+only after the same equivalence proof. The full snapshot, captured graphs and
+source provenance remain intact. True conflicts, uncovered routes and changed
+card/source facts grant no effect. The existing64-route/128-card/256-graph bounds,
+transaction locks, completed integrity certificate and lapse chronology checks
+remain unchanged.
+
 [`game_feedback.py`](game_feedback.py) implements the Study owner's semantic
 storage port using its existing borrowed PostgreSQL connection. It opens no
 connection and never commits, rolls back, deploys, or calls a producer.

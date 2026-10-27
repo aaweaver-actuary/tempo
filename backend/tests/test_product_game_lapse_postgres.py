@@ -679,3 +679,105 @@ def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case
         current=next(row for row in presentation_rows(database,study_day) if row['card_id']==case.card_id)
         assert current['admission_kind']=='new' and current['gameplay_priority_reason']=='product_game_encounter'
         assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+
+
+def equivalent_current_encounter_case(case, *, aliases=62, unintroduced=True):
+    """Complete actual route/graph aliases, projected from a fresh owner capture."""
+    from app.legacy_game_observation import capture_game
+    from app.repertoire import project_capture
+    from app.services.postgres_integrity import current_integrity_certificate
+    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
+    capture, _, command = current_encounter_case(case, unintroduced=unintroduced)
+    repertoire = command.decision.repertoire_id
+    route = capture['tables']['repertoire_lines'][0]['id']
+    with case.transaction() as database:
+        for number in range(1, aliases):
+            alias = route + '-alias-' + str(number).zfill(2)
+            database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,
+                start_fen,moves_json,created_at) SELECT %s,repertoire_id,name,trained_color,start_fen,
+                moves_json,created_at FROM repertoire_lines WHERE id=%s""", (alias, route))
+            database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,
+                decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,
+                first_decision_index,last_decision_index,decision_fen_keys_json)
+                SELECT repertoire_id,generation,%s,decision_index,card_id,decision_fen_key,starting_fen,
+                moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,
+                decision_fen_keys_json FROM opening_graph_steps WHERE line_id=%s""", (alias,route))
+    with case.transaction() as database:
+        def reader(statement, parameters=()):
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+        def metadata(identity):
+            header = repertoire_metadata(reader, identity)[0]
+            certificate = current_integrity_certificate(database, identity, header['graph_generation'])
+            return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
+        capture = capture_game(repertoire,command.key.game_id,(0,),reader=reader,metadata=metadata,now=NOW)
+    snapshot = project_capture(capture)
+    assert len(snapshot.decision_presentations) == len(capture['graphs']) == aliases
+    assert len({item.presentation_id for item in snapshot.decision_presentations}) == 1
+    mapping = min(snapshot.decision_presentations, key=lambda item:(item.route_id,item.route_ply))
+    command = command.model_copy(update={'decision':mapping})
+    return capture,snapshot,command
+
+
+@pytest.mark.parametrize('aliases',[2,62])
+@pytest.mark.parametrize('unintroduced',[False,True])
+def test_native_equivalent_route_bindings_apply_once_and_preserve_all_provenance(case,aliases,unintroduced):
+    capture,snapshot,command = equivalent_current_encounter_case(case,aliases=aliases,unintroduced=unintroduced)
+    original = snapshot.model_dump_json()
+    # The receiver proves the supplied original member, not an arbitrary first alias.
+    command = command.model_copy(update={'decision':max(snapshot.decision_presentations,
+        key=lambda item:(item.route_id,item.route_ply))})
+    with case.transaction() as database:
+        before = tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,interval_days FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        service = current_encounter_service(database,capture,snapshot)
+        receipt = service.accept_encounter(command)
+        assert receipt.admission_status == 'available'
+        assert receipt.disposition == ('first_introduction' if unintroduced else 'review_priority')
+        after = tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,interval_days FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        assert after[0] == (NOW.date().isoformat() if unintroduced else before[0])
+        assert after[1:] == before[1:]
+        assert service.decisions.snapshot.model_dump_json() == original
+    alternate = next(item for item in snapshot.decision_presentations if item.route_id != command.decision.route_id)
+    replay = command.model_copy(update={'decision':alternate,'detected_at':(NOW+timedelta(days=1)).isoformat()})
+    with case.transaction() as database:
+        receipt2 = current_encounter_service(database,capture,snapshot).accept_encounter(replay)
+        assert receipt2.outcome == 'duplicate' and receipt2.owner_receipt_id == receipt.owner_receipt_id
+        assert receipt2.detected_at == command.detected_at
+        effect = PostgresGameFeedbackStore(database).get(command.key)
+        assert effect.encounter == command
+        assert database.execute_native('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s',
+            (case.card_id,)).fetchone()[0] == 1
+        assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND status='queued'",
+            (case.card_id,)).fetchone()[0] == 1
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+            (case.card_id,)).fetchone()[0] == 0
+        assert len(service.decisions.snapshot.decision_presentations) == aliases
+
+
+@pytest.mark.parametrize('invalid',['conflict','different_target','unavailable','missing_binding','changed_revision','unknown_supplied_route'])
+def test_native_equivalent_route_bindings_fail_closed_for_conflict_or_staleness(case,invalid):
+    capture,snapshot,command = equivalent_current_encounter_case(case,aliases=2)
+    if invalid == 'changed_revision':
+        with case.transaction() as database:
+            database.execute_native('UPDATE cards SET revision=revision+1 WHERE id=%s',(case.card_id,))
+    elif invalid == 'unknown_supplied_route':
+        command = command.model_copy(update={'decision':command.decision.model_copy(update={'route_id':'not-current-route'})})
+    else:
+        mappings = list(snapshot.decision_presentations)
+        if invalid == 'missing_binding':
+            mappings.pop()
+        else:
+            update = ({'available':False} if invalid == 'unavailable' else
+                      {'presentation_id':case.card_id+'-other'} if invalid == 'different_target' else
+                      {'presentation_revision':command.decision.presentation_revision+1})
+            mappings[1] = mappings[1].model_copy(update=update)
+        snapshot = snapshot.model_copy(update={'decision_presentations':tuple(mappings)})
+    with case.transaction() as database:
+        receipt = current_encounter_service(database,capture,snapshot).accept_encounter(command)
+        assert receipt.admission_status != 'available'
+        assert receipt.status in {'pending','held'}
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
+        assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0] == 0
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+            (case.card_id,)).fetchone()[0] == 0
