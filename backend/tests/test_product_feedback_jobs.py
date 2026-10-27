@@ -491,7 +491,7 @@ def test_corrected_encounter_is_held_before_admission_and_delayed_retry():
     assert restarted.first_introductions == 0
 
 
-@pytest.mark.parametrize("reason", ["paused", "introduction_allowance"])
+@pytest.mark.parametrize("reason", ["paused", "active_attempt"])
 def test_encounter_owner_deferral_receipt_is_preserved(reason):
     h = encounter_harness()
     h.receiver.deferred_reason = reason
@@ -534,3 +534,39 @@ def test_distinct_encounters_keep_provenance_without_reintroducing_one_card():
     assert len(h.store.deliveries) == 2 and len(h.store.captures) == 2
     assert {item.encounter.key.game_id for item in h.store.deliveries.values()} == {"provider-game", "another-game"}
     assert pending.encounter.observation == "missed" and h.store.delivery(pending.operation_id).receipt.disposition == "review_priority"
+
+
+@pytest.mark.parametrize("ordinary_limit,ordinary_used,study_only", [
+    (0, 0, False), (4, 4, False), (0, 0, True), (4, 4, True),
+])
+def test_encounter_transport_does_not_apply_ordinary_admission_controls(ordinary_limit, ordinary_used, study_only):
+    """The owner fake grants the exception; Games only dispatches and preserves it.
+
+    Actual Study cap/Study-only/canonical writer proofs stay with #487/#495.
+    """
+    h = encounter_harness()
+    controls = {"ordinary_limit": ordinary_limit, "ordinary_used": ordinary_used, "study_only": study_only}
+    original_controls = dict(controls)
+    h.receiver.ordinary_controls = controls
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    h.runner.run_once()
+    delivery = next(iter(h.store.deliveries.values()))
+    assert delivery.receipt.disposition == "first_introduction"
+    assert delivery.receipt.admission_status == "available" and h.receiver.first_introductions == 1
+    assert delivery.lapse is None and controls == original_controls
+    assert h.receiver.ordinary_controls is controls
+
+
+def test_encounter_transport_accepts_racing_ordinary_introduction_receipt():
+    """An owner may observe ordinary admission after the producer captured facts."""
+    h = encounter_harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original = next(iter(h.store.deliveries.values()))
+    h.receiver.introduced_cards.add(original.encounter.decision.presentation_id)
+    h.runner.run_once()
+    delivery = h.store.delivery(original.operation_id)
+    assert delivery.receipt.disposition == "review_priority" and delivery.receipt.admission_status == "available"
+    assert h.receiver.first_introductions == 0 and delivery.encounter == original.encounter
+    assert not any(isinstance(command, GameLapse) for command in h.receiver.calls)

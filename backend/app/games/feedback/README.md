@@ -224,8 +224,8 @@ nontruncating advisory validation lock before either command; do not unlink it.
 
 ## Immediately next release: encounter-priority delivery (#489 addendum)
 
-**Next-release source**, consuming #482/#533 checkpoint
-`46f07e9a6844c4772b12148a9ca303b6e34e883b` (interface 0.2.1). The first-release branch and its qualified installed path
+**Next-release source**, consuming #482/#533 approved-policy checkpoint
+`092b574d954e767c74e77248643be25282e85c47` (interface 0.2.1). The first-release branch and its qualified installed path
 remain unchanged. This extension uses the same captured page, normalized game,
 exact repertoire occurrence, original detection time, GameEffectKey, pending
 command row, retry and hold/withdraw operations. There is no second ingestion
@@ -244,8 +244,12 @@ first introduction, revalidating current mapping/content/admission state. Only
 the existing proven introduced-before-game miss path may apply a lapse. Historical
 misses remain relevance even when introduction or later learning makes an FSRS
 lapse inappropriate; correctly played encounters remain frequency facts, never
-fabricated recall failures. No introduction allowance, Study-only/pause control
-or <=48h exception is chosen by Games. The actual owner disposition/reason must
+fabricated recall failures. The approved next-release policy is a targeted
+Study-owned exception: encounter first introductions bypass ordinary new-card
+caps and Study-only without changing either global setting. Explicit full Study
+pause, foreground/maintenance safety and current source/identity/legality/conflict
+guards still apply. Games chooses no admission policy and writes no settings.
+The actual owner disposition/reason must
 be persisted verbatim, including paused/deferred pending receipts.
 
 The first persisted semantic effect for a logical GameEffectKey remains the
@@ -312,3 +316,23 @@ encounter or its historical relevance. The original typed command remains in the
 source ledger. Raw-source correction or a positively contradictory observation
 still quarantines/fences it; current Study admission and authority checks remain
 with the receiving owner.
+
+
+### Approved targeted admission exception
+
+For this separate next release, genuine real-game encounter first introductions
+are exempt from ordinary exhausted/zero new-card allowance and Study-only. This
+is an operation-specific Study admission rule, not a global cap increase or a
+setting toggle. Unrelated introductions retain their ordinary controls. Explicit
+full pause and foreground/maintenance/source/identity/legality/conflict safety
+remain effective; duplicate or racing ordinary admission cannot reset a card,
+charge another introduction, fabricate Again, or rewrite learning history.
+
+The producer already delegates every encounter to the semantic owner; it neither
+reads nor rewrites ordinary controls. Its focused transport cases grant the owner
+fake's exception under zero/exhausted allowance and Study-only, and accept an
+owner's priority-only receipt when ordinary admission wins a race. Actual
+canonical admission/control/race proofs belong to #487/#495. Games receipt-readback cases preserve legitimate full-pause and active-attempt
+safety deferrals. The shared EncounterReceipt now rejects ordinary cap/zero
+allowance/Study-only deferral for first introduction. Owner full-pause/safety
+deferrals remain pending and must never be reported available by the producer.

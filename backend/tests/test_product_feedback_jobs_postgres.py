@@ -148,7 +148,7 @@ def test_encounter_lost_ack_restart_and_recomparison_preserve_original_effect(po
     assert not source.quarantined and postgres_workflow.count("product_feedback_deliveries") == 1
 
 
-@pytest.mark.parametrize("reason", ["paused", "introduction_allowance"])
+@pytest.mark.parametrize("reason", ["paused", "active_attempt"])
 def test_encounter_deferred_receipt_and_correction_hold_are_durable(postgres_workflow, reason):
     store = PostgresGamesStore(postgres_workflow.connections)
     h = encounter_harness(store)
