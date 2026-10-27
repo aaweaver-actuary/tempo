@@ -195,8 +195,11 @@ including its explicitly held receiving and day-only corrections. This practical
 branch remains local while those publication holds remain; it must not publish
 the held work through another branch. The wider provider/UI draft remains #519.
 Source/native evidence does not qualify an installed image or deployment resource
-isolation. Pure analysis-jobs contract packaging must be present in a later image;
-the native check used the explicit source path. No image build or live action ran.
+isolation. The exact pure analysis-jobs contract packaging from published
+`4c35eafd` is registered in Dockerfile, pyproject and lockfile; its metadata/path
+consistency check passed. The C runtime/routes/dispatcher are not activated.
+The native checks used the explicit source path; no image build, installation or
+live action ran, and installed-image qualification remains with release.
 
 Ordinary Study has no dependency on this optional operator. Existing
 64-route/128-physical capture guards are retained;
