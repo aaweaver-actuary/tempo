@@ -134,4 +134,24 @@ describe("product v0.2 shared wire", () => {
     payload.decision_presentations[0][field as string] = value;
     expect(() => RepertoireSnapshotSchema.parse(payload)).toThrow();
   });
+  it.each(["paused-introduction", "encounter-exception-introduction", "historical-review-priority"])("retains %s receipt fields alongside the legacy wire", name => {
+    const payload = fixture("game-detail-encounter-receipt");
+    payload.receipts[payload.receipts.length - 1] = fixture(`encounters/${name}`);
+    const value = GameDetailSchema.parse(payload);
+    expect(JSON.parse(JSON.stringify(value))).toEqual(payload);
+    expect("disposition" in value.receipts[0]).toBe(false);
+    expect("disposition" in value.receipts[1]).toBe(true);
+    if (!("disposition" in value.receipts[1])) throw new Error("encounter receipt was downcast");
+    expect(value.receipts[1].disposition).toBe(payload.receipts[1].disposition);
+    expect(value.receipts[1].admission_status).toBe(payload.receipts[1].admission_status);
+    expect(value.receipts[1].deferred_reason).toBe(payload.receipts[1].deferred_reason);
+    expect(() => Object.assign(value.receipts[1].key, { game_id: "changed" })).toThrow();
+  });
+  it.each(["invalid_admission", "unsupported_version", "missing_disposition"])("rejects %s instead of dropping encounter fields", fault => {
+    const payload = fixture("game-detail-encounter-receipt");
+    if (fault === "invalid_admission") payload.receipts[1].admission_status = "assumed_available";
+    else if (fault === "unsupported_version") payload.receipts[1].interface_version = "unsupported";
+    else delete payload.receipts[1].disposition;
+    expect(() => GameDetailSchema.parse(payload)).toThrow();
+  });
 });

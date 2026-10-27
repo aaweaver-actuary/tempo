@@ -230,6 +230,19 @@ under the targeted exception. Nested fixtures leave existing v0.2.0
 Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
 native persistence and normal-Study acceptance remain with their owning tasks.
 
+### Truthful Game Detail receipt reads
+
+The additive read projection accepts `EncounterReceipt | LearningReceipt` in
+`GameDetail.receipts`, with the more specific encounter subtype first. Python
+reuses the existing frozen receipt directly; the TypeScript parser mirrors that
+same wire type and deep-freezes its result. Both JSON and native-instance Python
+serialization retain disposition, actual admission, original detection/source,
+recorded observation and deferral fields. Legacy receipt JSON remains unchanged.
+An invalid/partial encounter receipt is rejected, never stripped/downcast into an
+apparently valid legacy result. `game-detail-encounter-receipt.json` is the shared
+mixed-receipt example. This changes no UI controller, admission policy, transport
+or broader analysis runtime; #490/#491 own adoption of the truthful read value.
+
 ## Synthetic examples and verification
 
 All [`fixtures/*.json`](fixtures) contain task-owned synthetic IDs/content:

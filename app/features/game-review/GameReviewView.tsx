@@ -5,7 +5,7 @@ import { Board } from "@tempo/board-ui";
 // The package's exported stylesheet; root package registration belongs to #491.
 import "../../../packages/board-ui/styles/board.css";
 import { Button } from "../../components/buttons/BaseButton";
-import type { Finding, GameDetail, GameSummary, LearningReceipt, ProviderSyncStatus, RecentGames } from "../product-api/contracts";
+import type { Finding, GameDetail, GameSummary, ProviderSyncStatus, RecentGames } from "../product-api/contracts";
 import type { GameReviewClient } from "./api";
 import { boardPosition, findingLabels, gamePositions, OperationKeys, OwnedRequests, receiptLabel } from "./state";
 import "./game-review.css";
@@ -31,7 +31,7 @@ function gameTime(game: GameSummary): string {
   return `${iso.slice(0, length).replace("T", " ")} UTC (${game.time_precision} precision)`;
 }
 
-function receiptFor(receipts: readonly LearningReceipt[], finding: Finding) {
+function receiptFor(receipts: GameDetail["receipts"], finding: Finding) {
   return receipts.find(receipt => receipt.key.provider === finding.provider && receipt.key.game_id === finding.game_id
     && receipt.key.occurrence_ply === finding.ply && receipt.key.decision_id === finding.decision_id && receipt.source_revision === finding.source_revision);
 }

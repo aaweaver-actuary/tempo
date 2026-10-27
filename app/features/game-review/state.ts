@@ -1,7 +1,7 @@
 import { Chess } from "chess.js";
 import type { BoardProps, Square } from "@tempo/board-ui";
 import { positionsFromMoves } from "../../hooks/use-board-history";
-import type { Finding, LearningReceipt } from "../product-api/contracts";
+import type { Finding, GameDetail } from "../product-api/contracts";
 
 export const findingLabels: Record<Finding["kind"], string> = {
   confirmed_miss: "Confirmed recall miss",
@@ -39,12 +39,15 @@ export function boardPosition(
   };
 }
 
-export function receiptLabel(receipt: LearningReceipt | null | undefined): string {
+export function receiptLabel(receipt: GameDetail["receipts"][number] | null | undefined): string {
   if (!receipt) return "No receiving-owner receipt";
-  if (["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome)) {
-    return `Feedback not applied: ${receipt.outcome.replaceAll("_", " ")}${receipt.reason ? ` — ${receipt.reason}` : ""}`;
-  }
-  return `Study feedback: ${receipt.status}${receipt.reason ? ` — ${receipt.reason}` : ""}`;
+  const status = ["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome)
+    ? `Feedback not applied: ${receipt.outcome.replaceAll("_", " ")}${receipt.reason ? ` — ${receipt.reason}` : ""}`
+    : `Study feedback: ${receipt.status}${receipt.reason ? ` — ${receipt.reason}` : ""}`;
+  if (!("admission_status" in receipt)) return status;
+  const disposition = receipt.disposition?.replaceAll("_", " ") ?? "unresolved";
+  const admission = receipt.admission_status === "available" ? "available for Study" : receipt.admission_status.replaceAll("_", " ");
+  return `${status} · Encounter ${receipt.observation_recorded ? "recorded" : "not recorded"} · Disposition: ${disposition} · Admission: ${admission}${receipt.deferred_reason ? ` · Deferred: ${receipt.deferred_reason.replaceAll("_", " ")}` : ""}`;
 }
 
 /** Feature-owned cancellation. Ignoring AbortSignal cannot publish an obsolete result. */
