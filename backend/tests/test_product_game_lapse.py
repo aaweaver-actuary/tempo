@@ -281,7 +281,8 @@ def encounter_owner():
     class Introductions:
         reason = None
         charges = 0
-        def admit_encounter(self, day, *, repertoire_id, decision_id):
+        def admit_encounter(self, day, *, repertoire_id, decision_id, target):
+            assert target.decision_id == decision_id and target.repertoire_id == repertoire_id
             if self.reason:
                 return SimpleNamespace(status='deferred', reason=self.reason)
             if store.facts.introduced_at is None:
@@ -292,7 +293,7 @@ def encounter_owner():
     store, decisions, clock, introductions = Store(), Current(), [NOW], Introductions()
     store.facts = replace(store.facts, introduced_at=None)
     service = EncounterFeedback(store, decisions, clock=lambda:clock[0], introductions=introductions,
-        introduction_policy=EncounterIntroductionPolicy('ordinary'))
+        introduction_policy=EncounterIntroductionPolicy('encounter_exception'))
     return store, decisions, clock, introductions, service, command
 
 
@@ -356,7 +357,7 @@ def test_correct_introduced_encounter_is_frequency_without_failure(encounter_own
 
 def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_original_intent(encounter_owner):
     store, _, clock, introductions, service, command = encounter_owner
-    introductions.reason = 'introduction_allowance'
+    introductions.reason = 'paused'
     first = service.accept_encounter(command)
     assert first.admission_status == 'pending' and first.available_by is None
     clock[0] += timedelta(days=1)
@@ -369,7 +370,7 @@ def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_o
     assert introductions.charges == 0 and store.card == before and store.saved is None and not store.reviews
 
 
-@pytest.mark.parametrize('reason', ['study_only','disabled','paused','zero_limit','introduction_allowance'])
+@pytest.mark.parametrize('reason', ['disabled','paused'])
 def test_encounter_explicit_controls_remain_pending_without_deadline(encounter_owner, reason):
     store, _, _, introductions, service, command = encounter_owner
     introductions.reason = reason
@@ -397,7 +398,38 @@ def test_encounter_active_attempt_and_unknown_policy_do_not_mutate(encounter_own
     service.introduction_policy = None
     service.maintain()
     assert service.encounter_status(command.key).reason == 'encounter_introduction_policy_pending'
-    service.introduction_policy = EncounterIntroductionPolicy('limited_reserve',1)
+    service.introduction_policy = EncounterIntroductionPolicy('encounter_exception')
+    introductions.reason = 'paused'
     service.maintain()
-    assert service.encounter_status(command.key).reason == 'encounter_reserve_capability_pending'
+    assert service.encounter_status(command.key).deferred_reason == 'paused'
     assert introductions.charges == 0 and not store.reviews and not store.queue
+
+
+def test_encounter_targeted_exception_delegates_exact_target_without_again(encounter_owner):
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    store,_,_,introductions,service,command=encounter_owner
+    service.introduction_policy=EncounterIntroductionPolicy('encounter_exception')
+    receipt=service.accept_encounter(command)
+    assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
+    assert introductions.charges==1 and not store.reviews and store.saved is None
+
+
+def test_encounter_old_allowance_capability_is_configuration_pending(encounter_owner):
+    store,_,_,introductions,service,command=encounter_owner
+    introductions.reason='study_only'
+    receipt=service.accept_encounter(command)
+    assert receipt.reason=='encounter_exception_capability_required' and receipt.deferred_reason is None
+    assert receipt.admission_status=='pending' and receipt.available_by is None
+    assert introductions.charges==0 and not store.reviews
+
+
+def test_encounter_status_reuses_existing_lapse_ledger_without_another_effect(owner):
+    from app.study.encounter_feedback import EncounterFeedback
+    store,decisions,clock,lapse_receiver=owner
+    command=fixture('lapse',GameLapse)
+    first=lapse_receiver.accept_lapse(command)
+    encounters=EncounterFeedback(store,decisions,clock=lambda:clock[0],introductions=None,introduction_policy=None)
+    status=encounters.encounter_status(command.key)
+    assert status.owner_receipt_id==first.owner_receipt_id and status.disposition=='existing_lapse'
+    assert status.observation=='missed' and status.observation_recorded
+    assert len(store.effects)==len(store.reviews)==1

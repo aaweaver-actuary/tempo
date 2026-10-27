@@ -189,7 +189,7 @@ The qualified first-release factory remains separately selectable.
 The concrete additive factory is
 `current_owner_encounter_feedback(database, retained_owner_capture=..., snapshot=...,
 clock=..., introductions=..., introduction_policy=...)` in the same database
-adapter. Compose #495's published `current_owner_introductions` / `admit_encounter`
+adapter. Compose #495's narrow `current_owner_encounter_introductions` / `admit_encounter`
 capability on that exact borrowed writer. Only the actual current introduction
 field may differ from the retained capture during priority validation; definition,
 revision, legal executable, route, source generations and membership remain fenced.
@@ -206,24 +206,57 @@ races and recomparison; a later `GameLapse` for the same semantic event receives
 the original receipt instead of converting it to Again. Genuine later Study
 completion can settle queue debt without deleting the retained observation.
 
-`EncounterIntroductionPolicy` requires an explicit `ordinary` or `limited_reserve`
-input. No live default is chosen. The published capability currently implements
-ordinary allowance; an absent policy or unsupported reserve remains pending.
-Disabled/pause/Study-only/zero controls remain with #495. Pending admission never
-claims an availability deadline; original detection stays in the receipt/storage.
-#495 currently returns a generic `deferred` result, so its actual disabled-control
-subreason remains generic unless that owner supplies a typed reason. No override
-or unconditional 48-hour promise is implied.
+`EncounterIntroductionPolicy` requires an explicit `ordinary` or
+`encounter_exception` input. Andy selected the targeted exception for this next
+release: genuine game encounters may first-introduce despite exhausted/zero
+ordinary allowance and Study-only. Saved caps and Study-only are never changed;
+unrelated ordinary introductions retain their controls. Explicit full Study pause,
+active attempts, burial, maintenance/source/definition/identity/legality/conflict
+guards still apply. The canonical introduction owner implements these controls;
+the receiver delegates them and retains its typed pending reason. Pending admission
+never claims an availability deadline; original detection stays stored.
+
+Compose the narrow #495 capability explicitly:
+
+```python
+policy = EncounterIntroductionPolicy("encounter_exception")
+introductions = current_owner_encounter_introductions(
+    borrowed_database, allowance=policy.allowance, paused=actual_full_study_pause,
+    conflicts=optional_study_conflict_store,
+)
+# Pass introductions and policy to current_owner_encounter_feedback above.
+```
+
+It receives the exact current shared mapping as `admit_encounter(..., target=...)`.
+The retained-owner factory translates only its already-fenced source revision to
+the target API's `scope_source_revision + 1` convention. Definition, position,
+response, physical identity and route scope are preserved; no source or mapping
+authority is invented.
+
+The retained schema through 051 and `services/study_mode.py` expose ordinary caps
+and Study-only, with no separate installation-wide full-Study-pause field. That
+verified absence is different from unreadable admission controls. The supplied
+`paused` Boolean comes from the caller's whole-operation admission decision;
+zero cap and Study-only never imply it. Existing
+`activity_gate.check_background_admission()` and the background database section
+in `tempo_legacy_database.connections.connection(background=True)` retain
+foreground admission, including denial on unavailable configured control evidence.
+Only an admitted operation can pass `paused=False`; a rejected/unknown admission
+retains its durable delivery without constructing a mutation capability. No new
+pause service, schema or UI is introduced. The #491 dedicated connection's bounded
+timeouts alone do not establish this foreground/control gate; its actual caller
+wiring remains that integration owner's acceptance boundary.
 
 The receiver adds **no DDL**: schema051 `payload_json` carries the immutable shared
 encounter command and a small mutable owner admission section. #495's broader
 `5f87902f` capability needs unregistered charge/period/rotation/ranking tables;
-this branch does not consume that full feature. A narrow admission capability
-using existing canonical state and this effect transaction is being supplied by
-that owner. Actual first-introduction/native composition remains pending its
-published checkpoint. No migration is allocated here. Larger-than-bound current
-sources still defer; small fixtures do not establish support for an arbitrary
-installed repertoire.
+this branch does not consume that full feature. The narrow
+`current_owner_encounter_introductions` capability instead uses existing canonical
+card/queue introduction facts and this effect transaction, with no ranking,
+charge, rotation or new DDL dependency. Exact published dependency bytes are
+assembled only for the native source proof and recorded in its manifest; broader
+D migrations are not installed. Source discovery/target bounds still defer safely;
+small fixtures do not establish support for an arbitrary installed repertoire.
 
 `product_game_encounter` is a distinct queue priority label, with a clean attempt
 state. The shared `queue_ordering._priority_projection` needs to recognize it

@@ -230,10 +230,23 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture, snapsh
                                      introductions, introduction_policy):
     """Additive next-release factory on the same borrowed writer transaction.
 
-    Compose #495's current_owner_introductions capability externally. No new
+    Compose #495's current_owner_encounter_introductions externally. No new
     schema, connection, commit, live policy default or producer lifecycle.
     """
     from app.study.encounter_feedback import EncounterFeedback
-    return EncounterFeedback(PostgresGameFeedbackStore(database),
-        CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot),
-        clock=clock,introductions=introductions,introduction_policy=introduction_policy)
+    decisions = CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot)
+
+    class RetainedIntroductionTarget:
+        def admit_encounter(self, day, *, repertoire_id, decision_id, target):
+            # Retained snapshots label mappings with graph generation; #495's
+            # exact current-target API uses source revision + 1. Both are actual
+            # facts checked under the same source fence above, not a guessed
+            # revision or new physical mapping. Preserve every decision field.
+            current = target.model_copy(update={
+                'repertoire_revision': decisions.authority.scope_source_revision + 1})
+            return introductions.admit_encounter(day,repertoire_id=repertoire_id,
+                                                decision_id=decision_id,target=current)
+
+    return EncounterFeedback(PostgresGameFeedbackStore(database), decisions,
+        clock=clock,introductions=RetainedIntroductionTarget() if introductions is not None else None,
+        introduction_policy=introduction_policy)

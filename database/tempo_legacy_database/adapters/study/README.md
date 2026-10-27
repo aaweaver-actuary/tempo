@@ -33,8 +33,13 @@ miss/frequency provenance remain distinguishable in the original command.
 `current_owner_encounter_feedback` adds priority-only validation. It permits only
 the current introduction field to race delivery while preserving all existing
 definition/source/membership fences. Its injected #495 introduction capability
-retains the sole canonical writer and its own existing private storage dependency;
-that dependency is documented by the [receiving owner](../../../../backend/app/study/README.md#next-release-encounter-importance-and-first-introduction).
+retains the sole canonical writer and reads existing canonical introduction facts;
+the targeted capability requires no D charge/rotation/ranking tables. The
+retained source revision is converted only to that capability's explicit
+`scope_source_revision + 1` mapping-version convention. Definition, physical
+identity and route fields remain unchanged; that actual source revision is already
+checked against current rows in the same transaction. The boundary is documented
+by the [receiving owner](../../../../backend/app/study/README.md#next-release-encounter-importance-and-first-introduction).
 
 There are deliberately no foreign keys to cards/reviews/queue: deletion or future
 presentation rebinding must not cascade away owed evidence. Card and review IDs

@@ -25,26 +25,23 @@ class EncounterAuthorityUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class EncounterIntroductionPolicy:
-    """Explicit unresolved installation choice, never a default live override.
+    """Explicit owner input; targeted exceptions never change saved settings.
 
-    The currently published admission capability implements ordinary allowance.
-    A reserve request remains pending until that owner supports its explicit
-    bound. Neither choice authorizes bypassing disabled/pause/Study-only controls.
+    Real-game first introductions may bypass ordinary caps and Study-only. Full
+    pause and current owner safety/authority guards remain effective. The
+    canonical admission capability implements these controls, not this receiver.
     """
-    allowance: Literal["ordinary", "limited_reserve"]
-    reserve_limit: int = 0
+    allowance: Literal["ordinary", "encounter_exception"]
 
     def __post_init__(self):
-        if (self.allowance not in {"ordinary", "limited_reserve"}
-                or type(self.reserve_limit) is not int or self.reserve_limit < 0
-                or (self.allowance == "ordinary" and self.reserve_limit != 0)
-                or (self.allowance == "limited_reserve" and not 1 <= self.reserve_limit <= 64)):
-            raise ValueError("explicit allowance policy and bounded reserve required")
+        if self.allowance not in {"ordinary", "encounter_exception"}:
+            raise ValueError("explicit ordinary or targeted encounter exception required")
 
 
 class EncounterIntroductions(Protocol):
     """#495's existing canonical writer; receiver and capability share one tx."""
-    def admit_encounter(self, day: str, *, repertoire_id: str, decision_id: str) -> CommitResult: ...
+    def admit_encounter(self, day: str, *, repertoire_id: str, decision_id: str,
+                        target: DecisionPresentation) -> CommitResult: ...
 
 
 class CurrentEncounterPort(CurrentDecisionPort, Protocol):
@@ -102,7 +99,7 @@ class EncounterFeedback(GameFeedback):
     def encounter_status(self, key):
         effect = self.store.get(key)
         # A key-only control tombstone has no encounter facts to report yet.
-        return self._encounter_receipt(effect, effect.encounter, "duplicate") if effect and effect.encounter else None
+        return self._encounter_receipt(effect, effect.encounter, "duplicate") if effect and (effect.encounter or effect.lapse) else None
 
     def accept_encounter(self, command: GameEncounter) -> EncounterReceipt:
         now = instant(self.clock())
@@ -166,13 +163,15 @@ class EncounterFeedback(GameFeedback):
             policy = self.introduction_policy
             if policy is None or self.introductions is None:
                 return replace(effect, admission_status="pending", reason="encounter_introduction_policy_pending")
-            if policy.allowance != "ordinary":
-                return replace(effect, admission_status="pending", reason="encounter_reserve_capability_pending")
+            if policy.allowance != "encounter_exception":
+                return replace(effect, admission_status="pending", reason="encounter_exception_policy_required")
             result = self.introductions.admit_encounter(day,
-                repertoire_id=mapping.repertoire_id, decision_id=mapping.decision_id)
+                repertoire_id=mapping.repertoire_id, decision_id=mapping.decision_id, target=mapping)
             if result.status not in {"introduced", "already_introduced", "replayed"}:
                 reason = getattr(result, "reason", None)
-                known = {"study_only", "disabled", "paused", "zero_limit", "introduction_allowance"}
+                if reason in {"study_only", "zero_limit", "introduction_allowance"}:
+                    return replace(effect, admission_status="pending", reason="encounter_exception_capability_required")
+                known = {"disabled", "paused", "active_attempt", "authority_unavailable"}
                 return replace(effect, admission_status="pending", reason=reason or "encounter_introduction_deferred",
                                deferred_reason=reason if reason in known else None)
             # A concurrent ordinary introduction is current state, never a new
