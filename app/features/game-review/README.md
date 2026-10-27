@@ -29,6 +29,14 @@ Study; a UI UUID never authorizes a second lapse. Error and pending states stay
 in this feature. `LearningReceipt` is displayed verbatim: `applied` does not prove
 queue availability, and `available_by` is a deadline rather than completion.
 
+The separate next-release encounter display accepts #482's shared receipt union.
+Legacy `LearningReceipt` labels remain unchanged. `EncounterReceipt` additionally
+shows whether the encounter was recorded, the Study owner's disposition, actual
+admission status and explicit deferral reason. Recorded importance, `status=applied`
+and a pending first introduction do not imply availability. Only an actual
+`admission_status=available` is labeled available for Study. This display changes
+no admission/retry policy and is independent of operator history-to-Study proof.
+
 `onReviewGap` emits a repertoire navigation intent naming the original finding;
 it grants no content mutation. The injected API has no Study reset/start/save,
 card-creation, SQL, browser-storage or engine capability.
@@ -41,7 +49,7 @@ flowchart LR
   Composition --> HTTP["api.ts: injected fetch adapter"]
   View --> Port["GameReviewClient: read / explicit sync / retry"]
   HTTP -. implements .-> Port
-  HTTP --> DTO["#482 factual DTO validation"]
+  HTTP --> DTO["#482 factual values + LearningReceipt / EncounterReceipt union"]
   View --> Board["@tempo/board-ui: supplied read-only FEN"]
   View --> Replay["state.ts: original move replay"]
   View --> Intent["Repertoire navigation intent"]

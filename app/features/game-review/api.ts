@@ -1,5 +1,5 @@
 import {
-  GameDetailSchema, RecentGamesSchema, ProviderSyncStatusSchema, LearningReceiptSchema,
+  GameDetailSchema, RecentGamesSchema, ProviderSyncStatusSchema, GameReviewReceiptSchema,
   type GameSummary, type GameReviewApi,
 } from "../product-api/contracts";
 
@@ -41,6 +41,6 @@ export function createGameReviewApi({ endpoints, fetch: fetchRequest = globalThi
     recentGames: ({ signal } = {}) => request(endpoints.recentGames, RecentGamesSchema, signal),
     gameDetail: ({ signal, ...selection }) => request(endpoints.gameDetail(selection), GameDetailSchema, signal),
     sync: ({ signal, ...command }) => request(endpoints.sync, ProviderSyncStatusSchema, signal, command),
-    retryFeedback: ({ signal, ...command }) => request(endpoints.retryFeedback, LearningReceiptSchema, signal, command),
+    retryFeedback: ({ signal, ...command }) => request(endpoints.retryFeedback, GameReviewReceiptSchema, signal, command),
   };
 }

@@ -6,10 +6,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { BoardProps } from "@tempo/board-ui";
 import { GameReviewView } from "../../app/features/game-review/GameReviewView";
 import { createGameReviewApi, type GameReviewClient } from "../../app/features/game-review/api";
-import { boardPosition, findingLabels, gamePositions } from "../../app/features/game-review/state";
-import { FindingSchema, GameDetailSchema, LearningReceiptSchema, type Finding, type GameDetail, type LearningReceipt } from "../../app/features/product-api/contracts";
+import { boardPosition, findingLabels, gamePositions, receiptLabel } from "../../app/features/game-review/state";
+import { FindingSchema, GameDetailSchema, LearningReceiptSchema, EncounterReceiptSchema, type Finding, type GameDetail, type LearningReceipt, type EncounterReceipt } from "../../app/features/product-api/contracts";
 import confirmedFixture from "../../contracts/product-v02/fixtures/confirmed-introduced-miss.json";
 import heldFixture from "../../contracts/product-v02/fixtures/held-receipt.json";
+import pausedEncounterFixture from "../../contracts/product-v02/fixtures/encounters/paused-introduction.json";
 import { useTrainingStore } from "../../app/state/training-store";
 
 const { boards } = vi.hoisted(() => ({ boards: [] as BoardProps[] }));
@@ -35,6 +36,10 @@ function finding(kind: Finding["kind"], ply = 1): Finding {
 function receipt(status: LearningReceipt["status"] = "pending", target = finding("confirmed_miss")): LearningReceipt {
   return LearningReceiptSchema.parse({ ...heldFixture.payload, source_revision: target.source_revision, status, outcome: "accepted", reason: null,
     key: { ...heldFixture.payload.key, provider: target.provider, game_id: target.game_id, decision_id: target.decision_id, occurrence_ply: target.ply } });
+}
+function encounterReceipt(overrides: Partial<EncounterReceipt> = {}, target = finding("confirmed_miss")): EncounterReceipt {
+  return EncounterReceiptSchema.parse({ ...pausedEncounterFixture.payload, key: receipt("pending", target).key,
+    source_revision: target.source_revision, source_digest: target.source_digest, ...overrides });
 }
 function detail(overrides: Partial<GameDetail> = {}): GameDetail {
   return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings: [finding("confirmed_miss")], receipts: [], ...overrides });
@@ -173,6 +178,41 @@ it("shows explicit stale/conflicting owner failure", async () => {
   await selectFirst(); await readyBoard();
   expect(screen.getByText("Feedback not applied: stale revision — Source changed")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
+});
+
+const encounterLabelCases: { name: string; fields: Partial<EncounterReceipt>; expected: readonly string[] }[] = [
+  { name: "recorded importance still awaiting review admission", fields: { status: "applied", disposition: "review_priority", admission_status: "pending", deferred_reason: "active_attempt", reason: null }, expected: ["Study feedback: applied", "Encounter recorded", "Disposition: review priority", "Admission: pending", "Deferred: active attempt"] },
+  { name: "paused first introduction remains pending", fields: {}, expected: ["Disposition: first introduction", "Admission: pending", "Deferred: paused"] },
+  { name: "actual first-introduction admission is available", fields: { status: "applied", admission_status: "available", deferred_reason: null, reason: null }, expected: ["Disposition: first introduction", "Admission: available for Study"] },
+  { name: "matched frequency has no requested admission", fields: { status: "applied", observation: "matched", disposition: "frequency_only", admission_status: "not_requested", deferred_reason: null, reason: null }, expected: ["Encounter recorded", "Disposition: frequency only", "Admission: not requested"] },
+  { name: "settled review admission", fields: { status: "settled", disposition: "review_priority", admission_status: "settled", deferred_reason: null, reason: null }, expected: ["Study feedback: settled", "Disposition: review priority", "Admission: settled"] },
+  { name: "unrecorded unresolved chronology", fields: { observation_recorded: false, disposition: null, deferred_reason: "unknown_chronology", reason: null }, expected: ["Encounter not recorded", "Disposition: unresolved", "Admission: pending", "Deferred: unknown chronology"] },
+  { name: "held conflicting source", fields: { status: "held", outcome: "conflict", disposition: null, deferred_reason: "authority_unavailable", reason: "Source changed" }, expected: ["Feedback not applied: conflict — Source changed", "Disposition: unresolved", "Admission: pending", "Deferred: authority unavailable"] },
+];
+it.each(encounterLabelCases)("labels owner encounter receipt: $name", ({ fields, expected }) => {
+  const value = encounterReceipt(fields);
+  const label = receiptLabel(value);
+  for (const text of expected) expect(label).toContain(text);
+  if (value.admission_status !== "available") expect(label).not.toContain("available for Study");
+  expect(label).not.toContain("scheduled");
+});
+
+it("renders the shared encounter/legacy receipt union and retains subtype fields on HTTP retry", async () => {
+  const introduced = finding("confirmed_miss");
+  const unintroduced = finding("known_unintroduced", 2);
+  const pending = encounterReceipt({}, unintroduced);
+  const retried = encounterReceipt({ disposition: "review_priority", deferred_reason: "active_attempt", reason: null }, introduced);
+  const fetchRequest = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ games: [firstSummary], sync: idleSync }), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify(detail({ findings: [introduced, unintroduced], receipts: [receipt("applied"), pending] })), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify(retried), { status: 200 }));
+  const api = createGameReviewApi({ endpoints: { recentGames: "/games", gameDetail: () => "/detail", sync: "/sync", retryFeedback: "/feedback" }, fetch: fetchRequest });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  expect(screen.getByText("Study feedback: applied")).toBeTruthy();
+  expect(screen.getByText(receiptLabel(pending))).toBeTruthy();
+  expect(screen.getByText("Card not introduced").closest("li")?.textContent).not.toContain("available for Study");
+  const returned = await api.retryFeedback({ finding: introduced, operation_id: "same-operation", signal: new AbortController().signal });
+  expect(returned).toEqual(retried);
 });
 
 it("preserves provider operation identity on retry and isolates failure from Study", async () => {
