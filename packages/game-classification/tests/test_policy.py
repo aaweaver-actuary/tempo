@@ -77,6 +77,22 @@ def test_introduction_after_game_remains_a_non_lapse_encounter(played):
         "known_unintroduced", "introduction_not_before_game")
 
 
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+def test_day_only_negative_introduction_proof_preserves_factual_encounter(played):
+    assert classify(played_uci=played, introduced=None, introduced_at=None,
+                    introduced_before_game=False) == ("known_unintroduced", "introduction_not_before_game")
+
+
+@pytest.mark.parametrize("played", ["e2e4", "d2d4"])
+@pytest.mark.parametrize("proof", [None, True])
+def test_unknown_day_only_introduction_cannot_become_a_lapse(played, proof):
+    finding = classify(played_uci=played, introduced=None, introduced_at=None, introduced_before_game=proof)
+    if played == "e2e4":
+        assert finding is None
+    else:
+        assert finding == ("known_unavailable", "introduction_evidence_unavailable")
+
+
 def test_correct_already_introduced_move_has_no_failure_finding():
     assert classify(played_uci="e2e4") is None
 

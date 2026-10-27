@@ -48,3 +48,13 @@ and unintroduced/later-introduced current state. It preserves the exact source,
 one-based key occurrence, route-local mapping, original detection/occurrence time
 and caller values. It does not implement command delivery, owner disposition or
 receipt/admission policy.
+
+Day-only correction: the two #488 retained-history failures (correct play omitted,
+different play classified unavailable) are reproduced in the pure regular suite.
+`test_retained_day_only_negative_proof_preserves_source_and_fact` retains exact
+source/card/played facts and a typed non-lapse GameEncounter for Lichess and the
+known retained Chess.com namespaces. `test_retained_day_only_negative_proof_rejects_changed_source`
+keeps provider/game/revision/digest mismatches unknown. The owning policy cases
+honor only the already-scoped negative assertion; missing/positive proof with an
+unknown introduction date cannot become a lapse. No current introduction enum or
+timestamp is fabricated. Actual native integration remains #488's owning check.
