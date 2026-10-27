@@ -1,0 +1,23 @@
+.repertoire-review { --review-border: var(--border, #ddd); max-width: 1440px; margin: 0 auto; padding: clamp(12px, 2vw, 28px); }
+.repertoire-review-header, .repertoire-review-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.repertoire-review-header { justify-content: space-between; margin-bottom: 18px; }
+.repertoire-review-workspace { display: grid; grid-template-columns: minmax(160px, 230px) minmax(0, 1fr); gap: 20px; padding-top: 18px; }
+.repertoire-review-workspace nav ul { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.repertoire-review-workspace nav button { text-align: left; width: 100%; white-space: normal; }
+.repertoire-review-workspace nav button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 1px; }
+.repertoire-review-detail, .repertoire-review-proposal, .repertoire-review article { min-width: 0; }
+.repertoire-review-board { max-width: 560px; margin-bottom: 22px; }
+.repertoire-review p, .repertoire-review code, .repertoire-review pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.repertoire-review fieldset { display: grid; gap: 12px; border: 1px solid var(--review-border); padding: 16px; margin: 20px 0; }
+.repertoire-review input:not([type="checkbox"]), .repertoire-review select { padding: 8px; max-width: 100%; color: inherit; background: transparent; border: 1px solid var(--review-border); border-radius: 6px; }
+.repertoire-review-approval { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; }
+.repertoire-review small { display: block; margin-top: 10px; }
+.repertoire-review table { width: 100%; table-layout: fixed; }
+.repertoire-review td, .repertoire-review th { vertical-align: top; padding: 8px; text-align: left; }
+.repertoire-review :focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+@media (max-width: 720px) {
+  .repertoire-review-workspace { grid-template-columns: minmax(0, 1fr); }
+  .repertoire-review-workspace nav ul { display: flex; flex-wrap: wrap; }
+  .repertoire-review-workspace nav button { width: auto; }
+  .repertoire-review .ui-tabs { overflow-x: auto; }
+}

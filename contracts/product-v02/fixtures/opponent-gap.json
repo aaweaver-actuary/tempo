@@ -1,0 +1,25 @@
+{
+  "model": "Finding",
+  "payload": {
+    "interface_version": "0.2.0",
+    "kind": "opponent_gap",
+    "provider": "lichess",
+    "game_id": "synthetic-game",
+    "source_revision": 1,
+    "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ply": 2,
+    "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+    "expected_uci": [],
+    "played_uci": "c7c5",
+    "repertoire_id": "white",
+    "repertoire_revision": 1,
+    "decision_id": null,
+    "presentation_id": null,
+    "presentation_revision": null,
+    "introduced_before_game": null,
+    "membership": "absent",
+    "lapse_eligible": false,
+    "diagnostic": "opponent_move_not_authored",
+    "reentry_authority_id": null
+  }
+}

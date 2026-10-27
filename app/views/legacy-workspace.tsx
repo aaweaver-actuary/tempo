@@ -15,6 +15,7 @@ import { useTrainingStore } from "../state/training-store";
 import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import { View } from "../types";
+import { RepertoireAuditMount } from "../features/product-api/RepertoireAuditMount";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
 const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 const CardEditor = lazy(() => import("./card_editor"));
@@ -197,6 +198,11 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
               />,
     content: <>
         {currentView === "repertoire" && (
+          <RepertoireAuditMount apiUrl={API_URL} request={fetch} onNavigate={intent => {
+            if (intent.kind === "import") setShowImport(true);
+            else if (intent.kind === "settings") changeWorkspace("settings");
+            else if (intent.kind === "manual_edit") setShowTree(true);
+          }}>
           <RepertoireView
             theme={boardTheme}
             pieceSet={pieceSet}
@@ -209,6 +215,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
             onRenameLocal={renameLocalRepertoire}
             onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
           />
+          </RepertoireAuditMount>
         )}
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />

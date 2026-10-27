@@ -1,0 +1,104 @@
+{
+  "model": "JoinPlan",
+  "payload": {
+    "interface_version": "0.2.0",
+    "plan_id": "synthetic-join",
+    "expected_study_revision": 7,
+    "left": {
+      "interface_version": "0.2.0",
+      "presentation_id": "existing-A",
+      "revision": 1,
+      "repertoire_id": "white",
+      "repertoire_revision": 1,
+      "variant": "standard",
+      "learner_color": "white",
+      "route_id": "route-a",
+      "components": [
+        {
+          "decision_id": "decision-e4",
+          "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+          "response_uci": "e2e4",
+          "resulting_position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -"
+        }
+      ],
+      "opponent_cues": [],
+      "clean_streak": 3,
+      "introduced": true,
+      "lineage": [],
+      "recorded_parent_id": null
+    },
+    "right": {
+      "interface_version": "0.2.0",
+      "presentation_id": "existing-B",
+      "revision": 2,
+      "repertoire_id": "white",
+      "repertoire_revision": 1,
+      "variant": "standard",
+      "learner_color": "white",
+      "route_id": "route-a",
+      "components": [
+        {
+          "decision_id": "decision-nf3",
+          "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+          "response_uci": "g1f3",
+          "resulting_position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -"
+        }
+      ],
+      "opponent_cues": [],
+      "clean_streak": 3,
+      "introduced": true,
+      "lineage": [],
+      "recorded_parent_id": "existing-A"
+    },
+    "connecting_cues": [
+      {
+        "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "move_uci": "e7e5",
+        "resulting_position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -"
+      }
+    ],
+    "result": {
+      "interface_version": "0.2.0",
+      "presentation_id": "combined-AB",
+      "revision": 1,
+      "repertoire_id": "white",
+      "repertoire_revision": 1,
+      "variant": "standard",
+      "learner_color": "white",
+      "route_id": "route-a",
+      "components": [
+        {
+          "decision_id": "decision-e4",
+          "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+          "response_uci": "e2e4",
+          "resulting_position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -"
+        },
+        {
+          "decision_id": "decision-nf3",
+          "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+          "response_uci": "g1f3",
+          "resulting_position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -"
+        }
+      ],
+      "opponent_cues": [
+        {
+          "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+          "move_uci": "e7e5",
+          "resulting_position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -"
+        }
+      ],
+      "clean_streak": 0,
+      "introduced": true,
+      "lineage": [
+        "existing-A",
+        "existing-B"
+      ],
+      "recorded_parent_id": null
+    },
+    "resulting_clean_streak": 0,
+    "introduction_slots": 0,
+    "unresolved_obligation_ids": [
+      "existing-game-obligation"
+    ]
+  }
+}
