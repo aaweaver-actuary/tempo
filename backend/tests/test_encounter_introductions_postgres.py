@@ -254,3 +254,19 @@ def test_encounter_exception_races_ordinary_admission_on_same_physical_card_once
         assert tuple(database.execute('SELECT * FROM cards WHERE id=?',(card,)).fetchone()) == actual
         assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?',(card,)).fetchone()[0] == 1
         assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?',(card,)).fetchone()[0] == 0
+
+
+def test_encounter_capability_never_loads_weighted_allocation_or_store(encounter_case,monkeypatch):
+    import builtins
+    transaction,repertoire,card,mapping = encounter_case
+    original = builtins.__import__
+    def guarded(name,*args,**kwargs):
+        if name in {'app.study.introductions.application','app.study.introductions.ports',
+                    'app.study.introductions.policy','app.contracts.product_v02.analysis'} or name.endswith('.product_introductions'):
+            raise AssertionError('weighted runtime loaded by canonical encounter: '+name)
+        return original(name,*args,**kwargs)
+    with transaction() as database:
+        target = mapping(database)
+        with monkeypatch.context() as imports:
+            imports.setattr(builtins,'__import__',guarded)
+            assert admit(database,target,allowance='encounter_exception').status == 'introduced'

@@ -168,14 +168,14 @@ class CurrentEncounterIntroductions:
 
     def admit_encounter(self, day, *, repertoire_id, decision_id, target=None):
         from app.contracts.product_v02.repertoire import DecisionPresentation
-        from app.study.introductions.application import (CommitResult, Introductions,
+        from app.study.introductions.encounter import (CommitResult, validate_study_day,
             introduction_is_held, encounter_allowance, target_alternatives)
         from tempo_legacy_database.adapters.queue_refresh.application import seeding
         from tempo_game_evidence_contracts.legacy import decision_identity
         from tempo_evidence_math import opening_position_key
         import chess
         import json
-        Introductions._day(day)
+        validate_study_day(day)
         if self.database.read_only or self.database.raw.info.transaction_status.name != 'INTRANS':
             raise CurrentIntroductionUnavailable('borrowed_writer_transaction_required')
         if self.paused:

@@ -37,6 +37,10 @@ and introduces no DDL. The caller's existing game-effect receipt owns delivery
 idempotency, replay and projection recovery; the capability neither saves a
 second effect receipt nor commits independently. Canonical already-introduced
 state returns `already_introduced` without consuming another slot.
+Its pure guards and result live in [encounter.py](encounter.py) and
+[results.py](results.py); the capability never imports the weighted application,
+ports/policy, ranking DTO or private store at runtime. The weighted application
+retains compatible result/helper exports for its existing consumers.
 
 The required allowance choice is either `"ordinary"` or `"encounter_exception"`.
 The latter implements the explicitly approved real-game exception to ordinary
