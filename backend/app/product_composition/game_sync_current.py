@@ -3,7 +3,7 @@
 Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
-from app.games.feedback.review import ReviewUnavailable
+from app.games.feedback.interfaces import ReviewUnavailable
 from app.contracts.product_v02.learning import EncounterFeedbackPort
 from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_published_snapshot
 from tempo_legacy_database.adapters.games.product_review import (

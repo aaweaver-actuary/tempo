@@ -9,7 +9,7 @@ from tempo_evidence_math.interfaces import LearnerPolicy, move_universe
 
 from app.analysis.coverage.interfaces import AnalysisLimits, PersonalGame, rank_candidates, rank_coverage
 from app.analysis.jobs.interfaces import AnalysisFence, AnalysisPublications, Cancellation, PreparedAnalysis
-from app.analysis.jobs.stockfish import EngineBridgeUnavailable
+from app.product_composition.stockfish_bridge import EngineBridgeUnavailable
 from app.analysis.proposals.interfaces import CapabilityUnavailable, ProposalCoordinator
 from app.analysis.probability.interfaces import ExplorerProbabilityProvider, ExplorerRequest
 from app.analysis.similarity.interfaces import RetrievalRequest, retrieve

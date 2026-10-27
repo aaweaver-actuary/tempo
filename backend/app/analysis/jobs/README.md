@@ -196,3 +196,11 @@ will be reserved separately when their checkpoint can use a short root window.
 The pending named browser command is `make ui-file
 FILE=product-repertoire-review.spec.ts` on task-owned fixtures; no browser pass is
 claimed before that file, root binding and resources exist.
+
+The concrete Python `StockfishBridge` now lives in
+[`product_composition/stockfish_bridge.py`](../../product_composition/stockfish_bridge.py).
+Its one-shot transport, finite cleanup and canonical evidence behavior are
+unchanged. The jobs component owns the generic preparation/publication lifecycle;
+composition selects the concrete process bridge and supplies its semantic engine
+capability. No domain imports a composition root and no compatibility back-import
+remains.

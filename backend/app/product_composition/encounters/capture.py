@@ -6,7 +6,7 @@ from app.contracts.product_v02.games import Finding
 from app.contracts.product_v02.learning import GameEncounter
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot
 from app.games.feedback.comparison import compare_game
-from app.games.feedback.coordinator import project_encounters
+from app.games.feedback.interfaces import project_encounters
 from app.repertoire.interfaces import build_index, project_capture
 
 from ..feedback_commands import retained_time_precision

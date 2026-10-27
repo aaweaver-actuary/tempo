@@ -21,7 +21,10 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@tempo/board-ui": ["./packages/board-ui/src/index.ts"]
+      "@tempo/board-ui": ["./packages/board-ui/src/index.ts"],
+      "@tempo/board-ui/interfaces": ["./packages/board-ui/src/interfaces/index.ts"],
+      "@tempo/chess-line/interfaces": ["./packages/chess-line/src/interfaces/index.ts"],
+      "@tempo/study-session/interfaces": ["./packages/study-session/src/interfaces/index.ts"]
     }
   },
   "include": [

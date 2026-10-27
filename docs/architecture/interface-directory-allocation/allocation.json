@@ -1302,7 +1302,7 @@
       ],
       "source": "Per-owner caller patches and legacy package-root aliases",
       "operation": "Apply exact qualified import-only caller changes, map actual implementations in #482 guard, then retire each compatibility alias after all declared callers and negative controls pass.",
-      "status": "18 Python callers adopted across repertoire, Games, Analysis and infrastructure; owner surface integration continues"
+      "status": "Published root/caller adoption checkpoint; two further Games root imports migrated, package interface subpaths registered/compiled/imported. Six-file frontend caller patch prepared separately."
     }
   ],
   "additional_integration_files": [
@@ -1321,7 +1321,12 @@
     "packages/chess-line/package.json",
     "packages/study-session/package.json",
     "app/features/product-api/RepertoireAuditMount.tsx",
-    "app/features/product-api/repertoire-review-api.ts"
+    "app/features/product-api/repertoire-review-api.ts",
+    "backend/app/product_composition/stockfish_bridge.py",
+    "backend/app/analysis/jobs/stockfish.py",
+    "backend/app/product_composition/encounters/capture.py",
+    "backend/app/product_composition/game_sync_current.py",
+    "backend/tests/test_product_analysis_integration.py"
   ],
   "boundary_status": "Source map registered for all 26 logical groups; missing owner surfaces and legacy import/table ownership violations fail closed. Empty tables grant no mutation authority. This is not a passing whole-repository guard claim."
 }

@@ -21,7 +21,7 @@ from tempo_evidence_math import LearnerPolicy, LearnerPolicyAction, opening_posi
 from app.analysis.coverage.ports import AnalysisLimits
 from app.analysis.jobs.application import AnalysisRunner
 from app.analysis.jobs.ports import AnalysisFence
-from app.analysis.jobs.stockfish import EngineBridgeUnavailable, StockfishBridge
+from app.product_composition.stockfish_bridge import EngineBridgeUnavailable, StockfishBridge
 from app.analysis.probability.explorer import ExplorerClient
 from app.contracts.product_v02.analysis import (CandidateEvaluation, EngineContext, EngineEvidence,
     PopulationSelection, ProposalDecision)

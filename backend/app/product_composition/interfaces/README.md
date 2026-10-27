@@ -9,6 +9,9 @@ never import composition. The namespace eagerly loads no optional feature.
   the retained coordinator and storage writer, registers the same fifteen durable
   and three maintenance handlers once, and releases partially started resources.
   No API module is imported to register handlers.
+- Private `stockfish_bridge.py` retains the unchanged bounded Python-to-owned-worker
+  transport. Composition supplies it through the existing semantic engine port;
+  the generic Analysis runner no longer owns this process adapter.
 - Private `readiness.py` binds the existing bounded storage/one-second Celery
   observations to `app.operations.interfaces.evaluate_readiness` and HTTP503.
 
