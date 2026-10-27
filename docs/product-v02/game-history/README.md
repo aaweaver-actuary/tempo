@@ -13,6 +13,9 @@ or full-history migration. It does not activate a live history pass.
   reads at most the selected game bound plus one sentinel from `imported_games`.
   Pages use stable canonical IDs and preserve `adaptive_excluded`. Cast/query
   failure is an unavailable preview, never a successful empty result.
+  Older rows without the provider ID required by the existing source-owner lock
+  remain visible as `retained_provider_identity_unavailable`; they are counted
+  unknown and cannot authorize an encounter effect.
 - [Composition](../../../backend/app/product_composition/game_history.py) reuses
   `capture_game` and #488's public `prepare_captured_encounters` assembly from
   the qualified first path. That owner supplies the current validated
@@ -170,6 +173,15 @@ At local executable **`38693c6da56a140938f4e0cf5412e222395f3f08`**:
   first genuine target review without a fabricated Again. Unknown control and
   foreground states deferred before work; unrelated optional tasks stayed paused.
 - Fixture removal is verified; the advisory validation lock was released.
+
+The final factual-source guard at **`5134d174e61a34a68926b9abff7de62da2182637`**
+also passed the one affected root/window native case (**1 passed, 3 deselected,
+3.50s**). Its selected window includes an old row without provider identity:
+**4 selected, 2 compared, 1 known match, 1 differing response, 2 unintroduced,
+1 excluded, 1 explicitly unknown**. Execution still processes only the two
+proved encounter commands. The other three native and 35 application/HTTP cases
+are unchanged and retain the earlier evidence. This guard invents no identity or
+lock fallback; broader old-row admission requires a public source-owner capability.
 
 Exact scoped commands:
 
