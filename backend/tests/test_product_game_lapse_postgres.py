@@ -32,7 +32,7 @@ from app.contracts.product_v02.learning import GameEffectControl
 from app.study.game_feedback import GameFeedback, effect_id
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, resume_available_feedback, settle_saved_review, invalidate_saved_review
-from test_product_game_lapse import CARD, NOW, Decisions, MemoryStore, fixture
+from test_product_game_lapse import CARD, NOW, Decisions, MemoryStore, fixture, accept_and_refresh
 from app.contracts.product_v02.learning import GameLapse
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -507,7 +507,7 @@ def test_native_encounter_current_owner_introduces_once_and_persists_original_wi
     capture,snapshot,command=current_encounter_case(case,matched=matched)
     with case.transaction() as database:
         service=current_encounter_service(database,capture,snapshot,include_introductions=True)
-        receipt=service.accept_encounter(command)
+        receipt=accept_and_refresh(service,command)
         assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
         state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
@@ -530,21 +530,25 @@ def test_native_encounter_current_owner_introduces_once_and_persists_original_wi
         assert service.encounter_status(command.key).admission_status=='available'
 
 
-def test_native_encounter_rolls_back_introduction_charge_queue_and_receipt_together(case):
+def test_native_encounter_failed_refresh_preserves_accepted_receipt_and_rolls_back_introduction(case):
     capture,snapshot,command=current_encounter_case(case)
+    with case.transaction() as database:
+        accepted=current_encounter_service(database,capture,snapshot).accept_encounter(command)
+        assert accepted.admission_status=='pending'
     with pytest.raises(RuntimeError,match='after_canonical_introduction'):
         with case.transaction() as database:
             service=current_encounter_service(database,capture,snapshot)
             def fail_save(*args): raise RuntimeError('after_canonical_introduction')
             service.store.save=fail_save
-            service.accept_encounter(command)
+            service.refresh_encounter(command.key)
     with case.transaction() as database:
         assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
         assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
         assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
             (case.card_id,)).fetchone()[0]==0
-        assert PostgresGameFeedbackStore(database).get(command.key) is None
-        assert current_encounter_service(database,capture,snapshot).accept_encounter(command).admission_status=='available'
+        retained=PostgresGameFeedbackStore(database).get(command.key)
+        assert retained.status=='pending' and retained.encounter==command
+        assert current_encounter_service(database,capture,snapshot).refresh_encounter(command.key).admission_status=='available'
 
 
 def test_native_encounter_ordinary_introduction_race_preserves_current_progress_and_single_charge(case):
@@ -561,7 +565,7 @@ def test_native_encounter_ordinary_introduction_race_preserves_current_progress_
     with case.transaction() as database:
         # Original capture still says unintroduced; only that current field may
         # race. Definition/revision/source/membership fences remain exact.
-        receipt=current_encounter_service(database,capture,snapshot).accept_encounter(command)
+        receipt=accept_and_refresh(current_encounter_service(database,capture,snapshot),command)
         assert receipt.disposition=='review_priority' and receipt.admission_status=='available'
         assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())==state
@@ -574,7 +578,7 @@ def test_native_encounter_saved_pause_and_pre_admission_hold_remain_durable(case
     capture,snapshot,command=current_encounter_case(case)
     with case.transaction() as database:
         database.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0 WHERE id=1')
-        receipt=current_encounter_service(database,capture,snapshot,paused=True).accept_encounter(command)
+        receipt=accept_and_refresh(current_encounter_service(database,capture,snapshot,paused=True),command)
         assert receipt.admission_status=='pending' and receipt.deferred_reason=='paused' and receipt.available_by is None
         assert receipt.observation_recorded and receipt.detected_at==command.detected_at
         assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
@@ -602,7 +606,7 @@ def test_native_encounter_historical_miss_adds_priority_without_rewinding_later_
             (case.card_id,)).fetchone())
         history=database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]
         service=current_encounter_service(database,capture,snapshot,include_introductions=False)
-        receipt=service.accept_encounter(command)
+        receipt=accept_and_refresh(service,command)
         assert receipt.disposition=='review_priority' and receipt.observation_recorded
         assert receipt.admission_status=='available'
         assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json,first_correct_at FROM cards WHERE id=%s',
@@ -624,7 +628,7 @@ def test_native_encounter_correct_introduced_play_records_frequency_only(case):
             (case.card_id,)).fetchone())
         history=database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]
         service=current_encounter_service(database,capture,snapshot,include_introductions=False)
-        receipt=service.accept_encounter(command)
+        receipt=accept_and_refresh(service,command)
         assert receipt.observation_recorded and receipt.disposition=='frequency_only'
         assert receipt.admission_status=='not_requested' and receipt.available_by is None
         assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
@@ -650,7 +654,7 @@ def test_native_encounter_targeted_exception_preserves_ordinary_settings(case, o
             (command.decision.repertoire_id,))
         before=tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())
         service=current_encounter_service(database,capture,snapshot)
-        receipt=service.accept_encounter(command)
+        receipt=accept_and_refresh(service,command)
         assert receipt.admission_status=='available' and receipt.disposition=='first_introduction'
         assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==before
         assert database.execute_native('SELECT new_cards_per_day FROM repertoires WHERE id=%s',
@@ -666,7 +670,7 @@ def test_native_encounter_normal_study_seed_preserves_targeted_introduction(case
         database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=%s',
             (command.decision.repertoire_id,))
         service=current_encounter_service(database,capture,snapshot)
-        assert service.accept_encounter(command).admission_status=='available'
+        assert accept_and_refresh(service,command).admission_status=='available'
         before=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
         from app.services.queue_application import seed_queue,presentation_rows
@@ -730,7 +734,7 @@ def test_native_equivalent_route_bindings_apply_once_and_preserve_all_provenance
         before = tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,interval_days FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
         service = current_encounter_service(database,capture,snapshot)
-        receipt = service.accept_encounter(command)
+        receipt = accept_and_refresh(service,command)
         assert receipt.admission_status == 'available'
         assert receipt.disposition == ('first_introduction' if unintroduced else 'review_priority')
         after = tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,interval_days FROM cards WHERE id=%s',

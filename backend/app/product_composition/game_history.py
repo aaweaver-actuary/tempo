@@ -56,27 +56,19 @@ def current_retained_history_comparer(*, capture=capture_game, prepare_capture=N
 
 
 def current_retained_history_receiver(*, policy_identity, operation_stopped,
-                                      introduction_policy, clock,
-                                      receive_admitted=None, prepare_capture=None, prepare_priority=None):
+                                      clock, receive_admitted=None, prepare_capture=None):
     """Bind the actual admitted receiver and owner policy without a fallback."""
-    if not callable(operation_stopped) or not callable(clock) or introduction_policy is None:
+    if not callable(operation_stopped) or not callable(clock):
         raise ValueError("explicit_history_operation_control_policy_and_clock_required")
-    def receive(database, *, capture, snapshot, command, prepared_priority=None):
+    def receive(database, *, capture, snapshot, command):
         operation = receive_admitted
         if operation is None:
             from .encounters import receive_admitted_encounter
             operation = receive_admitted_encounter
-        extra = {'prepared_priority':prepared_priority} if prepared_priority is not None else {}
-        return operation(database, capture=capture, snapshot=snapshot, command=command,
-            operation_stopped=operation_stopped, introduction_policy=introduction_policy, clock=clock,**extra)
-    if prepare_priority is None and receive_admitted is None:
-        def prepare_priority(command):
-            from app.services.queue_priority_promotion import prepare_priority_promotion
-            from tempo_legacy_database.connections import background_read_connection
-            return prepare_priority_promotion(clock().date().isoformat(),command.decision.presentation_id,
-                                               read=background_read_connection)
-    return RetainedEncounterReceiver(policy_identity, receive=receive,
-        prepare_capture=prepare_capture or prepare_retained_capture,prepare_priority=prepare_priority)
+        return operation(database,capture=capture,snapshot=snapshot,command=command,
+            operation_stopped=operation_stopped,clock=clock)
+    return RetainedEncounterReceiver(policy_identity,receive=receive,
+        prepare_capture=prepare_capture or prepare_retained_capture)
 
 
 def validate_history_plan_scope(plan, *, selection):
@@ -216,21 +208,19 @@ class RetainedEncounterReceiver:
     owner_for: Callable | None = None
     receive: Callable | None = None
     prepare_capture: Callable | None = None
-    prepare_priority: Callable | None = None
 
     def __post_init__(self):
         if (not isinstance(self.policy_identity, str) or not self.policy_identity
                 or sum(callable(item) for item in (self.owner_for, self.receive)) != 1):
             raise ValueError("explicit_retained_encounter_owner_and_policy_required")
 
-    def accept_retained_encounter(self, database, command, captured, snapshot, *, selection, prepared_priority=None):
+    def accept_retained_encounter(self, database, command, captured, snapshot, *, selection):
         from tempo_legacy_database.adapters.games.product_history import assert_history_selection
         if self.receive is not None:
             # The wrapper retains the canonical source locks in this borrowed
             # transaction. Check factual filters under those locks afterwards;
             # a mismatch rolls back its provisional effect and the task cursor.
-            extra = {'prepared_priority':prepared_priority} if prepared_priority is not None else {}
-            receipt = self.receive(database, capture=captured, snapshot=snapshot, command=command,**extra)
+            receipt = self.receive(database,capture=captured,snapshot=snapshot,command=command)
             assert_history_selection(database, selection, (command.key.game_id,), fence=True)
             return receipt
         raw = captured["game"]
@@ -341,15 +331,12 @@ def _execute_admitted_history_slice(task, *, write, receiver, capture):
             captured, snapshot = prepared.capture, prepared.snapshot
         else:
             snapshot = project_capture(captured, comparison_game=retained_canonical_game(captured))
-    prepared_priority = (receiver.prepare_priority(command)
-        if command is not None and receiver.prepare_priority is not None else None)
     with write() as database:
         if not lock_current_slice(database, task):
             return "superseded"
         if command is None:
             return "complete" if complete_task_slice_in_transaction(database, task) else "superseded"
-        receipt = receiver.accept_retained_encounter(database, command, captured, snapshot, selection=plan.selection,
-            prepared_priority=prepared_priority)
+        receipt = receiver.accept_retained_encounter(database, command, captured, snapshot, selection=plan.selection)
         if receipt.key != command.key or receipt.source_digest != command.source.source_digest:
             raise ValueError("retained_history_owner_receipt_mismatch")
         # Store the actual EncounterReceipt subtype, including disposition and

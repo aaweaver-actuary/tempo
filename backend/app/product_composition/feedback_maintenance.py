@@ -58,7 +58,10 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
             reason = getattr(error, "reason", None) or "current_source_unavailable"
     prepared_priority = None
     if observed is not None and observed.encounter is not None and captured is not None:
+        # Study alone loads queue/introduction capabilities, before its writer.
         from app.services.queue_priority_promotion import prepare_priority_promotion
+        from app.services.queue_admission_adapter import current_owner_encounter_introductions
+        from app.study.encounter_feedback import EncounterIntroductionPolicy
         prepared_priority = prepare_priority_promotion(clock().date().isoformat(),observed.card_id,read=read)
     with write() as database:
         slice_admitted = lock_current_slice(database, task)
@@ -84,8 +87,6 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
                 current_owner_game_feedback(database, retained_owner_capture=captured,
                     snapshot=snapshot, clock=clock).maintain(after=after, limit=1)
             else:
-                from app.services.queue_admission_adapter import current_owner_encounter_introductions
-                from app.study.encounter_feedback import EncounterIntroductionPolicy
                 # This existing short task unit was admitted by claim_task's
                 # durable pause predicate, the background writer and the current
                 # task-generation/lease fence above. There is no distinct global
@@ -96,7 +97,7 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
                     snapshot=snapshot, clock=clock, introductions=introductions,
                     introduction_policy=EncounterIntroductionPolicy("encounter_exception"),
                     prepared_priority=prepared_priority
-                ).maintain(after=after, limit=1)
+                ).refresh_encounter(observed.key)
         advance_task_slice_in_transaction(database, task, next_phase="scan",
             next_payload={"after": effect_id(observed.key), "hold_reason": reason})
     return False

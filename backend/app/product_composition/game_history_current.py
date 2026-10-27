@@ -52,7 +52,6 @@ def current_history_admission():
 
 
 def _receiver(*, operation_stopped, clock):
-    from app.study.encounter_feedback import EncounterIntroductionPolicy
     from .game_history import current_retained_history_receiver
 
     def stopped():
@@ -62,7 +61,7 @@ def _receiver(*, operation_stopped, clock):
 
     return current_retained_history_receiver(policy_identity=POLICY_IDENTITY,
         operation_stopped=stopped,
-        introduction_policy=EncounterIntroductionPolicy("encounter_exception"), clock=clock)
+        clock=clock)
 
 
 class CurrentHistoryOperations:

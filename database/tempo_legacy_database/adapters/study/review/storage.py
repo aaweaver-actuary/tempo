@@ -138,3 +138,6 @@ def apply_priority_positions(database, day, changes):
          [row[2] for row in changes],day)).rowcount
     if changed != len(changes):
         raise PriorityPositionConflict('priority positions changed or an attempt became protected')
+
+
+from tempo_legacy_database.adapters.queue_refresh.presentation import priority_ownership_state

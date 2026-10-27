@@ -93,7 +93,7 @@ class CurrentOwnerDecisions:
                  and proof.scope.moves == json.loads(source['game']['moves_json'])
                  and proof.scope.moves[ply] == played_uci,
                  'retained_owner_occurrence_unproved')
-        # Card/day locks already belong to the receiver. Never wait backwards
+        # Exact card locks belong to intake; refresh additionally owns the day. Never wait backwards
         # for graph/source locks; busy/missing authority grants no mutation.
         held = database.execute_native(
             "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
@@ -241,9 +241,17 @@ def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, c
         clock=clock, light_first_interval_days=light_first_interval_days)
 
 
+def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot, clock):
+    """Internal intake factory. No queue policy or mutation capability."""
+    from app.study.encounter_feedback import EncounterFeedback
+    return EncounterFeedback(PostgresGameFeedbackStore(database),
+        CurrentOwnerDecisions(database,retained_owner_capture=retained_owner_capture,snapshot=snapshot),
+        clock=clock,introductions=None,introduction_policy=None)
+
+
 def current_owner_encounter_feedback(database, *, retained_owner_capture, snapshot, clock,
                                      introductions, introduction_policy, prepared_priority=None):
-    """Additive next-release factory on the same borrowed writer transaction.
+    """Internal Study refresh factory on its own borrowed writer transaction.
 
     Compose #495's current_owner_encounter_introductions externally. No new
     schema, connection, commit, live policy default or producer lifecycle.

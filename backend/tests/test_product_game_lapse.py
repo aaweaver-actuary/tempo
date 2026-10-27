@@ -42,6 +42,8 @@ class MemoryStore:
             "2026-10-01T12:00:00Z", False, 20, False, "mature", "normal", 0, '["correct"]')
         self.saved = None
 
+    def lock_intake_target(self, card_id): pass
+
     def lock_target(self, card_id, day): pass
     def lock_effect(self, key): pass
     def get(self, key): return self.effects.get(effect_id(key))
@@ -297,15 +299,23 @@ def encounter_owner():
     return store, decisions, clock, introductions, service, command
 
 
-@pytest.mark.parametrize('observation', ['matched','missed'])
+def accept_and_refresh(service,command):
+    """Keep refresh-policy cases explicit; intake/failure isolation has native guards."""
+    accepted=service.accept_encounter(command)
+    if accepted.status=='pending' and accepted.outcome=='accepted':
+        return service.refresh_encounter(command.key)
+    return accepted
+
+
+@pytest.mark.parametrize('observation', ['matched', 'missed'])
 def test_encounter_first_introduction_once_without_review_or_again(encounter_owner, observation):
     store, _, clock, introductions, service, command = encounter_owner
     command = command.model_copy(update=dict(observation=observation,
         played_uci=command.expected_uci if observation=='matched' else command.played_uci))
     before = store.card
-    receipt = service.accept_encounter(command)
+    receipt = accept_and_refresh(service,command)
     clock[0] += timedelta(days=1)
-    duplicate = service.accept_encounter(command.model_copy(update={'detected_at':clock[0].isoformat()}))
+    duplicate = accept_and_refresh(service,command.model_copy(update={'detected_at':clock[0].isoformat()}))
     assert receipt.disposition == 'first_introduction' and receipt.admission_status == 'available'
     assert receipt.observation_recorded and receipt.observation == observation
     assert duplicate.owner_receipt_id == receipt.owner_receipt_id and duplicate.detected_at == command.detected_at
@@ -317,7 +327,7 @@ def test_encounter_first_introduction_once_without_review_or_again(encounter_own
 def test_encounter_later_recomparison_cannot_become_lapse(encounter_owner):
     from app.contracts.product_v02.learning import GameEncounter
     store, _, _, introductions, service, command = encounter_owner
-    first = service.accept_encounter(command)
+    first = accept_and_refresh(service,command)
     lapse = fixture('lapse', GameLapse).model_dump(mode='json')
     lapse.update(key=command.key.model_dump(mode='json'),detected_at=command.detected_at,occurred_at=command.occurred_at)
     lapse['finding'].update(provider=command.key.provider,game_id=command.key.game_id,
@@ -337,7 +347,7 @@ def test_historical_missed_encounter_retains_priority_after_later_learning(encou
     store.facts = replace(store.facts, introduced_at=NOW-timedelta(hours=2))
     store.clean_reviews.append(Completion(77,CARD,1,NOW-timedelta(hours=1),True,'study'))
     before = store.card
-    receipt = service.accept_encounter(command)
+    receipt = accept_and_refresh(service,command)
     assert receipt.disposition == 'review_priority' and receipt.admission_status == 'available'
     assert receipt.observation_recorded and receipt.observation == 'missed'
     assert (NOW.date().isoformat(),CARD) in store.queue
@@ -347,7 +357,7 @@ def test_historical_missed_encounter_retains_priority_after_later_learning(encou
 def test_correct_introduced_encounter_is_frequency_without_failure(encounter_owner):
     store, _, _, introductions, service, command = encounter_owner
     store.facts = replace(store.facts, introduced_at=NOW-timedelta(days=1))
-    receipt = service.accept_encounter(command.model_copy(update=dict(observation='matched',played_uci=command.expected_uci)))
+    receipt = accept_and_refresh(service,command.model_copy(update=dict(observation='matched',played_uci=command.expected_uci)))
     assert receipt.disposition == 'frequency_only' and receipt.admission_status == 'not_requested'
     assert receipt.observation_recorded and receipt.available_by is None
     assert not store.reviews and not store.queue and store.saved is None and introductions.charges == 0
@@ -358,7 +368,7 @@ def test_correct_introduced_encounter_is_frequency_without_failure(encounter_own
 def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_original_intent(encounter_owner):
     store, _, clock, introductions, service, command = encounter_owner
     introductions.reason = 'paused'
-    first = service.accept_encounter(command)
+    first = accept_and_refresh(service,command)
     assert first.admission_status == 'pending' and first.available_by is None
     clock[0] += timedelta(days=1)
     store.facts = replace(store.facts, introduced_at=clock[0]-timedelta(hours=1))
@@ -374,7 +384,7 @@ def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_o
 def test_encounter_explicit_controls_remain_pending_without_deadline(encounter_owner, reason):
     store, _, _, introductions, service, command = encounter_owner
     introductions.reason = reason
-    receipt = service.accept_encounter(command)
+    receipt = accept_and_refresh(service,command)
     assert receipt.admission_status == 'pending' and receipt.deferred_reason == reason
     assert receipt.available_by is None and receipt.detected_at == command.detected_at
     assert receipt.observation_recorded and introductions.charges == 0 and not store.reviews and not store.queue
@@ -383,7 +393,7 @@ def test_encounter_explicit_controls_remain_pending_without_deadline(encounter_o
 def test_encounter_hold_before_delivery_fences_both_command_kinds(encounter_owner):
     store, _, _, introductions, service, command = encounter_owner
     service.control_effect(GameEffectControl(key=command.key,source_revision=1,action='hold',reason='reanalysis'))
-    receipt = service.accept_encounter(command)
+    receipt = accept_and_refresh(service,command)
     assert receipt.status == 'held' and not receipt.observation_recorded
     service.maintain()
     assert not store.queue and not store.reviews and introductions.charges == 0
@@ -393,7 +403,7 @@ def test_encounter_active_attempt_and_unknown_policy_do_not_mutate(encounter_own
     from app.study.encounter_feedback import EncounterIntroductionPolicy
     store, _, _, introductions, service, command = encounter_owner
     store.facts = replace(store.facts, active_attempt=True)
-    assert service.accept_encounter(command).deferred_reason == 'active_attempt'
+    assert accept_and_refresh(service,command).deferred_reason == 'active_attempt'
     store.facts = replace(store.facts, active_attempt=False)
     service.introduction_policy = None
     service.maintain()
@@ -409,7 +419,7 @@ def test_encounter_targeted_exception_delegates_exact_target_without_again(encou
     from app.study.encounter_feedback import EncounterIntroductionPolicy
     store,_,_,introductions,service,command=encounter_owner
     service.introduction_policy=EncounterIntroductionPolicy('encounter_exception')
-    receipt=service.accept_encounter(command)
+    receipt=accept_and_refresh(service,command)
     assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
     assert introductions.charges==1 and not store.reviews and store.saved is None
 
@@ -417,7 +427,7 @@ def test_encounter_targeted_exception_delegates_exact_target_without_again(encou
 def test_encounter_old_allowance_capability_is_configuration_pending(encounter_owner):
     store,_,_,introductions,service,command=encounter_owner
     introductions.reason='study_only'
-    receipt=service.accept_encounter(command)
+    receipt=accept_and_refresh(service,command)
     assert receipt.reason=='encounter_exception_capability_required' and receipt.deferred_reason is None
     assert receipt.admission_status=='pending' and receipt.available_by is None
     assert introductions.charges==0 and not store.reviews

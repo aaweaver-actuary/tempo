@@ -32,12 +32,15 @@ class PostgresGameFeedbackStore:
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
             raise RuntimeError("game feedback requires a borrowed writer transaction")
 
-    def lock_target(self, card_id, day):
+    def lock_intake_target(self, card_id):
         self._writer()
-        # Existing Study card-edit/row order before the queue date reservation.
+        # Intake takes only the exact card lock, never a queue-date reservation.
         self.database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                                      ("tempo:card-edit:" + card_id,))
         self.database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,))
+
+    def lock_target(self, card_id, day):
+        self.lock_intake_target(card_id)
         lock_queue_date_for_position(self.database, day)
 
     def lock_effect(self, key):

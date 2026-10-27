@@ -203,3 +203,24 @@ def presentation_facts(database, day, miss_reason: str, *, read=None, after_entr
                                      (day, *(row['id'] for row in rows)))}
 
     return rows, reviewed, eligible
+
+
+def priority_ownership_state(database, day):
+    """Fence queued ownership/identity and issuance, not derived eligibility policy.
+
+    The target's current admission/content/source is independently fenced by Study.
+    Ordering never grants eligibility to another card. Changed owners or protected
+    attempts invalidate prepared positions; no whole-queue domain query runs here.
+    """
+    return database.execute_native("""WITH owned AS (
+        SELECT q.id,jsonb_build_array(q.id,q.card_id,q.xmin::text,c.xmin::text,
+            EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id
+                AND o.card_id=c.id AND o.revision=c.revision AND o.issued_as_head=1),
+            EXISTS(SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id),
+            EXISTS(SELECT 1 FROM teaching_states t WHERE t.card_id=c.id))::text value
+        FROM daily_queue q JOIN cards c ON c.id=q.card_id
+        WHERE q.queue_date=%s AND q.status='queued'
+    ) SELECT encode(sha256(convert_to(
+        COALESCE((SELECT string_agg(value,',' ORDER BY id) FROM owned),'') || '|' ||
+        COALESCE((SELECT xmin::text FROM frozen_opening_activation WHERE id=1),'') || '|' ||
+        COALESCE((SELECT xmin::text FROM settings WHERE id=1),''),'UTF8')),'hex')""",(day,)).fetchone()[0]

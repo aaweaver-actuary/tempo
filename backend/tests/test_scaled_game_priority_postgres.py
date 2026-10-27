@@ -69,13 +69,16 @@ def test_native_scaled_prepared_promotion_meets_budget_and_preserves_original_hi
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     with scale(case,queue_count) as (capture,snapshot,command):
         with case.transaction() as database: before=readback(database,case)
+        with case.transaction() as database:
+            accepted=receiving(database,capture,snapshot,None).accept_encounter(command)
+            assert accepted.admission_status=='pending'
         plan=prepare_priority_promotion(NOW.date().isoformat(),case.card_id,read=case.transaction)
         assert plan is not None and len(plan.changes)==queue_count-25
         with case.transaction() as database:
             database.execute_native("SET LOCAL transaction_timeout='250ms'")
             database.execute_native("SET LOCAL statement_timeout='250ms'")
             started=time.perf_counter()
-            receipt=receiving(database,capture,snapshot,plan).accept_encounter(command)
+            receipt=receiving(database,capture,snapshot,plan).refresh_encounter(command.key)
             elapsed=(time.perf_counter()-started)*1000
             print('SCALED_RECEIVE_MS',queue_count,round(elapsed,2))
             assert receipt.admission_status=='available' and receipt.disposition=='review_priority'
@@ -91,9 +94,12 @@ def test_native_scaled_prepared_promotion_meets_budget_and_preserves_original_hi
 
 
 @pytest.mark.parametrize('changed',['position','issued','eligibility'])
-def test_native_scaled_stale_preparation_rolls_back_receipt_and_cursor(case,monkeypatch,changed):
+def test_native_scaled_stale_preparation_preserves_intake_and_rolls_back_refresh_cursor(case,monkeypatch,changed):
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     with scale(case,805) as (capture,snapshot,command):
+        with case.transaction() as database:
+            accepted=receiving(database,capture,snapshot,None).accept_encounter(command)
+            assert accepted.admission_status=='pending'
         plan=prepare_priority_promotion(NOW.date().isoformat(),case.card_id,read=case.transaction)
         cursor=case.card_id+'-scaled-cursor'
         with case.transaction() as database:
@@ -111,9 +117,9 @@ def test_native_scaled_stale_preparation_rolls_back_receipt_and_cursor(case,monk
             with case.transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("UPDATE background_tasks SET payload_json=%s WHERE id=%s",(json.dumps({"next_index":1}),cursor))
-                receiving(database,capture,snapshot,plan).accept_encounter(command)
+                receiving(database,capture,snapshot,plan).refresh_encounter(command.key)
         with case.transaction() as database:
-            assert PostgresGameFeedbackStore(database).get(command.key) is None
+            assert PostgresGameFeedbackStore(database).get(command.key).status=='pending'
             assert database.execute_native('SELECT payload_json FROM background_tasks WHERE id=%s',(cursor,)).fetchone()[0]=='{"next_index":0}'
             assert database.execute_native('SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0] is None
             assert readback(database,case)==before

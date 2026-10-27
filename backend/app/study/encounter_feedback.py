@@ -1,8 +1,8 @@
 """Current Study priority for real encounters, independently of lapse authority.
 
-The existing effect ledger, holds, settlement and card/day lock order are reused.
-An encounter never calls the scheduler; introduction belongs to its existing
-canonical owner on this same borrowed transaction.
+Intake stores the existing effect ledger obligation using target-only fences.
+Study independently consumes it; canonical introduction and queue changes belong
+to that later refresh transaction. An encounter never calls the scheduler.
 """
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ class CurrentEncounterPort(CurrentDecisionPort, Protocol):
 
 class EncounterStore(GameFeedbackStore, Protocol):
     def encounter_card_facts(self, card_id: str, day: str) -> CardFacts | None: ...
+    def lock_intake_target(self, card_id: str) -> None: ...
     def promote_encounter(self, card_id: str, day: str) -> None: ...
 
 
@@ -103,7 +104,7 @@ class EncounterFeedback(GameFeedback):
 
     def accept_encounter(self, command: GameEncounter) -> EncounterReceipt:
         now = instant(self.clock())
-        self.store.lock_target(command.decision.presentation_id, now.date().isoformat())
+        self.store.lock_intake_target(command.decision.presentation_id)
         self.store.lock_effect(command.key)
         previous = self.store.get(command.key)
         if previous:
@@ -121,32 +122,69 @@ class EncounterFeedback(GameFeedback):
             available_by=min(instant(command.detected_at), now) + timedelta(hours=48),
             card_id=command.decision.presentation_id,
             card_revision=command.decision.presentation_revision)
-        effect = self._advance(effect, now)
+        effect = self._accept_priority(effect, now)
         self.store.save(effect, now)
         return self._encounter_receipt(effect, command,
             "stale_revision" if effect.status == "held" else "accepted")
 
-    def _advance(self, effect, now):
+    def refresh_encounter(self, key):
+        """Study-owned consumption of one accepted identity; never a producer action."""
+        observed = self.store.get(key)
+        if observed is None or observed.encounter is None:
+            return None
+        now = instant(self.clock())
+        self.store.lock_target(observed.card_id,now.date().isoformat())
+        self.store.lock_effect(key)
+        current = self.store.get(key)
+        advanced = self._advance(current,now)
+        self.store.save(advanced,now)
+        return self._encounter_receipt(advanced,advanced.encounter,'duplicate')
+
+    def _current_encounter(self, effect, now):
         if effect.encounter is None:
-            return super()._advance(effect, now)
+            return effect,None,None
         if effect.status not in {"pending", "applied"}:
-            return effect
+            return effect,None,None
         command, day = effect.encounter, now.date().isoformat()
         try:
             mappings = self.decisions.current_encounter(command)
         except EncounterAuthorityUnavailable as error:
             return replace(effect, admission_status="pending", reason=str(error),
-                           deferred_reason="authority_unavailable")
+                           deferred_reason="authority_unavailable"),None,None
         if len(mappings) != 1:
-            return replace(effect, status="held", reason="ambiguous_or_conflicted_decision")
+            return replace(effect, status="held", reason="ambiguous_or_conflicted_decision"),None,None
         mapping, supplied = mappings[0], command.decision
         fields = ("decision_id", "repertoire_id", "repertoire_revision", "position_key",
                   "selected_response_uci", "presentation_id", "presentation_revision", "route_id", "route_ply")
         if any(getattr(mapping, key) != getattr(supplied, key) for key in fields) or not mapping.available:
-            return replace(effect, status="held", reason="stale_current_mapping")
+            return replace(effect, status="held", reason="stale_current_mapping"),None,None
         facts = self.store.encounter_card_facts(effect.card_id, day)
         if facts is None or facts.revision != effect.card_revision or not facts.available:
-            return replace(effect, status="held", reason="current_card_unavailable")
+            return replace(effect, status="held", reason="current_card_unavailable"),None,None
+        return effect,mapping,facts
+
+    def _accept_priority(self, effect, now):
+        """Intake owns only exact validation and durable acceptance, never queue work."""
+        effect, mapping, facts = self._current_encounter(effect,now)
+        if mapping is None:
+            return effect
+        disposition = ('first_introduction' if facts.introduced_at is None else
+                       'frequency_only' if effect.encounter.observation == 'matched' else 'review_priority')
+        if disposition == 'frequency_only':
+            return replace(effect,observation_recorded=True,disposition=disposition,
+                status='settled',admission_status='not_requested',settled_at=now,
+                reason='encounter_frequency_recorded')
+        return replace(effect,observation_recorded=True,disposition=disposition,
+            admission_status='pending',reason='study_priority_pending')
+
+    def _advance(self, effect, now):
+        """Study-owned refresh only; acceptance never calls this queue capability."""
+        if effect.encounter is None:
+            return super()._advance(effect,now)
+        effect, mapping, facts = self._current_encounter(effect,now)
+        if mapping is None:
+            return effect
+        command, day = effect.encounter,now.date().isoformat()
         # Keep factual relevance even when old evidence cannot authorize a lapse.
         # A correctly played introduced decision records frequency only.
         disposition = effect.disposition or ("first_introduction" if facts.introduced_at is None

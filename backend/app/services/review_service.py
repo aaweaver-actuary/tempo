@@ -11,7 +11,7 @@ from tempo_legacy_database.adapters.study.review.storage import sqlite3
 from tempo_legacy_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
 from .queue_presentation import presentation_rows
-from .queue_ordering import _priority_queue_order, _queue_presentation_state
+from .queue_ordering import _priority_queue_order
 from .queue_priority_promotion import StalePriorityPromotion, priority_changes
 
 
@@ -119,7 +119,7 @@ def ensure_card_queued_after(
         if (not protect_presented or preserve_order
                 or (day,card_id,priority_reason) != (prepared_priority.queue_date,
                     prepared_priority.card_id,prepared_priority.priority_reason)
-                or _queue_presentation_state(presentation_rows(database,day)) != prepared_priority.presentation_state):
+                or storage.priority_ownership_state(database,day) != prepared_priority.ownership_state):
             raise StalePriorityPromotion('priority_presentation_changed')
     entry = storage.queued_entry(database, day, card_id)
     if prepared_priority is not None and (not entry or entry['id'] != prepared_priority.entry_id):

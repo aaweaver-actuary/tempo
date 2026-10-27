@@ -2,9 +2,9 @@
 from dataclasses import dataclass
 from .redis_admission_gate import BackgroundAdmissionDeferred
 
-from .queue_ordering import _priority_queue_order, _queue_presentation_state
+from .queue_ordering import _priority_queue_order
 from .queue_presentation import presentation_rows, MISS_REASON
-from tempo_legacy_database.adapters.queue_refresh.presentation import prepare_presentation_queries
+from tempo_legacy_database.adapters.queue_refresh.presentation import prepare_presentation_queries, priority_ownership_state
 
 
 class StalePriorityPromotion(BackgroundAdmissionDeferred):
@@ -17,7 +17,7 @@ class PreparedPriorityPromotion:
     card_id: str
     entry_id: int
     priority_reason: str
-    presentation_state: str
+    ownership_state: str
     changes: tuple[tuple[int, int, int], ...]  # entry, previous position, new position
 
 
@@ -37,10 +37,12 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
     """Read finite pages before the writer; never grant source/admission authority.
 
     None means no existing queued target: canonical introduction keeps its normal
-    existing writer path. Full current presentation evidence is rechecked by that
-    writer, including eligibility and every issued/protected attempt.
+    existing writer path. The writer rechecks queue ownership, card identity and
+    every issued/protected attempt. Ordering grants no serving eligibility.
     """
     prepare_presentation_queries(MISS_REASON)
+    with read() as database:
+        before = priority_ownership_state(database,queue_date)
     rows, after = [], 0
     while True:
         with read() as database:
@@ -51,8 +53,11 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
         if len(page) < 16:
             break
         after = page[-1]['id']
+    with read() as database:
+        if priority_ownership_state(database,queue_date) != before:
+            raise StalePriorityPromotion('priority_ownership_changed_during_preparation')
     targets = [row for row in rows if row['card_id'] == card_id]
     if len(targets) != 1:
         return None
     return PreparedPriorityPromotion(queue_date,card_id,targets[0]['id'],priority_reason,
-        _queue_presentation_state(rows),priority_changes(rows,card_id,priority_reason))
+        before,priority_changes(rows,card_id,priority_reason))

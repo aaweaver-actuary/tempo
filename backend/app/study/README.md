@@ -146,21 +146,20 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller transaction
-    participant S as Study receiver
-    participant D as Study storage
-    participant A as Existing Again application
-    C->>S: accept_lapse(shared GameLapse)
-    S->>D: card/day lock, effect lock, read receipt
-    alt held or duplicate
-        D-->>S: original durable receipt/deadline
-    else current introduced target
-        S->>A: Again at processing clock, source=game_lapse
-        A->>D: append provenance review + save schedule
-        S->>D: promote ordinary queue + save effect receipt
-    end
-    S-->>C: provisional owner receipt
-    C->>C: commit all effects or roll back all
+    participant P as Producer via public EncounterFeedbackPort
+    participant I as Study intake
+    participant D as Study-owned effect ledger
+    participant W as Independent Study sweep
+    participant Q as Existing queue and introduction owner
+    P->>I: accept_encounter(shared immutable facts)
+    I->>D: exact card/source fence; persist once
+    I-->>P: pending owner receipt; no queue promise
+    Note over I,Q: Intake never enumerates, prepares or promotes a queue
+    W->>D: claim existing pending obligation
+    W->>Q: prepare outside writer; recheck target and issuance
+    Q->>Q: canonical introduction if needed; protected position batch
+    W->>D: commit available status with queue effect
+    Note over P,W: Producer failure or removal does not stop Study pickup
 ```
 
 Shared host/database resource isolation and actual product activation remain T07
@@ -184,132 +183,66 @@ source field. Run just that case with
 `PYTEST_ADDOPTS='--tb=short -k day_only_introduction_requires_exact_current_game_proof'`
 on the native command above; unrelated native cases retain their evidence.
 
-## Next release: encounter importance and first introduction
+## Encounter intake and independent Study refresh
 
-[`EncounterFeedback`](encounter_feedback.py) consumes #533's published additive
-`GameEncounter`/`EncounterReceipt` at `46f07e9a`. Its explicit constructor takes
-the same borrowed store/current owner/clock plus `introductions` and
-`introduction_policy`. `accept_encounter` and `encounter_status` share the
-existing stable effect key, pre-delivery hold, immutable source/detection and
-receipt ledger with `accept_lapse`; no second delivery queue or scheduler exists.
-The qualified first-release factory remains separately selectable.
+The public `EncounterFeedbackPort` consumes shared immutable `GameEncounter`
+facts and returns the existing `EncounterReceipt`. Its `accept_encounter` and
+`encounter_status` share the original effect key, controls, source/detection and
+schema051 ledger. No new DDL, delivery queue, scheduler or producer dependency.
 
-The concrete additive factory is
-`current_owner_encounter_feedback(database, retained_owner_capture=..., snapshot=...,
-clock=..., introductions=..., introduction_policy=...)` in the same database
-adapter. Compose #495's narrow `current_owner_encounter_introductions` / `admit_encounter`
-capability on that exact borrowed writer. Only the actual current introduction
-field may differ from the retained capture during priority validation; definition,
-revision, legal executable, route, source generations and membership remain fenced.
-Neither a producer's snapshot nor a FEN match authorizes mutation.
+Intake validates only the exact current source, executable mapping, card identity,
+revision, availability and complete equivalent-route provenance. It uses card and
+effect locks; it cannot enumerate, prepare, lock a queue date, introduce or promote.
+Valid priority requests commit `pending` / `study_priority_pending`, without an
+availability promise. Introduced correct play settles as frequency evidence.
+Historical misses retain importance without fabricating Again or rewinding FSRS.
+Duplicates preserve the original command, receipt and disposition.
 
-An unintroduced current card requests genuine canonical introduction for either
-matched or missed play. A current introduced miss receives queue priority without
-calling Again or changing its schedule/history, including evidence predating
-introduction or later learning. Correct introduced play records frequency only.
-These are per-observation factual receipts; the pure importance calculation stays
-with #494. Study imports no Analysis implementation or copied score formula.
-Original command and disposition survive replay, reload, ordinary introduction
-races and recomparison; a later `GameLapse` for the same semantic event receives
-the original receipt instead of converting it to Again. Genuine later Study
-completion can settle queue debt without deleting the retained observation.
+The composition root binds the public producer port to the internal factory
+`current_owner_encounter_intake(database, retained_owner_capture=..., snapshot=...,
+clock=...)`. This factory accepts no queue capability or introduction policy.
+`receive_admitted_encounter` still requires actual whole-operation/foreground
+admission and the normal background database safety gate. Unknown control state
+fails closed; zero allowance and Study-only do not imply full pause.
 
-`EncounterIntroductionPolicy` requires an explicit `ordinary` or
-`encounter_exception` input. Andy selected the targeted exception for this next
-release: genuine game encounters may first-introduce despite exhausted/zero
-ordinary allowance and Study-only. Saved caps and Study-only are never changed;
-unrelated ordinary introductions retain their controls. Explicit full Study pause,
-active attempts, burial, maintenance/source/definition/identity/legality/conflict
-guards still apply. The canonical introduction owner implements these controls;
-the receiver delegates them and retains its typed pending reason. Pending admission
-never claims an availability deadline; original detection stays stored.
+Study independently discovers the persisted obligation through its existing
+`claim_feedback_sweep` / `execute_feedback_sweep`. It captures current authority
+and prepares finite presentation/ordering pages outside its short writer. The
+consumer calls `EncounterFeedback.refresh_encounter(key)` for that exact observed
+identity; source/target/current-task/lease checks, protected issuance fence, changed
+position batch and the available receipt commit together. A refresh failure rolls
+back only refresh and its task cursor; accepted intake stays pending. There is no
+eager-intake toggle or fallback, and Games removal cannot prevent Study pickup.
 
-Compose the narrow #495 capability explicitly:
+The internal refresh factory `current_owner_encounter_feedback` alone receives
+`introductions`, `introduction_policy` and optional immutable `prepared_priority`.
+The existing #495 canonical capability uses `allowance="encounter_exception"`,
+`paused=actual_whole_operation_pause` and the exact current `target` mapping.
+This targeted first-introduction exception bypasses ordinary new-card cap and
+Study-only without changing either global setting. Full pause, foreground,
+maintenance, active attempts, burial, legality, source and conflict guards remain.
+Schema051 has no distinct global full-Study-pause column: existing admitted-task
+and background connection controls supply that decision, never an invented flag.
+A racing ordinary introduction preserves actual progress and introduces once.
 
-```python
-policy = EncounterIntroductionPolicy("encounter_exception")
-introductions = current_owner_encounter_introductions(
-    borrowed_database, allowance=policy.allowance, paused=actual_full_study_pause,
-    conflicts=optional_study_conflict_store,
-)
-# Pass introductions and policy to current_owner_encounter_feedback above.
-```
+Preparation is an ordering hint, not a source certificate or eligibility grant.
+The refresh writer rechecks queue membership/row versions, card row versions,
+current issued/protected attempts, teaching/evidence protection, settings and
+frozen activation before applying guarded changed positions. Other cards' derived
+eligibility is evaluated outside the writer and remains independently enforced
+when serving. Changed ownership invalidates the plan and rolls back refresh.
+Intake never depends on this queue-sized work.
 
-It receives the exact current shared mapping as `admit_encounter(..., target=...)`.
-The retained-owner factory translates only its already-fenced source revision to
-the target API's `scope_source_revision + 1` convention. Definition, position,
-response, physical identity and route scope are preserved; no source or mapping
-authority is invented.
+Component interface directories, public exports/import guards and their short
+READMEs are owned by the designated interface lane; this implementation does not
+expose database or queue types in shared producer contracts.
 
-The retained schema through 051 and `services/study_mode.py` expose ordinary caps
-and Study-only, with no separate installation-wide full-Study-pause field. That
-verified absence is different from unreadable admission controls. The supplied
-`paused` Boolean comes from the caller's whole-operation admission decision;
-zero cap and Study-only never imply it. Existing
-`activity_gate.check_background_admission()` and the background database section
-in `tempo_legacy_database.connections.connection(background=True)` retain
-foreground admission, including denial on unavailable configured control evidence.
-Only an admitted operation can pass `paused=False`; a rejected/unknown admission
-retains its durable delivery without constructing a mutation capability. No new
-pause service, schema or UI is introduced. The #491 dedicated connection's bounded
-timeouts alone do not establish this foreground/control gate; its actual caller
-wiring remains that integration owner's acceptance boundary.
-
-The receiver adds **no DDL**: schema051 `payload_json` carries the immutable shared
-encounter command and a small mutable owner admission section. #495's broader
-`5f87902f` capability needs unregistered charge/period/rotation/ranking tables;
-this branch does not consume that full feature. The narrow
-`current_owner_encounter_introductions` capability instead uses existing canonical
-card/queue introduction facts and this effect transaction, with no ranking,
-charge, rotation or new DDL dependency. Exact published dependency bytes are
-assembled only for the native source proof and recorded in its manifest; broader
-D migrations are not installed. Source discovery/target bounds still defer safely;
-small fixtures do not establish support for an arbitrary installed repertoire.
-
-`product_game_encounter` is a distinct queue priority label, with a clean attempt
-state. The narrow shared projection/clearing hooks recognize it while the
-introduction retention fact protects current admissions from same-day and later
-ordinary rebuilds. No cap or Study-only setting changes, and a later source hold
-cannot refund historical admission. Integration retains actual caller admission,
-serving composition and live activation ownership.
-
-```mermaid
-sequenceDiagram
-    participant C as Caller transaction
-    participant S as Study EncounterFeedback
-    participant O as Current owner fences
-    participant I as Existing introduction owner
-    participant D as Study schema051 receipt / ordinary queue
-    C->>S: accept_encounter(shared GameEncounter)
-    S->>D: card/day lock, effect lock, original receipt
-    S->>O: exact current content / source / mapping
-    alt currently unintroduced
-        S->>I: admit_encounter(explicit local day / decision)
-        I->>D: canonical fresh introduction + owned charge
-    else historical missed response
-        S->>D: current queue priority, unchanged FSRS/history
-    else correctly played introduced response
-        S->>D: frequency observation, no fabricated failure
-    end
-    S->>D: immutable original command + owner admission facts
-    S-->>C: provisional receipt / honest pending reason
-    C->>C: commit all effects or roll back all
-```
-
-Changed owner checks remain in the two existing test files above; use `-k encounter`
-for the next-release cases. No first-release deployment or broad suite rerun is
-part of this extension.
-
-
-### Protected priority at actual queue size
-
-The retained-history receiving root and pending maintenance may pass an optional
-Study-owned `PreparedPriorityPromotion` to `current_owner_encounter_feedback`.
-It is an immutable local preparation value, never a producer DTO or alternate
-source certificate. Finite presentation reads and ordering happen before the
-writer; the existing canonical writer rechecks complete current presentation
-facts and all current source/identity/content/admission fences remain mandatory.
-Only changed queue positions are batched. Stale preparation aborts the effect
-and cursor together; replay keeps the original command and receipt. No historical
-review is generated or rewound. See the canonical
-[transaction and regression view](../../../database/tempo_legacy_database/adapters/study/review/README.md#actual-scale-protected-promotion).
+Focused runtime guard:
+`backend/tests/test_study_encounter_intake_boundary.py` contains
+`test_intake_never_calls_queue_and_commits_once_when_refresh_fails` and
+`test_study_refresh_without_games_consumes_accepted_priority`. The synthetic
+mixed731-row fixture retains4197reviews, the target's nine reviews/receipts and25
+protected attempts. It proves forbidden queue calls during intake, once/replay,
+refresh failure/stale rollback and pickup with Games disabled. Existing encounter
+policy/native cases call acceptance and refresh explicitly; they do not restore a
+production inline path. Installed first-release lapse handling is unchanged.
