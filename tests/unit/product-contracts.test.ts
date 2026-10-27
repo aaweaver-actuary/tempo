@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
+import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, GameDetailSchema, ProviderSyncStatusSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
 
 const directory = resolve("contracts/product-v02/fixtures");
 function fixture(name: string) { return JSON.parse(readFileSync(resolve(directory, `${name}.json`), "utf8")).payload; }
@@ -81,5 +81,13 @@ describe("product v0.2 shared wire", () => {
     const payload = fixture("snapshot-route-game-introduction");
     payload.decision_presentations[0][field as string] = value;
     expect(() => RepertoireSnapshotSchema.parse(payload)).toThrow();
+  });
+  it("keeps original game moves separate from findings and preserves provider errors/filters", () => {
+    const detail = GameDetailSchema.parse(fixture("game-detail"));
+    expect(detail.moves).toEqual(["d2d4", "d7d5", "c2c4"]);
+    expect(detail.findings[0].played_uci).toBe("d2d4");
+    expect(() => (detail.moves as unknown as string[]).push("c7c6")).toThrow();
+    expect(() => ProviderSyncStatusSchema.parse({ ...fixture("provider-sync-failed"), error: null })).toThrow();
+    expect(GamePageSchema.parse(fixture("incomplete-page")).filters).toEqual([["rated", "false"], ["perfType", "rapid"]]);
   });
 });

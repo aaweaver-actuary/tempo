@@ -13,7 +13,7 @@ const version = z.literal(INTERFACE_VERSION).default(INTERFACE_VERSION);
 
 const RawGameWindowSchema = z.strictObject({ start_at: utc, end_at: utc, precision }).refine(value => Date.parse(value.start_at) < Date.parse(value.end_at), "window must be nonempty");
 const RawGameRecordSchema = z.strictObject({ source_game_id: id, source_revision: revision, source_digest: digest, pgn: z.string().min(1), played_at: utc.nullable(), time_precision: precision }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "unknown source time remains null");
-const RawGamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: RawGameWindowSchema, records: z.array(RawGameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean() }).superRefine((value, ctx) => {
+const RawGamePageSchema = z.strictObject({ interface_version: version, provider, account: id, window: RawGameWindowSchema, records: z.array(RawGameRecordSchema), rejections: z.array(z.strictObject({ source_game_id: id.nullable(), source_revision: revision.nullable(), reason: id })), continuation: z.string().nullable(), complete: z.boolean(), saturated: z.boolean(), filters: z.array(z.tuple([z.string(), z.string()])).default([]) }).superRefine((value, ctx) => {
   if (value.complete && (value.saturated || value.continuation !== null)) ctx.addIssue({ code: "custom", message: "saturated/continuing page cannot be complete" });
   if (new Set(value.records.map(item => item.source_game_id)).size !== value.records.length) ctx.addIssue({ code: "custom", message: "conflicting game revisions in page" });
 });
@@ -105,8 +105,25 @@ export interface LearningFeedbackPort {
 
 /** Read/query screen boundary only; Repertoire/Study owners apply commands. */
 export interface GameReviewApi {
+  recentGames(request?: { signal?: AbortSignal }): Promise<RecentGames>;
+  gameDetail(request: { provider: GameSummary["provider"]; game_id: string; repertoire_id?: string; signal?: AbortSignal }): Promise<GameDetail>;
+  sync(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<ProviderSyncStatus>;
+  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<LearningReceipt>;
   findings(gameId: string): Promise<readonly Finding[]>;
   feedbackStatus(key: GameEffectKey): Promise<LearningReceipt | null>;
 }
 
-export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema } as const;
+const RawGameSummarySchema = z.strictObject({ provider, game_id: id, source_revision: revision, played_at: utc.nullable(), time_precision: precision, player_color: z.enum(["white", "black"]) }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "preserve unknown source time");
+const RawProviderSyncStatusSchema = z.strictObject({ provider, status: z.enum(["idle", "pending", "complete", "failed"]), operation_id: id.nullable(), error: id.nullable() }).refine(value => (value.status === "failed") === (value.error !== null) && (value.status === "idle" || value.operation_id !== null), "status must preserve failure and operation identity");
+const RawRecentGamesSchema = z.strictObject({ games: z.array(RawGameSummarySchema), sync: z.array(RawProviderSyncStatusSchema) });
+const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(RawLearningReceiptSchema) });
+export const GameSummarySchema = immutable(RawGameSummarySchema);
+export const ProviderSyncStatusSchema = immutable(RawProviderSyncStatusSchema);
+export const RecentGamesSchema = immutable(RawRecentGamesSchema);
+export const GameDetailSchema = immutable(RawGameDetailSchema);
+export type GameSummary = z.infer<typeof GameSummarySchema>;
+export type ProviderSyncStatus = z.infer<typeof ProviderSyncStatusSchema>;
+export type RecentGames = z.infer<typeof RecentGamesSchema>;
+export type GameDetail = z.infer<typeof GameDetailSchema>;
+
+export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema } as const;

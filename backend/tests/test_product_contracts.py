@@ -13,13 +13,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "packages/game-review-contracts/src"))
 sys.path.insert(0, str(ROOT / "contracts/game-evidence/src"))
 sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
-from app.contracts.product_v02.games import Finding, GamePage
+from app.contracts.product_v02.games import Finding, GamePage, GameSummary, ProviderSyncStatus, RecentGames
 from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
+from app.contracts.product_v02.presentation import GameDetail
 from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 
 FIXTURES = ROOT / "contracts/product-v02/fixtures"
-MODELS = {model.__name__: model for model in (Finding, GamePage, RepertoireSnapshot, GameEffectControl, GameLapse, LearningReceipt)}
+MODELS = {model.__name__: model for model in (Finding, GamePage, RepertoireSnapshot, GameEffectControl, GameLapse, LearningReceipt, GameSummary, ProviderSyncStatus, RecentGames, GameDetail)}
 
 
 def fixture(name):
@@ -146,6 +147,7 @@ builtins.__import__ = checked
 import app.contracts.product_v02.games
 import app.contracts.product_v02.repertoire
 import app.contracts.product_v02.learning
+import app.contracts.product_v02.presentation
 '''
     result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, env={"PYTHONPATH": ":".join(map(str, (ROOT / "backend", ROOT / "packages/game-review-contracts/src", ROOT / "contracts/game-evidence/src", ROOT / "packages/chess-core/src")))}, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -258,3 +260,14 @@ def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(s
     receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
     assert receipt.admission_status == "pending" and receipt.available_by is None
     assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
+
+
+def test_ui_history_status_and_filter_facts_remain_explicit():
+    detail = GameDetail.model_validate_json(json.dumps(fixture("game-detail")))
+    assert detail.moves == ("d2d4", "d7d5", "c2c4")
+    assert detail.findings[0].played_uci == "d2d4"
+    with pytest.raises(AttributeError): detail.moves.append("c7c6")
+    failed = fixture("provider-sync-failed")
+    assert ProviderSyncStatus.model_validate(failed).status == "failed"
+    with pytest.raises(ValidationError): ProviderSyncStatus.model_validate(failed | {"error": None})
+    assert GamePage.model_validate_json(json.dumps(fixture("incomplete-page"))).filters == (("rated", "false"), ("perfType", "rapid"))
