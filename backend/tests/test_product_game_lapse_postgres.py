@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 import importlib.util
+from itertools import count
 import json
 import hashlib
 from pathlib import Path
@@ -36,6 +37,7 @@ from app.contracts.product_v02.learning import GameLapse
 
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "postgres:18.6-trixie"
+RETAINED_POSITION_SEQUENCE = count(1)
 
 
 def docker(*args, check=True):
@@ -299,6 +301,16 @@ def retained_owner_case(case, changed):
     import chess
     board = chess.Board()
     board.remove_piece_at(chess.A8 if changed else chess.D8)
+    # Captures inspect actual catalogue alternatives across this module's DB.
+    # Give independent fixtures distinct legal positions rather than accidentally
+    # creating genuine cross-repertoire ambiguity for a later test.
+    position_number = next(RETAINED_POSITION_SEQUENCE)
+    assert position_number < 256
+    for file in range(8):
+        if position_number & (1 << file):
+            board.remove_piece_at(chess.square(file,6))
+    board.castling_rights = board.clean_castling_rights()
+    assert board.is_valid()
     start = board.fen(en_passant='legal')
     position = ' '.join(start.split()[:4])
     repertoire = case.card_id + '-repertoire'
@@ -413,6 +425,7 @@ def test_native_day_only_introduction_requires_exact_current_game_proof(case):
                                source_revision=lapse.finding.source_revision,source_digest=lapse.finding.source_digest))
     snapshot=RepertoireSnapshot.model_validate_json(json.dumps(payload))
     assert snapshot.decision_presentations[0].introduced_at is None
+
     assert capture['tables']['cards'][0]['introduced_before_game'] is True
     with case.transaction() as database:
         service=current_owner_game_feedback(database,retained_owner_capture=capture,snapshot=snapshot,clock=lambda:NOW)
@@ -433,3 +446,211 @@ def test_native_day_only_introduction_requires_exact_current_game_proof(case):
                 owner.decisions.current(lapse)
             assert store.get(lapse.key).status=='applied'
     assert snapshot.decision_presentations[0].introduced_at is None
+
+
+def current_encounter_case(case, *, unintroduced=True, matched=False):
+    """Published owners only: real retained capture, mapping, canonical admission."""
+    from app.legacy_game_observation import capture_game
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    repertoire,capture,snapshot,lapse = retained_owner_case(case, False)
+    with case.transaction() as database:
+        assert database.execute_native("""SELECT
+            to_regclass('study_product_introduction_state') IS NULL AND
+            to_regclass('study_product_introduction_periods') IS NULL AND
+            to_regclass('study_product_introduction_charges') IS NULL AND
+            to_regclass('study_product_introduction_rankings') IS NULL""").fetchone()[0]
+        database.execute_native('UPDATE settings SET study_only_mode=0,new_cards_per_day=100 WHERE id=1')
+        if unintroduced:
+            database.execute_native("UPDATE cards SET introduced_at=NULL,state='new',fsrs_card_json=NULL,"
+                "interval_days=0,first_correct_at=NULL,stability=0 WHERE id=%s",(case.card_id,))
+            database.execute_native('DELETE FROM reviews WHERE card_id=%s',(case.card_id,))
+        if matched:
+            database.execute_native("UPDATE imported_games SET moves_json='[\"e2e4\"]' WHERE id=%s",(lapse.key.game_id,))
+    metadata={**capture['authority'],'integrity_current':True,
+              'integrity_certificate':capture['catalogue_scope']['integrity_certificate']}
+    with case.transaction() as database:
+        def reader(statement,parameters=()):
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+        capture=capture_game(repertoire,lapse.key.game_id,(0,),reader=reader,metadata=lambda _:metadata,now=NOW)
+    payload=snapshot.model_dump(mode='json')
+    payload['membership'].update(digest=capture['export_digest'],source_revision=fingerprint(capture['authority']))
+    mapping=payload['decision_presentations'][0]
+    mapping.update(route_id=payload['membership']['routes'][0]['route_id'],route_ply=0,
+        introduction='unintroduced' if unintroduced else 'introduced',
+        introduced_at=None if unintroduced else mapping['introduced_at'],
+        introduction_matches_current_content=not unintroduced)
+    snapshot=RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    command=GameEncounter(key=lapse.key,
+        source=dict(provider=lapse.key.provider,game_id=lapse.key.game_id,
+            source_revision=lapse.finding.source_revision,source_digest=lapse.finding.source_digest),
+        decision=snapshot.decision_presentations[0],expected_uci='e2e4',
+        played_uci='e2e4' if matched else 'd2d4',observation='matched' if matched else 'missed',
+        detected_at=NOW.isoformat(),occurred_at=lapse.occurred_at,payload_digest='e'*64)
+    return capture,snapshot,command
+
+
+def current_encounter_service(database, capture, snapshot, *, now=NOW, include_introductions=True, paused=False):
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_feedback
+    introductions=None
+    if include_introductions:
+        from app.services.queue_admission_adapter import current_owner_encounter_introductions
+        introductions=current_owner_encounter_introductions(database,allowance='encounter_exception',paused=paused)
+    return current_owner_encounter_feedback(database,retained_owner_capture=capture,snapshot=snapshot,
+        clock=lambda:now,introductions=introductions,introduction_policy=EncounterIntroductionPolicy('encounter_exception'))
+
+
+@pytest.mark.parametrize('matched',[False,True])
+def test_native_encounter_current_owner_introduces_once_and_persists_original_without_review(case, matched):
+    capture,snapshot,command=current_encounter_case(case,matched=matched)
+    with case.transaction() as database:
+        service=current_encounter_service(database,capture,snapshot,include_introductions=True)
+        receipt=service.accept_encounter(command)
+        assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
+        state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        assert state[0]==NOW.date().isoformat() and state[1]=='learning'
+        queue=database.execute_native('SELECT admission_kind,attempt_state,gameplay_priority_reason FROM daily_queue WHERE card_id=%s',
+            (case.card_id,)).fetchone()
+        assert tuple(queue)==('new','clean','product_game_encounter')
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0]==0
+        assert database.execute_native('SELECT COUNT(*) FROM study_attempts WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+    with case.transaction() as database:
+        service=current_encounter_service(database,capture,snapshot,now=NOW+timedelta(days=1))
+        replay=service.accept_encounter(command.model_copy(update={'detected_at':(NOW+timedelta(days=1)).isoformat()}))
+        assert replay.owner_receipt_id==receipt.owner_receipt_id and replay.detected_at==command.detected_at
+        assert replay.outcome=='duplicate' and replay.observation_recorded
+        assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())==state
+        assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
+            (case.card_id,)).fetchone()[0]==1
+        assert PostgresGameFeedbackStore(database).get(command.key).encounter==command
+        assert service.encounter_status(command.key).admission_status=='available'
+
+
+def test_native_encounter_rolls_back_introduction_charge_queue_and_receipt_together(case):
+    capture,snapshot,command=current_encounter_case(case)
+    with pytest.raises(RuntimeError,match='after_canonical_introduction'):
+        with case.transaction() as database:
+            service=current_encounter_service(database,capture,snapshot)
+            def fail_save(*args): raise RuntimeError('after_canonical_introduction')
+            service.store.save=fail_save
+            service.accept_encounter(command)
+    with case.transaction() as database:
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
+        assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+        assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
+            (case.card_id,)).fetchone()[0]==0
+        assert PostgresGameFeedbackStore(database).get(command.key) is None
+        assert current_encounter_service(database,capture,snapshot).accept_encounter(command).admission_status=='available'
+
+
+def test_native_encounter_ordinary_introduction_race_preserves_current_progress_and_single_charge(case):
+    capture,snapshot,command=current_encounter_case(case)
+    with case.transaction() as database:
+        service=current_encounter_service(database,capture,snapshot)
+        assert service.introductions.admit_encounter(NOW.date().isoformat(),
+            repertoire_id=command.decision.repertoire_id,decision_id=command.key.decision_id,target=command.decision).status=='introduced'
+        state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+    with case.transaction() as database:
+        # Original capture still says unintroduced; only that current field may
+        # race. Definition/revision/source/membership fences remain exact.
+        receipt=current_encounter_service(database,capture,snapshot).accept_encounter(command)
+        assert receipt.disposition=='review_priority' and receipt.admission_status=='available'
+        assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())==state
+        assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
+            (case.card_id,)).fetchone()[0]==1
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0]==0
+
+
+def test_native_encounter_saved_pause_and_pre_admission_hold_remain_durable(case):
+    capture,snapshot,command=current_encounter_case(case)
+    with case.transaction() as database:
+        database.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0 WHERE id=1')
+        receipt=current_encounter_service(database,capture,snapshot,paused=True).accept_encounter(command)
+        assert receipt.admission_status=='pending' and receipt.deferred_reason=='paused' and receipt.available_by is None
+        assert receipt.observation_recorded and receipt.detected_at==command.detected_at
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
+    with case.transaction() as database:
+        service=current_encounter_service(database,capture,snapshot)
+        service.control_effect(GameEffectControl(key=command.key,source_revision=2,action='hold',reason='reanalysis'))
+    with case.transaction() as database:
+        database.execute_native('UPDATE settings SET study_only_mode=0 WHERE id=1')
+        service=current_encounter_service(database,capture,snapshot)
+        assert service.accept_encounter(command).status=='held'
+        service.maintain(after=effect_id(command.key)[:-1])
+        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
+        assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
+            (case.card_id,)).fetchone()[0]==0
+
+
+def test_native_encounter_historical_miss_adds_priority_without_rewinding_later_learning(case):
+    capture,snapshot,command=current_encounter_case(case,unintroduced=False)
+    with case.transaction() as database:
+        # This legitimate later introduction/learning is current owner state.
+        # The original source event remains evidence, never an Again authority.
+        later=(NOW-timedelta(hours=2)).isoformat()
+        database.execute_native('UPDATE cards SET introduced_at=%s WHERE id=%s',(later,case.card_id))
+        before=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json,first_correct_at FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        history=database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]
+        service=current_encounter_service(database,capture,snapshot,include_introductions=False)
+        receipt=service.accept_encounter(command)
+        assert receipt.disposition=='review_priority' and receipt.observation_recorded
+        assert receipt.admission_status=='available'
+        assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json,first_correct_at FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())==before
+        assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==history
+        assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
+            (case.card_id,)).fetchone()[0]==1
+        assert PostgresGameFeedbackStore(database).get(command.key).encounter==command
+        assert service.encounter_status(command.key).admission_status=='available'
+        service.control_effect(GameEffectControl(key=command.key,source_revision=2,action='hold',reason='reanalysis'))
+        assert PostgresGameFeedbackStore(database).get(command.key).encounter==command
+        assert service.encounter_status(command.key).status=='held'
+
+
+def test_native_encounter_correct_introduced_play_records_frequency_only(case):
+    capture,snapshot,command=current_encounter_case(case,unintroduced=False,matched=True)
+    with case.transaction() as database:
+        before=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())
+        history=database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]
+        service=current_encounter_service(database,capture,snapshot,include_introductions=False)
+        receipt=service.accept_encounter(command)
+        assert receipt.observation_recorded and receipt.disposition=='frequency_only'
+        assert receipt.admission_status=='not_requested' and receipt.available_by is None
+        assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+        assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==history
+        assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
+            (case.card_id,)).fetchone())==before
+        assert PostgresGameFeedbackStore(database).get(command.key).encounter==command
+
+
+@pytest.mark.parametrize('ordinary_limit,study_only',[(0,False),(0,True),(1,True)])
+def test_native_encounter_targeted_exception_preserves_ordinary_settings(case, ordinary_limit, study_only):
+    if ordinary_limit:
+        with case.transaction() as database:
+            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                introduced_at,revision,content_type) SELECT %s,repertoire_id,kind,start_fen,moves_json,'learning',
+                due_date,%s,revision,content_type FROM cards WHERE id=%s""",
+                (case.card_id+'-ordinary-spent',NOW.date().isoformat(),case.card_id))
+    capture,snapshot,command=current_encounter_case(case)
+    with case.transaction() as database:
+        database.execute_native('UPDATE settings SET new_cards_per_day=%s,study_only_mode=%s WHERE id=1',
+            (ordinary_limit,int(study_only)))
+        database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=%s',
+            (command.decision.repertoire_id,))
+        before=tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())
+        service=current_encounter_service(database,capture,snapshot)
+        receipt=service.accept_encounter(command)
+        assert receipt.admission_status=='available' and receipt.disposition=='first_introduction'
+        assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==before
+        assert database.execute_native('SELECT new_cards_per_day FROM repertoires WHERE id=%s',
+            (command.decision.repertoire_id,)).fetchone()[0]==0
+        assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]==0
+        assert database.execute_native('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(case.card_id,)).fetchone()[0]==1
