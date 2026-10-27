@@ -3,7 +3,7 @@ from pydantic import Field
 
 from . import Identifier, UciMove
 from .games import Finding, GameSummary
-from .learning import LearningReceipt
+from .learning import EncounterReceipt, LearningReceipt
 
 
 class GameDetail(GameSummary):
@@ -11,4 +11,5 @@ class GameDetail(GameSummary):
     starting_fen: Identifier
     moves: tuple[UciMove, ...] = Field(max_length=1000)
     findings: tuple[Finding, ...]
-    receipts: tuple[LearningReceipt, ...]
+    # Specific subtype first preserves its fields during nested serialization.
+    receipts: tuple[EncounterReceipt | LearningReceipt, ...]

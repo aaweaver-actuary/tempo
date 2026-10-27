@@ -48,6 +48,21 @@ timestamp alone cannot prove current content was introduced before a game. The
 synthetic snapshot proves both facts explicitly so a valid miss can be expressed.
 Position keys use the public `tempo_evidence_math.opening_position_key(fen)`
 legal-en-passant four-field FEN convention, scoped by repertoire and variant.
+`route_id` / zero-based `route_ply` optionally restrict a binding to the proven
+authored response occurrence; they must be paired. Paired nulls mean an explicitly
+global owner binding. A mapping for route A never grants authority for transposed
+route B merely because its position/response matches. Snapshot validation checks
+the referenced route, repertoire, ply and selected response.
+
+When Study supplies an explicit `introduced_before_game` boolean but its stored
+date is only day precision, preserve that boolean with `introduced_at: null` and
+`introduction_game: {provider, game_id, source_revision, source_digest}`. Boolean
+and exact game scope must be supplied together; unknown stays null/null. The
+boolean applies **only** to that captured game source, never to another provider,
+game or corrected revision/digest. It does not replace current-content provenance,
+availability or snapshot revision checks. No date is upgraded into a timestamp.
+`snapshot-route-game-introduction.json` demonstrates two legally transposed routes
+with only route A mapped and an explicit game-scoped chronology assertion.
 
 ## Frozen operation semantics
 
@@ -102,6 +117,82 @@ legal-en-passant four-field FEN convention, scoped by repertoire and variant.
 These requirements describe the receiver contract. Tests here prove wire shapes,
 identity and adapter behavior; #487 owns actual persistence/race/scheduler proof.
 
+## Immediately next release: encounter priority, additive interface 0.2.1
+
+This backend-only seam follows [#481's next-release scope](https://github.com/aaweaver-actuary/tempo/issues/481#issuecomment-6429212066)
+and [#487's receiving-owner boundary](https://github.com/aaweaver-actuary/tempo/issues/487#issuecomment-6429214039).
+It changes no existing `GameLapse`, `LearningReceipt`, `LearningFeedbackPort` or
+qualified first-release behavior. No analysis/UI contract or second pipeline is added.
+
+`learning.GameEncounter` reuses `GameEffectKey`, exact `IntroductionGameScope`
+source facts and immutable `DecisionPresentation`, with original detected/occurred
+time, expected/played moves and explicit `matched`/`missed` observation. Study must
+revalidate approved current route/content/mapping and actual admission state;
+neither position equality nor `known_unintroduced` alone grants authority.
+`EncounterFeedbackPort` adds `accept_encounter` / `encounter_status` alongside the
+unchanged lapse operations, and uses the same `control_effect` hold/withdraw fence.
+
+Historical importance and lapse eligibility are different facts. A miss may retain
+priority even when it predates introduction or later learning prevents a lapse;
+introduced material can receive review priority without rewinding that progress.
+Correct play is frequency evidence, never a fabricated failure. A currently
+unintroduced approved decision may receive first-introduction priority for either
+played response; Study alone performs genuine fresh introduction/scheduling.
+Only a proven introduced-before-game miss can use the existing lapse/Again path.
+
+`EncounterReceipt` extends the existing receipt fields with original detection,
+source digest, original observation, whether that observation is durably recorded,
+owner `disposition` (review_priority / first_introduction / existing_lapse /
+frequency_only / unresolved), actual `admission_status`, and explicit deferral.
+Recorded importance/frequency does not claim admission or a review. A receipt's
+existing `admitted_at` is owner command acceptance, not a manufactured introduction
+or Study attempt. The approved next-release policy is a **targeted exception**:
+real-game encounter first introductions bypass the ordinary new-card cap,
+including exhausted/zero allowance, and Study-only. The owner keeps the global
+cap and Study-only settings unchanged, and ordinary unrelated introductions retain
+their existing controls. A first-introduction receipt cannot claim those ordinary
+controls as its deferral reason. Their reason labels remain wire-compatible for
+other owner contexts; this does not alter the ordinary introduction interface.
+
+Explicit full Study pause/disable and foreground/maintenance, active-attempt,
+source/identity/legality/conflict guards still apply. Disabled/full-paused controls
+remain visibly pending and cannot promise an availability deadline. This targeted
+exception is implemented/qualified only by the separate next-release Study owner;
+the installed/qualified first release and live settings are untouched.
+The existing owner `reason` field preserves foreground/maintenance explanations;
+no new transport labels or global settings changes are needed.
+
+The owner persists one logical key and original observation/disposition through
+replay, later admission and recomparison. Later introduced-state projections must
+never turn an earlier unintroduced encounter into a fake Again or reintroduce an
+already/concurrently introduced card. A request payload digest is an identity
+claim, not authority: the owner validates source/decision/response facts and must
+not hash mutable admission state or retry/detection metadata into a second effect.
+Changed/withdrawn sources still use the same durable control tombstone and never
+reverse historical effects. #487 owns atomic introduction/receipt, chronology,
+controls and races; #489 owns durable delivery/retry. No state mutation is here.
+
+Synthetic next-release examples live in [`fixtures/encounters`](fixtures/encounters)
+and are tested in the existing Python product-contract suite. They cover matched
+and missed unintroduced encounters, a historical miss, paused first introduction,
+owner review priority without a lapse, and an admitted encounter introduction
+under the targeted exception. Nested fixtures leave existing v0.2.0
+Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
+native persistence and normal-Study acceptance remain with their owning tasks.
+
+### Truthful Game Detail receipt reads
+
+The additive read projection accepts `EncounterReceipt | LearningReceipt` in
+`GameDetail.receipts`, with the more specific encounter subtype first. Python
+reuses the existing frozen receipt directly; the TypeScript parser mirrors that
+same wire type and deep-freezes its result. Both JSON and native-instance Python
+serialization retain disposition, actual admission, original detection/source,
+recorded observation and deferral fields. Legacy receipt JSON remains unchanged.
+An invalid/partial encounter receipt is rejected, never stripped/downcast into an
+apparently valid legacy result. `game-detail-encounter-receipt.json` is the shared
+mixed-receipt example. This changes no UI controller, admission policy, transport
+or broader analysis runtime; #490/#491 own adoption of the truthful read value.
+
 ## Synthetic examples and verification
 
 All [`fixtures/*.json`](fixtures) contain task-owned synthetic IDs/content:
@@ -140,7 +231,7 @@ flowchart LR
   Repertoire["Repertoire snapshot owner"] -->|RepertoireSnapshot| Compare["Pure comparer"]
   Games -->|existing CanonicalGame| Compare
   Compare -->|Finding| Games
-  Games -->|accept_lapse / control_effect| Study["Study / Learning effect owner"]
+  Games -->|accept_lapse / additive accept_encounter / control_effect| Study["Study / Learning effect owner"]
   Study -->|LearningReceipt| Games
   UI["Game Review UI"] -->|read supplied facts| Games
   Study --> Queue["Ordinary Study queue"]

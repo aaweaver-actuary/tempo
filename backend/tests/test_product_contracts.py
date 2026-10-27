@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "packages/game-review-contracts/src"))
 sys.path.insert(0, str(ROOT / "contracts/game-evidence/src"))
 sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 from app.contracts.product_v02.games import Finding, GamePage, GameSummary, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, withdrawal_only_delivery
+from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.contracts.product_v02.presentation import GameDetail
 from tempo_game_evidence_contracts.v3 import EvidenceDelivery
@@ -25,6 +25,10 @@ MODELS = {model.__name__: model for model in (Finding, GamePage, RepertoireSnaps
 
 def fixture(name):
     return json.loads((FIXTURES / f"{name}.json").read_text())["payload"]
+
+
+def encounter_fixture(name):
+    return json.loads((FIXTURES / "encounters" / f"{name}.json").read_text())["payload"]
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.json")), ids=lambda path: path.stem)
@@ -105,6 +109,29 @@ def test_current_availability_and_unchanged_introduced_content_are_expressible()
     assert not unknown.available and not unknown.introduction_matches_current_content
 
 
+@pytest.mark.parametrize("before_game", [True, False])
+def test_route_local_date_only_chronology_keeps_exact_game_source(before_game):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0]["introduced_before_game"] = before_game
+    value = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    binding, = value.decision_presentations
+    assert binding.route_id == "route-a" and binding.route_ply == 4
+    assert len(value.membership.routes) == 2  # Same response after a legal transposition.
+    assert binding.introduced_at is None  # Do not turn a supplied date into a timestamp.
+    assert binding.introduced_before_game is before_game
+    assert binding.introduction_game.game_id == "synthetic-transposed-game"
+    with pytest.raises(ValidationError): binding.introduction_game.source_revision = 2
+    changed = binding.introduction_game.model_copy(update={"source_revision": 2})
+    assert changed != binding.introduction_game  # Other/corrected sources do not share the proof.
+
+
+@pytest.mark.parametrize("field,value", [("route_id", None), ("route_ply", None), ("route_ply", 5), ("introduction_game", None), ("introduced_before_game", None)])
+def test_partial_or_wrong_occurrence_and_chronology_scope_is_rejected(field, value):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0][field] = value
+    with pytest.raises(ValidationError): RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+
 def test_contract_imports_have_no_runtime_side_effects():
     script = '''
 import builtins, sys
@@ -158,6 +185,83 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert len(boundary_errors([("study", "import app.games.feedback"), ("games", "import app.study.game_feedback")])) == 2
 
 
+@pytest.mark.parametrize("path", sorted((FIXTURES / "encounters").glob("*.json")), ids=lambda path: path.stem)
+def test_next_release_encounter_values_round_trip_without_changing_lapse_wire(path):
+    document = json.loads(path.read_text())
+    model = {"GameEncounter": GameEncounter, "EncounterReceipt": EncounterReceipt}[document["model"]]
+    value = model.model_validate_json(json.dumps(document["payload"]))
+    assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("name", ["unintroduced-correct", "unintroduced-missed", "historical-missed"])
+def test_encounter_facts_preserve_frequency_and_historical_importance_without_lapse(name):
+    payload = encounter_fixture(name)
+    value = GameEncounter.model_validate_json(json.dumps(payload))
+    assert value.observation == ("matched" if value.played_uci == value.expected_uci else "missed")
+    assert value.decision.introduced_before_game is False
+    assert value.decision.introduction_game == value.source
+    if name == "historical-missed":
+        assert value.occurred_at < value.decision.introduced_at
+        assert value.observation == "missed"  # Still importance, even when lapse-ineligible.
+    original = fixture("lapse")
+    original["finding"]["introduced_before_game"] = False
+    with pytest.raises(ValidationError): GameLapse.model_validate_json(json.dumps(original))
+    payload["decision"]["presentation_id"] = "changed-caller-input"
+    assert value.decision.presentation_id == "existing-physical-card"
+    with pytest.raises(ValidationError): value.source.source_revision = 2
+
+
+@pytest.mark.parametrize("fault", ["key", "expected", "observation", "source_chronology"])
+def test_encounter_rejects_incoherent_source_and_response_claims(fault):
+    payload = encounter_fixture("unintroduced-missed")
+    if fault == "key": payload["key"]["game_id"] = "different-game"
+    elif fault == "expected": payload["expected_uci"] = "g1f3"
+    elif fault == "observation": payload["observation"] = "matched"
+    else: payload["decision"]["introduction_game"]["source_revision"] = 2
+    with pytest.raises(ValidationError): GameEncounter.model_validate_json(json.dumps(payload))
+
+
+def test_same_encounter_key_and_hold_survive_later_introduction_and_recomparison():
+    payload = encounter_fixture("unintroduced-missed")
+    original = GameEncounter.model_validate_json(json.dumps(payload))
+    payload["decision"].update(introduction="introduced", introduced_at="2026-10-26T13:00:00Z")
+    later = GameEncounter.model_validate_json(json.dumps(payload))
+    assert original.key.logical_id() == later.key.logical_id()
+    assert original.source == later.source and original.detected_at == later.detected_at
+    assert later.decision.introduced_before_game is False  # Admission cannot turn it into a lapse.
+    hold = GameEffectControl(key=original.key, source_revision=2, action="hold", reason="source_corrected")
+    assert hold.withdrawal is None and hold.key == later.key
+
+
+@pytest.mark.parametrize("fault", ["correct_lapse", "held_available", "deferred_available", "paused_deadline", "reasonless_pending", "miss_frequency_only"])
+def test_encounter_receipt_reports_disposition_and_control_deferral_honestly(fault):
+    payload = encounter_fixture("paused-introduction")
+    if fault == "correct_lapse": payload.update(observation="matched", disposition="existing_lapse")
+    elif fault == "held_available": payload.update(status="held", admission_status="available", deferred_reason=None)
+    elif fault == "deferred_available": payload["admission_status"] = "available"
+    elif fault == "paused_deadline": payload["available_by"] = "2026-10-28T12:00:00Z"
+    elif fault == "reasonless_pending": payload.update(deferred_reason=None, reason=None)
+    else: payload.update(disposition="frequency_only", admission_status="not_requested", deferred_reason=None)
+    with pytest.raises(ValidationError): EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("ordinary_control", ["zero_limit", "introduction_allowance", "study_only"])
+def test_encounter_first_introduction_cannot_defer_to_ordinary_controls(ordinary_control):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=ordinary_control, reason=ordinary_control)
+    with pytest.raises(ValidationError, match="targeted exception"):
+        EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("safety_guard", ["paused", "disabled", "active_attempt", "authority_unavailable", "unknown_chronology"])
+def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(safety_guard):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=safety_guard, reason=safety_guard)
+    receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
+    assert receipt.admission_status == "pending" and receipt.available_by is None
+    assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
+
+
 def test_ui_history_status_and_filter_facts_remain_explicit():
     detail = GameDetail.model_validate_json(json.dumps(fixture("game-detail")))
     assert detail.moves == ("d2d4", "d7d5", "c2c4")
@@ -167,3 +271,31 @@ def test_ui_history_status_and_filter_facts_remain_explicit():
     assert ProviderSyncStatus.model_validate(failed).status == "failed"
     with pytest.raises(ValidationError): ProviderSyncStatus.model_validate(failed | {"error": None})
     assert GamePage.model_validate_json(json.dumps(fixture("incomplete-page"))).filters == (("rated", "false"), ("perfType", "rapid"))
+
+
+@pytest.mark.parametrize("name", ["paused-introduction", "encounter-exception-introduction", "historical-review-priority"])
+def test_game_detail_round_trip_retains_encounter_receipt_and_legacy_wire(name):
+    payload = fixture("game-detail-encounter-receipt")
+    payload["receipts"][-1] = encounter_fixture(name)
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert type(value.receipts[0]) is LearningReceipt
+    assert type(value.receipts[-1]) is EncounterReceipt
+    assert json.loads(value.model_dump_json()) == payload
+    with pytest.raises(ValidationError): value.receipts[-1].key.game_id = "changed"
+
+
+def test_game_detail_serializing_native_encounter_instance_does_not_downcast():
+    value = GameDetail.model_validate_json(json.dumps(fixture("game-detail-encounter-receipt")))
+    encounter = EncounterReceipt.model_validate_json(json.dumps(encounter_fixture("paused-introduction")))
+    direct = GameDetail(**(value.model_dump(exclude={"receipts"}) | {"receipts": (encounter, value.receipts[0])}))
+    assert direct.receipts[0] is encounter
+    assert json.loads(direct.model_dump_json())["receipts"][0] == json.loads(encounter.model_dump_json())
+
+
+@pytest.mark.parametrize("fault", ["invalid_admission", "unsupported_version", "missing_disposition"])
+def test_game_detail_rejects_invalid_encounter_instead_of_dropping_fields(fault):
+    payload = fixture("game-detail-encounter-receipt")
+    if fault == "invalid_admission": payload["receipts"][-1]["admission_status"] = "assumed_available"
+    elif fault == "unsupported_version": payload["receipts"][-1]["interface_version"] = "unsupported"
+    else: del payload["receipts"][-1]["disposition"]
+    with pytest.raises(ValidationError): GameDetail.model_validate_json(json.dumps(payload))
