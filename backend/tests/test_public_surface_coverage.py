@@ -72,3 +72,18 @@ from app.analysis.coverage.interfaces import rank_coverage, RepertoireIndex
     completed = subprocess.run([sys.executable, "-c", script], cwd=ROOT,
         env={"PYTHONPATH": ":".join(str(ROOT / source) for source in SOURCES)}, capture_output=True, text=True, timeout=15)
     assert completed.returncode == 0, completed.stderr
+
+
+def test_analysis_surface_graph_reuses_existing_owner_guard_and_negative_controls():
+    from test_product_contracts import boundary_errors, has_import_cycle
+    modules = {}
+    for component in ("coverage", "similarity", "proposals"):
+        for path in (ROOT / "backend/app/analysis" / component).rglob("*.py"):
+            module = ".".join(path.relative_to(ROOT / "backend").with_suffix("").parts)
+            modules[module] = path.read_text()
+    assert not boundary_errors([("analysis", source, module) for module, source in modules.items()])
+    assert not has_import_cycle(modules)
+    assert boundary_errors([("analysis", "import app.main")])
+    assert boundary_errors([("analysis", "from app.repertoire.position_index import build_index")])
+    assert has_import_cycle({"app.analysis.one": "from .two import value",
+                             "app.analysis.two": "from .one import value"})

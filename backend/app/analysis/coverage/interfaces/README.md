@@ -40,6 +40,8 @@ imports remain unchanged. #501 removes exact bypasses after migration/negative
 controls. No whole-graph decoupling, installed routing or deployment is claimed.
 
 Checks: `backend/tests/test_public_surface_coverage.py` proves named export
-identity, closed owner exports, cold no-I/O import and a numerical fixture.
+identity, closed owner exports, cold no-I/O import and a numerical fixture. It
+reuses #482's existing scoped import/cycle guard on the three Analysis components,
+including root/private-import and cycle negative controls; it adds no checker.
 Retained semantic suite: `backend/tests/test_product_coverage_ranking.py`.
 Root registration/packaging belongs to #501; whole-graph guards belong to #482.
