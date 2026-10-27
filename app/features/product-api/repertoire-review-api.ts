@@ -4,7 +4,7 @@ import {
 } from "./contracts";
 import type {
   CommandOptions, ConflictRow, RepertoireReviewClient, RepertoireReviewRead, RequestOptions,
-} from "../repertoire-review/api";
+} from "../repertoire-review/interfaces";
 
 export interface RepertoireReviewEndpoints {
   review: (repertoireId: string) => string;

@@ -2,7 +2,7 @@
 from datetime import date, datetime, timezone
 
 from fsrs import Card
-from tempo_scheduling import Schedule, schedule_review as _schedule_review, unlock_ready
+from tempo_scheduling.interfaces import Schedule, schedule_review as _schedule_review, unlock_ready
 
 
 def schedule_review(

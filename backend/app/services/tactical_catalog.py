@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from app.chess.cards import card_id
-from .puzzles import validate_puzzle_record
+from app.tactics.interfaces import validate_puzzle_record
 from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions, lock_daily_tactic_admission
 from tempo_legacy_database.adapters.tactics import catalog as storage
 

@@ -72,3 +72,35 @@ The exact source inputs are in allocation.json. Current main and the listed publ
 ## Concrete residual edges
 
 `allocation.json.remaining_edges` assigns the exact Tactics mutation/Study receiver boundary (#503/#487), existing pure clean-streak export (#503), generic coordinator/health assembly (#501), and remaining caller/contract adoption. The legal-position helper remains the same pure evidence-math operation; the allowed repertoire/wire dependency is corrected explicitly instead of copying it into chess. Analysis runner’s immutable coverage value dependency is likewise explicit. None of these edges is considered resolved because an interface directory exists.
+
+## Integrated source checkpoint
+
+The integration branch consumes published #483, #491, #494, #497, #503 and #490
+surfaces. Actual caller changes include snapshot/index projection, Analysis
+preparation/publication, Games provider bindings, scheduling and Tactics
+validation, presentation adapters, and Repertoire/Game Review UI composition.
+Three JavaScript package interface subpaths and the Rust public module are
+registered. UI view/session/store internals still require their named owners.
+
+The worker no longer imports the HTTP API to register handlers. Its fifteen
+durable and three maintenance handlers now assemble in private composition,
+with partial-start cleanup and explicit process entry points. Its legacy HTTP
+readiness wait and mixed coordinator remain; this is not deployed lifecycle
+isolation. Operational readiness evaluates immutable supplied observations;
+concrete SQL/Celery/HTTP selection belongs to composition. See the canonical
+[composition boundary](../../../../backend/app/product_composition/interfaces/README.md).
+
+`node scripts/check-interface-allocation.mjs` feeds this single allocation map
+to #482's existing guard. Missing surfaces fail closed. `boundary.sources`
+registers source ownership for checking, not an editing lease. Empty table lists
+grant no mutation authority; remaining SQL ownership errors must be resolved by
+the actual state owner, not assigned wholesale to infrastructure. The map is not
+a claim that historical/legacy source is already fully partitioned.
+
+Focused assembled source checks pass; the complete graph is **not qualified**.
+Current blockers are missing wire/Study/content owner surfaces, #482's blanket
+rejection of explicit same-owner operation reexports, and chess-line's NodeNext
+facade import suffixes. Package type qualification passed for Board/Study-session
+and scoped UI; Rust public-module registration compiles offline. No policy,
+provider, native database or installed product completion follows from these
+source checks.

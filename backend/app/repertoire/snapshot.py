@@ -11,7 +11,7 @@ import json
 from typing import Callable, Mapping
 
 import chess
-from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.interfaces import opening_position_key
 from tempo_game_evidence_contracts.legacy import authority_source_digest, authority_graph_digest, decision_identity, fingerprint
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, RepertoireSnapshot as MembershipSnapshot
 

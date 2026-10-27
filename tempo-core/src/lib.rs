@@ -1,3 +1,4 @@
+pub mod interfaces;
 mod domain;
 mod structs;
 

@@ -40,7 +40,21 @@
       "depends_on": [],
       "activation": "#497 dispatched chess/engine/adapter batch; neutral chess exports only. Contract-bound backend helpers remain with their actual policy/adapter owner, never a hidden neutral-library re-export.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/chess",
+          "packages/chess-core",
+          "packages/chess-line",
+          "tempo-core/src"
+        ],
+        "modules": {
+          "app.chess": "backend/app/chess",
+          "tempo_chess_core": "packages/chess-core/src/tempo_chess_core",
+          "@tempo/chess-line": "packages/chess-line/src"
+        },
+        "tables": []
+      }
     },
     {
       "component": "wire-contracts",
@@ -79,7 +93,24 @@
       ],
       "activation": "ready after parent dispatch",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/contracts",
+          "contracts",
+          "packages/game-review-contracts"
+        ],
+        "modules": {
+          "app.contracts": "backend/app/contracts",
+          "tempo_game_review_contracts": "packages/game-review-contracts/src/tempo_game_review_contracts",
+          "tempo_game_evidence_contracts": "contracts/game-evidence/src/tempo_game_evidence_contracts",
+          "tempo_analysis_jobs_contracts": "contracts/analysis-jobs/src/tempo_analysis_jobs_contracts",
+          "tempo_learning_contracts": "contracts/learning/src/tempo_learning_contracts",
+          "tempo_content_publication_contracts": "contracts/content-publication/src/tempo_content_publication_contracts",
+          "tempo_intelligence_contracts": "contracts/intelligence/src/tempo_intelligence_contracts"
+        },
+        "tables": []
+      }
     },
     {
       "component": "scheduling",
@@ -100,7 +131,18 @@
       "depends_on": [],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "packages/scheduling",
+          "backend/app/services/scheduler.py",
+          "backend/app/services/scheduling_review_contracts.py"
+        ],
+        "modules": {
+          "tempo_scheduling": "packages/scheduling/src/tempo_scheduling"
+        },
+        "tables": []
+      }
     },
     {
       "component": "study",
@@ -139,7 +181,26 @@
       ],
       "activation": "#487 ownership retained; interface work deferred behind immediate functional fix. No other lane edits its implementations.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/study",
+          "services/learning/application",
+          "services/learning/remediation",
+          "services/learning/runtime",
+          "backend/app/services/real_game_feedback.py",
+          "backend/app/services/real_game_feedback_adapter.py",
+          "backend/app/services/review_service.py",
+          "backend/app/services/queue_application.py"
+        ],
+        "modules": {
+          "app.study": "backend/app/study",
+          "tempo_learning_review": "services/learning/application/src/tempo_learning_review",
+          "tempo_learning_remediation": "services/learning/remediation/src/tempo_learning_remediation",
+          "tempo_learning_runtime": "services/learning/runtime/src/tempo_learning_runtime"
+        },
+        "tables": []
+      }
     },
     {
       "component": "introductions",
@@ -164,7 +225,18 @@
       ],
       "activation": "#487 ownership retained; interface work deferred behind immediate functional fix. No other lane edits its implementations.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/study/introductions",
+          "backend/app/services/queue_admission_adapter.py",
+          "database/tempo_legacy_database/adapters/study/product_introductions.py"
+        ],
+        "modules": {
+          "app.study.introductions": "backend/app/study/introductions"
+        },
+        "tables": []
+      }
     },
     {
       "component": "presentations",
@@ -185,11 +257,26 @@
       "depends_on": [
         "chess",
         "scheduling",
-        "wire-contracts"
+        "wire-contracts",
+        "evidence-math"
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/study/presentations",
+          "backend/app/services/prefix_split.py",
+          "backend/app/prefix_split_commands.py",
+          "backend/app/study/recombination",
+          "database/tempo_legacy_database/adapters/study/recombination.py"
+        ],
+        "modules": {
+          "app.study.presentations": "backend/app/study/presentations",
+          "app.study.recombination": "backend/app/study/recombination"
+        },
+        "tables": []
+      }
     },
     {
       "component": "tactics",
@@ -215,7 +302,19 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/services/tactic_capture.py",
+          "backend/app/services/tactical_catalog.py",
+          "backend/app/services/puzzles.py",
+          "backend/app/services/threat_grading.py",
+          "backend/app/tactic_commands.py",
+          "backend/app/tactics/interfaces"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "repertoire",
@@ -240,7 +339,19 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/repertoire/position_index.py",
+          "backend/app/repertoire/snapshot.py",
+          "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
+          "backend/app/repertoire/interfaces"
+        ],
+        "modules": {
+          "app.repertoire": "backend/app/repertoire"
+        },
+        "tables": []
+      }
     },
     {
       "component": "content-changes",
@@ -276,7 +387,23 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/repertoire/changes",
+          "backend/app/studies",
+          "backend/app/authoring",
+          "services/content",
+          "database/tempo_legacy_database/adapters/authored_repertoires/product_changes.py"
+        ],
+        "modules": {
+          "app.repertoire.changes": "backend/app/repertoire/changes",
+          "app.studies": "backend/app/studies",
+          "app.authoring": "backend/app/authoring",
+          "tempo_content": "services/content/src/tempo_content"
+        },
+        "tables": []
+      }
     },
     {
       "component": "comparison",
@@ -307,7 +434,21 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "packages/repertoire-comparison",
+          "packages/game-classification",
+          "packages/game-actions",
+          "backend/app/games/feedback/comparison.py"
+        ],
+        "modules": {
+          "tempo_repertoire_comparison": "packages/repertoire-comparison/src/tempo_repertoire_comparison",
+          "tempo_game_classification": "packages/game-classification/src/tempo_game_classification",
+          "tempo_game_actions": "packages/game-actions/src/tempo_game_actions"
+        },
+        "tables": []
+      }
     },
     {
       "component": "game-ingestion",
@@ -342,7 +483,22 @@
       ],
       "activation": "#491 ownership retained; prepare new surfaces from its published source, preserve active Games sync/history fix and release leases before moving implementation.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "packages/game-ingestion",
+          "backend/app/games/ingestion",
+          "backend/app/games/feedback",
+          "services/game-evidence"
+        ],
+        "modules": {
+          "app.games.ingestion": "backend/app/games/ingestion",
+          "app.games.feedback": "backend/app/games/feedback",
+          "tempo_game_ingestion": "packages/game-ingestion/src/tempo_game_ingestion",
+          "tempo_game_evidence": "services/game-evidence/src/tempo_game_evidence"
+        },
+        "tables": []
+      }
     },
     {
       "component": "lichess",
@@ -364,7 +520,16 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/games/providers/lichess.py",
+          "backend/app/games/providers/lichess_acquisition.py",
+          "backend/app/games/providers/interfaces/lichess"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "chesscom",
@@ -386,7 +551,16 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/games/providers/chesscom.py",
+          "backend/app/games/providers/chesscom_acquisition.py",
+          "backend/app/games/providers/interfaces/chesscom"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "game-sync",
@@ -412,7 +586,17 @@
       ],
       "activation": "#491 ownership retained; prepare new surfaces from its published source, preserve active Games sync/history fix and release leases before moving implementation.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/games/sync",
+          "backend/app/services/game_sync.py"
+        ],
+        "modules": {
+          "app.games.sync": "backend/app/games/sync"
+        },
+        "tables": []
+      }
     },
     {
       "component": "evidence-math",
@@ -433,7 +617,16 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "packages/evidence-math"
+        ],
+        "modules": {
+          "tempo_evidence_math": "packages/evidence-math/src/tempo_evidence_math"
+        },
+        "tables": []
+      }
     },
     {
       "component": "probability",
@@ -456,7 +649,16 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/analysis/probability"
+        ],
+        "modules": {
+          "app.analysis.probability": "backend/app/analysis/probability"
+        },
+        "tables": []
+      }
     },
     {
       "component": "coverage",
@@ -479,7 +681,16 @@
       ],
       "activation": "ASSIGNED TO #494; awaiting parent dispatch of this single Analysis interface batch. No feature/policy expansion.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/analysis/coverage"
+        ],
+        "modules": {
+          "app.analysis.coverage": "backend/app/analysis/coverage"
+        },
+        "tables": []
+      }
     },
     {
       "component": "similarity",
@@ -497,11 +708,21 @@
       ],
       "depends_on": [
         "chess",
-        "wire-contracts"
+        "wire-contracts",
+        "evidence-math"
       ],
       "activation": "ASSIGNED TO #494; awaiting parent dispatch of this single Analysis interface batch. No feature/policy expansion.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/analysis/similarity"
+        ],
+        "modules": {
+          "app.analysis.similarity": "backend/app/analysis/similarity"
+        },
+        "tables": []
+      }
     },
     {
       "component": "stockfish",
@@ -526,7 +747,17 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "workers/repertoire-stockfish",
+          "scripts/stockfish-process.mjs",
+          "scripts/stockfish-child.mjs",
+          "contracts/analysis-jobs/src/tempo_analysis_jobs_contracts/stockfish.py"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "maia",
@@ -549,7 +780,14 @@
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "workers/maia"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "proposals",
@@ -571,11 +809,23 @@
       ],
       "depends_on": [
         "chess",
-        "wire-contracts"
+        "wire-contracts",
+        "evidence-math"
       ],
       "activation": "ASSIGNED TO #494; awaiting parent dispatch of this single Analysis interface batch. No feature/policy expansion.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/analysis/proposals",
+          "services/intelligence"
+        ],
+        "modules": {
+          "app.analysis.proposals": "backend/app/analysis/proposals",
+          "tempo_intelligence": "services/intelligence/src/tempo_intelligence"
+        },
+        "tables": []
+      }
     },
     {
       "component": "ui-study-games",
@@ -609,7 +859,20 @@
       ],
       "activation": "#490 dispatched UI batch; exact new interface/test files only. Existing view/root edits remain #501-controlled windows.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "app/features/game-review",
+          "app/views/home_view.tsx",
+          "app/views/training_view.tsx",
+          "app/views/tactics_view.tsx",
+          "packages/study-session",
+          "app/features/study/interfaces",
+          "app/features/tactics/interfaces"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "ui-repertoire-board",
@@ -641,7 +904,18 @@
       ],
       "activation": "#490 dispatched UI batch; exact new interface/test files only. Existing view/root edits remain #501-controlled windows.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "app/features/repertoire-review",
+          "app/views/repertoire_view.tsx",
+          "app/views/studies_view.tsx",
+          "packages/board-ui",
+          "apps/workbench-web"
+        ],
+        "modules": {},
+        "tables": []
+      }
     },
     {
       "component": "storage-infrastructure",
@@ -668,7 +942,20 @@
       ],
       "activation": "Integration-owned. Storage implementations stay in database by state owner; no cross-owner mutation facade",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "database",
+          "backend/app/operations",
+          "backend/app/services/activity_gate.py",
+          "backend/app/services/durable_tasks.py"
+        ],
+        "modules": {
+          "tempo_legacy_database": "database/tempo_legacy_database",
+          "app.operations": "backend/app/operations"
+        },
+        "tables": []
+      }
     },
     {
       "component": "analysis-runner",
@@ -690,7 +977,16 @@
       ],
       "activation": "Mechanical interface work only; lower-priority D/E behavior expansion remains paused",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/analysis/jobs"
+        ],
+        "modules": {
+          "app.analysis.jobs": "backend/app/analysis/jobs"
+        },
+        "tables": []
+      }
     },
     {
       "component": "composition",
@@ -738,7 +1034,26 @@
       ],
       "activation": "Wait for published owner surfaces; only integration chooses concrete adapters/providers/roots",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
-      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes"
+      "second_commit": "Migrate own internal callers; submit cross-owner/root caller patch to #501; no policy or SQL ownership changes",
+      "boundary": {
+        "sources": [
+          "backend/app/product_composition",
+          "app/product-composition",
+          "backend/app/main.py",
+          "backend/app/tasks.py",
+          "backend/app/background_worker.py",
+          "backend/app/services/game_sync_coordinator.py",
+          "backend/app/command_gateway.py",
+          "backend/app/command_dispatch.py",
+          "app/features/product-api/RepertoireAuditMount.tsx",
+          "app/features/product-api/repertoire-review-api.ts"
+        ],
+        "modules": {
+          "app.product_composition": "backend/app/product_composition"
+        },
+        "tables": [],
+        "composition": true
+      }
     }
   ],
   "shared_file_owner": {
@@ -923,6 +1238,7 @@
   "allocation_revision": 2,
   "supersedes": "First allocation owner numbers only: no leases remain for the earlier #484/#485/#486/#492/#493/#495/#496/#498/#499/#500 suggestions. Existing functional issue ownership is preserved; this revision assigns only the restructuring work.",
   "dispatch_clarification": "Revision2 ownership is authoritative for interface restructuring: #497 owns all seven listed groups. Stockfish-only work does not complete that batch; six other groups remain assigned, not reassigned or unowned.",
+  "publication_holds": [],
   "remaining_edges": [
     {
       "edge": "repertoire/wire legal-position helper",
@@ -930,14 +1246,14 @@
       "implementation_owner": 503,
       "source": "backend/app/repertoire/{position_index,snapshot}.py and canonical wire validators -> tempo_evidence_math.opening_position_key",
       "operation": "Keep the existing exact legal-en-passant helper; correct allowed DAG to depend on pure evidence-math, then route imports through tempo_evidence_math.interfaces after its publication approval. No moved/copied identity algorithm.",
-      "status": "DAG correction recorded; caller migration pending qualified published interface"
+      "status": "Repertoire/index/root callers now use same pure public evidence-math helper; canonical wire caller belongs to #482."
     },
     {
       "edge": "R11 adapter calls private clean-streak reducer",
       "owner_issue": 503,
       "source": "database/tempo_legacy_database/adapters/study/recombination.py -> app.study.recombination.policy.reduce_clean_streak",
       "operation": "Expose the same existing typed pure reduce_clean_streak in app.study.presentations.interfaces, document it and extend the allocated identity/semantic check; no wrapper/copied policy. #501 then routes the exact adapter import.",
-      "status": "Exact small owning follow-on request; publication hold preserved"
+      "status": "Exact small owning follow-on request; publication holds resolved"
     },
     {
       "edge": "Tactics mutations mix content/progress with Study effects",
@@ -954,14 +1270,14 @@
       "functional_lease_owner_issue": 491,
       "source": "backend/app/background_worker.py -> main.coordinator -> services/game_sync_coordinator.py",
       "operation": "#501 owns generic worker lifecycle/handler assembly. #491 retains current functional leases and Games-specific operations; its public sync surface must not export the all-domain coordinator. Extract/rebind existing handlers through published owner operations after lease release, preserving priority/control/replay behavior.",
-      "status": "Explicit root follow-on; not hidden in a public barrel"
+      "status": "API module import removed; exact 15+3 handlers moved to private root, fake lifecycle checked. Mixed coordinator and HTTP schema-startup wait remain explicit."
     },
     {
       "edge": "Operational health imports Celery and legacy connection composition",
       "owner_issue": 501,
       "source": "backend/app/operations/postgres_readiness.py -> app.celery_app and tempo_legacy_database.connections",
       "operation": "ReadinessProbe contract is import-safe; actual observation adapters and lifetime wiring still need root injection with named readiness/unavailable semantics proof. No concrete implementation re-exported as isolated.",
-      "status": "Contract delivered; concrete decoupling pending"
+      "status": "Implemented pure public evaluate_readiness with immutable observations and concrete root wiring; 15 focused cases passed"
     },
     {
       "edge": "Analysis result contract names private coverage value",
@@ -969,7 +1285,7 @@
       "receiving_owner_issue": 494,
       "source": "backend/app/analysis/jobs/ports.py -> app.analysis.coverage.ranking.CoverageRanking",
       "operation": "Keep class identity and route to the qualified coverage interfaces export; Analysis runner may depend on this immutable coverage value. No copied DTO.",
-      "status": "Allowed DAG corrected; migration waits for #494 surface"
+      "status": "Implemented exact class-identity routing through app.analysis.coverage.interfaces; assembled changed-boundary rerun pending"
     },
     {
       "edge": "Games/contract/provider caller and compatibility adoption",
@@ -986,7 +1302,26 @@
       ],
       "source": "Per-owner caller patches and legacy package-root aliases",
       "operation": "Apply exact qualified import-only caller changes, map actual implementations in #482 guard, then retire each compatibility alias after all declared callers and negative controls pass.",
-      "status": "#483 four snapshot imports + integration-owned repertoire/infrastructure routes already implemented and focused-tested; #491 patch next"
+      "status": "18 Python callers adopted across repertoire, Games, Analysis and infrastructure; owner surface integration continues"
     }
-  ]
+  ],
+  "additional_integration_files": [
+    "backend/app/operations/interfaces/readiness.py",
+    "backend/app/product_composition/readiness.py",
+    "backend/app/operations/postgres_readiness.py",
+    "backend/tests/test_postgres_readiness.py",
+    "backend/app/product_composition/legacy_worker.py",
+    "backend/app/product_composition/worker.py",
+    "backend/app/product_composition/interfaces/analysis.py",
+    "backend/app/product_composition/interfaces/worker.py",
+    "backend/tests/test_worker_composition.py",
+    "scripts/check-interface-allocation.mjs",
+    "tempo-core/src/lib.rs",
+    "packages/board-ui/package.json",
+    "packages/chess-line/package.json",
+    "packages/study-session/package.json",
+    "app/features/product-api/RepertoireAuditMount.tsx",
+    "app/features/product-api/repertoire-review-api.ts"
+  ],
+  "boundary_status": "Source map registered for all 26 logical groups; missing owner surfaces and legacy import/table ownership violations fail closed. Empty tables grant no mutation authority. This is not a passing whole-repository guard claim."
 }

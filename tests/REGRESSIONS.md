@@ -5379,3 +5379,21 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | Current publication owner and reader/writer separation are enforced; missing qualified receiver or real admission prevents work | `backend/tests/test_product_continuous_sync.py` |
 | Games acknowledges accepted/pending encounter evidence without inline queue work, private availability polling or replaying a fresh command after lost acknowledgment | `backend/tests/test_product_priority_intake_boundary.py` |
 | Explicit provider assembly requires the exact public priority intake and fails before source access when it is absent | `backend/tests/test_product_provider_feedback.py` |
+
+## Explicit composition and interface adoption (#501)
+
+- `backend/tests/test_worker_composition.py` proves cold worker entry, unchanged
+  fifteen-plus-three registration, request/write/wake order, readiness ordering
+  and partial-start/stop cleanup with fake capabilities. No worker is started.
+- `backend/tests/test_public_surface_infrastructure.py` and the three health
+  cases in `test_postgres_readiness.py` cover immutable facts, pure readiness
+  evaluation and actual root translation over fake transports.
+- The registered `interface-surfaces-python`, `interface-surfaces-ui` and
+  `interface-surfaces-process` suites retain each delivered owner's existing
+  cold-import, contract identity and explicit invocation checks.
+- `interface-directory-dag` invokes the #482 checker with the canonical allocation
+  map; unavailable interfaces and unresolved boundaries fail, never silently skip.
+  Its checker negative controls remain in `npm run test:components`.
+
+Whole-graph qualification and actual deployment/resource isolation remain pending.
+The legacy coordinator/HTTP startup wait are disclosed in composition's README.

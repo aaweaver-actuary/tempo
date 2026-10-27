@@ -21,9 +21,8 @@ flowchart LR
 ```
 
 The exact existing lifecycle/failure semantics are preserved. Import opens no
-connection, provider, engine or worker. The existing `ports.PreparedAnalysis`
-still names the private coverage value type; #501 routes that exact edge when
-#494 publishes its compatible coverage surface. Canonical wire origins likewise
+connection, provider, engine or worker. `ports.PreparedAnalysis` now names the identical coverage value through
+`app.analysis.coverage.interfaces`, preserving type identity. Canonical wire origins likewise
 await #482. Those edges are not hidden or claimed resolved by this directory.
 Actual source-generation native fencing and product D/E activation remain
 pending independently; interface work does not expand their feature scope.

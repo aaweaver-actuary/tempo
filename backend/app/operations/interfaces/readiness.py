@@ -30,3 +30,4 @@ class ReadinessProbe(Protocol):
     def __call__(self) -> dict[str, object]: ...
 
 
+__all__ = ["ReadinessProbe", "ReadinessSnapshot", "ReadinessUnavailable"]

@@ -1,27 +1,33 @@
 # Composition entry points
 
-Owner: #501. This runtime-root-only surface explicitly exports the existing typed
-`CoverageRequest`, `coverage_settings_digest` and async `prepare_coverage`.
-It does not introduce a feature registry, coordinator, default settings or
-provider. Domains must never import this package; roots alone bind concrete
-implementations to the existing receiving capabilities.
+Owner: #501. Runtime roots select an explicit process surface; domain components
+never import composition. The namespace eagerly loads no optional feature.
+
+- `analysis` exports the unchanged typed `CoverageRequest`, settings digest and
+  `prepare_coverage`. No provider, worker or default settings are constructed.
+- `worker.run_legacy_worker` is the explicit process operation. It lazily selects
+  the retained coordinator and storage writer, registers the same fifteen durable
+  and three maintenance handlers once, and releases partially started resources.
+  No API module is imported to register handlers.
+- Private `readiness.py` binds the existing bounded storage/one-second Celery
+  observations to `app.operations.interfaces.evaluate_readiness` and HTTP503.
 
 ```mermaid
 flowchart LR
-  Entry["Runtime entry point"] --> Public["Declared composition operation"]
-  Public --> Wiring["Existing private Analysis wiring"]
-  Wiring --> Owners["Injected capabilities / owner public surfaces"]
+  Entry["API / worker process entry"] --> Public["Explicit process surface"]
+  Public --> Wiring["Private root assembly"]
+  Wiring --> Owners["Owner public operations / immutable facts"]
+  Wiring -. "retained legacy exception" .-> Mixed["Mixed coordinator + HTTP startup readiness"]
 ```
 
-Importing the public surface performs no I/O or startup. Explicit execution keeps
-the existing bounded acquisition, immutable evidence and owner policy calls;
-publication/Study effects remain separate owning operations. There is no change
-to existing settings, scope, timeout or lifecycle behavior.
+The old worker HTTP readiness wait is retained to preserve SQLite schema-startup
+ordering. Removing it requires the storage startup owner/precondition; this is
+not completed lifecycle isolation. The mixed coordinator still imports Games,
+Study maintenance and optional producers; their separation remains explicit
+follow-on work. Moving registration into composition does not certify Study
+independence, deployed resource isolation or a newly activated feature.
 
-This checkpoint routes the qualified #483 repertoire surface. Other concrete
-Analysis/Study/wire imports await the allocated owners' exact compatible public
-surfaces. Games, HTTP, worker and frontend entry points are not exported until
-their qualified source is integrated. In particular, the legacy background
-worker→`main.coordinator` edge remains explicit #501 follow-up work. Operational
-health now binds immutable observations through `app.operations.interfaces` in
-the private readiness root; this barrel does not disguise them as completed isolation.
+Focused fake-capability checks cover cold public imports, exact registration,
+request/write/wake order, readiness failure ordering and partial-start cleanup.
+Existing policy/native evidence is reused where source is unchanged. No broad
+runtime build, server, live health request or deployment is part of these checks.

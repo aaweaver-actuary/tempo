@@ -22,8 +22,8 @@ from app.games.feedback.comparison import compare_game, normalize_record
 from app.games.feedback.interfaces import Coordinator
 from app.games.feedback.interfaces import FeedbackRunner
 from app.games.feedback.interfaces import AcquisitionFailure, Clock, GamesStore, JobSpec
-from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
-from app.games.providers.lichess_acquisition import LichessAcquisitionError, fetch_lichess_page
+from app.games.providers.interfaces.chesscom import ChesscomAcquisitionError, fetch_chesscom_page
+from app.games.providers.interfaces.lichess import LichessAcquisitionError, fetch_lichess_page
 from app.repertoire.interfaces import build_index
 
 class AcquisitionPolicy(Value):

@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 import chess
-from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.interfaces import opening_position_key
 
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot
 

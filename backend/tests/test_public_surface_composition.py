@@ -5,11 +5,11 @@ from test_public_surface_infrastructure import cold_import
 
 
 def test_composition_public_import_has_no_operational_startup():
-    cold_import("app.product_composition.interfaces")
+    cold_import("app.product_composition.interfaces.analysis")
 
 
 def test_composition_reuses_the_existing_typed_entry_points():
-    public = importlib.import_module("app.product_composition.interfaces")
+    public = importlib.import_module("app.product_composition.interfaces.analysis")
     implementation = importlib.import_module("app.product_composition.analysis")
     assert public.__all__ == ["CoverageRequest", "coverage_settings_digest", "prepare_coverage"]
     for name in public.__all__:

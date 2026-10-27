@@ -5,13 +5,13 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 
-from tempo_evidence_math import LearnerPolicy, move_universe
+from tempo_evidence_math.interfaces import LearnerPolicy, move_universe
 
 from app.analysis.coverage.interfaces import AnalysisLimits, PersonalGame, rank_candidates, rank_coverage
 from app.analysis.jobs.interfaces import AnalysisFence, AnalysisPublications, Cancellation, PreparedAnalysis
 from app.analysis.jobs.stockfish import EngineBridgeUnavailable
 from app.analysis.proposals.interfaces import CapabilityUnavailable, ProposalCoordinator
-from app.analysis.probability.ports import ExplorerProbabilityProvider, ExplorerRequest
+from app.analysis.probability.interfaces import ExplorerProbabilityProvider, ExplorerRequest
 from app.analysis.similarity.interfaces import RetrievalRequest, retrieve
 from app.contracts.product_v02.analysis import PopulationSelection, RankingInput
 from app.repertoire.interfaces import RepertoireSnapshot

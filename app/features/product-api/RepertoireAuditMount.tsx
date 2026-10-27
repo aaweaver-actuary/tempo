@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { RepertoireNavigationIntent } from "../repertoire-review/api";
+import { loadRepertoireReviewView, type RepertoireNavigationIntent } from "../repertoire-review/interfaces";
 import { RepertoireReviewSession } from "../repertoire-review/state";
 import { createProductRepertoireReviewApi } from "./repertoire-review-api";
 
-const Review = lazy(() => import("../repertoire-review/RepertoireReviewView").then(module => ({ default:module.RepertoireReviewView })));
+const Review = lazy(() => loadRepertoireReviewView().then(defaultView => ({ default:defaultView })));
 
 /** Root supplies its retained authoring view and existing authenticated fetch. */
 export function RepertoireAuditMount({ children, apiUrl, request, onNavigate }: {

@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from fastapi import APIRouter, Header, HTTPException
-from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.interfaces import opening_position_key
 
 from app.contracts.product_v02.analysis import (
     Proposal, ProposalDecision, RepertoireChangePort, RepertoireChangeReceipt,

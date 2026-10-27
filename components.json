@@ -7,14 +7,55 @@
       "maintainer": "Tempo / #193 A",
       "status": "implemented",
       "root": "tools/analysis-restoration/a_bridge",
-      "publicExports": ["main"],
-      "dependencies": ["chess", "tempo_game_evidence_contracts"],
-      "buildInputs": ["pyproject.toml", "uv.lock", "src", "tests", "fixtures", "REGRESSIONS.md", "qualify.py"],
+      "publicExports": [
+        "main"
+      ],
+      "dependencies": [
+        "chess",
+        "tempo_game_evidence_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "fixtures",
+        "REGRESSIONS.md",
+        "qualify.py"
+      ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {"name": "tempo-a-bridge", "version": "0.1.0", "format": "wheel + sdist"},
-      "tests": [{"owner": "analysis-a-bridge", "kind": "python", "cwd": "tools/analysis-restoration/a_bridge", "command": "python -m pytest tests --import-mode=importlib -q", "inputs": ["tests", "src", "fixtures", "pyproject.toml", "uv.lock"]}],
-      "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"]},
-      "dataOwnership": {"authority": "#193 A external integration tooling", "databases": [], "migrations": []},
+      "artifact": {
+        "name": "tempo-a-bridge",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "analysis-a-bridge",
+          "kind": "python",
+          "cwd": "tools/analysis-restoration/a_bridge",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "fixtures",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#193 A external integration tooling",
+        "databases": [],
+        "migrations": []
+      },
       "testInventory": "REGRESSIONS.md"
     },
     {
@@ -250,35 +291,99 @@
       "maintainer": "Tempo / #108",
       "status": "implemented",
       "root": "services/content",
-      "publicExports": ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source", "canonical_position", "inventory_segment", "validate_exercise_step", "build_publication"],
-      "dependencies": ["chess", "tempo_chess_core", "tempo_content_publication_contracts", "pydantic", "psycopg", "psycopg_pool"],
+      "publicExports": [
+        "SourceSnapshot",
+        "ContentService",
+        "ContentError",
+        "stable_id",
+        "canonical_source",
+        "canonical_position",
+        "inventory_segment",
+        "validate_exercise_step",
+        "build_publication"
+      ],
+      "dependencies": [
+        "chess",
+        "tempo_chess_core",
+        "tempo_content_publication_contracts",
+        "pydantic",
+        "psycopg",
+        "psycopg_pool"
+      ],
       "buildInputs": [
         "../../database/tempo_content_database",
-        "hatch_build.py","pyproject.toml", "uv.lock", "src", "fixtures", "tests", "integration", "run_suite.py", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"],
+        "hatch_build.py",
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "fixtures",
+        "tests",
+        "integration",
+        "run_suite.py",
+        "README.md",
+        "INTERFACES.md",
+        "REGRESSIONS.md",
+        "VALIDATION.md"
+      ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {"name": "tempo-content", "version": "0.1.0", "format": "wheel + sdist"},
+      "artifact": {
+        "name": "tempo-content",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
       "tests": [
         {
           "owner": "content",
           "kind": "python",
           "cwd": "services/content",
           "command": "python run_suite.py pure",
-          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"]
+          "inputs": [
+            "tests",
+            "fixtures",
+            "src",
+            "run_suite.py",
+            "pyproject.toml",
+            "uv.lock",
+            "../../database/tempo_content_database/tests/unit"
+          ]
         },
         {
           "owner": "content",
           "kind": "postgres",
           "cwd": "services/content",
           "command": "python ../../database/tempo_content_database/tooling/run_postgres.py",
-          "inputs": ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"]
+          "inputs": [
+            "../../database/tempo_content_database/tooling/run_postgres.py",
+            "../../database/tempo_content_database/tests/test_postgres.py",
+            "../../database/tempo_content_database/tooling/benchmark.py",
+            "run_suite.py",
+            "src",
+            "fixtures",
+            "pyproject.toml",
+            "uv.lock"
+          ]
         }
       ],
-      "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"], "postgresql": "18"},
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ],
+        "postgresql": "18"
+      },
       "dataOwnership": {
         "authority": "#108 / #264",
-        "databases": ["dedicated workspace Content database"],
-        "migrations": ["../../database/tempo_content_database/ddl/migrations/manifest.json"],
-        "documents": ["contracts/OWNERSHIP.md", "services/content/INTERFACES.md"],
+        "databases": [
+          "dedicated workspace Content database"
+        ],
+        "migrations": [
+          "../../database/tempo_content_database/ddl/migrations/manifest.json"
+        ],
+        "documents": [
+          "contracts/OWNERSHIP.md",
+          "services/content/INTERFACES.md"
+        ],
         "productionAdoption": false
       },
       "testInventory": "REGRESSIONS.md"
@@ -1871,6 +1976,72 @@
         "database/browser-intents",
         "packages/study-session",
         "packages/chess-line"
+      ]
+    },
+    {
+      "id": "interface-surfaces-python",
+      "owner": "#501 / allocated component owners",
+      "kind": "python",
+      "cwd": ".",
+      "command": "python -m pytest -q backend/tests/test_public_surface_analysis_runner.py backend/tests/test_public_surface_chess.py backend/tests/test_public_surface_chesscom.py backend/tests/test_public_surface_comparison.py backend/tests/test_public_surface_composition.py backend/tests/test_public_surface_coverage.py backend/tests/test_public_surface_game_ingestion.py backend/tests/test_public_surface_game_sync.py backend/tests/test_public_surface_infrastructure.py backend/tests/test_public_surface_lichess.py backend/tests/test_public_surface_presentations.py backend/tests/test_public_surface_probability.py backend/tests/test_public_surface_proposals.py backend/tests/test_public_surface_repertoire.py backend/tests/test_public_surface_similarity.py backend/tests/test_public_surface_tactics.py backend/tests/test_worker_composition.py",
+      "inputs": [
+        "backend/app",
+        "backend/tests",
+        "database/tempo_legacy_database",
+        "packages",
+        "services",
+        "contracts"
+      ]
+    },
+    {
+      "id": "interface-surfaces-ui",
+      "owner": "#490 / #501",
+      "kind": "frontend",
+      "cwd": ".",
+      "command": "node node_modules/vitest/vitest.mjs run tests/unit/public-surface-study-games.test.ts tests/unit/public-surface-repertoire-board.test.ts",
+      "inputs": [
+        "app/features",
+        "app/views",
+        "app/product-composition",
+        "tests/unit",
+        "packages/board-ui",
+        "packages/study-session",
+        "apps/workbench-web/src"
+      ]
+    },
+    {
+      "id": "interface-surfaces-process",
+      "owner": "#497 / #501",
+      "kind": "node",
+      "cwd": ".",
+      "command": "node --test tests/runner/public-surface-stockfish.test.mjs workers/maia/tests/interfaces.test.mjs",
+      "inputs": [
+        "tests/runner/public-surface-stockfish.test.mjs",
+        "workers/repertoire-stockfish",
+        "workers/maia",
+        "app/features/product-api/contracts.ts"
+      ]
+    },
+    {
+      "id": "interface-directory-dag",
+      "owner": "#501 / #482",
+      "kind": "node",
+      "cwd": ".",
+      "command": "node scripts/check-interface-allocation.mjs",
+      "inputs": [
+        "scripts/check-interface-allocation.mjs",
+        "docs/architecture/interface-directory-allocation/allocation.json",
+        "tools/component-build/check-interface-boundaries.mjs",
+        "tools/component-build/check-python.py",
+        "backend/app",
+        "database",
+        "packages",
+        "services",
+        "contracts",
+        "app",
+        "apps",
+        "workers",
+        "tempo-core/src"
       ]
     }
   ]
