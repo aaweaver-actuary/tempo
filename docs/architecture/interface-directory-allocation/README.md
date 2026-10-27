@@ -98,9 +98,11 @@ the actual state owner, not assigned wholesale to infrastructure. The map is not
 a claim that historical/legacy source is already fully partitioned.
 
 Focused assembled source checks pass; the complete graph is **not qualified**.
-Current blockers are missing wire/Study/content owner surfaces, #482's blanket
-rejection of explicit same-owner operation reexports, and chess-line's NodeNext
-facade import suffixes. Package type qualification passed for Board/Study-session
-and scoped UI; Rust public-module registration compiles offline. No policy,
+Current blockers are missing wire/Study/content owner surfaces and #482's
+blanket rejection of explicit same-owner operation reexports. The published
+chess-line NodeNext correction is integrated. All three package interface
+subpaths compile and import; seven frontend import lines across six callers now
+use those public surfaces. Scoped caller types and eight UI cases pass. Rust
+public-module registration compiles offline. No policy,
 provider, native database or installed product completion follows from these
 source checks.
