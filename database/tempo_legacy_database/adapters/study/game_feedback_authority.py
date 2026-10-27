@@ -185,9 +185,24 @@ class CurrentOwnerDecisions:
             board.push_uci(uci)
         _require(len(matching) == 1, 'current_owner_decision_not_in_executable')
         mappings = tuple(item for item in self.snapshot.decision_presentations
-            if item.decision_id == key.decision_id and item.presentation_id == card_id)
-        _require(len(mappings) == 1, 'current_owner_exact_introduction_time_unproved')
-        mapping=mappings[0]
+            if item.decision_id == key.decision_id)
+        # Route provenance is not a second physical target. Prove every other
+        # fact equal, retaining the complete snapshot and current graph binding.
+        _require(mappings and len({item.model_dump_json(exclude={'route_id','route_ply'})
+                                   for item in mappings}) == 1,
+                 'current_owner_conflicting_decision_bindings')
+        if len(mappings) > 1 or len(graphs) > 1:
+            routes = {item.route_id for item in mappings}
+            _require(None not in routes and routes == {row['line_id'] for row in graphs},
+                     'current_owner_incomplete_decision_bindings')
+        if priority_only:
+            supplied = tuple(item for item in mappings
+                if (item.route_id,item.route_ply) == (finding.route_id,finding.route_ply))
+            _require(supplied, 'current_owner_supplied_route_unproved')
+            mapping = supplied[0]  # Already proved equivalent; keep the actual supplied member.
+        else:
+            mapping = min(mappings, key=lambda item:(item.route_id or '',
+                -1 if item.route_ply is None else item.route_ply))
         if priority_only:
             _require(mapping.presentation_revision == actual['revision'], 'current_owner_card_revision_changed')
             # Priority makes no chronology assertion. The original command stays
@@ -211,7 +226,7 @@ class CurrentOwnerDecisions:
         else:
             _require(mapping.introduced_at == actual['introduced_at'],
                      'current_owner_exact_introduction_time_unproved')
-        return mappings
+        return (mapping,)
 
 
 def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, clock,
