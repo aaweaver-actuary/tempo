@@ -550,9 +550,12 @@ def test_native_encounter_rolls_back_introduction_charge_queue_and_receipt_toget
 def test_native_encounter_ordinary_introduction_race_preserves_current_progress_and_single_charge(case):
     capture,snapshot,command=current_encounter_case(case)
     with case.transaction() as database:
-        service=current_encounter_service(database,capture,snapshot)
-        assert service.introductions.admit_encounter(NOW.date().isoformat(),
-            repertoire_id=command.decision.repertoire_id,decision_id=command.key.decision_id,target=command.decision).status=='introduced'
+        from app.services.queue_admission_adapter import current_owner_encounter_introductions
+        ordinary=current_owner_encounter_introductions(database,allowance='ordinary',paused=False)
+        target=command.decision.model_copy(update={
+            'repertoire_revision':capture['authority']['scope_source_revision']+1})
+        assert ordinary.admit_encounter(NOW.date().isoformat(),
+            repertoire_id=command.decision.repertoire_id,decision_id=command.key.decision_id,target=target).status=='introduced'
         state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
     with case.transaction() as database:
