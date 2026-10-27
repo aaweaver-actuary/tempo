@@ -12,7 +12,7 @@ from tempo_legacy_database.adapters.games.product_review import (
 from tempo_legacy_database.adapters.games.product_sources import PostgresCanonicalGamesStore
 
 from .game_review import SystemClock, configuration_policy, configured_job, create_game_review
-from app.games.feedback.continuous import ContinuousSync, ForwardWindow
+from app.games.feedback.interfaces import ContinuousSync, ForwardWindow
 from .game_sync import create_game_sync
 from .game_worker import run_optional_worker
 

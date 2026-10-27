@@ -15,7 +15,7 @@ from tempo_legacy_database.adapters.study.game_feedback_authority import (
 from app.contracts.product_v02 import Identifier, Value
 from pydantic import Field
 from app.legacy_game_observation import capture_game
-from app.repertoire import project_capture
+from app.repertoire.interfaces import project_capture
 from .feedback import PreparedFeedback, prepare_game_feedback
 from .retained_game import retained_canonical_game
 

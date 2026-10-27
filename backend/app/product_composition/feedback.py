@@ -17,7 +17,7 @@ from app.contracts.product_v02.games import Finding, GameRecord
 from app.contracts.product_v02.learning import GameLapse, LearningFeedbackPort, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.games.feedback.comparison import compare_game, compare_record, effect_key
-from app.repertoire import build_index
+from app.repertoire.interfaces import build_index
 from app.study.game_feedback import semantic_digest
 
 

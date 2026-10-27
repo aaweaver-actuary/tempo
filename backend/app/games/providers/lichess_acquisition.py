@@ -15,7 +15,7 @@ from typing import Literal
 import httpx
 
 from app.contracts.product_v02.games import GamePage, GameRecord, GameRejection, GameWindow
-from ..ingestion.normalizer import RejectedGame, normalize_provider_pgn
+from ..ingestion.interfaces import RejectedGame, normalize_provider_pgn
 
 MAX_PAGE_SIZE = 1000
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024

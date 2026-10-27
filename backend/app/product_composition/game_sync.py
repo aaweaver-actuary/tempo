@@ -19,12 +19,12 @@ from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, Ga
 from app.contracts.product_v02.learning import EncounterFeedbackPort, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import RepertoireSnapshot, RepertoireSnapshotPort
 from app.games.feedback.comparison import compare_game, normalize_record
-from app.games.feedback.coordinator import Coordinator
-from app.games.feedback.jobs import FeedbackRunner
-from app.games.feedback.ports import AcquisitionFailure, Clock, GamesStore, JobSpec
+from app.games.feedback.interfaces import Coordinator
+from app.games.feedback.interfaces import FeedbackRunner
+from app.games.feedback.interfaces import AcquisitionFailure, Clock, GamesStore, JobSpec
 from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
 from app.games.providers.lichess_acquisition import LichessAcquisitionError, fetch_lichess_page
-from app.repertoire import build_index
+from app.repertoire.interfaces import build_index
 
 class AcquisitionPolicy(Value):
     """Explicit user filters plus finite integration resource bounds.

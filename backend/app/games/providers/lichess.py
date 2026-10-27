@@ -7,7 +7,7 @@ import io
 import chess.pgn
 import httpx
 
-from ..ingestion.normalizer import RejectedGame, normalize_provider_pgn
+from ..ingestion.interfaces import RejectedGame, normalize_provider_pgn
 from ..records import GameRecord
 from ..contracts import ProviderRequestError
 

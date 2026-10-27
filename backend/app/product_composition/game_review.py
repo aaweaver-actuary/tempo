@@ -5,10 +5,10 @@ from threading import Lock
 import os
 import time
 
-from app.games.feedback.review import GameReview, ReviewUnavailable
-from app.games.feedback.coordinator import Coordinator
+from app.games.feedback.interfaces import GameReview, ReviewUnavailable
+from app.games.feedback.interfaces import Coordinator
 from app.study.game_feedback import GameFeedback
-from app.repertoire import project_capture
+from app.repertoire.interfaces import project_capture
 from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore, fence_imported_game
 from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore

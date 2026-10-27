@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Protocol, get_args
 
 from tempo_game_classification import classify_response, resolve_equivalent_mapping
-from tempo_game_ingestion import BytesInput, PgnGameIngester
+from tempo_game_ingestion.interfaces import BytesInput, PgnGameIngester
 from tempo_game_review_contracts import CanonicalGame, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 

@@ -17,7 +17,7 @@ from tempo_legacy_database.adapters.study.game_feedback_authority import Current
 from app.games.feedback.comparison import compare_game
 from app.games.feedback.history import HistoryComparison, PreparedHistoryPlan, history_task_identity
 from app.legacy_game_observation import capture_game
-from app.repertoire import build_index, project_capture
+from app.repertoire.interfaces import build_index, project_capture
 from .feedback_commands import retained_time_precision
 from .retained_game import retained_canonical_game
 

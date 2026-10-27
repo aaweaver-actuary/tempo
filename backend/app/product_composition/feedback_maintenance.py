@@ -14,7 +14,7 @@ from tempo_legacy_database.adapters.study.game_feedback_authority import (
 
 from app.contracts.product_v02.learning import GameEffectControl
 from app.legacy_game_observation import capture_game
-from app.repertoire import project_capture
+from app.repertoire.interfaces import project_capture
 from app.services.durable_tasks import (advance_task_slice_in_transaction, claim_task,
     complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice)
 from app.study.game_feedback import GameFeedback, effect_id

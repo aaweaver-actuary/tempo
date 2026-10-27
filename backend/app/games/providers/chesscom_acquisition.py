@@ -18,7 +18,7 @@ import httpx
 from app.contracts.product_v02.games import GamePage, GameRecord, GameRejection, GameWindow
 
 from ..contracts import ProviderRequestError
-from ..ingestion.normalizer import RejectedGame, normalize_provider_pgn
+from ..ingestion.interfaces import RejectedGame, normalize_provider_pgn
 
 _ORIGIN = "https://api.chess.com"
 _SPEEDS = frozenset({"bullet", "blitz", "rapid", "classical"})
