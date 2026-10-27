@@ -39,10 +39,11 @@ is the canonical cross-component drawing.
   no writer credential. Games' optional worker owns only its own connections,
   cancellation, bounded units and stored synchronization state.
 
-One producer-contract mismatch remains with #489: encounter mode currently emits
-new `GameLapse` commands for confirmed introduced misses before processing its
-encounters. The requested encounter-evidence-only intake must cover that case.
-#491 does not edit that owner, convert frozen commands or fabricate chronology.
+#489 `65881c5c` now emits immutable `GameEncounter` facts for new confirmed
+introduced misses as well. Its exact producer patch is integrated without a
+compatibility converter. Original frozen legacy lapse commands retain their
+existing identity/path; none is relabeled. Study alone chooses current disposition.
+The owner's 35 focused cases and dependency guard are reused unchanged.
 
 ## Explicit bounded forward windows
 
@@ -74,10 +75,16 @@ Study-maintenance import proof remains independent of Games.
 
 The earlier inline provider adapter and its unqualified native fixture were
 removed; earlier preparation receipts are not acceptance for this architecture.
-Next integrate #487's published durable intake and #489's command alignment,
-then prepare/run the smallest real persisted acceptance/replay and independent
-Study-refresh boundary. Do not repeat unchanged provider/stop/kill suites.
+Next integrate #487's published durable intake, then prepare/run the smallest
+real persisted acceptance/replay and independent Study-refresh boundary. #489's
+producer alignment is already consumed. Do not repeat unchanged provider/stop/kill suites.
 No native/image/browser work runs ahead of current repair/R11 priority.
+
+The new main guidance at `d87accc5` has been read and applies here. The parent
+allocates ingestion/sync interfaces to #491, root wiring to #501 and guards to
+#482. Mechanical interface moves await the exact revision-2 allocation path/
+commit; it is not in this branch or the checked published main/#501 baseline.
+No owner paths, interface map or receiving export names are guessed or duplicated.
 
 Source migration052 was reused unchanged from published `f137d970`. It adds only
 Games tables. Readiness remains schema051, so ordered upgrade/readiness number
