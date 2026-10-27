@@ -1,6 +1,7 @@
-"""Read-only repertoire SELECT contract against task-owned PostgreSQL only."""
+"""Bounded snapshot/reservation contracts against task-owned PostgreSQL only."""
 import json
 import os
+from pathlib import Path
 import uuid
 
 import chess
@@ -183,3 +184,141 @@ def test_published_snapshot_preserves_authored_freshness_when_generation_is_unch
     assert before.membership.digest != after.membership.digest
     connection.execute("DELETE FROM repertoire_cards")
     assert not storage.current_published_snapshot(connection, "rep").decision_presentations
+
+
+def prepare_reservation_contract(connection):
+    """Same existing FK/reservation facts needed by the source owner, task schema only."""
+    connection.execute("""
+        CREATE TABLE background_tasks(id text PRIMARY KEY,kind text,deduplication_key text);
+        INSERT INTO background_tasks VALUES('graph-task','opening_graph_rebuild','rep');
+        ALTER TABLE cards ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE repertoire_lines ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE repertoire_cards ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE repertoire_cards ADD FOREIGN KEY(card_id) REFERENCES cards(id);
+        ALTER TABLE opening_graph_publications ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE opening_graph_steps ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE opening_graph_steps ADD FOREIGN KEY(line_id) REFERENCES repertoire_lines(id);
+        ALTER TABLE repertoire_integrity_card_blocks ADD COLUMN issue_id text DEFAULT 'fixture';
+        ALTER TABLE repertoire_integrity_card_blocks ADD FOREIGN KEY(repertoire_id) REFERENCES repertoires(id);
+        ALTER TABLE repertoire_integrity_card_blocks ADD FOREIGN KEY(card_id) REFERENCES cards(id);
+    """)
+    # Exercise the actual retained source-counter/promotion triggers, not a
+    # fabricated epoch substitute. They close same-FK nonopening -> opening
+    # transitions that the parent FK reservation alone cannot prevent.
+    root = Path(__file__).resolve().parents[2]
+    migration = (root / "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql").read_text()
+    for declaration in ("CREATE FUNCTION promote_canonical_card_source()",
+                        "CREATE OR REPLACE FUNCTION advance_canonical_prefix_source()"):
+        start = migration.index(declaration)
+        end = migration.index("END $$;", start) + len("END $$;")
+        connection.execute(migration[start:end])
+    for line in migration.splitlines():
+        if line.startswith(("CREATE TRIGGER canonical_card_promote ", "CREATE TRIGGER canonical_line_source ",
+                            "CREATE TRIGGER canonical_link_source ", "CREATE TRIGGER canonical_card_source ",
+                            "CREATE TRIGGER canonical_card_insert_source ", "CREATE TRIGGER canonical_card_delete_source ")):
+            connection.execute(line)
+    connection.commit()
+    connection.execute("SELECT 1")  # Caller owns an active writer transaction.
+
+
+def peer_database(schema):
+    return psycopg.connect(DSN, row_factory=dict_row,
+        options=f"-c search_path={schema} -c lock_timeout=50 -c statement_timeout=1000")
+
+
+def test_snapshot_reservation_holds_introduction_fact_until_caller_commit(database):
+    connection, schema = database
+    prepare_reservation_contract(connection)
+    before = storage.reserve_current_snapshot(connection, "rep")
+    with peer_database(schema) as writer:
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            writer.execute("UPDATE cards SET introduced_at='2026-10-21' WHERE id='physical'")
+        writer.rollback()
+        assert storage.current_snapshot(connection, "rep").membership.digest == before.membership.digest
+        connection.commit()
+        writer.execute("UPDATE cards SET introduced_at='2026-10-21' WHERE id='physical'")
+    assert storage.current_snapshot(connection, "rep").membership.digest != before.membership.digest
+
+
+@pytest.mark.parametrize("statement", [
+    "UPDATE repertoire_lines SET name='changed' WHERE id='route'",
+    "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep','additional')",
+    "INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id) VALUES('foreign','physical','new')",
+    "DELETE FROM repertoire_integrity_card_blocks WHERE card_id='physical'",
+    "UPDATE opening_graph_publications SET generation=4 WHERE repertoire_id='rep'",
+    "UPDATE cards SET content_type='opening' WHERE id='not-opening'",
+    "INSERT INTO cards SELECT 'late',repertoire_id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,canonical_route_source,introduced_at FROM cards WHERE id='physical'",
+])
+def test_snapshot_reservation_closes_source_membership_and_integrity_phantoms(database, statement):
+    connection, schema = database
+    prepare_reservation_contract(connection)
+    connection.execute("INSERT INTO repertoires VALUES('foreign','Foreign',0,0,'[]')")
+    connection.execute("INSERT INTO cards SELECT 'additional',repertoire_id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,canonical_route_source,introduced_at FROM cards WHERE id='physical'")
+    connection.execute("INSERT INTO cards SELECT 'not-opening',repertoire_id,revision,start_fen,moves_json,trained_color,'tactic',archived,pending_validation,superseded_by,0,introduced_at FROM cards WHERE id='physical'")
+    connection.execute("UPDATE cards SET moves_json='[]' WHERE id='not-opening'")
+    connection.execute("INSERT INTO repertoire_integrity_card_blocks VALUES('foreign','physical','existing')")
+    connection.commit(); connection.execute("SELECT 1")
+    storage.reserve_current_snapshot(connection, "rep")
+    with peer_database(schema) as writer:
+        with pytest.raises(psycopg.errors.LockNotAvailable): writer.execute(statement)
+        writer.rollback()
+
+
+def test_snapshot_reservation_reuses_permanent_delete_card_edit_guard(database):
+    connection, schema = database
+    prepare_reservation_contract(connection)
+    storage.reserve_current_snapshot(connection, "rep")
+    with peer_database(schema) as writer:
+        assert writer.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) held",
+            ("tempo:card-edit:physical",)).fetchone()["held"] is False
+    connection.rollback()
+    with peer_database(schema) as writer:
+        assert writer.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) held",
+            ("tempo:card-edit:physical",)).fetchone()["held"] is True
+
+
+@pytest.mark.parametrize("statement,parameters", [
+    ("SELECT id FROM background_tasks WHERE id='graph-task' FOR UPDATE", ()),
+    ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:opening-graph:rep",)),
+    ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:prefix-transition:reservations",)),
+    ("SELECT id FROM cards WHERE id='physical' FOR UPDATE", ()),
+])
+def test_snapshot_reservation_yields_on_current_owner_contention(database, statement, parameters):
+    connection, schema = database
+    prepare_reservation_contract(connection)
+    with peer_database(schema) as foreground:
+        foreground.execute(statement, parameters)
+        with pytest.raises(storage.SnapshotReservationUnavailable, match="snapshot_source_busy"):
+            storage.reserve_current_snapshot(connection, "rep")
+        connection.rollback()  # Caller releases partial reservations after yielding.
+
+
+def test_snapshot_reservation_does_not_commit_caller_source_changes(database):
+    connection, _ = database
+    prepare_reservation_contract(connection)
+    before = storage.current_snapshot(connection, "rep")
+    connection.execute("UPDATE cards SET introduced_at='2026-10-21' WHERE id='physical'")
+    assert storage.reserve_current_snapshot(connection, "rep").membership.digest != before.membership.digest
+    connection.rollback()
+    assert storage.current_snapshot(connection, "rep").membership.digest == before.membership.digest
+
+
+def test_snapshot_reservation_requires_real_existing_writer_transaction(database):
+    connection, _ = database
+    prepare_reservation_contract(connection)
+    connection.rollback()
+    with pytest.raises(storage.SnapshotReservationUnavailable, match="borrowed_writer_transaction_required"):
+        storage.reserve_current_snapshot(connection, "rep")
+    connection.execute("SET TRANSACTION READ ONLY")
+    with pytest.raises(storage.SnapshotReservationUnavailable, match="borrowed_writer_transaction_required"):
+        storage.reserve_current_snapshot(connection, "rep")
+
+
+@pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
+def test_snapshot_reservation_requires_current_read_committed_view(database, isolation):
+    connection, _ = database
+    prepare_reservation_contract(connection)
+    connection.rollback()
+    connection.execute("SET TRANSACTION ISOLATION LEVEL " + isolation)
+    with pytest.raises(storage.SnapshotReservationUnavailable, match="borrowed_read_committed_transaction_required"):
+        storage.reserve_current_snapshot(connection, "rep")

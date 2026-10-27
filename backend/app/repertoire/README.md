@@ -262,3 +262,80 @@ unavailable-publication refusal without hiding audits, and source-freshness/
 unknown-mapping preservation. The existing SQL read statement is unchanged;
 its eight-case native contract remains retained evidence. This adds no model,
 schema, migration, generation writer or versioning framework.
+
+### Reserve the complete source through an Analysis publication commit
+
+`product_snapshot.reserve_current_snapshot(borrowed_database, repertoire_id)` is
+an explicit writer-only capability returning the existing audit
+`RepertoireSnapshot`. Ordinary `current_snapshot` / published-feedback reads
+remain unchanged and take no reservations. Existing repair `lock_retained_sources`
+serializes repair publication, but does not alone freeze all card introduction,
+availability and relationship facts in the generic snapshot digest. The bounded
+Study target fencer likewise is not a full-catalogue snapshot reservation.
+
+The caller must already own a Read Committed writer transaction, so the final
+read can see every completed source change. Historical transaction snapshots
+are explicitly unavailable. This operation opens no
+connection, commits/rolls back nothing, changes no transaction setting and writes
+no content, Study or Analysis state. Call it only for the short final publication
+transaction after expensive Analysis work, not while fetching providers,
+evaluating candidates or waiting for user input. Analysis owns its remaining
+settings/personal/evidence fences and its publication write.
+
+It reuses the existing bounded read and projection. Immutable projection is
+prepared before source reservations; after acquiring the reservations it runs
+the same fresh bounded read and compares **all** returned facts. Only identical
+facts permit returning the prepared immutable value. Introduction, blocked,
+deleted, membership and other changes are rejected even if the source counter
+stays the same. No chess/policy replay runs while the source reservations are held.
+
+Reservations reuse current owning order and namespaces:
+
+1. Current graph-task row, then shared prefix-transition and repertoire graph
+   reservations, then the repertoire row. All use NOWAIT/try operations.
+2. Existing workspace/publication/route rows; bounded existing candidate cards
+   (including nonopening cards which could enter the snapshot), sorted per-card
+   `card-edit` reservations plus card rows; current membership and graph rows.
+3. Every existing integrity-block/tombstone row for the included physical cards,
+   including blocks owned by another repertoire.
+
+The existing repertoire/card UPDATE row reservations close FK insert phantoms
+for routes, memberships, graph publications and card integrity blocks. Actual
+retained source-counter/promotion triggers are preserved; candidate card locks
+also cover empty-move content transitions which do not advance that counter. Existing `card-edit` reservations serialize permanent deletion and
+recreation, including an absent tombstone. No new table-wide lock, advisory
+namespace, source version table, engine, admission or canonical writer is added.
+All lock reads remain bounded; auxiliary relationship overflow refuses a partial
+fence. The locks are transaction-scoped and survive until the caller commits.
+
+`SnapshotReservationUnavailable.reason` reports
+`borrowed_writer_transaction_required`,
+`borrowed_read_committed_transaction_required`, `snapshot_source_busy`,
+`snapshot_source_changed` or `snapshot_reservation_exceeds_bound`. A busy row or
+advisory owner causes an immediate yield. **The caller must roll back on any
+failure**, releasing partial reservations; do not catch and continue using the
+same transaction. No retry loop or independent scheduler is implemented here.
+
+```mermaid
+sequenceDiagram
+  participant A as Analysis publication owner
+  participant R as Repertoire reservation adapter
+  participant D as Existing borrowed database
+  A->>R: reserve_current_snapshot(database, repertoire_id)
+  R->>D: Bounded owner read (prepare immutable value)
+  R->>D: Existing try/NOWAIT source and card reservations
+  R->>D: Fresh same bounded read; compare every fact
+  R-->>A: Existing immutable RepertoireSnapshot or explicit unavailable
+  A->>D: Own fenced publication and caller commit / rollback
+```
+
+The source-level fake-port proof is
+`make python-file FILE=backend/tests/test_product_snapshot_reservation.py`.
+It covers ordering, writer-only operation, full-fact change refusal, immediate
+busy/overflow outcomes and lack of commit/rollback authority. Changed source AST,
+whitespace and conflict checks remain cheap. The new `snapshot_reservation`
+PostgreSQL cases are prepared in `test_product_snapshot_postgres.py` to prove
+actual FK/retained-trigger phantom protection, introduction stability through
+commit, owner contention and borrowed rollback. **Their native execution is
+pending the deployment owner's validation slot**; unit proof is not claimed as
+native or product qualification. No live resource or deployment is involved.

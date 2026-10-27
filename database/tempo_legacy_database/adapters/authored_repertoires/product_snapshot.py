@@ -1,11 +1,17 @@
 """Bounded repertoire-only SELECT over the existing borrowed PostgreSQL port.
 
 One statement owns one MVCC view even inside a READ COMMITTED writer transaction.
-No connection, transaction settings, locks, commits or schema are owned here.
+Ordinary reads own no connection, transaction settings, locks, commits or schema.
+The explicit writer-only reservation operation retains existing source locks
+through its caller transaction; it owns no commit or content mutation.
 """
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
 MAX_SOURCE_ROWS = 10000
 MAX_GRAPH_ROWS = 20000
@@ -127,3 +133,101 @@ def current_published_snapshot(database, repertoire_id: str):
     """
     from app.repertoire.snapshot import project_published_repertoire
     return project_published_repertoire(read_repertoire(database, repertoire_id))
+
+
+class SnapshotReservationUnavailable(RuntimeError):
+    """Optional publication must yield; caller rolls back its transaction."""
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def reserve_current_snapshot(database, repertoire_id: str) -> RepertoireSnapshot:
+    """Reserve the existing complete audit view through the caller's short commit.
+
+    Prepare immutable projection before source locks, then reserve and reread all
+    facts. Equality permits reuse of that exact projection without chess work
+    under source/card locks. No connection, commit, rollback or DML is owned here.
+    All failures require the caller to roll back, releasing partial reservations.
+    """
+    raw = getattr(database, "raw", database)
+    status = getattr(getattr(getattr(raw, "info", None), "transaction_status", None), "name", None)
+    if getattr(database, "read_only", False) or status != "INTRANS":
+        raise SnapshotReservationUnavailable("borrowed_writer_transaction_required")
+    execute = getattr(database, "execute_native", None) or database.execute
+
+    def rows(stage, statement, parameters=(), *, maximum=MAX_SOURCE_ROWS):
+        result = execute(f"/*snapshot-reserve:{stage}*/ " + statement, parameters).fetchall()
+        if len(result) > maximum:
+            raise SnapshotReservationUnavailable("snapshot_reservation_exceeds_bound")
+        return result
+
+    def scalar(stage, statement, parameters=()):
+        row = execute(f"/*snapshot-reserve:{stage}*/ " + statement, parameters).fetchone()
+        if row is None:
+            return None
+        # Both the existing TempoRow/native port and raw psycopg dict rows work.
+        return next(iter(row.values())) if isinstance(row, dict) else row[0]
+
+    try:
+        if not scalar("writer", "SELECT current_setting('transaction_read_only')='off'"):
+            raise SnapshotReservationUnavailable("borrowed_writer_transaction_required")
+        if scalar("isolation", "SELECT current_setting('transaction_isolation')") != "read committed":
+            raise SnapshotReservationUnavailable("borrowed_read_committed_transaction_required")
+        before = read_repertoire(database, repertoire_id)
+        from app.repertoire.snapshot import project_repertoire
+        prepared = project_repertoire(before)
+
+        # Same graph-task -> prefix reservation -> graph -> repertoire order as
+        # the retained repair owner; try/NOWAIT variants make optional work yield.
+        rows("graph-task", "SELECT id FROM background_tasks WHERE kind='opening_graph_rebuild' "
+             "AND deduplication_key=%s FOR UPDATE NOWAIT", (repertoire_id,), maximum=1)
+        for key in ("tempo:prefix-transition:reservations", "tempo:opening-graph:" + repertoire_id):
+            if not scalar("graph-reservation", "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))", (key,)):
+                raise SnapshotReservationUnavailable("snapshot_source_busy")
+        if not rows("repertoire", "SELECT id FROM repertoires WHERE id=%s FOR UPDATE NOWAIT",
+                    (repertoire_id,), maximum=1):
+            raise SnapshotReservationUnavailable("snapshot_source_changed")
+        if not rows("identity", "SELECT workspace_id FROM legacy_learning_identity WHERE id=1 FOR SHARE NOWAIT", maximum=1):
+            raise SnapshotReservationUnavailable("snapshot_source_changed")
+        rows("publication", "SELECT repertoire_id FROM opening_graph_publications WHERE repertoire_id=%s "
+             "FOR SHARE NOWAIT", (repertoire_id,), maximum=1)
+        rows("lines", "SELECT id FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT %s "
+             "FOR SHARE NOWAIT", (repertoire_id, MAX_SOURCE_ROWS + 1))
+
+        # Reserve all existing candidate cards, including nonopening cards which
+        # could enter the read without changing their repertoire FK. Empty-move
+        # content transitions need not advance the retained source counter.
+        candidates = rows("scope-cards", "SELECT c.id FROM cards c WHERE c.repertoire_id=%s OR EXISTS("
+            "SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=%s AND rc.card_id=c.id) "
+            "ORDER BY c.id LIMIT %s", (repertoire_id, repertoire_id, MAX_SOURCE_ROWS + 1))
+        card_ids = [next(iter(row.values())) if isinstance(row, dict) else row[0] for row in candidates]
+        # Existing card-edit reservations serialize permanent deletion/recreation.
+        # Card UPDATE row reservations also close FK insert phantoms for links
+        # and integrity blocks; existing rows below protect deletion/reassignment.
+        for card_id in card_ids:
+            if not scalar("card-reservation", "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+                          ("tempo:card-edit:" + card_id,)):
+                raise SnapshotReservationUnavailable("snapshot_source_busy")
+        locked_cards = rows("cards", "SELECT id FROM cards WHERE id=ANY(%s) ORDER BY id FOR UPDATE NOWAIT", (card_ids,))
+        if len(locked_cards) != len(card_ids):
+            raise SnapshotReservationUnavailable("snapshot_source_changed")
+        rows("memberships", "SELECT repertoire_id,card_id FROM repertoire_cards WHERE repertoire_id=%s "
+             "AND card_id=ANY(%s) ORDER BY card_id LIMIT %s FOR SHARE NOWAIT",
+             (repertoire_id, card_ids, MAX_SOURCE_ROWS + 1))
+        if before["graphs"]:
+            rows("graphs", "SELECT line_id,decision_index FROM opening_graph_steps WHERE repertoire_id=%s "
+                 "AND generation=%s ORDER BY line_id,decision_index LIMIT %s FOR SHARE NOWAIT",
+                 (repertoire_id, before["repertoire"]["graph_generation"], MAX_GRAPH_ROWS + 1), maximum=MAX_GRAPH_ROWS)
+        rows("integrity-blocks", "SELECT repertoire_id,card_id,issue_id FROM repertoire_integrity_card_blocks "
+             "WHERE card_id=ANY(%s) ORDER BY repertoire_id,card_id,issue_id LIMIT %s FOR SHARE NOWAIT",
+             (card_ids, MAX_SOURCE_ROWS + 1))
+        rows("deletions", "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s) "
+             "ORDER BY card_id LIMIT %s FOR SHARE NOWAIT", (card_ids, MAX_SOURCE_ROWS + 1))
+        if read_repertoire(database, repertoire_id) != before:
+            raise SnapshotReservationUnavailable("snapshot_source_changed")
+        return prepared
+    except Exception as error:
+        if getattr(error, "sqlstate", None) in {"55P03", "57014", "40001", "40P01"}:
+            raise SnapshotReservationUnavailable("snapshot_source_busy") from error
+        raise
