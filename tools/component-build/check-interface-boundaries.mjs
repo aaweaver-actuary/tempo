@@ -220,7 +220,24 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
       }
     }
   }
-  for (const intake of manifest.intakes ?? []) {
+  problems.push(...intakeProblems(facts, manifest.intakes ?? [], resolveImport, root));
+  const active = [], visited = new Set();
+  function visit(name) {
+    if (active.includes(name)) { problems.push("Component dependency cycle: " + [...active.slice(active.indexOf(name)), name].join(" -> ")); return; }
+    if (visited.has(name)) return;
+    active.push(name);
+    for (const target of new Set([...edges.get(name), ...components.find(component => component.id === name).dependencies])) visit(target);
+    active.pop(); visited.add(name);
+  }
+  for (const id of ids) visit(id);
+  if (problems.length) throw new Error([...new Set(problems)].sort().join("\n"));
+  return { files: facts.size, components: components.length, edges: Object.fromEntries([...edges].map(([name, targets]) => [name, [...targets].sort()])) };
+}
+
+/** Reuse the same queue-call walk for a narrow intake proof before the global map joins. */
+export function intakeProblems(facts, intakes, resolveImport, root) {
+  const problems = [], absolute = path => resolve(root, path);
+  for (const intake of intakes) {
     const file = absolute(intake.path), fact = facts.get(file);
     if (!fact || !intake.functions?.length || !intake.forbiddenCalls?.length) throw new Error("Missing intake guard source/functions/call policy");
     const pending = intake.functions.map(fn => [file, fn]), seen = new Set();
@@ -230,7 +247,7 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
       if (!current?.functions.includes(fn)) throw new Error("Unavailable guarded intake entry: " + fn);
       seen.add(identity);
       for (const call of [...current.calls, ...current.references].filter(call => call.function === fn)) {
-        if (["getattr", "Reflect.get"].includes(call.callee) || intake.forbiddenCalls.some(pattern => glob(pattern).test(call.callee) || glob(pattern).test(call.callee.split(".").at(-1)))) problems.push(relative(root, currentFile) + ":" + call.line + ": Intake references prohibited queue work: " + call.callee);
+        if ((["getattr", "Reflect.get"].includes(call.callee) && !call.data_access) || intake.forbiddenCalls.some(pattern => glob(pattern).test(call.callee) || glob(pattern).test(call.callee.split(".").at(-1)))) problems.push(relative(root, currentFile) + ":" + call.line + ": Intake references prohibited queue work: " + call.callee);
         if (current.functions.includes(call.callee)) pending.push([currentFile, call.callee]);
         else if (call.callee.includes("#")) {
           const [module, member] = call.callee.split("#"), target = resolveImport(module, currentFile);
@@ -245,17 +262,24 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
       }
     }
   }
-  const active = [], visited = new Set();
-  function visit(name) {
-    if (active.includes(name)) { problems.push("Component dependency cycle: " + [...active.slice(active.indexOf(name)), name].join(" -> ")); return; }
-    if (visited.has(name)) return;
-    active.push(name);
-    for (const target of new Set([...edges.get(name), ...components.find(component => component.id === name).dependencies])) visit(target);
-    active.pop(); visited.add(name);
-  }
-  for (const id of ids) visit(id);
+  return problems;
+}
+
+export function checkPythonIntake(path, functions, forbiddenCalls, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  root = realpathSync(root);
+  const file = resolve(root, path), sourceRoot = dirname(file);
+  if (!inside(root, file)) throw new Error("Intake source escape");
+  const files = filesUnder(sourceRoot).filter(file => file.endsWith(".py")).map(file => relative(root, file));
+  const result = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), "boundary-facts", root], { input: JSON.stringify(files), encoding: "utf8", timeout: 20000 });
+  if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stderr);
+  const facts = new Map(JSON.parse(result.stdout).map(fact => [resolve(root, fact.path), fact]));
+  const resolveImport = (module, importer, level = 0) => {
+    const packagePath = level ? resolve(dirname(importer), ...Array(level - 1).fill(".."), ...module.split(".").filter(Boolean)) : resolve(root, "backend", ...module.split("."));
+    return { path: [packagePath + ".py", resolve(packagePath, "__init__.py")].find(path => facts.has(path)) };
+  };
+  const problems = intakeProblems(facts, [{path, functions, forbiddenCalls}], resolveImport, root);
   if (problems.length) throw new Error([...new Set(problems)].sort().join("\n"));
-  return { files: facts.size, components: components.length, edges: Object.fromEntries([...edges].map(([name, targets]) => [name, [...targets].sort()])) };
+  return { source: path, functions, sourceFiles: facts.size };
 }
 
 export function writtenTables(sql) {
@@ -266,6 +290,11 @@ export function writtenTables(sql) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
+    if (process.argv[2] === "--intake") {
+      if (!process.argv[3] || !process.argv[4] || !process.argv[5]) throw new Error("Usage: --intake <source.py> <functions comma-list> <prohibited-call-patterns comma-list> [source-root]");
+      console.log(JSON.stringify(checkPythonIntake(process.argv[3], process.argv[4].split(","), process.argv[5].split(","), process.argv[6] ?? repository)));
+      process.exit(0);
+    }
     if (!process.argv[2]) throw new Error("Usage: node check-interface-boundaries.mjs <owner-manifest.json> [source-root]");
     console.log(JSON.stringify(checkInterfaceBoundaries(JSON.parse(readFileSync(process.argv[2], "utf8")), process.argv[3] ?? repository)));
   } catch (error) { console.error(error.message); process.exitCode = 1; }

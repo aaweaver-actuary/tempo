@@ -8,7 +8,7 @@ from typing import Mapping
 from tempo_game_classification import resolve_equivalent_mapping
 
 from app.contracts.product_v02.games import CanonicalGame, Finding
-from app.contracts.product_v02.learning import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
+from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,

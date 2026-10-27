@@ -161,7 +161,7 @@ import app.contracts.product_v02.analysis
 
 
 # Explicit new product roots only. Legacy modules outside these roots are not audited.
-PRODUCT_ROOTS = {"games": ("backend/app/games/feedback",), "repertoire": ("backend/app/repertoire",), "study": ("backend/app/study/game_feedback.py",), "contracts": ("backend/app/contracts/product_v02",)}
+PRODUCT_ROOTS = {"games": ("backend/app/games",), "repertoire": ("backend/app/repertoire",), "study": ("backend/app/study/game_feedback.py", "backend/app/study/encounter_feedback.py", "backend/app/study/interfaces"), "contracts": ("backend/app/contracts/product_v02",)}
 
 
 def import_targets(source, module):
@@ -181,6 +181,14 @@ def boundary_errors(sources):
         owner, source = item[:2]
         module = item[2] if len(item) > 2 else f"app.{owner}.module"
         for name in import_targets(source, module):
+            # The supported Study surface contains only the unchanged pure
+            # contracts. All other Study implementation imports stay private.
+            if owner == "games" and (name == "app.study.interfaces.game_priority" or
+                    name.startswith("app.study.interfaces.game_priority.")):
+                continue
+            if owner == "games" and name.startswith("app.") and not name.startswith(("app.games.", "app.contracts.", "app.chess.")):
+                errors.append(f"{owner}: unsupported application dependency {name}")
+                continue
             if name in {"app.main", "app.tasks"} or name.startswith(("app.main.", "app.tasks.")):
                 errors.append(f"{owner}: domain imports composition {name}")
             for sibling in ("games", "repertoire", "study"):
@@ -221,6 +229,8 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert len(boundary_errors([("study", "import app.games.feedback"), ("games", "import app.study.game_feedback")])) == 2
     assert boundary_errors([("games", "from ...study.game_feedback import apply", "app.games.feedback.comparison")])
     assert boundary_errors([("games", "from app import main")])
+    assert boundary_errors([("games", "from app.services.queue_application import seed_queue")])
+    assert not boundary_errors([("games", "from app.study.interfaces.game_priority import EncounterFeedbackPort")])
     assert has_import_cycle({"app.contracts.one": "from .two import value", "app.contracts.two": "from .one import value"})
 
 

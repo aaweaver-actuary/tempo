@@ -16,6 +16,7 @@ def boundary_facts(root, files):
         if path.is_symlink() or not path.resolve().is_relative_to(root):
             raise ValueError(f"{name}: source escape")
         tree = ast.parse(path.read_text())
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
         imported, aliases, constants = [], {}, {}
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -69,6 +70,9 @@ def boundary_facts(root, files):
                 if callee.startswith('self.') and len(self.scope) > 1:
                     callee = self.scope[0] + callee[4:]
                 call = dict(callee=callee, function='.'.join(self.scope), line=node.lineno)
+                # Comparing frozen fact fields does not invoke a capability.
+                if callee == 'getattr' and isinstance(parents.get(node), ast.Compare):
+                    call['data_access'] = True
                 if callee.split('.')[-1] in {'execute', 'execute_native', 'executemany', 'executescript', 'query', 'prepare'} and node.args:
                     value = string_value(node.args[0])
                     database_receiver = set(callee.lower().split('.')) & {'db', 'database', 'connection', 'conn', 'cursor', 'pool', 'writer', 'sqlite3', 'psycopg'}

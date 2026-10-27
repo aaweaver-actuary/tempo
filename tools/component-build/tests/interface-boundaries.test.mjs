@@ -161,6 +161,8 @@ test("Interfaces reject renamed/transitive intake promotion and method reference
   assert.throws(f.check, /Intake references prohibited queue work/);
   f.write("backend/app/study/intake.py", "def accept(store, command):\n    return getattr(store, 'promote')(command)\n");
   assert.throws(f.check, /Intake references prohibited queue work/);
+  f.write("backend/app/study/intake.py", "def accept(store, command):\n    if getattr(command, 'revision') != 1:\n        return None\n    return store.record(command)\n");
+  assert.doesNotThrow(f.check);
 });
 
 test("Interfaces enforce the same public/private/table rules for TypeScript", t => {
