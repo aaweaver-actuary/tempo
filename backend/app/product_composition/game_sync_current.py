@@ -4,6 +4,7 @@ Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
 from app.games.feedback.review import ReviewUnavailable
+from app.contracts.product_v02.learning import EncounterFeedbackPort
 from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_published_snapshot
 from tempo_legacy_database.adapters.games.product_review import (
     DedicatedGamesConnections, PostgresReviewStore,
@@ -16,9 +17,6 @@ from .game_sync import create_game_sync
 from .game_worker import run_optional_worker
 
 from contextlib import contextmanager
-from contextvars import ContextVar
-
-_SYNC_ADMITTED = ContextVar("product_game_sync_admitted", default=False)
 
 
 def _require_current_sync_controls():
@@ -38,11 +36,7 @@ def current_sync_admission():
     _require_current_sync_controls()
     with activity_gate.background_job("product_game_sync","worker",yielding=True):
         activity_gate.check_background_admission()
-        token = _SYNC_ADMITTED.set(True)
-        try:
-            yield
-        finally:
-            _SYNC_ADMITTED.reset(token)
+        yield
 
 
 class CurrentSyncSchedule:
@@ -72,9 +66,9 @@ def create_current_game_sync(*, workspace, connections, clock=None,
                              learning=None, forward_window=None, transport_factory=None):
     """Build one opted-in worker using both explicitly saved provider policies.
 
-    Generic repertoire comparison needs no imported game. Atomic Games page
-    publication then makes its canonical game available to the existing current
-    Study capture/factory for admission. No source write manufactures a capture.
+    Comparison uses published source facts. Canonical Games publication and its
+    original outbox commit before calling the injected public intake. Evidence
+    acceptance does not construct or wait for the receiver's queue refresh.
     """
     if learning is None:
         # Canonical identity is joined by SourceIdentity. The concrete receiving
@@ -99,32 +93,20 @@ def create_current_game_sync(*, workspace, connections, clock=None,
     return runtime, CurrentSyncSchedule(schedule)
 
 
-def create_current_provider_worker(*, workspace, connections, read_connections,
+def create_current_provider_worker(*, workspace, connections,
+                                   priority_intake: EncounterFeedbackPort | None = None,
                                    clock=None, forward_window=None, transport_factory=None):
-    """Prepare the real receiver with explicit profiles and actual unit control.
+    """Wire only the injected public idempotent priority intake.
 
-    Source only: the CLI stays fail-closed until this changed provider-to-Study
-    boundary and the ordered migration/profile are qualified together.
+    Accepted/pending is evidence acceptance, not queue availability. The root
+    supplies the receiver implementation; Games never constructs a Study owner,
+    borrows its writer, or refreshes/promotes its queue during delivery.
     """
-    from .provider_feedback import CurrentProviderFeedback
-    if connections.read_only or not read_connections.read_only:
-        raise ReviewUnavailable("explicit_games_reader_and_writer_profiles_required",503)
-    clock = clock or SystemClock()
-    runtime_holder = []
-
-    def operation_stopped():
-        if not _SYNC_ADMITTED.get() or not runtime_holder:
-            return None
-        _require_current_sync_controls()
-        return runtime_holder[0].stopped()
-
-    learning = CurrentProviderFeedback(read=read_connections.reader,
-        write=connections.writer, operation_stopped=operation_stopped, clock=clock)
-    runtime, schedule = create_current_game_sync(workspace=workspace, connections=connections,
-        learning=learning, clock=clock, forward_window=forward_window,
+    if priority_intake is None:
+        raise ReviewUnavailable("decoupled_priority_intake_required",503)
+    return create_current_game_sync(workspace=workspace, connections=connections,
+        learning=priority_intake, clock=clock, forward_window=forward_window,
         transport_factory=transport_factory)
-    runtime_holder.append(runtime)
-    return runtime, schedule
 
 
 def main():

@@ -1,58 +1,51 @@
 # One imported game to ordinary Study (#488)
 
-## Continuous-provider canonical identity candidate (#489 / #491)
+## Continuous-provider public priority intake (#489 / #491)
 
-The separate continuous-sync candidate supplies `PostgresCanonicalGamesStore`
-as the coordinator's optional `SourceIdentity` port. `WorkflowNormalizer` first
-verifies the original PGN digest, then the source owner binds the exact verified
-history to the existing imported-game ID and retained capture projection. A new
-row uses the same projection its atomic publication will store. Existing source
-bytes, provider aliases, timestamp spelling, and JSON spelling remain unchanged;
-different player/history/result/occurrence is quarantined instead of overwriting
-canonical evidence. Non-source metadata can still be enriched by the existing
-writer. The page transaction locks/rereads that source and refuses a changed
-binding before publishing its checkpoint and commands.
+The optional Games process receives an `EncounterFeedbackPort` from the
+composition root. `create_current_provider_worker(priority_intake=...)` requires
+that public capability before any source read/claim. It does not construct a
+Study receiver, borrow a Study writer, or promote/rebuild a queue. Accepted/pending
+means immutable evidence was accepted; actual availability belongs to Study's
+independent refresh and public receipt status.
 
-Provider and retained replay therefore share `GameEffectKey`, canonical source
-revision/digest and semantic payload while raw PGN proof/acquisition revision stay
-in the original provider capture. No queued finding is relabeled. No Study
-receiver, stored schema, global control or live configuration changes. The default
-factory still requires a qualified receiver; this candidate does not activate
-continuous synchronization. Native source/publication and final receiver binding
-are separate acceptance boundaries.
+The shared public contract is
+[`EncounterFeedbackPort`](../contracts/product_v02/learning.py), owned by the
+receiving contract/Study owners. Games' coordinator uses only its semantic
+accept/control/status methods. No replacement DTO or compatibility export is
+introduced. #487 supplies the durable intake implementation and refresh; root
+composition alone will wire that implementation after its public checkpoint.
+
+`PostgresCanonicalGamesStore` implements #489's `SourceIdentity` port. Strict PGN
+normalization verifies raw proof first; Games then binds the retained canonical
+ID/revision/fingerprint before comparison. Source publication, captures, original
+outbox and cursor commit atomically. Raw PGN/acquisition provenance stays separate.
+Changed source or an identity race is quarantined/rolled back, never relabeled.
 
 ```mermaid
 sequenceDiagram
-  participant Provider as Optional provider worker
-  participant Verify as Existing strict PGN normalizer
-  participant Source as Games canonical source owner
-  participant Compare as Pure comparer / coordinator
-  participant Binding as CurrentProviderFeedback
-  participant Study as Existing current Study owner
-  Provider->>Verify: Raw PGN + original digest / time precision
-  Verify->>Source: Verified history; bind_source (read only)
-  Source-->>Compare: Canonical ID / source revision / retained-row digest
-  Compare->>Source: Atomic page publication
-  Source->>Source: Lock / reread source; match binding or roll back
-  Source-->>Compare: Source + captures + command + checkpoint committed
-  Compare->>Binding: Original frozen command after Games transaction closes
-  Binding->>Binding: Actual admission; bounded current capture/project before writer
-  Binding->>Source: Borrow writer; lock/reread source + authenticate frozen effect
-  Binding->>Study: Borrow same writer; current mapping + canonical effect
-  Study-->>Binding: Provisional receipt
-  Binding-->>Compare: Receipt only after commit
+  participant Provider as Optional Games worker
+  participant Source as Games source / outbox owner
+  participant Intake as Public idempotent priority intake
+  participant Refresh as Independent Study-owned refresh
+  Provider->>Source: Verify / bind / compare immutable source
+  Source->>Source: Atomic canonical + capture + original command + checkpoint
+  Source-->>Provider: Committed original evidence
+  Provider->>Intake: accept_encounter(original command)
+  Intake-->>Provider: accepted / pending durable receipt
+  Provider->>Source: Acknowledge exact outbox delivery
+  Note over Provider,Intake: Acceptance does not rebuild or wait for queue availability
+  Refresh->>Intake: Consume accepted obligations independently
 ```
 
-The source identity is remote-verified at `2e6aa9d6`. The concrete provider
-binding is prepared separately in [provider_feedback.py](provider_feedback.py)
-and [game_sync_current.py](game_sync_current.py). It preserves the existing valid
-lapse path and adds the encounter receiver without changing either owner's
-policy. Its actual stop callback requires an admitted unit and readable current
-controls. Receipt status uses an explicit query-only profile. The CLI remains
-disabled pending the changed native/profile boundary; see the current
-[continuous-sync checkpoint and commands](../../../docs/product-v02/game-sync/README.md).
-The existing encounter-aware [feedback maintenance](feedback_maintenance.py)
-continues to own pending receipt recovery; there is no new maintenance timer.
+The earlier unqualified inline adapter/native fixture were removed from the
+follow-on branch. Their earlier passing preparation checks do not qualify this
+boundary. The default CLI stays blocked. Six public-port failure/replay cases,
+two factory-injection cases and the focused import/DAG guard cover the producer
+boundary. Receiver obligation durability/refresh and packaged profile/readiness
+qualification remain owner dependencies. See the
+[bounded commands and coverage](../../../docs/product-v02/game-sync/README.md).
+The frozen qualified retained-history release remains unchanged.
 
 ## First-release evidence
 

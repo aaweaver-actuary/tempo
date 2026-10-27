@@ -98,3 +98,29 @@ def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh(ob
     assert acknowledged.encounter == original.encounter
     assert intake.calls == [original.encounter, original.encounter]
     assert len(intake.commands) == 1 and intake.status_reads == 0
+
+
+@pytest.mark.parametrize("observation", ["matched", "missed"])
+def test_unavailable_priority_intake_keeps_original_outbox_retryable(observation):
+    h = encounter_harness(observation=observation)
+    class UnavailableIntake:
+        def accept_encounter(self, command):
+            raise ConnectionError("priority intake unavailable")
+    h.coordinator.learning = UnavailableIntake()
+    h.store.enqueue(spec())
+    assert h.runner.run_once() == "page"
+    original, = h.store.deliveries.values()
+    command_json = original.encounter.model_dump_json()
+    assert h.runner.run_once() == "delivery"
+    pending = h.store.delivery(original.operation_id)
+    assert pending.state == "pending" and pending.receipt is None
+    assert pending.encounter.model_dump_json() == command_json
+    assert pending.error == "owner_acknowledgment_uncertain"
+    intake = AcceptedPriorityIntake()
+    h.coordinator.learning = intake
+    h.clock.value += 10
+    assert FeedbackRunner(h.coordinator).run_once() == "delivery"
+    acknowledged = h.store.delivery(original.operation_id)
+    assert acknowledged.state == "acknowledged"
+    assert acknowledged.receipt.admission_status == "pending"
+    assert intake.calls == [original.encounter]

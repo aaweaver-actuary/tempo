@@ -1,19 +1,5 @@
 # Legacy Games command storage
 
-## Prepared continuous-provider command fence (#491)
-
-[`product_review.py`](product_review.py) supplies `fence_imported_effect` for the
-separately prepared provider composition. It borrows the caller writer, locks
-and rereads the exact canonical imported-game projection, refuses exclusion or
-changed bytes, and authenticates the original command in the committed Games
-source effects. It does no PGN replay, mapping selection or Study mutation.
-`DedicatedGamesConnections.reader` requires an explicit query-only profile;
-`writer` refuses that profile. The existing source-lock-before-Study order and
-250ms transaction budget stay unchanged. Native/profile installation evidence is
-pending; no schema, role or live migration is applied by this fence. The
-[composition sequence](../../../../backend/app/product_composition/README.md#continuous-provider-canonical-identity-candidate-489--491)
-owns the cross-component view.
-
 **Current source in the unmerged extraction; live deployment unverified.** These modules contain the existing parameter-bound queries, row/advisory locks and row-count/read projections formerly mixed into backend command files. They borrow the command or worker's existing connection and transaction; none opens, commits or rolls back a connection.
 
 | Storage module | Existing caller composition | Stored data / responsibility |

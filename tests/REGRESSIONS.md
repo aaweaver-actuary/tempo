@@ -5360,7 +5360,5 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | --- | --- |
 | Explicit contiguous forward windows keep stable restart identity, unfinished cursor/backoff, provider independence and configured filters | `backend/tests/test_product_continuous_sync.py` |
 | Current publication owner and reader/writer separation are enforced; missing qualified receiver or real admission prevents work | `backend/tests/test_product_continuous_sync.py` |
-| Provider delivery captures before the writer, fences the original committed source, retains the canonical lapse path and never acknowledges a failed commit | `backend/tests/test_product_provider_feedback.py` |
-| Current admitted-unit/stop controls and explicit reader/writer profiles prevent unauthorised delivery; status preserves encounter receipt fields | `backend/tests/test_product_provider_feedback.py` |
-| Both provider pages survive outbox restart, enter actual targeted Study once and share the retained-history effect on replay | `backend/tests/test_product_provider_receiving_postgres.py` (prepared; native execution pending) |
 | Games acknowledges accepted/pending encounter evidence without inline queue work, private availability polling or replaying a fresh command after lost acknowledgment | `backend/tests/test_product_priority_intake_boundary.py` |
+| Explicit provider assembly requires the exact public priority intake and fails before source access when it is absent | `backend/tests/test_product_provider_feedback.py` |
