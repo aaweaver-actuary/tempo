@@ -79,7 +79,7 @@ def body(case, run_id="bounded-history", **changes):
     selection = dict(workspace_id="legacy", provider="lichess", account="SYNTHETIC",
         window=dict(start_at=(NOW-timedelta(days=2)).isoformat(), end_at=NOW.isoformat(), precision="second"),
         repertoire_ids=[case.repertoire_id], speeds=["rapid"], rated=False,
-        maximum_games=3, maximum_positions=10)
+        maximum_games=4, maximum_positions=10)
     selection.update(changes)
     return dict(run_id=run_id, selection=selection)
 
@@ -106,20 +106,24 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
                 ("-excluded", "synthetic", NOW-timedelta(days=1), 1),
                 ("-other", "someone-else", NOW-timedelta(days=1), 0),
                 ("-old", "synthetic", NOW-timedelta(days=30), 0),
+                ("-unproven", "synthetic", NOW-timedelta(days=1), 0),
             ):
                 database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
                     played_at,speed,rated,color,result,start_fen,moves_json,content_hash,adaptive_excluded)
                     SELECT id||%s,provider,provider_game_id||%s,%s,%s,speed,rated,color,result,
                         start_fen,moves_json,content_hash,%s FROM imported_games WHERE id=%s""",
                     (suffix,suffix,account,played_at.isoformat(),excluded,case.game_ids[0]))
+            database.execute_native("UPDATE imported_games SET provider_game_id=NULL WHERE id=%s",
+                (case.game_ids[0]+"-unproven",))
         before = case.readback()
         request = body(case)
         preview = client.post(PREFIX + "/preview", json=request)
         assert preview.status_code == 200, preview.text
         report = preview.json()["preview"]
-        assert (report["selected_games"], report["compared_games"], report["positions_compared"]) == (3,2,2)
+        assert (report["selected_games"], report["compared_games"], report["positions_compared"]) == (4,2,2)
         assert (report["matches"], report["differing_responses"], report["unintroduced_encounters"]) == (1,1,2)
-        assert report["excluded_games"] == 1 and report["unknown_authority_or_mapping_games"] == 0
+        assert report["excluded_games"] == 1 and report["unknown_authority_or_mapping_games"] == 1
+        assert report["diagnostics"][0]["reason"] == "retained_provider_identity_unavailable"
         assert report["eligible_lapses"] == 0 and report["matches_are_lower_bound"]
         assert report["execution_ready"] and not report["more_available"]
         assert case.readback() == before
@@ -165,7 +169,7 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         with case.transaction() as database:
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 0
             database.execute_native("DELETE FROM background_tasks WHERE id=%s",(unrelated["id"],))
-            database.execute_native("DELETE FROM imported_games WHERE id=ANY(%s)",([case.game_ids[0]+suffix for suffix in ("-excluded","-other","-old")],))
+            database.execute_native("DELETE FROM imported_games WHERE id=ANY(%s)",([case.game_ids[0]+suffix for suffix in ("-excluded","-other","-old","-unproven")],))
 
 
 def test_owner_effect_and_history_checkpoint_rollback_then_original_resume(root_history,owned_postgres,monkeypatch):

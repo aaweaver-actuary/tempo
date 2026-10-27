@@ -12,7 +12,7 @@ class PostgresRetainedHistory:
         aliases = ["chess.com", "chesscom"] if selection.provider == "chesscom" else ["lichess"]
         with self.connections() as database:
             execute = getattr(database, "execute_native", None) or database.execute
-            rows = execute("""SELECT id,adaptive_excluded,moves_json FROM imported_games
+            rows = execute("""SELECT id,adaptive_excluded,moves_json,provider_game_id FROM imported_games
                 WHERE provider=ANY(%s) AND lower(username)=lower(%s)
                   AND played_at::timestamptz>=%s::timestamptz
                   AND played_at::timestamptz<%s::timestamptz
@@ -35,6 +35,11 @@ class PostgresRetainedHistory:
                 positions = len(moves)
             except (ValueError, TypeError, AttributeError):
                 reason = "retained_history_moves_unavailable"
+            if not isinstance(row[3], str) or not row[3].strip():
+                # The existing source-owner admission lock requires this exact
+                # provider identity. Keep an old unproved row visible as unknown;
+                # never invent its identity or fail after claiming admission.
+                reason = "retained_provider_identity_unavailable"
             games.append(RetainedHistoryGame(row[0], bool(row[1]), positions, reason))
         return RetainedHistoryPage(tuple(games), len(rows) > selection.maximum_games)
 
