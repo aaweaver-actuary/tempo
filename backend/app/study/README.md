@@ -189,7 +189,7 @@ The qualified first-release factory remains separately selectable.
 The concrete additive factory is
 `current_owner_encounter_feedback(database, retained_owner_capture=..., snapshot=...,
 clock=..., introductions=..., introduction_policy=...)` in the same database
-adapter. Compose #495's published `current_owner_introductions` / `admit_encounter`
+adapter. Compose #495's narrow `current_owner_encounter_introductions` / `admit_encounter`
 capability on that exact borrowed writer. Only the actual current introduction
 field may differ from the retained capture during priority validation; definition,
 revision, legal executable, route, source generations and membership remain fenced.

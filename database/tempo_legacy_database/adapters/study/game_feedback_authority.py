@@ -230,7 +230,7 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture, snapsh
                                      introductions, introduction_policy):
     """Additive next-release factory on the same borrowed writer transaction.
 
-    Compose #495's current_owner_introductions capability externally. No new
+    Compose #495's current_owner_encounter_introductions externally. No new
     schema, connection, commit, live policy default or producer lifecycle.
     """
     from app.study.encounter_feedback import EncounterFeedback
