@@ -117,3 +117,13 @@ def current_snapshot(database, repertoire_id: str):
     """Concrete RepertoireSnapshot reader for composition/current change stores."""
     from app.repertoire.snapshot import project_repertoire
     return project_repertoire(read_repertoire(database, repertoire_id))
+
+
+def current_published_snapshot(database, repertoire_id: str):
+    """Feedback read with explicit publication version; source audits stay separate.
+
+    A missing/non-ready generation fails instead of borrowing an authored counter.
+    Current Study capture/fencing remains mandatory before any learning effect.
+    """
+    from app.repertoire.snapshot import project_published_repertoire
+    return project_published_repertoire(read_repertoire(database, repertoire_id))

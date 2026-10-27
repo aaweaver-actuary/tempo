@@ -235,7 +235,7 @@ class CapturedSnapshotAdapter:
         return project_capture(captured, comparison_game=self._comparison_game)
 
 
-def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, published: bool = False) -> RepertoireSnapshot:
     """Project the complete bounded repertoire-only owner read, including conflicts.
 
     No game/clean-integrity prerequisite and no inferred date-only chronology.
@@ -269,12 +269,20 @@ def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> Rep
     source["cards"].sort(key=lambda row: row["id"])
     source["memberships"].sort(key=lambda row: (row["repertoire_id"], row["card_id"]))
     source["graphs"].sort(key=lambda row: (row["line_id"], row["decision_index"]))
-    revision = header["scope_source_revision"] + 1
-    digest = fingerprint({"kind": "current_repertoire_snapshot", "schema_version": 1, "facts": source})
+    if published:
+        generation = header.get("graph_generation")
+        if header.get("graph_state") != "ready" or type(generation) is not int or generation < 1:
+            raise ValueError("repertoire_publication_unavailable")
+        revision = generation
+    else:
+        revision = header["scope_source_revision"] + 1
+    kind = "current_published_repertoire_snapshot" if published else "current_repertoire_snapshot"
+    digest = fingerprint({"kind": kind, "schema_version": 1, "facts": source})
     moment = captured_at or datetime.now(timezone.utc).isoformat()
     membership = MembershipSnapshot(workspace_id=header["workspace_id"],
-        snapshot_id="repertoire:" + digest, revision=revision, digest=digest,
-        source_revision=digest, captured_at=moment, scope_id="repertoire:" + repertoire_id,
+        snapshot_id=("publication:" if published else "repertoire:") + digest,
+        revision=revision, digest=digest, source_revision=digest, captured_at=moment,
+        scope_id=("publication:" if published else "repertoire:") + repertoire_id,
         scope_repertoire_ids=[repertoire_id], complete=True, routes=list(routes))
     # Retain the existing exact graph/executable/card mapping law. A missing or
     # non-ready graph leaves physical mapping unknown but never hides source routes.
@@ -289,8 +297,24 @@ def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> Rep
             include_unavailable=True))
 
 
+def project_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+    """Audit source view: positive authored counter, independent of publication."""
+    return _project_repertoire(facts, captured_at=captured_at)
+
+
+def project_published_repertoire(facts: Mapping, *, captured_at: str | None = None) -> RepertoireSnapshot:
+    """Feedback comparison view: explicit ready graph generation, never a guess.
+
+    Current source facts remain in the freshness digest. This is detector input,
+    not mutation authority; Study still captures/fences its current owner state.
+    """
+    return _project_repertoire(facts, captured_at=captured_at, published=True)
+
+
 class CurrentSnapshotAdapter:
     """RepertoireSnapshotPort over an injected bounded repertoire-only read."""
+    projection = staticmethod(project_repertoire)
+
     def __init__(self, read: Callable[[str], Mapping]):
         self._read = read
 
@@ -298,4 +322,9 @@ class CurrentSnapshotAdapter:
         facts = self._read(repertoire_id)
         if facts["repertoire"]["id"] != repertoire_id:
             raise ValueError("repertoire_snapshot_scope_mismatch")
-        return project_repertoire(facts)
+        return self.projection(facts)
+
+
+class PublishedSnapshotAdapter(CurrentSnapshotAdapter):
+    """Feedback comparison port; unavailable publication grants no view."""
+    projection = staticmethod(project_published_repertoire)

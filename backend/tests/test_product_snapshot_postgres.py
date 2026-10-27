@@ -150,3 +150,36 @@ def test_current_snapshot_scope_is_parameter_bound(database):
     with pytest.raises(ValueError, match="repertoire_not_found"):
         storage.current_snapshot(connection, "rep' OR true --")
     assert connection.execute("SELECT count(*) count FROM repertoires").fetchone()["count"] == 1
+
+
+def test_published_snapshot_distinguishes_source_counter_from_graph_authority(database):
+    connection, _ = database
+    connection.execute("SET TRANSACTION READ ONLY")
+    audit = storage.current_snapshot(connection, "rep")
+    published = storage.current_published_snapshot(connection, "rep")
+    assert audit.membership.revision == 8 and published.membership.revision == 3
+    assert published.decision_presentations[0].repertoire_revision == 3
+    assert published.membership.scope_id == "publication:rep"
+    assert published.membership.digest != audit.membership.digest
+
+
+@pytest.mark.parametrize("change", ["UPDATE opening_graph_publications SET state='failed'",
+    "DELETE FROM opening_graph_publications"])
+def test_published_snapshot_refuses_unavailable_authority_without_hiding_audit(database, change):
+    connection, _ = database
+    connection.execute(change)
+    audit = storage.current_snapshot(connection, "rep")
+    assert audit.membership.available and audit.membership.revision == 8
+    with pytest.raises(ValueError, match="repertoire_publication_unavailable"):
+        storage.current_published_snapshot(connection, "rep")
+
+
+def test_published_snapshot_preserves_authored_freshness_when_generation_is_unchanged(database):
+    connection, _ = database
+    before = storage.current_published_snapshot(connection, "rep")
+    connection.execute("UPDATE repertoires SET scope_source_revision=8")
+    after = storage.current_published_snapshot(connection, "rep")
+    assert before.membership.revision == after.membership.revision == 3
+    assert before.membership.digest != after.membership.digest
+    connection.execute("DELETE FROM repertoire_cards")
+    assert not storage.current_published_snapshot(connection, "rep").decision_presentations

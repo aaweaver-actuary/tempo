@@ -370,3 +370,44 @@ def test_repertoire_read_port_is_one_parameter_bound_read_and_fails_on_truncatio
     assert requested not in reader.calls[0][0]
     reader.bounded = False
     with pytest.raises(ValueError, match="exceeds_bound"): read_repertoire(reader, "rep")
+
+
+def test_published_revision_matches_retained_study_mapping_when_source_counter_differs():
+    from app.repertoire import project_repertoire, project_published_repertoire
+    facts = repertoire_facts(); before = deepcopy(facts)
+    audit = project_repertoire(facts)
+    published = project_published_repertoire(facts)
+    retained = project_capture(capture())
+    assert facts["repertoire"]["scope_source_revision"] == 7
+    assert audit.membership.revision == 8
+    assert published.membership.revision == retained.membership.revision == 3
+    assert published.decision_presentations[0].repertoire_revision == retained.decision_presentations[0].repertoire_revision == 3
+    assert published.decision_presentations[0].decision_id == retained.decision_presentations[0].decision_id
+    assert audit.membership.scope_id == "repertoire:rep" and published.membership.scope_id == "publication:rep"
+    assert audit.membership.digest != published.membership.digest
+    assert facts == before
+
+
+@pytest.mark.parametrize("authority", [dict(graph_state="failed"), dict(graph_generation=None),
+                                       dict(graph_generation=0), dict(graph_generation=True)])
+def test_published_view_never_guesses_generation_but_audit_remains_available(authority):
+    from app.repertoire import project_repertoire, project_published_repertoire
+    facts = repertoire_facts(); facts["repertoire"].update(authority)
+    assert project_repertoire(facts).membership.available
+    with pytest.raises(ValueError, match="repertoire_publication_unavailable"):
+        project_published_repertoire(facts)
+
+
+def test_published_view_keeps_source_freshness_and_unknown_mapping():
+    from app.repertoire import project_published_repertoire, PublishedSnapshotAdapter
+    facts = repertoire_facts()
+    first = PublishedSnapshotAdapter(lambda _: facts).snapshot("rep")
+    facts["repertoire"]["scope_source_revision"] += 1
+    changed = project_published_repertoire(facts)
+    assert changed.membership.revision == first.membership.revision == 3
+    assert changed.membership.digest != first.membership.digest
+    assert changed.membership.source_revision != first.membership.source_revision
+    facts["memberships"] = []
+    unknown = project_published_repertoire(facts)
+    assert not unknown.decision_presentations
+    assert build_index(unknown).mapping_diagnostics[0].code == "physical_mapping_unknown"

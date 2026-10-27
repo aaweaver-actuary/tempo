@@ -197,6 +197,10 @@ flowchart LR
   Reader --> Project["Repertoire project_repertoire\nexisting T01 snapshot"]
   Injected["Injected owner read for pure tests"] --> Project
   Project --> Consumers["Existing immutable index / comparer / conflict owner"]
+  Reader --> Published["project_published_repertoire
+explicit ready graph generation"]
+  Published --> Feedback["Game-feedback comparison
+Study capture/fencing remains required"]
 ```
 
 This source diagram does not claim live adoption or deployment isolation.
@@ -213,3 +217,48 @@ read-only execution, single-statement source consistency, borrowed rollback,
 conflict visibility, SQL parameter binding and overflow refusal. It has no live
 or engine/provider dependency. #491/#501 own runtime wiring and central test
 registration; #492 owns its approval/publication transaction and callback.
+
+### Authored revision and feedback publication are distinct
+
+The generic audit's authored counter is not a Study publication generation. Use
+the existing immutable snapshot type through separately named views:
+
+| Consumer | Concrete owner read | `membership.revision` |
+| --- | --- | --- |
+| Audit / approved change preview | `current_snapshot(database, repertoire_id)` | `scope_source_revision + 1` |
+| Game-feedback comparison | `current_published_snapshot(database, repertoire_id)` | explicit ready `graph_generation` |
+| Retained-history feedback | unchanged `project_capture(capture, ...)` | captured graph generation |
+
+The concrete functions live in
+`tempo_legacy_database.adapters.authored_repertoires.product_snapshot`. Pure
+injected readers use `project_published_repertoire(owner_facts)` or
+`PublishedSnapshotAdapter(read_callable)`. The audit APIs remain unchanged.
+
+A published view requires a positive stored integer generation and a ready
+publication; missing/non-ready/invalid facts raise
+`repertoire_publication_unavailable`. There is no fallback from the authored
+counter to a guessed generation. The audit still exposes source/conflicts when
+publication is unavailable. A ready generation alone cannot manufacture physical
+mapping, availability, introduction or chronology evidence: unknown stays unknown.
+
+Both views retain the actual authored counter and all selected owner facts in
+their freshness digest, including when that counter changes but publication
+generation does not. Distinct `repertoire:` / `publication:` scope/identity
+namespaces prevent confusing an audit index with a feedback index. No existing
+finding or queued command is rewritten to another revision. #491 must select
+the feedback view before comparison and leave retry/recomparison controls with
+their current owners.
+
+This view is detector input, not mutation authority. It cannot replace the
+retained capture supplied to Study's current-owner factory. The unchanged Study
+receiver still validates and fences that actual capture, source generations,
+publication, integrity, exact mapping and card facts in its writer transaction.
+No stale-source rejection, receiver check or retained-history path is weakened.
+
+The focused regression uses authored counter 7, audit revision 8 and publication
+3. The public feedback mapping matches retained Study revision 3; authored
+freshness remains distinct. Four PostgreSQL cases prove that distinction,
+unavailable-publication refusal without hiding audits, and source-freshness/
+unknown-mapping preservation. The existing SQL read statement is unchanged;
+its eight-case native contract remains retained evidence. This adds no model,
+schema, migration, generation writer or versioning framework.
