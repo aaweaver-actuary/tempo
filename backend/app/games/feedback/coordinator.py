@@ -5,8 +5,9 @@ import hashlib
 import json
 from typing import Mapping
 
+from app.contracts.product_v02.games import CanonicalGame, Finding
 from app.contracts.product_v02.learning import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
-from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshotPort
+from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,
                     GamesStore, JobState, Normalizer, PageCommit, SourceState)
@@ -34,6 +35,55 @@ def encounter_observation(encounter: GameEncounter) -> tuple:
     """Admission/review state is not a new historical source observation."""
     return (encounter.key.logical_id(), encounter.source.source_digest, encounter.decision.position_key,
             encounter.expected_uci, encounter.played_uci)
+
+
+def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
+                       snapshots: tuple[RepertoireSnapshot, ...], source: IntroductionGameScope,
+                       detected_at: str, occurred_at: str | None,
+                       payload_digest: str | None = None) -> tuple[GameEncounter, ...]:
+    """Pure shared-command projection for imported canonical history or new pages.
+
+    Original occurrence/detection/source facts are explicit; no PGN, acquisition,
+    clock, store, receipt or admission policy is consulted. An empty result is not
+    evidence of complete/correct coverage: callers retain unresolved findings.
+    """
+    if (source.game_id, source.source_revision, source.source_digest) != (
+            game.game_id, game.source_revision, game.source_digest):
+        raise ValueError("encounter source differs from canonical game")
+    if any(snapshot.membership.workspace_id != game.workspace_id for snapshot in snapshots):
+        raise ValueError("encounter snapshot workspace differs from canonical game")
+    candidates = []
+    for finding in findings:
+        if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
+                source.provider, source.game_id, source.source_revision, source.source_digest):
+            raise ValueError("encounter finding differs from supplied source")
+        if not any(finding.repertoire_id in snapshot.membership.scope_repertoire_ids
+                   and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
+            raise ValueError("encounter finding is outside supplied snapshot scope")
+        if (finding.kind not in {"known_unintroduced", "confirmed_miss"}
+                or finding.membership != "present" or len(finding.expected_uci) != 1):
+            continue
+        mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
+            for mapping in snapshot.decision_presentations
+            if mapping.available and (mapping.repertoire_id, mapping.repertoire_revision,
+                mapping.decision_id, mapping.position_key, mapping.selected_response_uci,
+                mapping.presentation_id, mapping.presentation_revision) == (
+                finding.repertoire_id, finding.repertoire_revision, finding.decision_id,
+                finding.position_key, finding.expected_uci[0], finding.presentation_id,
+                finding.presentation_revision)}
+        if len(mappings) != 1:
+            continue  # Retain the finding; never guess a current presentation.
+        if finding.ply > len(game.moves) or finding.played_uci != game.moves[finding.ply - 1]:
+            raise ValueError("encounter played move differs from captured game")
+        decision = next(iter(mappings.values()))
+        candidates.append(GameEncounter(key=GameEffectKey(workspace_id=game.workspace_id,
+            provider=source.provider, game_id=game.game_id, decision_id=decision.decision_id,
+            occurrence_ply=finding.ply), source=source, decision=decision,
+            expected_uci=finding.expected_uci[0], played_uci=finding.played_uci,
+            observation="matched" if finding.played_uci == finding.expected_uci[0] else "missed",
+            detected_at=detected_at, occurred_at=occurred_at,
+            payload_digest=source.source_digest if payload_digest is None else payload_digest))
+    return tuple(candidates)
 
 
 class Coordinator:
@@ -104,34 +154,11 @@ class Coordinator:
                             and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
                         raise ValueError("comparison repertoire scope differs from captured snapshot")
                 if self.encounter_feedback:
-                    detected_at = self.clock.utc_now()
-                    candidates = []
-                    for finding in findings:
-                        if (finding.kind not in {"known_unintroduced", "confirmed_miss"}
-                                or finding.membership != "present" or len(finding.expected_uci) != 1):
-                            continue
-                        mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
-                            for mapping in snapshot.decision_presentations
-                            if mapping.available and (mapping.repertoire_id, mapping.repertoire_revision,
-                                mapping.decision_id, mapping.position_key, mapping.selected_response_uci,
-                                mapping.presentation_id, mapping.presentation_revision) == (
-                                finding.repertoire_id, finding.repertoire_revision, finding.decision_id,
-                                finding.position_key, finding.expected_uci[0], finding.presentation_id,
-                                finding.presentation_revision)}
-                        if len(mappings) != 1:
-                            continue  # Retain the finding; never guess a current presentation.
-                        if finding.ply > len(normalized.moves) or finding.played_uci != normalized.moves[finding.ply - 1]:
-                            raise ValueError("encounter played move differs from captured game")
-                        decision = next(iter(mappings.values()))
-                        candidates.append(GameEncounter(key=GameEffectKey(workspace_id=spec.workspace_id,
-                            provider=spec.provider, game_id=normalized.game_id, decision_id=decision.decision_id,
-                            occurrence_ply=finding.ply),
-                            source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
-                                source_revision=record.source_revision, source_digest=record.source_digest),
-                            decision=decision, expected_uci=finding.expected_uci[0], played_uci=finding.played_uci,
-                            observation="matched" if finding.played_uci == finding.expected_uci[0] else "missed",
-                            detected_at=detected_at, occurred_at=record.played_at, payload_digest=record.source_digest))
-                    encounters = tuple(candidates)
+                    encounters = project_encounters(normalized, findings=findings, snapshots=snapshots,
+                        source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
+                            source_revision=record.source_revision, source_digest=record.source_digest),
+                        detected_at=self.clock.utc_now(), occurred_at=record.played_at,
+                        payload_digest=record.source_digest)
             except ValueError:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
                 boundary = True
