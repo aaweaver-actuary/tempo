@@ -262,6 +262,11 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
                 introductions=None, introduction_policy=None, clock=lambda: NOW)
             assert pending.admission_status == "pending"
             task = durable_tasks.enqueue_task_in_transaction(database, KIND, case.repertoire_id, {"after": ""})
+            unrelated_kind = "unrelated_optional_encounter_fixture"
+            durable_tasks.enqueue_task_in_transaction(database, unrelated_kind, case.repertoire_id, {})
+            _, unrelated_candidate, unrelated_parameters = storage.prepare_task_claim(
+                unrelated_kind, None, NOW.isoformat(), DEFENSIVE_TASK_KINDS)
+            assert (unrelated_candidate(database, [NOW.isoformat(), *unrelated_parameters]) is None) is study_only
             assert set_control_in_transaction(database, "durable", task["id"], "pause")
             _, read_candidate, parameters = storage.prepare_task_claim(KIND, None, NOW.isoformat(), DEFENSIVE_TASK_KINDS)
             assert read_candidate(database, [NOW.isoformat(), *parameters]) is None
