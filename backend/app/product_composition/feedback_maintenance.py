@@ -39,7 +39,10 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
     """One effect and durable cursor per transaction; all reads close first."""
     write = write or (lambda: connection(background=True))
     clock = clock or (lambda: datetime.now(timezone.utc))
-    after = json.loads(task["payload_json"]).get("after", "")
+    payload = task.get("payload")
+    if payload is None:
+        payload = json.loads(task["payload_json"])
+    after = payload.get("after", "")
     with read() as database:
         page = PostgresGameFeedbackStore(database).owed_page(after, 1)
     observed = page[0] if page else None
