@@ -92,7 +92,7 @@ settlement or a promise that a queued card is still available now.
 
 ```mermaid
 flowchart LR
-  Operator["Explicit local HTTP preview / start / bounded resume"] --> Guard["Opt-in PostgreSQL/Celery qualification\ncurrent controls + foreground admission\none operator slot"]
+  Operator["HTTP reader preview/status; bounded writer-profile operator"] --> Guard["Opt-in PostgreSQL/Celery qualification\ncurrent controls + foreground admission\none operator slot"]
   Guard --> Read["Games imported-history read"]
   Read --> Existing[("Existing imported_games")]
   Read --> First["First retained canonical / capture / comparison path"]
@@ -128,6 +128,12 @@ legality/conflict and maintenance fences remain in force.
 
 All routes use prefix `/api/product/game-history`, and the entire prefix receives
 background admission, including callers without a special work-class header.
+The API reader profile serves preview/status only. It supplies no receiving
+capability, reports `execution_ready=false`, and rejects write requests with
+`retained_history_writer_operator_required` (HTTP 503). The existing bounded
+operations may instead be invoked by an explicit operator in the established
+writer-worker profile; API writer credentials and a new dispatch layer are not
+introduced. The packaged writer budget qualification below is still incomplete.
 
 1. `POST /preview` with a unique `run_id` and explicit `selection`: workspace
    `legacy`, provider `lichess` or `chesscom`, actual account, half-open UTC
@@ -156,14 +162,24 @@ or live kickoff is part of this path.
 
 ## Qualification and remaining release boundary
 
-The focused packaged check at `0840fa21` built the backend image, imported the
-installed modules without a source overlay, bootstrapped schema 051, reached
-actual API/Celery health and returned a truthful synthetic HTTP preview. HTTP
-start then failed 500 before a writer connection: the standard API intentionally
-has only reader credentials, while the current start/run-ready facade calls a
-writer directly. Activation remains blocked until those commands use the
-existing writer/command owner. Supplying API writer credentials is not a fix.
-The disposable stack/image/builder/secrets were removed and locks released.
+The focused packaged check at `0840fa21` found the reader API requesting a writer
+connection. The narrow correction at `fb36dbe9ce175a119e3b3d81eb1da80d9dd63c20`
+preserves read-only API permissions and uses the existing bounded operations in
+the established writer profile. Its packaged image built, imported without a
+source overlay, bootstrapped schema 051 and reached actual API/Celery health.
+HTTP preview passed with truthful read-only readiness, and reader write requests
+were rejected with the expected 503 before any writer transaction.
+
+The writer operator committed its bounded manifest and reached actual receiving
+admission, then hit the standard 250ms PostgreSQL transaction limit during
+`promote_encounter -> ensure_card_queued_after -> presentation_facts`. No completed
+run or owner receipt was acknowledged. Packaged duplicate/resume checks were not
+reached and are not claimed passed. The timeout was preserved, not raised.
+No receiving-owner preparation hook exists on this path; a bounded/prepared
+promotion capability or established command preparation fitting the current
+budget is the concrete remaining qualification seam. No SQL-copy/prewarm hack
+or larger design is added here. Activation remains blocked. All disposable
+stack/image/builder/secrets resources were removed and locks released.
 
 The missing published #487 `abfacd08` material-introduction correction is now
 consumed at runtime checkpoint `5865882c77ce44c0aa9e6b0c082afd78021d569a`.
@@ -179,7 +195,7 @@ uses the encounter-aware sweep on the writer worker. Its original command/source
 durable per-work pause, current lease/generation and explicit encounter allowance
 are retained. The unchanged #488 pending-maintenance proofs for Study-only false
 and true are reused; that source connection is not a remaining gap. Actual
-packaged history admission is blocked by the API writer-owner defect above.
+packaged history completion is blocked by the receiving transaction budget above.
 
 At local executable **`38693c6da56a140938f4e0cf5412e222395f3f08`**:
 
