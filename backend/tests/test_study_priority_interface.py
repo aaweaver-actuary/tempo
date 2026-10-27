@@ -1,4 +1,5 @@
 """Cheap production-boundary guards; native isolation lives in #487's owner suite."""
+import ast
 import json
 import os
 from pathlib import Path
@@ -49,7 +50,9 @@ def test_games_domain_has_no_database_execution_or_dynamic_loader():
         assert not facts["loaders"], facts["path"]
         assert not [call for call in facts["calls"] if "sql" in call], facts["path"]
         for imported in facts["imports"]:
-            assert not imported["module"].startswith(("tempo_legacy_database", "psycopg", "sqlite3")), facts["path"]
+            module = imported["module"].split(".")[0]
+            assert not module.endswith("_database"), facts["path"]
+            assert not module.startswith(("psycopg", "sqlite3", "asyncpg", "sqlalchemy")), facts["path"]
 
 
 def test_public_priority_surface_is_pure_and_reuses_exact_frozen_contract_types():
@@ -75,3 +78,24 @@ for name in ('EncounterReceipt', 'GameEffectControl', 'GameEffectKey', 'GameEnco
         env=os.environ | {"PYTHONPATH": os.pathsep.join(str(ROOT / path) for path in paths)},
         capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
+
+
+def test_required_priority_command_registers_real_failure_replay_and_independent_consumption():
+    runner = ast.parse((ROOT / "backend/app/study/qualify_priority.py").read_text())
+    required = next(ast.literal_eval(node.value) for node in runner.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "REQUIRED" for target in node.targets))
+    assert len(required) == len(set(required))
+    critical = {
+        "test_intake_never_calls_queue_and_commits_once_when_refresh_fails",
+        "test_study_refresh_without_games_consumes_accepted_priority",
+        "test_real_shape_history_intake_commits_pending_then_study_refresh_without_games",
+        "test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games",
+    }
+    assert critical <= {selector.split("::")[-1] for selector in required}
+    # Missing/renamed required cases fail both this cheap check and pytest
+    # collection; a new uncollected file cannot stand in for owner evidence.
+    for selector in required:
+        path, *case = selector.split("::")
+        tree = ast.parse((ROOT / path).read_text())
+        if case:
+            assert case[0] in {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}, selector

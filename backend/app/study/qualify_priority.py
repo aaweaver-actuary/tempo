@@ -5,6 +5,7 @@ Combine #487 deferred intake and #488 functional integration source first. Missi
 required files/cases fail pytest collection; there are no optional fallbacks.
 """
 from pathlib import Path
+import fcntl
 import os
 import subprocess
 import sys
@@ -23,10 +24,35 @@ REQUIRED = (
 
 
 def main(arguments=()):
-    paths = [ROOT / "backend", ROOT / "database"]
+    # Reuse the receiving owner's existing source-overlay qualification inputs;
+    # select the caller's already-installed Python, never install dependencies.
+    sources = (
+        "backend", "database", "packages/repertoire-comparison/src",
+        "packages/game-classification/src", "packages/game-ingestion/src",
+        "packages/game-review-contracts/src", "packages/evidence-math/src",
+        "packages/scheduling/src", "packages/chess-core/src",
+        "services/learning/runtime/src", "services/learning/application/src",
+        "services/learning/remediation/src", "contracts/game-evidence/src",
+        "contracts/analysis-jobs/src",
+    )
+    paths = [ROOT / source for source in sources]
     environment = os.environ | {"PYTHONPATH": os.pathsep.join(map(str, paths)), "PYTHONDONTWRITEBYTECODE": "1"}
-    return subprocess.run([sys.executable, "-m", "pytest", "-q", *REQUIRED, *arguments],
-        cwd=ROOT, env=environment).returncode
+    command = [sys.executable, "-m", "pytest", "-q", *REQUIRED, *arguments]
+    lock_path = Path(environment.get("TEMPO_VALIDATION_LOCK_PATH", "/tmp/tempo-mac-validation-20261025.lock"))
+    if "--collect-only" not in arguments and lock_path.exists():
+        # Never truncate or unlink the shared advisory lock. Fail promptly if a
+        # native owner is already qualifying; release immediately on completion.
+        with lock_path.open("r+") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("VALIDATION_LOCK_BUSY", file=sys.stderr)
+                return 2
+            try:
+                return subprocess.run(command, cwd=ROOT, env=environment).returncode
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+    return subprocess.run(command, cwd=ROOT, env=environment).returncode
 
 
 if __name__ == "__main__":

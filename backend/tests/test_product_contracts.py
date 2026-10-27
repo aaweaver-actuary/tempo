@@ -177,14 +177,21 @@ def import_targets(source, module):
 
 def boundary_errors(sources):
     errors = []
+    public_module = "app.study.interfaces.game_priority"
+    public_tree = ast.parse((ROOT / "backend/app/study/interfaces/game_priority.py").read_text())
+    public_exports = next(ast.literal_eval(node.value) for node in public_tree.body
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets))
     for item in sources:
         owner, source = item[:2]
         module = item[2] if len(item) > 2 else f"app.{owner}.module"
         for name in import_targets(source, module):
+            if owner == "games" and name in {"app.contracts.product_v02.learning.LearningFeedbackPort", "app.contracts.product_v02.learning.EncounterFeedbackPort"}:
+                errors.append(f"{owner}: consume the designated Study priority interface {name}")
             # The supported Study surface contains only the unchanged pure
             # contracts. All other Study implementation imports stay private.
-            if owner == "games" and (name == "app.study.interfaces.game_priority" or
-                    name.startswith("app.study.interfaces.game_priority.")):
+            if owner == "games" and (name == public_module or name.startswith(public_module + ".")):
+                if name != public_module and name.removeprefix(public_module + ".") not in public_exports:
+                    errors.append(f"{owner}: unavailable Study interface export {name}")
                 continue
             if owner == "games" and name.startswith("app.") and not name.startswith(("app.games.", "app.contracts.", "app.chess.")):
                 errors.append(f"{owner}: unsupported application dependency {name}")
@@ -194,6 +201,13 @@ def boundary_errors(sources):
             for sibling in ("games", "repertoire", "study"):
                 if sibling != owner and (name == f"app.{sibling}" or name.startswith(f"app.{sibling}.")):
                     errors.append(f"{owner}: private sibling import {name}")
+        if owner == "games":
+            tree = ast.parse(source)
+            aliases = {alias.asname or alias.name: public_module for node in ast.walk(tree)
+                if isinstance(node, ast.Import) for alias in node.names if alias.name == public_module}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and aliases.get(ast.unparse(node.value), ast.unparse(node.value)) == public_module and node.attr not in public_exports:
+                    errors.append(f"{owner}: unavailable Study interface member {node.attr}")
     return errors
 
 
@@ -231,6 +245,9 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert boundary_errors([("games", "from app import main")])
     assert boundary_errors([("games", "from app.services.queue_application import seed_queue")])
     assert not boundary_errors([("games", "from app.study.interfaces.game_priority import EncounterFeedbackPort")])
+    assert boundary_errors([("games", "from app.contracts.product_v02.learning import EncounterFeedbackPort")])
+    assert boundary_errors([("games", "from app.study.interfaces.game_priority import PrivateStore")])
+    assert boundary_errors([("games", "import app.study.interfaces.game_priority as api\ndef hidden():\n    return api.PrivateStore()")])
     assert has_import_cycle({"app.contracts.one": "from .two import value", "app.contracts.two": "from .one import value"})
 
 
