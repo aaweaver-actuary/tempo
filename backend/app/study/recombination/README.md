@@ -300,8 +300,7 @@ All three original cards retain synthetic old history with explicitly unknown
 assistance, so ordinary refresh does not reclaim them as abandoned, unreviewed
 introductions. That history earns no R11 evidence. The native recorded-review /
 prepared-head case runs actual queue refresh between each new qualifying review.
-No Study API is intercepted. A prepared or partly passing browser spec is not a
-pass; the current result and remaining assertion are recorded below.
+No Study API is intercepted. The current bounded browser result is recorded below.
 The retained UI's first teaching pass on a fresh composite is an actual assisted
 review and earns no clean streak. A08 then requires three fresh whole-sequence
 clean reviews; it seeds no combined first-correct or prior-review facts.
@@ -310,15 +309,17 @@ Central regression/schema/diagram registration links this owner. The changed
 native split/admission selection passes five cases, and the browser-intent file
 passes three. The actual-refresh regression passes at `e5a3e4b8`, preserving the
 `unintroduced_member` guard and retained unknown-assistance fixture history.
-The single A08 run at that same SHA saved genuine A/C/B reviews, created AB then
-ABC after fresh whole-sequence reviews, applied the visible confirmed split,
-and passed the original-card/history, fresh-lineage and unrelated-attempt
-assertions. Its final queue assertion failed because the test requested
-`limit=50`; the existing endpoint explicitly accepts only 1–20. The test now
-requests 20 and checks HTTP success before reading the payload. This is a test
-request correction, with no product behavior change. A08 remains unqualified
-until that final corrected assertion completes in the next authorized run.
-The failed run's disposable resources were removed and its shared validation
-lock released; other assigned checks retain priority before another build.
+The single corrected A08 run at `cc9694bcb0542855c12247febdb5d964c7841edc`
+passed: **1 passed**, browser stage 105.53 seconds. It saved genuine A/C/B reviews,
+created AB then ABC after fresh whole-sequence reviews, applied the visible
+confirmed split, and passed the original-card/history, fresh-lineage,
+unrelated-attempt and retired-ABC queue assertions. The final queue read uses the
+existing endpoint's supported `limit=20` and checks HTTP success before reading
+its payload. No product behavior was changed for that request correction.
+The runner completed cleanup in 4.08 seconds; its exact disposable containers,
+volumes, networks and images were verified absent, and the nontruncating shared
+validation lock was released. Existing unchanged focused evidence is reused;
+no broad suite was run. This result qualifies the bounded disposable A08 scenario.
+Live resource isolation and later #495/#501 composition remain unverified.
 No live join/review, history reset, graph migration resumption, deployment or merge
 is performed by this task.
