@@ -234,3 +234,66 @@ def test_stopped_operation_defers_before_first_introduction_and_resumes_once(own
             assert first.admission_status == "available"
             assert receive(database).owner_receipt_id == first.owner_receipt_id
             assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("study_only", [False, True])
+def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games(
+    owned_postgres, monkeypatch, study_only,
+):
+    import builtins
+    import json
+    from datetime import timedelta
+    from app.product_composition.encounters import receive_captured_encounter
+    from app.product_composition.feedback_maintenance import KIND, execute_feedback_sweep
+    from app.services.background_activity import set_control_in_transaction
+    from app.services.defensive_analysis import DEFENSIVE_TASK_KINDS
+    from app.services import durable_tasks
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.durable_tasks import storage
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(durable_tasks, "_now", lambda: NOW)
+    with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=study_only) as case:
+        capture = case.capture(case.game_ids[0]); command = case.command(capture)
+        snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        with case.transaction() as database:
+            pending = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
+                introductions=None, introduction_policy=None, clock=lambda: NOW)
+            assert pending.admission_status == "pending"
+            task = durable_tasks.enqueue_task_in_transaction(database, KIND, case.repertoire_id, {"after": ""})
+            assert set_control_in_transaction(database, "durable", task["id"], "pause")
+            _, read_candidate, parameters = storage.prepare_task_claim(KIND, None, NOW.isoformat(), DEFENSIVE_TASK_KINDS)
+            assert read_candidate(database, [NOW.isoformat(), *parameters]) is None
+        before = case.readback()
+        with case.transaction() as database:
+            assert set_control_in_transaction(database, "durable", task["id"], "resume")
+            row = read_candidate(database, [NOW.isoformat(), *parameters])
+            assert row["id"] == task["id"]
+            storage.claim_lease(database, ("encounter-maintenance-lease", (NOW+timedelta(days=2)).isoformat(),
+                NOW.isoformat(), NOW.isoformat(), row["id"], row["generation"]))
+            claimed = dict(storage.task_by_id(database, (row["id"],)))
+        original_import = builtins.__import__
+        def without_games(name, *args, **kwargs):
+            if name == "app.games" or name.startswith("app.games."):
+                raise AssertionError("Study maintenance imported optional Games")
+            return original_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", without_games)
+        # A stale operation never reaches the receiving/admission capability.
+        stale = {**claimed, "lease_token": "stale"}
+        assert execute_feedback_sweep(stale, read=case.transaction, write=case.transaction,
+            capture=lambda *args: capture, clock=lambda: NOW) is False
+        assert case.readback() == before
+        assert execute_feedback_sweep(claimed, read=case.transaction, write=case.transaction,
+            capture=lambda *args: capture, clock=lambda: NOW) is False
+        with case.transaction() as database:
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+            assert effect.status == "applied" and effect.admission_status == "available"
+            assert effect.encounter == command and effect.disposition == "first_introduction"
+            current_task = dict(storage.task_by_id(database, (task["id"],)))
+            assert current_task["state"] == "queued" and json.loads(current_task["payload_json"])["after"]
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+        admitted = case.readback()
+        assert execute_feedback_sweep(claimed, read=case.transaction, write=case.transaction,
+            capture=lambda *args: capture, clock=lambda: NOW) is False
+        assert case.readback() == admitted

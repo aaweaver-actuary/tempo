@@ -8,7 +8,9 @@ from tempo_legacy_database.connections import background_read_connection, connec
 from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
 from tempo_legacy_database.adapters.games.authority import acceptance as source_owner
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, installed
-from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable, current_owner_game_feedback
+from tempo_legacy_database.adapters.study.game_feedback_authority import (
+    CurrentDecisionUnavailable, current_owner_game_feedback, current_owner_encounter_feedback,
+)
 
 from app.contracts.product_v02.learning import GameEffectControl
 from app.legacy_game_observation import capture_game
@@ -45,7 +47,9 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
     reason = None
     if observed is not None and observed.status == "pending":
         try:
-            captured = capture(observed.lapse.finding.repertoire_id, observed.key.game_id,
+            repertoire_id = (observed.encounter.decision.repertoire_id if observed.encounter is not None
+                             else observed.lapse.finding.repertoire_id)
+            captured = capture(repertoire_id, observed.key.game_id,
                                (observed.key.occurrence_ply-1,))
             snapshot = project_capture(captured, comparison_game=retained_canonical_game(captured))
         except (CurrentDecisionUnavailable, RemediationError, ValueError) as error:
@@ -53,7 +57,8 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
             # and proceeds fairly; its next generation retries missing facts.
             reason = getattr(error, "reason", None) or "current_source_unavailable"
     with write() as database:
-        if not lock_current_slice(database, task):
+        slice_admitted = lock_current_slice(database, task)
+        if not slice_admitted:
             return False
         if observed is None:
             complete_task_slice_in_transaction(database, task)
@@ -64,14 +69,29 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
             current = source_owner.imported_game(database, raw["id"])
             if current is None or dict(current) != raw:
                 raise CurrentDecisionUnavailable("canonical_imported_source_changed")
-            if observed.lapse.finding.source_digest != fingerprint(raw):
-                # Changed source cannot newly apply the obsolete deferred lapse.
+            source_digest = (observed.encounter.source.source_digest if observed.encounter is not None
+                             else observed.lapse.finding.source_digest)
+            if source_digest != fingerprint(raw):
+                # Changed source cannot newly apply an obsolete deferred effect.
                 GameFeedback(PostgresGameFeedbackStore(database), None, clock=clock).control_effect(
                     GameEffectControl(key=observed.key, source_revision=observed.source_revision,
                                       action="hold", reason="source_corrected"))
-            else:
+            elif observed.encounter is None:
                 current_owner_game_feedback(database, retained_owner_capture=captured,
                     snapshot=snapshot, clock=clock).maintain(after=after, limit=1)
+            else:
+                from app.services.queue_admission_adapter import current_owner_encounter_introductions
+                from app.study.encounter_feedback import EncounterIntroductionPolicy
+                # This existing short task unit was admitted by claim_task's
+                # durable pause predicate, the background writer and the current
+                # task-generation/lease fence above. There is no distinct global
+                # Study-pause field; cap/Study-only never supply this Boolean.
+                introductions = current_owner_encounter_introductions(database,
+                    allowance="encounter_exception", paused=not slice_admitted)
+                current_owner_encounter_feedback(database, retained_owner_capture=captured,
+                    snapshot=snapshot, clock=clock, introductions=introductions,
+                    introduction_policy=EncounterIntroductionPolicy("encounter_exception")
+                ).maintain(after=after, limit=1)
         advance_task_slice_in_transaction(database, task, next_phase="scan",
             next_payload={"after": effect_id(observed.key), "hold_reason": reason})
     return False
