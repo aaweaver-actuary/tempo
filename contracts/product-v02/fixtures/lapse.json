@@ -1,0 +1,39 @@
+{
+  "model": "GameLapse",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-game",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "finding": {
+      "interface_version": "0.2.0",
+      "kind": "confirmed_miss",
+      "provider": "lichess",
+      "game_id": "synthetic-game",
+      "source_revision": 1,
+      "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ply": 1,
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "expected_uci": [
+        "e2e4"
+      ],
+      "played_uci": "d2d4",
+      "repertoire_id": "white",
+      "repertoire_revision": 1,
+      "decision_id": "existing-decision",
+      "presentation_id": "existing-physical-card",
+      "presentation_revision": 1,
+      "introduced_before_game": true,
+      "membership": "present",
+      "lapse_eligible": true,
+      "diagnostic": null,
+      "reentry_authority_id": null
+    },
+    "detected_at": "2026-10-26T12:00:00Z",
+    "occurred_at": "2026-10-25T12:00:00Z",
+    "payload_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
