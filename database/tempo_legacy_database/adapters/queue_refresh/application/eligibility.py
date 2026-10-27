@@ -199,11 +199,16 @@ def _reset_unintroduced_opening_cards(database, queue_date: str) -> None:
 
 
 def _reset_stale_opening_introductions(database, queue_date: str) -> None:
-    database.execute(
-        """UPDATE cards SET state='new',introduced_at=NULL
+    statement = """UPDATE cards SET state='new',introduced_at=NULL
            WHERE content_type='opening' AND repertoire_id<>'__retained_cards__' AND state='learning' AND introduced_at<?
              AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
              AND NOT EXISTS(SELECT 1 FROM daily_queue queue
-                            WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
-        (queue_date, queue_date),
-    )
+                            WHERE queue.card_id=cards.id AND queue.queue_date=?)"""
+    from tempo_legacy_database.adapters.study.game_feedback import installed, retained_encounter_introduction_query
+    if installed(database):
+        statement += ' AND cards.id NOT IN (' + retained_encounter_introduction_query() + ')'
+        # Keep this owned PostgreSQL projection native: the legacy SQLite
+        # translator would rewrite its JSONB operator into a JSON-only function.
+        database.execute_native(statement.replace('?', '%s'), (queue_date, queue_date))
+        return
+    database.execute(statement, (queue_date, queue_date))

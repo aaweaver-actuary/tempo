@@ -114,7 +114,15 @@ of that day, so same-day ordering is not invented.
   reservations when the caller already holds a day lock.
 - `queue_application.py::presentation_rows` removes obsolete priority, and
   `queue_ordering.py::_priority_projection` uses the unchanged existing priority
-  algorithm for `product_game_lapse`. Protected issued attempts remain protected.
+  algorithm for `product_game_lapse` and `product_game_encounter`. Protected issued
+  attempts remain protected; the stored encounter reason stays distinct.
+- `queue_admission_adapter.py::has_outstanding_miss` preserves the legacy
+  reconciliation interface while also reading Study's material encounter
+  introduction fact. This is retention of an already-introduced current revision,
+  never a miss classification or authority for a fresh introduction.
+- The database eligibility owner's `_reset_stale_opening_introductions` excludes
+  the same material admissions, so a later Study day does not erase/reintroduce
+  them. Other unseen introductions retain ordinary reconciliation controls.
 
 The adapter lives in [the database owner](../../../database/tempo_legacy_database/adapters/study/README.md).
 Migration 051 is allocated and registered by readiness version 51; it is source
@@ -259,10 +267,11 @@ D migrations are not installed. Source discovery/target bounds still defer safel
 small fixtures do not establish support for an arbitrary installed repertoire.
 
 `product_game_encounter` is a distinct queue priority label, with a clean attempt
-state. The shared `queue_ordering._priority_projection` needs to recognize it
-before product adoption; its exact shared-file reservation/publication remains
-pending. Current source does not claim the later normal-Study priority proof or
-live activation. Integration retains admission/serving composition ownership.
+state. The narrow shared projection/clearing hooks recognize it while the
+introduction retention fact protects current admissions from same-day and later
+ordinary rebuilds. No cap or Study-only setting changes, and a later source hold
+cannot refund historical admission. Integration retains actual caller admission,
+serving composition and live activation ownership.
 
 ```mermaid
 sequenceDiagram
