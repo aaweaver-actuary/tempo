@@ -4,7 +4,14 @@ Issue [#482](https://github.com/aaweaver-actuary/tempo/issues/482), under
 [#481](https://github.com/aaweaver-actuary/tempo/issues/481), pins SPEC v0.2 at
 `6885b942`. These are proposed/unmerged source interfaces, **not live behavior**.
 The initial slice is usable independently; probability, engine, proposal and
-rejoining values will be additive checkpoints and do not gate game feedback.
+rejoining values are additive checkpoints and do not gate game feedback.
+The second compatible checkpoint adds provider `filters` facts and the isolated
+Game Review screen's `GameSummary`, `ProviderSyncStatus`, `RecentGames` and
+original-history `GameDetail` projections. These are read models, not a new
+canonical game or receiver. The UI renders receipt statuses verbatim; `applied`
+does not mean `available`. Failed sync requires an error and operation identity.
+`GameReviewApi` adds `recentGames`, `gameDetail`, `sync` and `retryFeedback` with
+request-local AbortSignal/operation/repertoire context; no transport starts here.
 
 ## Public seams and owners
 
@@ -17,6 +24,11 @@ rejoining values will be additive checkpoints and do not gate game feedback.
 | Games → Study | `control_effect(GameEffectControl)` | Study durably holds/withdraws even evidence not yet received. |
 | Consumer → Study | `effect_status(GameEffectKey)` → `LearningReceipt` or null | Study owns receipt, pending/held/applied/settled status and chronology. |
 | UI → owning API | `GameReviewApi` reads findings and feedback status | UI renders supplied facts; it does not mutate schedules or queues. |
+| Probability provider → analysis | `ProbabilityPort.evidence` → `ProbabilityEvidence` | Provider owns transport/model lifecycle; evidence has no admission authority. |
+| Engine → analysis | `EngineEvaluationPort.evaluate` → `EngineEvidence` | Evaluator owns bounded execution; supplied values start no process. |
+| Analysis/UI → Repertoire | `RepertoireChangePort.preview/decide` | Repertoire revalidates one-own-response, source revisions and approved displayed edits/card additions. |
+| Ranking → Study | `RankingInput/RankingOutput` | Study owns eligibility, global budget/weights and selection; rankings contain facts only. |
+| Pure rejoining policy → Study | `Presentation`, `JoinPlan`, `PresentationChangePort.apply_join` | Study owns safe-boundary revalidation, schedule, lineage and obligation remapping. |
 
 Python contracts live in [`backend/app/contracts/product_v02`](../../backend/app/contracts/product_v02).
 TypeScript schemas and types live in [`contracts.ts`](../../app/features/product-api/contracts.ts).
@@ -64,6 +76,9 @@ with only route A mapped and an explicit game-scoped chronology assertion.
   null/unknown. Saturated or continuing pages cannot claim completeness. A page
   cannot contain two revisions of one stable provider game ID. Continuations are
   opaque; provider adapters own completeness and checkpoint interpretation.
+  `GamePage.filters` retains exact requested key/value facts (default empty).
+  Provider-specific raw metadata may live in an immutable owner envelope around
+  the shared page/record; it does not justify a competing canonical game DTO.
 - Finding `ply` is **one-based**. Existing membership route offsets and v3
   encounters remain **zero-based**, so adapters must convert explicitly.
   Only `confirmed_miss` with one selected own response, proven introduction and
@@ -107,11 +122,60 @@ with only route A mapped and an explicit game-scoped chronology assertion.
 These requirements describe the receiver contract. Tests here prove wire shapes,
 identity and adapter behavior; #487 owns actual persistence/race/scheduler proof.
 
+## Later analysis and presentation checkpoint
+
+[`analysis.py`](../../backend/app/contracts/product_v02/analysis.py) reuses public
+`tempo_evidence_math.PositionMoveUniverse`, `MoveProbabilityDistribution` and
+`CountEvidence`: every legal move is retained, partial mass stays unknown, and
+absent counts remain null. The small wrapper supplies provider/model, observation
+date and explicit selected population/time controls. Personal account evidence
+is a separate basis and never silently replaces population context. D04 is still
+open: example rating/time-control settings are **synthetic fixture inputs**, not
+a choice of Andy's live Settings. Unavailability is a reason, not invented zeros.
+
+Engine scores reuse analysis-jobs CP/mate models through wire-compatible frozen
+adapters. All scores in `EngineEvidence` are **learner oriented**; the evaluator
+owns conversion from side-to-move. `EngineContext` retains starting/target full
+FEN, ordered game history, variant/color, engine version, depth/node/time bounds,
+threads and hash allocation. Every explicitly requested candidate has a result
+or explicit unavailable reason, including candidates outside a preferred top five.
+The engine fixture has seven candidates and a supplied 24 CP candidate loss;
+no real engine/model ran in this contract task. Mate/inconclusive evidence is
+distinct and cannot be treated as a CP score or acceptance proof.
+
+`Proposal` contains the source revision/digest, explanation, exact edits and all
+displayed card additions/updates, evidence and distinct supporting positions.
+`max_loss_cp` defaults to **30**; any contextual change requires an explicit
+displayed reason. Repertoire owns evaluating that policy and invariant checks.
+`Proposal.content_digest()` / async `proposalDisplayDigest()` bind all fields
+except `display_digest` via SHA-256 of UTF-8 JSON with recursively sorted object
+keys, no whitespace and unescaped Unicode. Arrays keep their displayed order.
+`ProposalDecision.matches_preview()` / `matchesProposalPreview()` compare that
+binding plus proposal/source revisions. The owner must perform this check against
+the stored preview before accepting. Hash matching alone is no permission to
+publish; the Repertoire owner still rechecks current invariants and versions.
+An edit returns a fresh preview; it cannot publish directly.
+
+[`presentation.py`](../../backend/app/contracts/product_v02/presentation.py) keeps
+existing decision IDs and actual presentation IDs, exact route/repertoire/variant
+scope, component response positions, opponent cues, expected participant/Study
+revisions and lineage. `JoinPlan` preserves component order, exact connecting
+position chain and unresolved obligation IDs; its result starts at 0/3 and costs
+zero introduction slots. #502 owns choosing eligible neighbours and clean-streak
+policy; #503/Study owns between-attempt application, conservative schedules,
+history/obligation/deadline preservation and repeated-failure splitting. These
+DTOs do not implement a new scheduler, choose joins, fabricate clean successes,
+or require the game-feedback/analysis lanes to run.
+
 ## Synthetic examples and verification
 
 All [`fixtures/*.json`](fixtures) contain task-owned synthetic IDs/content:
 `confirmed-introduced-miss`, `opponent-gap`, `unintroduced`, `conflict`, `reentry`,
 `incomplete-page`, `snapshot`, `lapse`, `hold`, `withdraw`, and `held-receipt`.
+Later fixtures add `probability-unknown-mass`, `probability-unavailable`,
+`probability-personal`, `engine-explicit-candidate`, `engine-mate`, `proposal`,
+`proposal-accept`, `presentation`, `join-a-b-to-ab`, `ranking-input` and
+`ranking-output`; the UI checkpoint adds summary/detail/recent/sync examples.
 Each `{model, payload}` document round-trips unchanged in both regular suites.
 The v3 withdrawal-only test additionally reuses the existing synthetic v3 fixture.
 
@@ -121,7 +185,8 @@ make unit-file FILE=tests/unit/product-contracts.test.ts
 ```
 
 The Python test supplies local source paths for game-review contracts, chess-core
-and game-evidence contracts. No dependency installation is required when using
+and game-evidence contracts, plus evidence-math and analysis-jobs for the later
+checkpoint. No dependency installation is required when using
 the existing backend pytest/Pydantic runtime. Integration #488 must register the
 existing `tempo-game-review-contracts` package in the actual runtime if absent;
 this issue cannot edit dependency/build files. The new tests are discoverable in
@@ -134,7 +199,8 @@ The dependency guard covers only explicit new product roots (contracts,
 `games/feedback`, `repertoire`, `study/game_feedback.py`). It rejects composition
 imports and all private cross-domain implementation edges, hence cycles between
 those domains. Pure shared packages and explicit contracts remain allowed.
-Extend that small root map when further product modules are added; it is not a
+Relative imports and explicit cycles within the bounded new-module graph are
+checked as well. Extend that small root map when further modules are added; it is not a
 legacy-tree architecture audit or a claim about deployed resources.
 
 ## Proposed target architecture — not live
@@ -149,6 +215,8 @@ flowchart LR
   Study -->|LearningReceipt| Games
   UI["Game Review UI"] -->|read supplied facts| Games
   Study --> Queue["Ordinary Study queue"]
+  Analysis["Supplied probability / engine evidence"] -->|Proposal preview / decision| Repertoire
+  Policy["Pure join policy"] -->|JoinPlan| Study
 ```
 
 Study has no producer import, call, readiness or lifecycle dependency. These
