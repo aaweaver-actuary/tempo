@@ -1,3 +1,94 @@
+## Product v0.2 continuous provider / Game Review composition
+
+`backend/tests/test_product_game_sync_integration.py` owns concrete two-provider
+HTTP/checkpoint joins, explicit filters and bounded cancellation, cold lazy API
+construction, durable configured commands/read projections, and the current
+Study factory with a committed canonical Games source fence. Its native stopped
+and killed worker cases are invoked by
+`node --test tests/runner/product-game-worker.test.mjs`; they retain actual normal
+Study issuance/review both during blocked optional HTTP and after termination.
+`tests/unit/product-game-sync-settings.test.tsx` owns explicit choices, UTC
+serialization and revision-conflict reload. The prepared
+`tests/browser/product-game-sync.spec.ts` is the full source-to-normal-review
+product check; registration is not a passing browser receipt.
+
+The [canonical integration view](../docs/product-v02/game-sync/README.md) names
+resource/transaction owners, source evidence and pending deployment limits.
+Game Review mounts only in the optional legacy workspace. Settings loads its
+Games panel lazily, and HTTP construction starts no provider or worker.
+`backend/tests/test_product_game_review_mount.py` executes the actual root
+admission function for exact read/command URLs with no live app import;
+`tests/unit/product-game-review-mount.test.tsx` owns legacy navigation while
+retaining the independent Study exclusion.
+
+## Product v0.2 game-feedback composition
+
+`backend/tests/test_product_feedback_integration.py` owns the T07 source and
+actual disposable PostgreSQL join: supplied existing physical identity, missing
+mapping rejection, canonical moves without reconstructed PGN, one lapse/replay,
+ordinary controller save/settlement, deadline survival across no-Study days and
+new connections/queue recovery, unrelated issued attempt preservation, canonical
+source correction rejection, durable pending maintenance, and producer absence.
+`test_day_only_introduction_binds_exact_canonical_source` covers stored date-only
+introduction with exact comparison source scope;
+`test_maintenance_cold_import_has_no_games_dependency` checks a fresh interpreter.
+The source/native suite uses synthetic task-owned data and establishes no genuine
+private-game mapping or deployment/resource isolation.
+
+`tests/browser/product-game-feedback.spec.ts` owns the single real API/worker/
+PostgreSQL/Chromium acceptance for protected queue head, one applied effect and
+retry identity, exact target FEN/move, optional producer transport disabled,
+ordinary Study review save, reload and settled receipt/history readback. A fixture
+or browser failure is never recorded as a pass. Current results and blockers are
+in the [composition receipt](../backend/app/product_composition/README.md).
+`test_legacy_intake_study_mode.py` owns exact command admission and foreground
+race deferral; the HTTP admission/query-only parametrization in
+`test_legacy_study_remediation.py` owns both new transport route classifications.
+
+`backend/tests/test_product_contracts.py` and
+`tests/unit/product-contracts.test.ts` own shared synthetic fixture round trips,
+invalid/unproved findings, saturated pages, revision conflicts, caller isolation,
+pre-admission control without invented owner IDs, withdrawal-only compatibility,
+immutable returned containers and scoped import/boundary guards. Repertoire
+index/snapshot source cases live in `test_product_position_index.py` and
+`test_product_snapshot.py`; comparer cases are listed in the
+[classification owner inventory](../packages/game-classification/REGRESSIONS.md).
+Study lapse/deadline/hold/settlement cases are listed in its
+[owner README](../backend/app/study/README.md#focused-checks).
+
+## T06 Study-owned game lapse and durable withdrawal fence
+
+`backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:
+`test_game_lapse_matches_again_transition`,
+`test_duplicate_delivery_has_one_effect_and_original_deadline`,
+`test_recomparison_revision_is_not_new_lapse`,
+`test_unintroduced_conflicted_stale_or_ambiguous_is_rejected`,
+`test_no_fabricated_study_review`, `test_active_attempt_is_preserved`,
+`test_pending_feedback_survives_two_days_without_study`,
+`test_queue_rebuild_and_restart_do_not_erase_obligation`,
+`test_genuine_review_settles_once`, `test_late_evidence_does_not_rewind_state`,
+`test_changed_source_is_quarantined`, and
+`test_withdraw_after_apply_preserves_history`. Changed-source coverage includes
+the key/revision/reason-only pre-admission hold followed by delayed original
+delivery; no producer-guessed owner obligation identity is required.
+`test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns`
+accepts retained `chess.com`/`chesscom` at the existing owner scope boundary,
+preserves original capture bytes/digests, and rejects unknown/mismatched providers
+before the next owner fence. Lichess behavior remains covered in that same case.
+
+`backend/tests/test_product_game_lapse_postgres.py` owns source/native retry,
+concurrent same-key delivery, schedule-before-receipt rollback, new-connection
+readback/off-day ordinary-queue recovery, pre-delivery tombstone readback,
+saved-review settlement/invalidation, and unrelated issued-head preservation.
+It provisions only a unique capped disposable PostgreSQL container and verifies
+its removal. These tests do not certify installed artifacts or the actual T07
+game-to-Study product loop. The [owner interface](../backend/app/study/README.md)
+records boundary ownership and composition responsibilities.
+`test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_authority`
+adds a real retained-owner source capture: current authority applies, a concurrent
+source edit is blocked by its transaction fence, and a changed captured revision
+is rejected without a schedule/receipt. It creates no producer authority.
+
 ## Daily statistics producer retirement
 
 `backend/tests/test_statistics.py::test_daily_statistics_refresh_is_retired_without_admission`
@@ -5266,3 +5357,31 @@ source epochs and ordinary Study remain in scope.
 Python SQLite/fake, selected schema and runner source checks establish their
 stated boundaries only. Native fixture edits have no native execution receipt;
 installed artifacts, deployment and full-system qualification remain unverified.
+
+## C repertoire audit composition (#501)
+
+`backend/tests/test_product_repertoire_integration.py` owns the C-only source
+boundary: actual #492 manual preview/approval/replay and unchanged unrelated
+routes; route-local eligibility/stale preview; real in-process owner HTTP and
+read projection; exact borrowed command transaction/stable retry identity; and
+release of the current snapshot read connection. Semantic fixture stores are
+explicitly fake here; this file does not establish normal Study suspension.
+
+- `test_c_real_owner_manual_preview_approval_and_replay_preserve_unrelated_route`
+- `test_c_conflict_eligibility_is_route_local_and_stale_decision_rejected`
+- `test_c_unregistered_router_uses_real_owner_http_and_exact_approval`
+- `test_c_command_transport_reuses_exact_transaction_and_stable_retry_identity`
+- `test_c_current_snapshot_read_releases_borrowed_reader_before_returning`
+
+`tests/unit/product-repertoire-integration.test.ts` owns the concrete #500 client
+mapping, exact preview/decision payload and retry correlation, safe optional
+failure, 202 remaining pending, cancellation/scope rejection, and retention of
+the existing authoring view while audit enforcement requires an explicit command.
+
+`tests/browser/product-repertoire-review.spec.ts` owns the normal-product case
+`C exact conflict is enforced and manually resolved while unrelated issued Study and history survive`.
+It uses normal imports/queue/approval/UI, a verified disposable-only legacy-source
+conflict fixture, stale-decision rejection and reload. Its fixture never records
+a Study review or applies a fake learning effect. Source collection/typechecking
+is not a browser/PostgreSQL pass; actual C acceptance remains pending until the
+real current-owner callbacks and root registration are present.

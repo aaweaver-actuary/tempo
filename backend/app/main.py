@@ -222,6 +222,8 @@ app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .product_composition.game_review import current_game_review_router
+app.include_router(current_game_review_router())
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -603,6 +605,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
                 and path_parts[5] == "queue"))
+        product_feedback_command = (request.method == "POST" and
+            path_parts == ["api", "game-evidence", "product", "feedback"])
+        product_game_review_command = request.method == "POST" and path_parts in (
+            ["api", "product", "game-review", "configuration"],
+            ["api", "product", "game-review", "sync"],
+            ["api", "product", "game-review", "feedback", "retry"],
+        )
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -672,7 +681,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, product_feedback_command, product_game_review_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -691,6 +700,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
     )
     is_background = (
         prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        or request.url.path.startswith("/api/product/game-review/")
         or (request.method == 'POST' and len(request_path_parts) == 5
             and request_path_parts[:2] == ['api', 'repertoires']
             and request_path_parts[3:] == ['prefix-transition', 'apply'])
@@ -698,6 +708,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
+        or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",

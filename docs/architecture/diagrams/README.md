@@ -14,6 +14,13 @@ The [current backend organization view](../../../backend/app/README.md) maps the
 
 ## Source and status
 
+**PROPOSED / #487:** [Study game feedback](../../../backend/app/study/README.md)
+owns the canonical receiver/transaction and normal Study recovery drawings;
+[its database chart](../../../database/tempo_legacy_database/adapters/study/README.md)
+shows the additive effect receipt/deadline/tombstone schema. These views describe
+unmerged source and bounded native evidence, with deployment/resource isolation
+unverified. Existing scheduler, queue and review authorities are retained.
+
 Current documentation reconciliation: main at
 [`1ce172e9f4f312d7d70b2a363dce7b20dab35baf`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf),
 reviewed October 26, 2026 UTC. This is a bounded source review of the affected
@@ -187,6 +194,7 @@ ownership; its status alone does not prove adoption.
 | [Conditional Study build/offline assets](../../../static/README.md#conditional-study-build-and-offline-assets-main) | Build/data flow: can emitted optional chunks enter the required offline shell without executing? | Study build and offline-shell owners; [inventory plugin](../../../scripts/offline-shell-assets.ts), [service worker](../../../public/sw.js), [readiness client](../../../app/lib/offline-shell.ts). PR324 retains actual emitted-artifact and synthetic offline evidence; combined deployment unverified. |
 | [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the merged endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
 | [Games reader](../../../apps/workbench-web/README.md#merged-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
+| [Continuous Games / Game Review](../../product-v02/game-sync/README.md) | Component/sequence: explicit provider commands, durable page/source/delivery publication, current Study receiver and optional process stop | Games, Study and composition owners; unmerged #491 / PR519 source and scoped evidence, browser/deployment acceptance separate. |
 | [Review and lost-response recovery](../../../services/learning/runtime/README.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
 | [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
 | [Publication and activation](../../../services/content/README.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
