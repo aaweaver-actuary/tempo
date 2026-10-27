@@ -300,19 +300,25 @@ All three original cards retain synthetic old history with explicitly unknown
 assistance, so ordinary refresh does not reclaim them as abandoned, unreviewed
 introductions. That history earns no R11 evidence. The native recorded-review /
 prepared-head case runs actual queue refresh between each new qualifying review.
-No Study API is intercepted. Exact browser/migration results are in the PR; a
-prepared but unrun browser spec is not a pass.
+No Study API is intercepted. A prepared or partly passing browser spec is not a
+pass; the current result and remaining assertion are recorded below.
 The retained UI's first teaching pass on a fresh composite is an actual assisted
 review and earns no clean streak. A08 then requires three fresh whole-sequence
 clean reviews; it seeds no combined first-correct or prior-review facts.
 
 Central regression/schema/diagram registration links this owner. The changed
 native split/admission selection passes five cases, and the browser-intent file
-passes three. The previous A08 reached actual AB/ABC and manual confirmation but
-failed on the original active-attempt guard; one A08 rerun after this repair is
-not yet passing. Its later no-join was reproduced as the correct
-`unintroduced_member` hold after refresh reclaimed inconsistent legacy fixture
-introductions. The fixture correction and actual-refresh regression preserve
-that guard. A08 remains unqualified until the next authorized run passes.
+passes three. The actual-refresh regression passes at `e5a3e4b8`, preserving the
+`unintroduced_member` guard and retained unknown-assistance fixture history.
+The single A08 run at that same SHA saved genuine A/C/B reviews, created AB then
+ABC after fresh whole-sequence reviews, applied the visible confirmed split,
+and passed the original-card/history, fresh-lineage and unrelated-attempt
+assertions. Its final queue assertion failed because the test requested
+`limit=50`; the existing endpoint explicitly accepts only 1–20. The test now
+requests 20 and checks HTTP success before reading the payload. This is a test
+request correction, with no product behavior change. A08 remains unqualified
+until that final corrected assertion completes in the next authorized run.
+The failed run's disposable resources were removed and its shared validation
+lock released; other assigned checks retain priority before another build.
 No live join/review, history reset, graph migration resumption, deployment or merge
 is performed by this task.

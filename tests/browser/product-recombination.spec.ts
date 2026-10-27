@@ -95,7 +95,9 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
   expect(state.original_cards).toBe(3);
   expect(state.unknown_history).toBe(3);
   expect(state.protected).toEqual(protectedOrigin);
-  const queue = await (await request.get(`${api}/queue/window?limit=50`)).json();
+  const queueResponse = await request.get(`${api}/queue/window?limit=20`);
+  await expect(queueResponse).toBeOK();
+  const queue = await queueResponse.json();
   expect(queue.cards.some((card: { id: string }) => card.id === abc.presentation_id)).toBe(false);
   await other.close();
 });
