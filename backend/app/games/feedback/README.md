@@ -236,6 +236,19 @@ nontruncating advisory validation lock before either command; do not unlink it.
 
 ## Immediately next release: encounter-priority delivery (#489 addendum)
 
+With `encounter_feedback=True`, every newly emitted mapped encounter, including
+a confirmed introduced miss, is an immutable `GameEncounter` sent through the
+public `EncounterFeedbackPort.accept_encounter`. Expected/played/source/chronology
+facts remain intact; Study owns current disposition and scheduling. Accepted
+`pending` receipts finish Games delivery without queue access or availability
+polling; Study refresh proceeds independently. Lost acknowledgments replay the
+same command. Existing frozen legacy lapse commands are neither relabeled nor
+duplicated; the separately selected legacy port remains their compatibility path.
+The owning regressions are
+`test_confirmed_introduced_miss_uses_immutable_pending_intake_without_lapse_or_queue`
+and `test_encounter_mode_does_not_relabel_or_duplicate_frozen_legacy_lapse` in
+[`test_product_feedback_jobs.py`](../../../tests/test_product_feedback_jobs.py).
+
 **Next-release source**, consuming #482/#533 approved-policy checkpoint
 `092b574d954e767c74e77248643be25282e85c47` (interface 0.2.1). The first-release branch and its qualified installed path
 remain unchanged. This extension uses the same captured page, normalized game,
@@ -251,9 +264,10 @@ one-based occurrence ply. `known_unintroduced` alone cannot authorize a fresh
 introduction: that finding can also describe a card introduced after the game.
 The producer consumes the shared encounter value, never fabricates lapse proof.
 
-Study's new semantic owner command decides priority-only review versus genuine
-first introduction, revalidating current mapping/content/admission state. Only
-the existing proven introduced-before-game miss path may apply a lapse. Historical
+Study's semantic owner revalidates source, chronology, mapping/content and
+admission, then chooses the actual lapse, priority or genuine first introduction.
+A proven introduced-before-game miss retains genuine lapse semantics; the
+producer does not decide or apply it. Historical
 misses remain relevance even when introduction or later learning makes an FSRS
 lapse inappropriate; correctly played encounters remain frequency facts, never
 fabricated recall failures. The approved next-release policy is a targeted
@@ -275,7 +289,7 @@ flowchart LR
   Existing["Existing page capture / normalized game"] --> Facts["Shared exact encounter facts"]
   Facts --> Durable["Existing Games pending-delivery row / stable GameEffectKey"]
   Durable -->|"same-command retry"| Study["Study owner: accept_encounter"]
-  Study --> Receipt["actual priority / fresh-introduction / paused / deferred receipt"]
+  Study --> Receipt["durable accepted/pending or actual owner status; availability separate"]
   Control["Existing key + source-revision hold/withdraw"] --> Durable
   Control --> Study
 ```
