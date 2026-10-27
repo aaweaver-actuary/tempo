@@ -7,6 +7,92 @@ from pathlib import Path
 import sys
 
 
+def boundary_facts(root, files):
+    """Source facts for the existing component guard; never import application code."""
+    root = Path(root).resolve()
+    results = []
+    for name in files:
+        path = root / name
+        if path.is_symlink() or not path.resolve().is_relative_to(root):
+            raise ValueError(f"{name}: source escape")
+        tree = ast.parse(path.read_text())
+        imported, aliases, constants = [], {}, {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported.append(dict(module=alias.name, level=0, names=[], line=node.lineno))
+                    aliases[alias.asname or alias.name.split('.')[0]] = alias.name if alias.asname else alias.name.split('.')[0]
+            elif isinstance(node, ast.ImportFrom):
+                imported.append(dict(module=node.module or '', level=node.level,
+                                     names=[alias.name for alias in node.names], line=node.lineno))
+                for alias in node.names:
+                    aliases[alias.asname or alias.name] = '.' * node.level + '.'.join(filter(None, [node.module, alias.name]))
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        constants.setdefault(target.id, []).append(node.value)
+
+        def string_value(node, seen=()):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return node.value
+            if isinstance(node, ast.Name) and node.id not in seen and len(constants.get(node.id, [])) == 1:
+                return string_value(constants[node.id][0], (*seen, node.id))
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                left, right = string_value(node.left, seen), string_value(node.right, seen)
+                return left + right if left is not None and right is not None else None
+            if isinstance(node, ast.JoinedStr) and all(isinstance(item, ast.Constant) for item in node.values):
+                return ''.join(str(item.value) for item in node.values)
+            return None
+
+        def dotted(node):
+            if isinstance(node, ast.Name):
+                return aliases.get(node.id, node.id)
+            if isinstance(node, ast.Attribute):
+                return dotted(node.value) + '.' + node.attr
+            return '<dynamic>'
+
+        calls, references, functions, loaders = [], [], [], []
+        class Visitor(ast.NodeVisitor):
+            def __init__(self): self.scope = []
+            def enter(self, node):
+                self.scope.append(node.name)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    functions.append('.'.join(self.scope))
+                self.generic_visit(node)
+                self.scope.pop()
+            visit_FunctionDef = enter
+            visit_AsyncFunctionDef = enter
+            visit_ClassDef = enter
+            def visit_Call(self, node):
+                callee = dotted(node.func)
+                if callee.startswith('self.') and len(self.scope) > 1:
+                    callee = self.scope[0] + callee[4:]
+                call = dict(callee=callee, function='.'.join(self.scope), line=node.lineno)
+                if callee.split('.')[-1] in {'execute', 'execute_native', 'executemany', 'executescript', 'query', 'prepare'} and node.args:
+                    value = string_value(node.args[0])
+                    database_receiver = set(callee.lower().split('.')) & {'db', 'database', 'connection', 'conn', 'cursor', 'pool', 'writer', 'sqlite3', 'psycopg'}
+                    if database_receiver or callee.split('.')[-1] in {'execute_native', 'executemany', 'executescript'} or value is not None and re.search(r'\b(?:SELECT|WITH|INSERT|UPDATE|DELETE|TRUNCATE|MERGE|REPLACE|COPY|CREATE|ALTER|DROP)\b', value, re.I):
+                        call['sql'] = value
+                calls.append(call)
+                self.generic_visit(node)
+            def visit_Name(self, node):
+                if node.id in {'__import__', 'eval', 'exec'}: loaders.append(node.lineno)
+            def visit_Attribute(self, node):
+                if node.attr in {'import_module', 'exec_module', 'load_module'}: loaders.append(node.lineno)
+                references.append(dict(callee=dotted(node), function='.'.join(self.scope), line=node.lineno))
+                self.generic_visit(node)
+        Visitor().visit(tree)
+        exports = None
+        if '__all__' in constants:
+            try:
+                exports = ast.literal_eval(constants['__all__'][0]) if len(constants['__all__']) == 1 else None
+            except (ValueError, TypeError): pass
+        results.append(dict(path=name, imports=imported, calls=calls, functions=functions,
+                            references=references, exports=exports, loaders=sorted(set(loaders))))
+    return results
+
+
 def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
     root = Path(root).resolve()
     sources = root / "src"
@@ -86,7 +172,9 @@ def check_consumer(source, package_name, exports):
 
 if __name__ == "__main__":
     try:
-        if sys.argv[1] == "consumers":
+        if sys.argv[1] == "boundary-facts":
+            print(json.dumps(boundary_facts(sys.argv[2], json.load(sys.stdin))))
+        elif sys.argv[1] == "consumers":
             for source_path in Path(sys.argv[2]).rglob("*.py"):
                 check_consumer(source_path.read_text(), sys.argv[3], json.loads(sys.argv[4]))
             print(json.dumps({"consumers": "valid"}))

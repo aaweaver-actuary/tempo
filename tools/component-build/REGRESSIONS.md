@@ -3,6 +3,19 @@
 Regular owner command: `npm run test:components` (or the documented tool-local Node command).
 The existing global packaging wrapper remains discoverable during transition.
 
+`tests/interface-boundaries.test.mjs` is discovered by that same regular command.
+Its focused source-only command is
+`node --test --test-concurrency=1 tools/component-build/tests/interface-boundaries.test.mjs`.
+It owns component-owned public/private import and export checks in Python and
+TypeScript, conditional/deferred/namespace bypass controls, interface README and
+purity checks, source ownership/escape rejection, dependency cycles, table-write
+ownership, and intake eligibility/preparation/promotion checks through direct
+calls, aliases, helper chains and method references. Disposable negative controls
+prove an intentional violation exits nonzero and the corrected source passes.
+The tests start no application, native database, worker or engine. Actual
+acceptance/refresh-failure/producer-absent/replay/attempt behavior remains with
+the runtime owner and must be registered in its required affected-component suite.
+
 `tests/integration.test.mjs` owns named D regressions for implemented contract
 source, artifact names/versions, public namespaces, schema exports, undeclared lazy
 imports, selector rejection, suite cwd, planned executable claims, source-independent
