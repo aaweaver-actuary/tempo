@@ -184,3 +184,41 @@ def test_history_start_cannot_rebind_a_frozen_manifest_to_another_scope(field,va
         validate_history_plan_scope(plan,selection=changed)
     with pytest.raises(ValueError,match="outside_selection|outside_window"):
         validate_history_plan_scope(replace(plan,selection=changed),selection=changed)
+
+
+def test_bounded_ply_preview_retains_unknowns_and_exposes_same_page_continuation():
+    comparer = Comparer(HistoryComparison(4, (finding("known_unintroduced", ply=3),), (),
+        False, 1, ("legacy_capture_candidate_budget",), 20))
+    comparer.position_bound = lambda request, total: min(total-request.start_ply, request.maximum_plies)
+    plan = prepare(Reader([RetainedHistoryGame("retained-game", False, 24)], more=True),
+        comparer, selection(maximum_positions=4, maximum_plies=4))
+    assert plan.preview.compared_games == 1 and plan.preview.positions_compared == 4
+    assert plan.preview.unresolved_positions == plan.preview.unknown_authority_or_mapping_games == 1
+    assert plan.preview.remaining_positions == 20 and plan.preview.next_start_ply == 4
+    assert plan.preview.more_available and plan.preview.next_game_id == "retained-game"
+    assert plan.preview.matches_are_lower_bound and plan.preview.matches == 0
+
+
+def test_original_version_one_manifest_round_trip_keeps_exact_digest():
+    from app.games.feedback.history import PreparedHistoryPlan
+    import hashlib
+    plan = prepare(Reader([RetainedHistoryGame("retained-game", False, 4)]),
+                   Comparer(HistoryComparison(4, ())))
+    original = replace(plan, version=1).payload()
+    expected = hashlib.sha256(json.dumps(original, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    restored = PreparedHistoryPlan.from_payload(original)
+    assert restored.version == 1 and restored.payload() == original and restored.digest == expected
+
+
+def test_exact_ply_window_is_part_of_the_frozen_selection_and_command_guard():
+    from app.product_composition.game_history import project_retained_encounters, validate_history_plan_scope
+    game, snapshot, findings = projection_inputs()
+    commands = project_retained_encounters(game=game,provider="lichess",snapshot=snapshot,
+        findings=findings,detected_at="2026-10-27T00:00:00Z",time_precision="second")
+    request = selection().model_copy(update={"workspace_id":game.workspace_id,"repertoire_ids":("white",)})
+    comparer = Comparer(HistoryComparison(1,findings,commands))
+    comparer.projection_available = True
+    plan = prepare(Reader([RetainedHistoryGame(game.game_id,False,1)]),comparer,request,policy="owner")
+    changed = replace(plan, selection=request.model_copy(update={"start_ply":2}))
+    with pytest.raises(ValueError,match="outside_ply_window"):
+        validate_history_plan_scope(changed,selection=changed.selection)

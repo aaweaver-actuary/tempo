@@ -37,6 +37,39 @@ shown separately. Zero eligible misses never asserts that every game was correct
 The next page and `more_available` remain visible; a bounded prefix never claims
 the entire requested window was exhausted.
 
+### Exact bounded position windows
+
+The history selection also freezes zero-based `start_ply` (default 0) and
+`maximum_plies` (default/maximum 16). Every selected game/repertoire examines only
+that half-open interval. The existing published
+[`candidate_lookup.decision_bindings`](../../../database/tempo_legacy_database/adapters/games/authority/candidate_lookup/README.md)
+adapter supplies unfiltered current-publication physical leads, then
+[`retained_history_capture`](../../../backend/app/services/retained_history_capture.py)
+calls the unchanged complete authority capture for each exact learner ply.
+Missing, blocked, unintroduced and conflicting alternatives are never filtered
+from this discovery/capture boundary. A 65th binding or catalogue route remains
+unresolved at that position; the 64-route/128-card guards are unchanged. It does
+not prevent a later exact position from having its own complete capture.
+
+The history composition retains only the selected ply's findings/commands from
+the existing capture preparation helper. Earlier canonical moves use its existing
+authored-route traversal. The comparer, command projector, complete source proof
+and receiving owner are unchanged.
+No game source, route, alternative, mapping or game/decision effect identity is
+invented, truncated or relabeled.
+
+`unresolved_positions` reports selected learner positions without reportable
+authority/mapping evidence. Diagnostics retain overflow and missing-binding
+reasons. `remaining_positions` counts unexamined played-position/repertoire slots
+beyond this window, and `next_start_ply` identifies the next interval. Repeat the
+same game page, explicit filters and window with that start ply and a new run ID
+until `next_start_ply` is null; only then advance `after_game_id` to the next game
+page. Earlier unresolved positions remain unresolved, never implicit matches.
+Overlapping windows retain the same deduplicated game/decision identities.
+Started runs resume their frozen encounter cursor independently of discovery.
+Version-1 saved manifests retain their exact original serialization/digest;
+new position-window manifests are version 2.
+
 ## Execution and existing durability
 
 `current_retained_history_comparer()` explicitly binds #488's qualified
@@ -95,7 +128,8 @@ flowchart LR
   Operator["HTTP reader preview/status; bounded writer-profile operator"] --> Guard["Opt-in PostgreSQL/Celery qualification\ncurrent controls + foreground admission\none operator slot"]
   Guard --> Read["Games imported-history read"]
   Read --> Existing[("Existing imported_games")]
-  Read --> First["First retained canonical / capture / comparison path"]
+  Read --> Select["Bounded ply interval + unfiltered published physical leads"]
+  Select --> First["Exact-ply complete authority capture / same comparison path"]
   First --> Preview["Counts + explicit unknown / lower-bound facts"]
   First -. "injected public projection required" .-> Encounter["Shared GameEncounter"]
   Encounter --> Task[("Existing background_tasks\nfrozen manifest + cursor + actual receipts")]

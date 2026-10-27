@@ -34,6 +34,8 @@ class HistorySelection(Value):
     maximum_games: int = Field(default=25, ge=1, le=100)
     maximum_positions: int = Field(default=10000, ge=1, le=10000)
     after_game_id: Identifier | None = None
+    start_ply: int = Field(default=0, ge=0, le=1000)
+    maximum_plies: int = Field(default=16, ge=1, le=16)
 
     @model_validator(mode="after")
     def explicit_scope(self):
@@ -62,6 +64,9 @@ class HistoryComparison:
     findings: tuple[Finding, ...]
     encounters: tuple[GameEncounter, ...] = ()
     matches_complete: bool = False
+    unresolved_positions: int = 0
+    diagnostics: tuple[str, ...] = ()
+    remaining_positions: int = 0
 
 
 class HistoryReader(Protocol):
@@ -104,6 +109,9 @@ class HistoryPreview(Value):
     next_game_id: str | None
     execution_ready: bool
     diagnostics: tuple[HistoryDiagnostic, ...]
+    unresolved_positions: int = 0
+    remaining_positions: int = 0
+    next_start_ply: int | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +122,7 @@ class PreparedHistoryPlan:
     selection: HistorySelection
     preview: HistoryPreview
     encounters: tuple[GameEncounter, ...]
+    version: int = 2
 
     def __post_init__(self):
         _RunIdentity(run_id=self.run_id, detected_at=self.detected_at, policy_identity=self.policy_identity)
@@ -124,9 +133,16 @@ class PreparedHistoryPlan:
         return history_task_identity(self.selection.workspace_id, self.run_id)
 
     def payload(self) -> dict:
-        return dict(version=1, run_id=self.run_id, detected_at=self.detected_at,
-            policy_identity=self.policy_identity, selection=self.selection.model_dump(mode="json"),
-            preview=self.preview.model_dump(mode="json"),
+        selection = self.selection.model_dump(mode="json")
+        preview = self.preview.model_dump(mode="json")
+        if self.version == 1:
+            # Existing durable manifests retain their original byte identity.
+            for key in ("start_ply", "maximum_plies"):
+                selection.pop(key)
+            for key in ("unresolved_positions", "remaining_positions", "next_start_ply"):
+                preview.pop(key)
+        return dict(version=self.version, run_id=self.run_id, detected_at=self.detected_at,
+            policy_identity=self.policy_identity, selection=selection, preview=preview,
             encounters=[command.model_dump(mode="json") for command in self.encounters])
 
     @property
@@ -137,12 +153,13 @@ class PreparedHistoryPlan:
     @classmethod
     def from_payload(cls, payload):
         from app.contracts.product_v02.learning import GameEncounter
-        if payload.get("version") != 1:
+        if payload.get("version") not in {1, 2}:
             raise ValueError("unsupported_retained_history_plan")
         return cls(payload["run_id"], payload["detected_at"], payload["policy_identity"],
             HistorySelection.model_validate_json(json.dumps(payload["selection"])),
             HistoryPreview.model_validate_json(json.dumps(payload["preview"])),
-            tuple(GameEncounter.model_validate_json(json.dumps(item)) for item in payload["encounters"]))
+            tuple(GameEncounter.model_validate_json(json.dumps(item)) for item in payload["encounters"]),
+            payload["version"])
 
     def require_execution(self, policy_identity: str):
         if not self.preview.execution_ready or self.policy_identity is None:
@@ -170,6 +187,7 @@ def preview_history(selection: HistorySelection, *, reader: HistoryReader, compa
     compared, unknown, diagnostics, commands = set(), set(), [], []
     counts = Counter()
     positions = matches = differing = eligible = unintroduced = excluded = unreported = 0
+    unresolved_positions = remaining_positions = 0
     lower_bound, ready = False, comparer.projection_available and policy_identity is not None
     for game in page.games:
         if game.excluded:
@@ -181,7 +199,9 @@ def preview_history(selection: HistorySelection, *, reader: HistoryReader, compa
                                                   reason=game.diagnostic or "retained_history_unavailable"))
             continue
         for repertoire_id in selection.repertoire_ids:
-            if positions + game.positions > selection.maximum_positions:
+            bounded_positions = (comparer.position_bound(selection, game.positions)
+                if callable(getattr(comparer, "position_bound", None)) else game.positions)
+            if positions + bounded_positions > selection.maximum_positions:
                 unknown.add(game.game_id)
                 ready = False
                 diagnostics.append(HistoryDiagnostic(game_id=game.game_id, repertoire_id=repertoire_id,
@@ -200,6 +220,15 @@ def preview_history(selection: HistorySelection, *, reader: HistoryReader, compa
                 raise ValueError("retained_comparison_exceeded_position_bound")
             compared.add(game.game_id)
             positions += result.positions
+            unresolved_positions += result.unresolved_positions
+            remaining_positions += result.remaining_positions
+            if result.unresolved_positions:
+                unknown.add(game.game_id)
+            for reason in sorted(set(result.diagnostics)):
+                if not reason.replace("_", "").isalnum() or len(reason) > 120:
+                    reason = "retained_authority_or_mapping_unavailable"
+                diagnostics.append(HistoryDiagnostic(game_id=game.game_id,
+                    repertoire_id=repertoire_id, reason=reason))
             lower_bound = lower_bound or not result.matches_complete
             observed = set()
             for finding in result.findings:
@@ -242,5 +271,7 @@ def preview_history(selection: HistorySelection, *, reader: HistoryReader, compa
         matches_are_lower_bound=lower_bound or bool(unknown) or bool(unreported) or bool(excluded),
         finding_counts=tuple(sorted(counts.items())),
         more_available=page.more_available, next_game_id=page.games[-1].game_id if page.more_available and page.games else None,
-        execution_ready=ready, diagnostics=tuple(diagnostics))
+        execution_ready=ready, diagnostics=tuple(diagnostics),
+        unresolved_positions=unresolved_positions, remaining_positions=remaining_positions,
+        next_start_ply=selection.start_ply+selection.maximum_plies if remaining_positions else None)
     return PreparedHistoryPlan(run_id, detected_at, policy_identity, selection, preview, tuple(commands))

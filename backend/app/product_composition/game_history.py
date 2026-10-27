@@ -50,8 +50,9 @@ def prepare_retained_capture(captured, *, detected_at):
 
 def current_retained_history_comparer(*, capture=capture_game, prepare_capture=None):
     """Explicit #488 binding; construction performs no read or kickoff."""
+    from app.services.retained_history_capture import capture_history_positions
     return RetainedHistoryComparer(prepare_capture=prepare_capture or prepare_retained_capture,
-                                   capture=capture)
+        capture=capture, capture_positions=capture_history_positions if capture is capture_game else None)
 
 
 def current_retained_history_receiver(*, policy_identity, operation_stopped,
@@ -95,6 +96,9 @@ def validate_history_plan_scope(plan, *, selection):
             occurred = datetime.fromisoformat(command.occurred_at.replace("Z", "+00:00"))
             if not start <= occurred < end:
                 raise ValueError("retained_history_command_outside_window")
+        if plan.version >= 2 and not (selection.start_ply <= command.key.occurrence_ply-1
+                                      < selection.start_ply+selection.maximum_plies):
+            raise ValueError("retained_history_command_outside_ply_window")
         games.add(command.key.game_id)
         identity = command.key.logical_id()
         if identity in keys:
@@ -111,16 +115,51 @@ class RetainedHistoryComparer:
     projector seam remains for source/pure tests, with no revision rewriting.
     Neither seam permits an absent finding to be labelled a correct move.
     """
-    def __init__(self, *, project_encounters=None, prepare_capture=None, capture=capture_game):
+    def __init__(self, *, project_encounters=None, prepare_capture=None, capture=capture_game,
+                 capture_positions=None):
         if project_encounters is not None and prepare_capture is not None:
             raise ValueError("one_retained_encounter_preparation_capability_required")
         self.project_encounters, self.capture = project_encounters, capture
         self.prepare_capture = prepare_capture
+        self.capture_positions = capture_positions
         self.projection_available = project_encounters is not None or prepare_capture is not None
 
+    def position_bound(self, selection, total_positions):
+        if self.capture_positions is None:
+            return total_positions
+        return max(0, min(total_positions-selection.start_ply, selection.maximum_plies))
+
     def compare(self, selection, game_id, repertoire_id, detected_at):
+        if self.capture_positions is None:
+            return self._compare_capture(self.capture(repertoire_id, game_id),
+                selection, game_id, repertoire_id, detected_at)
         try:
-            captured = self.capture(repertoire_id, game_id)
+            selected = self.capture_positions(repertoire_id, game_id, start_ply=selection.start_ply,
+                                              maximum_plies=selection.maximum_plies)
+        except (CurrentDecisionUnavailable, RemediationError) as error:
+            raise ValueError(getattr(error, "reason", None) or str(error)) from None
+        findings, encounters = [], []
+        unresolved = list(selected.unresolved)
+        for ply, captured in selected.captures:
+            try:
+                result = self._compare_capture(captured, selection, game_id, repertoire_id, detected_at)
+            except (ValueError, CurrentDecisionUnavailable, RemediationError) as error:
+                unresolved.append((ply, getattr(error, "reason", None) or str(error)))
+                continue
+            selected_findings = tuple(item for item in result.findings
+                if item.ply == ply+1 and item.repertoire_id == repertoire_id)
+            findings.extend(selected_findings)
+            encounters.extend(item for item in result.encounters if item.key.occurrence_ply == ply+1)
+            if any(item.kind in {"known_unavailable", "ambiguous", "conflict"} for item in selected_findings):
+                unresolved.append((ply, "retained_position_authority_or_mapping_unresolved"))
+            elif not selected_findings:
+                unresolved.append((ply, "retained_position_without_reportable_finding"))
+        return HistoryComparison(selected.positions, tuple(findings), tuple(encounters), False,
+            len({ply for ply, _ in unresolved}), tuple(reason for _, reason in unresolved),
+            selected.remaining_positions)
+
+    def _compare_capture(self, captured, selection, game_id, repertoire_id, detected_at):
+        try:
             raw = captured["game"]
             provider = {"lichess": "lichess", "chess.com": "chesscom", "chesscom": "chesscom"}.get(raw["provider"])
             game = retained_canonical_game(captured)
@@ -137,7 +176,7 @@ class RetainedHistoryComparer:
                 snapshot = project_capture(captured, comparison_game=game)
                 precision = retained_time_precision(raw)
                 findings = compare_game(game, provider=provider, time_precision=precision,
-                                        snapshot=snapshot, reentry_lookup=build_index(snapshot))
+                    snapshot=snapshot, reentry_lookup=build_index(snapshot))
                 encounters = ()
         except (CurrentDecisionUnavailable, RemediationError) as error:
             raise ValueError(getattr(error, "reason", None) or str(error)) from None
