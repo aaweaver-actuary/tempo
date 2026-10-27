@@ -27,7 +27,6 @@ def test_existing_operation_or_foreground_hold_prevents_all_encounter_effects(mo
 
 
 def test_positive_existing_admission_selects_only_targeted_exception(monkeypatch):
-    from app.services import queue_admission_adapter
     stopped = Event()
     database, capability, policy, receipt = object(), object(), object(), object()
     order = []
@@ -41,7 +40,7 @@ def test_positive_existing_admission_selects_only_targeted_exception(monkeypatch
         assert values["introduction_policy"] is policy
         order.append("receive")
         return receipt
-    monkeypatch.setattr(queue_admission_adapter, "current_owner_encounter_introductions", canonical)
+    monkeypatch.setattr(receiver, "current_owner_encounter_introductions", canonical)
     monkeypatch.setattr(receiver, "receive_captured_encounter", receive)
     assert receiver.receive_admitted_encounter(database, capture=None, snapshot=None, command=None,
         operation_stopped=stopped.is_set, introduction_policy=policy, clock=None) is receipt
