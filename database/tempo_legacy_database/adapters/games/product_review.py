@@ -66,6 +66,14 @@ class DedicatedGamesConnections:
         with self() as database:
             yield PostgresConnection(database)
 
+    @contextmanager
+    def reader(self):
+        if not self.read_only:
+            raise ReviewUnavailable("games_reader_profile_required",503)
+        from ..postgres_store import PostgresConnection
+        with self() as database:
+            yield PostgresConnection(database,read_only=True)
+
 
 class PostgresReviewStore:
     def __init__(self, connections):
@@ -292,3 +300,44 @@ def fence_imported_game(database, lapse, retained):
                 and f.played_uci == lapse.finding.played_uci and f.expected_uci == lapse.finding.expected_uci
                 for f in source.findings)):
         raise ReviewUnavailable("committed_game_source_changed_or_unproved")
+
+
+def fence_imported_effect(database, command, retained):
+    """Authenticate a frozen provider command against its committed canonical row.
+
+    Games source/import locks precede the existing Study card/day locks. No
+    provider, PGN replay, target selection or learning write occurs here.
+    """
+    import json
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.games.feedback.coordinator import stable_id
+    from .authority import acceptance
+    game=retained["game"]
+    provider={"lichess":"lichess","chess.com":"chesscom","chesscom":"chesscom"}.get(game["provider"])
+    if (game["id"],provider,retained["authority"]["workspace_id"]) != (
+            command.key.game_id,command.key.provider,command.key.workspace_id):
+        raise ReviewUnavailable("canonical_imported_game_scope_mismatch")
+    acceptance.lock_imported_source(database,game["provider"],game["provider_game_id"])
+    actual=acceptance.imported_game(database,game["id"])
+    source_digest = (command.source.source_digest if isinstance(command,GameEncounter)
+                     else command.finding.source_digest)
+    source_revision = (command.source.source_revision if isinstance(command,GameEncounter)
+                       else command.finding.source_revision)
+    if (actual is None or dict(actual)!=game or game["adaptive_excluded"]
+            or source_digest!=fingerprint(game)):
+        raise ReviewUnavailable("canonical_imported_game_changed_or_excluded")
+    source_key=stable_id(command.key.workspace_id,provider,game["provider_game_id"])
+    row=database.execute_native("SELECT payload::text FROM product_feedback_sources WHERE source_key=%s FOR SHARE",
+                                (source_key,)).fetchone()
+    source=SourceState.model_validate_json(row[0]) if row else None
+    if (source is None or source.quarantined or source.normalized is None
+            or source.original.source_game_id!=game["provider_game_id"]
+            or (source.normalized.game_id,source.normalized.source_revision,source.normalized.source_digest)!=(
+                command.key.game_id,source_revision,source_digest)
+            or source.normalized.workspace_id!=command.key.workspace_id
+            or source.normalized.starting_fen!=game["start_fen"]
+            or source.normalized.moves!=json.loads(game["moves_json"])
+            or source.normalized.learner_color!=game["color"]
+            or command not in source.effects):
+        raise ReviewUnavailable("committed_game_effect_changed_or_unproved")

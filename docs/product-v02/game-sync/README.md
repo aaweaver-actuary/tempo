@@ -21,6 +21,10 @@ Game Review mounting/browser acceptance and live activation are not claimed.
   Games publishes the normalized library row and page/capture/delivery/cursor in
   one transaction. Canonical ID/alias races roll back for recomputation. No PGN
   export, fake capture or pre-checkpoint side effect manufactures authority.
+- #489 `2e6aa9d6` binds strict PGN normalization to the retained canonical ID,
+  source revision and exact stored fingerprint before comparison. Raw PGN proof
+  and acquisition revision remain separately captured. Its source branch is
+  remote-verified; queued findings and original commands are never relabeled.
 - Configuration, queries and mutations remain in Games-owned adapters. The API
   reader is not granted a write credential. The operator preview uses READ_URL
   and a query-only connection; that connection rejects writer capability use.
@@ -61,27 +65,47 @@ flowchart LR
   Publication["#483 current_published_snapshot"] --> Compare["Qualified shared comparer / projector"]
   Publish --> Compare
   Compare --> Outbox[("Existing Games delivery outbox")]
-  Outbox -. "source identity join still required" .-> Receiver["Qualified Study owner"]
+  Outbox --> Binding["Prepared provider binding: capture before writer"]
+  Binding --> Fence["Games authenticates original committed command + current source"]
+  Fence --> Receiver["Existing Study current-owner receiver"]
   Receiver --> Study[("Study-owned effects / queue / receipts")]
+  Reader["Explicit query-only profile"] --> Status["Actual Study receipt status"]
 ```
 
-## Concrete remaining source interface
+## Prepared receiving binding and remaining qualification
 
 Activation currently fails before any acquisition/source read with
 `qualified_provider_encounter_receiver_required`, unless an explicit qualified
 receiving capability is injected. There is deliberately no lapse-only fallback.
 
-The old new-provider workflow freezes provider PGN `GameRecord.source_digest` and
-requires normalized game/finding digests to match it. Retained history instead
-uses the authenticated canonical library header fingerprint. The same genuine
-game/decision key can therefore arrive with different semantic source hashes,
-which the receiving owner correctly holds as changed source. Publication revision
-alignment alone does not resolve that provenance join. Do not relabel queued
-findings, weaken hash/source guards or create a second matching pipeline.
-A small source/normalizer contract with #489/#487 is required before the current
-factory can safely bind new-provider delivery to the qualified receiving owner.
-Generic snapshots also preserve unknown day-only introduction chronology; this
-must not be fabricated into positive lapse evidence or silently called correct.
+The provenance join is now supplied by #489's canonical source owner. The new
+`CurrentProviderFeedback` prepares one bounded current capture/projection before
+opening its writer. Inside that same borrowed transaction, Games locks/rereads
+the canonical source, rejects excluded/changed/quarantined facts, and requires
+the exact frozen command in its committed source effects. The existing Study
+receiver then owns current mapping, introduction/schedule, queue and receipt.
+The command is acknowledged only after commit. Eligible existing GameLapse
+commands keep their canonical lapse receiver; encounter commands never become
+fabricated lapses. Unknown day-only chronology stays unknown.
+
+`create_current_provider_worker` requires explicit writer and query-only reader
+profiles. Its stop callback is available only inside actual admitted worker units,
+rechecks the existing readable controls, and reads the real runtime stop event.
+The retained product has no distinct full-pause setting; disabled worker opt-in,
+process stop, foreground/maintenance admission and unreadable controls are its
+existing whole-operation gates. Zero ordinary allowance and Study-only remain
+unchanged and do not manufacture pause. Status reads require the reader profile
+and retain EncounterReceipt disposition/admission fields. Pending encounter
+maintenance is already connected through the existing durable Study task in
+`feedback_maintenance.py`; this follow-on does not add another wake or scheduler.
+
+This concrete helper is prepared source, not installation acceptance. The default
+CLI still refuses a missing qualified receiver. Its next native seam is both
+provider adapters over synthetic HTTP, ordered source migrations 001..052 on an
+empty task-owned database, original outbox restart, actual targeted Study
+introduction, and retained-history replay of the same effect. That prepared test
+has not run while repair/R11 owns native priority. Reader/writer role packaging
+and readiness remain separate unresolved deployment boundaries.
 
 The backend has no new UI DTO. Existing explicit SyncConfiguration fields are
 reused; forward mode/overlap are currently operator choices. Parent coordinates
@@ -97,7 +121,7 @@ python -m app.product_composition.game_sync_current --workspace legacy \
   --preview --follow --overlap-seconds 300
 ```
 
-After the receiving identity seam and runtime qualification are complete, the
+After the receiving native seam and runtime qualification are complete, the
 separately authorized optional writer would explicitly set
 `TEMPO_PRODUCT_GAME_SYNC_ENABLED=1` and use `--follow --overlap-seconds 300`.
 `--once --max-units 50` bounds an existing queued-work drain; adding `--follow`
@@ -106,7 +130,7 @@ new account/filter settings. Current source intentionally cannot activate throug
 that command yet. Reader preview reports `executable=false` with the exact reason.
 Import/window completeness is distinct from comparison coverage, unresolved
 mapping/authority, delivery pending/held and actual Study availability. Zero
-eligible misses is never an all-correct claim.
+eligible misses is never an all-correct claim. This branch makes no live request.
 
 Source migration052 is reused unchanged from published #491 checkpoint f137d970;
 it adds only Games-owned optional tables. This follow-on has not activated it or
@@ -120,8 +144,11 @@ Cheap focused checks cover deterministic restart/contiguous catch-up, original
 retry cursor retention, held-provider independence, explicit publication reader,
 read-only writer refusal and admission before claims/enqueue. Changed syntax
 checks pass. No database, image, browser or native worker work is started while
-the release owner is deploying. Reuse the prior provider/workflow and stop/kill
-receipts where inputs are unchanged. After the receiving identity contract is
-ready and deployment releases the validation slot, run only the new canonical
-publication/receipt replay and migration boundary, then the affected integrated
-provider/browser proof. This source checkpoint is not installation acceptance.
+the repair/R11 owners hold priority. The 19 new provider-binding cases pass;
+#489's unchanged 70 identity/workflow/projection/continuous-policy cases and one
+dependency guard are reused. The new native file is
+`backend/tests/test_product_provider_receiving_postgres.py`; collect-only is not
+an execution pass. Reuse the provider/workflow and stop/kill receipts where inputs
+are unchanged. Next run only that canonical publication/actual receipt replay
+seam in the coordinated native slot, then qualify affected profiles/packaging.
+UI mounting/browser acceptance stays separate from this backend checkpoint.

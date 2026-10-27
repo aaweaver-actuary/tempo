@@ -223,6 +223,9 @@ class GameSyncRuntime:
         for cancel in self._cancel_acquisitions:
             cancel()
 
+    def stopped(self) -> bool:
+        return self._stop.is_set()
+
     def close(self) -> None:
         self.request_stop()
         self.runner.close()

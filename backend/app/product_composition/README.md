@@ -2,7 +2,7 @@
 
 ## Continuous-provider canonical identity candidate (#489 / #491)
 
-The separately held continuous-sync branch supplies `PostgresCanonicalGamesStore`
+The separate continuous-sync candidate supplies `PostgresCanonicalGamesStore`
 as the coordinator's optional `SourceIdentity` port. `WorkflowNormalizer` first
 verifies the original PGN digest, then the source owner binds the exact verified
 history to the existing imported-game ID and retained capture projection. A new
@@ -27,15 +27,32 @@ sequenceDiagram
   participant Verify as Existing strict PGN normalizer
   participant Source as Games canonical source owner
   participant Compare as Pure comparer / coordinator
-  participant Study as Injected Study owner
+  participant Binding as CurrentProviderFeedback
+  participant Study as Existing current Study owner
   Provider->>Verify: Raw PGN + original digest / time precision
   Verify->>Source: Verified history; bind_source (read only)
   Source-->>Compare: Canonical ID / source revision / retained-row digest
   Compare->>Source: Atomic page publication
   Source->>Source: Lock / reread source; match binding or roll back
   Source-->>Compare: Source + captures + command + checkpoint committed
-  Compare->>Study: Original frozen command after Games transaction closes
+  Compare->>Binding: Original frozen command after Games transaction closes
+  Binding->>Binding: Actual admission; bounded current capture/project before writer
+  Binding->>Source: Borrow writer; lock/reread source + authenticate frozen effect
+  Binding->>Study: Borrow same writer; current mapping + canonical effect
+  Study-->>Binding: Provisional receipt
+  Binding-->>Compare: Receipt only after commit
 ```
+
+The source identity is remote-verified at `2e6aa9d6`. The concrete provider
+binding is prepared separately in [provider_feedback.py](provider_feedback.py)
+and [game_sync_current.py](game_sync_current.py). It preserves the existing valid
+lapse path and adds the encounter receiver without changing either owner's
+policy. Its actual stop callback requires an admitted unit and readable current
+controls. Receipt status uses an explicit query-only profile. The CLI remains
+disabled pending the changed native/profile boundary; see the current
+[continuous-sync checkpoint and commands](../../../docs/product-v02/game-sync/README.md).
+The existing encounter-aware [feedback maintenance](feedback_maintenance.py)
+continues to own pending receipt recovery; there is no new maintenance timer.
 
 ## First-release evidence
 
