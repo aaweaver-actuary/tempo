@@ -104,6 +104,8 @@ def invalidate_review(database, card_id, review_id, reason):
     retained = storage.invalidated_review(database, review_id, card_id)
     if not retained or retained[0] is None:
         raise ValueError("The review owner must invalidate the actual review in this transaction")
+    from tempo_legacy_database.adapters.study.game_feedback import invalidate_saved_review
+    invalidate_saved_review(database, card_id, review_id)
     repository(database).invalidate_settlement(str(review_id), reason)
     clear_priority(database, card_id)
 

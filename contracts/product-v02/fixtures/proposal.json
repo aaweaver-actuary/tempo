@@ -1,0 +1,159 @@
+{
+  "model": "Proposal",
+  "payload": {
+    "interface_version": "0.2.0",
+    "proposal_id": "synthetic-proposal",
+    "proposal_revision": 1,
+    "repertoire_id": "white",
+    "source_revision": 1,
+    "source_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "display_digest": "ec2e340f86292d3544b71650749f663b63249b27388dee54f3e0192f16af80d2",
+    "title": "Synthetic familiar candidate",
+    "explanation": "Supplied synthetic candidate evidence only; no engine was executed.",
+    "edits": [
+      {
+        "route_id": "route-a",
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "previous_response_uci": "d2d4",
+        "proposed_response_uci": "a2a3",
+        "displayed_pgn": "1. a3 *"
+      }
+    ],
+    "card_changes": [
+      {
+        "action": "add",
+        "presentation_id": null,
+        "expected_revision": null,
+        "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [
+          "a2a3"
+        ],
+        "learner_color": "white"
+      }
+    ],
+    "engine_evidence": [
+      {
+        "interface_version": "0.2.0",
+        "evidence_id": "synthetic-explicit-candidates",
+        "context": {
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "history_uci": [],
+          "target_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "variant": "standard",
+          "learner_color": "white",
+          "engine_version": "synthetic-stockfish-fixture",
+          "max_depth": 12,
+          "max_nodes": 1000,
+          "max_time_ms": 100,
+          "threads": 1,
+          "hash_mb": 16
+        },
+        "requested_candidates": [
+          "e2e4",
+          "d2d4",
+          "g1f3",
+          "c2c4",
+          "b1c3",
+          "g2g3",
+          "a2a3"
+        ],
+        "best": {
+          "move_uci": "e2e4",
+          "score": {
+            "kind": "centipawns",
+            "value": 50
+          },
+          "score_perspective": "learner",
+          "depth": 12,
+          "nodes": 1000,
+          "unavailable_reason": null
+        },
+        "candidates": [
+          {
+            "move_uci": "e2e4",
+            "score": {
+              "kind": "centipawns",
+              "value": 50
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "d2d4",
+            "score": {
+              "kind": "centipawns",
+              "value": 46
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "g1f3",
+            "score": {
+              "kind": "centipawns",
+              "value": 42
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "c2c4",
+            "score": {
+              "kind": "centipawns",
+              "value": 38
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "b1c3",
+            "score": {
+              "kind": "centipawns",
+              "value": 34
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "g2g3",
+            "score": {
+              "kind": "centipawns",
+              "value": 30
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          },
+          {
+            "move_uci": "a2a3",
+            "score": {
+              "kind": "centipawns",
+              "value": 26
+            },
+            "score_perspective": "learner",
+            "depth": 12,
+            "nodes": 1000,
+            "unavailable_reason": null
+          }
+        ],
+        "unavailable_reason": null
+      }
+    ],
+    "supporting_position_keys": [
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+    ],
+    "max_loss_cp": 30,
+    "threshold_adjustment_reason": null
+  }
+}

@@ -12,6 +12,9 @@ from fastapi import HTTPException
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
+from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.ports import ChangeError
+from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
 from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.authored_repertoires import branches as storage
@@ -43,6 +46,12 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
     ).hexdigest()
     if storage.lock_repertoire_for_add(database, repertoire_id) is None:
         raise HTTPException(404, "Repertoire not found")
+    try:
+        validate_source_rows(repertoire_id, change_storage.lock_sources(database, repertoire_id) + (
+            dict(source_id=f"branch:{line_id}", start_fen=request.starting_fen,
+                 moves_json=json.dumps(moves), trained_color=request.trained_color),))
+    except ChangeError as error:
+        raise HTTPException(409, str(error)) from error
     validated_route = ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False)
     inserted = storage.insert_line_values(
         database,
