@@ -297,3 +297,57 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
         assert execute_feedback_sweep(claimed, read=case.transaction, write=case.transaction,
             capture=lambda *args: capture, clock=lambda: NOW) is False
         assert case.readback() == admitted
+
+
+def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_original_events(
+    owned_postgres, monkeypatch,
+):
+    from threading import Event
+    from app.product_composition.encounters import (
+        prepare_captured_encounters, receive_admitted_encounter, importance_from_encounters,
+    )
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    stopped, policy = Event(), EncounterIntroductionPolicy("encounter_exception")
+    with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
+        # The operator-selected window is exactly these two already-retained
+        # synthetic IDs. Actual bounded history selection/progress stays #491's.
+        prepared = tuple(prepare_captured_encounters(case.capture(game_id), detected_at=NOW.isoformat())
+                         for game_id in case.game_ids)
+        commands = tuple(command for item in prepared for command in item.encounters)
+        report = dict(scanned=len(prepared), matched=len(commands),
+            unresolved=sum(len(item.findings)-len(item.encounters) for item in prepared),
+            remaining=0, correct=sum(command.observation == "matched" for command in commands),
+            missed=sum(command.observation == "missed" for command in commands))
+        assert report == dict(scanned=2, matched=2, unresolved=0, remaining=0, correct=1, missed=1)
+        def receive(database, item, command):
+            return receive_admitted_encounter(database, capture=item.capture, snapshot=item.snapshot,
+                command=command, operation_stopped=stopped.is_set,
+                introduction_policy=policy, clock=lambda: NOW)
+        with case.transaction() as database:
+            protected = _issue(database, case.protected_id)
+            receipts = tuple(receive(database, item, command) for item in prepared for command in item.encounters)
+            assert [receipt.disposition for receipt in receipts] == ["first_introduction", "frequency_only"]
+            current, = CurrentOwnerDecisions(database, retained_owner_capture=prepared[0].capture,
+                snapshot=prepared[0].snapshot).current_encounter(commands[0])
+            importance, = importance_from_encounters(workspace_id=commands[0].key.workspace_id,
+                account="synthetic", current_approved_decisions=(current,), encounters=commands+commands)
+            assert importance.facts.personal_encounters == 2 and len(importance.differing_response_sources) == 1
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+            _ordinary_review(database, case.protected_id, protected, "bounded-protected:"+case.card_id)
+            entry = _issue(database, case.card_id)
+            assert _ordinary_review(database, case.card_id, entry, "bounded-first:"+case.card_id)["persisted"]
+        learned = case.readback()
+        for original, original_receipt in zip(commands, receipts):
+            recaptured = prepare_captured_encounters(case.capture(original.key.game_id), detected_at=NOW.isoformat())
+            assert len(recaptured.encounters) == 1
+            recomparison = recaptured.encounters[0]
+            assert recomparison.key == original.key and recomparison.source == original.source
+            with case.transaction() as database:
+                replay = receive(database, recaptured, recomparison)
+                assert replay.owner_receipt_id == original_receipt.owner_receipt_id
+                assert replay.admission_status in {"settled", "not_requested"}
+        assert case.readback() == learned
