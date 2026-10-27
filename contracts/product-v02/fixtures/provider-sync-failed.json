@@ -1,0 +1,9 @@
+{
+  "model": "ProviderSyncStatus",
+  "payload": {
+    "provider": "lichess",
+    "status": "failed",
+    "operation_id": "synthetic-sync",
+    "error": "provider_timeout"
+  }
+}

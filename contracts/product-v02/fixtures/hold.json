@@ -1,0 +1,16 @@
+{
+  "model": "GameEffectControl",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-game",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source_revision": 2,
+    "action": "hold",
+    "withdrawal": null,
+    "reason": "source_corrected"
+  }
+}
