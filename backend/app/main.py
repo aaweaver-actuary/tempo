@@ -222,6 +222,8 @@ app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .product_composition.game_history_current import current_game_history_router
+app.include_router(current_game_history_router())
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -420,6 +422,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 "/api/repertoire/paste/preview",
                 "/api/endgames/probe",
                 "/api/cards/validate",
+                "/api/product/game-history/preview",
             }
             or (len(request_path_parts) == 5
                 and request_path_parts[:2] == ["api", "studies"]
@@ -603,6 +606,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
                 and path_parts[5] == "queue"))
+        product_feedback_command = (request.method == "POST" and
+            path_parts == ["api", "game-evidence", "product", "feedback"])
+        product_history_command = (request.method == "POST" and len(path_parts) == 4
+            and path_parts[:3] == ["api", "product", "game-history"]
+            and path_parts[3] in {"preview", "start", "run-ready", "resume"})
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -672,7 +680,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, product_feedback_command, product_history_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -691,6 +699,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
     )
     is_background = (
         prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        # Monitoring observes learner activity; it must not mint a learner
+        # lease itself. Older clients and Docker health probes omit headers.
+        or (request.method == "GET" and request.url.path in {
+            "/api/health", "/api/system/foreground-active",
+            "/api/system/foreground-requests-active", "/api/system/tasks",
+        })
         or (request.method == 'POST' and len(request_path_parts) == 5
             and request_path_parts[:2] == ['api', 'repertoires']
             and request_path_parts[3:] == ['prefix-transition', 'apply'])
@@ -698,6 +712,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
+        or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
+        or request.url.path.startswith("/api/product/game-history/")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",

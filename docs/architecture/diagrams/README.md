@@ -14,6 +14,13 @@ The [current backend organization view](../../../backend/app/README.md) maps the
 
 ## Source and status
 
+**PROPOSED / #487:** [Study game feedback](../../../backend/app/study/README.md)
+owns the canonical receiver/transaction and normal Study recovery drawings;
+[its database chart](../../../database/tempo_legacy_database/adapters/study/README.md)
+shows the additive effect receipt/deadline/tombstone schema. These views describe
+unmerged source and bounded native evidence, with deployment/resource isolation
+unverified. Existing scheduler, queue and review authorities are retained.
+
 Current documentation reconciliation: main at
 [`1ce172e9f4f312d7d70b2a363dce7b20dab35baf`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf),
 reviewed October 26, 2026 UTC. This is a bounded source review of the affected

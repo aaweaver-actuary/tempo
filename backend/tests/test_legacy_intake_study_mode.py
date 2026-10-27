@@ -7,7 +7,7 @@ from app.services import study_mode
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
-@pytest.mark.parametrize('command', ['game_evidence.receive_legacy', 'games.analysis.start',
+@pytest.mark.parametrize('command', ['game_evidence.receive_legacy', 'game_evidence.product_accept', 'games.analysis.start',
     'game_evidence.receive_legacy.batch', 'game_evidence.receive'])
 def test_only_exact_intake_command_runs_in_study_only_mode(monkeypatch, command):
     calls = []
@@ -28,7 +28,7 @@ def test_only_exact_intake_command_runs_in_study_only_mode(monkeypatch, command)
         return 'accepted'
     monkeypatch.setattr(tasks, 'execute_command', execute)
     result = tasks.execute_background_command.run('explicit-operation', command, {'ignored': 'raw'})
-    if command == 'game_evidence.receive_legacy':
+    if command in {'game_evidence.receive_legacy', 'game_evidence.product_accept'}:
         assert result == 'accepted' and [item[0] for item in calls] == ['admission', 'execute']
         assert calls[-1][1] == ('explicit-operation', command, {'delivery': 'saved immutable envelope'})
         assert calls[-1][2] == dict(background=True, attempt_token='attempt-token')
@@ -38,7 +38,8 @@ def test_only_exact_intake_command_runs_in_study_only_mode(monkeypatch, command)
     assert 'game_evidence.receive_legacy' not in tasks._CONTROL_BACKGROUND_COMMANDS
 
 
-def test_intake_foreground_race_is_durably_deferred_before_capture(monkeypatch):
+@pytest.mark.parametrize('command', ['game_evidence.receive_legacy', 'game_evidence.product_accept'])
+def test_intake_foreground_race_is_durably_deferred_before_capture(monkeypatch, command):
     calls = []
     monkeypatch.setattr(tasks, 'measure_handler', lambda *a: nullcontext())
     monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
@@ -49,5 +50,5 @@ def test_intake_foreground_race_is_durably_deferred_before_capture(monkeypatch):
         assert not tasks.activity_gate.in_background_control
         raise BackgroundAdmissionDeferred('Waiting for foreground Study')
     monkeypatch.setattr(tasks.activity_gate, 'check_background_admission', denied)
-    assert tasks.execute_background_command.run('explicit-operation', 'game_evidence.receive_legacy', {}) is None
+    assert tasks.execute_background_command.run('explicit-operation', command, {}) is None
     assert calls == [('explicit-operation', 'token')]

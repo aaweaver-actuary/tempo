@@ -25,6 +25,14 @@ repertoire weights, card membership deduplication, queue admission and schedulin
 - [`personal_evidence.PersonalGame`, `PersonalEncounter`, `deduplicate_games`,
   `encounter_sources`](personal_evidence.py) are local immutable policy inputs
   and normalization helpers, not another provider DTO or persistence model.
+- `personal_evidence.decision_importance(current_approved_decisions=...,
+  games=...) -> tuple[DecisionImportance, ...]` is a separate next-release
+  projection for **both introduced and unintroduced** currently approved mapped
+  decisions. Existing `rank_coverage` and `rank_candidates` APIs are unchanged.
+- `personal_evidence.importance_from_encounters(workspace_id=..., account=...,
+  current_approved_decisions=..., encounters=...)` consumes frozen shared
+  [#533 `GameEncounter`](../../contracts/product_v02/learning.py) values directly.
+  It retains their original observation, effect key, source and detection facts.
 
 Reuse: public `tempo_evidence_math.LearnerPolicy`, `opening_position_key`,
 `route_probability`, `decision_reach`, `RouteReach`, `coverage_mass_summary` and
@@ -43,6 +51,12 @@ flowchart LR
   ReadPort --> Policy
   Facts["Shared #482 immutable snapshot / probabilities\nexplicit provider population and time controls"] --> Policy
   Games["Supplied personal game observations\nsource ID and revision"] --> Policy
+  Games --> Importance["Pure decision_importance\nintroduced and unintroduced current mappings"]
+  Encounters["Shared #533 GameEncounter\noriginal observation / effect key / source"] --> Adapt["importance_from_encounters\nexact decision + source revision dedup"]
+  Adapt --> Importance
+  Mappings["Supplied exact current approved\nDecisionPresentation facts"] --> Importance
+  Importance --> ImportanceFacts["Shared RankingCandidate encounter counts\nseparate differing-response source supports"]
+  ImportanceFacts --> Outer
   Policy --> Math["Public evidence-math\nroute products / first-encounter unions"]
   Policy --> Result["Rankings + evidence + digests\nunknowns and truncation diagnostics"]
   Result --> Outer
@@ -177,3 +191,92 @@ was changed. #495 can consume `result.introductions` with its provenance;
 #499 can inspect `result.details` for covered/missing opponent replies. #501
 must wire actual acquisition, approved-route authority, settings and publication.
 These pure checks do not establish A06's budget/queue or A07's engine/product proof.
+
+## Next-release historical importance checkpoint
+
+`decision_importance` reuses the existing normalized comparison's scoped
+`PersonalGame` observations and the owner's exact current approved
+`DecisionPresentation` facts. It does not traverse PGN, recapture games, infer a
+physical card from FEN or introduce another worker/backfill pipeline. The caller
+must supply observations already scoped by the existing exact comparison and
+current owner mappings. A generic FEN match does not establish that authority.
+Unavailable/unknown-state mappings are withheld; conflicting current responses
+and ambiguous copies of a decision fail explicitly.
+
+Each local immutable `DecisionImportance` calculation result contains the shared
+current mapping, a shared `RankingCandidate` with the existing
+`personal_encounters` unique-game count, stable encounter source IDs/revisions,
+separate `differing_response_sources`, policy version
+`current-decision-personal-importance-v1`, and a dependency digest. These local
+calculation details are not another shared encounter/admission DTO. The frozen
+#533 `GameEncounter`/`EncounterReceipt` and `EncounterFeedbackPort` define that
+transport; `importance_from_encounters` now consumes the actual `GameEncounter`
+type without changing it. Composition supplies these factual values without
+making Study import an Analysis implementation or choosing an owner disposition.
+
+A differing observation means the normalized game played another move than the
+supplied current prescribed response. It is **importance evidence**, not proof
+that the player forgot historically learned content. Correct observations count
+only as encounter frequency. One source game/current decision contributes once
+across duplicate imports, recomparisons and route/transposition copies; if a
+game revisits and plays differently on one visit, it has one differing-game
+support as well. Counts are deduplicated within each repertoire/decision scope;
+Study owns compatible same-card membership deduplication.
+
+No introduction date, current schedule, latest review, obligation settlement or
+lapse eligibility filters this evidence. A miss before introduction or before
+later genuine learning therefore retains one importance contribution when the
+current mapping becomes introduced. Mapping/state changes update the result
+digest while stable game/decision support remains. A newer complete source-game
+revision may retract corrected/obsolete observations, using the existing
+deduplication policy. There is no extra numeric miss bonus or probability fusion;
+Study receives differing-game supports separately and owns their current priority
+consequences.
+
+This projection writes no priority, history, FSRS state, introduction or receipt,
+and grants no Again authority. Study must revalidate current approval/membership,
+source identity, mapping revision and any shared delivery fences. The original
+pipeline retains full canonical game provenance/detection; this compact result
+does not replace it. Actual unchanged-schedule/history and durable-priority proof
+belongs to #487's owning/native tests. Allowance, pause and Study-only exceptions
+remain undecided here. The qualified first installation and #521 are unchanged.
+
+Five initial additional cases in the same regular owning suite cover both
+states, duplicate/recomparison/transposition identity, historical relevance after
+later introduction/learning, correct frequency versus differing play, and source
+correction/current-mapping fences. No provider, engine or state writer is used.
+
+### Frozen encounter consumption
+
+`importance_from_encounters` consumes published #533 commit `46f07e9a`, preserving
+the full immutable commands in each result's `source_encounters`. It requires an
+explicit workspace/account and separate current approved owner mappings. Events
+bind by the shared `GameEffectKey.decision_id` and repertoire, then exact position;
+two card decisions at equal positions do not inherit one another's evidence.
+Source digest conflicts, workspace mismatches, conflicting observations of the
+same key/revision and moved current decision identities fail explicitly.
+
+The input is a complete supplied encounter set per source-game revision, as for
+the existing `PersonalGame` input. A newer complete source revision replaces the
+old observation set. Existing source/hold/withdraw exclusions are applied by the
+owning pipeline before calculation; this pure adapter owns no ledger or control
+transition. Retry/recomparison metadata cannot replace the earliest supplied
+original detection. Multiple occurrence keys may remain in provenance while
+the game/decision contribution counts once.
+
+For this adapter, `differing_response_sources` comes from the immutable
+`GameEncounter.observation == 'missed'`, not from reinterpreting the past move
+against a later edited response. An old miss remains a miss fact even if today's
+response matches its played move; an originally matched observation never turns
+into a fabricated failure after a repertoire edit. The lower-level legacy
+`decision_importance` still compares its supplied raw observations with the
+supplied current response. Both APIs retain their original call shapes.
+
+The shared contract does not authorize a lapse, admission or control override.
+Study alone consumes `accept_encounter`/`encounter_status`, applies controls and
+chooses current disposition. Allowance/Study-only overrides remain unresolved.
+Seven adapter boundary cases cover both introduction states and immutable source
+observations, duplicate/recomparison/original detection, source correction,
+workspace/observation fences and exact decision identity despite equal positions.
+The dependency merge retains both #513 analysis and #533/#516 contract tests and
+documentation; no shared DTO policy is changed by this consumer.

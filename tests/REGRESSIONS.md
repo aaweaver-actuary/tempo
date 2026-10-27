@@ -15,6 +15,82 @@ native concurrency or live isolation. #482 owns the new whole-declared-graph
 checker; exact remaining edges and owners are recorded in
 `docs/architecture/interface-directory-allocation/allocation.json`.
 
+## Product v0.2 game-feedback composition
+
+`backend/tests/test_product_game_history.py` owns bounded retained-library preview,
+truthful lower-bound matches/unresolved positions, immutable source/detection and
+execution scope. `test_product_game_history_http.py` owns opaque server-preview
+transport and bounded start/run/status. `test_product_game_history_postgres.py`
+owns the schema051 window selection, actual root controls, durable pause/resume,
+receipt/cursor rollback and normal Study boundary on disposable synthetic data.
+These checks neither enable live history nor qualify an installed release.
+
+`backend/tests/test_product_feedback_integration.py` owns the T07 source and
+actual disposable PostgreSQL join: supplied existing physical identity, missing
+mapping rejection, canonical moves without reconstructed PGN, one lapse/replay,
+ordinary controller save/settlement, deadline survival across no-Study days and
+new connections/queue recovery, unrelated issued attempt preservation, canonical
+source correction rejection, durable pending maintenance, and producer absence.
+`test_day_only_introduction_binds_exact_canonical_source` covers stored date-only
+introduction with exact comparison source scope;
+`test_maintenance_cold_import_has_no_games_dependency` checks a fresh interpreter.
+The source/native suite uses synthetic task-owned data and establishes no genuine
+private-game mapping or deployment/resource isolation.
+
+`tests/browser/product-game-feedback.spec.ts` owns the single real API/worker/
+PostgreSQL/Chromium acceptance for protected queue head, one applied effect and
+retry identity, exact target FEN/move, optional producer transport disabled,
+ordinary Study review save, reload and settled receipt/history readback. A fixture
+or browser failure is never recorded as a pass. Current results and blockers are
+in the [composition receipt](../backend/app/product_composition/README.md).
+`test_legacy_intake_study_mode.py` owns exact command admission and foreground
+race deferral; the HTTP admission/query-only parametrization in
+`test_legacy_study_remediation.py` owns both new transport route classifications.
+
+`backend/tests/test_product_contracts.py` and
+`tests/unit/product-contracts.test.ts` own shared synthetic fixture round trips,
+invalid/unproved findings, saturated pages, revision conflicts, caller isolation,
+pre-admission control without invented owner IDs, withdrawal-only compatibility,
+immutable returned containers and scoped import/boundary guards. Repertoire
+index/snapshot source cases live in `test_product_position_index.py` and
+`test_product_snapshot.py`; comparer cases are listed in the
+[classification owner inventory](../packages/game-classification/REGRESSIONS.md).
+Study lapse/deadline/hold/settlement cases are listed in its
+[owner README](../backend/app/study/README.md#focused-checks).
+
+## T06 Study-owned game lapse and durable withdrawal fence
+
+`backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:
+`test_game_lapse_matches_again_transition`,
+`test_duplicate_delivery_has_one_effect_and_original_deadline`,
+`test_recomparison_revision_is_not_new_lapse`,
+`test_unintroduced_conflicted_stale_or_ambiguous_is_rejected`,
+`test_no_fabricated_study_review`, `test_active_attempt_is_preserved`,
+`test_pending_feedback_survives_two_days_without_study`,
+`test_queue_rebuild_and_restart_do_not_erase_obligation`,
+`test_genuine_review_settles_once`, `test_late_evidence_does_not_rewind_state`,
+`test_changed_source_is_quarantined`, and
+`test_withdraw_after_apply_preserves_history`. Changed-source coverage includes
+the key/revision/reason-only pre-admission hold followed by delayed original
+delivery; no producer-guessed owner obligation identity is required.
+`test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns`
+accepts retained `chess.com`/`chesscom` at the existing owner scope boundary,
+preserves original capture bytes/digests, and rejects unknown/mismatched providers
+before the next owner fence. Lichess behavior remains covered in that same case.
+
+`backend/tests/test_product_game_lapse_postgres.py` owns source/native retry,
+concurrent same-key delivery, schedule-before-receipt rollback, new-connection
+readback/off-day ordinary-queue recovery, pre-delivery tombstone readback,
+saved-review settlement/invalidation, and unrelated issued-head preservation.
+It provisions only a unique capped disposable PostgreSQL container and verifies
+its removal. These tests do not certify installed artifacts or the actual T07
+game-to-Study product loop. The [owner interface](../backend/app/study/README.md)
+records boundary ownership and composition responsibilities.
+`test_native_current_owner_factory_fences_retained_rows_and_rejects_changed_authority`
+adds a real retained-owner source capture: current authority applies, a concurrent
+source edit is blocked by its transaction fence, and a changed captured revision
+is rejected without a schedule/receipt. It creates no producer authority.
+
 ## Daily statistics producer retirement
 
 `backend/tests/test_statistics.py::test_daily_statistics_refresh_is_retired_without_admission`
@@ -5283,3 +5359,23 @@ source epochs and ordinary Study remain in scope.
 Python SQLite/fake, selected schema and runner source checks establish their
 stated boundaries only. Native fixture edits have no native execution receipt;
 installed artifacts, deployment and full-system qualification remain unverified.
+# Retained-history bounded position discovery (#491)
+
+| Behavior | Owning test |
+| --- | --- |
+| A 65-route early root stays unresolved while a later exact scoped decision reaches canonical Study once; retry preserves state and global controls | `backend/tests/test_product_game_history_postgres.py::test_broad_root_overflow_resumes_later_ply_into_actual_study_once` |
+| A later authored conflicting response remains in complete capture and cannot produce an effect | `backend/tests/test_product_game_history_postgres.py::test_later_ply_capture_keeps_authored_conflict_and_produces_no_effect` |
+| Discovery forwards missing/blocked leads to complete capture and discards a slice when the actual game or current publication changes | `backend/tests/test_product_history_capture.py` |
+| Bounded preview shows unresolved/remaining positions and saved version-1 manifests retain their digest | `backend/tests/test_product_game_history.py::test_bounded_ply_preview_retains_unknowns_and_exposes_same_page_continuation` |
+| Exact monitor GETs do not mint learner activity or starve background work, while genuine foreground, input, queue and review guards remain | `backend/tests/test_foreground_admission_http.py` |
+| Encounter projection preserves equivalent-route provenance and differing availability/chronology while emitting one deterministic target | `backend/tests/test_product_encounter_projection.py` |
+| 62 equivalent route bindings persist one Study effect/receipt/queue entry across a fresh history recomparison | `backend/tests/test_product_game_history_postgres.py::test_equivalent_route_history_persists_one_effect_and_receipt_under_recomparison` |
+
+## Continuous provider synchronization preparation (#491)
+
+| Behavior | Owning test |
+| --- | --- |
+| Explicit contiguous forward windows keep stable restart identity, unfinished cursor/backoff, provider independence and configured filters | `backend/tests/test_product_continuous_sync.py` |
+| Current publication owner and reader/writer separation are enforced; missing qualified receiver or real admission prevents work | `backend/tests/test_product_continuous_sync.py` |
+| Games acknowledges accepted/pending encounter evidence without inline queue work, private availability polling or replaying a fresh command after lost acknowledgment | `backend/tests/test_product_priority_intake_boundary.py` |
+| Explicit provider assembly requires the exact public priority intake and fails before source access when it is absent | `backend/tests/test_product_provider_feedback.py` |

@@ -288,6 +288,36 @@ def test_absent_or_nonboolean_study_chronology_stays_unknown():
     assert result.decision_presentations[0].introduction_game is None
 
 
+@pytest.mark.parametrize("stored_provider", ["chess.com", "chesscom"])
+@pytest.mark.parametrize("comparison_provider", ["chess.com", "chesscom"])
+def test_retained_chesscom_provider_alias_preserves_game_scope_and_provenance(stored_provider, comparison_provider):
+    source = capture()
+    source["game"]["provider"] = stored_provider
+    source["tables"]["cards"][0].update(revision=1, introduced_at="2026-10-20", introduced_before_game=True)
+    source = reseal(source); before = deepcopy(source)
+    game = comparison_game(source, source_id=comparison_provider, source_digest=fingerprint(source["game"]))
+    result = project_capture(source, comparison_game=game)
+    mapping = result.decision_presentations[0]
+    assert mapping.introduced_before_game is True and mapping.introduced_at is None
+    assert mapping.introduction_game.provider == "chesscom"
+    assert mapping.introduction_game.game_id == game.game_id == source["game"]["id"]
+    assert mapping.introduction_game.source_revision == game.source_revision
+    assert mapping.introduction_game.source_digest == game.source_digest == fingerprint(source["game"])
+    assert game.source_id == comparison_provider and source == before
+    assert source["game"]["provider"] == stored_provider
+
+
+@pytest.mark.parametrize("unknown_provider", ["Chess.com", "chess_com", "https://chess.com", "other"])
+@pytest.mark.parametrize("field", ["stored", "comparison"])
+def test_chronology_provider_alias_rejects_unknown_provider(unknown_provider, field):
+    source = capture()
+    if field == "stored": source["game"]["provider"] = unknown_provider
+    source = reseal(source)
+    game = comparison_game(source, source_id=unknown_provider if field == "comparison" else "lichess")
+    with pytest.raises(ValueError, match="unsupported_chronology_provider"):
+        project_capture(source, comparison_game=game)
+
+
 def repertoire_facts():
     source = capture()
     return dict(repertoire=source["tables"]["repertoires"][0] | dict(name="Synthetic",

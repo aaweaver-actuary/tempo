@@ -10,6 +10,8 @@ from tempo_legacy_database.adapters.study.review.storage import sqlite3
 
 from tempo_legacy_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
+from .queue_presentation import presentation_rows
+from .queue_ordering import _priority_queue_order
 
 
 def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
@@ -119,8 +121,6 @@ def ensure_card_queued_after(
     elif priority_reason:
         storage.set_priority(database, priority_reason, entry["id"])
     if protect_presented:
-        from .queue_application import presentation_rows
-        from .queue_ordering import _priority_queue_order
         rows = presentation_rows(database, day)
         for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), _priority_queue_order(rows)):
             if slot['position'] != row['position']:

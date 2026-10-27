@@ -122,6 +122,69 @@ with only route A mapped and an explicit game-scoped chronology assertion.
 These requirements describe the receiver contract. Tests here prove wire shapes,
 identity and adapter behavior; #487 owns actual persistence/race/scheduler proof.
 
+## Immediately next release: encounter priority, additive interface 0.2.1
+
+This backend-only seam follows [#481's next-release scope](https://github.com/aaweaver-actuary/tempo/issues/481#issuecomment-6429212066)
+and [#487's receiving-owner boundary](https://github.com/aaweaver-actuary/tempo/issues/487#issuecomment-6429214039).
+It changes no existing `GameLapse`, `LearningReceipt`, `LearningFeedbackPort` or
+qualified first-release behavior. No analysis/UI contract or second pipeline is added.
+
+`learning.GameEncounter` reuses `GameEffectKey`, exact `IntroductionGameScope`
+source facts and immutable `DecisionPresentation`, with original detected/occurred
+time, expected/played moves and explicit `matched`/`missed` observation. Study must
+revalidate approved current route/content/mapping and actual admission state;
+neither position equality nor `known_unintroduced` alone grants authority.
+`EncounterFeedbackPort` adds `accept_encounter` / `encounter_status` alongside the
+unchanged lapse operations, and uses the same `control_effect` hold/withdraw fence.
+
+Historical importance and lapse eligibility are different facts. A miss may retain
+priority even when it predates introduction or later learning prevents a lapse;
+introduced material can receive review priority without rewinding that progress.
+Correct play is frequency evidence, never a fabricated failure. A currently
+unintroduced approved decision may receive first-introduction priority for either
+played response; Study alone performs genuine fresh introduction/scheduling.
+Only a proven introduced-before-game miss can use the existing lapse/Again path.
+
+`EncounterReceipt` extends the existing receipt fields with original detection,
+source digest, original observation, whether that observation is durably recorded,
+owner `disposition` (review_priority / first_introduction / existing_lapse /
+frequency_only / unresolved), actual `admission_status`, and explicit deferral.
+Recorded importance/frequency does not claim admission or a review. A receipt's
+existing `admitted_at` is owner command acceptance, not a manufactured introduction
+or Study attempt. The approved next-release policy is a **targeted exception**:
+real-game encounter first introductions bypass the ordinary new-card cap,
+including exhausted/zero allowance, and Study-only. The owner keeps the global
+cap and Study-only settings unchanged, and ordinary unrelated introductions retain
+their existing controls. A first-introduction receipt cannot claim those ordinary
+controls as its deferral reason. Their reason labels remain wire-compatible for
+other owner contexts; this does not alter the ordinary introduction interface.
+
+Explicit full Study pause/disable and foreground/maintenance, active-attempt,
+source/identity/legality/conflict guards still apply. Disabled/full-paused controls
+remain visibly pending and cannot promise an availability deadline. This targeted
+exception is implemented/qualified only by the separate next-release Study owner;
+the installed/qualified first release and live settings are untouched.
+The existing owner `reason` field preserves foreground/maintenance explanations;
+no new transport labels or global settings changes are needed.
+
+The owner persists one logical key and original observation/disposition through
+replay, later admission and recomparison. Later introduced-state projections must
+never turn an earlier unintroduced encounter into a fake Again or reintroduce an
+already/concurrently introduced card. A request payload digest is an identity
+claim, not authority: the owner validates source/decision/response facts and must
+not hash mutable admission state or retry/detection metadata into a second effect.
+Changed/withdrawn sources still use the same durable control tombstone and never
+reverse historical effects. #487 owns atomic introduction/receipt, chronology,
+controls and races; #489 owns durable delivery/retry. No state mutation is here.
+
+Synthetic next-release examples live in [`fixtures/encounters`](fixtures/encounters)
+and are tested in the existing Python product-contract suite. They cover matched
+and missed unintroduced encounters, a historical miss, paused first introduction,
+owner review priority without a lapse, and an admitted encounter introduction
+under the targeted exception. Nested fixtures leave existing v0.2.0
+Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
+native persistence and normal-Study acceptance remain with their owning tasks.
+
 ## Later analysis and presentation checkpoint
 
 [`analysis.py`](../../backend/app/contracts/product_v02/analysis.py) reuses public
@@ -211,7 +274,7 @@ flowchart LR
   Repertoire["Repertoire snapshot owner"] -->|RepertoireSnapshot| Compare["Pure comparer"]
   Games -->|existing CanonicalGame| Compare
   Compare -->|Finding| Games
-  Games -->|accept_lapse / control_effect| Study["Study / Learning effect owner"]
+  Games -->|accept_lapse / additive accept_encounter / control_effect| Study["Study / Learning effect owner"]
   Study -->|LearningReceipt| Games
   UI["Game Review UI"] -->|read supplied facts| Games
   Study --> Queue["Ordinary Study queue"]

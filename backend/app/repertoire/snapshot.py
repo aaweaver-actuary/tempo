@@ -38,19 +38,30 @@ def _introduction(card):
     return "unknown", None
 
 
+def _chronology_provider(value):
+    # The retained importer uses "chess.com"; product contracts use "chesscom".
+    # Normalize only those explicit aliases, never the source value or digest.
+    if value in {"chess.com", "chesscom"}:
+        return "chesscom"
+    if value == "lichess":
+        return "lichess"
+    raise ValueError("unsupported_chronology_provider")
+
+
 def _comparison_scope(capture, comparison_game):
     if comparison_game is None:
         return None
     game = CanonicalGame.model_validate(comparison_game.model_dump(mode="python"))
     raw = capture["game"]
-    if (game.game_id != raw.get("id") or game.source_id != raw.get("provider")
+    provider = _chronology_provider(raw.get("provider"))
+    if (game.game_id != raw.get("id") or _chronology_provider(game.source_id) != provider
             or game.learner_color != raw.get("color")
             or list(game.moves) != json.loads(raw["moves_json"])
             or opening_position_key(game.starting_fen) != opening_position_key(raw["start_fen"])
             or game.played_at is None or datetime.fromisoformat(game.played_at.replace("Z", "+00:00"))
             != datetime.fromisoformat(raw["played_at"].replace("Z", "+00:00"))):
         raise ValueError("snapshot_comparison_game_mismatch")
-    return IntroductionGameScope(provider=raw["provider"], game_id=game.game_id,
+    return IntroductionGameScope(provider=provider, game_id=game.game_id,
         source_revision=game.source_revision, source_digest=game.source_digest)
 
 

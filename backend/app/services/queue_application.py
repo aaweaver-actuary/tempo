@@ -122,7 +122,10 @@ def seed_queue(db, day, *, introductions=None):
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
         seeding_storage.append_due_card(db, day, row[0], maximum + offset)
-    maximum += len(rows)
+    from tempo_legacy_database.adapters.study.game_feedback import resume_available_feedback
+    resume_available_feedback(db, day)
+    # Recover owed introduced-card feedback before optional new introductions.
+    maximum = seeding_storage.maximum_position(db, day)
     if introductions is None:
         admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
     outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
@@ -146,21 +149,10 @@ from tempo_legacy_database.adapters.queue_refresh import presentation as present
 from tempo_legacy_database.adapters.queue_refresh.presentation import _QUEUE_RANDOMIZATION_ROWS_SQL
 
 def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=None):
-    """Capture eligibility and attempt protection without changing membership."""
-    rows, reviewed, eligible = presentation_storage.presentation_facts(
-        database, day, MISS_REASON, read=read, after_entry_id=after_entry_id, limit=limit,
-    )
-    if not rows:
-        return rows
-    for row in rows:
-        from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
-        if presentation_storage.is_postgres_connection(database) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
-            from .legacy_study_remediation import has_current_miss
-            if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
-        row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
-                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
-        row['eligible'] = row['id'] in eligible
-    return rows
+    """Compatibility entry for the narrow, transaction-bound presentation reader."""
+    from .queue_presentation import presentation_rows as current_presentation_rows
+    return current_presentation_rows(database, day, read=read,
+                                     after_entry_id=after_entry_id, limit=limit)
 
 
 def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None = None) -> None:

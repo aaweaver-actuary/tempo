@@ -9,6 +9,74 @@ from app.study.introductions.application import Introductions
 from app.study.introductions.policy import Candidate, RankingContext, RequiredWork, select
 from app.study.introductions.ports import AllocationState, OwnerFacts
 
+
+@pytest.mark.parametrize('study_only,global_limit,repertoire_limit,credits,reason', [
+    (True, 10, None, (), 'study_only'),
+    (False, 0, None, (), 'zero_limit'),
+    (False, 10, 0, (), 'zero_limit'),
+    (False, 1, None, ('b',), 'introduction_allowance'),
+    (False, 10, 1, ('a',), 'introduction_allowance'),
+    (False, 2, None, ('b',), None),
+    (False, True, None, (), 'current_controls_unproved'),
+])
+def test_encounter_ordinary_saved_allowance(study_only,global_limit,repertoire_limit,credits,reason):
+    from app.study.introductions.application import ordinary_encounter_allowance
+    assert ordinary_encounter_allowance(study_only=study_only,global_limit=global_limit,
+        repertoire_limit=repertoire_limit,introduction_count=len(credits),repertoire_count=credits.count('a')) == reason
+
+
+@pytest.mark.parametrize('allowance,paused,expected',[
+    ('ordinary',False,'study_only'),('encounter_exception',False,None),
+    ('ordinary',True,'paused'),('encounter_exception',True,'paused'),
+])
+def test_encounter_exception_is_explicit_and_full_pause_is_independent(allowance,paused,expected):
+    from app.study.introductions.application import encounter_allowance
+    assert encounter_allowance(allowance=allowance,paused=paused,study_only=True,
+        global_limit=0,repertoire_limit=0,introduction_count=10,repertoire_count=10) == expected
+    with pytest.raises(ValueError,match='explicit'):
+        encounter_allowance(allowance='unknown',paused=False,study_only=True,
+            global_limit=0,repertoire_limit=0,introduction_count=0,repertoire_count=0)
+
+
+def test_encounter_target_retains_complete_alternatives_not_unrelated_routes():
+    import chess
+    from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute
+    from app.study.introductions.application import target_alternatives
+    from tempo_evidence_math import opening_position_key
+    board = chess.Board()
+    board.push_uci('e2e4'); board.push_uci('e7e5')
+    expected = ((opening_position_key(board.fen()),'g1f3'),)
+    def route(identity,moves,start=chess.STARTING_FEN):
+        return ImmutableAuthoredRoute(repertoire_id='a',route_id=identity,policy_id='a',
+            learner_color='white',starting_fen=start,moves=moves)
+    target = route('target',('e2e4','e7e5','g1f3'))
+    unrelated = tuple(route(str(n),('d2d4','d7d5','c2c4')) for n in range(80))
+    assert target_alternatives((*unrelated,target),expected=expected,learner_color='white').routes == (target,)
+    conflict = route('unmapped-conflict',('f1c4',),board.fen())
+    assert target_alternatives((*unrelated,target,conflict),expected=expected,
+        learner_color='white').reason == 'target_response_conflict'
+    relevant = tuple(route(str(n),target.moves) for n in range(65))
+    assert target_alternatives(relevant,expected=expected,
+        learner_color='white').reason == 'target_alternatives_bound'
+    assert target_alternatives((target,),expected=(),learner_color='white').reason == 'target_context_unproved'
+
+
+def test_encounter_target_checks_transposed_and_later_physical_decisions():
+    import chess
+    from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute
+    from app.study.introductions.application import target_alternatives
+    from tempo_evidence_math import opening_position_key
+    def route(identity,moves):
+        return ImmutableAuthoredRoute(repertoire_id='a',route_id=identity,policy_id='a',
+            learner_color='white',starting_fen=chess.STARTING_FEN,moves=moves)
+    board = chess.Board()
+    for uci in ('g1f3','g8f6','g2g3','g7g6'): board.push_uci(uci)
+    target = route('target',('g1f3','g8f6','g2g3','g7g6','f1g2'))
+    other = route('transposition',('g2g3','g7g6','g1f3','g8f6','d2d4'))
+    assert target_alternatives((target,other),
+        expected=((opening_position_key(board.fen()),'f1g2'),),
+        learner_color='white').reason == 'target_response_conflict'
+
 DAY = "2026-10-26"
 NEXT_DAY = "2026-10-27"
 CONTEXT = RankingContext((("a", 1, "source-a"), ("b", 1, "source-b")), "explicit-settings-1")

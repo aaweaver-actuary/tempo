@@ -1,25 +1,11 @@
 """Offline-safe ranking consumption and atomic Study-owned introduction effects."""
-from dataclasses import dataclass
-from datetime import date
-
 from app.contracts.product_v02.analysis import RankingOutput
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from .policy import Candidate, RankingContext, Selection, compatible_ranking, select
-from .ports import IntroductionConflicts, IntroductionOwner, IntroductionStore, Receipt
-
-
-def introduction_is_held(conflicts: IntroductionConflicts | None, *, repertoire_id: str,
-                         presentation_id: str, presentation_revision: int) -> bool:
-    """Delegate current suspension to its Study owner, without copying policy.
-
-    No capability preserves the prior behavior. An injected capability must
-    explicitly prove False to permit admission; unknown is never a release.
-    """
-    if conflicts is None:
-        return False
-    if type(presentation_revision) is not int or presentation_revision < 1:
-        return True
-    return conflicts.blocked(repertoire_id, presentation_id, presentation_revision) is not False
+from .ports import IntroductionOwner, IntroductionStore, Receipt
+from .results import CommitResult
+from .encounter import (introduction_is_held, target_alternatives, ordinary_encounter_allowance,
+                        encounter_allowance, validate_study_day)
 
 
 def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
@@ -45,12 +31,6 @@ def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
         mappings=mappings))
 
 
-@dataclass(frozen=True)
-class CommitResult:
-    status: str
-    receipt: Receipt | None = None
-
-
 class Introductions:
     def __init__(self, store: IntroductionStore, owner: IntroductionOwner):
         self.store, self.owner = store, owner
@@ -67,8 +47,7 @@ class Introductions:
 
     @staticmethod
     def _day(day):
-        if date.fromisoformat(day).isoformat() != day:
-            raise ValueError("explicit local Study day required")
+        validate_study_day(day)
 
     def preview(self, day: str, *, priority: tuple[str, str] | None = None) -> Selection:
         self._day(day)
@@ -87,7 +66,8 @@ class Introductions:
                       spent=tuple(spent.items()), introduced=facts.introduced,
                       mandatory=facts.mandatory,
                       rotation_after=state.period_rotation_after if state.period_started else state.rotation_after,
-                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only, priority=priority)
+                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only,
+                      priority=priority)
 
     def commit(self, day: str, candidate: Candidate, context: RankingContext, *,
                priority: tuple[str, str] | None = None) -> CommitResult:
