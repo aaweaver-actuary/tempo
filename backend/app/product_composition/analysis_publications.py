@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.analysis.jobs.ports import AnalysisFence
+from app.analysis.jobs.interfaces import AnalysisFence
 from app.repertoire.interfaces import RepertoireSnapshot
 from tempo_legacy_database.adapters.analysis.publications import (
     AnalysisPublicationError, PublicationDatabase,

@@ -15,7 +15,7 @@ from typing import Protocol
 from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError
 
-from app.analysis.jobs.ports import AnalysisFence, PreparedAnalysis
+from app.analysis.jobs.interfaces import AnalysisFence, PreparedAnalysis
 
 MAX_PUBLICATION_BYTES = 4 * 1024 * 1024
 PUBLICATION_FORMAT_VERSION = 1

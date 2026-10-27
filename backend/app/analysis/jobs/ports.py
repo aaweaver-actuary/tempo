@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from app.analysis.coverage.ranking import CoverageRanking
+from app.analysis.coverage.interfaces import CoverageRanking
 from app.contracts.product_v02 import Digest, Identifier, Revision, Value
 
 
