@@ -74,7 +74,8 @@
         "backend/tests/test_public_surface_wire_contracts.py"
       ],
       "depends_on": [
-        "chess"
+        "chess",
+        "evidence-math"
       ],
       "activation": "ready after parent dispatch",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
@@ -234,7 +235,8 @@
       ],
       "depends_on": [
         "chess",
-        "wire-contracts"
+        "wire-contracts",
+        "evidence-math"
       ],
       "activation": "Parent-dispatched owner batch; exact new interface/test files only, preserve all active functional leases.",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
@@ -683,7 +685,8 @@
         "backend/tests/test_public_surface_analysis_runner.py"
       ],
       "depends_on": [
-        "wire-contracts"
+        "wire-contracts",
+        "coverage"
       ],
       "activation": "Mechanical interface work only; lower-priority D/E behavior expansion remains paused",
       "first_commit": "Explicit named exports/typed existing contracts, short interface README, cold-import/export identity check; preserve behavior",
@@ -919,5 +922,71 @@
   "undispatched_batches": [],
   "allocation_revision": 2,
   "supersedes": "First allocation owner numbers only: no leases remain for the earlier #484/#485/#486/#492/#493/#495/#496/#498/#499/#500 suggestions. Existing functional issue ownership is preserved; this revision assigns only the restructuring work.",
-  "dispatch_clarification": "Revision2 ownership is authoritative for interface restructuring: #497 owns all seven listed groups. Stockfish-only work does not complete that batch; six other groups remain assigned, not reassigned or unowned."
+  "dispatch_clarification": "Revision2 ownership is authoritative for interface restructuring: #497 owns all seven listed groups. Stockfish-only work does not complete that batch; six other groups remain assigned, not reassigned or unowned.",
+  "remaining_edges": [
+    {
+      "edge": "repertoire/wire legal-position helper",
+      "owner_issue": 501,
+      "implementation_owner": 503,
+      "source": "backend/app/repertoire/{position_index,snapshot}.py and canonical wire validators -> tempo_evidence_math.opening_position_key",
+      "operation": "Keep the existing exact legal-en-passant helper; correct allowed DAG to depend on pure evidence-math, then route imports through tempo_evidence_math.interfaces after its publication approval. No moved/copied identity algorithm.",
+      "status": "DAG correction recorded; caller migration pending qualified published interface"
+    },
+    {
+      "edge": "R11 adapter calls private clean-streak reducer",
+      "owner_issue": 503,
+      "source": "database/tempo_legacy_database/adapters/study/recombination.py -> app.study.recombination.policy.reduce_clean_streak",
+      "operation": "Expose the same existing typed pure reduce_clean_streak in app.study.presentations.interfaces, document it and extend the allocated identity/semantic check; no wrapper/copied policy. #501 then routes the exact adapter import.",
+      "status": "Exact small owning follow-on request; publication hold preserved"
+    },
+    {
+      "edge": "Tactics mutations mix content/progress with Study effects",
+      "owner_issue": 503,
+      "receiving_owner_issue": 487,
+      "routing_owner_issue": 501,
+      "source": "backend/app/tactic_commands.py::{create_tactic_capture,submit_tactic_attempt,set_tactic_activation}; services/tactic_capture.py; services/tactical_catalog.py; database adapters/tactics",
+      "operation": "#503 owns capture/catalog/progress semantics and maps existing request/receipt types. #487 owns card/due/queue/guided effects through a borrowed-transaction semantic receiver after its immediate fix. #501 owns registration/caller assembly. Preserve current attempt receipt/replay and global controls; do not re-export mixed command registration or hide direct Study writes behind Tactics interfaces.",
+      "status": "Actual mutation split pending; pure puzzle interface is not completion"
+    },
+    {
+      "edge": "Legacy worker depends on HTTP/Games coordinator",
+      "owner_issue": 501,
+      "functional_lease_owner_issue": 491,
+      "source": "backend/app/background_worker.py -> main.coordinator -> services/game_sync_coordinator.py",
+      "operation": "#501 owns generic worker lifecycle/handler assembly. #491 retains current functional leases and Games-specific operations; its public sync surface must not export the all-domain coordinator. Extract/rebind existing handlers through published owner operations after lease release, preserving priority/control/replay behavior.",
+      "status": "Explicit root follow-on; not hidden in a public barrel"
+    },
+    {
+      "edge": "Operational health imports Celery and legacy connection composition",
+      "owner_issue": 501,
+      "source": "backend/app/operations/postgres_readiness.py -> app.celery_app and tempo_legacy_database.connections",
+      "operation": "ReadinessProbe contract is import-safe; actual observation adapters and lifetime wiring still need root injection with named readiness/unavailable semantics proof. No concrete implementation re-exported as isolated.",
+      "status": "Contract delivered; concrete decoupling pending"
+    },
+    {
+      "edge": "Analysis result contract names private coverage value",
+      "owner_issue": 501,
+      "receiving_owner_issue": 494,
+      "source": "backend/app/analysis/jobs/ports.py -> app.analysis.coverage.ranking.CoverageRanking",
+      "operation": "Keep class identity and route to the qualified coverage interfaces export; Analysis runner may depend on this immutable coverage value. No copied DTO.",
+      "status": "Allowed DAG corrected; migration waits for #494 surface"
+    },
+    {
+      "edge": "Games/contract/provider caller and compatibility adoption",
+      "owner_issue": 501,
+      "component_owners": [
+        482,
+        483,
+        490,
+        491,
+        497,
+        503,
+        494,
+        487
+      ],
+      "source": "Per-owner caller patches and legacy package-root aliases",
+      "operation": "Apply exact qualified import-only caller changes, map actual implementations in #482 guard, then retire each compatibility alias after all declared callers and negative controls pass.",
+      "status": "#483 four snapshot imports + integration-owned repertoire/infrastructure routes already implemented and focused-tested; #491 patch next"
+    }
+  ]
 }

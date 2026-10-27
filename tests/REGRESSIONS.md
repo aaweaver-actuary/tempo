@@ -1,3 +1,20 @@
+## Interface-directory first adoption
+
+`backend/tests/test_public_surface_infrastructure.py` preserves exact PostgreSQL
+class/function identity, row/configuration behavior and import-time isolation.
+`backend/tests/test_public_surface_analysis_runner.py` preserves typed runner
+identity and stop cleanup without closing borrowed infrastructure or changing
+unrelated attempt state. `backend/tests/test_public_surface_composition.py`
+checks cold root-surface import and the actual snapshot caller's use of the
+public projection before source reservations. Existing repertoire surface,
+source-reservation and Analysis integration files are the affected receiving
+checks; unchanged index/projection/SQL evidence is retained separately.
+
+These named cases do not establish whole-repository DAG/export-bypass negatives,
+native concurrency or live isolation. #482 owns the new whole-declared-graph
+checker; exact remaining edges and owners are recorded in
+`docs/architecture/interface-directory-allocation/allocation.json`.
+
 ## Daily statistics producer retirement
 
 `backend/tests/test_statistics.py::test_daily_statistics_refresh_is_retired_without_admission`

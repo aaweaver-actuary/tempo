@@ -6,7 +6,7 @@
 
 ## Dispatch now — revision 2
 
-This revision consolidates 26 groups into nine existing owner batches. It supersedes the original per-leaf owner suggestions for restructuring only. Existing functional issue ownership and hotfix leases remain intact. No groups are unassigned; #494 is the one batch still requiring parent dispatch.
+This revision consolidates 26 groups into nine existing owner batches. It supersedes the original per-leaf owner suggestions for restructuring only. Existing functional issue ownership and hotfix leases remain intact. All nine owner batches are now dispatched; no groups are unassigned.
 
 | Existing owner | Component groups | Dispatch / dependency |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ This revision consolidates 26 groups into nine existing owner batches. It supers
 | #491 | `game-ingestion`, `game-sync` | Retained Games/sync owner; functional fixes first, surfaces from exact published head. |
 | #497 | `chess`, `comparison`, `lichess`, `chesscom`, `probability`, `stockfish`, `maia` | Dispatched chess, comparison, engine and external adapter batch; no new implementations. |
 | #503 | `scheduling`, `presentations`, `tactics`, `evidence-math` | Dispatched scheduling, presentation, tactics and evidence-math support batch. |
-| #494 | `coverage`, `similarity`, `proposals` | Parent still needs to dispatch this one Analysis interface batch; no feature expansion. |
+| #494 | `coverage`, `similarity`, `proposals` | Dispatched Analysis interface batch; no feature expansion. |
 | #501 | `storage-infrastructure`, `analysis-runner`, `composition` | Integration retained; concrete routing only after the exact consumed surfaces are qualified. |
 
 Preparation may proceed in parallel. Allowed import dependencies: chess/scheduling first; wire contracts and evidence math over neutral chess; domain policies/workflows over their typed facts; UI/storage over owner contracts; composition selects concrete implementations last. This is not an all-leaf completion gate.
@@ -68,3 +68,7 @@ Existing `backend/app/background_worker.py` is documented as importing `main.coo
 #482’s checker must resolve the declared Python/TypeScript/Rust public surfaces and reject private sibling imports, root-backwards imports, cycles and export bypasses with negative controls. Use the existing component-build/contract tooling rather than a second framework. Every moved boundary retains its semantic regressions and gains only the changed import/lifecycle/failure/replay/protected-state proof it needs. No broad full-system gate or image build is added.
 
 The exact source inputs are in allocation.json. Current main and the listed published checkpoints are not one merged runtime. Interface delivery, consumer adoption, native proof and live operation remain separate claims. Existing C/D/E qualifications are retained; Analysis feature expansion is paused.
+
+## Concrete residual edges
+
+`allocation.json.remaining_edges` assigns the exact Tactics mutation/Study receiver boundary (#503/#487), existing pure clean-streak export (#503), generic coordinator/health assembly (#501), and remaining caller/contract adoption. The legal-position helper remains the same pure evidence-math operation; the allowed repertoire/wire dependency is corrected explicitly instead of copying it into chess. Analysis runner’s immutable coverage value dependency is likewise explicit. None of these edges is considered resolved because an interface directory exists.
