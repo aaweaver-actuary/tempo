@@ -11,12 +11,18 @@ import guard are reused from #539. No private Study implementation or queue read
 is added. The [owning interface view](../../../backend/app/games/feedback/interfaces/README.md#game-review-receipt-reads)
 records the query and serialization boundary.
 
-This independently tested API checkpoint does not mount Game Review or enable a
-provider worker. Root wiring must provide the rich public status capability and
-the existing authorized command boundary. UI integration must also consume the
-already-published #536 TypeScript union and #490 receipt renderer; the older strict
-client parser cannot consume encounter fields. No live or browser acceptance is
-claimed, and no API-reader writer permission is introduced.
+The paired source consumes #536's exact TypeScript receipt fragment while retaining
+all 55 existing contract exports. It adopts #490's receipt-only component at
+`241bced7` through the complete four-file delta over #514 `d55dd02a`; component
+behavior is unchanged. The focused `product-game-review-api-receipts.test.tsx`
+feeds captured current Python GET responses through the canonical client/parser
+and real view/board. Pending introduction stays pending, and reads make no POST.
+
+This checkpoint does not mount Game Review or enable a provider worker. Root
+wiring must supply the rich public status capability and the existing authorized
+command boundary. Packaged/user-browser and live acceptance remain separate;
+no API-reader writer permission is introduced. The broader usability/refresh
+checkpoint `507111af` is not required by this minimal receipt integration.
 
 This separate follow-on branch is based on frozen retained-history `0db8c980`.
 It changes no live service, source account, setting or installed schema. Provider

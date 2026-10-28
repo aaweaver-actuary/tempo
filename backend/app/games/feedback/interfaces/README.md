@@ -49,6 +49,6 @@ flowchart LR
 The six `test_product_game_review_receipts.py` cases use typed owner facts and
 in-process HTTP; mutations/acquisition/queue calls are forbidden. No database,
 provider, user browser or root mount is started. #501 must supply the rich public
-status capability when wiring encounter data. UI adoption still needs #536's
-published TypeScript receipt schema and #490's renderer; this backend checkpoint
-does not claim a mounted browser or full provider-sync acceptance.
+status capability when wiring encounter data. The paired receipt-only #490 view
+and #536 TypeScript fragment are covered by one captured-API-to-view fixture case;
+mounted-browser and full provider-sync acceptance remain separate.
