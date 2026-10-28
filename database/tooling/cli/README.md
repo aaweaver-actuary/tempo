@@ -8,7 +8,8 @@ The only queried table is operational `tempo_schema_migrations(version)`, ordere
 
 ## Two-copy backup guard
 
-**PROPOSED / source only**, based on release `20683bc0`; deployment unverified.
+**PROPOSED / source only**, [reviewed source](https://github.com/aaweaver-actuary/tempo/tree/b98610957928c3939b5fba4f50108f625d9b001d/database/tooling/cli),
+based on release `20683bc0`; deployment unverified.
 [`postgres-backup.sh`](postgres-backup.sh) now owns admission for both recurring
 Compose and explicit CLI dumps. A shared directory lock serializes creation.
 The CLI still stops recurring work before backup/restore verification. Recurring
