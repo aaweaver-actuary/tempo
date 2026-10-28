@@ -4,7 +4,7 @@ from ...controls.claim_sql import claimable
 COMMAND = 'imports.pgn.explicit'
 
 
-def predicate(task='background_tasks'):
+def receipt_scope(task='background_tasks'):
     # Only fixed internal aliases are accepted, never user SQL.
     if task not in {'background_tasks','task'}: raise ValueError('Unknown import task alias')
     return f"""{task}.kind IN ('opening_graph_rebuild','integrity_scan') AND EXISTS (
@@ -23,7 +23,11 @@ def predicate(task='background_tasks'):
               AND ({task}.payload_json::jsonb->>'graph_generation')=graph.generation::text
               AND ({task}.payload_json::jsonb->>'origin_graph_task_id')=graph.id
               AND ({task}.payload_json::jsonb->>'origin_import_operation_id')=receipt.operation_id)
-    ) AND {claimable('durable',task+'.id')}"""
+    )"""
+
+
+def predicate(task='background_tasks'):
+    return f"({receipt_scope(task)}) AND {claimable('durable',task+'.id')}"
 
 
 def delivery(database, task_id, generation, lease_token):

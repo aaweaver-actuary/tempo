@@ -5,6 +5,7 @@ from sqlglot import exp, parse_one
 from sqlglot.executor import execute
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import preparation as storage
 from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
+from tempo_legacy_database.adapters.controls.activity import storage as control_storage
 
 
 def test_explicit_claim_keeps_receipt_generation_manual_pause_and_lease_fences():
@@ -45,6 +46,11 @@ def _candidate_eligible(*, explicit, kind, study_only, current_import, paused, d
         None, None, 'now', ('defensive_admission',), explicit_imports_only=explicit)
     candidate(Database(), ['now'])
     where = parse_one(statements[0], read='postgres' if explicit else 'sqlite').args['where'].this
+    return _policy_value(where, kind=kind, study_only=study_only, current_import=current_import,
+                         paused=paused, defensive_enabled=defensive_enabled)
+
+
+def _policy_value(expression, *, kind, study_only, current_import, paused, defensive_enabled):
 
     def supplied_facts(node):
         if isinstance(node, exp.Exists):
@@ -60,7 +66,7 @@ def _candidate_eligible(*, explicit, kind, study_only, current_import, paused, d
             return exp.convert(1)  # The queued candidate is due.
         return node
 
-    return execute(exp.select(where.transform(supplied_facts))).rows[0][0]
+    return execute(exp.select(expression.transform(supplied_facts))).rows[0][0]
 
 
 @pytest.mark.parametrize('explicit,kind,study_only,current_import,paused,defensive_enabled,expected', [
@@ -87,3 +93,31 @@ def test_explicit_import_claim_policy_keeps_the_exception_receipt_scoped(
 ):
     assert _candidate_eligible(explicit=explicit, kind=kind, study_only=study_only,
         current_import=current_import, paused=paused, defensive_enabled=defensive_enabled) is expected
+
+
+@pytest.mark.parametrize('native,kind,study_only,current_import,defensive_enabled,expected', [
+    (True, 'opening_graph_rebuild', 1, True, 0, True),
+    (True, 'integrity_scan', 1, True, 0, True),
+    (True, 'opening_graph_rebuild', 1, False, 0, False),
+    (True, 'game_analysis_publish', 1, True, 0, False),
+    (True, 'defensive_admission', 0, False, 0, False),
+    (False, 'opening_graph_rebuild', 1, True, 0, False),
+])
+def test_resume_and_activity_use_receipt_scope_without_bypassing_manual_pause(
+    monkeypatch, native, kind, study_only, current_import, defensive_enabled, expected,
+):
+    statements = []
+    class Database:
+        def execute(self, statement, parameters):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+        execute_native = execute
+    monkeypatch.setattr(control_storage.postgres_store, 'configured', lambda: native)
+    control_storage.prepare_control_read('durable', ('defensive_admission',))(Database(), 'task')
+    control_storage.durable_activity(Database(), ['cutoff'], ('defensive_admission',))
+    values = []
+    for statement in statements:
+        expression = parse_one(statement, read='postgres' if native else 'sqlite').expressions[1].this
+        values.append(_policy_value(expression, kind=kind, study_only=study_only,
+            current_import=current_import, paused=1, defensive_enabled=defensive_enabled))
+    assert values == [expected, not expected]  # settings_admitted / paused_by_settings
