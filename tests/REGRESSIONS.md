@@ -5381,3 +5381,13 @@ deduplicated owed-feedback lookup, with no application retry or write.
 executes the actual PostgreSQL background preparation twice after Study-owned
 priority application, with fresh owned reads, Games absent, and cards, queue,
 reviews, receipts, protected origins and the original effect preserved.
+
+## PostgreSQL adopted-child supervision
+
+`backend/tests/test_postgres_init_supervision.py::test_orphan_exit_two_is_reaped_by_init_without_postgres_recovery`
+compares exactly one task-owned no-init/init pair using the selected existing
+PostgreSQL image. It verifies the normal exit-2 orphan mechanism, held backend
+identity, committed sentinel, init reaping, graceful signal forwarding and exact
+cleanup. It does not identify the historical executable or operate live services.
+The existing backend suite discovers the file; use the regular `make python-file`
+selection for its finite native proof. No dedicated qualifier or CI gate is added.
