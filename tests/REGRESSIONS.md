@@ -1529,6 +1529,23 @@ Current-main integration: `current-main integration retains CI and segmentation 
 
 ## Tactic capture
 
+#541's repeated Capture flow is owned by the existing parser/component suites:
+`one Capture saves three consecutive puzzles in one modal and resets and focuses only after confirmation`;
+`invalid source input and provider failure retain input note and the authored draft without a capture`;
+`duplicate Capture and lost acknowledgement keep one identity and retain the source until receipt recovery`;
+parameterized `Lichess %s during fetch cancels acquisition and fences a late response before saving`.
+The existing optional-preview/manual cases retain their editing/validation
+assertions; #541 replaces their obsolete close-on-success expectation with
+confirmed reset and an explicitly open dialog. Parser cases use the official
+Lichess API fixture and cover both solver colors, absent FEN, complete solution,
+position/setup/identity rejection and explicit credential-free acquisition.
+The existing `Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture`
+browser case now pastes/captures three times in one modal (with deterministic
+Lichess acquisition), checks reset/focus, distinct capture IDs and reused queue
+membership, then opens ordinary Training. Normal Chess.com export semantics
+remain unverified pending a representative export; this is partial #541 work.
+
+
 Backend capture regressions in `backend/tests/test_tactic_capture.py` cover:
 
 - `test_captured_tactic_create_queues_valid_tactic_today`
