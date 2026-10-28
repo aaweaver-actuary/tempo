@@ -133,3 +133,9 @@ before a short unit opens; no row data or eligibility result is cached. The
 native reader re-evaluates all original current availability predicates in the
 writer. Explicit legacy read callbacks and SQLite keep their original query
 shape. See [protected priority promotion](../study/review/README.md#actual-scale-protected-promotion).
+
+`priority_ownership_state` evaluates issued-origin, evidence-attempt and teaching
+membership as uncorrelated sets, avoiding a historical table scan per queued
+card when current-day statistics underestimate the queue. Its digest fields,
+row-version/ownership/protection guards and NULL-as-absent semantics are unchanged.
+No schema, writer, transaction boundary, public signature or timeout changed.

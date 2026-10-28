@@ -20,6 +20,7 @@ REQUIRED = (
     "backend/tests/test_product_encounter_integration.py::test_unintroduced_encounter_intake_commits_pending_without_queue_capability",
     "backend/tests/test_product_encounter_integration.py::test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games",
     "backend/tests/test_product_feedback_integration.py::test_maintenance_cold_import_has_no_games_dependency",
+    "backend/tests/test_priority_ownership_pickup_postgres.py::test_historical_evidence_ownership_pickup_commits_within_existing_budget_and_replays",
 )
 
 

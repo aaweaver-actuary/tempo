@@ -5353,3 +5353,12 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | Exact monitor GETs do not mint learner activity or starve background work, while genuine foreground, input, queue and review guards remain | `backend/tests/test_foreground_admission_http.py` |
 | Encounter projection preserves equivalent-route provenance and differing availability/chronology while emitting one deterministic target | `backend/tests/test_product_encounter_projection.py` |
 | 62 equivalent route bindings persist one Study effect/receipt/queue entry across a fresh history recomparison | `backend/tests/test_product_game_history_postgres.py::test_equivalent_route_history_persists_one_effect_and_receipt_under_recomparison` |
+
+## Study priority ownership with historical evidence (#488)
+
+`backend/tests/test_priority_ownership_pickup_postgres.py::test_historical_evidence_ownership_pickup_commits_within_existing_budget_and_replays`
+reproduces underestimated current-day queue statistics and historical evidence
+under the existing 250ms cap. Constrained independent Study pickup commits once,
+replay preserves the original obligation, nine saved reviews/receipts and 26
+protected attempts. Existing scaled stale-plan cases retain ownership/issuance/
+card-version rollback coverage. No live game or data is copied into the fixture.

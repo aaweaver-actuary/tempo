@@ -211,13 +211,17 @@ def priority_ownership_state(database, day):
     The target's current admission/content/source is independently fenced by Study.
     Ordering never grants eligibility to another card. Changed owners or protected
     attempts invalidate prepared positions; no whole-queue domain query runs here.
+    Uncorrelated membership sets avoid a historical-evidence scan per queued row
+    when current-day statistics underestimate queue size. Nullable legacy evidence
+    IDs must remain False, matching the original EXISTS predicates.
     """
     return database.execute_native("""WITH owned AS (
         SELECT q.id,jsonb_build_array(q.id,q.card_id,q.xmin::text,c.xmin::text,
-            EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id
-                AND o.card_id=c.id AND o.revision=c.revision AND o.issued_as_head=1),
-            EXISTS(SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id),
-            EXISTS(SELECT 1 FROM teaching_states t WHERE t.card_id=c.id))::text value
+            COALESCE((q.id,c.id,c.revision) IN (SELECT o.queue_entry_id,o.card_id,o.revision
+                FROM queue_attempt_origins o WHERE o.issued_as_head=1),FALSE),
+            q.id IN (SELECT a.queue_entry_id FROM opening_evidence_attempts a
+                WHERE a.queue_entry_id IS NOT NULL),
+            c.id IN (SELECT t.card_id FROM teaching_states t))::text value
         FROM daily_queue q JOIN cards c ON c.id=q.card_id
         WHERE q.queue_date=%s AND q.status='queued'
     ) SELECT encode(sha256(convert_to(
