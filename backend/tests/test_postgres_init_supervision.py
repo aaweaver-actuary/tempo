@@ -9,7 +9,6 @@ The ordinary backend suite discovers this file; no dedicated qualifier is added.
 import json
 import os
 from pathlib import Path
-import re
 import selectors
 import subprocess
 import time
@@ -24,9 +23,9 @@ exec postgres -D /var/lib/postgresql/owned-data -c listen_addresses= -c unix_soc
 """
 ORPHAN = """mkfifo /tmp/orphan-release
 (
+  trap 'status=$?; trap - EXIT; printf "%s\\n" "$status" > /tmp/orphan-outcome; exit "$status"' EXIT
   printf '%s\\n' "$BASHPID" > /tmp/orphan-pid
   read -r release < /tmp/orphan-release
-  printf 'normal exit code 2\\n' > /tmp/orphan-outcome
   exit 2
 ) >/tmp/orphan.stdout 2>/tmp/orphan.stderr &
 printf '%s\\n' "$!"
@@ -82,6 +81,25 @@ def _proc(container_id, pid):
     status = _docker("exec", container_id, "cat", f"/proc/{pid}/status").stdout
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     return {key: fields[key].strip() for key in ("Name", "Pid", "PPid", "State")}
+
+
+def _wait_reaped_exit_two(container_id, pid):
+    """Observe the actor's EXIT status and disappearance, without init logging.
+
+    The identical actor's normal exit 2 is independently recorded by PostgreSQL
+    in the baseline. Some Docker init binaries omit verbose child-reap logs.
+    """
+    deadline = time.monotonic() + 10
+    command = (f"if [[ -f /tmp/orphan-outcome && ! -e /proc/{pid} ]]; then "
+               "IFS= read -r status < /tmp/orphan-outcome; printf '%s' \"$status\"; "
+               "else printf waiting; fi")
+    while True:
+        value = _docker("exec", container_id, "bash", "-c", command).stdout
+        if value == "2":
+            return
+        assert value == "waiting", "Artificial orphan did not report normal exit 2"
+        assert time.monotonic() < deadline, "Init did not reap the artificial orphan"
+        time.sleep(0.05)
 
 
 class HeldClient:
@@ -216,13 +234,7 @@ def _case(image, owner, init_enabled, evidence):
             report["fresh_post_recovery_sentinel"] = fresh
             report["baseline_mechanism_reproduced"] = True
         else:
-            def reaped(text):
-                return (re.search(r"Reaped child with pid: '?" + str(orphan_pid) + r"'?", text)
-                        and re.search(r"exit code '?2'?", text))
-            _wait_logs(container_id, reaped, seconds=10)
-            absent = _docker("exec", container_id, "bash", "-c",
-                f"test ! -e /proc/{orphan_pid}", check=False)
-            assert absent.returncode == 0, "Init did not reap the artificial orphan"
+            _wait_reaped_exit_two(container_id, orphan_pid)
             after = held.query("SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel")[-1]
             assert after == identity, "Original backend identity or committed sentinel changed"
             report.update(held_connection_retained=True, sentinel_after=after.split(":", 1)[1],
@@ -231,7 +243,7 @@ def _case(image, owner, init_enabled, evidence):
             assert "untracked child process" not in text and "reinitializing" not in text
             assert text.count("database system is ready to accept connections") == 1
         report["orphan_outcome_marker"] = _docker("exec", container_id, "cat", "/tmp/orphan-outcome").stdout.strip()
-        assert report["orphan_outcome_marker"] == "normal exit code 2"
+        assert report["orphan_outcome_marker"] == "2"
         held.close()
         held = None
         _owned(container_id, owner, image)
