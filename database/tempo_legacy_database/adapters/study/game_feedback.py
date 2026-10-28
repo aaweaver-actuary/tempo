@@ -200,9 +200,25 @@ def installed(database):
         "SELECT to_regclass('study_game_feedback') IS NOT NULL").fetchone()[0]
 
 
+def owed_feedback_card_ids(database, card_ids, *, read=None):
+    """One borrowed or bounded read for the requested outstanding obligations."""
+    ids = tuple(dict.fromkeys(card_ids))
+    if not ids:
+        return set()
+    if read is not None:
+        placeholders = ','.join('?' for _ in ids)
+        rows = read("SELECT DISTINCT card_id FROM study_game_feedback "
+            f"WHERE card_id IN ({placeholders}) AND status IN ('pending','applied')", ids)
+    else:
+        if database is None:
+            raise RuntimeError('owed feedback requires a borrowed connection or bounded reader')
+        rows = database.execute_native("SELECT DISTINCT card_id FROM study_game_feedback "
+            "WHERE card_id=ANY(%s::text[]) AND status IN ('pending','applied')", (list(ids),)).fetchall()
+    return {row[0] for row in rows}
+
+
 def has_owed_feedback(database, card_id):
-    return bool(database.execute_native("""SELECT 1 FROM study_game_feedback
-        WHERE card_id=%s AND status IN ('pending','applied') LIMIT 1""", (card_id,)).fetchone())
+    return card_id in owed_feedback_card_ids(database, (card_id,))
 
 
 def retained_encounter_introduction_query():

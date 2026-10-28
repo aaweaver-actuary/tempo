@@ -5362,3 +5362,22 @@ under the existing 250ms cap. Constrained independent Study pickup commits once,
 replay preserves the original obligation, nine saved reviews/receipts and 26
 protected attempts. Existing scaled stale-plan cases retain ownership/issuance/
 card-version rollback coverage. No live game or data is copied into the fixture.
+
+## Bounded game-priority presentation reads (#488; dependent on #546)
+
+Background queue presentation after game-priority application must use its supplied bounded reader when no borrowed database connection exists; real obligations retain priority, stale obligations lose priority, and active Study attempts/history remain intact.
+
+`backend/tests/test_queue_refresh_read_database_split.py` owns
+`test_game_priority_bounded_presentation_keeps_owed_labels_without_connection`
+(red-before `NoneType.execute_native`),
+`test_game_priority_bounded_presentation_clears_only_unowed_labels`,
+`test_game_priority_native_presentation_uses_borrowed_connection`,
+`test_game_priority_lookup_failure_propagates_without_fabricating_settlement`,
+and `test_nonpriority_presentation_does_not_read_owed_feedback`; the existing
+empty-page regression remains unchanged. Each relevant 16-row page uses one
+deduplicated owed-feedback lookup, with no application retry or write.
+
+`backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts`
+executes the actual PostgreSQL background preparation twice after Study-owned
+priority application, with fresh owned reads, Games absent, and cards, queue,
+reviews, receipts, protected origins and the original effect preserved.

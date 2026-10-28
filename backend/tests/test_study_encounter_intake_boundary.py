@@ -189,3 +189,83 @@ def test_study_refresh_without_games_consumes_accepted_priority(case,monkeypatch
             assert state(database,case)==before and len(before['reviews'])==9 and len(before['receipts'])==9 and len(before['protected'])==25
             assert database.execute_native('SELECT position FROM daily_queue WHERE card_id=%s AND queue_date=%s',
                 (case.card_id,NOW.date().isoformat())).fetchone()[0]==1
+
+
+def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts(case, monkeypatch):
+    from test_scaled_game_priority_postgres import scale, receiving
+    from app.services.queue_priority_promotion import prepare_priority_promotion
+    from tempo_legacy_database.adapters.study.game_feedback import owed_feedback_card_ids
+    from tempo_legacy_database.adapters import postgres_store
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    # Three entries suffice: two retained protected attempts and one target.
+    with scale(case, 3) as (capture, snapshot, command):
+        with case.transaction() as database:
+            database.execute_native('UPDATE queue_attempt_origins SET issued_as_head=0 WHERE card_id=%s', (case.card_id,))
+            accepted = receiving(database, capture, snapshot, None).accept_encounter(command)
+            assert accepted.admission_status == 'pending'
+            assert owed_feedback_card_ids(database, (case.card_id,)) == {case.card_id}
+        prepared = prepare_priority_promotion(NOW.date().isoformat(), case.card_id, read=case.transaction)
+        with case.transaction() as database:
+            available = receiving(database, capture, snapshot, prepared).refresh_encounter(command.key)
+            assert available.admission_status == 'available'
+            assert available.owner_receipt_id == accepted.owner_receipt_id
+            # A stale label on another fixture card is presentation-only;
+            # it does not create an obligation or a review.
+            database.execute_native("UPDATE daily_queue SET gameplay_priority_reason='product_game_lapse' WHERE card_id=%s",
+                (case.card_id+':1',))
+            assert owed_feedback_card_ids(database, (case.card_id, case.card_id, case.card_id+':1')) == {case.card_id}
+            assert database.execute_native('SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s',
+                (case.card_id,)).fetchone()[0] == 'product_game_encounter'
+
+        def preserved():
+            with case.transaction() as database:
+                return dict(state=state(database, case),
+                    queue=[tuple(row) for row in database.execute_native('SELECT * FROM daily_queue ORDER BY id').fetchall()],
+                    origins=[tuple(row) for row in database.execute_native('SELECT * FROM queue_attempt_origins ORDER BY queue_entry_id,card_id,revision').fetchall()],
+                    cards=[tuple(row) for row in database.execute_native('SELECT * FROM cards ORDER BY id').fetchall()],
+                    effects=[tuple(row) for row in database.execute_native('SELECT * FROM study_game_feedback ORDER BY effect_key').fetchall()],
+                    review_count=database.execute_native('SELECT COUNT(*) FROM reviews').fetchone()[0],
+                    receipt_count=database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts').fetchone()[0])
+
+        before = preserved()
+        assert before['state']['protected']
+        original_import = builtins.__import__
+        def no_games(name, *args, **kwargs):
+            if name == 'app.games' or name.startswith('app.games.'):
+                raise AssertionError('Queue preparation imported optional Games')
+            return original_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, '__import__', no_games)
+        from app.services import postgres_queue_refresh
+        from tempo_legacy_database.adapters.queue_refresh import reads
+        monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', case.transaction)
+        bounded_calls = []
+        def bounded(statement, parameters=(), *, native=False):
+            assert statement.lstrip().startswith(('SELECT', 'WITH'))
+            bounded_calls.append((statement, parameters, native))
+            with case.transaction() as database:
+                execute = database.execute_native if native else database.execute
+                return execute(statement, parameters).fetchall()
+        monkeypatch.setattr(reads, '_bounded_read', bounded)
+        plans = [postgres_queue_refresh._prepare_queue_randomization(NOW.date().isoformat()) for _ in range(2)]
+        # Read IDs explicitly rather than depending on the storage column order.
+        with case.transaction() as database:
+            expected_ids = {row[0] for row in database.execute_native('SELECT id FROM daily_queue WHERE queue_date=%s AND status=\'queued\'',
+                (NOW.date().isoformat(),)).fetchall()}
+            original = PostgresGameFeedbackStore(database).get(command.key)
+            assert original.status == 'applied' and original.encounter == command
+        for plan in plans:
+            assert all(isinstance(plan[key], str) and plan[key] for key in ('presentation_state', 'membership_hash', 'raw_membership_hash'))
+            assert isinstance(plan['frozen_token'], list)
+            assert plan['entries'] is not None and {entry['id'] for entry in plan['entries']} == expected_ids
+            assert all(set(entry) == {'id', 'position', 'bucket', 'kind'} for entry in plan['entries'])
+        assert plans[0]['presentation_state'] == plans[1]['presentation_state']
+        owed_calls = [(sql, parameters, native) for sql, parameters, native in bounded_calls if 'FROM study_game_feedback' in sql]
+        assert len(owed_calls) == 2  # one lookup per three-entry priority page, twice
+        assert all('?' in sql and not native and len(parameters) == 2 for sql, parameters, native in owed_calls)
+        assert preserved() == before
+        with case.transaction() as database:
+            replay = receiving(database, capture, snapshot, None).accept_encounter(command)
+            assert replay.owner_receipt_id == available.owner_receipt_id and replay.outcome == 'duplicate'
+            assert replay.admission_status == 'available'
+        assert preserved() == before
