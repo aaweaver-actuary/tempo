@@ -86,10 +86,10 @@ def connect(role):
     database = psycopg.connect(dsn, autocommit=True, connect_timeout=2)
     try:
         row = database.execute("""SELECT current_database(),current_schema(),current_user,
-            inet_server_addr()::text,shobj_description(oid,'pg_database')
+            host(inet_server_addr()),shobj_description(oid,'pg_database')
             FROM pg_database WHERE datname=current_database()""").fetchone()
         assert row[:3] == ("tempo", "public", role)
-        assert row[3] in payload["postgres_addresses"]
+        assert row[3] in payload["postgres_addresses"], ("Database address differs from owned fixture", row[3], payload["postgres_addresses"])
         assert row[4] == "tempo-disposable-postgres-test"
         versions = database.execute("SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()
         assert [row[0] for row in versions] == list(range(1,53))
