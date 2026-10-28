@@ -1,8 +1,8 @@
 # Parallel implementation assignments
 
-> **Historical assignments:** These workstreams and sequencing notes reflect the earlier CI-isolation audit, not the adopted twelve-phase reconstruction. Follow [the current component architecture](../component-reconstruction.md), [contribution workflow](../../../CONTRIBUTING.md), and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192). The original audit record is retained without rewriting its findings.
+> Historical evidence/proposal. The findings, measurements, gates, and assignments below belong to their recorded baseline. They do not establish today's required checks or assign current work. Use [SPEC](../../../SPEC.md) for product scope, [AGENTS](../../../AGENTS.md) for execution, and [docs/testing.md](../../testing.md) plus current executable/hosted settings for qualification. #192 and the old phase sequence remain historical references, not current task prerequisites. Preserve these records without rerunning their audits.
 
-These prompts describe future authorized implementation work. No agents were delegated during this read-only audit. Start from the latest remote main in isolated .dev-copies checkouts, following current AGENTS.md and CONTRIBUTING.md; never develop in the live study checkout. Audit baseline: 622d611a2fc6315163a54d7ae689ce1b97d06122. Read [the report](audit-report.md) and [specifications](issue-specifications.md), then refresh existing issues/open PRs before implementing. Historical audit measurements are not passes for a new candidate.
+These prompts record historical proposed work and grant no current implementation authority. No agents were delegated during this read-only audit. Start from the latest remote main in isolated .dev-copies checkouts, following current AGENTS.md and CONTRIBUTING.md; never develop in the live study checkout. Audit baseline: 622d611a2fc6315163a54d7ae689ce1b97d06122. Read [the report](audit-report.md) and [specifications](issue-specifications.md), then refresh existing issues/open PRs before implementing. Historical audit measurements are not passes for a new candidate.
 
 ## Ownership and concurrency contract
 

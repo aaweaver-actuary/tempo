@@ -1,8 +1,7 @@
 # Tempo interface contract
 
 Tempo retains the warm paper/green palette, Georgia display headings, Arial controls,
-Cburnett/Merida pieces and the selectable board colors. This document and the regular
-browser suite are the acceptance contract, not a collection of optional examples.
+Cburnett/Merida pieces and the selectable board colors. This document defines retained UI behavior and visual/accessibility constraints where applicable to the changed surface. It does not require running the entire regular browser, viewport, visual, or performance matrix for every UI change. Select proof using [docs/testing.md](testing.md); actual required gates remain unchanged.
 
 ## Layout
 
@@ -76,6 +75,8 @@ and provider connectivity are distinct; generic success badges must not imply se
 
 ## Validation
 
+Choose affected views and representative viewport/input cases. Shared responsive-layout or interaction primitives can require broader consumer coverage; explain the dependency. A local change does not automatically require every workspace, breakpoint, visual baseline, and performance run. Preserve the stated behavior and thresholds; narrower selection is not a relaxation.
+
 Geometry: 320x568, 390x844, 844x390, 768x1024, 1024x768, 1280x720, 1440x900,
 1920x1080, and breakpoint-adjacent widths. Board bounds (except the documented phone opening-study vertical offset) differ
 by at most 1 CSS pixel
@@ -106,7 +107,7 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 | Repertoire | [390px](../tests/browser/visual-baselines/repertoire-390.png) | [768px](../tests/browser/visual-baselines/repertoire-768.png) | [1280px](../tests/browser/visual-baselines/repertoire-1280.png) | [1920px](../tests/browser/visual-baselines/repertoire-1920.png) |
 | Settings | [390px](../tests/browser/visual-baselines/settings-390.png) | [768px](../tests/browser/visual-baselines/settings-768.png) | [1280px](../tests/browser/visual-baselines/settings-1280.png) | [1920px](../tests/browser/visual-baselines/settings-1920.png) |
 
-Update candidates deliberately with `npm run test:visual -- --update`, inspect the changed images, then run `npm run test:visual` without update. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.
+For an assigned rendering change that intentionally alters a baseline, the procedure for an explicitly selected full baseline update is `npm run test:visual -- --update`, deliberate review of the changed images, then `npm run test:visual` without update. This is not the ordinary default; use supported focused checks from [testing guidance](testing.md). Never refresh a baseline merely to hide a failure. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.
 
 The notification-center header and toast states were reviewed at phone, tablet,
 laptop, and wide widths in the pinned runner. Compact laptop action labels

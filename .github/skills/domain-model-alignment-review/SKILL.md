@@ -1,68 +1,28 @@
 ---
 name: domain-model-alignment-review
-description: 'Review and refactor code to consolidate similar objects and data structures into domain-based shared models. Use when improving stakeholder readability, reducing duplicate technical representations, and applying SOLID only when it simplifies the codebase and clarifies business intent.'
-argument-hint: '[scope or feature area]'
+description: 'Review explicitly assigned domain-model duplication or contract clarity. Preserve the requested scope and action type: review produces findings; refactoring occurs only when implementation is explicitly authorized. Not a mandatory step for ordinary feature, naming, or documentation changes.'
+argument-hint: '[explicitly assigned scope or feature area]'
 user-invocable: true
 ---
 
 # Domain Model Alignment Review
 
-## Outcome
-- Produce a focused refactor that combines similar object and data elements into shared domain-based models.
-- Make the relationship between code and product intent easier for non-technical stakeholders to follow.
-- Preserve behavior while reducing accidental complexity.
+## Applicability and authority
 
-## When To Use
-- Multiple types or payload shapes represent the same domain concept with minor technical differences.
-- Feature code is organized around framework or storage details instead of domain language.
-- A review request asks for simplification, better naming, or clearer domain traceability.
+Use only for domain-model work within the current assignment. Follow [root working rules](../../../AGENTS.md), [SPEC](../../../SPEC.md), and the assigned acceptance case. Selecting this skill does not authorize implementation, broaden the write boundary, or create additional acceptance requirements.
 
-## Inputs
-- Target scope: file set, folder, or feature area.
-- Domain intent statement: what user or business goal this code supports.
-- Constraints: backward compatibility, API contracts, migration limits, release timeline.
+A request to review, assess, explain, or recommend remains read-only unless edits are explicitly authorized. A justified no-change result is successful completion. Similar names or fields alone do not establish duplicate responsibilities.
 
 ## Procedure
-1. Define domain intent first.
-   - Write a one-paragraph statement in domain language, not framework language.
-   - Identify core entities, value objects, and actions.
-2. Inventory duplicated or parallel structures.
-   - List objects, DTOs, state slices, and response shapes that model the same concept.
-   - For each item, record where it is used and which fields are truly domain fields versus transport or UI fields.
-3. Choose the consolidation strategy.
-   - Default to a shared core plus adapters when domain meaning is shared but boundary concerns differ.
-   - Use direct merge only when two structures have the same invariant and lifecycle.
-   - Keep separate models only when invariants or lifecycle differ in a domain-significant way.
-4. Refactor toward a shared domain model.
-   - Create or promote domain objects in a domain-oriented module.
-   - Move validation and invariants close to the shared model.
-   - Rename symbols to domain terms stakeholders recognize.
-5. Apply SOLID selectively to simplify.
-   - Single Responsibility: split mixed validation, persistence, and presentation logic.
-   - Open/Closed: extend through small adapters at boundaries instead of duplicating domain rules.
-   - Interface Segregation and Dependency Inversion: introduce abstractions only at clear boundary seams.
-   - Reject abstractions that increase indirection without reducing real complexity.
-6. Protect behavior with tests.
-   - Add or update tests that verify observable outcomes.
-   - For any user-reported defect touched by this change, add a named regression test and record it in `tests/REGRESSIONS.md`.
-7. Prepare a stakeholder-readable summary.
-   - Map old technical structures to new domain structures.
-   - Explain how the new model reflects original product goals.
 
-## Decision Points
-- If consolidation changes public contracts, stop and define an explicit migration or compatibility layer.
-- If two models only look similar but enforce different domain rules, do not merge them.
-- If a proposed SOLID abstraction adds more concepts than it removes, prefer a simpler concrete design.
+1. Read the named scope, its public contracts, and the directly relevant consumers.
+2. Distinguish genuine duplication from deliberate differences in ownership, invariants, lifecycle, or transport representation.
+3. Report concrete findings and the smallest useful correction. Prefer retaining a simple existing design when consolidation has no clear benefit.
+4. Only for authorized implementation, make the assigned correction within its allowed files. Do not introduce a shared model, adapter framework, migration, or renamed API merely to satisfy this skill.
+5. Use [affected-check selection](../../../docs/testing.md#select-the-smallest-relevant-proof). Fixed defects need named owning regressions; existing coverage may suffice. Follow component-local versus transitional registration rules rather than always editing the root registry.
 
-## Completion Checks
-- Every consolidated model has a clear domain name and documented purpose.
-- Duplicate domain logic is removed from at least one technical layer.
-- Existing behavior is preserved and verified with automated tests.
-- Regression coverage is added for user-reported defects and listed in `tests/REGRESSIONS.md`.
-- A non-technical stakeholder can trace each key domain concept to a single primary model.
+## Stop and report
 
-## Deliverables
-- Refactored code with shared domain-based objects.
-- Updated tests and regression entries where required.
-- Stakeholder mapping table: old technical structures -> new domain model.
-- Short change log in domain language: what was unified, why, and what remains intentionally separate.
+Stop when the requested review or implementation acceptance is complete. Missing authority or an out-of-scope contract change is a reported blocker, not permission to build a compatibility programme.
+
+Use the existing task/PR. Report findings or the implemented outcome, relevant evidence, and material limitations. No minimum amount of refactoring, stakeholder mapping table, separate change log, new test, or code change is required solely to complete this skill.
