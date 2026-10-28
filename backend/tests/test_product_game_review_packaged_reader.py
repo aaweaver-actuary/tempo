@@ -142,10 +142,10 @@ command = GameEncounter.model_validate_json(json.dumps(payload["command"]))
 now = datetime.fromisoformat(command.detected_at.replace("Z","+00:00"))
 effect = Effect(key=command.key,source_revision=command.source.source_revision,received_at=now,
     status="held",encounter=command,payload_hash=encounter_digest(command),
-    reason="synthetic_reader_hold",disposition="first_introduction",admission_status="pending",
+    reason="reanalysis",disposition="first_introduction",admission_status="pending",
     deferred_reason="authority_unavailable",observation_recorded=True,
     control=GameEffectControl(key=command.key,source_revision=command.source.source_revision,
-                              action="hold",reason="synthetic_reader_hold"))
+                              action="hold",reason="reanalysis"))
 with connect("tempo_writer") as database:
     with database.transaction():
         database.execute("SET LOCAL transaction_timeout='250ms'")
