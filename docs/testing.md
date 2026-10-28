@@ -1,43 +1,49 @@
 # Test selection and qualification
 
-Choose checks from the changed behavior, owning component, and actual dependency
-and consumer graph. Validate the affected boundary without repeating unrelated
-suites.
+Choose development checks from changed behavior and concrete affected boundaries. This current selection policy governs local work; historical receipts below do not add acceptance requirements to a new assignment. Actual executable/hosted qualification rules remain separate and are not changed by this document.
 
 ## Select the smallest relevant proof
 
+State a finite selection briefly in the existing task/PR. Reuse existing tests and runners. Do not create a separate test plan, evidence platform, or new guard framework for ordinary work.
+
 | Change | Development evidence |
 | --- | --- |
-| Documentation or instructions only | Review the diff and links; verify documented commands against their definitions; run `npm run check:conflicts` and `git diff --check`. No runtime suite unless edited text is consumed by a test, script, or configuration. |
-| Pure package or module | Run its owning package tests and relevant import/API contracts. No unrelated database, Python, model-worker, or whole-product suite. |
-| UI-only behavior or rendering | Run affected unit/component checks; add the real browser spec for browser behavior and visual checks only for rendering changes. UI-only work does not require PostgreSQL, Python, or model-worker suites. |
-| API or shared contract | Test the producer, affected consumers, and contract/error cases. Add integration boundaries when unit tests cannot prove the real interaction. |
-| Persistence, transaction, migration, receipt, or recovery | Run focused owning-component tests and real tests against that component's PostgreSQL boundary. Mocked or SQLite-only tests do not prove PostgreSQL behavior. |
-| Shared runtime, security, CI selection, build configuration, or cross-component change | Include actual affected consumers and integration boundaries. Broaden for unknown/shared dependencies with a stated reason. |
+| Documentation/instructions only | Diff, affected links, conflict/whitespace checks. Check executable documentation consumers only when their consumed contract changes; prose is not automatically inert. |
+| Internal component behavior | Owning affected tests and relevant existing public-boundary checks. |
+| Public contract or semantics | Producer and affected consumer checks, including representative current values and error/retry semantics. |
+| Persistence, locking, rollback, or replay | Focused proof at the actual owning infrastructure boundary; mocks do not establish PostgreSQL semantics. |
+| Component wiring or shared runtime | Focused assembled selection for the changed interaction and preserved safeguards. More than one case may be necessary; this is not a universal full-product suite. |
+| UI-only behavior | Relevant component checks and browser proof where real browser behavior matters; no unrelated database/backend suites. |
+| Shared layout, dependencies, security, or verification infrastructure | Affected consumers and concrete shared risks, with the broader selection explained. |
 
-For a reported defect fixed by the change, add a named regression to its regular
-owning suite and
-follow [regression ownership and transitional registration](#regression-ownership-during-reconstruction).
-Verify the intended cases ran: zero-selected, skipped, failed, cancelled, or
-missing required tests are not passes. Diagnose failures in the smallest
-relevant scope. Fix causally related failures with the owning change; route
-unrelated failures to their own owner rather than broadening the task
-automatically.
+Matching types alone do not prove semantic compatibility. Use current relevant identity, timestamp precision, missing-value, admission, retry, and transaction semantics rather than inventing convenient incompatible fixtures.
 
-Reuse passing evidence only when relevant source, dependencies, fixtures,
-commands, and toolchain inputs remain unchanged. Draft status or unrelated
-advancement of `main` alone does not require rerunning all tests. Changed
-relevant inputs require fresh evidence for the affected scope.
+Component workers own component proof. The delivery owner owns changed assembled behavior. Do not make every worker repeat the same assembly run or unchanged dependency suite.
+
+Additional or repeated checks require relevant changed inputs, an observed failure or concrete uncovered risk, an explicit assignment, or an actual required gate. Before another broad local run, state the unanswered question and why existing evidence cannot answer it. Generic confidence, handoff, or a new reviewer is insufficient.
+
+Reuse passing evidence when relevant source, dependencies, configuration, fixtures, harness, selection/commands, and toolchain inputs remain unchanged. Prose-only commits and unrelated main advancement do not themselves invalidate local runtime evidence. Actual hosted freshness rules may still require new qualification; report that distinction.
+
+Reuse compatible artifacts/caches through existing supported mechanisms. Keep mutable test state isolated and task-owned. Do not bypass a runner's safeguards or invent a new caching/certification system to avoid setup. Install only selected prerequisites. Do not duplicate a broad hosted qualification locally without a concrete diagnostic need.
+
+A failure is classified as product/contract, harness/fixture, environment, or qualification-policy failure, with uncertainty stated. Fix causally related defects within scope. Route unrelated failures to their owner; do not automatically run a second full baseline or broaden the feature. Do not claim a failure is unrelated without evidence.
+
+Repeat a failed check after a relevant repair, changed environment condition, or explicit diagnostic hypothesis—not simply until it passes. Retain the original failure; a diagnostic success is not automatically qualification. Never count unavailable, cancelled, skipped, zero-selected, or failed required checks as passes.
+
+Preserve still-required assertions and invariants. A deliberately changed requirement can justify replacing its obsolete expectation; identify the requirement and replacement proof. A legitimate fixture/harness correction must preserve the intended behavioral proof. Do not relax assertions, timeouts, snapshots, or controls merely to get green.
+
+Stop local validation when the selected acceptance and safeguards are established. Missing hosted qualification or installation is reported separately, not used to prolong otherwise complete component work.
 
 ## Regression ownership during reconstruction
 
 Every user-reported defect fixed by a change requires a named regression that
-is discoverable and executable through its regular owning suite. Under the
-[single-user MVP delivery policy](../AGENTS.md#deliver-a-usable-single-user-mvp),
-non-blocking edge cases may be deferred to linked issues with a safe fallback,
-affected scope, user impact and follow-up acceptance criteria. They do not
-automatically block delivery; issues and prose entries are not regression
-coverage. Preserve existing regressions and required checks.
+is discoverable and executable through its regular owning suite. An existing
+suitable named regression may satisfy this requirement; do not duplicate it.
+Preserve existing regressions and required checks.
+
+Record safe nonblocking limitations in the existing task or PR. Create a separate
+issue only for useful independently tracked follow-up. A limitation record is
+not regression coverage.
 
 For tests still governed by the legacy runner and its registration checks,
 continue to record coverage in `tests/REGRESSIONS.md` until replacement
@@ -89,6 +95,8 @@ boundary requires them.
 
 ## Desired policy and current hosted behavior
 
+Separate local development evidence, configured CI execution, actually enforced hosted requirements, and installation qualification. Verify hosted settings when a merge claim depends on them; do not infer requirements solely from a historical document or infer permission to bypass project acceptance from an absent setting. Current classification/freshness rules may force broader work than local policy. Report that mismatch for a separately assigned correction. Do not change or bypass those rules in an ordinary feature or instruction task.
+
 The adopted policy in [the component architecture guide](architecture/component-reconstruction.md)
 is component-local qualification plus affected contract and boundary proofs.
 Full-system testing is an explicit integration or periodic checkpoint, not a
@@ -112,10 +120,7 @@ use explicitly imported Worker types or its own runtime-specific configuration.
 
 ## Current runner regression inventory
 
-The current ordinary qualification inventory has six global Chromium smoke
-cases. This records current runner selection; the target architecture may move
-tests to their component owners or replace mechanisms with explicitly justified
-equivalent proofs. Preserve the invariant and its owning evidence.
+FAST/STUDY selection and the retained FULL browser inventory are distinct. Use their executable inventories for current selection. The literal count and global-case table retained below are also consumed by a CI reliability test; they are not an instruction to run that inventory for every assignment.
 
 Global critical browser smoke: **5 cases**.
 
@@ -269,7 +274,7 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 
 ## Historical CI reliability and validation evidence
 
-> Sections below preserve earlier runner/qualification audits and task validation records at their captured revisions. Some proposals and merge-policy descriptions were superseded by the October 14 component reconstruction in [#192](https://github.com/aaweaver-actuary/tempo/issues/192). Use the current selection policy and commands at the top of this file and the [component architecture guide](architecture/component-reconstruction.md); do not treat the historical recommendations as active instructions. Original findings and results are retained.
+> These are dated audit/task receipts, not current task-selection instructions. Current local policy is at the top of this file; actual gates come from current executable source and hosted settings. The later `M02 package-local transition` and other component-specific appendices are scoped command references, not universal prerequisites. Historical findings and results remain evidence at their recorded revisions.
 
 ### CI reliability maintenance: decomposition boundary
 
