@@ -5415,7 +5415,10 @@ fixture, repeat snapshot, illegal-tail rejection, competing-own-response hold
 and finite route bound. `test_pgn_import_storage_boundary.py` covers preserved
 main selection/training depth, existing batching/certification and exact explicit
 graph pin. `test_explicit_pgn_scope.py` covers fixed receipt/generation/manual-pause
-SQL scope. `test_explicit_pgn_preparation.py` covers leased kind/phase/body recheck, transaction recheck, unchanged
+SQL scope and evaluates actual candidate predicates over supplied facts without
+a database: current receipt-scoped graph/integrity can prepare with Study-only
+on, while missing receipts, paused work, ordinary optional/old work and defensive
+admission retain their guards. `test_explicit_pgn_preparation.py` covers leased kind/phase/body recheck, transaction recheck, unchanged
 daily-queue priority and unrelated paused work. These fake-driver tests do not
 prove native locking, atomicity or complete worker execution.
 `tests/unit/pgn-import-dialog-regressions.test.tsx` adds finite saved/pending and

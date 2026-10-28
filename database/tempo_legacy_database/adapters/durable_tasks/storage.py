@@ -121,10 +121,13 @@ def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds, *, explicit_im
             reclaimed = database.execute(reclaim_statement, reclaim_parameters).fetchall()
         return reclaimed
 
+    # The receipt predicate limits this path to its current graph/integrity;
+    # ordinary claims retain the global Study-only and defensive admission gate.
+    admission_clause = 'TRUE' if explicit_imports_only else task_admission_sql('background_tasks.kind', defensive_kinds)
     candidate_statement = f"""SELECT * FROM background_tasks
                     WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
                       AND {claimable('durable', 'background_tasks.id')}
-                      AND {task_admission_sql('background_tasks.kind', defensive_kinds)}
+                      AND {admission_clause}
                     ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1"""
     # The explicit path is PostgreSQL-only. Translate before its background
     # transaction begins, retaining the existing short database budget.
