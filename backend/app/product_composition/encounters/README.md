@@ -144,3 +144,70 @@ receiver/capture preparation before the short history writer opens. This moves
 code loading only: operation-stop/foreground checks, source and current-mapping
 fences, canonical introduction, priority promotion and command receipt/cursor
 still share the existing transaction. There is no cache warmup or extra task.
+
+
+Retained-history and pending-maintenance composition prepare the Study-owned
+priority overlay before opening the short command writer. The optional immutable
+value is passed through to Study; no queue policy or query is implemented here.
+Actual operation-stop/foreground admission and source/current-task fences still
+run in their original units. Study's canonical writer rechecks current presentation
+facts before atomically changing only the planned positions with its receipt.
+
+
+## Decoupled priority intake candidate (current)
+
+This minimal correction advances from installed source baseline `1e273f53`,
+consumes #487 `8803db3b`, and takes only #489's immutable-encounter producer
+`65881c5c`; it does not adopt continuous synchronization or repository-wide moves.
+The earlier synchronous availability receipt above is historical evidence only.
+
+`receive_captured_encounter` / `receive_admitted_encounter` now construct only
+Study's current intake capability. Their supported arguments no longer include
+introduction policy, introduction capability or prepared queue ordering.
+Successful intake commits the original observation once with
+`reason=study_priority_pending`, `admission_status=pending`, no availability
+promise and no queue preparation/promotion/date lock. A producer receives facts
+and a durable receipt; it does not choose Study's learning disposition.
+
+The existing independent Study wake calls `claim_feedback_sweep`, then
+`execute_feedback_sweep`, then `refresh_encounter(observed.key)` for that exact
+accepted identity. Queue preparation occurs before its bounded writer. The
+sweep accepts the parsed `payload` returned by the real `claim_task` API as well
+as the stored `payload_json` shape. Cursor/effect rollback cannot remove the
+already-committed intake. Games absence does not stop Study pickup.
+
+```mermaid
+flowchart LR
+  Facts["Immutable original game encounter"] --> Intake["Target/source-fenced Study intake"]
+  Intake --> Pending["Committed pending evidence and original receipt"]
+  Wake["Existing Study wake: discover and claim"] --> Pending
+  Pending --> Refresh["Independent Study refresh_encounter: exact key"]
+  Refresh --> Admission["Current canonical introduction / protected ordering"]
+  Admission --> Available["Available status; ordinary Study queue"]
+```
+
+The regular integration case
+`test_product_deferred_priority_integration.py::test_real_shape_history_intake_commits_pending_then_study_refresh_without_games`
+reuses the owner's honest synthetic 731-queue/4197-review/62-equivalent-route
+fixture. It drives the concrete retained-history receiver, commits/replays pending
+while queue preparation is disabled, invokes the real Study discovery/claim,
+then refreshes with Games imports forbidden. The original receipt/effect remains
+one; 25 protected attempts and the target's nine reviews/nine receipts are
+unchanged. This case passed (4.18s); the two stored-payload compatibility cases
+passed (2.46s). The updated 18-case integration file passed (6.04s), explicitly
+committing intake before separate Study refresh. No helper refreshes during intake.
+
+Owner evidence is reused: #487's two isolation/44 affected cases and constrained
+worker whole transactions (14.72ms intake, 83.63ms refresh under 250ms). These are
+owner measurements, not a new combined packaged or live run by #488. No image
+build, engine, new DDL, broker, scheduler, inline fallback or broad suite was added.
+
+Public interface path/guard migration is assigned to #482/#501. The exact
+compatibility construction paths in `encounters/receiver.py` and
+`feedback_maintenance.py` remain designated outer composition, with removal of
+the old adapter import paths owned by that interface publication. #488 does not
+move their reserved interfaces or import a sibling producer into Study.
+
+Release qualification still requires the sole release owner to deploy the exact
+qualified bundle and resume the saved real case. The saved private run was not
+read or replayed here; synthetic success is not a claim that the live 0/1 changed.

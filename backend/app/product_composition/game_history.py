@@ -56,19 +56,18 @@ def current_retained_history_comparer(*, capture=capture_game, prepare_capture=N
 
 
 def current_retained_history_receiver(*, policy_identity, operation_stopped,
-                                      introduction_policy, clock,
-                                      receive_admitted=None, prepare_capture=None):
+                                      clock, receive_admitted=None, prepare_capture=None):
     """Bind the actual admitted receiver and owner policy without a fallback."""
-    if not callable(operation_stopped) or not callable(clock) or introduction_policy is None:
+    if not callable(operation_stopped) or not callable(clock):
         raise ValueError("explicit_history_operation_control_policy_and_clock_required")
     def receive(database, *, capture, snapshot, command):
         operation = receive_admitted
         if operation is None:
             from .encounters import receive_admitted_encounter
             operation = receive_admitted_encounter
-        return operation(database, capture=capture, snapshot=snapshot, command=command,
-            operation_stopped=operation_stopped, introduction_policy=introduction_policy, clock=clock)
-    return RetainedEncounterReceiver(policy_identity, receive=receive,
+        return operation(database,capture=capture,snapshot=snapshot,command=command,
+            operation_stopped=operation_stopped,clock=clock)
+    return RetainedEncounterReceiver(policy_identity,receive=receive,
         prepare_capture=prepare_capture or prepare_retained_capture)
 
 
@@ -221,7 +220,7 @@ class RetainedEncounterReceiver:
             # The wrapper retains the canonical source locks in this borrowed
             # transaction. Check factual filters under those locks afterwards;
             # a mismatch rolls back its provisional effect and the task cursor.
-            receipt = self.receive(database, capture=captured, snapshot=snapshot, command=command)
+            receipt = self.receive(database,capture=captured,snapshot=snapshot,command=command)
             assert_history_selection(database, selection, (command.key.game_id,), fence=True)
             return receipt
         raw = captured["game"]

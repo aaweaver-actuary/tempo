@@ -23,25 +23,20 @@ def test_existing_operation_or_foreground_hold_prevents_all_encounter_effects(mo
     with pytest.raises(BackgroundAdmissionDeferred):
         receiver.receive_admitted_encounter(object(), capture=None, snapshot=None, command=None,
             operation_stopped=(lambda: None) if blocked == "unknown" else stopped.is_set,
-            introduction_policy=None, clock=None)
+            clock=None)
 
 
-def test_positive_existing_admission_selects_only_targeted_exception(monkeypatch):
+def test_positive_existing_admission_reaches_only_target_intake(monkeypatch):
     stopped = Event()
-    database, capability, policy, receipt = object(), object(), object(), object()
+    database, receipt = object(), object()
     order = []
     monkeypatch.setattr(activity_gate, "check_background_admission", lambda: order.append("foreground"))
-    def canonical(database_argument, *, allowance, paused):
-        assert database_argument is database and allowance == "encounter_exception" and paused is False
-        order.append("canonical")
-        return capability
     def receive(database_argument, **values):
-        assert database_argument is database and values["introductions"] is capability
-        assert values["introduction_policy"] is policy
+        assert database_argument is database
+        assert set(values)=={"capture","snapshot","command","clock"}
         order.append("receive")
         return receipt
-    monkeypatch.setattr(receiver, "current_owner_encounter_introductions", canonical)
     monkeypatch.setattr(receiver, "receive_captured_encounter", receive)
     assert receiver.receive_admitted_encounter(database, capture=None, snapshot=None, command=None,
-        operation_stopped=stopped.is_set, introduction_policy=policy, clock=None) is receipt
-    assert order == ["foreground", "canonical", "receive"]
+        operation_stopped=stopped.is_set, clock=None) is receipt
+    assert order == ["foreground", "receive"]

@@ -9,6 +9,25 @@ from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
 
 
+def _study_refresh(case, capture, snapshot, command):
+    """Separate Study transaction after committed intake; never called by intake."""
+    from app.services.queue_priority_promotion import prepare_priority_promotion
+    from app.services.queue_admission_adapter import current_owner_encounter_introductions
+    from app.study.encounter_feedback import EncounterIntroductionPolicy
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_feedback
+    from test_product_game_lapse import NOW
+    prepared = prepare_priority_promotion(NOW.date().isoformat(), command.decision.presentation_id,
+        read=case.transaction)
+    with case.transaction() as database:
+        introductions = current_owner_encounter_introductions(database,
+            allowance="encounter_exception", paused=False)
+        owner = current_owner_encounter_feedback(database, retained_owner_capture=capture,
+            snapshot=snapshot, clock=lambda: NOW, introductions=introductions,
+            introduction_policy=EncounterIntroductionPolicy("encounter_exception"),
+            prepared_priority=prepared)
+        return owner.refresh_encounter(command.key)
+
+
 @pytest.fixture(autouse=True)
 def normal_study_clock(monkeypatch):
     from app import queue_commands
@@ -57,7 +76,7 @@ def test_retained_history_fixture_has_exact_current_mapping_and_protected_attemp
 
 
 @pytest.mark.parametrize("played", ["e2e4", "d2d4"])
-def test_unintroduced_encounter_retains_one_honest_pending_receipt_without_a_policy(
+def test_unintroduced_encounter_intake_commits_pending_without_queue_capability(
     owned_postgres, monkeypatch, played,
 ):
     from app.product_composition.encounters import receive_captured_encounter
@@ -70,13 +89,13 @@ def test_unintroduced_encounter_retains_one_honest_pending_receipt_without_a_pol
         before = case.readback()
         with case.transaction() as database:
             first = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
         with case.transaction() as database:
             duplicate = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
         assert first.observation_recorded and first.disposition == "first_introduction"
         assert first.admission_status == "pending" and first.available_by is None
-        assert first.reason == "encounter_introduction_policy_pending"
+        assert first.reason == "study_priority_pending"
         assert duplicate.owner_receipt_id == first.owner_receipt_id and duplicate.detected_at == first.detected_at
         assert case.readback() == before
 
@@ -93,8 +112,11 @@ def test_historical_priority_reaches_ordinary_study_without_rewinding_later_lear
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
         with case.transaction() as database:
             receipt = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
-        assert receipt.disposition == "review_priority" and receipt.admission_status == "available"
+                clock=lambda: NOW)
+        assert receipt.disposition == "review_priority" and receipt.admission_status == "pending"
+        assert receipt.available_by is None and case.readback() == before
+        available = _study_refresh(case, capture, snapshot, command)
+        assert available.admission_status == "available" and available.owner_receipt_id == receipt.owner_receipt_id
         after = case.readback()
         assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]
         assert tuple(row for row in after["origins"] if row[1] == case.protected_id) == before["origins"]
@@ -105,7 +127,7 @@ def test_historical_priority_reaches_ordinary_study_without_rewinding_later_lear
             assert _ordinary_review(database, case.card_id, target, "priority:"+case.card_id)["persisted"]
         with case.transaction() as database:
             replay = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
             assert replay.status == "settled" and replay.admission_status == "settled"
             assert replay.owner_receipt_id == receipt.owner_receipt_id and replay.detected_at == receipt.detected_at
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
@@ -146,9 +168,9 @@ def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgr
         before = case.readback()
         with case.transaction() as database:
             first = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
             duplicate = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
             assert first.disposition == "review_priority" and duplicate.owner_receipt_id == first.owner_receipt_id
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
         after = case.readback()
@@ -162,11 +184,10 @@ def test_targeted_zero_allowance_study_only_encounter_reaches_first_real_study_o
     from threading import Event
     from app.product_composition.encounters import receive_admitted_encounter
     from app.services.queue_application import seed_queue
-    from app.study.encounter_feedback import EncounterIntroductionPolicy
     from tempo_legacy_database.adapters import postgres_store
     from test_product_game_lapse import NOW
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
-    policy, stopped = EncounterIntroductionPolicy("encounter_exception"), Event()
+    stopped = Event()
     with retained_history_case(owned_postgres, state="unintroduced", played=played,
             ordinary_limit=0, study_only=True) as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
@@ -177,12 +198,18 @@ def test_targeted_zero_allowance_study_only_encounter_reaches_first_real_study_o
         def receive(database):
             return receive_admitted_encounter(database, capture=capture, snapshot=snapshot,
                 command=command, operation_stopped=stopped.is_set,
-                introduction_policy=policy, clock=lambda: NOW)
+                clock=lambda: NOW)
         with case.transaction() as database:
             first = receive(database)
-            assert first.disposition == "first_introduction" and first.admission_status == "available"
+            assert first.disposition == "first_introduction" and first.admission_status == "pending"
+            assert first.available_by is None
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
             assert tuple(database.execute_native("SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1").fetchone()) == (0, 1)
+            assert database.execute_native("SELECT introduced_at FROM cards WHERE id=%s", (case.card_id,)).fetchone()[0] is None
+        assert case.readback() == before
+        available = _study_refresh(case, capture, snapshot, command)
+        assert available.admission_status == "available" and available.owner_receipt_id == first.owner_receipt_id
+        with case.transaction() as database:
             assert database.execute_native("SELECT introduced_at FROM cards WHERE id=%s", (case.card_id,)).fetchone()[0] == NOW.date().isoformat()
             # The ordinary seed/refresh must keep the targeted introduction and
             # protect the already presented unrelated head under saved controls.
@@ -208,7 +235,6 @@ def test_stopped_operation_defers_before_first_introduction_and_resumes_once(own
     from threading import Event
     from app.product_composition.encounters import receive_admitted_encounter
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-    from app.study.encounter_feedback import EncounterIntroductionPolicy
     from tempo_legacy_database.adapters import postgres_store
     from test_product_game_lapse import NOW
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
@@ -216,12 +242,11 @@ def test_stopped_operation_defers_before_first_introduction_and_resumes_once(own
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
-        policy = EncounterIntroductionPolicy("encounter_exception")
         before = case.readback()
         def receive(database):
             return receive_admitted_encounter(database, capture=capture, snapshot=snapshot,
                 command=command, operation_stopped=stopped.is_set,
-                introduction_policy=policy, clock=lambda: NOW)
+                clock=lambda: NOW)
         with pytest.raises(BackgroundAdmissionDeferred, match="operation is stopped"):
             with case.transaction() as database:
                 receive(database)
@@ -231,8 +256,12 @@ def test_stopped_operation_defers_before_first_introduction_and_resumes_once(own
         stopped.clear()
         with case.transaction() as database:
             first = receive(database)
-            assert first.admission_status == "available"
+            assert first.admission_status == "pending" and first.available_by is None
             assert receive(database).owner_receipt_id == first.owner_receipt_id
+            assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
+        available = _study_refresh(case, capture, snapshot, command)
+        assert available.admission_status == "available" and available.owner_receipt_id == first.owner_receipt_id
+        with case.transaction() as database:
             assert database.execute_native("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 1
 
 
@@ -259,7 +288,7 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
         with case.transaction() as database:
             pending = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
-                introductions=None, introduction_policy=None, clock=lambda: NOW)
+                clock=lambda: NOW)
             assert pending.admission_status == "pending"
             task = durable_tasks.enqueue_task_in_transaction(database, KIND, case.repertoire_id, {"after": ""})
             unrelated_kind = "unrelated_optional_encounter_fixture"
@@ -311,12 +340,11 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
     from app.product_composition.encounters import (
         prepare_captured_encounters, receive_admitted_encounter, importance_from_encounters,
     )
-    from app.study.encounter_feedback import EncounterIntroductionPolicy
     from tempo_legacy_database.adapters import postgres_store
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
     from test_product_game_lapse import NOW
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
-    stopped, policy = Event(), EncounterIntroductionPolicy("encounter_exception")
+    stopped = Event()
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
         # The operator-selected window is exactly these two already-retained
         # synthetic IDs. Actual bounded history selection/progress stays #491's.
@@ -331,11 +359,17 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
         def receive(database, item, command):
             return receive_admitted_encounter(database, capture=item.capture, snapshot=item.snapshot,
                 command=command, operation_stopped=stopped.is_set,
-                introduction_policy=policy, clock=lambda: NOW)
+                clock=lambda: NOW)
         with case.transaction() as database:
             protected = _issue(database, case.protected_id)
             receipts = tuple(receive(database, item, command) for item in prepared for command in item.encounters)
-            assert [receipt.disposition for receipt in receipts] == ["first_introduction", "frequency_only"]
+            assert [receipt.disposition for receipt in receipts] == ["first_introduction", "first_introduction"]
+            assert all(receipt.admission_status == "pending" and receipt.available_by is None for receipt in receipts)
+            assert database.execute_native("SELECT introduced_at FROM cards WHERE id=%s", (case.card_id,)).fetchone()[0] is None
+        for item in prepared:
+            for command in item.encounters:
+                assert _study_refresh(case, item.capture, item.snapshot, command).admission_status == "available"
+        with case.transaction() as database:
             current, = CurrentOwnerDecisions(database, retained_owner_capture=prepared[0].capture,
                 snapshot=prepared[0].snapshot).current_encounter(commands[0])
             importance, = importance_from_encounters(workspace_id=commands[0].key.workspace_id,

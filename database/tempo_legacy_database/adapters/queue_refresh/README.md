@@ -124,3 +124,18 @@ One-time source proof compares all 79 queue query/method/parameter/result expres
 [Foreground refresh projection](foreground.py) owns the unchanged named queue-projection write used after canonical task enqueue. Existing `queue_application` compatibility constant aliases it and request_queue_refresh_in_transaction calls it at the original point on the same borrowed transaction. Coordinated legacy review consumers use this same operation; no second SQL implementation or task/commit authority is introduced.
 
 [Queue application eligibility and seeding storage](application/README.md) holds complete original fixed queries and sparse unlock selection; application allowance/seed/unlock/phase/clock/feedback decisions remain outside. The category name identifies its consumer, not application policy inside the database tree. Randomization/quarantine/materialization/requeue queries now reside in the same root category; queue_application contains policy only with no SQL/direct driver/dialect operations. The existing queue_admission_adapter capacity-reader bridge is separated too: fixed borrowed rows stay root, pure deterministic route selection remains application code. Original public reader wrapper remains compatible.
+
+
+Native presentation captures now bind reviewed-card and available-entry IDs with
+arrays, so queue size does not generate a new SQL parser tree. The fixed
+`prepare_presentation_queries(miss_reason)` compiles immutable availability SQL
+before a short unit opens; no row data or eligibility result is cached. The
+native reader re-evaluates all original current availability predicates in the
+writer. Explicit legacy read callbacks and SQLite keep their original query
+shape. See [protected priority promotion](../study/review/README.md#actual-scale-protected-promotion).
+
+`priority_ownership_state` evaluates issued-origin, evidence-attempt and teaching
+membership as uncorrelated sets, avoiding a historical table scan per queued
+card when current-day statistics underestimate the queue. Its digest fields,
+row-version/ownership/protection guards and NULL-as-absent semantics are unchanged.
+No schema, writer, transaction boundary, public signature or timeout changed.

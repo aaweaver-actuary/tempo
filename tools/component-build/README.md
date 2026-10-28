@@ -73,6 +73,92 @@ path dependencies; root CI's `backend/requirements-test.txt` installs both distr
 The backend image copies only the declared scheduling and chess-core packages before installing them.
 These adapters do not establish an independently deployable Learning or Study Web.
 
+## Component-owned interface and priority-intake guard
+
+`check-interface-boundaries.mjs` extends the existing TypeScript import parser
+and Python AST checker. It reads source only: no application import, database,
+producer, worker, engine or hosted CI activation. The integration owner supplies
+the **single authoritative** component/path map; this tool creates no second
+production ownership registry.
+
+```sh
+node tools/component-build/check-interface-boundaries.mjs <owner-map.json>
+node --test --test-concurrency=1 tools/component-build/tests/interface-boundaries.test.mjs
+```
+
+Before the global owner map is joined, the same call walker also supports
+`--intake <source.py> <entry-functions comma-list> <forbidden-call-patterns comma-list> [source-root]`.
+This checks the named function and statically resolved helpers in its source
+directory, rejects direct SQL and opaque loaders, and permits frozen-field
+comparisons that do not invoke dynamic capabilities. The functional Study
+selection uses it through `backend/tests/test_study_priority_interface.py`;
+this does not create a competing component ownership map.
+
+The optional second checker argument is a disposable source root for negative
+controls. `TEMPO_COMPONENT_PYTHON` selects the existing Python interpreter;
+the Python source reader uses only the standard library. The regular
+`npm run test:components` command already discovers the negative controls.
+
+Each map component supplies `id`, repository-relative `sources`, designated
+`interfaces`, `modules` (import-prefix to source path), `dependencies` (component
+IDs), and `tables` (owned SQL relation names). A named composition component may
+set `composition: true`; only that owner wires private implementations, and
+domains cannot import it. Explicitly list source roots for all participating
+owners. An interface belongs beneath its owner's source root, has a README and
+cannot designate the entire implementation directory as public. Python
+interfaces require literal `__all__`; TypeScript interfaces use named exports.
+
+`intakes` optionally identifies an exact `path`, `functions` (for example
+`EncounterFeedback.accept_encounter`) and `forbiddenCalls` patterns for broad
+eligibility enumeration, preparation, refresh and promotion. The guard follows
+statically resolved local/imported helper calls and rejects prohibited capability
+references as well as direct calls. Use the receiving owner's actual names;
+the guard does not invent a second queue or intake API.
+
+Enforcement covers Python and JavaScript/TypeScript private imports (including
+lazy/conditional/type-only imports), unavailable public exports and namespace
+member bypass, interface-to-private/infrastructure leaks, known lifecycle/I/O
+calls, source symlinks/escapes, direct dependency cycles, and known SQL write
+primitives crossing table ownership. Unknown targets at recognized database
+execution sites fail closed. An interface cannot expose an implementation by
+renaming its private import. Old compatibility modules may forward **to** the new
+interface; the new interface must not back-import its compatibility wrapper.
+
+This is not a SQL engine or a whole-program semantic effect proof. Computed
+capability dispatch, callbacks supplied at runtime, SQL stored procedures and
+unsupported languages require their existing owner/compiler/runtime checks.
+Do not claim static success proves bounded admission or failure isolation.
+Study's runtime tests must still prove acceptance survives refresh failure,
+accepted work is consumed with Games absent, one effect on replay, and protected
+attempt safety. The required affected-component suite must include those actual
+cases and the existing #491 public-injection/failure/replay/cold-Study tests;
+map/suite registration is an integration requirement, not an optional README task.
+
+### Short README convention for each owner's `interfaces/`
+
+Keep the README next to the interface code. In a few explicit paragraphs or a
+small table, state:
+
+- Responsibility and state/effect owner; designated module and supported exports.
+- Commands and data inputs/outputs; no database handles, queue implementation,
+  worker objects or private storage types in the public surface.
+- Allowed dependency direction: consumers import the interface; composition
+  alone supplies concrete implementations. Study never requires optional Games
+  to save, select, consume or refresh accepted work.
+- State semantics. For priority intake, **accepted** means durably recorded;
+  **pending** has not established queue availability; **available** requires the
+  Study owner's actual serving receipt. Pure components explicitly say that
+  admission states are not applicable rather than manufacturing them.
+- Failure/retry/idempotency: stable logical key, receipt/outcome, original source
+  and detection preserved; optional refresh failure cannot undo acceptance.
+- Forbidden caller behavior: private imports/calls, cross-owner table writes,
+  inline broad queue eligibility/preparation/promotion or availability guesses.
+- The exact enforced checker/required test command and its actual limitations.
+
+The checker enforces interface location, explicit exports, README presence and
+source rules. A human owner still reviews whether the README and public types
+truthfully describe supported behavior; a heading is not runtime evidence.
+
 ## Test lanes and identities
 
 `test-inventory.json` classifies every current legacy unit file exactly once as

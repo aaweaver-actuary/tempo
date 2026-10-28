@@ -56,3 +56,9 @@ with that unadopted continuous-sync component; it is not a prerequisite here. Ch
 The generic negative controls are collected by `npm run test:components`.
 Static imports/calls cannot prove arbitrary injected callback behavior; the two
 native #487 tripwire cases remain required in `qualify_priority.py`.
+
+The historical-evidence ownership regression also uses the existing disposable
+PostgreSQL fixture and a cached qualified worker image, with no pull/build.
+`TEMPO_PRIORITY_WORKER_IMAGE` may select that test artifact; the default is the
+retained `ea0b9746` image. It retains the 250ms transaction limit under constrained
+worker/database CPU, and tests pickup/replay against stale queue statistics.

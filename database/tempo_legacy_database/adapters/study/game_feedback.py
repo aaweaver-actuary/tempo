@@ -22,21 +22,25 @@ ENCOUNTER_PRIORITY_REASON = "product_game_encounter"
 
 
 class PostgresGameFeedbackStore:
-    def __init__(self, database, *, promote=None):
+    def __init__(self, database, *, promote=None, prepared_priority=None):
         self.database = database
         self.scheduling = OwnedConnectionSchedulingReviewStore(database)
         self._promote = promote
+        self.prepared_priority = prepared_priority
 
     def _writer(self):
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
             raise RuntimeError("game feedback requires a borrowed writer transaction")
 
-    def lock_target(self, card_id, day):
+    def lock_intake_target(self, card_id):
         self._writer()
-        # Existing Study card-edit/row order before the queue date reservation.
+        # Intake takes only the exact card lock, never a queue-date reservation.
         self.database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                                      ("tempo:card-edit:" + card_id,))
         self.database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,))
+
+    def lock_target(self, card_id, day):
+        self.lock_intake_target(card_id)
         lock_queue_date_for_position(self.database, day)
 
     def lock_effect(self, key):
@@ -175,7 +179,8 @@ class PostgresGameFeedbackStore:
 
     def promote_encounter(self, card_id, day):
         ensure_card_queued_after(self.database, card_id, 0, attempt_state="clean", priority_reason=ENCOUNTER_PRIORITY_REASON,
-                                 queue_date=day, protect_presented=True, preserve_order=False)
+                                 queue_date=day, protect_presented=True, preserve_order=False,
+                                 prepared_priority=self.prepared_priority)
 
     def owed_page(self, after, limit):
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback
@@ -195,9 +200,25 @@ def installed(database):
         "SELECT to_regclass('study_game_feedback') IS NOT NULL").fetchone()[0]
 
 
+def owed_feedback_card_ids(database, card_ids, *, read=None):
+    """One borrowed or bounded read for the requested outstanding obligations."""
+    ids = tuple(dict.fromkeys(card_ids))
+    if not ids:
+        return set()
+    if read is not None:
+        placeholders = ','.join('?' for _ in ids)
+        rows = read("SELECT DISTINCT card_id FROM study_game_feedback "
+            f"WHERE card_id IN ({placeholders}) AND status IN ('pending','applied')", ids)
+    else:
+        if database is None:
+            raise RuntimeError('owed feedback requires a borrowed connection or bounded reader')
+        rows = database.execute_native("SELECT DISTINCT card_id FROM study_game_feedback "
+            "WHERE card_id=ANY(%s::text[]) AND status IN ('pending','applied')", (list(ids),)).fetchall()
+    return {row[0] for row in rows}
+
+
 def has_owed_feedback(database, card_id):
-    return bool(database.execute_native("""SELECT 1 FROM study_game_feedback
-        WHERE card_id=%s AND status IN ('pending','applied') LIMIT 1""", (card_id,)).fetchone())
+    return card_id in owed_feedback_card_ids(database, (card_id,))
 
 
 def retained_encounter_introduction_query():
