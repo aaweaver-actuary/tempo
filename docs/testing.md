@@ -95,6 +95,8 @@ boundary requires them.
 
 ## Desired policy and current hosted behavior
 
+The existing prose/FAST selection also covers exactly `.github/skills/domain-model-alignment-review/SKILL.md`, `backend/ORGANIZATION.md`, `database/PERSISTENCE-DISPOSITION.md`, and `database/SIMPLIFICATION.md`. Other skill files, adjacent helpers, database/source/configuration paths and unknown changes retain their existing classification. Mixed changes retain executable requirements; this selector repair itself remains infrastructure/FULL. Common FAST static checks and revision/readiness gates are unchanged.
+
 Separate local development evidence, configured CI execution, actually enforced hosted requirements, and installation qualification. Verify hosted settings when a merge claim depends on them; do not infer requirements solely from a historical document or infer permission to bypass project acceptance from an absent setting. Current classification/freshness rules may force broader work than local policy. Report that mismatch for a separately assigned correction. Do not change or bypass those rules in an ordinary feature or instruction task.
 
 The adopted policy in [the component architecture guide](architecture/component-reconstruction.md)
