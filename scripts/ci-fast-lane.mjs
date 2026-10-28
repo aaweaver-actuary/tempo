@@ -21,7 +21,9 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
     const mappings = inventory.sources.filter(mapping => mapping.paths.includes(path));
     const certifications = (inventory.certifiedTests ?? []).filter(mapping => mapping.paths.includes(path));
     if ((/^docs\/.+\.md$/.test(path) || /(?:^|\/)README\.md$/.test(path)
-      || ['AGENTS.md','CONTRIBUTING.md','tests/REGRESSIONS.md','THIRD_PARTY_NOTICES.md'].includes(path))) {
+      || ['AGENTS.md','CONTRIBUTING.md','tests/REGRESSIONS.md','THIRD_PARTY_NOTICES.md',
+        '.github/skills/domain-model-alignment-review/SKILL.md','backend/ORGANIZATION.md',
+        'database/PERSISTENCE-DISPOSITION.md','database/SIMPLIFICATION.md'].includes(path))) {
       reasons.push(`${path}: prose`); continue;
     }
     if (inventory.fullPaths.includes(path)

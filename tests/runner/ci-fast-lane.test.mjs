@@ -297,3 +297,87 @@ test('PR214_FULL_workflow_downloads_same_run_plan_and_retains_development_routin
   assert(!gate.includes('run-id:'));
   assert(workflow.includes("if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier"));
 });
+
+const reviewedInstructionPaths = [
+  ".github/skills/domain-model-alignment-review/SKILL.md",
+  "backend/ORGANIZATION.md",
+  "database/PERSISTENCE-DISPOSITION.md",
+  "database/SIMPLIFICATION.md"
+];
+test('issue543_exact_instruction_paths_are_FAST_without_runtime_work', () => {
+  for (const path of reviewedInstructionPaths) {
+    const selected = selectFastLane([path]);
+    assert.equal(selected.tier, 'FAST', path);
+    assert.equal(selected.node, false, path); assert.equal(selected.python, false, path);
+    for (const key of ['frontend', 'backend', 'browser', 'nativeChecks']) assert.deepEqual(selected[key], [], `${path}: ${key}`);
+    assert.deepEqual(fastCommands(makeFastPlan([path], context)).map(([name]) => name), ['conflicts', 'migrations', 'diff']);
+  }
+});
+test('issue543_complete_24_file_instruction_repair_stays_on_existing_prose_path', () => {
+  const paths = [
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "docs/testing.md",
+    "docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md",
+    ".github/skills/domain-model-alignment-review/SKILL.md",
+    ".github/skills/domain-model-alignment-review/README.md",
+    "docs/architecture/component-reconstruction.md",
+    "docs/architecture/diagrams/README.md",
+    "docs/UI-CONTRACT.md",
+    "README.md",
+    "backend/ORGANIZATION.md",
+    "database/README.md",
+    "database/PERSISTENCE-DISPOSITION.md",
+    "database/SIMPLIFICATION.md",
+    "docs/architecture/study-first-reduction-2026-10-21/README.md",
+    "docs/architecture/study-first-reduction-2026-10-21/PLAN.md",
+    "docs/architecture/study-first-reduction-2026-10-21/DECISION.md",
+    "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+    "docs/architecture/study-first-reduction-2026-10-21/LAUNCHER-CUTOVER.md",
+    "docs/architecture/ci-isolation/audit-report.md",
+    "docs/architecture/ci-isolation/issue-specs.md",
+    "docs/architecture/ci-isolation/parallel-impl.md",
+    "docs/architecture/ci-classification-audit/report.md",
+    "tests/browser/README.md"
+];
+  const selected = selectFastLane(paths);
+  assert.equal(paths.length, 24); assert.equal(selected.tier, 'FAST');
+  assert.equal(selected.node, false); assert.equal(selected.python, false);
+  for (const key of ['frontend', 'backend', 'browser', 'nativeChecks']) assert.deepEqual(selected[key], [], key);
+  assert.deepEqual(fastCommands(makeFastPlan(paths, context)).map(([name]) => name), ['conflicts', 'migrations', 'diff']);
+});
+test('issue543_prose_companions_do_not_downgrade_sensitive_unknown_or_invalid_paths', () => {
+  const sensitive = [
+    '.github/workflows/pages.yml', '.github/skills/domain-model-alignment-review/helper.mjs',
+    '.github/skills/another-skill/SKILL.md', 'database/other-proposal.md', 'backend/UNKNOWN.md',
+    'database/tempo_legacy_database/ddl/migrations/999_instruction.sql',
+    'database/tempo_legacy_database/adapters/study/game_feedback.py',
+    'scripts/ci-fast-lane.mjs', 'scripts/ci-fast-lane-inventory.json',
+    'tests/runner/ci-fast-lane.test.mjs', 'tests/browser/ui-fixtures.ts',
+    'package.json', 'package-lock.json', 'backend/app/main.py', 'app/unknown-source.ts',
+    '/backend/ORGANIZATION.md', 'backend/../backend/ORGANIZATION.md',
+  ];
+  for (const path of sensitive) {
+    assert.equal(selectFastLane([path]).tier, 'FULL', path);
+    assert.equal(selectFastLane([...reviewedInstructionPaths, path]).tier, 'FULL', path);
+  }
+  const current = selectFastLane(['app/lib/review-outbox.ts']);
+  const combined = selectFastLane([...reviewedInstructionPaths, 'app/lib/review-outbox.ts']);
+  assert.equal(combined.tier, 'STUDY');
+  for (const key of ['frontend', 'backend', 'browser', 'nativeChecks', 'node', 'python']) assert.deepEqual(combined[key], current[key], key);
+});
+test('issue543_renames_and_deletions_keep_the_sensitive_side_of_reviewed_prose', () => {
+  for (const changes of [
+    'R100\0scripts/ci-fast-lane.mjs\0backend/ORGANIZATION.md\0',
+    'R100\0.github/skills/domain-model-alignment-review/SKILL.md\0.github/skills/domain-model-alignment-review/helper.mjs\0',
+    'D\0database/tempo_legacy_database/adapters/study/game_feedback.py\0M\0database/SIMPLIFICATION.md\0',
+  ]) assert.equal(selectFastLane(changedPathsFromNameStatus(changes)).tier, 'FULL');
+});
+test('issue543_complete_comparison_and_late_full_requirements_still_apply_to_prose', () => {
+  for (const options of [{complete: true}, {comparisonAvailable: false}]) {
+    assert.equal(selectFastLane(reviewedInstructionPaths, options).tier, 'FULL');
+  }
+  const prose = fixture(reviewedInstructionPaths[0]);
+  assert.deepEqual(failures(prose), []);
+  assert(validateFastGate(prose.plan, prose.report, prose.needs, {...pr, labels: [{name: 'ci:full'}]}, execution).length);
+});
