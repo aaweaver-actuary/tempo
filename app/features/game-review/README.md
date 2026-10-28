@@ -35,8 +35,10 @@ Legacy `LearningReceipt` labels remain unchanged. `EncounterReceipt` additionall
 shows whether the encounter was recorded, the Study owner's disposition, actual
 admission status and explicit deferral reason. Recorded importance, `status=applied`
 and a pending first introduction do not imply availability. Only an actual
-`admission_status=available` is labeled available for Study. This display changes
-no admission/retry policy and is independent of operator history-to-Study proof.
+`admission_status=available` is labeled available for Study. The existing feedback retry endpoint replays stored lapse deliveries only; a
+pending `EncounterReceipt` therefore has no legacy Retry feedback action. This
+view adds no encounter replay API and is independent of operator history-to-Study
+proof.
 
 `onReviewGap` emits a repertoire navigation intent naming the original finding;
 it grants no content mutation. The injected API has no Study reset/start/save,

@@ -351,3 +351,16 @@ it("keeps the new feature dependency boundary independent from Study/Tactics con
     expect(source).not.toMatch(/localStorage|sessionStorage|indexedDB|resetStudy|startStudy/);
   }
 });
+
+
+it("does not offer legacy lapse retry for a pending confirmed-miss encounter receipt", async () => {
+  const missed = finding("confirmed_miss");
+  const pending = encounterReceipt({ status: "pending", outcome: "accepted",
+    admission_status: "pending", disposition: "existing_lapse", deferred_reason: null,
+    reason: "existing_lapse_obligation" }, missed);
+  const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [missed], receipts: [pending] })) });
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  expect(screen.getByText(/Disposition: existing lapse · Admission: pending/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
+  expect(api.retryFeedback).not.toHaveBeenCalled();
+});

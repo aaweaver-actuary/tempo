@@ -203,7 +203,9 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
         <ul className="game-review-findings">{currentDetail.findings.map(finding => {
           const receipt = receiptFor(currentDetail.receipts, finding);
           const gap = finding.kind === "opponent_gap" || finding.kind === "missing_own_continuation";
-          const retryable = !receipt || receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome);
+          // The existing retry endpoint replays stored lapse deliveries only.
+          const retryable = !receipt || !("admission_status" in receipt)
+            && receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome);
           return <li key={findingKey(finding)} className="game-review-finding" data-current={cursor === finding.ply - 1 || cursor === finding.ply}>
             <strong>{findingLabels[finding.kind]}</strong><p>Ply {finding.ply}{finding.diagnostic ? ` · ${finding.diagnostic}` : ""}</p>
             <dl><dt>Played</dt><dd>{finding.played_uci}</dd><dt>Expected</dt><dd>{finding.expected_uci.join(", ") || "Not known"}</dd><dt>Repertoire</dt><dd>{finding.repertoire_id}</dd><dt>Decision</dt><dd>{finding.decision_id ?? "Not mapped"}</dd><dt>Card / presentation</dt><dd>{finding.presentation_id ?? "Not mapped"}</dd></dl>

@@ -224,6 +224,8 @@ from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
 from .product_composition.game_history_current import current_game_history_router
 app.include_router(current_game_history_router())
+from .product_composition.game_review import current_game_review_router
+app.include_router(current_game_review_router())
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -715,6 +717,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
         or request.url.path.startswith("/api/product/game-history/")
+        or request.url.path.startswith("/api/product/game-review/")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",

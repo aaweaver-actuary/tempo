@@ -39,16 +39,29 @@ the read does not substitute an older available receipt or start optional work.
 
 ```mermaid
 flowchart LR
-  Get["Game Review GET"] --> View["Games stored-source projection"]
+  Nav["Full workspace: Games lazy slot"] --> Get["Mounted Game Review GET"]
+  Get --> Root["Lazy composition: reader profile only"]
+  Root --> View["Games stored-source projection"]
   View --> Source["Games original effects / deliveries"]
   View --> Status["Public Study encounter_status / legacy effect_status"]
-  Status --> Wire["Existing GameDetail receipt union"]
+  Status --> Reader["Study owner status: bounded read-only transaction"]
+  Reader --> Wire["Existing GameDetail receipt union"]
   Wire --> Get
 ```
 
 The six `test_product_game_review_receipts.py` cases use typed owner facts and
 in-process HTTP; mutations/acquisition/queue calls are forbidden. No database,
-provider, user browser or root mount is started. #501 must supply the rich public
-status capability when wiring encounter data. The paired receipt-only #490 view
-and #536 TypeScript fragment are covered by one captured-API-to-view fixture case;
-mounted-browser and full provider-sync acceptance remain separate.
+provider or user browser is started. The current composition lazily binds the
+public status operation to the actual Study owner using the existing reader
+credential and a read-only connection. Writer commands require their separate
+existing profile; reading does not construct a provider coordinator. The owning
+`test_product_game_review_composition.py` case traverses actual application
+registration/middleware and scripted owner SQL; it proves current pending status,
+contained 503 failure and writer refusal without a writer profile.
+
+The paired receipt-only #490 view and #536 TypeScript fragment retain their
+captured-API-to-view proof. The current full-workspace navigation mounts this
+view lazily; `product-game-review-composition.test.tsx` preserves the existing
+browser attempt token through successful and failed optional reads. Independent
+Study does not import the legacy optional workspace. Actual PostgreSQL role,
+packaged/browser and full provider-sync acceptance remain separate.

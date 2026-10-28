@@ -134,3 +134,31 @@ Window completeness, compared/unresolved positions, pending/held receipts and
 actual Study availability are distinct. Zero eligible misses is never all-correct.
 #490 usability/onReviewGap mounting remains separate; no invented source URLs or
 expected moves are added to standalone receipts.
+
+
+## Bounded Game Review composition checkpoint
+
+The full workspace now exposes Games and lazily mounts the existing published
+view. Its gap action opens Repertoire without creating or editing content.
+Independent Study retains its existing navigation exclusion and physical entry.
+`main.py` mounts the existing router and classifies only its optional route
+namespace as background work; GET query-only scope remains unchanged.
+
+`CurrentGameReviewOperations` constructs no connection/worker on registration.
+GET operations use only `TEMPO_DATABASE_READ_URL`, existing bounded
+`DedicatedGamesConnections(read_only=True)`, and the Study owner's actual receipt
+status operation. No source capture, scheduling, admission or queue work is needed
+for this status. Optional read failure is a local 503; it cannot supply stale
+availability. Explicit commands retain their writer profile and fail without it.
+No reader grants or credentials are broadened.
+
+Focused source proof uses the real application router/middleware and owner status
+with scripted SQL, plus the mounted full-workspace view and retained browser
+attempt token. This does not establish actual PostgreSQL grants, packaged process
+isolation or genuine-data acceptance. The existing schema052 remains a later
+release prerequisite; this source does not apply migrations or change readiness.
+The #547 repair stack remains separate and its five files are untouched.
+The legacy feedback retry action is hidden when the actual receipt is an
+`EncounterReceipt`: that endpoint supports stored lapse replay only. Pending
+encounters remain accurately labeled and use their existing delivery/owner path;
+this checkpoint adds no encounter retry endpoint.
