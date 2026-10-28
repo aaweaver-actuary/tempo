@@ -1,5 +1,7 @@
 # Backend organization progress
 
+Applicability: this is a dated organization/extraction record. Its inventories and remaining-work lists do not assign cleanup to every feature; use its mechanical task list only for an explicitly selected migration. Current [SPEC](../SPEC.md) and [AGENTS](../AGENTS.md) govern product execution. Historical counts and source-status labels below retain their recorded meaning.
+
 **Current unmerged source; deployment unverified.** The authorized work preserves functionality while moving existing modules and splitting actual responsibilities. It introduces no domain framework, features, schema redesign or consolidation.
 
 The finite scope is **202 original `backend/app` Python modules**, locked at PR353 (`55539695`). All 202 have a source responsibility/dependency review. Review coverage is not implementation completion. The [per-module checklist](organization-inventory.json) records original/current paths, responsibility, status and the remaining action; additional Python paths created by splits are listed separately.
@@ -29,9 +31,11 @@ The large HTTP root still contains 184 functions across 36 reviewed responsibili
 
 Shared runtime admission/writer resources need one owner and explicit outer wiring. The [database inventory](../database/INVENTORY.md#additional-storage-candidates-found-after-the-baseline) separately tracks those technical reverse imports; zero original SQL extraction candidates does not close that work. Preserve gate/ContextVar/condition identity, writer-thread behavior, transaction/lock/cleanup order and direct-run entry points.
 
-A module closes when its actual responsibility, public contracts, side effects/lifecycle and dependencies are understandable at its canonical owner, with proportional source/fake checks. An already cohesive module can be explicitly retained. Domains never import sibling implementation, including through public indexes. Outer composition imports implementations and supplies narrow capabilities; neutral pure libraries, explicit contracts and external packages are permitted. Ordinary Study has no Games dependency.
+A module closes when its actual responsibility, public contracts, side effects/lifecycle and dependencies are understandable at its canonical owner, with proportional source/fake checks. An already cohesive module can be explicitly retained. Domain policy depends on declared contracts and injected semantic capabilities, not sibling concrete implementations. Designated composition may import supported public factories/operations to wire them; consumers never bypass another owner's private surface. A facade may expose its own implementation without laundering foreign private dependencies. Neutral pure libraries, explicit contracts and external packages are permitted. Ordinary Study has no Games dependency.
 
 ## Local checks and evidence limits
+
+This instruction edit changes no executable check. Report a disagreement between intended policy and an existing checker separately; do not bypass or silently repair that checker here.
 
 The six `organized-*` contracts in [the existing import-linter configuration](../.importlinter) check the folders moved in this stage, including package initializers. They allow only their own implementation, explicit shared contracts and neutral chess support within `app`; all other `app` implementation imports are forbidden. No CI job is enabled. Run with the repository-pinned backend dev tools and `PYTHONPATH=backend:database`:
 
@@ -39,7 +43,7 @@ The six `organized-*` contracts in [the existing import-linter configuration](..
 lint-imports --no-cache --contract organized-contracts --contract organized-chess --contract organized-games --contract organized-study --contract organized-authoring --contract organized-studies
 ```
 
-Grimp checks static imports, including aliases, re-exports and type-only imports. These moved leaves contain no dynamic import/exec mechanism; static contracts alone do not qualify arbitrary runtime import strings or untouched legacy folders. Eventual changed boundary checks must cover dynamic imports too. Retain the existing frontend loaded-graph guard in `scripts/study-composition.ts`; backend moves do not authorize broad frontend moves.
+Grimp checks static imports, including aliases, re-exports and type-only imports. These moved leaves contain no dynamic import/exec mechanism; static contracts alone do not qualify arbitrary runtime import strings or untouched legacy folders. Changed dynamic loading must not bypass declared boundaries and needs relevant focused checks; this does not assign a general dynamic-import proof or new checker for untouched code. Retain the existing frontend loaded-graph guard in `scripts/study-composition.ts`; backend moves do not authorize broad frontend moves.
 
 Selected existing pure/fake suites, source/identity/schema equivalence, bounded parser/MockTransport scenarios and path checks are recorded in [the relocation validation receipt](../database/VALIDATION.md). API/Main, native PostgreSQL/Redis, full-system/deployment/resource isolation remain unverified. Existing fake-harness/readiness limitations remain explicit; this organization phase is not an unrelated repair campaign.
 
