@@ -113,10 +113,15 @@ def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds, *, explicit_im
                             WHERE state='leased' AND lease_expires_at<=?{kind_clause}
                             ORDER BY lease_expires_at,id LIMIT 1)
                AND state='leased' AND lease_expires_at<=? RETURNING id,kind,generation"""
+    # This fixed explicit-import predicate is already PostgreSQL JSONB SQL.
+    # Only convert this statement's bound parameter markers, not its dialect.
+    reclaim_native = (reclaim_statement.replace('?', '%s').replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)')
+                      if explicit_imports_only else None)
 
     def reclaim(database):
         if hasattr(database, 'execute_native'):
-            reclaimed = database.execute_native(postgres_store.postgres_sql(reclaim_statement).replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)'), reclaim_parameters).fetchall()
+            statement = reclaim_native or postgres_store.postgres_sql(reclaim_statement).replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)')
+            reclaimed = database.execute_native(statement, reclaim_parameters).fetchall()
         else:
             reclaimed = database.execute(reclaim_statement, reclaim_parameters).fetchall()
         return reclaimed
@@ -129,10 +134,9 @@ def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds, *, explicit_im
                       AND {claimable('durable', 'background_tasks.id')}
                       AND {admission_clause}
                     ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1"""
-    # The explicit path is PostgreSQL-only. Translate before its background
-    # transaction begins, retaining the existing short database budget.
-    candidate_native = postgres_store.postgres_sql(candidate_statement) if explicit_imports_only else None
-    if explicit_imports_only: postgres_store.postgres_sql(reclaim_statement)
+    # Keep the receipt's native JSONB operators; SQLite translation changes
+    # them into json_extract_path_text(jsonb, ...), which PostgreSQL rejects.
+    candidate_native = candidate_statement.replace('?', '%s') if explicit_imports_only else None
 
     def read_candidate(database, parameters):
         if explicit_imports_only:

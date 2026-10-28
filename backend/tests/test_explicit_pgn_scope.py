@@ -17,7 +17,8 @@ def test_explicit_claim_keeps_receipt_generation_manual_pause_and_lease_fences()
     reclaim(Database())
     candidate(Database(), ['now', *parameters])
     for sql, _ in calls:
-        assert "receipt.command_name = 'imports.pgn.explicit'" in sql
+        assert "receipt.command_name = 'imports.pgn.explicit'" in parse_one(sql, read='postgres').sql(dialect='postgres')
+        assert 'json_extract_path_text' not in sql.lower(), 'JSONB receipt SQL must stay native PostgreSQL'
         assert 'graph_generation' in sql and 'origin_graph_task_id' in sql
         assert 'graph_task_id' in sql and 'graph.generation' in sql
         assert 'background_activity' in sql and 'paused' in sql
