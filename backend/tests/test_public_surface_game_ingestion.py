@@ -42,7 +42,7 @@ SURFACES = {
 }
 
 
-def cold_import(module, *, blocked=()):
+def cold_import(module, *, blocked=(), allowed=()):
     code = '''
 import importlib, importlib.abc, socket, sqlite3, subprocess, sys, threading
 import httpx, psycopg
@@ -53,14 +53,17 @@ sqlite3.connect = psycopg.connect = forbidden
 httpx.Client.__init__ = httpx.AsyncClient.__init__ = forbidden
 subprocess.Popen = threading.Thread.start = forbidden
 blocked = BLOCKED
+allowed = ALLOWED
 class NoConcreteAssembly(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, *args):
+        if fullname in allowed:
+            return None
         if any(fullname == prefix or fullname.startswith(prefix + ".") for prefix in blocked):
             raise AssertionError("public import loaded forbidden owner/root: " + fullname)
 sys.meta_path.insert(0, NoConcreteAssembly())
 importlib.import_module(MODULE)
 print("ok")
-'''.replace("BLOCKED", repr(tuple(blocked))).replace("MODULE", repr(module))
+'''.replace("BLOCKED", repr(tuple(blocked))).replace("ALLOWED", repr(tuple(allowed))).replace("MODULE", repr(module))
     environment = dict(os.environ)
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(directory) for directory in EXTRA_SOURCE_ROOTS] + [environment.get("PYTHONPATH", "")])
@@ -89,8 +92,12 @@ def test_ingestion_public_exports_keep_exact_existing_identity(module):
 
 @pytest.mark.parametrize("module", SURFACES)
 def test_ingestion_public_cold_import_has_no_effect_or_study_root_dependency(module):
+    # Public type dependency is supported; every private Study implementation
+    # remains blocked, including any import attempted by that interface itself.
+    allowed = (("app.study", "app.study.interfaces", "app.study.interfaces.game_priority")
+               if module == "app.games.feedback.interfaces" else ())
     cold_import(module, blocked=("app.main", "app.tasks", "app.study", "app.product_composition",
-        "tempo_learning_review", "tempo_learning_remediation", "tempo_learning_runtime"))
+        "tempo_learning_review", "tempo_learning_remediation", "tempo_learning_runtime"), allowed=allowed)
 
 
 def test_public_ingester_preserves_exact_source_and_explicit_identity():

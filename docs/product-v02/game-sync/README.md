@@ -1,5 +1,23 @@
 # Continuous provider synchronization (#491)
 
+## Bounded Game Review receipt-read checkpoint
+
+The backend Game Review GET now preserves the current public owner's complete
+EncounterReceipt, including pending first introduction and control/hold status.
+It chooses `encounter_status` from the original immutable effect kind; legacy
+receipts still use their legacy operation/wire form. The exact Python receipt
+union from #536 is consumed, with no new DTO. The public Study surface and affected
+import guard are reused from #539. No private Study implementation or queue read
+is added. The [owning interface view](../../../backend/app/games/feedback/interfaces/README.md#game-review-receipt-reads)
+records the query and serialization boundary.
+
+This independently tested API checkpoint does not mount Game Review or enable a
+provider worker. Root wiring must provide the rich public status capability and
+the existing authorized command boundary. UI integration must also consume the
+already-published #536 TypeScript union and #490 receipt renderer; the older strict
+client parser cannot consume encounter fields. No live or browser acceptance is
+claimed, and no API-reader writer permission is introduced.
+
 This separate follow-on branch is based on frozen retained-history `0db8c980`.
 It changes no live service, source account, setting or installed schema. Provider
 activation, browser mounting and deployment remain unqualified.

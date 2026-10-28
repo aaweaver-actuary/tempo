@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 
 from app.contracts.product_v02 import Identifier, Value
 from app.contracts.product_v02.games import Finding, GameSummary, GameWindow, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import LearningFeedbackPort, LearningReceipt
+from app.study.interfaces.game_priority import EncounterFeedbackPort, GameEncounter, LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
 from .ports import Delivery, JobSpec, JobState, SourceState
 
@@ -65,7 +65,7 @@ def sync_status(provider: Provider, job: JobState | None) -> ProviderSyncStatus:
 
 
 class GameReview:
-    def __init__(self, *, workspace: str, store: ReviewStore, learning: LearningFeedbackPort,
+    def __init__(self, *, workspace: str, store: ReviewStore, learning: EncounterFeedbackPort,
                  build_job: Callable[[SyncConfiguration, str], JobSpec],
                  deliver: Callable[[Delivery], None], now: Callable[[], float]):
         self.workspace, self.store, self.learning = workspace, store, learning
@@ -93,9 +93,16 @@ class GameReview:
             raise ReviewUnavailable(source.diagnostic or "source_quarantined")
         game = source.normalized
         findings = tuple(f for f in source.findings if repertoire_id is None or f.repertoire_id == repertoire_id)
+        encounter_keys = {effect.key.logical_id() for effect in source.effects
+                          if isinstance(effect, GameEncounter)}
         receipts = []
         for delivery in self.store.deliveries(source.source_key):
-            receipt = self.learning.effect_status(delivery.command.key)
+            key = delivery.command.key
+            # Controls retain the original effect kind. The legacy read operation
+            # cannot represent encounter disposition/admission/deferral fields.
+            receipt = (self.learning.encounter_status(key)
+                if delivery.encounter is not None or key.logical_id() in encounter_keys
+                else self.learning.effect_status(key))
             if receipt is not None and receipt not in receipts:
                 receipts.append(receipt)
             elif receipt is None and delivery.receipt is not None and delivery.receipt not in receipts:
