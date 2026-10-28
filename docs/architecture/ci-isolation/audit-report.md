@@ -1,6 +1,6 @@
 # Tempo CI Isolation and Architecture Dependency Audit
 
-> **Historical audit:** Findings and recommendations below refer to the frozen October 12 baseline. The adopted component architecture and qualification policy are maintained in [the reconstruction guide](../component-reconstruction.md), [docs/testing.md](../../testing.md), and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192). Retain this report as dated evidence; do not treat superseded recommendations as current execution policy.
+> Historical evidence/proposal. The findings, measurements, gates, and assignments below belong to their recorded baseline. They do not establish today's required checks or assign current work. Use [SPEC](../../../SPEC.md) for product scope, [AGENTS](../../../AGENTS.md) for execution, and [docs/testing.md](../../testing.md) plus current executable/hosted settings for qualification. #192 and the old phase sequence remain historical references, not current task prerequisites. Preserve these records without rerunning their audits.
 
 **Read-only audit • 12 October 2026 • baseline `622d611a2fc6315163a54d7ae689ce1b97d06122`**
 
