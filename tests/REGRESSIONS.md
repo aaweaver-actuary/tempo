@@ -5423,3 +5423,13 @@ manual held publication outcomes, retaining cancellation and one-POST recovery.
 Existing pending-import tests own same-key duplicate/retry identity. This feature
 requires native disposable-fixture and assembled proof before merge qualification;
 it is not installed and no genuine Taimanov file has been supplied.
+
+`backend/tests/test_explicit_pgn_import_postgres.py::test_native_explicit_black_import_round_trip_preserves_study`
+owns the source/native explicit-command → receipt-pinned graph/integrity → normal
+Study queue round trip, using the existing `owned_postgres` fixture. It covers
+branching Black sources, same-key replay, pause/resume, saved versus ready
+projections, quota hold, main/history/issued-attempt/accepted-feedback preservation,
+and rollback after actual graph enqueue. Its broker/Redis transport is substituted;
+it does not qualify a running worker stack or a genuine private PGN. Eventual
+fixture-authorized command:
+`make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
