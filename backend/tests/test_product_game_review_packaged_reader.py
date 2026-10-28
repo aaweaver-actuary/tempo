@@ -36,8 +36,10 @@ RUNTIME_FILES = {
 
 
 def _docker(*args, source=None):
-    return subprocess.run(["docker", *args], input=source, capture_output=True,
-                          text=True, check=True, timeout=30).stdout
+    result = subprocess.run(["docker", *args], input=source, capture_output=True,
+                            text=True, timeout=30)
+    assert result.returncode == 0, "Owned Docker operation failed:\n" + result.stderr
+    return result.stdout
 
 
 def _owned_containers():
@@ -84,7 +86,7 @@ def connect(role):
     database = psycopg.connect(dsn, autocommit=True, connect_timeout=2)
     try:
         row = database.execute("""SELECT current_database(),current_schema(),current_user,
-            inet_server_addr()::text,obj_description(oid,'pg_database')
+            inet_server_addr()::text,shobj_description(oid,'pg_database')
             FROM pg_database WHERE datname=current_database()""").fetchone()
         assert row[:3] == ("tempo", "public", role)
         assert row[3] in payload["postgres_addresses"]
