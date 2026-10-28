@@ -5381,6 +5381,7 @@ deduplicated owed-feedback lookup, with no application retry or write.
 executes the actual PostgreSQL background preparation twice after Study-owned
 priority application, with fresh owned reads, Games absent, and cards, queue,
 reviews, receipts, protected origins and the original effect preserved.
+
 ## PostgreSQL adopted-child supervision
 
 `backend/tests/test_postgres_init_supervision.py::test_orphan_exit_two_is_reaped_by_init_without_postgres_recovery`

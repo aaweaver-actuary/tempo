@@ -14,8 +14,8 @@ It compares one no-init and one init-enabled container using an already-present
 image, isolated temporary storage and no exposed ports or production credentials.
 The artificial orphan exits normally with code 2. The fixed case requires the
 original held backend and committed sentinel to survive, actual orphan reaping,
-normal readiness, graceful shutdown and verified task-owned cleanup. This proves
-a mechanism and mitigation, not the identity of historical PID 499653 or an API
+normal readiness, graceful shutdown and verified task-owned cleanup. A passing
+comparison demonstrates the mechanism and mitigation, not the identity of historical PID 499653 or an API
 pool's recovery after a database restart.
 
 This source setting is not an installation claim. Applying it requires a
