@@ -15,6 +15,10 @@ Compose and explicit CLI dumps. A shared directory lock serializes creation.
 The CLI still stops recurring work before backup/restore verification. Recurring
 creation pauses at two copies and skips archives younger than 24 hours, including
 after container restart. There is no age-based or automatic permanent deletion.
+The recurring command embeds the same script bytes in Compose (with a parity
+assertion), so the existing release copy and configuration fingerprint include
+its executable policy. It has no executable bind mount into the mutable checkout;
+later checkout edits cannot change a saved/running release's recurring behavior.
 
 Explicit maintenance may stage **one replacement** as `.dump.staged` when two
 copies already exist. The CLI records its actual filename, restores it and runs
@@ -29,7 +33,7 @@ With the registered target's existing context/project/configuration options,
 preview rotation without changing any backup:
 
 ```sh
-docker compose <registered target options> run --rm --no-deps -T --entrypoint sh postgres-backup /opt/tempo/postgres-backup.sh preview
+docker compose <registered target options> run --rm --no-deps -T --entrypoint sh postgres-backup -s preview < database/tooling/cli/postgres-backup.sh
 ```
 
 The preview lists exact archive names and recorded verification state, including
@@ -44,6 +48,7 @@ clean up failed artifacts, prove free space, or replace a restore drill.
 
 ```mermaid
 flowchart LR
+  Release[Saved Compose command with frozen script] --> Recurring
   Recurring[Recurring Compose] --> Guard[Shared backup admission and creation lock]
   CLI[CLI with target maintenance lock] -->|stop recurring work| Guard
   Guard -->|below two; due for recurring| Retained[Retained archives]
