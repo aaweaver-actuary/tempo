@@ -17,10 +17,15 @@ const draft = { starting_fen: new Chess().fen(), moves: ["e2e4"], source_kind: "
 const puzzlePgn = readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8");
 const puzzleStartingFen = "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/1P6/P1PP2PP/R1B1K1NR b KQ - 0 1";
 function loadPuzzlePgn(text = puzzlePgn) {
-  if (!screen.queryByLabelText("Chess.com puzzle PGN"))
-    fireEvent.click(screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" }));
-  fireEvent.change(screen.getByLabelText("Chess.com puzzle PGN"), { target: { value: text } });
+  if (!screen.queryByLabelText("Puzzle Rush PGN or Lichess puzzle ID"))
+    fireEvent.click(screen.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" }));
+  fireEvent.change(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Load PGN" }));
+}
+function pastePuzzle(text: string) {
+  if (!screen.queryByLabelText("Puzzle Rush PGN or Lichess puzzle ID"))
+    fireEvent.click(screen.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" }));
+  fireEvent.change(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID"), { target: { value: text } });
 }
 function success(body: string, reused = false) {
   const request = JSON.parse(body);
@@ -77,15 +82,16 @@ it("capture prevents invalid saves and sends the minimal UCI request before inva
   vi.stubGlobal("fetch", fetcher);
   const onClose = vi.fn(), changed = vi.fn();
   render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={onClose} onQueueChanged={changed} />);
-  expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Solution" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Standard position" }));
   fireEvent.click(screen.getByRole("button", { name: "Solution" }));
   fireEvent.click(screen.getByRole("button", { name: "Record e4" }));
   fireEvent.change(screen.getByLabelText("Source"), { target: { value: "puzzle_rush" } });
   fireEvent.change(screen.getByLabelText("Reference (optional)"), { target: { value: "synthetic-encounter" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
-  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+  await waitFor(() => expect(screen.getByLabelText("FEN")).toHaveProperty("value", EMPTY_SETUP_FEN));
+  expect(onClose).not.toHaveBeenCalled();
   expect(changed).toHaveBeenCalledOnce();
   expect(invalidateWorkspaceData).toHaveBeenCalled();
   const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
@@ -203,7 +209,7 @@ it("capture accepts numbered Black-first SAN lines and saves canonical UCI moves
   expect((screen.getByLabelText("SAN moves") as HTMLInputElement).value).toBe("");
   expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(
     "r1bqkbnr/pppp1ppp/2n5/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 14");
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
   await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
   expect(JSON.parse(fetcher.mock.calls[0][1].body as string).moves).toEqual(["e7e5", "g1f3", "b8c6"]);
 });
@@ -214,10 +220,10 @@ it("capture rejects an invalid SAN line atomically and retains text for correcti
   expect(screen.getByRole("alert").textContent).toContain("invalid");
   expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(new Chess().fen());
   expect((screen.getByLabelText("SAN moves") as HTMLInputElement).value).toBe("e4 e5 invalid");
-  expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(true);
   enterSan("1. e4 e5");
   expect(screen.queryByRole("alert")).toBeNull();
-  expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it("capture SAN entry replaces the continuation at the cursor and mixes with board moves", () => {
@@ -236,7 +242,7 @@ it("capture SAN entry stays locked while saving and awaiting capture confirmatio
   vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("lost"); }));
   openCaptureSolution();
   enterSan("e4");
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
   expect((screen.getByLabelText("SAN moves") as HTMLInputElement).disabled).toBe(true);
   await waitFor(() => expect(screen.getByText(/A capture is awaiting confirmation/)).toBeTruthy());
   expect((screen.getByLabelText("SAN moves") as HTMLInputElement).disabled).toBe(true);
@@ -294,12 +300,12 @@ it("capture rejects null SAN moves inline and retains typed text without enablin
     expect(screen.getByRole("alert").textContent).toContain("“--” is not legal SAN");
     expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(new Chess().fen());
     expect((screen.getByLabelText("SAN moves") as HTMLInputElement).value).toBe(text);
-    expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(true);
   }
   expect(fetcher).not.toHaveBeenCalled();
 });
 
-it("Chess.com puzzle PGN populates an editable capture without persisting until Add to training", async () => {
+it("Chess.com optional PGN preview remains editable without persisting until Capture", async () => {
   const fetcher = vi.fn(async (_url: string, init: RequestInit) => success(init.body as string));
   vi.stubGlobal("fetch", fetcher);
   const onClose = vi.fn();
@@ -319,8 +325,9 @@ it("Chess.com puzzle PGN populates an editable capture without persisting until 
   expect(fetcher).not.toHaveBeenCalled();
   expect(pendingTacticCapture()).toBeNull();
   fireEvent.change(screen.getByLabelText("Reference (optional)"), { target: { value: "edited-reference" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
-  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+  await waitFor(() => expect(screen.getByLabelText("FEN")).toHaveProperty("value", EMPTY_SETUP_FEN));
+  expect(onClose).not.toHaveBeenCalled();
   expect(JSON.parse(fetcher.mock.calls[0][1].body as string)).toMatchObject({
     starting_fen: puzzleStartingFen, moves: ["c5d4", "f6d4", "c6d4"], source_kind: "puzzle_rush",
     source_ref: "edited-reference", source_url: "https://www.chess.com/puzzles/problem/3211014", note: "Remember the fork",
@@ -345,7 +352,7 @@ it("Chess.com puzzle import rejects invalid input without changing the authored 
     expect(screen.getByLabelText("Reference (optional)")).toHaveProperty("value", "original-reference");
     expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "https://example.com/original");
     expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "original-note");
-    expect(screen.getByLabelText("Chess.com puzzle PGN")).toHaveProperty("value", invalidPgn);
+    expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", invalidPgn);
   }
   loadPuzzlePgn();
   expect(screen.queryByRole("alert")).toBeNull();
@@ -395,8 +402,8 @@ it("Chess.com puzzle controls stay locked while saving or awaiting capture confi
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((_resolve, reject) => { rejectSave = reject; })));
   openCaptureSolution();
   loadPuzzlePgn();
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
-  for (const control of [screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" }), screen.getByRole("button", { name: "Load PGN" }), screen.getByLabelText("Chess.com puzzle PGN")])
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+  for (const control of [screen.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" }), screen.getByRole("button", { name: "Load PGN" }), screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")])
     expect(control).toHaveProperty("disabled", true);
   await act(async () => rejectSave(new Error("lost transport")));
   await waitFor(() => expect(screen.getByText(/A capture is awaiting confirmation/)).toBeTruthy());
@@ -405,7 +412,7 @@ it("Chess.com puzzle controls stay locked while saving or awaiting capture confi
   expect(pendingTacticCapture()).toEqual(originalPending);
   cleanup();
   render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
-  expect(screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" })).toHaveProperty("disabled", true);
 });
 
 it("Chess.com puzzle Link errors use existing capture validation and leave imported fields editable", async () => {
@@ -413,9 +420,112 @@ it("Chess.com puzzle Link errors use existing capture validation and leave impor
   render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
   loadPuzzlePgn(puzzlePgn.replace("https://www.chess.com/puzzles/problem/3211014", "not-a-url"));
   expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "not-a-url");
-  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Source URL"));
   expect(screen.getByLabelText("URL (optional)")).toHaveProperty("disabled", false);
   expect(screen.getByLabelText("FEN")).toHaveProperty("value", puzzleStartingFen);
   expect(pendingTacticCapture()).toBeNull();
+});
+
+const lichessPuzzle = JSON.parse(readFileSync("tests/fixtures/lichess-puzzle-api.json", "utf8"));
+it("one Capture saves three consecutive puzzles in one modal and resets and focuses only after confirmation", async () => {
+  const bodies: string[] = [];
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith("https://lichess.org/")) return Response.json(lichessPuzzle);
+    bodies.push(init!.body as string);
+    return success(init!.body as string, bodies.length === 3);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const onClose = vi.fn(), changed = vi.fn();
+  render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={onClose} onQueueChanged={changed} />);
+  for (const input of [puzzlePgn, "PSjmf", puzzlePgn]) {
+    pastePuzzle(input);
+    fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "this puzzle only" } });
+    const before = bodies.length;
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(before + 1));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")));
+    expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("FEN")).toHaveProperty("value", EMPTY_SETUP_FEN);
+    expect(screen.getByLabelText("Reference (optional)")).toHaveProperty("value", "");
+    expect(pendingTacticCapture()).toBeNull();
+  }
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(new Set(bodies.map(body => JSON.parse(body).capture_id)).size).toBe(3);
+  expect(JSON.parse(bodies[0])).toMatchObject({ starting_fen: puzzleStartingFen,
+    moves: ["c5d4", "f6d4", "c6d4"], source_kind: "puzzle_rush" });
+  expect(JSON.parse(bodies[1])).toMatchObject({ starting_fen: lichessPuzzle.puzzle.fen,
+    moves: lichessPuzzle.puzzle.solution, source_kind: "other", source_ref: "PSjmf", source_url: "https://lichess.org/training/PSjmf" });
+});
+
+it("invalid source input and provider failure retain input note and the authored draft without a capture", async () => {
+  const fetcher = vi.fn(async () => new Response("unavailable", { status: 503 }));
+  vi.stubGlobal("fetch", fetcher);
+  openCaptureSolution(); enterSan("e4");
+  fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "keep note" } });
+  for (const input of ["broken PGN", "PSjmf"]) {
+    pastePuzzle(input);
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", input);
+    expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "keep note");
+    expect(screen.getByLabelText("FEN")).toHaveProperty("value", new Chess().fen());
+    expect(screen.getByRole("button", { name: "1.e4" })).toBeTruthy();
+    expect(pendingTacticCapture()).toBeNull();
+  }
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("duplicate Capture and lost acknowledgement keep one identity and retain the source until receipt recovery", async () => {
+  let rejectSave!: (error: Error) => void;
+  const fetcher = vi.fn(() => new Promise<Response>((_resolve, reject) => { rejectSave = reject; }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
+  pastePuzzle(puzzlePgn);
+  const capture = screen.getByRole("button", { name: "Capture" });
+  fireEvent.click(capture); fireEvent.click(capture);
+  expect(fetcher).toHaveBeenCalledOnce();
+  const pending = pendingTacticCapture()!;
+  await act(async () => rejectSave(new Error("lost acknowledgment")));
+  expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", puzzlePgn);
+  expect(screen.getByLabelText("FEN")).toHaveProperty("value", puzzleStartingFen);
+  expect(pendingTacticCapture()).toEqual(pending);
+  const receipt = vi.fn(async () => Response.json({ state: "complete", response: {
+    capture_id: pending.capture_id, card_id: "existing", queued: true, reused: true, introduced: false,
+  } }));
+  vi.stubGlobal("fetch", receipt);
+  fireEvent.click(screen.getByRole("button", { name: "Check pending capture" }));
+  await waitFor(() => expect(pendingTacticCapture()).toBeNull());
+  expect(receipt).toHaveBeenCalledOnce();
+  pastePuzzle("next puzzle");
+  await act(async () => { await Promise.resolve(); });
+  expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", "next puzzle");
+});
+
+it.each(["input change", "close"])("Lichess %s during fetch cancels acquisition and fences a late response before saving", async action => {
+  let finish!: (response: Response) => void;
+  const fetcher = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  const onClose = vi.fn();
+  const rendered = render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={onClose} onQueueChanged={vi.fn()} />);
+  pastePuzzle("PSjmf");
+  expect(fetcher).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+  if (action === "close") {
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    rendered.unmount();
+    render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
+  }
+  pastePuzzle(puzzlePgn);
+  await act(async () => finish(Response.json(lichessPuzzle)));
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(pendingTacticCapture()).toBeNull();
+  expect(screen.getByLabelText("FEN")).toHaveProperty("value", EMPTY_SETUP_FEN);
+  expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", puzzlePgn);
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => success(init.body as string)));
+  fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+  await waitFor(() => expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", ""));
 });

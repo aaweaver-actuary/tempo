@@ -1605,6 +1605,23 @@ Current-main integration: `current-main integration retains CI and segmentation 
 
 ## Tactic capture
 
+#541's repeated Capture flow is owned by the existing parser/component suites:
+`one Capture saves three consecutive puzzles in one modal and resets and focuses only after confirmation`;
+`invalid source input and provider failure retain input note and the authored draft without a capture`;
+`duplicate Capture and lost acknowledgement keep one identity and retain the source until receipt recovery`;
+parameterized `Lichess %s during fetch cancels acquisition and fences a late response before saving`.
+The existing optional-preview/manual cases retain their editing/validation
+assertions; #541 replaces their obsolete close-on-success expectation with
+confirmed reset and an explicitly open dialog. Parser cases use the official
+Lichess API fixture and cover both solver colors, absent FEN, complete solution,
+position/setup/identity rejection and explicit credential-free acquisition.
+The existing `Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture`
+browser case now pastes/captures three times in one modal (with deterministic
+Lichess acquisition), checks reset/focus, distinct capture IDs and reused queue
+membership, then opens ordinary Training. Normal Chess.com export semantics
+remain unverified pending a representative export; this is partial #541 work.
+
+
 Backend capture regressions in `backend/tests/test_tactic_capture.py` cover:
 
 - `test_captured_tactic_create_queues_valid_tactic_today`
@@ -5390,3 +5407,13 @@ deduplicated owed-feedback lookup, with no application retry or write.
 executes the actual PostgreSQL background preparation twice after Study-owned
 priority application, with fresh owned reads, Games absent, and cards, queue,
 reviews, receipts, protected origins and the original effect preserved.
+
+## PostgreSQL adopted-child supervision
+
+`backend/tests/test_postgres_init_supervision.py::test_orphan_exit_two_is_reaped_by_init_without_postgres_recovery`
+compares exactly one task-owned no-init/init pair using the selected existing
+PostgreSQL image. It verifies the normal exit-2 orphan mechanism, held backend
+identity, committed sentinel, init reaping, graceful signal forwarding and exact
+cleanup. It does not identify the historical executable or operate live services.
+The existing backend suite discovers the file; use the regular `make python-file`
+selection for its finite native proof. No dedicated qualifier or CI gate is added.

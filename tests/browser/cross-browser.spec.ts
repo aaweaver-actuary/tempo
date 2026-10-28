@@ -160,8 +160,8 @@ test("Chess.com puzzle import starts at the solver position across browser engin
   await prepareVisualUI(page); await navigate(page, "Tactics");
   await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
   const dialog = page.getByRole("dialog"), board = dialog.locator(".board-frame");
-  await dialog.getByRole("button", { name: "Paste Chess.com puzzle PGN" }).click();
-  await dialog.getByLabel("Chess.com puzzle PGN").fill(readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8"));
+  await dialog.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" }).click();
+  await dialog.getByLabel("Puzzle Rush PGN or Lichess puzzle ID").fill(readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8"));
   await dialog.getByRole("button", { name: "Load PGN", exact: true }).click();
   const startingFen = "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/1P6/P1PP2PP/R1B1K1NR b KQ - 0 1";
   await expect(board).toHaveAttribute("data-fen", startingFen);

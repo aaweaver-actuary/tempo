@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { Chess } from "chess.js";
 import { expect, it } from "vitest";
 import { parseChessComPuzzlePgn } from "../../app/lib/tactic-capture-pgn";
+import { fetchLichessPuzzle, parseLichessPuzzle } from "../../app/lib/tactic-capture-lichess";
+import { vi } from "vitest";
 import { solutionUciMoves } from "../../app/hooks/use-position-solution-editor";
 
 const puzzlePgn = readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8");
@@ -73,4 +75,49 @@ it("Chess.com puzzle import derives a White learner after a Black setup move", (
 it("Chess.com puzzle import uses only the mainline and ignores comments and variations", () => {
   const text = puzzlePgn.replace("1. b3 Bd4", "1. b3 {setup} (1. d3) Bd4");
   expect(parseChessComPuzzlePgn(text)).toEqual(parseChessComPuzzlePgn(puzzlePgn));
+});
+
+const lichess = JSON.parse(readFileSync("tests/fixtures/lichess-puzzle-api.json", "utf8"));
+it("Lichess official API fixture starts after setup and retains the complete Black solution", () => {
+  const imported = parseLichessPuzzle(lichess, "PSjmf");
+  expect(imported).toMatchObject({ startingFen: lichess.puzzle.fen, sourceKind: "other", sourceRef: "PSjmf",
+    sourceUrl: "https://lichess.org/training/PSjmf" });
+  expect(solutionUciMoves(imported.startingFen, imported.solutionSanMoves)).toEqual(lichess.puzzle.solution);
+  expect(imported.solutionSanMoves).toEqual(["Kg7", "Qe5", "Qxe5+"]);
+});
+
+it("Lichess fallback replays all setup plies without dropping the first solution move for either solver color", () => {
+  const withoutFen = structuredClone(lichess); delete withoutFen.puzzle.fen;
+  const black = parseLichessPuzzle(withoutFen, "PSjmf");
+  expect(black.startingFen.split(" ").slice(0, 4)).toEqual(lichess.puzzle.fen.split(" ").slice(0, 4));
+  expect(solutionUciMoves(black.startingFen, black.solutionSanMoves)).toEqual(lichess.puzzle.solution);
+  const white = parseLichessPuzzle({ game: { pgn: "e4 e5" }, puzzle: {
+    id: "White", initialPly: 1, solution: ["g1f3", "b8c6", "f1b5"],
+  } }, "White");
+  expect(white.startingFen).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+  expect(white.solutionSanMoves).toEqual(["Nf3", "Nc6", "Bb5"]);
+});
+
+it.each([
+  { puzzle: { ...lichess.puzzle, id: "wrong" } },
+  { puzzle: { ...lichess.puzzle, initialPly: 51 } },
+  { puzzle: { ...lichess.puzzle, fen: new Chess().fen() } },
+  { puzzle: { ...lichess.puzzle, solution: [] } },
+  { puzzle: { ...lichess.puzzle, solution: ["g8g1"] } },
+  { game: { pgn: "e4 invalid" } },
+])("Lichess invalid identity, setup or full solution fails before capture: %j", override => {
+  expect(() => parseLichessPuzzle({ ...lichess, ...override }, "PSjmf")).toThrow(/invalid/);
+});
+
+it("Lichess acquisition uses only the explicit official ID endpoint and preserves provider failure", async () => {
+  const fetcher = vi.fn(async () => Response.json(lichess));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    await fetchLichessPuzzle(" PSjmf ", new AbortController().signal);
+    expect(fetcher).toHaveBeenCalledWith("https://lichess.org/api/puzzle/PSjmf", expect.objectContaining({ credentials: "omit" }));
+    fetcher.mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
+    await expect(fetchLichessPuzzle("PSjmf", new AbortController().signal)).rejects.toThrow(/503/);
+    await expect(fetchLichessPuzzle("../x", new AbortController().signal)).rejects.toThrow(/ID/);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  } finally { vi.unstubAllGlobals(); }
 });

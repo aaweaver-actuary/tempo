@@ -259,8 +259,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await sanInput.fill("1...e5");
     await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
     await expect(dialog.locator(".board-frame")).toHaveAttribute("data-orientation", "black");
-    await dialog.getByRole("button", { name: "Paste Chess.com puzzle PGN" }).click();
-    const pgnInput = dialog.getByLabel("Chess.com puzzle PGN");
+    await dialog.getByRole("button", { name: "Paste puzzle PGN or Lichess ID" }).click();
+    const pgnInput = dialog.getByLabel("Puzzle Rush PGN or Lichess puzzle ID");
     await pgnInput.scrollIntoViewIfNeeded();
     await expect(pgnInput).toBeInViewport();
     const pgnBounds = (await pgnInput.boundingBox())!;
