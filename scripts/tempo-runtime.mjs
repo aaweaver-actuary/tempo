@@ -9,7 +9,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
-import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
+import { createBackupRestoreDatabase, createPostgresBackup, markPostgresBackupVerified, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -451,22 +451,25 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function backup() {
     stage("verifying_backup");
     const stamp = `${new Date().toISOString().replaceAll(/[-:.]/g, "")}-${operation.id}`;
-    const name = `tempo-${stamp}.dump`;
+    let name = `tempo-${stamp}.dump`;
     const restoreDatabase = `tempo_cli_restore_${operation.id.replaceAll("-", "")}`;
     const user = configuration.services.postgres.environment.POSTGRES_USER ?? "postgres";
     const database = configuration.services.postgres.environment.POSTGRES_DB;
     backupRecord = { filename: name, restore_database: restoreDatabase, created_at: new Date().toISOString(), verified: false };
     operation.backup = backupRecord; atomicJson(journalPath, operation);
-    await createPostgresBackup(compose, name, user, database);
+    name = await createPostgresBackup(compose, name, user, database);
+    backupRecord.filename = name; atomicJson(journalPath, operation);
     await createBackupRestoreDatabase(compose, user, restoreDatabase);
     backupRecord.restore_created = true; atomicJson(journalPath, operation);
     await restorePostgresBackup(compose, user, restoreDatabase, name);
     await maintenance("database/tooling/verify_postgres_backup.py", [`postgresql://${user}@postgres:5432/${database}`,
       `postgresql://${user}@postgres:5432/${restoreDatabase}`], { echo: true });
+    await markPostgresBackupVerified(compose, name);
     backupRecord.verified = true; atomicJson(journalPath, operation);
     await removeBackupRestoreDatabase(compose, user, restoreDatabase);
     backupRecord.restore_removed = true; atomicJson(journalPath, operation);
     log(`Verified backup: ${name}`);
+    if (name.endsWith(".staged")) log("Manual backup rotation required: one verified replacement is staged in addition to the two retained copies. No backups were removed.");
     return backupRecord;
   }
 

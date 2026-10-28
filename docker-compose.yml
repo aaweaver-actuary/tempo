@@ -171,15 +171,7 @@ services:
     command:
       - |
         while :; do
-          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
-          partial=/backups/tempo-$${stamp}.dump.partial
-          finished=/backups/tempo-$${stamp}.dump
-          pg_dump -h postgres -U tempo -d tempo -Fc -f "$${partial}"
-          pg_restore -l "$${partial}" >/dev/null
-          mv "$${partial}" "$${finished}"
-          sha256sum "$${finished}" > "$${finished}.sha256"
-          find /backups -name 'tempo-*.dump' -mtime +30 -delete
-          find /backups -name 'tempo-*.dump.sha256' -mtime +30 -delete
+          sh /opt/tempo/postgres-backup.sh recurring || echo 'Backup failed or needs inspection; existing copies preserved.' >&2
           sleep 86400
         done
     environment:
@@ -190,6 +182,7 @@ services:
         mode: 0400
     volumes:
       - tempo-postgres-backups:/backups
+      - ./database/tooling/cli/postgres-backup.sh:/opt/tempo/postgres-backup.sh:ro
     depends_on:
       postgres: {condition: service_healthy}
     restart: unless-stopped

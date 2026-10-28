@@ -279,5 +279,8 @@ async function fakeCommand() {
     output(actual); process.exit(0);
   }
   if (fixture.mode === "backup-fail" && args.some(argument => argument.includes("pg_dump"))) { console.error("canary-private-password backup failed"); process.exit(14); }
+  if (args.some(argument => argument.includes("pg_dump"))) {
+    console.log(`TEMPO_BACKUP_FILENAME=${args[args.indexOf("manual") + 1]}`);
+  }
   process.exit(0);
 }
