@@ -359,6 +359,13 @@ def poll_background_tasks(self) -> bool:
         if queue_refresh_wake:
             wake_queue_refresh_after_foreground_denial()
         return False
+    if claimed_task is None and study_only_enabled():
+        try:
+            activity_gate.check_background_admission()
+            with activity_gate.background_job('dispatch','explicit-import',yielding=True):
+                claimed_task=claim_task(explicit_imports_only=True)
+        except BackgroundAdmissionDeferred:
+            return False
     if claimed_task is None:
         return False
     return _execute_claimed_background_slice(
@@ -428,9 +435,13 @@ def _execute_claimed_background_slice(
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"], yielding=True):
         try:
             activity_gate.check_background_admission()
-            if claimed_task['kind'] not in STUDY_TASK_KINDS and study_only_enabled():
-                defer_task_for_foreground(claimed_task)
-                return False
+            explicit_origin = claimed_task.get('payload', {}).get('origin_import_operation_id')
+            if claimed_task['kind'] not in STUDY_TASK_KINDS and (study_only_enabled() or explicit_origin):
+                from .services.explicit_repertoire_import import permitted_delivery
+                if not permitted_delivery(claimed_task):
+                    defer_task_for_foreground(claimed_task)
+                    return False
+                claimed_task={**claimed_task,'explicit_import_preparation':True}
             if defer_paused_defensive_task(claimed_task):
                 return False
             if not current_delivery(claimed_task):
