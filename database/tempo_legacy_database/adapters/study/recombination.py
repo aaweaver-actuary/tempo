@@ -424,8 +424,6 @@ class CurrentStudyRecombination:
             if not card:
                 return self._hold("current_card_busy_or_missing")
             cards[identifier] = card
-        from .conflicts import installed as conflicts_installed, PostgresConflictStore
-        conflicts = PostgresConflictStore(database) if conflicts_installed(database) else None
         members, dues = [], []
         for identifier in identifiers:
             card = cards[identifier]
@@ -480,7 +478,6 @@ class CurrentStudyRecombination:
             unavailable = database.execute_native("""SELECT 1 FROM deleted_cards WHERE card_id=%s UNION ALL
                 SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s AND repertoire_id=%s LIMIT 1""",
                 (identifier,identifier,repertoire_id)).fetchone()
-            unavailable = unavailable or (conflicts is not None and conflicts.blocked(repertoire_id,identifier,card['revision']))
             active = database.execute_native("""SELECT 1 FROM daily_queue q JOIN queue_attempt_origins o
                 ON o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.revision=%s
                 WHERE q.card_id=%s AND q.status='queued' AND o.issued_as_head=1 LIMIT 1""", (card["revision"],identifier)).fetchone()
