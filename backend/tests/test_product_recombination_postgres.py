@@ -552,6 +552,19 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
         assert database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()
         assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id IN ('A','B') AND status='queued'").fetchone()
         assert PostgresGameFeedbackStore(database).get(lapse.key).available_by==deadline
+    # The real preparation reader closes its initial connection. Prove current
+    # target labels survive that callback boundary with PostgreSQL, not mocks.
+    from app.services.queue_presentation import presentation_rows
+    calls = []
+    def bounded_read(statement, parameters=()):
+        calls.append(statement)
+        with transaction() as database:
+            return database.execute(statement, parameters).fetchall()
+    visible = presentation_rows(None, now.date().isoformat(), read=bounded_read, limit=16)
+    target = next(row for row in visible if row['card_id'] == combined)
+    assert target['admission_kind'] == 'review'
+    assert target['gameplay_priority_reason'] == 'product_game_lapse'
+    assert sum('FROM study_game_feedback' in statement for statement in calls) == 1
     with transaction() as database:
         reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
         settled = PostgresGameFeedbackStore(database).get(lapse.key)
@@ -647,6 +660,12 @@ def test_current_owner_regrouping_costs_zero_actual_introduction_slots(current_o
         assert sum(count for _,count in counts.counts)==0 and combined not in unseen, (
             'An already-introduced regrouping must not consume allowance or be reset by unseen reconciliation',
             counts,combined in unseen)
+        from tempo_legacy_database.adapters.queue_refresh.application.admission import (
+            product_current_queue_facts, product_encounter_budget_facts,
+        )
+        assert combined not in {row[0] for row in product_current_queue_facts(database, day)[1]}
+        _, budget = product_encounter_budget_facts(database, day, 'r11-repertoire', combined)
+        assert budget[0] == 0 and budget[1] == 0
         from app.services.queue_application import seed_queue,presentation_rows
         assert next(row for row in presentation_rows(database,day) if row['card_id']==combined)['admission_kind']=='review'
         for _ in range(2):

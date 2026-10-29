@@ -144,6 +144,9 @@ def seed_queue(db, day, *, introductions=None):
         for offset, study_row in enumerate(study_rows):
             seeding_storage.append_study_card(db, day, study_row["id"], next_position + offset)
 
+    from tempo_legacy_database.adapters.study.recombination import project_current_presentations
+    project_current_presentations(db, day)
+
 
 from tempo_legacy_database.adapters.queue_refresh import presentation as presentation_storage
 from tempo_legacy_database.adapters.queue_refresh.presentation import _QUEUE_RANDOMIZATION_ROWS_SQL

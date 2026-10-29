@@ -95,13 +95,15 @@ def set_position(database, position, entry_id):
 
 
 def classify_entry(database, entry_id):
+    from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
                admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
                    WHEN EXISTS(SELECT 1 FROM reviews review
                    WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
-                     AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
+                     AND review.invalidated_at IS NULL) OR ("""
+        + regrouped_card_sql(database, "daily_queue.card_id") + """) THEN 'review' ELSE 'new' END
            WHERE id=?""",
         (entry_id,),
     )

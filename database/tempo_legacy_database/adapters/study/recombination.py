@@ -224,7 +224,7 @@ def regrouped_presentation_ids(database, identifiers, *, read=None):
         return frozenset()
     if read is not None:
         available = read("SELECT to_regclass('study_recombination_presentations') IS NOT NULL", ())
-        if not available or not available[0][0]:
+        if not available or available[0][0] is not True:
             return frozenset()
     elif not installed(database):
         return frozenset()

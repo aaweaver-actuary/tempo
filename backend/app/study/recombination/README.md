@@ -1,14 +1,11 @@
 # Study recombination owner — #503
 
-Current delivery port: the qualified R11 source at `04cd9535` is being assembled
-on integration `adfc8de8` (schema 52). The frozen #502 planner is unchanged.
-The private application and bounded-reader adapter checks pass on this base;
-shared review/queue/feedback/UI hooks, migration 053 registration and current-base
-native/A08 qualification are pending the exact coordination reservation. The
-earlier actual-board pass at `cc9694bc` remains evidence for its original stack,
-not a claim that this current port is already assembled, merge-qualified or
-installed. The contract and diagrams below describe the qualified implementation
-being reused; update this status after the integration proof.
+Current delivery port: qualified R11 source `04cd9535` is assembled on integration
+`adfc8de8`, with reserved normal-Study hooks and additive migration 053 after
+schema 52. Frozen #502 policy is unchanged. Current encounter fields, deferred
+intake, guarded priority writes and #547 bounded reads are retained. Current-base
+native/A08 qualification is pending; the earlier `cc9694bc` board pass is evidence
+for its original stack, not current merge qualification or installation.
 
 Study-owned implementation for SPEC v0.2 C01–C04 / A08. It consumes
 [#502's pure policy](POLICY.md) at `86debb32` and #482's immutable
@@ -116,10 +113,9 @@ that a physical ID belongs to this owner's persisted presentation history; it
 returns `FALSE` when the optional schema is absent. The current admission reads,
 stale reset, queue classifier and presentation mapping now consume that identity;
 the native test uses the actual QueueAdmissionAdapter and a lost projection/day
-rollover. No backdated date, invented review or copied FSRS state is used. #495's
-separately published opt-in `product_current_queue_facts` addition must retain the
-same exclusion when composing that later branch; it is absent from this current
-source and is not claimed as T01 product acceptance.
+rollover. No backdated date, invented review or copied FSRS state is used. The current `product_current_queue_facts` and `product_encounter_budget_facts`
+readers retain this same explicit exclusion. This verifies R11's zero charge,
+without claiming the separate T01 ranking feature's full acceptance.
 
 `Obligation(logical_id, decision_id, available_by)` carries #487's original
 unresolved effect identity/deadline unchanged. Only obligations whose existing
@@ -287,14 +283,12 @@ are isolated by the savepoint after the actual review has saved.
 
 Serving an existing generated presentation locks its own definition under the
 same current route fence; a busy join neighbour only defers the later proposal.
-The optional published #487 conflict store is checked before issuance, recovery,
-failure marking and review lookup. When its DDL is absent these controls add no
-hold. Queue seeding reconciles one currently queued, provably scoped durable hold
-per transaction; already suspended rows are durable progress, so a rebuilt queue
-cannot repeatedly visit only an old first hold. Scope and restoration policy stay
-in #487; #495 owns admission and #501 owns current Repertoire composition and its
-separate migration. A generated occurrence supplies exact identity proof from its
-immutable definition/current mapping without becoming conflict authority.
+The current R11 guard checks generated identity/source availability before
+recovery, failure marking and review lookup. Current source/integrity fences
+remain authoritative. The separate unmerged #487 scoped-conflict extension is
+preserved on the earlier R11 branch rather than imported as a prerequisite.
+Shared or ambiguous occurrences remain unjoined with an explicit diagnostic.
+
 
 The external task runner bounds the existing disposable image, uses a loopback
 ephemeral port, verifies exact container ownership, removes its container/anonymous

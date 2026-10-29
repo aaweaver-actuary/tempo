@@ -1,6 +1,7 @@
 """Fixed legacy admission queries on the caller connection; no admission policy."""
 
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query
+from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
 from tempo_legacy_database.adapters.queue_refresh.capacity import capacity_priority_statement, read_capacity_route_rows
 
 
@@ -56,6 +57,7 @@ def unseen_opening_page(database, day, after, batch_size):
                      AND COALESCE(q.admission_kind,'')!='explicit'
                      AND (c.introduced_at IS NULL OR c.introduced_at=?)
                      AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
+                + " AND NOT (" + regrouped_card_sql(database, "c.id") + ")"
                 + cursor + " ORDER BY q.position,q.id LIMIT ?",
                 (day, day, *((after[0], after[0], after[1]) if after is not None else ()), batch_size),
             ).fetchall()
@@ -70,6 +72,7 @@ def introduction_count_rows(database, day, after_repertoire_id, reviewed_only, b
             """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
             FROM daily_queue q JOIN cards c ON c.id=q.card_id
             WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?""")
+    statement += " AND NOT (" + regrouped_card_sql(database, "c.id") + ")"
     parameters = (day,) if reviewed_only else (day, day)
     if after_repertoire_id is not None:
         statement += " AND COALESCE(q.admission_repertoire_id,c.repertoire_id)>?"
@@ -196,7 +199,8 @@ def product_current_queue_facts(database, day, *, fence=False):
     introduced = database.execute_native("""SELECT card.id,card.introduced_at,
         COALESCE((SELECT admission_repertoire_id FROM daily_queue WHERE card_id=card.id
             AND cycle=0 AND queue_date=card.introduced_at ORDER BY id LIMIT 1),card.repertoire_id)
-        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s""", (day,)).fetchall()
+        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s"""
+        + ' AND NOT (' + regrouped_card_sql(database, 'card.id') + ')', (day,)).fetchall()
     required = database.execute_native("""SELECT c.id,q.gameplay_priority_reason
         FROM cards c LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=%s AND q.cycle=0
         WHERE c.content_type='opening' AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
@@ -238,7 +242,8 @@ def product_encounter_budget_facts(database, day, repertoire_id, card_id):
     counts = database.execute_native("""WITH introduced AS MATERIALIZED (
         SELECT COALESCE((SELECT admission_repertoire_id FROM daily_queue WHERE card_id=card.id
             AND cycle=0 AND queue_date=card.introduced_at ORDER BY id LIMIT 1),card.repertoire_id) credited
-        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s
+        FROM cards card WHERE card.content_type='opening' AND card.introduced_at=%s"""
+        + ' AND NOT (' + regrouped_card_sql(database, 'card.id') + ')'+"""
         ) SELECT count(*),count(*) FILTER(WHERE credited=%s),EXISTS(
             SELECT 1 FROM daily_queue WHERE card_id=%s AND (queue_date=%s
             OR (status='queued' AND attempt_state NOT IN ('clean','unstarted')))) FROM introduced""",

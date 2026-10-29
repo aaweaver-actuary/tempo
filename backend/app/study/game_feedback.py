@@ -125,12 +125,21 @@ class GameFeedbackStore(Protocol):
     def card_effects(self, card_id: str) -> tuple[Effect, ...]: ...
 
 
+class GameFeedbackTargets(Protocol):
+    """Optional Study-owned current-presentation capability; original provenance stays."""
+    def promote_effect(self, effect: Effect, day: str) -> bool: ...
+    def completion_matches(self, effect: Effect, completion: Completion) -> bool: ...
+
+
 class GameFeedback:
     """Implements #482 LearningFeedbackPort; no connection/commit authority."""
     def __init__(self, store: GameFeedbackStore, decisions: CurrentDecisionPort,
                  *, clock: Callable[[], datetime], light_first_interval_days: int = 7):
         self.store, self.decisions, self.clock = store, decisions, clock
         self.light_interval = light_first_interval_days
+        # Legacy/fake stores retain exact original-card semantics. The retained
+        # adapter explicitly supplies this Study-owned capability when present.
+        self.targets: GameFeedbackTargets | None = getattr(store, "targeting", None)
 
     def _receipt(self, effect: Effect, outcome: str) -> LearningReceipt:
         return LearningReceipt(
@@ -231,7 +240,11 @@ class GameFeedback:
             )
             effect = replace(effect, status="applied", applied_at=now,
                              review_id=self.store.last_game_review_id(effect.key))
-        self.store.promote(effect.card_id, day)
+        if self.targets:
+            if not self.targets.promote_effect(effect, day):
+                return replace(effect, reason="current_presentation_unavailable_or_busy")
+        else:
+            self.store.promote(effect.card_id, day)
         return replace(effect, reason=None)
 
     def maintain(self, *, after: str = "", limit: int = 1) -> str | None:
@@ -259,7 +272,9 @@ class GameFeedback:
         for observed in self.store.card_effects(completion.card_id):
             self.store.lock_effect(observed.key)
             effect = self.store.get(observed.key)
-            if (effect.status in {"pending", "applied"} and effect.card_revision == completion.revision
+            matches = (self.targets.completion_matches(effect, completion) if self.targets else
+                effect.card_id == completion.card_id and effect.card_revision == completion.revision)
+            if (effect.status in {"pending", "applied"} and matches
                     and completion.reviewed_at >= effect.received_at):
                 self.store.save(replace(effect, status="settled", reason="genuine_review",
                     settled_at=completion.reviewed_at, settlement_review_id=completion.review_id), now)

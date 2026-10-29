@@ -27,6 +27,7 @@ class PostgresGameFeedbackStore:
         self.scheduling = OwnedConnectionSchedulingReviewStore(database)
         self._promote = promote
         self.prepared_priority = prepared_priority
+        self.targeting = self
 
     def _writer(self):
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
@@ -94,6 +95,7 @@ class PostgresGameFeedbackStore:
 
     def save(self, effect, now):
         self._writer()
+        previous = self.get(effect.key)
         lapse, command = effect.lapse, effect.encounter or effect.lapse
         payload = lapse.model_dump_json() if lapse else None
         if effect.encounter is not None:
@@ -122,6 +124,10 @@ class PostgresGameFeedbackStore:
              effect.status, effect.reason, effect.applied_at, effect.review_id, effect.settled_at,
              effect.settlement_review_id, str(effect.control.source_revision) if effect.control else None,
              effect.control.model_dump_json() if effect.control else None, effect.conflict_json, now))
+
+        if effect.review_id is not None and (previous is None or previous.review_id is None):
+            from .recombination import record_admitted_failure
+            record_admitted_failure(self.database, effect)
 
     def card_facts(self, card_id, day):
         return self._card_facts(card_id, day, states=['learning','mature'])
@@ -189,9 +195,48 @@ class PostgresGameFeedbackStore:
         return tuple(self._effect(row) for row in rows)
 
     def card_effects(self, card_id):
+        from .recombination import installed as recombination_installed
+        if recombination_installed(self.database):
+            rows = self.database.execute_native("""SELECT effect.* FROM study_game_feedback effect
+                WHERE effect.status IN ('pending','applied') AND (effect.card_id=%s OR EXISTS(
+                    SELECT 1 FROM study_recombination_current current
+                    JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
+                    WHERE current.presentation_id=%s AND current.decision_id=effect.decision_id
+                      AND p.result_json->'presentation'->>'repertoire_id'=COALESCE(effect.payload_json::jsonb->'finding'->>'repertoire_id',
+                          effect.payload_json::jsonb->'command'->'decision'->>'repertoire_id')))
+                ORDER BY effect.effect_key""", (card_id,card_id)).fetchall()
+            return tuple(self._effect(row) for row in rows)
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback
             WHERE card_id=%s AND status IN ('pending','applied') ORDER BY effect_key""", (card_id,)).fetchall()
         return tuple(self._effect(row) for row in rows)
+
+
+    def promote_effect(self, effect, day):
+        from .recombination import effect_target, current_presentation_available
+        target = effect_target(self.database,effect)
+        if target!=effect.card_id:
+            if not self.try_lock_target(target,day) or not current_presentation_available(self.database,target):
+                return False
+            facts = self.card_facts(target,day)
+            if not facts or not facts.available or facts.active_attempt or facts.buried:
+                return False
+        if effect.encounter is None:
+            self.promote(target,day)
+        else:
+            self.promote_encounter(target,day)
+        return True
+
+
+    def completion_matches(self, effect, completion):
+        from .recombination import effect_target, current_presentation_available
+        target = effect_target(self.database,effect)
+        if target!=completion.card_id:
+            return False
+        if target==effect.card_id:
+            return effect.card_revision==completion.revision
+        facts = self.card_facts(target,completion.reviewed_at.date().isoformat())
+        return facts is not None and facts.revision==completion.revision and current_presentation_available(self.database,target)
+
 
 
 def installed(database):
@@ -200,11 +245,26 @@ def installed(database):
         "SELECT to_regclass('study_game_feedback') IS NOT NULL").fetchone()[0]
 
 
-def owed_feedback_card_ids(database, card_ids, *, read=None):
+def owed_feedback_card_ids(database, card_ids, *, read=None, include_regrouped=False):
     """One borrowed or bounded read for the requested outstanding obligations."""
     ids = tuple(dict.fromkeys(card_ids))
     if not ids:
         return set()
+    if include_regrouped:
+        placeholder = '?' if read is not None else '%s'
+        requested = ','.join('(' + placeholder + ')' for _ in ids)
+        statement = """WITH requested(card_id) AS (VALUES """ + requested + """)
+            SELECT DISTINCT requested.card_id FROM requested
+            WHERE EXISTS(SELECT 1 FROM study_game_feedback effect
+                WHERE effect.status IN ('pending','applied') AND (effect.card_id=requested.card_id OR EXISTS(
+                    SELECT 1 FROM study_recombination_current current
+                    JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
+                    WHERE current.presentation_id=requested.card_id AND current.decision_id=effect.decision_id
+                      AND json_extract_path_text(CAST(p.result_json AS json),'presentation','repertoire_id')=COALESCE(
+                        json_extract_path_text(CAST(effect.payload_json AS json),'finding','repertoire_id'),
+                        json_extract_path_text(CAST(effect.payload_json AS json),'command','decision','repertoire_id')))))"""
+        rows = read(statement, ids) if read is not None else database.execute_native(statement, ids).fetchall()
+        return {row[0] for row in rows}
     if read is not None:
         placeholders = ','.join('?' for _ in ids)
         rows = read("SELECT DISTINCT card_id FROM study_game_feedback "
@@ -269,8 +329,8 @@ def invalidate_saved_review(database, card_id, review_id):
     database.execute_native("""UPDATE study_game_feedback SET
         status=CASE WHEN applied_at IS NULL THEN 'pending' ELSE 'applied' END,
         settled_at=NULL,settlement_review_id=NULL,reason='settling_review_invalidated',updated_at=%s
-        WHERE card_id=%s AND settlement_review_id=%s AND status='settled'""",
-        (datetime.now(timezone.utc), card_id, review_id))
+        WHERE settlement_review_id=%s AND status='settled'""",
+        (datetime.now(timezone.utc), review_id))
 
 
 def resume_available_feedback(database, day, *, limit=16):
@@ -300,7 +360,4 @@ def resume_available_feedback(database, day, *, limit=16):
             store.save(replace(effect, status="held", reason="current_card_unavailable"),
                        datetime.now(timezone.utc))
         elif not facts.active_attempt and not facts.buried:
-            if effect.encounter is None:
-                store.promote(effect.card_id, day)
-            else:
-                store.promote_encounter(effect.card_id, day)
+            store.promote_effect(effect, day)

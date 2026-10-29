@@ -1,3 +1,25 @@
+## T22 Study recombination and immutable presentation provenance
+
+`backend/tests/test_product_recombination_application.py` owns genuine saved
+evidence, fresh AB/ABC streaks, conservative scheduling, exact retries, active
+member holds, original obligation identity/deadline and confirmed final-decision
+splits. Its scoped dependency/cycle guard protects the pure application seam.
+
+`backend/tests/test_product_recombination_postgres.py` owns the private transaction
+contract and actual `test_current_owner_*` source/issuance/evidence/review/queue
+boundary. Changed regressions prove exact issued-head confirmation, rollback on
+response/assistance or changed intent, original history/manifest retention,
+zero actual introduction allowance and unreviewed-fragment day-rollover recovery.
+`tests/unit/prefix-split-pending-regressions.test.ts` retains the exact displayed
+attempt across pending retries and preserves legacy request serialization.
+
+`tests/browser/product-recombination.spec.ts` owns A08's real board reviews,
+fresh combined streaks, manual split and reload with another issued attempt
+unchanged. It stages only deliberate extra practice in a guarded disposable
+fixture, seeds no qualifying review and intercepts no Study API. Presence is not
+a browser pass; exact execution results belong to #503 / draft #528.
+See the [canonical owner diagrams and current limits](../backend/app/study/recombination/README.md).
+
 ## Product v0.2 game-feedback composition
 
 `backend/tests/test_product_game_history.py` owns bounded retained-library preview,

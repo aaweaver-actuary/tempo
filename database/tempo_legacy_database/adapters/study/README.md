@@ -1,5 +1,26 @@
 # Study game-feedback storage
 
+The Study-owned [recombination adapter](recombination.py) now supplies bounded
+`CurrentStudyRecombination` source/attempt fencing, fresh generated card scheduling,
+normal queue projection and confirmed splits. Its canonical
+[component, sequence and six-table ER views](../../../../backend/app/study/recombination/README.md)
+describe source migration 053, explicit current decision/presentation mappings and
+original history/provenance relationships. No live schema/deployment is asserted.
+
+When the optional published [scoped conflict store](conflicts.py) is installed,
+the retained serving/recovery boundary uses its original-attempt guard, while
+queue seeding reapplies one provably scoped queued hold. Existing suspended rows
+remain unchanged. Generated-presentation identity proof comes from the current
+recombination mapping; conflict and restoration eligibility remain Repertoire's
+injected policy. These hooks neither register C's DDL nor claim C browser proof.
+
+`PostgresGameFeedbackStore.targeting` supplies the optional Study-owned
+`GameFeedbackTargets` capability: applied obligations follow one exact current
+decision target, and genuine whole-sequence reviews settle the original effect.
+Original effect/card/lapse identity, deadline and occurrence/processing facts stay
+immutable. Combined review invalidation reopens that same receipt; joining does
+not apply another lapse. No producer is called to resolve or serve this state.
+
 [`game_feedback_authority.py`](game_feedback_authority.py) supplies the concrete
 `current_owner_game_feedback` factory and retained-owner `CurrentOwnerDecisions`
 fencer. It requires the existing backend capture plus its public snapshot,
