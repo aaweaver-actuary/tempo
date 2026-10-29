@@ -1,6 +1,7 @@
 # Approved repertoire changes — #492
 
-Implemented source, unmerged; product wiring and live behavior are unverified.
+Implemented source, unmerged. #501 supplies the separate C1 assembled product
+proof; live/installed behavior remains unverified.
 Repertoire owns approved moves, conflicts, proposals and approval receipts. Study
 owns every schedule, review, active attempt, queue occurrence and physical-card
 publication. Content approval is distinct from R11 presentation regrouping.

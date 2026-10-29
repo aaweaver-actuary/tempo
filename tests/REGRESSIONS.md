@@ -5494,6 +5494,7 @@ the existing authoring view while audit enforcement requires an explicit command
 `C exact conflict is enforced and manually resolved while unrelated issued Study and history survive`.
 It uses normal imports/queue/approval/UI, a verified disposable-only legacy-source
 conflict fixture, stale-decision rejection and reload. Its fixture never records
-a Study review or applies a fake learning effect. Source collection/typechecking
-is not a browser/PostgreSQL pass; actual C acceptance remains pending until the
-real current-owner callbacks and root registration are present.
+a Study review or applies a fake learning effect. It runs the registered current-owner callbacks, HTTP/worker/navigation and ordered
+schema054 through the owning disposable PostgreSQL browser runner. Its real UI
+proof remains distinct from source/type checks and from genuine-data or installed
+acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
