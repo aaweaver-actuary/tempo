@@ -1,6 +1,7 @@
 import { attachPassingBrowserShards } from "./ci-browser-shard-fixture.mjs";
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from "node:test";
+import { protectRegressionSuite } from "../../scripts/verification-stages.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -374,6 +375,10 @@ test("rename deletion unknown paths and missing history select conservative cove
   }
   assert.throws(() => changedPathsFromNameStatus("R100\0one\0"), /Invalid/);
   assert.throws(() => changedPathsFromNameStatus("U\0app/components/discoveries-tray.tsx\0"), /Uncertain/);
+});
+
+test("negative controlled-browser fixtures remain compatible with the repository regression guard", () => {
+  protectRegressionSuite("tests/controlled-browser/unit");
 });
 
 test("new unclassified specs fail planning and every test has nightly and release coverage", () => {
