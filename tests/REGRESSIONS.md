@@ -4958,6 +4958,19 @@ service budgets, rootless build confinement and bounded/labelled component Docke
 invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
 checks and listing do not acquire a heavy-work lease.
 
+`A14 managed build defaults and explicit lower limits bind creation and exact readback`,
+`A15 invalid or over-budget build limits fail before ownership, hooks or Docker`,
+`A16 lower build snapshot admits existing peers at the ceiling and preserves them through cleanup`,
+`A17 aggregate build admission rejects CPU or memory overflow without touching peers`,
+`A18 builder cgroup mismatch fails without fallback and verifies cleanup before release`,
+`A19 lower build retains journal and lane on failed cleanup and excludes inherited builders`,
+and `A20 Compose build forwards explicit limits and preserves build failures after verified cleanup`
+in that same registered runner own per-build allocation. They retain the default
+2 CPU / 2048 MiB policy and prove explicit 1 CPU / 1536 MiB limits with injected
+Docker readback, caller mutation, CPU/memory overcommit, peer preservation,
+failed cleanup and lane exclusion. Real lower-memory build success remains
+separate, unproved operational evidence.
+
 `scripts/check-inference-priority-images.mjs` additionally runs actual engine and
 Maia images at their optional-service kernel limits. Stockfish may require the
 hard-stop fallback at its CPU ceiling; the proof retains the 250 ms yield target,
