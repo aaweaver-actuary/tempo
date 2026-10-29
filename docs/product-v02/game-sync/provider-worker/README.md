@@ -1,9 +1,11 @@
 # Optional provider-worker packaging — #491
 
-The goal is game-versus-repertoire comparison: a missed own decision reprioritizes
-its existing card for normal Study. There is no coaching, explanation or engine
-requirement. Genuine first-introduction contracts remain a separate supported
-path; their evidence is not proof of the existing-card priority goal.
+The goal is game-versus-repertoire comparison: a missed own decision identifies
+an important move and requests front-of-queue Study reinforcement. That goal does
+not depend on whether the receipt calls it missed or first introduction, or proof
+that the card was already known at the time. Preserve real timestamps, source/card
+identity and retry receipts; never invent chronology or completed Study work.
+There is no coaching, explanation or engine requirement.
 
 This is an **untested source extraction** of #558 `403c19e5`, based on main
 `346d1741` (includes #586). No tests, builds, provider imports/HTTP, containers,
@@ -115,8 +117,9 @@ sequenceDiagram
 - #558's `packaged-intake-checkpoint.json` records packaged source `c7d78137`,
   image `sha256:a4c9912688dd21b7ee561056c60dcee858c4d7a525cf672e039d347f2c68195b`,
   schema054. The actual CLI/default capture/public intake stored a pending
-  first-introduction receipt, duplicate replay kept its identity, and ordinary
-  cards/reviews/queue were unchanged. That probe omitted command workers/browser
+  first-introduction-labelled receipt, duplicate replay kept its identity, and
+  ordinary cards/reviews/queue were unchanged. That is evidence of intake, not a
+  demonstration of actual front-of-queue reinforcement. That probe omitted command workers/browser
   and independent refresh; full health truthfully reported missing workers.
 - The later `settlement-retry-result.json` at published `403c19e5` records the
   actual reader/command-worker/CLI prefix with one source/delivery/Study effect,
