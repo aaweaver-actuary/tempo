@@ -1,5 +1,10 @@
 # Optional provider-worker packaging — #491
 
+The goal is game-versus-repertoire comparison: a missed own decision reprioritizes
+its existing card for normal Study. There is no coaching, explanation or engine
+requirement. Genuine first-introduction contracts remain a separate supported
+path; their evidence is not proof of the existing-card priority goal.
+
 This is an **untested source extraction** of #558 `403c19e5`, based on main
 `346d1741` (includes #586). No tests, builds, provider imports/HTTP, containers,
 services, settings writes or activation were run for this extraction. The donor's
@@ -9,7 +14,9 @@ retained receipts below are historical evidence, not a pass for this final diff.
 
 The exact slice is `game_sync_current.py`, `provider_priority.py`, the separate
 [`docker-compose.games-feedback.yml`](../../../../docker-compose.games-feedback.yml)
-overlay and this README. The two Python modules retain the donor's exact bytes.
+overlay and this README. The intake adapter retains the donor's exact bytes.
+The worker root adds early validation through the existing pure forward-window
+policy.
 Only the `game-feedback-worker` service is copied from its Compose file. Current
 base Compose, backend Dockerfile, API routes/Settings, central resource policy,
 Study/maintenance/recovery and original #558 checkout are untouched. This avoids
@@ -22,13 +29,24 @@ saved configuration before each provider unit. A changed scope refuses old
 clients; the process must rebuild them on restart. It does not create settings,
 choose filters, alter evidence identity or add a second delivery ledger.
 
-`python -m app.product_composition.game_sync_current --workspace <workspace>` is
-the existing entry point, enabled only by explicit
-`TEMPO_PRODUCT_GAME_SYNC_ENABLED=1`. `--preview` instead uses the configured reader
-URL and never dispatches work; `--once --max-units N` retains the bounded-unit
-behavior. `--follow` requires explicit overlap and retains the saved filters.
-These describe source entry points, not authorization or instructions to start a
-process. No CLI command was executed here.
+The existing CLI requires `TEMPO_PRODUCT_GAME_SYNC_ENABLED=1` for work. The optional
+`games-feedback` profile now explicitly passes `--follow` and requires
+`TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS`: an operator-selected integer 0..3600,
+strictly smaller than every recurring provider's saved seed-window width. There
+is no default overlap. Recurring seeds must be 60 seconds..1 day; the existing pure
+`ForwardWindow.next_job` validates them before client construction or work claims.
+Invalid large windows are refused, never shortened or converted. It preserves
+account, filters, repertoires, revision and original pending-job checkpoints.
+
+Historical backfill is a different mode: the existing CLI without `--follow`,
+using its explicit fixed-window job and bounded `--once --max-units N` drain.
+A 90 day saved range remains valid backfill, but cannot serve as a recurring follow
+seed. Finish that historical job and explicitly save a suitable forward seed;
+never replace an outstanding continuation with a new window. Recurrence off
+remains off, even in the follow process; manual queued jobs may still drain.
+`--preview --follow --overlap-seconds N` is the existing query-only preview.
+These describe interfaces, not authorization or instructions to start anything.
+No CLI command was executed here.
 
 End-to-end dependencies stay separately tracked: #590 supplies durable
 command/API/Settings and exact route transitions, #589 owns claimed-feedback
@@ -45,6 +63,8 @@ it declares `game-feedback-worker`, profile `games-feedback`, `init: true`,
 secret. No port, persistent worker volume, broker or service dependency is added
 to Study or the API. The provider service depends only on the existing PostgreSQL
 and Redis health conditions. Saved recurrence alone cannot start the process.
+Without follow, fixed-window recurrence repeats the same UTC range; it must not
+be advertised as ongoing imports.
 
 Only this optional worker receives its own writer DSN/passfile. The API keeps its
 reader URL/passfile. The worker's read URL uses its existing writer-role profile
@@ -126,11 +146,23 @@ Missing configuration is refused; no account/window/default filter is invented.
 Manual queued work can drain with recurrence off. A run must retain its original
 job identity, source revision and saved window; forward windows are opt-in.
 
-The retained provider/packaged evidence is synthetic. **Current user account,
-window, filters, repertoires, recurrence and pending-job state are unverified.**
-No live route, database connection, provider endpoint, token or setting was read
-or changed in this preparation. Do not treat an account seen in historical games
-or a fixture as current authorization/configuration.
+The retained provider/packaged evidence is synthetic. Current saved-configuration
+and resource observations belong in the private dated readiness handoff, not in
+source as a lasting claim of capacity or activation. No account, identifier or
+token is published here. Account, seed window, filters, repertoire selection,
+recurrence and overlap must be explicitly supplied before activation; none is
+inferred from historical games. The ongoing goal selects follow mode, so no extra
+mode preference is needed for the ongoing profile. A historical backfill, if
+wanted, remains a separate explicit fixed-window request.
+
+Readable quiet foreground controls, selected-daemon CPU allocation and managed
+memory headroom are distinct observations; none grants activation or proves idle
+CPU/free physical memory. Source registration is separately unresolved: the
+optional service is absent from the central named allocation maps. No central
+resource file is edited before owner coordination. Bounded readiness reads use
+only existing approved local configuration/control routes and resource-owner
+read functions. No tests, builds, provider HTTP/import, direct database access,
+settings write, credential or service change accompanies them.
 
 The release owner must reconcile source/schema/profile and current role/secret
 readiness using its existing approved path, obtain a redacted current saved-config
@@ -138,3 +170,23 @@ snapshot through the already authorized read route if needed, account for the ne
 optional allocation, and combine #590/#589/#581 at their declared boundaries.
 Token values, account identifiers and private payloads must stay out of this
 handoff and PR. There is no merge qualification, deployment or activation claim.
+
+
+## API/Settings coordination and mixed-side finding
+
+#590/#591's stored `SyncConfiguration` remains unchanged. Required copy/interface
+handoff: fixed UTC ranges and arbitrary-width backfills are still supported;
+recurrence repeats that range unless the explicit follow process is selected.
+Ongoing follow uses a 60 second..1 day seed plus explicit smaller overlap, not a
+silent conversion of a 90 day range. Overlap is an operator/process input in this
+slice, not a new Settings/DTO/database field. No API/Settings file is edited here;
+the API owner receives this precise copy requirement through the coordinator.
+
+A separate source trace in `games/feedback/coordinator.py` shows all configured
+snapshots compared to each game, while `comparison.py` rejects learner-color
+mismatch. An unrelated opposite-color snapshot can therefore quarantine a valid
+match. This is not attributed to any historical failed run without its captured
+configuration. The owning correction must select every exact same-color snapshot
+and preserve their complete conflict/mapping evidence; no-match must remain
+honestly unresolved. It is outside this four-file packaging lease and is proposed
+to the coordinator for explicit ownership, not silently patched here.

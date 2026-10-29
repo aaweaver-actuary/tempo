@@ -81,6 +81,12 @@ def create_current_game_sync(*, workspace, connections, clock=None,
         if (value:=configuration_store.configuration(workspace,provider)) is not None)
     if not configurations:
         raise ReviewUnavailable("explicit_sync_configuration_required")
+    if forward_window is not None:
+        # Apply the existing pure follow policy before building provider clients
+        # or claiming work. This validates recurring seed width/overlap without
+        # enqueueing, changing a historical job or inventing a smaller window.
+        for configuration in configurations:
+            forward_window.next_job(configuration, None, now=clock.now(), build_job=configured_job)
     @contextmanager
     def configured_admission():
         with current_sync_admission():
