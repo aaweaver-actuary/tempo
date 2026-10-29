@@ -27,4 +27,9 @@ def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> d
     return result
 
 
-register_review_commands(register_command, submit=submit_review, reconcile=reconcile_review)
+def register_prepared_review(name, handler):
+    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    register_command(name,handler,prepare=prepare_recombination_review)
+
+
+register_review_commands(register_prepared_review, submit=submit_review, reconcile=reconcile_review)
