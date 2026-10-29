@@ -81,11 +81,22 @@ def create_current_game_sync(*, workspace, connections, clock=None,
         if (value:=configuration_store.configuration(workspace,provider)) is not None)
     if not configurations:
         raise ReviewUnavailable("explicit_sync_configuration_required")
+    @contextmanager
+    def configured_admission():
+        with current_sync_admission():
+            current = tuple(value for provider in ("lichess", "chesscom")
+                if (value:=configuration_store.configuration(workspace,provider)) is not None)
+            if current != configurations:
+                # The independently restarted process rebuilds its concrete
+                # acquisition policies. Never run a newly edited filter/window
+                # through clients constructed for the previous configuration.
+                raise ReviewUnavailable("sync_configuration_changed_restart_worker",503)
+            yield
     store = PostgresCanonicalGamesStore(connections)
     runtime = create_game_sync(policies=tuple(configuration_policy(value) for value in configurations),
         store=store, snapshots=CurrentRepertoireSnapshots(connections), learning=learning,
         clock=clock, source_identity=store,
-        transport_factory=transport_factory,encounter_feedback=True,admission=current_sync_admission)
+        transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)
     schedule=(ContinuousSync(workspace=workspace,store=configuration_store,policy=forward_window,
@@ -107,6 +118,26 @@ def create_current_provider_worker(*, workspace, connections,
     return create_current_game_sync(workspace=workspace, connections=connections,
         learning=priority_intake, clock=clock, forward_window=forward_window,
         transport_factory=transport_factory)
+
+
+def current_provider_worker(*, workspace, connections, clock=None, forward_window=None,
+                            transport_factory=None):
+    """Concrete opt-in root: the worker alone owns this intake's lifecycle."""
+    from threading import Event
+    from .provider_priority import CurrentProviderPriorityIntake
+    clock = clock or SystemClock()
+    stopped = Event()
+    intake = CurrentProviderPriorityIntake(connections=connections, clock=clock,
+        operation_stopped=stopped.is_set)
+    runtime, schedule = create_current_provider_worker(workspace=workspace, connections=connections,
+        priority_intake=intake, clock=clock, forward_window=forward_window,
+        transport_factory=transport_factory)
+    stop = runtime.request_stop
+    def request_stop():
+        stopped.set()
+        stop()
+    runtime.request_stop = request_stop
+    return runtime, schedule
 
 
 def main():
@@ -142,14 +173,14 @@ def main():
                 configuration=configuration.model_dump(mode="json"),
                 previous=None if previous is None else previous.model_dump(mode="json"),
                 next_window=None if job is None else job.window.model_dump(mode="json"),
-                executable=False,reason="qualified_provider_encounter_receiver_required"))
+                executable=False,reason="preview_only_worker_opt_in_required"))
         print(json.dumps(dict(read_only=True,providers=result)));return
     if os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED")!="1":
         raise RuntimeError("TEMPO_PRODUCT_GAME_SYNC_ENABLED=1 is required; no worker starts automatically")
     dsn = os.environ.get("TEMPO_DATABASE_WRITE_URL")
     if not dsn:
         raise RuntimeError("TEMPO_DATABASE_WRITE_URL is required")
-    runtime, review = create_current_game_sync(workspace=options.workspace,
+    runtime, review = current_provider_worker(workspace=options.workspace,
         connections=DedicatedGamesConnections(dsn),forward_window=policy)
     first_schedule=True
     def enqueue_selected():
