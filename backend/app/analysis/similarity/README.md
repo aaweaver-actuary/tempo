@@ -6,6 +6,11 @@ composition. It does not acquire a snapshot, run an engine, decide correctness,
 approve content, or change Study. Product wiring belongs to #501; acceptable
 repair proposals belong to #499, engine evidence to #497, approval to #492.
 
+The main-base refresh uses the index and contracts already integrated on main
+at `b4b59725`; no unmerged producer branch is required. Current route-scoped
+physical mappings remain Repertoire-owned. Retrieval consumes only the unchanged
+public position, selected-response and route-provenance facts.
+
 ## Public interface and ownership
 
 Import from [retrieval.py](retrieval.py):
@@ -136,7 +141,8 @@ Existing Python 3.14/chess/Pydantic/pytest and source paths for
 `packages/{chess-core,evidence-math,game-review-contracts}/src`,
 `contracts/{game-evidence,analysis-jobs}/src` are sufficient. No install needed.
 The task wrapper sets these paths and holds/releases the existing nontruncating
-advisory Mac validation lock. #501 owns central runtime/test registration and
-product adoption; #482 owns the requested addition of analysis to its shared
-guard discovery. No central/shared source is edited in this PR. Actual engine,
-proposal approval, browser, native database and live acceptance are not claimed.
+advisory Mac validation lock. Main already declares these runtime dependencies.
+The owning test applies the existing product-boundary helpers to this directory;
+no shared guard or registration source is edited in this PR. #501 owns product
+adoption and any assembled registration. Actual engine, proposal approval,
+browser, native database and live acceptance are not claimed.
