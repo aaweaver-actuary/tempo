@@ -49,7 +49,8 @@ content; the coordinator must inspect both when reconciling changed evidence.
 
 ## Checkpoint and completeness
 
-One call makes at most one HTTP request. `page_size` is 1–1000 (default 100).
+One call makes at most one HTTP request. Request `page_size` is 1–1000 (default 100);
+the independent output budgets below may end a page earlier.
 The next request includes boundary overlap, so its explicit `max` may grow up to
 1000 even with `page_size=100`. A response containing `max` source rows always
 returns `saturated=True`, `complete=False`, and an opaque continuation.
@@ -138,3 +139,24 @@ its [OpenAPI source](https://github.com/lichess-org/api/blob/master/doc/specs/ta
 and the half-open creation-time query in [Query.scala](https://github.com/lichess-org/lila/blob/master/modules/game/src/main/Query.scala)
 and [dateBetween](https://github.com/lichess-org/lila/blob/master/modules/db/src/main/dsl.scala).
 The new request sends `until=end_at` without subtracting a millisecond.
+
+## Task D emitted-page budgets and delayed completion
+
+Output bounds additionally default to `max_page_records=100`,
+`max_page_positions=10000`, `max_page_bytes=8388608`, independently of the
+streamed response limit and request `page_size`. A record that would overflow a
+page is not consumed: the original millisecond/ID boundary resumes it on the
+next page. Existing version 1 continuation binding and coincident-timestamp
+safeguards remain. A single oversized record fails as
+`record_exceeds_page_budget` with the original continuation. Serialized page
+provenance reserves room for the existing bounded boundary token and remains
+below the coordinator's 16 MiB limit.
+
+The request still excludes ongoing games and queries **creation time**. A game
+that finishes after its creation time leaves the short forward overlap is found
+by `ContinuousSync`'s explicitly configured full-history reconciliation, starting
+at the saved coverage start. The adapter itself creates no timer, storage or
+retry loop. See the [continuous owner](../feedback/README.md#continuous-acquisition-and-historical-reconciliation--task-d).
+Current regular acquisition proof is in `test_product_continuous_sync.py` plus
+the selected adapter cases in `test_product_game_sync_integration.py`; the older
+standalone suite named above is absent at the Task D baseline.

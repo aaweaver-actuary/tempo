@@ -3,7 +3,8 @@ from contextlib import contextmanager
 import hashlib
 
 from app.contracts.product_v02.games import Finding, GameSummary
-from app.games.feedback.ports import Delivery, JobState, SourceState
+from app.games.feedback.ports import ConcurrentUpdate, Delivery, JobState, SourceState
+from app.games.feedback.continuous import ContinuousProviderState, stream_prefix
 from app.games.feedback.review import ReviewUnavailable, SyncConfiguration
 from .product_feedback import PostgresGamesStore
 
@@ -123,22 +124,22 @@ class PostgresReviewStore:
                 WHERE payload->'normalized'->>'workspace_id'=%s
                 ORDER BY (payload->'original'->>'played_at')::timestamptz DESC NULLS LAST,source_key
                 LIMIT %s""", (workspace, limit)).fetchall()
-        return tuple(GameSummary(provider=row[0], game_id=row[1], source_revision=int(row[2]),
+        return tuple(GameSummary(provider="chesscom" if row[0] == "chess.com" else row[0], game_id=row[1], source_revision=int(row[2]),
             played_at=row[3], time_precision=row[4], player_color=row[5]) for row in rows)
 
     def source_detail(self, workspace, provider, game_id):
         with self._transaction() as database:
             rows = database.execute("""SELECT payload::text FROM product_feedback_sources
                 WHERE payload->'normalized'->>'workspace_id'=%s
-                  AND payload->'normalized'->>'source_id'=%s
+                  AND payload->'normalized'->>'source_id'=ANY(%s)
                   AND payload->'normalized'->>'game_id'=%s LIMIT 2""",
-                (workspace, provider, game_id)).fetchall()
+                (workspace, ["chesscom", "chess.com"] if provider in {"chesscom", "chess.com"} else [provider], game_id)).fetchall()
         if len(rows) > 1:
             raise ReviewUnavailable("ambiguous_stored_game")
         return SourceState.model_validate_json(rows[0][0]) if rows else None
 
     def canonical_game_id(self, provider, provider_game_id):
-        aliases = ["chesscom", "chess.com"] if provider == "chesscom" else ["lichess"]
+        aliases = ["chesscom", "chess.com"] if provider in {"chesscom", "chess.com"} else [provider]
         with self._transaction() as database:
             rows = database.execute("""SELECT id FROM imported_games
                 WHERE provider=ANY(%s) AND provider_game_id=%s LIMIT 2""",
@@ -167,7 +168,55 @@ class PostgresReviewStore:
                 (workspace, provider)).fetchone()
         return JobState.model_validate_json(row[0]) if row else None
 
+    @staticmethod
+    def _stream_job(database, configuration, purpose):
+        prefix = stream_prefix(configuration, purpose)
+        row = database.execute("""SELECT job.payload::text FROM product_feedback_sync_requests request
+            JOIN product_feedback_jobs job ON job.job_id=request.job_id
+            WHERE request.workspace_id=%s AND request.provider=%s
+              AND starts_with(job.job_id,%s)
+            ORDER BY (job.status='complete' AND job.payload->>'window_complete'='true'),
+              CASE WHEN NOT (job.status='complete' AND job.payload->>'window_complete'='true')
+                THEN request.requested_at END ASC,
+              (job.payload->'spec'->'window'->>'end_at')::timestamptz DESC,job.job_id
+            LIMIT 1""", (configuration.workspace_id, configuration.provider, prefix)).fetchone()
+        return JobState.model_validate_json(row[0]) if row else None
+
+    def continuous_state(self, workspace, now):
+        with self._transaction() as database:
+            rows = database.execute("""SELECT payload::text,next_run_at FROM product_feedback_configuration
+                WHERE workspace_id=%s AND payload->>'interval_seconds' IS NOT NULL
+                  AND provider IN ('lichess','chesscom') ORDER BY provider LIMIT 2""", (workspace,)).fetchall()
+            result = []
+            for payload, next_run in rows:
+                configuration = SyncConfiguration.model_validate_json(payload)
+                result.append(ContinuousProviderState(configuration, next_run <= now,
+                    self._stream_job(database, configuration, "forward"),
+                    self._stream_job(database, configuration, "reconciliation")))
+            return tuple(result)
+
+    def enqueue_continuous(self, configuration, job, now, *, purpose, expected_previous):
+        if not job.job_id.startswith(stream_prefix(configuration, purpose)):
+            raise ReviewUnavailable("continuous_job_purpose_mismatch")
+        with self._transaction() as database:
+            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (f"tempo:product-sync-config:{configuration.workspace_id}:{configuration.provider}",))
+            current = self._stream_job(database, configuration, purpose)
+            if current != expected_previous:
+                raise ConcurrentUpdate("continuous_stream_changed")
+            if current is not None and (current.status != "complete" or not current.window_complete):
+                raise ConcurrentUpdate("continuous_stream_unfinished")
+            @contextmanager
+            def borrowed():
+                yield database
+            # Reuse the one configured enqueue authority and its exact transaction.
+            return PostgresReviewStore(borrowed)._enqueue(configuration, job, now,
+                                                          advance_schedule=purpose == "forward")
+
     def enqueue(self, configuration, job, now):
+        return self._enqueue(configuration, job, now)
+
+    def _enqueue(self, configuration, job, now, *, advance_schedule=True):
         with self._transaction() as database:
             database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                 (f"tempo:product-sync-config:{configuration.workspace_id}:{configuration.provider}",))
@@ -193,7 +242,7 @@ class PostgresReviewStore:
             database.execute("""INSERT INTO product_feedback_sync_requests
                 (workspace_id,operation_id,provider,job_id,requested_at) VALUES(%s,%s,%s,%s,%s)""",
                 (configuration.workspace_id, job.job_id, job.provider, job.job_id, now))
-            if configuration.interval_seconds is not None:
+            if advance_schedule and configuration.interval_seconds is not None:
                 database.execute("""UPDATE product_feedback_configuration SET next_run_at=%s
                     WHERE workspace_id=%s AND provider=%s""",
                     (now + configuration.interval_seconds, configuration.workspace_id, configuration.provider))

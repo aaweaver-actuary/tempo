@@ -468,3 +468,60 @@ produce no command and remain the caller's unresolved findings. The helper does
 not infer occurrence precision, invent a timestamp or interpret an empty output
 as all-correct/complete coverage. It does not select admission, apply a lapse,
 score importance or write history; Study retains those decisions/guards.
+
+## Continuous acquisition and historical reconciliation — Task D
+
+Prepared source for #491; root/CLI integration belongs to Task C. No provider is
+activated by constructing `ContinuousSync`. Its optional keyword
+`reconciliation_interval_seconds: int | None = None` accepts integers >=60;
+`None` creates no reconciliation jobs and does not cancel already durable work.
+The existing optional worker still owns lifecycle, admission, serial HTTP units,
+provider backoff and client cancellation. Study has no new dependency.
+
+```mermaid
+flowchart LR
+  Clock["Injected clock + saved provider configuration"] --> Schedule["ContinuousSync: forward and reconciliation policy"]
+  Schedule -->|"typed bounded state; conditional enqueue"| Store["Games PostgresReviewStore"]
+  Store -->|"same transaction: request + existing job"| Jobs["Existing Games jobs and page ledger"]
+  Jobs -->|"one bounded page per claim"| Providers["Lichess / Chess.com acquisition adapters"]
+  Providers -->|"page and continuation"| Commit["Existing coordinator / atomic page commit"]
+  Commit --> Jobs
+  Manual["Manual requests: independent identity"] --> Store
+```
+
+`ContinuousStore` is the semantic capability: `continuous_state(workspace, now)`
+returns at most two `ContinuousProviderState` values (`configuration`,
+`forward_due`, `forward_job`, `reconciliation_job`). `enqueue_continuous` compares
+`expected_previous` under the existing configuration lock before borrowing the
+existing configured enqueue transaction. SQL and connection ownership remain in
+[the Games adapter](../../../../database/tempo_legacy_database/adapters/games/product_review/README.md).
+
+The existing `following:<provider>:<configuration revision>:` prefix owns forward
+progress; `reconciling:` owns historical passes. Both bind the workspace and
+explicit account/filter/repertoire/window scope through their job specification
+and stable identity. `last_job` remains the latest arbitrary request for status,
+not the forward pointer. Oldest unfinished work wins stream selection; only
+`status=complete` **and** `window_complete=true` can advance forward coverage.
+Queued/partial/retryable/failed/quarantined jobs retain their original scope,
+continuation and retry timing. A held stream does not block the other purpose or
+provider. Scheduling refusals are exposed in `ContinuousSync.errors` by
+(provider, purpose); ordinary enqueue races are retried on a later scheduling pass.
+
+Every reconciliation starts at **the saved configuration window's `start_at`**,
+ends at the frozen enqueue-time UTC second, and uses the same jobs, adapters,
+source identities, page commits and logical-effect deduplication. A restart
+resumes the same job/cursor. The next pass waits the explicitly supplied cadence
+from the last successful completion checkpoint. Reconciliation never changes
+forward scheduling time. A finite overlap alone does not establish late-game
+coverage. Completeness is limited to finished games visible during a successful
+pass inside this configured historical scope; no all-time or provider snapshot
+completeness is claimed.
+
+Task B owns checkpoint classification. Exact provider exclusion reasons are
+`duplicate_source_id`, `filtered_speed`, `filtered_rated`, `unsupported_variant`,
+`outside_window`, `time_control_filtered`, `rated_filtered`, `unfinished_game`.
+The last means the existing PGN validator refused an unfinished/unsupported
+result; later completion is discovered by reconciliation. Malformed PGNs,
+account mismatch and conflicting identities remain unresolved. **B's baseline
+coordinator quarantines every rejection**; its compatible exclusion-classification
+checkpoint is required before claiming these exclusion pages drain in production.

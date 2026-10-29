@@ -5600,3 +5600,25 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 
 - Ordinary execution must not inherit fractional CPU quotas: `tests/runner/development-budget.test.mjs` A14 and A26–A30 cover unrestricted defaults, explicit exact caps, Games memory/PID allocation, preserved memory rejection, and verified cleanup. The legacy qualification-plan suites cover unrestricted CPU defaults without daemon reads, explicit cap partitioning, and retained helper memory/swap/PID constraints. Existing ownership, Study deferral, admission and cleanup regressions remain owning proof.
 - Independent Content, Game Evidence, Intelligence, legacy Learning and shared ownership fixtures must not restore an ordinary CPU quota: `backend/tests/test_cpu_resource_launchers.py::test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_and_ownership` executes real launch construction through fake Docker and verifies the original memory/PID/ownership arguments without starting a database.
+## #491 Task D — recurring collection and delayed visibility
+
+Owning suite: `backend/tests/test_product_continuous_sync.py`.
+
+- `test_manual_backfill_never_resets_forward_progress_and_reconciliation_is_independent`
+- `test_reconciliation_restart_freezes_scope_cursor_and_waits_from_completion`
+- `test_reconciliation_requires_explicit_integer_cadence`
+- `test_reconciliation_default_remains_disabled_and_stale_enqueue_retries_next_pass`
+- `test_dense_two_month_archive_exact_ids_with_record_position_and_byte_pages`
+- `test_archive_mutation_replays_month_without_mutating_record_provenance_and_v1_resumes`
+- `test_provider_429_retains_original_cursor_and_retry_after`
+- `test_lichess_budget_split_keeps_unconsumed_timestamp_ids`
+- `test_reconciliation_finds_late_provider_visibility_after_forward_overlap_exactly_once`
+- `test_provider_unfinished_exclusion_is_distinct_from_malformed_and_resource_failure`
+- `test_conflicting_archive_ids_are_detected_before_first_slice`
+- `test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_restart`
+
+Owning suite: `backend/tests/test_product_game_review_commands_postgres.py`.
+
+- `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
+
+Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fakes. The one selected native case reuses the existing owned disposable PostgreSQL fixture for stream/CAS/rollback/alias reads; no Study settlement suite is selected.
