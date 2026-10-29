@@ -1,10 +1,8 @@
 {
   "schemaVersion": 1,
   "development": {
-    "cpus": 2,
     "memoryMiB": 2048,
-    "concurrentInvocations": 1,
-    "buildParallelism": 1
+    "concurrentInvocations": 1
   },
   "optionalServices": {
     "background-worker": {

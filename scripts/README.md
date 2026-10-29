@@ -140,11 +140,15 @@ this source does not execute or authorize a one-time cutover.
 ## Managed builder allocation
 
 [`managedBuild`](development-budget.mjs) and `managedComposeBuild` accept an
-explicit `limits: {cpus, memoryMiB}` option. Omission retains 2 CPU / 2048 MiB.
-An explicit request supplies both numeric fields: positive finite CPUs whose
-100000-microsecond quota is an exact integer, and positive integer MiB. Each
-request must fit the unchanged aggregate 2 CPU / 2048 MiB ceiling. No limit is
-rounded, silently increased or replaced on failure.
+explicit `limits: {cpus, memoryMiB}` option. Omission uses the CPU count reported
+by the selected Docker daemon and the existing 2048 MiB memory limit. Missing or
+invalid daemon CPU information fails without a fallback. An explicit request
+supplies both numeric fields: positive finite CPUs whose 100000-microsecond
+quota is an exact integer, and positive integer MiB. There is no fixed aggregate
+CPU ceiling; explicit CPU allocations may exceed two CPUs. Every managed
+container retains positive finite individual CPU and memory limits, and the
+aggregate memory ceiling remains 2048 MiB. No requested limit is rounded,
+silently increased or replaced on failure.
 
 For the proposed lower-memory build, the supported API is:
 
@@ -157,18 +161,48 @@ await managedBuild(buildWithNamedBuilder, {
 
 The caller keeps its existing build command, Docker adapter, quiet check and
 owner token/directory options. No new environment or CLI override is introduced.
-Limits are validated and copied before ownership acquisition or asynchronous
-hooks, then used for aggregate admission, rootless builder creation and exact
+Explicit limits are validated and copied before ownership acquisition or asynchronous
+hooks, then used for memory admission, rootless builder creation and exact
 kernel readback. Existing development containers count toward admission and are
 preserved. The one builder lane still excludes new managed container/Compose
 starts, even when a smaller builder leaves headroom.
 
+Study active/unavailable control still defers heavy work; ownership, short
+startup admission and one-heavy-build serialization are unchanged. Internal
+compiler fanout is separate from those lifecycle locks: the development wrapper
+preserves caller `CARGO_BUILD_JOBS`, `CMAKE_BUILD_PARALLEL_LEVEL`,
+`RAYON_NUM_THREADS` and `UV_CONCURRENT_BUILDS` settings and otherwise leaves them
+unset for standard runtime defaults. BuildKit likewise owns worker parallelism
+inside its verified container limits. The production `Dockerfile.web` likewise
+leaves Rust/Wasm compiler fanout at runtime defaults instead of pinning it to one.
+The managed Docker adapter derives an
+omitted `--cpus` from the selected daemon as well. A daemon CPU count sets a
+kernel limit; it is not evidence of idle headroom or real-world Study latency.
+Memory/OOM failures remain failures.
+
+Callers needing the same CPU allocation can import
+`readDevelopmentCpuAllocation({cpus, docker})` from `development-budget.mjs`. It
+validates an optional explicit numeric CPU value, or asynchronously reads the
+selected daemon's reported CPU allocation when omitted, using the same
+positive/finite/quota validation as the builder and managed Docker adapter.
+The optional injected `docker(args)` returns command output. No lease,
+workload or reservation is created. Consumers with an explicit allocated CPU
+value should keep that value rather than replace it with daemon capacity. No
+new CPU environment variable is introduced.
+
+Memory discovery currently uses `tempo.resource-class=development`. A known
+retained peer lacking that label must still be accounted for before a runtime
+action; an empty discovery result is not free capacity. Two retained 512 MiB
+services plus one 1536 MiB builder require 2560 MiB, so the unchanged memory
+policy still blocks that build even when builders run sequentially. Removing
+the CPU ceiling grants no memory exception or service shutdown authority.
+
 ```mermaid
 flowchart TD
-    Request[managedBuild / managedComposeBuild limits] --> Snapshot[Validate and copy limits; defaults 2 CPU / 2048 MiB]
+    Request[managedBuild / managedComposeBuild limits] --> Snapshot[Validate and copy explicit limits; default CPU count comes from daemon]
     Snapshot --> Owner[Existing host budget owner and exclusive builder lane]
     Owner --> Quiet[Existing Study quiet check]
-    Quiet --> Admission[Snapshot plus existing managed containers within global ceiling]
+    Quiet --> Admission[Builder plus accounted managed container memory within 2048 MiB]
     Admission --> Journal[Journal this builder identity before creation]
     Journal --> Create[Create rootless builder with snapshot memory and CPU quota]
     Create --> Verify[Exact kernel readback against snapshot]

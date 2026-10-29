@@ -1127,8 +1127,10 @@ test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_
       Memory:resourceBudgets.developmentServices[service].memoryMiB*1024*1024}}));
   const docker=args=>args[0]==='ps'?rows.map(row=>row.Id).join('\n'):JSON.stringify(rows);
   assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic);
+  assert.doesNotThrow(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
+    {schema:{...diagnostic.schema,cpus:4}}));
   assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
-    {schema:{...diagnostic.schema,cpus:diagnostic.schema.cpus+0.001}}),/exceed the aggregate/);
+    {schema:{...diagnostic.schema,memoryMiB:2048}}),/exceed the aggregate/);
   const maia=resourceBudgets.developmentServices['maia-worker'];
   rows.push({Id:'maia',Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':'maia-worker'}},
     HostConfig:{NanoCpus:maia.cpus*1e9,Memory:maia.memoryMiB*1024*1024}});
@@ -1224,7 +1226,7 @@ for (const [runnerName, functionEnd] of [
           assert.equal(command, 'docker');assert(args.includes('up'));
           events.push('docker-start');
           assert.equal(competingAllocation, false,
-            `${runnerName} launched Docker while a sibling owns the full 2 CPU/2048 MiB allocation; ${events.join(' -> ')}`);
+            `${runnerName} launched Docker while a sibling owns the full 2048 MiB allocation; ${events.join(' -> ')}`);
           return { status: 0 };
         },
       };

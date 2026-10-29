@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {readdir,readFile} from 'node:fs/promises';
-import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource} from './development-budget.mjs';
+import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource,readDevelopmentCpuAllocation} from './development-budget.mjs';
 
 export function managedDockerEnvironment(environment,directory) {
   const docker = environment.TEMPO_REAL_DOCKER ?? environment.PATH.split(delimiter)
@@ -27,15 +27,16 @@ function option(args,name) {
   const index=args.indexOf(name);
   return index>=0 ? args[index+1] : args.find(value=>value.startsWith(name+'='))?.slice(name.length+1);
 }
-export function managedContainerArguments(args,token) {
+export function managedContainerArguments(args,token,defaultCpus) {
   if(args[0]!=='run') return args;
-  const cpus=Number(option(args,'--cpus') ?? '1');
+  if(option(args,'--cpus')===undefined&&!Number.isFinite(defaultCpus))throw new Error('Managed tests require a finite daemon CPU allocation');
+  const cpus=Number(option(args,'--cpus') ?? defaultCpus);
   const memory=option(args,'--memory') ?? '512m';
   const match=/^(\d+(?:\.\d+)?)([bkmgt]?)b?$/i.exec(memory);
-  if(!match || !(cpus>0)) throw new Error('Managed tests require finite CPU and memory limits');
+  if(!match || !Number.isFinite(cpus) || !(cpus>0)) throw new Error('Managed tests require finite CPU and memory limits');
   const powers={b:1/1024**2,k:1/1024,m:1,g:1024,t:1024**2,'':1/1024**2};
   const memoryMiB=Number(match[1])*powers[match[2].toLowerCase()];
-  if(!(memoryMiB>0)) throw new Error('Managed tests require a positive memory limit');
+  if(!Number.isFinite(memoryMiB) || !(memoryMiB>0)) throw new Error('Managed tests require a positive finite memory limit');
   return {args:['run','--label','tempo.resource-class=development','--label',`tempo.resource-owner=${token}`,
     ...(!option(args,'--cpus')?['--cpus',String(cpus)]:[]),...(!option(args,'--memory')?['--memory',memory]:[]),...args.slice(1)],limits:{cpus,memoryMiB}};
 }
@@ -58,7 +59,8 @@ export async function runManagedDocker(args) {
     try {
       const directory=process.env.TEMPO_DEVELOPMENT_BUDGET_DIRECTORY??join(tmpdir(),'tempo-development-resource-budget-v1.lock');
       if(existsSync(join(directory,'builder-lane')))throw new Error('The owned builder execution lane is occupied; no container may share its allocation');
-      const request=managedContainerArguments(args,token);
+      const defaultCpus=option(args,'--cpus')===undefined?await readDevelopmentCpuAllocation({docker:inspect}):undefined;
+      const request=managedContainerArguments(args,token,defaultCpus);
       assertDevelopmentCapacity(['component-test'],'new-component-container',inspect,{'component-test':request.limits});
       name=option(request.args,'--name')??'tempo-managed-'+randomUUID();
       args=option(request.args,'--name')?request.args:['run','--name',name,...request.args.slice(1)];
