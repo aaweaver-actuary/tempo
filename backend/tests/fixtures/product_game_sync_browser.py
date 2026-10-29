@@ -157,8 +157,11 @@ def seed_fixture(transaction, project):
                      last_review=now-timedelta(days=1), stability=20, difficulty=5).to_json()
         title = "Game sync fixture repertoire" if name == "primary" else "Preserved Study fixture"
         with transaction() as database:
-            database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'T10 synthetic fixture',%s)",
-                                    (repertoire,title,now.isoformat()))
+            # Keep ordinary seeding from consuming the target before the
+            # real encounter exception is exercised. Only this synthetic
+            # repertoire has zero allowance; the unrelated review is unchanged.
+            database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'T10 synthetic fixture',%s,%s)",
+                                    (repertoire,title,now.isoformat(),0 if fresh else 2))
             database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,
                 state,due_date,introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
                 VALUES(%s,%s,'prefix',%s,'["e2e4"]','white',%s,%s,%s,1,%s,%s,%s,%s,'opening')""",
