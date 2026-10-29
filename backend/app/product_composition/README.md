@@ -1,5 +1,52 @@
 # One imported game to ordinary Study (#488)
 
+## Durable Game Review commands and Settings recovery (#590)
+
+The reader-profile API dispatches configure, manual sync and legacy feedback
+retry through the existing command gateway. `game_review_commands.py` registers
+those three handlers on the existing foreground command worker. Games borrows
+the command transaction; its configuration/job or legacy delivery mutation and
+the operation receipt commit together. Configure uses `Idempotency-Key`; sync
+and feedback retry retain the request's `operation_id`. Reads acquire no writer
+credential. Provider HTTP and Study queue refresh do not run in these handlers.
+
+```mermaid
+sequenceDiagram
+  participant Settings as Games settings / Game Review
+  participant Journal as Games browser pending record
+  participant API as Reader HTTP API
+  participant Gateway as Existing durable command gateway
+  participant Command as Foreground command worker / writer
+  participant Games as Games configuration / job / legacy delivery
+  Settings->>Journal: Persist original save bytes or manual-run identity
+  Settings->>API: Configure / sync / legacy retry with original operation ID
+  API->>Gateway: Dispatch bounded command
+  Gateway->>Command: Execute or replay original operation
+  Command->>Games: Borrow caller transaction; fence current facts
+  Note over Command,Games: Games mutation and operation receipt commit atomically
+  Command-->>API: Completed result or pending operation
+  API-->>Settings: Actual result / pending / failure
+  Settings->>Journal: Clear matching terminal save/run only
+```
+
+`GameSyncSettings` is mounted only in the existing Games Settings tab. Its
+endpoint/workspace-scoped browser record survives unmount/reload, retains the
+original configuration bytes or manual-run ID after an uncertain response, and
+locks edits until that operation is resolved. Loading saved settings does not
+prove a pending save succeeded. A sync result of `pending` means a durable job
+request, not completed acquisition or an available Study card. Legacy lapse
+retry keeps its existing current-finding/source fences; encounter redelivery
+is not exposed through that legacy command.
+
+This slice requires only the command gateway and schema already on main. It
+does not package or activate an optional provider worker, alter Study
+maintenance, or solve #581. The owning HTTP, native command and UI cases are
+`test_product_game_review_commands.py`,
+`test_product_game_review_commands_postgres.py`, and
+`product-game-sync-settings.test.tsx`. They are extracted from #558; prior
+evidence is retained there. The current-main extraction is **untested** under
+the user's no-new-tests instruction. It is not a merge or installation claim.
+
 ## Continuous-provider public priority intake (#489 / #491)
 
 The optional Games process receives an `EncounterFeedbackPort` from the

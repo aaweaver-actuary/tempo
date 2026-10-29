@@ -24,6 +24,7 @@ import { PendingOperationError } from "../lib/operation-status";
 import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
+import { CurrentGameSyncSettings } from "../product-composition/GameSyncSettings";
 
 type SettingsValues = {
   initial_depth: number;
@@ -706,6 +707,7 @@ export default function SettingsView({
         </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
+          {activeSection === "games" && <CurrentGameSyncSettings />}
           <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
           <label>
             <span>Lichess username</span>

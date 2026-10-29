@@ -30,13 +30,15 @@ flowchart LR
 `localStorage` enforces one string value per origin/key. The full browser key is
 the record identity; suffixes are parts of that key, not relational columns or
 foreign keys. JSON field shapes below come from the linked application source,
-not a browser schema constraint. No index, new version or key format was added.
+not a browser schema constraint. Existing legacy keys are preserved; configured
+product Games uses its separate scoped recovery key below. There is no index.
 
 | Owner / adapter | Exact key or formula | Serialized value and existing application contract |
 | --- | --- | --- |
 | Endgames attempt — [endgame-attempt.ts](endgame-attempt.ts) | `tempo-pending-endgame-attempt-v1` | JSON `{ operationId: string, templateId: string }`; [attempt command](../../../../app/lib/endgame-attempt-command.ts). |
 | Endgames template admission — [endgame-template.ts](endgame-template.ts) | `tempo-pending-endgame-template-v1` | JSON `{ operationId: string, body: string }`. `body` is the exact request JSON for `name`, `white_material`, `black_material`, `trained_color`, `goal_mix` (all strings); [template command](../../../../app/lib/endgame-template-command.ts). |
 | Game synchronization — [game-sync.ts](game-sync.ts) | `tempo-pending-game-sync-command-v1` | JSON `{ operationId: string, body: string }`. `body` is exact request JSON from `Record<string, unknown>`; [sync command](../../../../app/lib/game-sync-command.ts). |
+| Configured product Games — [game-sync.ts](game-sync.ts) | `tempo-pending-product-game-sync-v1:${encodeURIComponent(scope)}`, where scope is the Game Review endpoint plus workspace ID | One unresolved `{kind:"save",operationId,body}` or `{kind:"run",provider,operation_id}` record; [Games settings](../../../../app/product-composition/GameSyncSettings.tsx) owns validation and recovery. Save bytes and run identity survive tab unmount/reload. Only a confirmed terminal response removes the matching operation; loading current settings does not imply success. |
 | Tactic capture — [tactic-capture.ts](tactic-capture.ts) | `tempo-pending-tactic-capture-v1` | JSON `{ body: string }` containing exact transport JSON. Inner request fields: `capture_id: UUID string`, `starting_fen: string`, `moves: string[]`, `source_kind: "puzzle_rush", "game", "manual" or "other"`, optional nullable `source_ref/source_url: string`, `note: string`; [capture request schema and command](../../../../app/lib/tactic-capture-command.ts). The inner `capture_id` is the operation identity. |
 
 Operation IDs, template/game/finding IDs and guided-review session IDs have only
