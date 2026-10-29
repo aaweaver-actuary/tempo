@@ -4958,6 +4958,19 @@ service budgets, rootless build confinement and bounded/labelled component Docke
 invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
 checks and listing do not acquire a heavy-work lease.
 
+`A14 managed build defaults and explicit lower limits bind creation and exact readback`,
+`A15 invalid or over-budget build limits fail before ownership, hooks or Docker`,
+`A16 lower build snapshot admits existing peers at the ceiling and preserves them through cleanup`,
+`A17 aggregate build admission rejects CPU or memory overflow without touching peers`,
+`A18 builder cgroup mismatch fails without fallback and verifies cleanup before release`,
+`A19 lower build retains journal and lane on failed cleanup and excludes inherited builders`,
+and `A20 Compose build forwards explicit limits and preserves build failures after verified cleanup`
+in that same registered runner own per-build allocation. They retain the default
+2 CPU / 2048 MiB policy and prove explicit 1 CPU / 1536 MiB limits with injected
+Docker readback, caller mutation, CPU/memory overcommit, peer preservation,
+failed cleanup and lane exclusion. Real lower-memory build success remains
+separate, unproved operational evidence.
+
 `scripts/check-inference-priority-images.mjs` additionally runs actual engine and
 Maia images at their optional-service kernel limits. Stockfish may require the
 hard-stop fallback at its CPU ceiling; the proof retains the 250 ms yield target,
@@ -5469,3 +5482,37 @@ and rollback after actual graph enqueue. Its broker/Redis transport is substitut
 it does not qualify a running worker stack or a genuine private PGN. Eventual
 fixture-authorized command:
 `make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
+
+## C repertoire audit composition (#501)
+
+`backend/tests/test_product_repertoire_integration.py` owns the C-only source
+boundary: actual #492 manual preview/approval/replay and unchanged unrelated
+routes; route-local eligibility/stale preview; real in-process owner HTTP and
+read projection; exact borrowed command transaction/stable retry identity; and
+release of the current snapshot read connection. Semantic fixture stores are
+explicitly fake here; this file does not establish normal Study suspension.
+
+- `test_c_real_owner_manual_preview_approval_and_replay_preserve_unrelated_route`
+- `test_c_conflict_eligibility_is_route_local_and_stale_decision_rejected`
+- `test_c_unregistered_router_uses_real_owner_http_and_exact_approval`
+- `test_c_command_transport_reuses_exact_transaction_and_stable_retry_identity`
+- `test_c_current_snapshot_read_releases_borrowed_reader_before_returning`
+
+`tests/unit/product-repertoire-integration.test.ts` owns the concrete #500 client
+mapping, exact preview/decision payload and retry correlation, safe optional
+failure, 202 remaining pending, cancellation/scope rejection, and retention of
+the existing authoring view while audit enforcement requires an explicit command.
+
+`tests/browser/product-repertoire-review.spec.ts` owns the normal-product case
+`C exact conflict is enforced and manually resolved while unrelated issued Study and history survive`.
+It uses normal imports/queue/approval/UI, a verified disposable-only legacy-source
+conflict fixture, stale-decision rejection and reload. Its fixture never records
+a Study review or applies a fake learning effect. It runs the registered current-owner callbacks, HTTP/worker/navigation and ordered
+schema054 through the owning disposable PostgreSQL browser runner. Its real UI
+proof remains distinct from source/type checks and from genuine-data or installed
+acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
+
+## Saved discovery mobile overlay
+
+- **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
+- **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.

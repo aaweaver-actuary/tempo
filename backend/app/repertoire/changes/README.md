@@ -1,6 +1,7 @@
 # Approved repertoire changes — #492
 
-Implemented source, unmerged; product wiring and live behavior are unverified.
+Implemented source, unmerged. #501 supplies the separate C1 assembled product
+proof; live/installed behavior remains unverified.
 Repertoire owns approved moves, conflicts, proposals and approval receipts. Study
 owns every schedule, review, active attempt, queue occurrence and physical-card
 publication. Content approval is distinct from R11 presentation regrouping.
@@ -98,8 +99,8 @@ exact shared proposal remain retained as evidence; receipt insertion and source
 publication roll back together.
 
 `SCHEMA_SQL` is the exact two-table disposable-fixture/schema handoff. It is never
-run on import or application startup. #501 must allocate an additive migration
-number and coordinate its schema index/registration; no live migration ran.
+run on import or application startup. #501 registers it in additive migration054, after schema053, alongside the
+Study owner's existing conflict DDL. No live migration ran.
 
 ```mermaid
 erDiagram

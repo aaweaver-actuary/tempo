@@ -11,7 +11,8 @@ export function validateInventory() {
   const actual = readdirSync(resolve(root, "tests/unit")).filter(name => /\.test\.[cm]?tsx?$/.test(name)).map(name => "tests/unit/" + name);
   if (new Set(declared).size !== declared.length || declared.sort().join() !== actual.sort().join()) throw new Error("Missing/duplicate test ownership; update test-inventory.json");
   const runnerFiles = readdirSync(resolve(root, "tests/runner")).filter(name => /\.test\.mjs$/.test(name)).map(name => "tests/runner/" + name);
-  if (runnerFiles.sort().join() !== [...inventory.lanes.runners].sort().join()) throw new Error("Missing runner test ownership");
+  const declaredRunners = [...inventory.lanes.runners, ...(inventory.explicitRunnerFiles ?? [])];
+  if (new Set(declaredRunners).size !== declaredRunners.length || runnerFiles.sort().join() !== declaredRunners.sort().join()) throw new Error("Missing/duplicate runner test ownership");
   // Minimal repositories may omit this lane entirely. Owning files always require registration.
   const controlledDirectory = "tests/controlled-browser/unit";
   if (existsSync(resolve(root, controlledDirectory)) || Object.hasOwn(inventory.lanes, "controlled-browser")) {

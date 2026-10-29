@@ -25,6 +25,18 @@ current-owner, queue, schedule and private-store writes together. A returned
 `applied` receipt is provisional until commit. Any exception requires rollback.
 Do not catch an initialization/storage error and commit an earlier partial write.
 
+Normal review command preparation can supply `PreparedRecombination` from the
+database owner before the writer opens. It streams authored source in 16-row
+pages, distinguishes final exhaustion from interruption, and binds discovery to
+the repertoire's monotone source/prefix revisions and published graph generation.
+The writer rechecks that binding, current integrity, every retained relevant
+source row and the target graph under the existing nonblocking fences. A changed,
+missing or skipped row defers regrouping while the actual review remains saved.
+An accepted change retains its bounded source proof in its existing private JSON;
+later composite availability and split generations recheck that proof without
+replaying the unrelated repertoire. Historical small-source fingerprints remain
+compatible. No new table, scheduler, producer or source mutation is introduced.
+
 - `record_review(route_id, ReviewEvent) -> CleanStreak`: accepts an exact saved
   owner fact only after `StudyBoundary.saved_review` proves its immutable
   presentation/revision/epoch, attempt/review, completion, assistance and failure
@@ -157,11 +169,13 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
+    participant Prepare as Existing command preparation
     participant Hook as Retained Study hook
     participant App as Recombination
     participant Current as CurrentStudyRecombination
     participant Policy as #502 pure policy
     participant Store as Private store
+    Prepare->>Prepare: bounded complete source discovery; close read
     Hook->>App: after saved review, same writer
     App->>Store: try route + sorted evidence locks
     App->>Current: prove saved review/current route, no wait
@@ -181,9 +195,12 @@ sequenceDiagram
 [`recombination.py`](../../../../database/tempo_legacy_database/adapters/study/recombination.py)
 contains source DDL `SCHEMA`, also frozen in
 [`053_study_recombination.sql`](../../../../database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql).
-The store/adapter runs no DDL, opens no connection and commits nothing. 053 follows
-#491's published `f137d970` migration 052; source readiness is 53. Complete ordered
-DDL through 053 is exercised in the native fixture. Central registration remains
+The store/writer adapter runs no DDL, borrows its caller's transaction and never
+commits. Command preparation uses the existing read-connection lifecycle before
+that writer opens. Migration 053 follows
+#491's published `f137d970` migration 052. Current main registers C1 as migration
+054; the native fixture follows the migration owner's current readiness version,
+including those conflict controls. Earlier recorded R11 evidence used 053. Central registration remains
 with the serialized integration owner. Columns are source, not a live-schema claim.
 
 ```mermaid
@@ -262,9 +279,20 @@ connection/policy read is injected. The synthetic source fixture includes retain
 unknown-assistance history; every qualifying success is performed through the
 normal controller. There is no Games/provider implementation in the Study path.
 
-The concrete adapter materializes at most 64 authored routes, 256 graph steps,
-128 physical/current generated members and 128 obligations. It refuses larger,
-unproved, changed-content, unsupported and ambiguous scopes with diagnostics.
+Source preparation visits at most 10,000 authored routes / 100,000 plies / 32 MiB,
+with 64 KiB per source row. These are explicit discovery limits; stopping at one
+is an incomplete hold, never a complete first page. Only authored routes touching
+the target route's exposed learner positions enter the working set: at most 64
+relevant routes / 4,096 plies / 256 KiB, plus 256 target graph steps, 128
+physical/current generated members and 128 obligations. Unrelated authored rows
+and graph steps consume no relevant working-set allowance. Relevant alternatives
+are discovered from authored source even when absent from the selected graph;
+late competing own responses reach the unchanged pure policy. Unsupported or
+oversized input, interrupted discovery, missing rows, skipped locks and changed
+source bindings have explicit holds. Direct legacy callers without preparation
+retain the original complete-small-source fallback; they cannot assert a complete
+large scope. Complete persisted retirement exclusion remains separate from the
+optional 16-route recovery pass introduced by assignment B.
 Current client evidence supports at most 40 moves / 20 learner decisions; larger
 proposed results are held without interrupting the saved review. Each clean event
 requires complete persisted evidence, all actual expected first responses and no

@@ -99,12 +99,24 @@ export async function reconcileDevelopmentBuilder(name, { directory = budgetDire
   await recordBudgetResource(key, false, token, directory);
 }
 
+function snapshotBuildLimits(limits) {
+  const { cpus, memoryMiB } = limits ?? {};
+  if (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000) ||
+      !Number.isSafeInteger(memoryMiB) || !(memoryMiB > 0))
+    throw new Error('Managed build limits require positive finite CPUs with an exact CPU quota and positive integer memoryMiB');
+  if (cpus > resourceBudgets.development.cpus || memoryMiB > resourceBudgets.development.memoryMiB)
+    throw new Error('Managed build limits exceed the aggregate development budget');
+  return Object.freeze({ cpus, memoryMiB });
+}
+
 export function assertDevelopmentCapacity(requestedServices, project, docker = args =>
-  execFileSync('docker', args, { encoding: 'utf8' }), allocations = resourceBudgets.developmentServices) {
+  execFileSync('docker', args, { encoding: 'utf8' }), allocations = resourceBudgets.developmentServices,
+  builderLimits = resourceBudgets.development) {
+  const build = project === '__builder' ? snapshotBuildLimits(builderLimits) : undefined;
   const ids = docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}']).trim().split(/\s+/).filter(Boolean);
   const existing = ids.length ? JSON.parse(docker(['inspect', ...ids])) : [];
-  let cpus = project === "__builder" ? resourceBudgets.development.cpus : 0;
-  let memory = project === "__builder" ? resourceBudgets.development.memoryMiB : 0;
+  let cpus = build?.cpus ?? 0;
+  let memory = build?.memoryMiB ?? 0;
   for (const container of existing) {
     const host = container.HostConfig;
     const limit = host.NanoCpus / 1e9 || host.CpuQuota / host.CpuPeriod;
@@ -195,7 +207,11 @@ export function reconcileDevelopmentStartup(project,{directory=budgetDirectory()
 
 export async function managedBuild(build, { docker = defaultDocker, quiet = waitForStudyQuiet,
   directory = budgetDirectory(), token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,
+  limits = resourceBudgets.development,
   prepare = async path => writeFile(path, '[worker.oci]\nmax-parallelism = 1\n') } = {}) {
+  // Validate and copy before acquiring ownership or yielding to caller hooks.
+  const buildLimits = snapshotBuildLimits(limits);
+  const cpuPeriod = 100000, cpuQuota = buildLimits.cpus * cpuPeriod;
   const lease = token ? undefined : await acquireDevelopmentBudget({ directory });
   token ??= lease.token;
   const name = `tempo-budget-builder-${randomUUID()}`;
@@ -217,21 +233,23 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
     await quiet();
     const managedIds = (await docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}'])).trim();
     const managedContainers = managedIds ? await docker(['inspect', ...managedIds.split(/\s+/)]) : '[]';
-    assertDevelopmentCapacity([], '__builder', args => args[0] === 'ps' ? managedIds : managedContainers);
+    assertDevelopmentCapacity([], '__builder', args => args[0] === 'ps' ? managedIds : managedContainers,
+      resourceBudgets.developmentServices, buildLimits);
     if (await inspectBuilder(name, docker) !== undefined || await inspectBuilderContainer(`buildx_buildkit_${name}0`, docker) !== undefined)
       throw new Error(`Builder identity already exists: ${name}`);
     await recordBudgetResource(`builder:${name}`, true, token, directory);
     journaled = true;
     await docker(['buildx', 'create', '--name', name, '--driver', 'docker-container', '--buildkitd-config', buildConfig, '--driver-opt', 'image=moby/buildkit:rootless',
       '--driver-opt', `env.TEMPO_RESOURCE_OWNER=${token}`,
-      '--driver-opt', `memory=${resourceBudgets.development.memoryMiB}m`,
-      '--driver-opt', 'cpu-period=100000', '--driver-opt', `cpu-quota=${resourceBudgets.development.cpus * 100000}`,
+      '--driver-opt', `memory=${buildLimits.memoryMiB}m`,
+      '--driver-opt', `cpu-period=${cpuPeriod}`, '--driver-opt', `cpu-quota=${cpuQuota}`,
       '--driver-opt', 'default-load=true']);
     await docker(['buildx', 'inspect', name, '--bootstrap']);
     const [container] = JSON.parse(await docker(['inspect', `buildx_buildkit_${name}0`]));
     const host = container.HostConfig;
-    if (!/^1000(?::1000)?$/.test(container.Config?.User ?? "") || host.Memory !== resourceBudgets.development.memoryMiB * 1024 * 1024 ||
-        host.CpuQuota / host.CpuPeriod !== resourceBudgets.development.cpus)
+    if (!/^1000(?::1000)?$/.test(container.Config?.User ?? "") || host.Memory !== buildLimits.memoryMiB * 1024 * 1024 ||
+        host.CpuQuota !== cpuQuota || host.CpuPeriod !== cpuPeriod ||
+        (host.NanoCpus ?? 0) !== 0 && host.NanoCpus !== buildLimits.cpus * 1e9)
       throw new Error('Managed builder kernel limits do not match the development budget');
     result = await build(name);
   } catch (error) { failure = error;

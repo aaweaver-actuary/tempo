@@ -304,7 +304,7 @@ def submit_legacy_review(database, payload):
     except learning.ReviewFailure as error:
         raise translate_failure(error) from error
     from tempo_legacy_database.adapters.study.recombination import after_saved_review
-    regrouping = after_saved_review(database, command.attempt_id)
+    regrouping = after_saved_review(database, command.attempt_id, prepared=payload.get("prepared_recombination"))
     if regrouping:
         result["recombination"] = regrouping
     adapter.finish_compatibility_effects()

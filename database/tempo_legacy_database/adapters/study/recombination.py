@@ -76,9 +76,10 @@ def _event(value):
 
 
 class PostgresRecombinationStore:
-    def __init__(self, database, *, validate_reviews=False):
+    def __init__(self, database, *, validate_reviews=False, prepared=None):
         self.database = database
         self.validate_reviews = validate_reviews
+        self.prepared = prepared
 
     def _writer(self):
         if self.database.read_only or self.database.raw.info.transaction_status.name != "INTRANS":
@@ -171,9 +172,18 @@ class PostgresRecombinationStore:
 
     def save_change(self, change, digest, receipt):
         self._writer()
+        document = asdict(change)
+        capture = json.loads(self.prepared.source_json) if self.prepared and self.prepared.source_json else None
+        if capture is None:
+            row = self.database.execute_native("""SELECT change_json->'source_capture' FROM study_recombination_changes
+                WHERE change_json->>'route_id'=%s AND change_json->>'source_revision'=%s
+                  AND change_json ? 'source_capture' LIMIT 1""", (change.route_id,change.source_revision)).fetchone()
+            capture = row[0] if row else None
+        if capture and capture['source_revision']==change.source_revision and capture['route_id']==change.route_id:
+            document['source_capture'] = capture
         self.database.execute_native("""INSERT INTO study_recombination_changes
             (command_id,digest,change_json,receipt_json) VALUES(%s,%s,%s::jsonb,%s::jsonb)""",
-            (change.command_id, digest, _json(asdict(change)), receipt.model_dump_json()))
+            (change.command_id, digest, _json(document), receipt.model_dump_json()))
         for result in change.results:
             self.database.execute_native("""INSERT INTO study_recombination_presentations
                 (presentation_id,command_id,result_json) VALUES(%s,%s,%s::jsonb)""",
@@ -253,6 +263,183 @@ class _Route:
     moves: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PreparedRecombination:
+    """Owner-derived discovery, prepared before the command writer opens."""
+    route_id: str | None = None
+    source_json: str | None = None
+    reason: str | None = None
+
+
+def _source_header(database, repertoire_id, *, fence=False):
+    return database.execute_native("""SELECT r.scope_source_revision,r.canonical_prefix_revision,
+        p.generation graph_generation,p.state graph_state,i.status integrity_status,i.scan_status,
+        i.scan_generation,i.checked_at,i.scan_completed_sources,i.scan_total_sources,i.scan_error,
+        g.generation graph_task_generation,g.state graph_task_state,
+        s.id scan_task_id,s.generation scan_task_generation,s.state scan_task_state,s.payload_json
+        FROM repertoires r JOIN opening_graph_publications p ON p.repertoire_id=r.id
+        JOIN repertoire_integrity_state i ON i.repertoire_id=r.id
+        JOIN background_tasks g ON g.kind='opening_graph_rebuild' AND g.deduplication_key=r.id
+        JOIN background_tasks s ON s.kind='integrity_scan' AND s.deduplication_key=r.id
+        WHERE r.id=%s""" + (' FOR SHARE OF r,p,i,g,s SKIP LOCKED' if fence else ''), (repertoire_id,)).fetchone()
+
+
+def _source_binding(header):
+    return fingerprint([header[key] for key in
+        ('scope_source_revision','canonical_prefix_revision','graph_generation','graph_state')])
+
+
+def _current_certificate(header, repertoire_id):
+    if not header or header['graph_state']!='ready':
+        raise ValueError('current_publication_unavailable')
+    certificate = LegacyIntegrityCertificate.model_validate({k:header[k] for k in LegacyIntegrityCertificate.model_fields})
+    payload = json.loads(header['payload_json'])
+    if (certificate.graph_task_generation!=header['graph_generation']
+            or payload.get('graph_generation')!=header['graph_generation'] or payload.get('repertoire_id')!=repertoire_id):
+        raise ValueError('current_integrity_generation_changed')
+
+
+def _source_route_page(database, repertoire_id, after):
+    # Source traversal is preparation, not an authored-route prefix declared
+    # complete by the saved-review writer. Oversized text never leaves storage.
+    return database.execute_native("""WITH page AS MATERIALIZED (
+        SELECT id,repertoire_id,trained_color,start_fen,moves_json,
+            octet_length(concat_ws('',id,repertoire_id,trained_color,start_fen,moves_json))>65536 oversized
+        FROM repertoire_lines WHERE repertoire_id=%s AND id>%s ORDER BY id LIMIT 16
+        ) SELECT CASE WHEN octet_length(id)<=200 THEN id END id,repertoire_id,trained_color,
+            CASE WHEN NOT oversized THEN start_fen END start_fen,
+            CASE WHEN NOT oversized THEN moves_json END moves_json,oversized FROM page ORDER BY id""",
+        (repertoire_id,after)).fetchall()
+
+
+def _route_positions(row):
+    moves = json.loads(row['moves_json'])
+    if row['trained_color'] not in {'white','black'} or not isinstance(moves,list) or not 0<len(moves)<=1000:
+        raise ValueError('source_route_unsupported')
+    board = chess.Board(row['start_fen'])
+    if not board.is_valid():
+        raise ValueError('source_route_illegal')
+    decisions = set()
+    for uci in moves:
+        if board.turn==(row['trained_color']=='white'):
+            decisions.add(opening_position_key(board.fen()))
+        move = chess.Move.from_uci(uci)
+        if move not in board.legal_moves:
+            raise ValueError('source_route_illegal')
+        board.push(move)
+    terminal = opening_position_key(board.fen()) if board.turn==(row['trained_color']=='white') else None
+    return moves, decisions, terminal
+
+
+def _target_graphs(database, repertoire_id, generation, route_id, *, fence=False):
+    return database.execute_native("""SELECT line_id,card_id,
+        CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN starting_fen END starting_fen,
+        CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN moves_json END moves_json,trained_color
+        FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s AND line_id=%s
+        ORDER BY decision_index LIMIT 257""" + (' FOR SHARE SKIP LOCKED' if fence else ''),
+        (repertoire_id,generation,route_id)).fetchall()
+
+
+def _prepare_recombination_source(database, card_id):
+    if not installed(database):
+        return PreparedRecombination()
+    routes = routes_for_card(database,card_id)
+    if len(routes)!=1:
+        return PreparedRecombination(reason='route_missing' if not routes else 'ambiguous_route')
+    route_id = routes[0]
+    target = database.execute_native("""SELECT id,repertoire_id,trained_color,
+        CASE WHEN octet_length(concat_ws('',id,repertoire_id,trained_color,start_fen,moves_json))<=65536 THEN start_fen END start_fen,
+        CASE WHEN octet_length(concat_ws('',id,repertoire_id,trained_color,start_fen,moves_json))<=65536 THEN moves_json END moves_json
+        FROM repertoire_lines WHERE id=%s""", (route_id,)).fetchone()
+    if not target:
+        return PreparedRecombination(route_id,reason='route_missing')
+    if target['start_fen'] is None or target['moves_json'] is None:
+        return PreparedRecombination(route_id,reason='target_source_oversized')
+    repertoire_id = target['repertoire_id']
+    header = _source_header(database,repertoire_id)
+    _current_certificate(header,repertoire_id)
+    _, wanted, _ = _route_positions(target)
+    expected, highwater = tuple(database.execute_native(
+        "SELECT count(*),max(id) FROM repertoire_lines WHERE repertoire_id=%s", (repertoire_id,)).fetchone())
+    if not 0<expected<=10000:
+        return PreparedRecombination(route_id,reason='source_discovery_bound')
+    after, visited, plies, size, relevant_plies = '', 0, 0, 0, 0
+    relevant, small_inventory = [], []
+    while True:
+        page = _source_route_page(database,repertoire_id,after)
+        if page is None:
+            return PreparedRecombination(route_id,reason='source_discovery_interrupted')
+        if not page:
+            break
+        for row in page:
+            if row['oversized'] or not row['id']:
+                return PreparedRecombination(route_id,reason='source_row_oversized')
+            if row['id']<=after or visited>=expected:
+                return PreparedRecombination(route_id,reason='source_discovery_changed')
+            after, visited = row['id'], visited+1
+            moves, positions, terminal = _route_positions(row)
+            plies += len(moves)
+            size += len(_json(dict(row)).encode())
+            if plies>100000 or size>32*1024*1024:
+                return PreparedRecombination(route_id,reason='source_discovery_bound')
+            source = {key:row[key] for key in ('id','repertoire_id','trained_color','start_fen','moves_json')}
+            if expected<=64:
+                small_inventory.append(source)
+            if row['trained_color']==target['trained_color'] and (positions & wanted or terminal in wanted):
+                relevant.append(source)
+                relevant_plies += len(moves)
+                if len(relevant)>64 or relevant_plies>4096 or len(_json(relevant).encode())>262144:
+                    return PreparedRecombination(route_id,reason='relevant_source_bound')
+    if visited!=expected or after!=highwater:
+        return PreparedRecombination(route_id,reason='source_discovery_incomplete')
+    graphs = [dict(row) for row in _target_graphs(database,repertoire_id,header['graph_generation'],route_id)]
+    if not graphs or len(graphs)>256:
+        return PreparedRecombination(route_id,reason='target_graph_missing_or_exceeds_bound')
+    if any(row['starting_fen'] is None or row['moves_json'] is None for row in graphs):
+        return PreparedRecombination(route_id,reason='target_graph_row_oversized')
+    # Retain the original fingerprint for previously supported small sources.
+    # Large source identity uses only the bounded relevant definition plus the
+    # same monotone source/publication binding, never an unrelated graph census.
+    graph_count = database.execute_native("SELECT count(*) FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s",
+        (repertoire_id,header['graph_generation'])).fetchone()[0]
+    if expected<=64 and graph_count<=256:
+        legacy_graphs = database.execute_native("""SELECT line_id,card_id,starting_fen,moves_json,trained_color
+            FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s
+              AND octet_length(concat_ws('',starting_fen,moves_json))<=65536 ORDER BY line_id,decision_index""",
+            (repertoire_id,header['graph_generation'])).fetchall()
+        if len(legacy_graphs)!=graph_count:
+            return PreparedRecombination(route_id,reason='source_graph_row_oversized')
+        revision = fingerprint([header['scope_source_revision'],header['canonical_prefix_revision'],header['graph_generation'],
+            small_inventory,[dict(row) for row in legacy_graphs]])
+    else:
+        revision = fingerprint(['recombination-relevant-v1',_source_binding(header),route_id,relevant,graphs])
+    current_header = _source_header(database,repertoire_id)
+    _current_certificate(current_header,repertoire_id)
+    if _source_binding(current_header)!=_source_binding(header):
+        return PreparedRecombination(route_id,reason='source_discovery_changed')
+    document = dict(version=1,route_id=route_id,repertoire_id=repertoire_id,binding=_source_binding(header),
+        source_revision=revision,lines=relevant,graphs=graphs,expected=expected,visited=visited,
+        highwater=highwater,last_key=after,exhausted=True)
+    return PreparedRecombination(route_id,_json(document))
+
+
+def prepare_recombination_review(payload, *, read_connection=None):
+    """Existing command-gateway preparation; no writer or request-identity change.
+
+    Failures defer optional regrouping, not the actual Study save. The returned
+    frozen value is ephemeral server preparation; the original envelope remains
+    the command receipt's identity.
+    """
+    if read_connection is None:
+        from tempo_legacy_database.connections import read_connection
+    try:
+        with read_connection() as database:
+            prepared = _prepare_recombination_source(database,payload['card_id'])
+    except (psycopg.Error,ValueError,KeyError,TypeError,RuntimeError) as error:
+        prepared = PreparedRecombination(reason='source_discovery_unavailable:'+type(error).__name__)
+    return {**payload,'prepared_recombination':prepared}
+
+
 def _instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
 
@@ -266,8 +453,9 @@ class CurrentStudyRecombination:
     The retained queue cannot represent ambiguous shared occurrences: those
     members are unavailable for regrouping and retain their normal Study uses.
     """
-    def __init__(self, database, *, clock=None):
+    def __init__(self, database, *, clock=None, prepared=None):
         self.database = database
+        self.prepared = prepared
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         name = database.execute_native("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
         self.zone = datetime.now().astimezone().tzinfo if name == "local" else ZoneInfo(name)
@@ -333,6 +521,45 @@ class CurrentStudyRecombination:
         except (ValueError, KeyError, TypeError):
             return self._hold("current_route_unsupported")
 
+    def _captured_source(self, route_id, repertoire_id, header):
+        if self.prepared is not None:
+            if not isinstance(self.prepared,PreparedRecombination):
+                raise ValueError('source_preparation_invalid')
+            if self.prepared.reason:
+                raise ValueError(self.prepared.reason)
+            if self.prepared.route_id not in (None,route_id):
+                raise ValueError('source_discovery_changed')
+            document = json.loads(self.prepared.source_json) if self.prepared.source_json else None
+        else:
+            row = self.database.execute_native("""SELECT change_json->'source_capture' FROM study_recombination_changes
+                WHERE change_json->>'route_id'=%s AND change_json->'source_capture'->>'binding'=%s LIMIT 1""",
+                (route_id,_source_binding(header))).fetchone()
+            document = row[0] if row else None
+        if document is None:
+            return None
+        if (document['version']!=1 or document['route_id']!=route_id or document['repertoire_id']!=repertoire_id
+                or document['binding']!=_source_binding(header) or document['exhausted'] is not True
+                or document['expected']!=document['visited'] or document['highwater']!=document['last_key']
+                or not 0<document['visited']<=10000 or not 0<len(document['lines'])<=64):
+            raise ValueError('source_discovery_changed_or_incomplete')
+        lines = self.database.execute_native("""SELECT id,repertoire_id,trained_color,
+            CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN start_fen END start_fen,
+            CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN moves_json END moves_json
+            FROM repertoire_lines WHERE repertoire_id=%s AND id=ANY(%s) ORDER BY id FOR SHARE SKIP LOCKED""",
+            (repertoire_id,[row['id'] for row in document['lines']])).fetchall()
+        graphs = _target_graphs(self.database,repertoire_id,header['graph_generation'],route_id,fence=True)
+        if len(lines)!=len(document['lines']) or len(graphs)!=len(document['graphs']):
+            counts = self.database.execute_native("""SELECT
+                (SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s AND id=ANY(%s)),
+                (SELECT count(*) FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s AND line_id=%s)""",
+                (repertoire_id,[row['id'] for row in document['lines']],repertoire_id,header['graph_generation'],route_id)).fetchone()
+            if counts[0]!=len(document['lines']) or counts[1]!=len(document['graphs']):
+                raise ValueError('relevant_source_missing')
+            raise ValueError('relevant_source_busy')
+        if [dict(row) for row in lines]!=document['lines'] or [dict(row) for row in graphs]!=document['graphs']:
+            raise ValueError('relevant_source_changed')
+        return lines, graphs, document['source_revision']
+
     def _read_current(self, route_id, *, only_presentation_id=None):
         database = self.database
         PostgresRecombinationStore(database)._writer()
@@ -343,16 +570,7 @@ class CurrentStudyRecombination:
         if not database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
                 ("tempo:opening-graph:" + repertoire_id,)).fetchone()[0]:
             return self._hold("current_graph_busy")
-        header = database.execute_native("""SELECT r.scope_source_revision,r.canonical_prefix_revision,
-            p.generation graph_generation,p.state graph_state,i.status integrity_status,i.scan_status,
-            i.scan_generation,i.checked_at,i.scan_completed_sources,i.scan_total_sources,i.scan_error,
-            g.generation graph_task_generation,g.state graph_task_state,
-            s.id scan_task_id,s.generation scan_task_generation,s.state scan_task_state,s.payload_json
-            FROM repertoires r JOIN opening_graph_publications p ON p.repertoire_id=r.id
-            JOIN repertoire_integrity_state i ON i.repertoire_id=r.id
-            JOIN background_tasks g ON g.kind='opening_graph_rebuild' AND g.deduplication_key=r.id
-            JOIN background_tasks s ON s.kind='integrity_scan' AND s.deduplication_key=r.id
-            WHERE r.id=%s FOR SHARE OF r,p,i,g,s SKIP LOCKED""", (repertoire_id,)).fetchone()
+        header = _source_header(database,repertoire_id,fence=True)
         if not header or header["graph_state"] != "ready":
             return self._hold("current_publication_unavailable")
         try:
@@ -363,23 +581,33 @@ class CurrentStudyRecombination:
         if (certificate.graph_task_generation != header["graph_generation"] or payload.get("graph_generation") != header["graph_generation"]
                 or payload.get("repertoire_id")!=repertoire_id):
             return self._hold("current_integrity_generation_changed")
-        lines = database.execute_native("""SELECT id,repertoire_id,trained_color,start_fen,moves_json
-            FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 65 FOR SHARE SKIP LOCKED""", (repertoire_id,)).fetchall()
-        graphs = database.execute_native("""SELECT line_id,card_id,starting_fen,moves_json,trained_color
-            FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s
-            ORDER BY line_id,decision_index LIMIT 257 FOR SHARE SKIP LOCKED""", (repertoire_id,header["graph_generation"])).fetchall()
-        if not lines or len(lines)>64 or not graphs or len(graphs)>256:
-            return self._hold("current_route_scope_unavailable_or_exceeds_bound")
-        # Holding the repertoire row fences authored inserts/deletes through the
-        # existing source-revision triggers; the graph advisory lock fences its
-        # publication. Full bounded row inventories also reject skipped locks.
-        expected = database.execute_native("SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s", (repertoire_id,)).fetchone()[0]
-        graph_count = database.execute_native("SELECT count(*) FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s",
-            (repertoire_id,header["graph_generation"])).fetchone()[0]
-        if len(lines)!=expected or len(graphs)!=graph_count:
-            return self._hold("current_source_busy")
-        source_revision = fingerprint([header["scope_source_revision"],header["canonical_prefix_revision"],header["graph_generation"],
-            [dict(row) for row in lines],[dict(row) for row in graphs]])
+        try:
+            captured = self._captured_source(route_id,repertoire_id,header)
+        except (ValueError,KeyError,TypeError) as error:
+            return self._hold(str(error))
+        if captured is not None:
+            lines, graphs, source_revision = captured
+        else:
+            # Compatibility for existing small-source captures and direct
+            # legacy callers. Large scopes require complete preparation.
+            lines = database.execute_native("""SELECT id,repertoire_id,trained_color,
+                CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN start_fen END start_fen,
+                CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN moves_json END moves_json
+                FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 65 FOR SHARE SKIP LOCKED""", (repertoire_id,)).fetchall()
+            graphs = database.execute_native("""SELECT line_id,card_id,
+                CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN starting_fen END starting_fen,
+                CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN moves_json END moves_json,trained_color
+                FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s
+                ORDER BY line_id,decision_index LIMIT 257 FOR SHARE SKIP LOCKED""", (repertoire_id,header["graph_generation"])).fetchall()
+            if not lines or len(lines)>64 or not graphs or len(graphs)>256:
+                return self._hold("current_route_scope_unavailable_or_exceeds_bound")
+            expected = database.execute_native("SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s", (repertoire_id,)).fetchone()[0]
+            graph_count = database.execute_native("SELECT count(*) FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s",
+                (repertoire_id,header["graph_generation"])).fetchone()[0]
+            if len(lines)!=expected or len(graphs)!=graph_count:
+                return self._hold("current_source_busy")
+            source_revision = fingerprint([header["scope_source_revision"],header["canonical_prefix_revision"],header["graph_generation"],
+                [dict(row) for row in lines],[dict(row) for row in graphs]])
         routes = tuple(_Route(row["id"], repertoire_id, row["trained_color"], repertoire_id,
             source_revision,row["start_fen"],tuple(json.loads(row["moves_json"]))) for row in lines)
         matching = tuple(r for r in routes if r.route_id==route_id)
@@ -474,7 +702,9 @@ class CurrentStudyRecombination:
                     recorded_parent_id=next(iter(parents),None))
                 epoch, use = f"physical:{identifier}:{card['revision']}", RouteUse(route_id,f"physical:{identifier}:{start}",start,stop)
             shared = database.execute_native("""SELECT count(*) FROM repertoire_cards WHERE card_id=%s""", (identifier,)).fetchone()[0]>1
-            shared = shared or len([g for g in graphs if g["card_id"]==identifier])>1
+            shared = shared or len(database.execute_native("""SELECT 1 FROM opening_graph_steps
+                WHERE repertoire_id=%s AND generation=%s AND card_id=%s LIMIT 2""",
+                (repertoire_id,header['graph_generation'],identifier)).fetchall())>1
             unavailable = database.execute_native("""SELECT 1 FROM deleted_cards WHERE card_id=%s UNION ALL
                 SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s AND repertoire_id=%s LIMIT 1""",
                 (identifier,identifier,repertoire_id)).fetchone()
@@ -573,19 +803,19 @@ def routes_for_card(database, card_id):
     return tuple(row[0] for row in rows)
 
 
-def after_saved_review(database, attempt_id, *, clock=None):
+def after_saved_review(database, attempt_id, *, clock=None, prepared=None):
     """Called AFTER ordinary completion/evidence and prepared issuance, same writer."""
     if not attempt_id or not installed(database):
         return None
     from app.study.recombination.application import Recombination
-    boundary = CurrentStudyRecombination(database,clock=clock)
+    boundary = CurrentStudyRecombination(database,clock=clock,prepared=prepared)
     event = boundary.event_for_review(attempt_id)
     if event is None:
         return None
     routes = routes_for_card(database,event.presentation_id)
     if len(routes)!=1:
-        return {"status":"held","reason":"ambiguous_route"}
-    store = PostgresRecombinationStore(database,validate_reviews=True)
+        return {"status":"held","reason":"route_missing" if not routes else "ambiguous_route"}
+    store = PostgresRecombinationStore(database,validate_reviews=True,prepared=prepared)
     application = Recombination(store,boundary,clock=boundary.clock,next_local_study_day=boundary.next_day)
     try:
         state = application.record_review(routes[0],event)
@@ -654,10 +884,56 @@ def is_current_occurrence(database,occurrence):
     return False
 
 
+def _suppress_replaced_presentations(database, day):
+    """Complete queue exclusion from accepted lineage, without route recapture.
+
+    Recovery may skip busy routes or stop at its batch bound; retirement cannot.
+    A retained physical identity with an independent current membership remains
+    usable because the legacy queue cannot identify its route occurrence.
+    """
+    database.execute_native("""WITH replaced_uses AS MATERIALIZED (
+        SELECT DISTINCT retired->>0 presentation_id, change.change_json->>'route_id' route_id,
+            change.change_json->'results'->0->'presentation'->>'repertoire_id' repertoire_id
+        FROM study_recombination_changes change,
+            jsonb_array_elements(change.change_json->'retired_uses') retired
+        WHERE retired->1->>'route_id'=change.change_json->>'route_id'
+          AND EXISTS(SELECT 1 FROM study_recombination_current current
+              WHERE current.route_id=change.change_json->>'route_id')
+          AND NOT EXISTS(SELECT 1 FROM study_recombination_current current
+              WHERE current.route_id=change.change_json->>'route_id' AND current.presentation_id=retired->>0)
+          AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(change.change_json->'results') result,
+              jsonb_array_elements(result->'presentation'->'components') component
+              WHERE NOT EXISTS(SELECT 1 FROM study_recombination_current current
+                  JOIN study_recombination_presentations presentation ON presentation.presentation_id=current.presentation_id
+                  WHERE current.route_id=change.change_json->>'route_id'
+                    AND current.decision_id=component->>'decision_id'
+                    AND presentation.result_json->'presentation'->>'route_id'=current.route_id
+                    AND presentation.result_json->'presentation'->>'repertoire_id'=
+                        result->'presentation'->>'repertoire_id'))
+        ) UPDATE daily_queue queue SET status='blocked' FROM cards card
+        WHERE queue.card_id=card.id AND queue.queue_date=%s AND queue.status='queued'
+          AND EXISTS(SELECT 1 FROM replaced_uses replaced
+              WHERE replaced.presentation_id=card.id AND replaced.repertoire_id=card.repertoire_id)
+          AND NOT EXISTS(SELECT 1 FROM repertoire_cards membership WHERE membership.card_id=card.id
+              AND NOT EXISTS(SELECT 1 FROM replaced_uses replaced
+                  WHERE replaced.presentation_id=card.id AND replaced.repertoire_id=membership.repertoire_id))
+          AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step JOIN opening_graph_publications publication
+              ON publication.repertoire_id=step.repertoire_id AND publication.generation=step.generation AND publication.state='ready'
+              WHERE step.card_id=card.id AND NOT EXISTS(SELECT 1 FROM replaced_uses replaced
+                  WHERE replaced.presentation_id=card.id AND replaced.route_id=step.line_id
+                    AND replaced.repertoire_id=step.repertoire_id))
+          AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+              WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id AND origin.issued_as_head=1)
+          AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+              WHERE attempt.card_id=card.id AND attempt.state<>'complete'
+                AND NOT EXISTS(SELECT 1 FROM review_attempt_receipts receipt WHERE receipt.attempt_id=attempt.attempt_id))""", (day,))
+
+
 def project_current_presentations(database, day, *, limit=16):
-    """Queue recovery only: no new join, scheduler transition or producer call."""
+    """Complete retirement exclusion, then bounded optional queue recovery."""
     if not installed(database):
         return
+    _suppress_replaced_presentations(database,day)
     from app.services.review_service import ensure_card_queued_after
     routes = database.execute_native("SELECT DISTINCT route_id FROM study_recombination_current ORDER BY route_id LIMIT %s", (limit,)).fetchall()
     for row in routes:
@@ -670,17 +946,6 @@ def project_current_presentations(database, day, *, limit=16):
         if current is None:
             # Never change an issued attempt for an unavailable/busy capture.
             continue
-        active_ids = [m.presentation.presentation_id for m in current.members]
-        retired = database.execute_native("""SELECT DISTINCT retired->>0 id FROM study_recombination_changes c,
-            jsonb_array_elements(c.change_json->'retired_uses') retired
-            WHERE c.change_json->>'route_id'=%s UNION SELECT p.presentation_id FROM study_recombination_presentations p
-            WHERE p.result_json->'presentation'->>'route_id'=%s AND NOT(p.presentation_id=ANY(%s))""", (route_id,route_id,active_ids)).fetchall()
-        for identifier in retired:
-            if identifier[0] in active_ids:
-                continue
-            database.execute_native("""UPDATE daily_queue q SET status='blocked' WHERE q.queue_date=%s AND q.card_id=%s
-                AND q.status='queued' AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins o
-                    WHERE o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.issued_as_head=1)""", (day,identifier[0]))
         for member in current.members:
             identifier = member.presentation.presentation_id
             if member.available and identifier in {r[0] for r in database.execute_native(
