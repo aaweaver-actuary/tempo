@@ -31,6 +31,7 @@ sequenceDiagram
   Settings->>API: Configure / sync / legacy retry with original operation ID
   API->>Gateway: Dispatch bounded command
   Gateway->>Command: Execute or replay original operation
+  Note over Command,Games: Validate new ongoing seed before configuration write; invalid seed fails with 422
   Command->>Games: Borrow caller transaction; fence current facts
   Note over Command,Games: Games mutation and operation receipt commit atomically
   Command-->>API: Completed result or pending operation
@@ -55,6 +56,30 @@ Game Review derives its override from the actual command endpoint. Legacy accoun
 and automatic-sync controls/browser mirroring are removed, while global settings
 retain loaded compatibility values for Next Opponent and the old sync consumers.
 The still-used finding threshold remains separate and uses the global save.
+
+Settings explicitly distinguishes **Historical/manual import** from **Ongoing
+collection**. The existing `interval_seconds` field remains the wire choice:
+`null` disables recurrence and preserves arbitrary-width fixed historical ranges;
+ongoing collection requires an explicit integer interval of 60–86400 seconds.
+Both require increasing UTC dates and explicit account, repertoires, speeds and
+supported rated policy. Ongoing seeds must span 60–86400 seconds inclusive.
+Settings preserves existing UTC seconds/milliseconds and never shortens dates.
+`GameReview.configure` enforces seed width before the store write; the stored
+`SyncConfiguration` parser remains unchanged so an old incompatible range can
+still be read and corrected. A new incompatible ongoing write fails with an
+actionable 422 explaining how to adjust the seed or choose historical/manual
+import. Durable dispatch can initially return 202 before recording that failure.
+
+The selected ongoing worker advances acquisition windows from the saved seed;
+Settings does not start it or establish that it is active. Overlap and
+reconciliation cadence remain operator/process inputs checked by launch
+preflight, without Settings fields or a schema migration. A manual run requests
+the saved range or seed once, independently of ongoing process activation.
+An unconfirmed command, an accepted request with acquisition pending, acquisition
+complete, and actual Study effects are different facts. This collection-only
+release promises no Study reprioritization. The original save bytes, revision,
+operation ID and Games-origin recovery are retained, even if loading current
+settings displays another revision or an incompatible old range.
 
 This slice requires only the command gateway and schema already on main. It
 does not package or activate an optional provider worker, alter Study
