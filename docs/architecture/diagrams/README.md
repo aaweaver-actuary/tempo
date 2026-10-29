@@ -1,18 +1,26 @@
 # Architecture drawing index
 
-These maintained Mermaid views are reviewable maps of source, not deployment
-certificates. Start at the system level, follow the component links, then use a
-sequence to inspect the transaction or failure boundary in question. The
-[adopted target](../component-reconstruction.md) and
-[migration index #192](https://github.com/aaweaver-actuary/tempo/issues/192) remain
-the target/migration authorities. Source wins if a drawing disagrees; correct the
-drawing and disclose the discrepancy.
+These are source maps and retained target references, not assignments or deployment certificates. [SPEC](../../../SPEC.md) governs current product requirements and delivery order; [AGENTS](../../../AGENTS.md) governs execution. [#192](https://github.com/aaweaver-actuary/tempo/issues/192) is historical migration context. Source determines implementation facts, not intended requirements. Report a source/SPEC discrepancy instead of silently treating existing behavior as the requirement.
 
 Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here. The [implemented frozen-order policy/storage split](../../../backend/app/study/frozen_order/README.md) documents its bounded policy/storage wiring and remaining legacy caller coupling. The subsequent [authored Studies conflict split](../../../backend/app/studies/README.md) keeps line queries in the legacy database owner and pure conflict computation outside it.
 
 The [current backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; reviewing or relocating source does not establish deployment isolation.
 
 ## Source and status
+
+**SOURCE IMPLEMENTED / #503:** [Study recombination](../../../backend/app/study/recombination/README.md)
+owns the canonical saved-review, route-local join/split transaction, exact manual
+attempt confirmation and original-obligation targeting diagrams. Its six-table
+ER retains source content and immutable history. Migration 053/readiness 53 and
+changed native evidence are source qualification; A08 rerun and deployment are
+separate claims.
+
+**PROPOSED / #487:** [Study game feedback](../../../backend/app/study/README.md)
+owns the canonical receiver/transaction and normal Study recovery drawings;
+[its database chart](../../../database/tempo_legacy_database/adapters/study/README.md)
+shows the additive effect receipt/deadline/tombstone schema. These views describe
+unmerged source and bounded native evidence, with deployment/resource isolation
+unverified. Existing scheduler, queue and review authorities are retained.
 
 Current documentation reconciliation: main at
 [`1ce172e9f4f312d7d70b2a363dce7b20dab35baf`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf),
@@ -91,6 +99,8 @@ claim of robust arbitrary plugins, eliminated coupling or deployed failure/resou
 isolation.
 
 ## Bounded resumption priorities
+
+The table contains dated candidate follow-ups, not prerequisites or automatically active assignments.
 
 Resume from the pinned source and the existing owner task, not from an assumption
 that a merged preparation PR is an installed, accepted system. These are proposed
@@ -183,6 +193,7 @@ ownership; its status alone does not prove adoption.
 | [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md), [Content](../../../services/content/README.md), [Game Evidence](../../../services/game-evidence/README.md), [Intelligence](../../../services/intelligence/README.md). |
 | [Legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling) | System: where do current full-app dependencies cross those target boundaries? | Legacy app/backend owners; [Home](../../../app/views/home_view.tsx), [backend root](../../../backend/app/main.py), [Compose](../../../docker-compose.yml). |
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
+| [Managed builder allocation](../../../scripts/README.md#managed-builder-allocation) | Development resource boundary: how does one validated per-build request reach admission, cgroup readback and verified cleanup? | Shared builder guard owner; [development-budget](../../../scripts/development-budget.mjs). Proposed source behavior; real 1 CPU / 1536 MiB build remains unproved. |
 | [Study dependency detail](../../../app/README.md#main-study-path-and-source-gap) | Component: which adapters and semantic ports serve Study, and how is optional workspace ownership excluded from Study? | Study browser/session and Learning owners (merged MAIN source); [connection](../../../app/lib/study-connection.ts), [ReviewStore](../../../services/learning/application/src/tempo_learning_review/ports.py). |
 | [Conditional Study build/offline assets](../../../static/README.md#conditional-study-build-and-offline-assets-main) | Build/data flow: can emitted optional chunks enter the required offline shell without executing? | Study build and offline-shell owners; [inventory plugin](../../../scripts/offline-shell-assets.ts), [service worker](../../../public/sw.js), [readiness client](../../../app/lib/offline-shell.ts). PR324 retains actual emitted-artifact and synthetic offline evidence; combined deployment unverified. |
 | [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the merged endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
@@ -210,40 +221,23 @@ Keep explanatory detail and source links beside each bounded view.
 
 ## Maintenance and review procedure
 
-1. Identify changed interfaces, callers, databases, effects, transactions,
-   commands/receipts, failure, cancellation, shutdown and resource owners. Search
-   source and public exports as well as this index and `components.json`.
-2. Update only affected system/component/sequence views in the same PR as the
-   architecture change. Add a bounded view for an unrepresented changed boundary;
-   its absence is not a no-impact reason. Place the canonical block directly in
-   the relevant owning directory's `README.md`; keep this README's overview and
-   placement links current. For a cross-component drawing, choose one README home
-   and link from peer directories. Move existing blocks/source notes and update
-   references instead of copying a drawing. Split an unreadable graph by question. Link new nodes and
-   important edges to concrete source files and symbols in nearby prose/tables;
-   preserve named gaps instead of drawing only the desired design.
-3. Check both ends of each edge. Verify who can read/write each state, which
-   transaction commits receipts with effects, and what retries or loses authority
-   after timeout, cancellation, stale generation or lost response. Study must have
-   no Games call/import/wait/readiness/transaction/lifecycle dependency. Optional
-   influence must enter Learning's semantic interface, never its tables directly.
-4. Label source state and exact baseline. Keep unmerged diagrams pinned to the
-   reviewed PR SHA. When adopted, verify the actual merge/source, move the view
-   into MAIN, and replace proposal links; do not infer deployment from merging.
-   Refresh only affected baseline/evidence statements and explain reuse limits.
-5. Extract edited Mermaid blocks and parse with already available lightweight
-   Mermaid tooling if present; report its version and limits. Check relative paths
-   and anchors, pinned source links and symbol correspondence. Run
-   `npm run check:conflicts` and `git diff --check` per [testing](../../testing.md).
-   Inspect GitHub's rendered Markdown at useful width; parsing alone does not
-   prove layout or GitHub's exact renderer version. Record any unavailable check.
-   Do not install a new toolchain, start services or run heavy suites for drawings.
-6. In the PR, write `Architecture impact:` with updated view links and the actual
-   boundary change, or `Architecture impact: none` with a concrete reason. State
-   relevant checks, exceptions, and deployment/resource claims still unverified.
-   Reviewers check the graph against source, not just its appearance or test count.
+1. Determine whether the assigned change materially alters a represented boundary.
+   No runtime boundary change means no new diagram. For a new materially changed
+   boundary, add one appropriately bounded view, not a documentation programme.
+2. Update only its canonical owner README/view and directly affected navigation.
+   Show real callers, state/transaction authority, relevant failures, and proposed
+   versus implemented status. Reuse existing views; do not duplicate diagrams or
+   refresh unrelated baselines.
+3. Check source correspondence and changed local links. Parse changed Mermaid
+   with already available tooling when useful. Inspect rendered layout when
+   changed diagram structure makes it necessary and the renderer is available.
+   Do not install tooling, run browsers/services, or repeat cosmetic adjustments
+   merely to qualify prose. Report unavailable checks without equating them to
+   functional failure; actual explicit requirements remain applicable.
+4. Put a concise architecture-impact statement in the existing PR. Missing or
+   misleading material ownership information is actionable; unchanged-diagram
+   polish is not another release gate.
 
-This documentation criterion preserves the [MVP policy](../../../AGENTS.md#deliver-a-usable-single-user-mvp),
-essential data/permission safeguards and existing required checks. It neither
-requires every extraction/edge case before delivery nor excuses coupling in a
-new or changed path that claims isolation.
+This criterion preserves data, permissions, applicable gates, and independence
+of the changed path under [root working rules](../../../AGENTS.md). It does not
+assign unrelated extraction or waive safeguards.

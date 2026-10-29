@@ -21,6 +21,8 @@ class Rows:
         if self.events is not None:
             self.events.append('iterate')
         return iter(self.rows)
+    def fetchall(self):
+        return self.rows
 
 
 class Batch:
@@ -87,7 +89,8 @@ def test_import_batches_keep_returning_sets_then_depth_annotations_and_cursor_cl
 
 
 @pytest.mark.parametrize('existing_repertoire', [False, True])
-def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order(monkeypatch, existing_repertoire):
+@pytest.mark.parametrize('explicit', [False, True])
+def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order(monkeypatch, existing_repertoire, explicit):
     events = []
     batch = Batch(events, [])
     database = Borrowed(events, replies=[
@@ -124,9 +127,13 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
     monkeypatch.setattr(application, 'ensure_batch_lines_in_scope', scope)
     monkeypatch.setattr(application, 'certify_admitted_route', certify)
     monkeypatch.setattr(application, 'invalidate_integrity_in_transaction', lambda *args: events.append('invalidate'))
-    monkeypatch.setattr(application, 'request_graph_rebuild_in_transaction', lambda *args: events.append(('graph', args)))
+    def graph(*args, **kwargs):
+        assert kwargs == ({'origin_import_operation_id': 'explicit-operation'} if explicit else {})
+        events.append(('graph', args))
+        return {'id': 'graph', 'generation': 2}
+    monkeypatch.setattr(application, 'request_graph_rebuild_in_transaction', graph)
     monkeypatch.setattr(application, 'integrity_summary', lambda *args: events.append('summary') or {'state': 'pending'})
-    payload = dict(source_name='book.pgn', trained_color='white', depth=3, games_found=2,
+    payload = dict(source_name='book.pgn', trained_color='black', depth=3, games_found=2,
         unique_lines=2, imported_segments_count=2, decision_segments_count=1, prefix_segments_count=1,
         segment_ids=['existing', 'new'], prefix_segment_ids=['existing'], lines=[
             dict(starting_fen=chess.STARTING_FEN, moves=['e2e4'], annotations=[]),
@@ -134,7 +141,10 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
                 fen_key='fen', comment='text', arrows=[dict(color='G')], squares=[])]),
         ])
     # The pre-existing outer Games refresh decorator is unchanged and outside this split.
-    result = application.admit_pgn_import.__wrapped__(database, payload)
+    if explicit:
+        payload['operation_id'] = 'explicit-operation'
+    handler = application.explicit_pgn_import if explicit else application.admit_pgn_import
+    result = handler.__wrapped__(database, payload)
     assert events[:3] == ['clock', ('native', 1), ('native', 2)]
     assert events.count('uuid') == (0 if existing_repertoire else 1)
     assert database.native_calls[3][1] == ('repertoire', 'book', 'book.pgn', 'timestamp')
@@ -147,6 +157,9 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
     assert result['cards_created'] == 1 and result['decision_cards_created'] == 1
     assert result['prefix_cards_created'] == 0 and result['shared_prefixes_reused'] == 1
     assert result['integrity'] == {'state': 'pending'} and result['graph_state'] == 'refreshing'
+    assert result.get('preparation') == ({'graph_task_id': 'graph', 'graph_generation': 2} if explicit else None)
+    assert all('UPDATE repertoires SET is_main' not in sql for sql, _ in database.native_calls)
+    assert 'is_main=excluded' not in database.native_calls[3][0]
 
 
 @pytest.mark.parametrize('receipt,outcome,status', [

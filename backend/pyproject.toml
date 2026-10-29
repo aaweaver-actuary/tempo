@@ -9,6 +9,12 @@ dependencies = [
     "tempo-scheduling==0.2.0",
     "tempo-chess-core==0.1.0",
     "tempo-game-evidence-contracts==3.0.0",
+    "tempo-analysis-jobs-contracts==1.0.0",
+    "tempo-game-review-contracts==0.1.0",
+    "tempo-evidence-math==0.1.0",
+    "tempo-game-ingestion==0.1.0",
+    "tempo-repertoire-comparison==0.1.0",
+    "tempo-game-classification==0.1.0",
     "tempo-learning-review==0.1.0",
     "tempo-learning-remediation==0.1.0",
     "tempo-learning-runtime==0.1.0",
@@ -28,6 +34,12 @@ tempo-learning-review = { path = "../services/learning/application" }
 tempo-learning-remediation = { path = "../services/learning/remediation" }
 tempo-learning-runtime = { path = "../services/learning/runtime" }
 tempo-game-evidence-contracts = { path = "../contracts/game-evidence" }
+tempo-analysis-jobs-contracts = { path = "../contracts/analysis-jobs" }
+tempo-game-review-contracts = { path = "../packages/game-review-contracts" }
+tempo-evidence-math = { path = "../packages/evidence-math" }
+tempo-game-ingestion = { path = "../packages/game-ingestion" }
+tempo-repertoire-comparison = { path = "../packages/repertoire-comparison" }
+tempo-game-classification = { path = "../packages/game-classification" }
 
 [tool.pytest.ini_options]
 pythonpath = [".", "../database"]

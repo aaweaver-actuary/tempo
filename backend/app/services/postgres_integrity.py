@@ -76,7 +76,8 @@ def integrity_certificate_from_row(row: dict, repertoire_id: str, graph_generati
 
 def request_integrity_scan_in_transaction(
     database: PostgresConnection, repertoire_id: str,
-    graph_generation: int, local_day: str,
+    graph_generation: int, local_day: str, *,
+    origin_import_operation_id: str | None = None, origin_graph_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Make a completed graph generation's integrity scan durable."""
 
@@ -86,7 +87,9 @@ def request_integrity_scan_in_transaction(
         database, "integrity_scan", repertoire_id,
         {"repertoire_id": repertoire_id, "graph_generation": graph_generation,
          "local_day": local_day, "source_type": "line", "after_source_id": "",
-         "source_offset": 0},
+         "source_offset": 0,
+         **({"origin_import_operation_id":origin_import_operation_id,"origin_graph_task_id":origin_graph_task_id}
+            if origin_import_operation_id and origin_graph_task_id else {})},
         priority=40, minimum_generation=graph_generation,
     )
     storage.set_scan_generation(database, (f"{queued_task['id']}:{queued_task['generation']}", repertoire_id))

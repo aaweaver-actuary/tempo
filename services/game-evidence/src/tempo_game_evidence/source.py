@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
-from tempo_game_ingestion import MAX_SOURCE_BYTES, normalize_pgn
+from tempo_game_ingestion.interfaces import MAX_SOURCE_BYTES, normalize_pgn
 from tempo_game_review_contracts import replay_line
 
 INDEX_VERSION = 1

@@ -222,6 +222,13 @@ app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .product_composition.game_history_current import current_game_history_router
+app.include_router(current_game_history_router())
+from .product_composition.game_review import current_game_review_router
+app.include_router(current_game_review_router())
+from .product_composition.repertoire_runtime import current_repertoire_router, is_repertoire_command_path
+if postgres_store.configured():
+    app.include_router(current_repertoire_router())
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -420,6 +427,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 "/api/repertoire/paste/preview",
                 "/api/endgames/probe",
                 "/api/cards/validate",
+                "/api/product/game-history/preview",
             }
             or (len(request_path_parts) == 5
                 and request_path_parts[:2] == ["api", "studies"]
@@ -603,6 +611,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
                 and path_parts[5] == "queue"))
+        product_feedback_command = (request.method == "POST" and
+            path_parts == ["api", "game-evidence", "product", "feedback"])
+        product_history_command = (request.method == "POST" and len(path_parts) == 4
+            and path_parts[:3] == ["api", "product", "game-history"]
+            and path_parts[3] in {"preview", "start", "run-ready", "resume"})
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -643,7 +656,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
             and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
             and request.method in {"POST", "PUT"})
-        if not read_only_post and not any((prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
+        product_repertoire_command = is_repertoire_command_path(request.method, path_parts)
+        if not read_only_post and not any((product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -672,7 +686,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, product_feedback_command, product_history_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -691,6 +705,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
     )
     is_background = (
         prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        # Monitoring observes learner activity; it must not mint a learner
+        # lease itself. Older clients and Docker health probes omit headers.
+        or (request.method == "GET" and request.url.path in {
+            "/api/health", "/api/system/foreground-active",
+            "/api/system/foreground-requests-active", "/api/system/tasks",
+        })
         or (request.method == 'POST' and len(request_path_parts) == 5
             and request_path_parts[:2] == ['api', 'repertoires']
             and request_path_parts[3:] == ['prefix-transition', 'apply'])
@@ -698,6 +718,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
+        or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
+        or request.url.path.startswith("/api/product/game-history/")
+        or request.url.path.startswith("/api/product/game-review/")
+        or request.url.path.startswith("/api/product/repertoires/")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
@@ -1377,14 +1402,19 @@ async def import_pgn(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     from .services.study_mode import study_only_enabled
-    if study_only_enabled():
-        raise HTTPException(409, "Imports are paused by Study-only mode. Turn it off in Settings to import this PGN.")
+    if study_only_enabled() and not postgres_store.configured():
+        raise HTTPException(409,"Explicit preparation in Study-only mode requires the supported PostgreSQL backend.")
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
     if trained_color not in {"white", "black"}:
         raise HTTPException(400, "trained_color must be white or black")
     import_started_at = time.perf_counter()
-    games, lines = parse_pgn((await file.read()).decode("utf-8-sig"))
+    try:
+        raw_pgn=await file.read(8*1024*1024+1)
+        if len(raw_pgn)>8*1024*1024: raise ValueError("PGN exceeds the 8 MiB import limit")
+        games, lines = parse_pgn(raw_pgn.decode("utf-8-sig"))
+    except (ValueError,UnicodeDecodeError) as error:
+        raise HTTPException(422,str(error)) from error
     parsed_at = time.perf_counter()
     if not lines:
         raise HTTPException(422, "No playable lines were found")
@@ -1396,11 +1426,10 @@ async def import_pgn(
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         from .pgn_import_commands import prepare_import_payload
-        return dispatch_command(
-            "imports.pgn.admit",
-            prepare_import_payload(file.filename, trained_color, depth, games, lines),
-            idempotency_key=idempotency_key,
-        )
+        operation_id=idempotency_key or str(uuid.uuid4())
+        payload=prepare_import_payload(file.filename,trained_color,depth,games,lines)
+        payload["operation_id"]=operation_id
+        return dispatch_command("imports.pgn.explicit",payload,idempotency_key=operation_id)
     imported_segments = [
         segment
         for line in lines

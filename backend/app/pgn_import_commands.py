@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
+from .pgn_import_validation import validate_sources
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import.storage import PostgresConnection
 from app.chess.cards import card_id
@@ -40,6 +41,7 @@ class ImportLine(BaseModel):
 
 class ImportPayload(BaseModel):
     source_name: str = Field(min_length=1)
+    operation_id: str | None = Field(default=None,min_length=1,max_length=128)
     trained_color: Literal["white", "black"]
     depth: int = Field(ge=2, le=20)
     games_found: int = Field(ge=0)
@@ -80,17 +82,20 @@ def prepare_import_payload(
     ).model_dump(mode="json")
 
 
-@refresh_game_publications_after_mutation
-def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) -> dict[str, Any]:
+def _admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any], *, explicit=False) -> dict[str, Any]:
     payload = ImportPayload.model_validate(raw_payload)
+    if not payload.lines or (explicit and not payload.operation_id):
+        raise HTTPException(422,"Explicit import requires lines and its durable operation identity")
     source_name = payload.source_name
     trained_color = payload.trained_color
     now = datetime.now(timezone.utc).isoformat()
     storage.lock_main_repertoire(database)
     existing_repertoire = storage.matching_repertoire(database, source_name, trained_color)
     repertoire_id = existing_repertoire[0] if existing_repertoire else str(uuid.uuid4())
-    storage.clear_main_repertoire(database)
-    storage.upsert_main_repertoire(database, repertoire_id, source_name.rsplit(".", 1)[0], source_name, now)
+    proposed=[dict(id=f"import:{number}",start_fen=line.starting_fen,moves_json=json.dumps(line.moves),trained_color=trained_color)
+              for number,line in enumerate(payload.lines)]
+    validate_sources(repertoire_id,[dict(row) for row in storage.current_sources(database,repertoire_id,trained_color)]+proposed)
+    storage.save_repertoire(database,repertoire_id,source_name.rsplit(".",1)[0],source_name,now)
     existing_lines = {
         (row["start_fen"], row["moves_json"]): row["id"]
         for row in storage.existing_lines(database, repertoire_id)
@@ -135,7 +140,8 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     prefix_created = len(prefix_ids - existing_card_ids - deleted_ids)
     descendant_created = len((segment_ids - prefix_ids) - existing_card_ids - deleted_ids)
     invalidate_integrity_in_transaction(database, repertoire_id)
-    request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
+    graph=request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat(),
+        **({"origin_import_operation_id":payload.operation_id} if explicit else {}))
     return {
         "repertoire_id": repertoire_id, "source_name": source_name,
         "games_found": payload.games_found, "unique_lines": payload.unique_lines,
@@ -149,10 +155,26 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
         "shared_prefixes_reused": max(0, payload.prefix_segments_count - excluded_prefix_count - prefix_created),
         "descendant_decision_cards_created": descendant_created,
         "graph_state": "refreshing",
+        **({"preparation":{"graph_task_id":graph["id"],"graph_generation":graph["generation"]},
+            "preparation_state":"pending"} if explicit else {}),
     }
 
 
+@refresh_game_publications_after_mutation
+def admit_pgn_import(database,raw_payload):
+    return _admit_pgn_import(database,raw_payload)
+
+
+@refresh_game_publications_after_mutation
+def explicit_pgn_import(database,raw_payload):
+    if "retained_import_preview" in raw_payload:
+        from app.repertoire.changes.imports import validate_approved_import
+        raw_payload = validate_approved_import(database, raw_payload)
+    return _admit_pgn_import(database,raw_payload,explicit=True)
+
+
 register_command("imports.pgn.admit", admit_pgn_import)
+register_command("imports.pgn.explicit", explicit_pgn_import)
 
 
 def discard_pgn_import(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -166,7 +188,7 @@ def discard_pgn_import(database: PostgresConnection, payload: dict[str, Any]) ->
     storage.lock_discard_operation(database, operation_id)
     storage.insert_discard_receipt(database, operation_id, f"discarded:{operation_id}", discarded_error_json)
     receipt = storage.discard_receipt(database, operation_id)
-    if receipt[0] != "imports.pgn.admit":
+    if receipt[0] not in {"imports.pgn.admit","imports.pgn.explicit"}:
         raise HTTPException(409, "Only PGN imports can be discarded")
     if receipt[1] == "complete":
         return {"operation_id": operation_id, "outcome": "already_complete",

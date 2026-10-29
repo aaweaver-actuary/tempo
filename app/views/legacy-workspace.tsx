@@ -15,12 +15,24 @@ import { useTrainingStore } from "../state/training-store";
 import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import { View } from "../types";
+import { RepertoireAuditMount } from "../features/product-api/RepertoireAuditMount";
+import { createGameReviewApi } from "../features/game-review/api";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
 const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 const CardEditor = lazy(() => import("./card_editor"));
 const RepertoireView = lazy(() => import("./repertoire_view"));
 const SettingsView = lazy(() => import("./settings_view"));
 const StudiesView = lazy(() => import("./studies_view"));
+const GameReviewView = lazy(() => import("../features/game-review/GameReviewView").then(module => ({ default: module.GameReviewView })));
+const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
+  recentGames: `${API_URL}/api/product/game-review/games`,
+  gameDetail: ({ provider, game_id, repertoire_id }) => {
+    const path = `${API_URL}/api/product/game-review/games/${provider}/${encodeURIComponent(game_id)}`;
+    return repertoire_id ? `${path}?repertoire_id=${encodeURIComponent(repertoire_id)}` : path;
+  },
+  sync: `${API_URL}/api/product/game-review/sync`,
+  retryFeedback: `${API_URL}/api/product/game-review/feedback/retry`,
+} });
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
 const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
@@ -28,7 +40,7 @@ const PendingDiscoverySaves = lazy(() => import("../components/pending-discovery
 import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
-  return view === "analysis" || view === "builder" || view === "compare" || view === "games" || view === "insights" || view === "progress" || view === "statistics"
+  return view === "analysis" || view === "builder" || view === "compare" || view === "insights" || view === "progress" || view === "statistics"
     ? "train"
     : view;
 }
@@ -196,7 +208,13 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
                 onResume={() => openRepairDialog(pausedIntegrity.id)}
               />,
     content: <>
+        {currentView === "games" && <GameReviewView api={gameReviewApi} onReviewGap={() => changeWorkspace("repertoire")} />}
         {currentView === "repertoire" && (
+          <RepertoireAuditMount apiUrl={API_URL} request={fetch} onNavigate={intent => {
+            if (intent.kind === "import") setShowImport(true);
+            else if (intent.kind === "settings") changeWorkspace("settings");
+            else if (intent.kind === "manual_edit") setShowTree(true);
+          }}>
           <RepertoireView
             theme={boardTheme}
             pieceSet={pieceSet}
@@ -209,6 +227,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
             onRenameLocal={renameLocalRepertoire}
             onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
           />
+          </RepertoireAuditMount>
         )}
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />

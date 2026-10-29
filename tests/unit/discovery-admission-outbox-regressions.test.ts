@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions,
+import { DISCOVERY_ADMISSION_QUEUED, enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions,
   pendingDiscoveryAdmissions, recoverUnacknowledgedDiscoveryAdmissions,
   retryPendingDiscoveryAdmission } from
   "../../app/lib/discovery-admission-outbox";
@@ -243,10 +243,12 @@ it("legacy discovery admission 202 keeps its intent receipt without a Celery ope
   expect(pendingDiscoveryAdmissions()[0].error).toBeUndefined();
 });
 
-it("timed out discovery save remains unconfirmed and replays the same choice after reload", async () => {
+it("unknown admission outcome cannot become success", async () => {
   vi.useFakeTimers();
   try {
     enqueuePendingDiscoveryAdmission(admission);
+    const original = pendingDiscoveryAdmissions()[0];
+    const queued = vi.spyOn(window, "dispatchEvent");
     const fetcher = vi.fn()
       .mockImplementationOnce((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
         options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
@@ -258,12 +260,19 @@ it("timed out discovery save remains unconfirmed and replays the same choice aft
     await vi.advanceTimersByTimeAsync(15_000);
     await firstFlush;
     expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "pending" });
-    recoverUnacknowledgedDiscoveryAdmissions();
+    expect(pendingDiscoveryAdmissions()[0]).toMatchObject(original);
+    expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+    await vi.resetModules();
+    const reloaded = await import("../../app/lib/discovery-admission-outbox");
+    reloaded.recoverUnacknowledgedDiscoveryAdmissions();
     await vi.advanceTimersByTimeAsync(3_000);
-    await flushPendingDiscoveryAdmissions();
-    expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "intent" });
-    await flushPendingDiscoveryAdmissions();
+    await reloaded.flushPendingDiscoveryAdmissions();
+    expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ ...original, state: "accepted", intentId: "intent" });
+    expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+    await reloaded.flushPendingDiscoveryAdmissions();
     expect(pendingDiscoveryAdmissions()).toEqual([]);
+    expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(1);
+    expect(new Headers(fetcher.mock.calls[1][1].headers).get("Idempotency-Key")).toBe(original.operationId);
     expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/accept"))).toHaveLength(2);
     expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body);
   } finally { vi.useRealTimers(); }
@@ -344,4 +353,149 @@ it("terminal discovery admission failure remains retryable after acknowledgment"
   expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "failed", error: "publication stopped" });
   await retryPendingDiscoveryAdmission("gap");
   expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "intent" });
+});
+
+it("terminal active-discovery 404 is retained without automatic replay", async () => {
+  vi.useFakeTimers();
+  try {
+    enqueuePendingDiscoveryAdmission(hashAdmission);
+    const original = pendingDiscoveryAdmissions()[0];
+    const queued = vi.spyOn(window, "dispatchEvent");
+    const fetcher = vi.fn().mockResolvedValue(Response.json(
+      { detail: "Active discovery not found" }, { status: 404 },
+    ));
+    vi.stubGlobal("fetch", fetcher);
+    await flushPendingDiscoveryAdmissions();
+    const failed = { ...original, state: "failed", error: "Active discovery not found" };
+    expect(pendingDiscoveryAdmissions()).toEqual([failed]);
+    await vi.resetModules();
+    const reloaded = await import("../../app/lib/discovery-admission-outbox");
+    reloaded.recoverUnacknowledgedDiscoveryAdmissions();
+    for (const elapsed of [3_000, 30_000, 86_400_000]) {
+      await vi.advanceTimersByTimeAsync(elapsed);
+      await reloaded.flushPendingDiscoveryAdmissions();
+    }
+    expect(reloaded.pendingDiscoveryAdmissions()).toEqual([failed]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1].method).toBe("POST");
+    expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+  } finally { vi.useRealTimers(); }
+});
+
+it("legacy active-discovery failure with accepted intent resumes status polling", async () => {
+  const original = { ...hashAdmission, operationId: "original-operation", intentId: "original-intent",
+    state: "failed", error: "Active discovery not found" };
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([original]));
+  const queued = vi.spyOn(window, "dispatchEvent");
+  recoverUnacknowledgedDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()).toEqual([{ ...original, state: "accepted", error: undefined }]);
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ state: "preparing" }))
+    .mockResolvedValueOnce(Response.json({ state: "queued" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ ...hashAdmission,
+    operationId: original.operationId, intentId: original.intentId, state: "accepted" });
+  expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+  await flushPendingDiscoveryAdmissions();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  for (const [url, options] of fetcher.mock.calls) {
+    expect(url).toContain("/api/discovery-admissions/original-intent");
+    expect(options?.method ?? "GET").toBe("GET");
+  }
+  expect(pendingDiscoveryAdmissions()).toEqual([]);
+  const completions = queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED);
+  expect(completions).toHaveLength(1);
+  expect((completions[0][0] as CustomEvent).detail).toEqual({
+    opportunityId: hashAdmission.opportunityId, evidenceFingerprint: hashAdmission.evidenceFingerprint,
+  });
+});
+
+it("explicit retry of a terminal discovery retains the original choice", async () => {
+  const original = { ...hashAdmission, operationId: "rejected-operation", state: "failed",
+    error: "Active discovery not found" };
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([original]));
+  const queued = vi.spyOn(window, "dispatchEvent");
+  let accept!: (response: Response) => void;
+  const fetcher = vi.fn().mockImplementation(() => new Promise<Response>((resolve) => { accept = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  const retry = retryPendingDiscoveryAdmission(original.opportunityId);
+  const pending = pendingDiscoveryAdmissions()[0];
+  expect(pending).toMatchObject({ ...hashAdmission, state: "pending", retryCount: 0 });
+  expect(pending.operationId).not.toBe(original.operationId);
+  expect(pending.intentId).toBeUndefined();
+  expect(fetcher.mock.calls[0][0]).toContain(`/api/discoveries/${original.opportunityId}/accept`);
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).toBe(pending.operationId);
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+    selected_move_uci: original.selectedMoveUci, evidence_fingerprint: original.evidenceFingerprint,
+  });
+  expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+  accept(Response.json({ intent_id: "new-intent" }));
+  await retry;
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ ...pending, state: "accepted", intentId: "new-intent" });
+  expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
+});
+
+it("failed records do not prevent independent pending saves", async () => {
+  const failures = ["failed-one", "failed-two", "failed-three"].map((opportunityId) => ({
+    ...admission, opportunityId, operationId: `operation-${opportunityId}`, state: "failed",
+    error: "Active discovery not found",
+  }));
+  const pending = { ...admission, opportunityId: "pending", operationId: "pending-operation", state: "pending" };
+  const accepted = { ...admission, opportunityId: "accepted", operationId: "accepted-operation",
+    intentId: "existing-intent", state: "accepted" };
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([...failures, pending, accepted]));
+  const queued = vi.spyOn(window, "dispatchEvent");
+  const fetcher = vi.fn(async (url: string) => url.endsWith("/accept")
+    ? Response.json({ intent_id: "new-intent" }) : Response.json({ state: "queued" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    expect.stringContaining("/api/discoveries/pending/accept"),
+    expect.stringContaining("/api/discovery-admissions/existing-intent"),
+  ]);
+  expect(pendingDiscoveryAdmissions()).toEqual([...failures, { ...pending, intentId: "new-intent",
+    state: "accepted", retryCount: 0 }]);
+  const completions = queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED);
+  expect(completions).toHaveLength(1);
+  expect((completions[0][0] as CustomEvent).detail.opportunityId).toBe("accepted");
+});
+
+it("overlapping discovery flushes share one active submission identity", async () => {
+  enqueuePendingDiscoveryAdmission(admission);
+  const original = pendingDiscoveryAdmissions()[0];
+  let accept!: (response: Response) => void;
+  const fetcher = vi.fn().mockImplementation(() => new Promise<Response>((resolve) => { accept = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  const first = flushPendingDiscoveryAdmissions();
+  const overlapping = flushPendingDiscoveryAdmissions();
+  expect(overlapping).toBe(first);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).toBe(original.operationId);
+  accept(Response.json({ intent_id: "one-intent" }));
+  await Promise.all([first, overlapping]);
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ ...original, state: "accepted", intentId: "one-intent" });
+});
+
+
+it("legacy accepted intent that cannot be confirmed retains unresolved truth", async () => {
+  const original = { ...hashAdmission, operationId: "original-operation", intentId: "missing-intent",
+    state: "failed", error: "Active discovery not found" };
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([original]));
+  const queued = vi.spyOn(window, "dispatchEvent");
+  recoverUnacknowledgedDiscoveryAdmissions();
+  const fetcher = vi.fn().mockResolvedValue(Response.json(
+    { detail: "Discovery admission was not found" }, { status: 404 },
+  ));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ ...original,
+    error: "Discovery admission was not found" });
+  recoverUnacknowledgedDiscoveryAdmissions();
+  await flushPendingDiscoveryAdmissions();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toContain("/api/discovery-admissions/missing-intent");
+  expect(fetcher.mock.calls[0][1]?.method ?? "GET").toBe("GET");
+  expect(queued.mock.calls.filter(([event]) => event.type === DISCOVERY_ADMISSION_QUEUED)).toHaveLength(0);
 });

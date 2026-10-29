@@ -136,3 +136,52 @@ unsupported for this minimal start/stop/status milestone. Source/release/schema
 updates and backup require their own owning capabilities. Actual PostgreSQL,
 runtime, graph import, admission and deployment qualification remain separate;
 this source does not execute or authorize a one-time cutover.
+
+## Managed builder allocation
+
+[`managedBuild`](development-budget.mjs) and `managedComposeBuild` accept an
+explicit `limits: {cpus, memoryMiB}` option. Omission retains 2 CPU / 2048 MiB.
+An explicit request supplies both numeric fields: positive finite CPUs whose
+100000-microsecond quota is an exact integer, and positive integer MiB. Each
+request must fit the unchanged aggregate 2 CPU / 2048 MiB ceiling. No limit is
+rounded, silently increased or replaced on failure.
+
+For the proposed lower-memory build, the supported API is:
+
+```js
+await managedBuild(buildWithNamedBuilder, {
+  limits: {cpus: 1, memoryMiB: 1536},
+});
+// Or: managedComposeBuild(prepareBakeJSON, executeBake, {limits: {cpus: 1, memoryMiB: 1536}})
+```
+
+The caller keeps its existing build command, Docker adapter, quiet check and
+owner token/directory options. No new environment or CLI override is introduced.
+Limits are validated and copied before ownership acquisition or asynchronous
+hooks, then used for aggregate admission, rootless builder creation and exact
+kernel readback. Existing development containers count toward admission and are
+preserved. The one builder lane still excludes new managed container/Compose
+starts, even when a smaller builder leaves headroom.
+
+```mermaid
+flowchart TD
+    Request[managedBuild / managedComposeBuild limits] --> Snapshot[Validate and copy limits; defaults 2 CPU / 2048 MiB]
+    Snapshot --> Owner[Existing host budget owner and exclusive builder lane]
+    Owner --> Quiet[Existing Study quiet check]
+    Quiet --> Admission[Snapshot plus existing managed containers within global ceiling]
+    Admission --> Journal[Journal this builder identity before creation]
+    Journal --> Create[Create rootless builder with snapshot memory and CPU quota]
+    Create --> Verify[Exact kernel readback against snapshot]
+    Verify --> Build[Execute caller build once]
+    Create --> Cleanup[Existing owner-checked cleanup and independent absence probes]
+    Verify --> Cleanup
+    Build --> Cleanup
+    Cleanup --> Release[Release journal and lane only after verified absence]
+    Cleanup --> Retain[Uncertain or failed cleanup retains ownership and lane]
+```
+
+This view describes proposed source behavior. The owning
+[`development-budget` regressions](../tests/runner/development-budget.test.mjs)
+use injected Docker capabilities; they do not establish a successful real
+1 CPU / 1536 MiB build or deployed resource isolation. Build errors, including
+OOM or time failures, remain failures without retrying at a higher allocation.

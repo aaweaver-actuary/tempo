@@ -107,27 +107,34 @@ _QUEUE_ELIGIBILITY_PHASES = (
 )
 
 
-def seed_queue(db, day):
+def seed_queue(db, day, *, introductions=None):
     for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
         apply_phase(db, day)
     seed_tactical_introductions(db, day)
-    _reset_unintroduced_opening_cards(db, day)
-    _reset_stale_opening_introductions(db, day)
-    limit = seeding_storage.opening_allowance(db)
-    from ..repertoire_settings import effective_opening_limits
-    repertoire_limits = effective_opening_limits(db)
-    reconcile_unseen_queue(db, day, limit, repertoire_limits)
+    if introductions is None:
+        _reset_unintroduced_opening_cards(db, day)
+        _reset_stale_opening_introductions(db, day)
+        limit = seeding_storage.opening_allowance(db)
+        from ..repertoire_settings import effective_opening_limits
+        repertoire_limits = effective_opening_limits(db)
+        reconcile_unseen_queue(db, day, limit, repertoire_limits)
     maximum = seeding_storage.maximum_position(db, day)
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
         seeding_storage.append_due_card(db, day, row[0], maximum + offset)
-    maximum += len(rows)
-    admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
+    from tempo_legacy_database.adapters.study.game_feedback import resume_available_feedback
+    resume_available_feedback(db, day)
+    # Recover owed introduced-card feedback before optional new introductions.
+    maximum = seeding_storage.maximum_position(db, day)
+    if introductions is None:
+        admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
     outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
     for missed_card in outstanding_studied_cards:
         promote_real_game_card(db, missed_card["card_id"], day)
     for stale_priority in seeding_storage.stale_miss_priority(db, day, MISS_REASON):
         clear_satisfied_miss_priority(db, stale_priority["card_id"])
+    if introductions is not None:
+        introductions.admit(day)
     study_allowance = seeding_storage.study_allowance(db)
     admitted_studies = seeding_storage.admitted_study_count(db, day)
     remaining_studies = max(0, study_allowance - admitted_studies)
@@ -137,26 +144,18 @@ def seed_queue(db, day):
         for offset, study_row in enumerate(study_rows):
             seeding_storage.append_study_card(db, day, study_row["id"], next_position + offset)
 
+    from tempo_legacy_database.adapters.study.recombination import project_current_presentations
+    project_current_presentations(db, day)
+
 
 from tempo_legacy_database.adapters.queue_refresh import presentation as presentation_storage
 from tempo_legacy_database.adapters.queue_refresh.presentation import _QUEUE_RANDOMIZATION_ROWS_SQL
 
 def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=None):
-    """Capture eligibility and attempt protection without changing membership."""
-    rows, reviewed, eligible = presentation_storage.presentation_facts(
-        database, day, MISS_REASON, read=read, after_entry_id=after_entry_id, limit=limit,
-    )
-    if not rows:
-        return rows
-    for row in rows:
-        from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
-        if presentation_storage.is_postgres_connection(database) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
-            from .legacy_study_remediation import has_current_miss
-            if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
-        row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
-                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
-        row['eligible'] = row['id'] in eligible
-    return rows
+    """Compatibility entry for the narrow, transaction-bound presentation reader."""
+    from .queue_presentation import presentation_rows as current_presentation_rows
+    return current_presentation_rows(database, day, read=read,
+                                     after_entry_id=after_entry_id, limit=limit)
 
 
 def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None = None) -> None:

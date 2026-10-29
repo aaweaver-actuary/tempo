@@ -95,13 +95,51 @@ def set_position(database, position, entry_id):
 
 
 def classify_entry(database, entry_id):
+    from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
                admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
                    WHEN EXISTS(SELECT 1 FROM reviews review
                    WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
-                     AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
+                     AND review.invalidated_at IS NULL) OR ("""
+        + regrouped_card_sql(database, "daily_queue.card_id") + """) THEN 'review' ELSE 'new' END
            WHERE id=?""",
         (entry_id,),
     )
+
+
+class PriorityPositionConflict(RuntimeError):
+    pass
+
+
+def apply_priority_positions(database, day, changes):
+    """One guarded borrowed write for only the positions changed by the owner."""
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    if not changes:
+        return
+    if not isinstance(database, PostgresConnection):
+        for entry_id,previous,position in changes:
+            set_position(database,position,entry_id)
+        return
+    changed = database.execute_native("""UPDATE daily_queue queue SET position=planned.position
+        FROM unnest(%s::bigint[],%s::bigint[],%s::bigint[])
+            AS planned(id,previous,position)
+        WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'
+          AND queue.position=planned.previous AND queue.attempt_failed=0
+          AND queue.review_result_json IS NULL
+          AND queue.admission_kind IS DISTINCT FROM 'explicit'
+          AND queue.attempt_state IN ('clean','unstarted','gameplay')
+          AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+              WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id
+                AND origin.revision=(SELECT revision FROM cards WHERE id=queue.card_id)
+                AND origin.issued_as_head=1)
+          AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+              WHERE attempt.queue_entry_id=queue.id)""",
+        ([row[0] for row in changes],[row[1] for row in changes],
+         [row[2] for row in changes],day)).rowcount
+    if changed != len(changes):
+        raise PriorityPositionConflict('priority positions changed or an attempt became protected')
+
+
+from tempo_legacy_database.adapters.queue_refresh.presentation import priority_ownership_state

@@ -20,3 +20,5 @@ class ImportResult(BaseModel):
     shared_prefixes_reused: int = 0
     descendant_decision_cards_created: int = 0
     graph_state: Literal["refreshing", "ready", "failed"] = "refreshing"
+    preparation_state: Literal["pending", "ready", "held"] = "pending"
+    preparation: dict[str, str | int] | None = None

@@ -25,6 +25,18 @@ The 12 included remediation tables have their canonical charts/dictionary in the
 
 ## Read projections
 
+The additive [Study recombination owner chart](../../../backend/app/study/recombination/README.md#private-storage-shape)
+documents migration 053's six tables: streaks, events, distinct completions,
+immutable changes/receipts, generated presentations and route/decision current
+targets. Original card, attempt, review and obligation references remain logical
+and noncascading. Source readiness 53 follows 052; this is not a live-schema claim.
+
+The additive T06 [Study game-feedback owner chart](../adapters/study/README.md)
+documents `study_game_feedback` from migration 051: stable effect identity,
+original deadline, pre-delivery hold, application and settlement provenance.
+Relationships to cards/reviews are logical and noncascading. Source only;
+live schema/deployment unverified.
+
 These are SQL views, not additional stored tables. DDL links define their projected fields and backing queries.
 
 | View | DDL |
@@ -44,3 +56,8 @@ These are SQL views, not additional stored tables. DDL links define their projec
 | `public.gameplay_events` | [014_versioned_game_events.sql](../ddl/migrations/014_versioned_game_events.sql) |
 | `public.repertoire_comparisons` | [035_canonical_publication_freshness.sql](../ddl/migrations/035_canonical_publication_freshness.sql) |
 | `public.repertoire_decision_events` | [041_real_game_study_obligations.sql](../ddl/migrations/041_real_game_study_obligations.sql) |
+
+C1 migration [054](../ddl/migrations/054_product_repertoire_review.sql) adds the
+Repertoire-owned [preview/approval dictionary](../../../backend/app/repertoire/changes/README.md)
+and Study-owned [conflict hold/receipt dictionary](../adapters/study/CONFLICTS.md).
+Their exact logical queue/card references do not grant cross-owner writes.
