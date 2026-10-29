@@ -273,3 +273,17 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     mark_queue_refreshing(database, queue_date)
     return task
 
+
+
+def ensure_due_refresh_in_transaction(database, queue_date):
+    """Request missing due work without restarting an active queue generation.
+
+    Call without effect/card/day locks; the queue owner locks its task first.
+    A ready projection alone does not prove that newly due work is already queued.
+    """
+    from tempo_legacy_database.adapters.commands import queue as storage
+    active = storage.lock_current_queue_task(database)
+    if (active and active['state'] in {'queued', 'leased', 'retrying'}
+            and json.loads(active['payload_json']).get('queue_date') == queue_date):
+        return
+    request_queue_refresh_in_transaction(database, queue_date)
