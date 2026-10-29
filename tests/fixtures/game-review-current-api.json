@@ -1,0 +1,97 @@
+{
+  "api_sha": "4daf8b03e7dae0f8451210a8d94efff8867ffebc",
+  "ui_sha": "241bced7b7c77f8ccbe33d35ae7a9669f12d248e",
+  "contract_sha": "59b07fcea6eee9ef5c281d953dd86023e372bdd4",
+  "detail_path": "/api/product/game-review/games/lichess/source-game",
+  "recent": {
+    "games": [
+      {
+        "provider": "lichess",
+        "game_id": "source-game",
+        "source_revision": 1,
+        "played_at": "2026-10-20T12:00:00Z",
+        "time_precision": "second",
+        "player_color": "white"
+      }
+    ],
+    "sync": [
+      {
+        "provider": "lichess",
+        "status": "idle",
+        "operation_id": null,
+        "error": null
+      },
+      {
+        "provider": "chesscom",
+        "status": "idle",
+        "operation_id": null,
+        "error": null
+      }
+    ]
+  },
+  "detail": {
+    "provider": "lichess",
+    "game_id": "source-game",
+    "source_revision": 1,
+    "played_at": "2026-10-20T12:00:00Z",
+    "time_precision": "second",
+    "player_color": "white",
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [
+      "d2d4"
+    ],
+    "findings": [
+      {
+        "interface_version": "0.2.0",
+        "kind": "known_unintroduced",
+        "provider": "lichess",
+        "game_id": "source-game",
+        "source_revision": 1,
+        "source_digest": "0e93c277bb0d85e7e870dc9a05e2154c82b28bb06117e22a7fea6fa0672b5b5c",
+        "ply": 1,
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "expected_uci": [
+          "e2e4"
+        ],
+        "played_uci": "d2d4",
+        "repertoire_id": "rep",
+        "repertoire_revision": 1,
+        "decision_id": "shared-decision",
+        "presentation_id": "shared-card",
+        "presentation_revision": 1,
+        "introduced_before_game": false,
+        "membership": "present",
+        "lapse_eligible": false,
+        "diagnostic": "introduction_not_before_game",
+        "reentry_authority_id": null
+      }
+    ],
+    "receipts": [
+      {
+        "key": {
+          "workspace_id": "workspace",
+          "provider": "lichess",
+          "game_id": "source-game",
+          "decision_id": "shared-decision",
+          "occurrence_ply": 1
+        },
+        "source_revision": 1,
+        "status": "pending",
+        "outcome": "duplicate",
+        "owner_receipt_id": "actual-owner-receipt",
+        "admitted_at": null,
+        "available_by": null,
+        "applied_at": null,
+        "reason": "study_priority_pending",
+        "interface_version": "0.2.1",
+        "detected_at": "2026-10-27T04:00:00Z",
+        "source_digest": "0e93c277bb0d85e7e870dc9a05e2154c82b28bb06117e22a7fea6fa0672b5b5c",
+        "observation": "missed",
+        "observation_recorded": true,
+        "disposition": "first_introduction",
+        "admission_status": "pending",
+        "deferred_reason": null
+      }
+    ]
+  }
+}

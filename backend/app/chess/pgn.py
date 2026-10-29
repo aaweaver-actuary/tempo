@@ -49,16 +49,23 @@ def _annotation(node: chess.pgn.GameNode, board: chess.Board) -> ParsedAnnotatio
 
 
 def _collect_lines(node: chess.pgn.GameNode, board: chess.Board, moves: list[str], annotations: list[ParsedAnnotation]) -> list[tuple[list[str], list[ParsedAnnotation]]]:
-    here = _annotation(node, board)
-    current_annotations = [*annotations, *([here] if here else [])]
-    if not node.variations:
-        return [(moves, current_annotations)]
-    lines: list[tuple[list[str], list[ParsedAnnotation]]] = []
-    for variation in node.variations:
-        next_board = board.copy(stack=False)
-        uci = variation.move.uci()
-        next_board.push(variation.move)
-        lines.extend(_collect_lines(variation, next_board, [*moves, uci], current_annotations))
+    pending = [(node,board,moves,annotations)]
+    lines = []
+    total = 0
+    while pending:
+        current,position,route,notes = pending.pop()
+        here = _annotation(current,position)
+        current_notes = [*notes,*([here] if here else [])]
+        if len(route)>1000 or len(pending)+len(lines)>10000:
+            raise ValueError("PGN exceeds the bounded route limit")
+        if not current.variations:
+            total += len(route)
+            if total>100000: raise ValueError("PGN exceeds the bounded move limit")
+            lines.append((route,current_notes))
+        for variation in reversed(current.variations):
+            next_board=position.copy(stack=False)
+            next_board.push(variation.move)
+            pending.append((variation,next_board,[*route,variation.move.uci()],current_notes))
     return lines
 
 
@@ -66,13 +73,20 @@ def parse_pgn(raw_pgn: str) -> tuple[int, list[ParsedLine]]:
     stream = io.StringIO(raw_pgn)
     games = 0
     parsed: list[ParsedLine] = []
+    total_plies = 0
     while game := chess.pgn.read_game(stream):
+        if game.errors:
+            raise ValueError("Invalid PGN: an illegal tail cannot be imported as a legal prefix")
         games += 1
+        if not game.board().is_valid(): raise ValueError("Invalid PGN starting position")
         board = game.board()
         starting_fen = board.fen()
         for moves, annotations in _collect_lines(game, board, [], []):
             if moves:
                 parsed.append(ParsedLine(starting_fen=starting_fen, moves=moves, annotations=annotations))
+                total_plies += len(moves)
+                if len(parsed)>10000 or total_plies>100000:
+                    raise ValueError("PGN exceeds the bounded source limit")
     return games, parsed
 
 

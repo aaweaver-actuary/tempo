@@ -1,6 +1,6 @@
 """Content card definition/prefix split contracts."""
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 
 class CardRevisionRequest(BaseModel):
@@ -18,6 +18,14 @@ class PrefixSplitRequest(BaseModel):
     """Decide on a one-decision prefix split at the observed card revision."""
 
     expected_revision: int = Field(ge=1)
+    queue_entry_id: int | None = Field(default=None, ge=1)
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_attempt(self, handler):
+        value = handler(self)
+        if self.queue_entry_id is None:
+            value.pop("queue_entry_id", None)
+        return value
 
 
 class PrefixSplitCard(BaseModel):

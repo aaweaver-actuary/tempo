@@ -1,6 +1,8 @@
 # Feature register: retain, retire, or reimplement later
 
-**Status:** Product-scope decision record, 2026-10-21. This documents features; it does not certify source deletion or physical-table drops. Source examples are from [`7d77ed1b25198dcd320e0265f777cc630f23775e`](https://github.com/aaweaver-actuary/tempo/commit/7d77ed1b25198dcd320e0265f777cc630f23775e).
+Historical programme reference. This document records the October 21–25 Study-first reduction/migration work. Current product scope and delivery order come from [SPEC](../../../SPEC.md); execution comes from [AGENTS](../../../AGENTS.md). Its retirement defaults, replacement-runtime requirements, migration sequence, source-reduction targets, and then-current task queue are not prerequisites or assignments for ordinary product features. Reuse a particular procedure only when the current assignment explicitly selects it and reconciles it with current requirements. Historical evidence and safety conditions are retained.
+
+Source examples are from [`7d77ed1b25198dcd320e0265f777cc630f23775e`](https://github.com/aaweaver-actuary/tempo/commit/7d77ed1b25198dcd320e0265f777cc630f23775e).
 
 | Capability | Product disposition | Minimum preservation or historical pointer |
 |---|---|---|

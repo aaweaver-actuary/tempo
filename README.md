@@ -1,5 +1,11 @@
 # Tempo
 
+## Product specification
+
+**[Read SPEC.md](SPEC.md)** for the current product requirements, decided policies, delivery slices, and specific reuse map. It includes real-game feedback, probability-driven introductions, a 30 CP repair tolerance, and adaptive card recombination after three consecutive clean reviews.
+
+Keep working Study and Tactics in place; selectively restart unfinished workflows when faster. Replacement-runtime adoption, full history migration, and broad cleanup are not prerequisites for the next useful feature. The spec governs product scope where older plans or the implementation notes below conflict; it is not a claim that all target behavior is already available.
+
 Tempo is a functional local-first chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, guided corrections, compact progress, and a fixed daily queue.
 
 ## Local product
@@ -8,7 +14,7 @@ Docker Tempo is the full product. After the [PostgreSQL maintenance cutover](doc
 
 For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
 
-Every reported defect must have a named regression test before closure. Select checks for the affected component and contracts; `make full` is the current whole-repository integration gate, not a universal entrance requirement. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
+Defects actually fixed need discoverable named regression coverage; existing appropriate coverage can suffice. Closing a duplicate, deferred, or not-planned report is not a claim of a fix. Select checks for the affected component and contracts; `make full` is the current whole-repository integration gate, not a universal entrance requirement. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
 
 - Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
 - Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
@@ -29,6 +35,8 @@ Every reported defect must have a named regression test before closure. Select c
 - Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. The stopped SQLite volume remains historical evidence after cutover.
 
 ## Run locally
+
+This section is an operating reference, not a development acceptance step. Install/start/restart/maintenance commands may change the registered installation. Run them only within an authorized operational assignment, not to validate a feature branch or documentation edit.
 
 ### Easiest on a Mac
 
@@ -100,8 +108,7 @@ The [component reconstruction guide](docs/architecture/component-reconstruction.
 describes the adopted target, current transition, and migration index. The
 [code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) is historical
 evidence from its dated baseline. Maintained source, test, asset, and
-documentation directories also contain a local `README.md`; start with the
-README closest to the code you are changing.
+documentation directories also contain a local `README.md`. Read the relevant owner README for APIs, state ownership, and commands. Its linked plans and operating procedures do not enlarge the assignment. Consult only the parts needed for the changed boundary.
 
 ## Static build
 
@@ -111,11 +118,13 @@ npm run verify:static
 npm run preview:static
 ```
 
-This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. Docker/Python stays supported as the compatibility and migration source until each deterministic service passes parity fixtures against Rust.
+This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. This describes the static build; it does not assign a general Rust port or runtime migration. Docker/Python support is not contingent on completing every deterministic service port.
 
 The public practice demo is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions runs the complete local-product suite before publishing the limited `pages-dist/` demonstration. Rust identity/validation/prefix fixtures are shared with Python; scheduling remains Python-authoritative until full parity is proven.
 
-## Settled product decisions
+## Earlier implementation decisions
+
+These notes describe earlier behavior. [SPEC.md](SPEC.md) governs the target product, particularly the strict per-repertoire own-response rule, introductions, and connected practice. This documentation update does not change runtime behavior.
 
 - Initial depth is six **user moves**. Opponent replies are included as needed but do not count toward the six.
 - “Again” stays in today’s fixed session and is reinserted after four other cards rather than repeated immediately.
@@ -132,7 +141,9 @@ The Lichess puzzle database is public domain and provides FEN, UCI solution move
 
 Lichess now requires authentication for Opening Explorer requests. Interactive Explorer requests use Lichess's PKCE flow and keep the access token in browser session storage. Unattended repertoire-coverage work uses `TEMPO_LICHESS_EXPLORER_TOKEN` in the analysis worker environment. The token is not stored with queued work or Explorer cache entries. Interactive Stockfish 19 and Maia 3 analysis runs in browser workers; durable Stockfish and Maia analysis runs in Docker workers with the same packaged models.
 
-## Recommended maturity and depth policy
+## Earlier maturity and depth policy
+
+This earlier proposal is retained for context, not as an additional prerequisite. The current target is [probability-driven introductions](SPEC.md#s02--probability-driven-introductions) and [adaptive card recombination](SPEC.md#6-r11--adaptive-card-recombination).
 
 The optimization target is practical recall from the beginning of a playable line, not maximum theoretical depth. A child card unlocks only when its parent has:
 

@@ -185,8 +185,10 @@ def enqueue_compact_postgres_task_in_transaction(
 
 def claim_task(
     kind: str | None = None, *, allowed_kinds: tuple[str, ...] | None = None,
-    lease_seconds: int = 60,
+    lease_seconds: int = 60, explicit_imports_only: bool = False,
 ) -> dict | None:
+    if explicit_imports_only and (kind is not None or allowed_kinds is not None):
+        raise ValueError("Explicit import claims use only their receipt-bound scope")
     if kind is not None and allowed_kinds is not None:
         raise ValueError("Use one durable-task kind filter")
     if allowed_kinds is not None and not allowed_kinds:
@@ -194,9 +196,12 @@ def claim_task(
     if allowed_kinds is not None:
         warm_scheduling_sql(allowed_kinds)
 
+    prepared_import_claim = (storage.prepare_task_claim(None,None,_iso(),DEFENSIVE_TASK_KINDS,explicit_imports_only=True)
+                             if explicit_imports_only else None)
+
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
-        reclaim, read_candidate, kind_parameters = storage.prepare_task_claim(kind, allowed_kinds, now, DEFENSIVE_TASK_KINDS)
+        reclaim, read_candidate, kind_parameters = prepared_import_claim or storage.prepare_task_claim(kind,allowed_kinds,now,DEFENSIVE_TASK_KINDS)
 
 
 
@@ -260,6 +265,9 @@ def lock_current_slice(database, task: dict) -> bool:
     )
     if not current:
         increment(database, task.get("kind", "other"), task["id"], stale_results=1)
+    elif task.get('explicit_import_preparation'):
+        from .explicit_repertoire_import import require_delivery
+        require_delivery(database,task)
     elif 'maintenance_scope' in task:
         # Only explicit selected-rebuild deliveries carry this process-local pin.
         # The check and source/policy locks belong inside the owner's transaction.

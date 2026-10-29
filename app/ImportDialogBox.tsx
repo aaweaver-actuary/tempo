@@ -80,6 +80,8 @@ export function ImportDialogBox({
     descendants: 0,
     sharedPrefixes: 0,
     backend: false,
+    publication: "ready" as "ready" | "pending" | "held",
+    admissionPending: false,
   });
   const [working, setWorking] = useState(false);
   const [acknowledgedImport, setAcknowledgedImport] = useState<Awaited<ReturnType<typeof savePgnImportCommand>> | null>(null);
@@ -124,13 +126,16 @@ export function ImportDialogBox({
   async function waitForPublishedAdmission(
     repertoireId: string,
     signal: AbortSignal,
-  ): Promise<number> {
-    while (true) {
+  ): Promise<{ admitted: number; publication: "ready" | "pending" | "held"; admissionPending: boolean }> {
+    const deadline = Date.now() + 30_000;
+    let contentReady = false;
+    while (Date.now() < deadline) {
       signal.throwIfAborted();
       const result = await readImportPublication(`${API_URL}/api/repertoires`, repertoiresResponseSchema, "imported repertoire admission", signal);
       signal.throwIfAborted();
       const repertoire = result.repertoires.find(candidate => candidate.id === repertoireId);
       if (!repertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
+      contentReady = Boolean(repertoire.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at);
       if (repertoire.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
       if (repertoire.integrity_scan_status === "failed")
         throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
@@ -145,10 +150,11 @@ export function ImportDialogBox({
           signal.throwIfAborted();
           const refreshedRepertoire = refreshed.repertoires.find(candidate => candidate.id === repertoireId);
           if (!refreshedRepertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
-          return refreshedRepertoire.due_count;
+          if (refreshedRepertoire.graph_state !== "ready" || refreshedRepertoire.integrity_status !== "clean" || refreshedRepertoire.graph_updated_at !== repertoire.graph_updated_at) { contentReady = false; continue; }
+          return { admitted: refreshedRepertoire.due_count, publication: "ready", admissionPending: false };
         }
       }
-      if (repertoire.integrity_status === "needs_repair") return 0;
+      if (repertoire.integrity_status === "needs_repair") return { admitted: 0, publication: "held", admissionPending: true };
       signal.throwIfAborted();
       await new Promise<void>((resolve, reject) => {
         const cancelObservation = () => { window.clearTimeout(observationTimer); reject(signal.reason); };
@@ -159,6 +165,7 @@ export function ImportDialogBox({
         signal.addEventListener("abort", cancelObservation, { once: true });
       });
     }
+    return { admitted: 0, publication: contentReady ? "ready" : "pending", admissionPending: true };
   }
 
   async function importFile(retryBlocked = false) {
@@ -185,6 +192,8 @@ export function ImportDialogBox({
       let descendants = parsed.descendantCards;
       let sharedPrefixes = parsed.sharedPrefixes;
       let integrityRepertoireId: string | undefined;
+      let publication: "ready" | "pending" | "held" = "ready";
+      let admissionPending = false;
       if (usesLocalApi()) {
         const result = acknowledgedImport ?? await savePgnImportCommand(file, trainedColor, initialDepth, {
           signal: controller.signal, retryBlocked,
@@ -200,9 +209,10 @@ export function ImportDialogBox({
           descendants = result.descendant_decision_cards_created ?? result.decision_cards_created ?? 0;
           sharedPrefixes = result.shared_prefixes_reused ?? 0;
           if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
-          admitted = await waitForPublishedAdmission(
-            result.repertoire_id, controller.signal,
-          );
+          const observed = await waitForPublishedAdmission(result.repertoire_id, controller.signal);
+          admitted = observed.admitted;
+          publication = observed.publication;
+          admissionPending = observed.admissionPending;
           controller.signal.throwIfAborted();
           await onDatabaseUpdated();
         }
@@ -215,7 +225,7 @@ export function ImportDialogBox({
         prefixes,
         descendants,
         sharedPrefixes,
-        backend,
+        backend, publication, admissionPending,
       });
       setFinished(true);
       if (integrityRepertoireId) {
@@ -289,7 +299,7 @@ export function ImportDialogBox({
         {finished ? (
           <div className="import-finished">
             <span>✓</span>
-            <h2 id="import-title">Imported</h2>
+            <h2 id="import-title">{summary.publication === "ready" ? "Imported" : "PGN saved"}</h2>
             <p>
               <strong>{file?.name}</strong> added {summary.lines} unique{" "}
               {summary.lines === 1 ? "line" : "lines"}
@@ -297,10 +307,16 @@ export function ImportDialogBox({
                 ? ` and merged ${summary.duplicates} duplicate ${summary.duplicates === 1 ? "line" : "lines"}`
                 : ""}
               .{" "}
-              Created {summary.prefixes} initial prefix {summary.prefixes === 1 ? "card" : "cards"} and {summary.descendants} one-move descendant {summary.descendants === 1 ? "card" : "cards"}
+              {summary.backend ? "Planned" : "Created"} {summary.prefixes} initial prefix {summary.prefixes === 1 ? "card" : "cards"} and {summary.descendants} one-move descendant {summary.descendants === 1 ? "card" : "cards"}
               {summary.sharedPrefixes ? `; reused ${summary.sharedPrefixes} shared ${summary.sharedPrefixes === 1 ? "prefix" : "prefixes"}` : ""}.{" "}
               {summary.backend
-                ? `${summary.admitted} cards are in today’s queue; remaining new cards will follow your daily limit.`
+                ? summary.publication === "pending"
+                  ? "Preparation is pending. The saved import will wait for foreground work or paused preparation; check Repertoire or Activity for progress."
+                  : summary.publication === "held"
+                    ? "Preparation is held for manual integrity resolution. No conflict winner was selected."
+                    : summary.admissionPending
+                      ? "Content is ready; normal Study admission is still pending. Existing Study controls and daily limits remain in force."
+                      : `${summary.admitted} cards are in today’s queue; remaining new cards follow your existing Study controls and daily limit.`
                 : "This browser’s repertoire and practice queue are updated."}
             </p>
             <Button

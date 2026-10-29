@@ -93,6 +93,8 @@ class LearningReviewAdapter:
             return None
         owners = tuple(item[0] for item in storage.card_owners(self.database, card_id))
         integrity = storage.card_integrity(self.database, card_id)
+        from tempo_legacy_database.adapters.study.recombination import current_presentation_available
+        integrity = bool(integrity) and current_presentation_available(self.database, card_id)
         return learning.CardFacts(row["content_type"], bool(row["archived"]), row["superseded_by"],
             row["revision"], row["state"], bool(integrity), owners)
 
@@ -111,6 +113,9 @@ class LearningReviewAdapter:
             row = storage.attempt_by_id(self.database, command.queue_entry_id, command.card_id, lock)
         else:
             row = storage.first_queued_attempt(self.database, context.local_day.isoformat(), command.card_id, lock)
+        if row is not None:
+            from .study_attempt_guard import guard_current_attempt
+            guard_current_attempt(self.database,row['id'],command.card_id,self.current_revision(command.card_id))
         return self._attempt(row)
 
     def recover_attempt(self, command):
@@ -155,6 +160,8 @@ class LearningReviewAdapter:
 
     def settle_remediation(self, command, review_id, *, revision):
         if review_id is None: return
+        from tempo_legacy_database.adapters.study.game_feedback import settle_saved_review
+        settle_saved_review(self.database, command.card_id, review_id, revision)
         from .legacy_study_remediation import settle_review
         settle_review(self.database, command.card_id, review_id, queue_entry_id=command.queue_entry_id,
                       revision=revision, source_attempt_id=command.attempt_id)
@@ -280,6 +287,10 @@ def apply_legacy_review(card_id, request, *, database=None, observed_at=None, lo
             result = learning.apply_review(adapter, command, adapter.context(command)).as_dict()
         except learning.ReviewFailure as error:
             raise translate_failure(error) from error
+        from tempo_legacy_database.adapters.study.recombination import after_saved_review
+        regrouping = after_saved_review(owned, command.attempt_id)
+        if regrouping:
+            result["recombination"] = regrouping
     adapter.finish_compatibility_effects()
     return result
 
@@ -292,5 +303,9 @@ def submit_legacy_review(database, payload):
         result = learning.submit_review(adapter, command, lambda: adapter.context(command)).as_dict()
     except learning.ReviewFailure as error:
         raise translate_failure(error) from error
+    from tempo_legacy_database.adapters.study.recombination import after_saved_review
+    regrouping = after_saved_review(database, command.attempt_id)
+    if regrouping:
+        result["recombination"] = regrouping
     adapter.finish_compatibility_effects()
     return result
