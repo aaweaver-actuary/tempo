@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { repository, checkTypeScript, checkConsumer, validateManifest } from "../check-components.mjs";
+import { repository, checkTypeScript, checkConsumer, validateManifest, validateSuite } from "../check-components.mjs";
 const manifest = JSON.parse(readFileSync(resolve(repository, "components.json"), "utf8"));
 const chess = manifest.components.find(component => component.id === "chess-line");
 const scheduling = manifest.components.find(component => component.id === "scheduling");
@@ -144,6 +144,31 @@ test("M02 Python public API policy rejects private and unavailable consumer expo
     assert.notEqual(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stderr, /Private/);
   }
+});
+for (const { name, kind, command, originalInputs } of [
+  {
+    name: "pure", kind: "python", command: "python services/content/run_suite.py pure",
+    originalInputs: ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"],
+  },
+  {
+    name: "PostgreSQL", kind: "postgres", command: "python database/tempo_content_database/tooling/run_postgres.py",
+    originalInputs: ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"],
+  },
+]) test(`M02 Content ${name} suite preserves relocated database inputs at repository root`, () => {
+  const content = manifest.components.find(component => component.id === "content");
+  assert.equal(content.status, "implemented");
+  assert.equal(content.root, "services/content");
+  assert.equal(content.tests.length, 2);
+  const suite = content.tests.find(candidate => candidate.kind === kind);
+  assert.ok(suite, `Content retains its ${kind} suite`);
+  assert.doesNotThrow(() => validateSuite(suite, repository, content.root));
+  assert.equal(suite.owner, "content");
+  assert.equal(suite.cwd, ".");
+  assert.equal(suite.command, command);
+  const originalPaths = originalInputs.map(input => resolve(repository, content.root, input));
+  assert.deepEqual(suite.inputs, originalPaths.map(path => relative(repository, path)));
+  assert.deepEqual(suite.inputs.map(input => realpathSync(resolve(repository, suite.cwd, input))), originalPaths.map(path => realpathSync(path)));
+  assert.doesNotThrow(() => validateManifest(manifest, repository, { componentIds: ["content"] }));
 });
 test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
   const plannedComponent = manifest.components.find(component => component.status === "planned");
