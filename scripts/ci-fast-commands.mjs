@@ -5,11 +5,13 @@ export function studyGrep(browser) {
   return browser.map(test => `(?:^| )${escape(test.title)}$`).join('|');
 }
 export function fastCommands(plan) {
-  // The owning similarity proof consumes the actual immutable index/contracts.
-  // Bind its source-package roots into command evidence, including child Python.
-  const similarityPaths = 'backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src';
-  const pythonCommand = (name, args) => plan.backend.includes('backend/tests/test_product_similarity.py')
-    ? [name, 'env', [`PYTHONPATH=${similarityPaths}`, resolvePython(), ...args]]
+  // These exact bounded Analysis proofs consume the existing pure contracts.
+  // Bind their source-package roots into command evidence, including child Python.
+  const analysisPaths = 'backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src';
+  const analysisTests = ['backend/tests/test_product_similarity.py',
+    'backend/tests/test_product_explorer.py','backend/tests/test_product_proposals.py'];
+  const pythonCommand = (name, args) => analysisTests.some(file => plan.backend.includes(file))
+    ? [name, 'env', [`PYTHONPATH=${analysisPaths}`, resolvePython(), ...args]]
     : [name, resolvePython(), args];
   const commands = [
     ['conflicts','node',['scripts/check-merge-conflicts.mjs']],

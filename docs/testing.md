@@ -107,6 +107,19 @@ Adjacent unknown files and dependency/contract changes retain conservative
 classification. This prospective mapping does not qualify historical #523 or its
 engine/proposal/runtime integration; this infrastructure repair retains FULL.
 
+Explorer's exact `backend/app/analysis/probability/{explorer.py,ports.py,interfaces/__init__.py}`
+paths select `backend/tests/test_product_explorer.py`; the four exact
+`backend/app/analysis/proposals/{acceptability.py,blunders.py,coordinator.py,ports.py}`
+paths select `backend/tests/test_product_proposals.py`. These reuse the same
+command-bound pure source roots for shared contracts and child import checks.
+Explorer uses fake HTTP/cache/clock; proposals use fake similarity/probability/
+engine ports. Neither selection establishes provider connectivity, real engine
+evaluation, approval, persistence or product wiring. The exact
+`backend/app/analysis/probability/EXPLORER.md` is static prose FAST; no directory
+or arbitrary-Markdown exemption is added. The owner test files must exist on
+the candidate; a missing selected file still forces FULL. These prospective
+mappings do not retroactively qualify #518/#530 or change infrastructure gates.
+
 Separate local development evidence, configured CI execution, actually enforced hosted requirements, and installation qualification. Verify hosted settings when a merge claim depends on them; do not infer requirements solely from a historical document or infer permission to bypass project acceptance from an absent setting. Current classification/freshness rules may force broader work than local policy. Report that mismatch for a separately assigned correction. Do not change or bypass those rules in an ordinary feature or instruction task.
 
 The following exact paths retain FULL because their component qualification is not
