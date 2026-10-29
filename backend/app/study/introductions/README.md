@@ -372,3 +372,52 @@ the actual current schema, reader, canonical writer and hold read, not installed
 artifact qualification or an optional runtime. Exact dependency hashes and commands
 belong in the handoff evidence. #501 retains migration/registration and visible
 product proof; the first feedback release is not changed by this feature.
+
+## Prepared independent Study sweep — #558 repair
+
+**Proposed source on the #558 dependency; deployment unverified.** Only the
+independent Study sweep opts into `prepared_introduction=PreparedEncounterIntroduction`.
+Other exact-encounter callers retain their current synchronous path.
+
+The [preparer](../../services/encounter_preparation.py) reads complete source
+route pages through the existing database projections, closes each read before
+chess validation and yields between pages. The immutable Study-owned value binds
+the target and exact source facts; it is ephemeral, not a second authority or
+persisted certificate. Existing 10k-route/100k-ply/64-relevant-route limits remain.
+The current-owner decision adapter validates retained capture/executable facts
+before the writer and still fences actual source, membership and graph rows there.
+
+```mermaid
+sequenceDiagram
+    participant S as Independent Study sweep
+    participant R as Bounded source read adapters
+    participant P as Pure introduction validation
+    participant W as Borrowed effect and checkpoint writer
+    participant Q as Learning queue refresh owner
+    S->>R: Read target and complete route pages
+    R-->>S: Close each read before computation
+    S->>P: Validate all exposed decisions and alternatives
+    P-->>S: Immutable prepared introduction or pending reason
+    S->>W: Recheck task, source versions, exact rows, controls and card/day locks
+    alt Source changed or preparation unavailable
+        W-->>S: Commit honest pending receipt and cursor
+    else Missing due work
+        W-->>S: Commit pending receipt and cursor, release all effect locks
+        S->>Q: Ensure refresh without replacing active generation
+        Q-->>S: Commit request, then advisory wake
+    else Current target admitted
+        W-->>S: Atomically commit sole introduction, priority, receipt and cursor
+    end
+```
+
+The prepared writer never scans the repertoire or seeds a due-card backlog. A
+bounded missing-due check defers to the existing one-card queue admission slices,
+then a later sweep prepares again. The queue request uses its existing task-first
+lock order after all effect locks close. A crash between those commits leaves the
+accepted obligation pending for ordinary periodic recovery. No producer call,
+new service, schema, transaction-limit change or independent settlement writer
+is introduced.
+
+Owning regressions: `test_feedback_preparation.py`, the named #558 native cases
+in `test_encounter_introductions_postgres.py`, and the existing Games→Study
+qualification selection. PostgreSQL/deployment outcomes are separate from source.

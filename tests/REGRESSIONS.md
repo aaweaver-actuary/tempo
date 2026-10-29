@@ -5537,3 +5537,25 @@ acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
 
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
 - **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
+
+### #558 Study feedback claimed-slice recovery
+
+Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake ownership:
+`test_issue558_study_feedback_periodic_and_retry_wakes_are_coalesced` in
+`backend/tests/test_background_wakes.py`. Named regressions cover typed deadline
+and connection loss after claim, fresh-writer recovery before wake, unchanged
+checkpoint/failure budget, successor generation and lost commit acknowledgment,
+and failed cleanup leaving normal lease recovery rather than a retry loop.
+
+### #558 prepared first-introduction transaction scope
+
+`backend/tests/test_feedback_preparation.py` owns closed-page chess preparation,
+complete 1,025-route discovery, immutable/stale source bindings, no writer route
+scan/chess replay, due-refresh progress preservation and payload-free diagnostics.
+`test_issue558_prepared_first_introduction_yields_due_work_and_commits_once`,
+`test_issue558_prepared_source_rejects_inserted_conflicting_route`, and
+`test_issue558_postgres_connection_recovery_fences_checkpoint_and_successor` in
+`backend/tests/test_encounter_introductions_postgres.py` own actual storage proof
+under the unchanged 250ms writer limit, due-first ordering, protected attempts,
+rollback, no fabricated reviews, replay and generation fences. Registration is
+not a claim that native qualification or assembled settlement has passed.

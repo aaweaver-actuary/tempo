@@ -262,3 +262,20 @@ def lock_product_admission(database, day, card_id):
         return False
     lock_queue_day(database, day)
     return True
+
+
+def has_missing_due_card(database, day):
+    from ..eligibility import _DUE_CARD_ELIGIBILITY
+    return database.execute_native(
+        'SELECT 1 FROM cards c WHERE ' + _DUE_CARD_ELIGIBILITY + ' LIMIT 1',
+        (day, day, day),
+    ).fetchone() is not None
+
+
+def introduction_source_binding(header, card, graphs, routes):
+    """Exact bounded source facts, excluding adapter-only route sentinels."""
+    import json
+    route_fields = ('id', 'repertoire_id', 'trained_color', 'start_fen', 'moves_json')
+    return json.dumps([dict(header), dict(card), [dict(row) for row in graphs],
+        [{field: row[field] for field in route_fields} for row in routes]],
+        sort_keys=True, default=str, separators=(',', ':'))
