@@ -60,7 +60,7 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
         lambda db, payload: apply_approved_import(db, payload)
         if 'retained_import_preview' in payload else original_handler(db, payload))
     with case.transaction() as db:
-        db.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0 WHERE id=1')
+        db.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0,timezone=%s WHERE id=1', ('UTC',))
         db.execute_native("UPDATE repertoires SET is_main=1 WHERE id='white'")
         db.execute_native("UPDATE cards SET trained_color='white' WHERE id=%s", (case.card_id,))
         assert case.service(db).accept_lapse(case.lapse).status == 'applied'

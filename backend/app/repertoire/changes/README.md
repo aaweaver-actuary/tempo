@@ -302,6 +302,13 @@ assembly. It asserts held import without activation, reload read, exact approved
 branches, saved/pending status, main/history/active attempt/accepted game receipt
 preservation, same-result retry and outer rollback with no completed receipt.
 Native stale-source and publication races remain to execute at the same boundary.
-The fixture creates an owned PostgreSQL18/schema51/module050 cluster and temporary
-credentials; that operation is not authorized by this checkpoint. Do not run it
-until the coordinator admits the resources and fixture authority.
+The existing approved fixture follows the checked-in PostgreSQL migration registry
+(current main is schema53, including module050). Current main through #559 at
+`39796fd1` is merged into this feature branch because its queue/presentation and
+accepted-game-effect changes affect the protected-state proof. The native test
+sets its disposable settings timezone to UTC rather than inheriting host-local
+time. The final node collects without a database. Its execution remains blocked
+by capacity: the observed other-owner disposable stack already reserves the full
+2-CPU development ceiling. Do not stop or reuse that stack; its coordinator must
+release capacity before this existing capped fixture can run. No container,
+credential or database was created during this qualification attempt.
