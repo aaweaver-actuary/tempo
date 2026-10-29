@@ -112,3 +112,34 @@ or UI expansion is included.
 See the [operator commands and canonical lifecycle drawing](../../scripts/README.md#games-collection-operator).
 Private launch values/provenance remain outside Git; public evidence contains
 only synthetic game data and operational identities, never accounts or credentials.
+
+## Follow-up: operator maintenance/schema repair (source and synthetic evidence)
+
+Repair commit: `d6d8c836ee4d28374d7c6ca2d6ff4d79176eb762`, based on parent
+`30a618934af72ebc58a164557b18dd470962ead5` (#611). This evidence-only follow-up
+does not change the tested operator source.
+
+- Before production edits, `node tools/component-build/test-lane.mjs runners game-review-collection`
+  passed all 10 original tests, with no skips/TODOs.
+- `node --test --test-name-pattern='^collection enable blocks (pending migration|schema mismatch)$' tests/runner/game-review-collection.test.mjs`
+  then failed both selected cases on their intended missing-blocker assertions
+  (0 passed, 2 failed); no import/setup error was counted as reproduction.
+- Final `node --check scripts/game-review-collection.mjs` and
+  `node --check tests/runner/game-review-collection.test.mjs` passed.
+- Final registered `node tools/component-build/test-lane.mjs runners game-review-collection`
+  reported 74 passed, 0 failed, 0 skipped and 0 TODO (including parameterized groups).
+  All ten original test bodies remain verbatim. Real assessor/locking/main tests
+  demonstrate guard precedence, fail-closed sanitized evidence, exact positive
+  integer schema matching, refused starts, safe owned disable, unchanged maintenance
+  evidence, read-only plan/status, lock release and idempotent enable.
+- `git diff --check`, `git diff --stat` and `git diff --name-only` were inspected;
+  the repair is confined to the five assigned files and allowed documentation sections.
+  The existing canonical operator lifecycle diagram was updated; GitHub rendering
+  was not verified. Separate baseline/expected-red/final logs are retained outside Git.
+
+No live service, database, provider, account/configuration, installation or activation
+operation occurred. Tests use synthetic files and external-command responses.
+The original 822-game/image evidence above is reused, not relabeled or rerun:
+no packaged production input changed in this host-operator repair. #607/#608
+remain separate qualification issues, and parent #611 merge qualification remains
+subject to its applicable required checks. Not installed or activated.
