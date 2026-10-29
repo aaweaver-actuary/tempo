@@ -34,7 +34,12 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
         worker.cpu !== 0.15e9 || worker.memory !== 256 * 1024 ** 2 || worker.pids !== 96 ||
         JSON.stringify(worker.command) !== JSON.stringify(["python", "-m", "app.product_composition.game_sync_current", "--workspace", "legacy"]))
       throw new Error("Only this owned actual optional worker may be signalled");
-    execFileSync("docker", ["kill", `--signal=${action === "worker-stop" ? "TERM" : "KILL"}`, worker.id], { timeout: 10_000 });
+    // Docker kill marks a container manually stopped and suppresses its real
+    // restart policy. Signal the exact CLI child of init instead; no other
+    // process, service, startup journal or allocation is touched.
+    const signal = action === "worker-stop" ? "SIGTERM" : "SIGKILL";
+    const source = `import os, signal\nfrom pathlib import Path\nexpected = [b'python', b'-m', b'app.product_composition.game_sync_current', b'--workspace', b'legacy']\nchildren = Path('/proc/1/task/1/children').read_text().split()\nworkers = [int(pid) for pid in children if Path('/proc/' + pid + '/cmdline').read_bytes().rstrip(b'\\0').split(b'\\0') == expected]\nassert len(workers) == 1, 'Exact optional CLI child required'\nos.kill(workers[0], signal.${signal})\n`;
+    execFileSync("docker", ["exec", worker.id, "python", "-c", source], { timeout: 10_000 });
     return { signalled: action, container: worker.id };
   }
   // Execute inside the existing capped writer slot. Starting another Compose
