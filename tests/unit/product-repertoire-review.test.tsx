@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
@@ -48,7 +49,7 @@ function fakeApi(data = read(), proposals: readonly Proposal[] = [original]): Re
 }
 async function mount(api = fakeApi(), extra: Partial<Parameters<typeof RepertoireReviewView>[0]> = {}) {
   const session = new RepertoireReviewSession(() => "operation-stable");
-  const view = render(<RepertoireReviewView api={api} repertoireId="white" session={session} {...extra} />);
+  const view = render(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="white" session={session} {...extra} />);
   await screen.findByRole("tab", { name: "Missing replies" });
   return { api, session, ...view };
 }
@@ -145,7 +146,7 @@ it("an old pending preview cannot restore approval after edits", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Preview proposal" }));
   // A source generation change unmounts the old editor, even if transport ignores abort.
   const other = fakeApi(read({ source_revision: 2 }));
-  view.rerender(<RepertoireReviewView api={other} repertoireId="white" />);
+  view.rerender(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={other} repertoireId="white" />);
   await screen.findByText(/Stale proposal/);
   await act(async () => { finish(receipt(original)); });
   expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
@@ -277,8 +278,8 @@ it("late read for another repertoire cannot mutate current screen selection", as
   let finish!: (value: RepertoireReviewRead) => void;
   const api = fakeApi(); vi.mocked(api.review).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
     .mockResolvedValueOnce(read({ repertoire_id: "black", findings: [finding({ label: "Current black finding", proposal_id: null })] }));
-  const view = render(<RepertoireReviewView api={api} repertoireId="white" />);
-  view.rerender(<RepertoireReviewView api={api} repertoireId="black" />);
+  const view = render(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="white" />);
+  view.rerender(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="black" />);
   await screen.findByRole("heading", { name: "Current black finding" });
   await act(async () => { finish(read()); });
   expect(screen.getByRole("heading", { name: "Current black finding" })).toBeTruthy();
@@ -291,7 +292,7 @@ it("an old command acknowledgment cannot display success in another repertoire",
   const view = await mount(api); await previewAndApprove(); fireEvent.click(screen.getByRole("button", { name: "Accept displayed changes" }));
   await waitFor(() => expect(api.decide).toHaveBeenCalledTimes(1));
   const nextApi = fakeApi(read({ repertoire_id: "black", findings: [] }), []);
-  view.rerender(<RepertoireReviewView api={nextApi} repertoireId="black" session={view.session} />);
+  view.rerender(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={nextApi} repertoireId="black" session={view.session} />);
   await screen.findByText("Source revision 1 · black");
   await act(async () => { finish(receipt(original, "accepted")); });
   expect(screen.queryByText("Owner status: accepted")).toBeNull();
@@ -299,7 +300,7 @@ it("an old command acknowledgment cannot display success in another repertoire",
 
 it("import/manual editing/settings remain navigation intents and a failed read is retryable", async () => {
   const navigate = vi.fn(); const api = fakeApi(); vi.mocked(api.review).mockRejectedValueOnce(new Error("owner down"));
-  render(<RepertoireReviewView api={api} repertoireId="white" onNavigate={navigate} />);
+  render(<RepertoireReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="white" onNavigate={navigate} />);
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("button", { name: "Import lines" })); fireEvent.click(screen.getByRole("button", { name: "Manual editor" }));
   fireEvent.click(screen.getByRole("button", { name: "Likelihood settings" }));
@@ -331,7 +332,25 @@ it("feature dependency boundary contains no Study controllers, live clients, pri
     const source = readFileSync(`app/features/repertoire-review/${file}`, "utf8");
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const imports = parsed.statements.filter(ts.isImportDeclaration).map(statement => (statement.moduleSpecifier as ts.StringLiteral).text);
-    for (const path of imports) expect(path, `${file}: ${path}`).toMatch(/^(?:react|chess\.js|@tempo\/board-ui|\.\/(?:api|state|PositionViewer|EvidencePanel|ConflictPanel|ProposalPanel|styles\.css)|\.\.\/product-api\/contracts|\.\.\/\.\.\/components\/(?:ui|buttons\/BaseButton)|\.\.\/\.\.\/hooks\/use-board-history|\.\.\/\.\.\/\.\.\/packages\/board-ui\/styles\/board\.css)$/);
+    for (const path of imports) expect(path, `${file}: ${path}`).toMatch(/^(?:react|chess\.js|@tempo\/board-ui(?:\/styles\.css)?|\.\/(?:api|state|PositionViewer|EvidencePanel|ConflictPanel|ProposalPanel|styles\.css)|\.\.\/product-api\/contracts|\.\.\/\.\.\/components\/(?:ui|buttons\/BaseButton)|\.\.\/\.\.\/hooks\/use-board-history|\.\.\/\.\.\/\.\.\/packages\/board-ui\/styles\/board\.css)$/);
     expect(source).not.toMatch(/\bfetch\s*\(|localStorage|sessionStorage|useTrainingStore|home_view|training_view|tactics_view/);
   }
+});
+
+it("shared_board_appearance_repertoire_categories_and_proposals_follow_settings", async () => {
+  const conflict = { conflict_id: "appearance-conflict", repertoire_id: "white", position, affected_routes: ["route-a"],
+    study_block: { status: "blocked" as const, reason: "Own response conflict" }, choices: [{ move_uci: "a2a3", proposal: original }] };
+  const api = fakeApi(read({ conflicts: [conflict], findings: [finding(), finding({ finding_id: "covered", kind: "common_blunder", label: "Covered response",
+    existing_card: { presentation_id: "existing", revision: 1, introduced: true } })] }));
+  const view = await mount(api, { appearance: { theme: "blue", pieceSet: "merida" } });
+  const check = () => expect(view.container.querySelector(".tempo-theme-blue.tempo-pieces-merida")).not.toBeNull();
+  check();
+  fireEvent.click(screen.getByRole("button", { name: "Choose a2a3" })); check();
+  for (const label of ["Missing replies", "Common blunders", "Lines & positions"]) {
+    fireEvent.click(screen.getByRole("tab", { name: label })); check();
+  }
+  view.rerender(<RepertoireReviewView appearance={{ theme: "green", pieceSet: "cburnett" }} api={api} repertoireId="white" session={view.session} />);
+  expect(view.container.querySelector(".tempo-theme-green.tempo-pieces-cburnett")).not.toBeNull();
+  expect(api.review).toHaveBeenCalledTimes(1);
+  expect(api.preview).not.toHaveBeenCalled(); expect(api.decide).not.toHaveBeenCalled();
 });

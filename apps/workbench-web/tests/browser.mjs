@@ -1,3 +1,4 @@
+import { sharedBoardAppearance } from './board-appearance.mjs';
 import { navigationFixture } from './navigation-fixture.mjs';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
@@ -18,7 +19,7 @@ assert.ok(fixtures.dismissal?.receipt,'Actual producer dismissal receipt require
 const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml'};
 const host=createServer(async(request,response)=>{
   const url=new URL(request.url,'http://localhost');const path=url.pathname==='/'?'index.html':url.pathname.slice(1);
-  if(!inventory.has(path)||!['GET','HEAD'].includes(request.method)||(url.search&&(path!=='index.html'||[...url.searchParams.keys()].some(key=>!['run','category','dismissal'].includes(key))))){unexpected.push('host escape '+request.method+' '+url.pathname);response.writeHead(404);response.end();return;}
+  if(!inventory.has(path)||!['GET','HEAD'].includes(request.method)||(url.search&&(path!=='index.html'||[...url.searchParams.keys()].some(key=>!['run','category','dismissal','boardTheme','pieceSet'].includes(key))))){unexpected.push('host escape '+request.method+' '+url.pathname);response.writeHead(404);response.end();return;}
   response.writeHead(200,{'Content-Type':mime[extname(path)]??'application/octet-stream'});response.end(await readFile(resolve(dist,path)));
 });
 await mkdir(evidence,{recursive:true});
@@ -58,9 +59,9 @@ try{
   await context.addInitScript(ids=>{crypto.randomUUID=()=>{const count=Number(sessionStorage.getItem('test-command-sequence')??0);sessionStorage.setItem('test-command-sequence',String(count+1));return ids[count]??ids.at(-1);};},[fixtures.dismissal.command.command_id,'browser-blocked-command',fixtures.reopening.command.command_id,fixtures.unscoped.dismissal.command.command_id]);
   page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>unexpected.push('pageerror '+error.message));page.on('websocket',socket=>unexpected.push('WebSocket '+socket.url()));
   // C_connected_fresh_navigation: the shared page is HTML, never an API JSON page.
-  const freshNavigation=await page.goto(origin+'/?run=run');
+  const freshNavigation=await page.goto(origin+'/?run=run&boardTheme=blue&pieceSet=merida');
   assert.equal(freshNavigation.status(),200);assert.match(freshNavigation.headers()['content-type'],/text\/html/);
-  assert.equal(freshNavigation.request().redirectedFrom(),null);assert.equal(page.url(),origin+'/?run=run');
+  assert.equal(freshNavigation.request().redirectedFrom(),null);assert.equal(page.url(),origin+'/?run=run&boardTheme=blue&pieceSet=merida');
   await expect(page.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toBeVisible();
   await expect(page.getByLabel('Caller credential',{exact:true})).toHaveValue('');
   await expect(page.getByLabel('Intelligence origin',{exact:true})).toHaveValue(navigationFixture.TEMPO_INTELLIGENCE_ORIGIN);
@@ -92,7 +93,7 @@ try{
   const unknownGame=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'&&context.after_divergence===true));
   assert.ok(unknownGame,'Native selected game with an unknown comparison required');
   await page.getByRole('button',{name:'Inspect game '+(unknownGame.provider_game_id??unknownGame.game_id),exact:true}).click();
-  await page.getByLabel('Game chessboard').waitFor();await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();
+  await page.getByLabel('Game chessboard').waitFor();await sharedBoardAppearance(page,'Game chessboard');await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();
   const unknownContext=unknownGame.contexts.find(context=>context.status==='unknown'&&context.after_divergence===true);
   await page.getByLabel('Game position',{exact:true}).selectOption(String(unknownContext.ply));
   await expect(page.getByLabel('Accepted comparison')).toContainText('unknown');
@@ -104,7 +105,7 @@ try{
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   // Clipping the old pixel plane must not substitute for a complete resized board.
   await expect.poll(()=>page.getByLabel('Game chessboard').evaluate(element=>{
-    const board=element.getBoundingClientRect(),pieces=[...element.querySelectorAll('piece')];
+    const board=element.getBoundingClientRect(),pieces=[...element.querySelectorAll('cg-board piece')];
     return pieces.length===32&&pieces.every(piece=>{const bounds=piece.getBoundingClientRect();return bounds.left>=board.left-1&&bounds.right<=board.right+1&&bounds.top>=board.top-1&&bounds.bottom<=board.bottom+1;});
   })).toBe(true);
   await page.screenshot({path:resolve(evidence,'game-phone.png'),fullPage:true});
@@ -113,7 +114,7 @@ try{
   await page.getByRole('button',{name:'Back to findings',exact:true}).click();
   await page.setViewportSize({width:1280,height:960});await page.getByLabel('Category',{exact:true}).waitFor();
   await page.getByLabel('Category',{exact:true}).selectOption('practical_gap');await expect(page.getByRole('button',{name:'Inspect finding'})).toHaveCount(1);
-  await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();await expect(page.locator('piece')).toHaveCount(32);
+  await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await sharedBoardAppearance(page,'Finding chessboard');await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();await expect(page.locator('cg-board piece')).toHaveCount(32);
   // C3_gap_names_opponent_reply_separately_from_learner_response.
   await expect(page.getByText('Uncovered opponent reply: a6. No accepted continuation under this policy.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Flip board'}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Show played move'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','f3']);await page.getByRole('button',{name:'Decision position'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','g1']);
@@ -149,7 +150,7 @@ try{
   await expect(page.getByRole('button',{name:'Inspect finding',exact:true})).toHaveCount(1);
   await expect(page.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toHaveCount(0);
   assert.equal(traffic.filter(item=>item.method==='POST').length,writesBeforeReload);
-  await page.getByRole('button',{name:'Inspect finding',exact:true}).click();await page.getByLabel('Finding chessboard').waitFor();
+  await page.getByRole('button',{name:'Inspect finding',exact:true}).click();await page.getByLabel('Finding chessboard').waitFor();await sharedBoardAppearance(page,'Finding chessboard');
   navigationCases.push('C_connected_session_scope');
   await page.getByRole('button',{name:'Dismiss',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Saving dismissal state…');
   assert.ok((await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-command-v2:'+JSON.stringify([location.origin,'fixture'])))).includes(fixtures.dismissal.command.command_id));
@@ -163,12 +164,12 @@ try{
   await page.reload();await page.getByRole('button',{name:'Inspect finding'}).first().waitFor();assert.equal(await page.getByLabel('Category',{exact:true}).inputValue(),'practical_gap');
   assert.ok((await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-connection-v1'))).includes('synthetic-caller'));
   assert.equal(await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-command-v2:'+JSON.stringify([location.origin,'fixture']))),null);
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Inspect finding'}).first().click();await page.getByLabel('Finding chessboard').waitFor();await page.getByRole('button',{name:'Reopen',exact:true}).waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:resolve(evidence,'detail-phone.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Inspect finding'}).first().click();await page.getByLabel('Finding chessboard').waitFor();await sharedBoardAppearance(page,'Finding chessboard');await page.getByRole('button',{name:'Reopen',exact:true}).waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:resolve(evidence,'detail-phone.png'),fullPage:true});
   await page.getByRole('button',{name:'Reopen',exact:true}).click();await page.getByRole('button',{name:'Inspect finding'}).first().waitFor();
   await page.reload();await page.getByRole('button',{name:'Inspect finding'}).first().click();await page.getByRole('button',{name:'Dismiss',exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to findings'}).click();await page.getByLabel('Category',{exact:true}).selectOption('');await page.getByLabel('Run',{exact:true}).selectOption('unscoped-browser');
   await page.getByRole('button',{name:'Inspect finding'}).first().click();await page.getByText('Repertoire, policy and source lineage are unknown for this engine finding.',{exact:true}).waitFor();
-  await page.getByLabel('Finding chessboard').waitFor();await page.screenshot({path:resolve(evidence,'unscoped-engine.png'),fullPage:true});
+  await page.getByLabel('Finding chessboard').waitFor();await sharedBoardAppearance(page,'Finding chessboard');await page.screenshot({path:resolve(evidence,'unscoped-engine.png'),fullPage:true});
   await page.getByRole('button',{name:'Dismiss',exact:true}).click();await page.getByRole('button',{name:'Inspect finding'}).first().waitFor();await page.reload();await page.getByRole('button',{name:'Inspect finding'}).first().click();await page.getByRole('button',{name:'Reopen',exact:true}).waitFor();
   legacyView=true;
   await page.getByRole('button',{name:'Back to findings'}).click();

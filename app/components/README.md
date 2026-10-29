@@ -1,21 +1,17 @@
 # Shared components
 
-Reusable React components live here: the Chessground board, persistent board
+Reusable React components live here: the shared-board interaction adapter, persistent board
 shell, controls, dialogs, navigation, feedback, and common buttons. Components
 may use hooks and domain adapters, but screen-specific data fetching belongs in
 the owning view or feature hook.
 
-Before adding another board, inspect the implemented presentation-only
-[`@tempo/board-ui` package](../../packages/board-ui/README.md) and the
-[component discovery guide](../../docs/architecture/component-reconstruction.md#discover-before-building).
-Its public API includes supplied shapes, focus and a keyboard-event seam;
-application keyboard policy and engine computation are not package features.
-Current legacy reuse points are [Chessboard](board/chessboard.tsx),
-[the persistent shell](board/persistent-board-shell.tsx),
-[move controls](board/MoveNavigationControls.tsx), and
-[keyboard dispatch/history actions](../lib/keyboard-shortcuts.ts).
-Inventory those behaviors before extracting an independent interaction adapter;
-do not import the legacy application store into an independent renderer.
+All production boards use [`@tempo/board-ui`](../../packages/board-ui/README.md#appearance-and-adopted-consumers)
+and its public stylesheet/assets. [Chessboard](board/chessboard.tsx) adapts legal
+moves, promotion, hints, sound, keyboard/help and viewport/frame allocation. It
+constructs no renderer. [The persistent shell](board/persistent-board-shell.tsx)
+keeps one Board mounted across workspace ownership changes; exact lease identity
+and position revision fence obsolete input. Review screens receive appearance
+from composition; they do not read another feature's store.
 
 Shared native-element UI primitives are in `ui.tsx` with tokens and styles in
 `ui.css`. The category inventory and workspace review checklist are in

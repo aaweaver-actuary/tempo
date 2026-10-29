@@ -10,3 +10,5 @@ export { studyUrl, studyUrlForBuild, studyHandoffNotice, intelligenceOrigin, int
 export type { WorkbenchOptions } from "./workbench.js";
 
 export type { GamesReader, GameScope, GamePage, Game } from './games-reader.js';
+
+export { readWorkbenchAppearance } from "./appearance.js";

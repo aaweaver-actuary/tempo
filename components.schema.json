@@ -66,6 +66,7 @@
               "type": "string"
             }
           },
+          "publicSubpaths": { "type": "array", "items": { "type": "string" } },
           "dependencies": {
             "type": "array",
             "items": {

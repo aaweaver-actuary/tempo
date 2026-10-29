@@ -1,3 +1,5 @@
+
+import { resolveBoardAppearance } from "@tempo/board-ui/appearance";
 import type { LegacyWorkspace, LegacyWorkspaceController, LegacyWorkspaceSlots } from '../components/optional-workspace';
 import StudySettingsView from './study-settings-view';
 import { canOpenWorkspace } from '../lib/study-workspace-policy';
@@ -576,10 +578,10 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
           ...(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []).map(asTeachingMoveKey),
         ]));
         setBoardTheme(
-          (localStorage.getItem("tempo-board-theme") as BoardTheme) ?? "brown",
+          resolveBoardAppearance({ theme: localStorage.getItem("tempo-board-theme") }).theme,
         );
         setPieceSet(
-          (localStorage.getItem("tempo-piece-set") as PieceSet) ?? "cburnett",
+          resolveBoardAppearance({ pieceSet: localStorage.getItem("tempo-piece-set") }).pieceSet,
         );
         setSoundOn(moveSoundEnabled());
         void refreshDatabaseQueue().catch(() => undefined);
@@ -662,12 +664,10 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         initializeCardState(loadedCard);
       }
       setBoardTheme(
-        (localStorage.getItem("tempo-board-theme") as BoardTheme | null) ??
-          "brown",
+        resolveBoardAppearance({ theme: localStorage.getItem("tempo-board-theme") }).theme,
       );
       setPieceSet(
-        (localStorage.getItem("tempo-piece-set") as PieceSet | null) ??
-          "cburnett",
+        resolveBoardAppearance({ pieceSet: localStorage.getItem("tempo-piece-set") }).pieceSet,
       );
       setSoundOn(moveSoundEnabled());
       void refreshDatabaseQueue().catch(() => undefined);

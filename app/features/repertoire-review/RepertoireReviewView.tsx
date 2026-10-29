@@ -1,3 +1,4 @@
+import type { BoardAppearance } from "@tempo/board-ui";
 import { useEffect, useId, useState } from "react";
 import type { Proposal } from "../product-api/contracts";
 import { Button } from "../../components/buttons/BaseButton";
@@ -11,6 +12,7 @@ import { ProposalPanel } from "./ProposalPanel";
 import "./styles.css";
 
 export interface RepertoireReviewViewProps {
+  readonly appearance: BoardAppearance;
   readonly api: RepertoireReviewClient;
   readonly repertoireId: string;
   readonly repertoires?: readonly { readonly id: string; readonly name: string }[];
@@ -20,7 +22,7 @@ export interface RepertoireReviewViewProps {
 }
 type Loaded = { readonly read: RepertoireReviewRead; readonly proposals: readonly Proposal[] };
 
-export function RepertoireReviewView({ api, repertoireId, repertoires, onRepertoireChange, onNavigate, session }: RepertoireReviewViewProps) {
+export function RepertoireReviewView({ api, repertoireId, repertoires, onRepertoireChange, onNavigate, session, appearance }: RepertoireReviewViewProps) {
   const [ownSession] = useState(() => new RepertoireReviewSession());
   const [loaded, setLoaded] = useState<(Loaded & { api: RepertoireReviewClient; request: number }) | null>(null);
   const [failure, setFailure] = useState<{ repertoireId: string; message: string } | null>(null);
@@ -54,7 +56,7 @@ export function RepertoireReviewView({ api, repertoireId, repertoires, onReperto
     {failure?.repertoireId === repertoireId && <p role="alert">Repertoire review unavailable: {failure.message}. Retry with Refresh review.</p>}
     {!current && failure?.repertoireId !== repertoireId && <p role="status">Loading repertoire review…</p>}
     {current && <ReviewWorkspace key={`${repertoireId}/${current.read.source_revision}/${current.read.source_digest}/${request}`}
-      {...current} api={api} session={session ?? ownSession} onNavigate={onNavigate} />}
+      {...current} appearance={appearance} api={api} session={session ?? ownSession} onNavigate={onNavigate} />}
   </main>;
 }
 
@@ -63,7 +65,7 @@ const tabs = [
   ["common_blunder", "Common blunders"], ["lines", "Lines & positions"],
 ] as const;
 type Tab = typeof tabs[number][0];
-function ReviewWorkspace({ read, proposals, api, session, onNavigate }: Loaded & Pick<RepertoireReviewViewProps, "api" | "onNavigate"> & { session: RepertoireReviewSession }) {
+function ReviewWorkspace({ read, proposals, api, session, onNavigate, appearance }: Loaded & Pick<RepertoireReviewViewProps, "api" | "onNavigate" | "appearance"> & { session: RepertoireReviewSession }) {
   const [tab, setTab] = useState<Tab>(visibleConflicts(read).length ? "conflicts" : "missing_reply");
   const [selected, setSelected] = useState<string | null>(null);
   const tabsId = useId();
@@ -86,31 +88,31 @@ function ReviewWorkspace({ read, proposals, api, session, onNavigate }: Loaded &
       <nav aria-label="Review items"><ul>{rows.map(row => <li key={row.id}><Button aria-pressed={selectedId === row.id} onClick={() => setSelected(row.id)}>{row.label}</Button></li>)}</ul></nav>
       <div className="repertoire-review-detail">
         {rows.length === 0 && <p>No supplied {tabs.find(([id]) => id === tab)?.[1].toLowerCase()}.</p>}
-        {conflict && <ConflictPanel key={conflict.conflict_id} conflict={conflict} read={read} api={api} session={session} />}
-        {line && <Surface><h3>{line.label}</h3><PositionViewer position={line.position} identity={line.route_id} /></Surface>}
-        {finding && <FindingDetail key={`${finding.finding_id}/${proposal?.display_digest}`} finding={finding} proposal={proposal}
+        {conflict && <ConflictPanel appearance={appearance} key={conflict.conflict_id} conflict={conflict} read={read} api={api} session={session} />}
+        {line && <Surface><h3>{line.label}</h3><PositionViewer appearance={appearance} position={line.position} identity={line.route_id} /></Surface>}
+        {finding && <FindingDetail appearance={appearance} key={`${finding.finding_id}/${proposal?.display_digest}`} finding={finding} proposal={proposal}
           read={read} api={api} session={session} onNavigate={onNavigate} />}
       </div>
     </section>
   </>;
 }
 
-function FindingDetail({ finding, proposal, read, api, session, onNavigate }: {
-  finding: ReviewFinding; proposal?: Proposal; read: RepertoireReviewRead; api: RepertoireReviewClient;
+function FindingDetail({ finding, proposal, read, api, session, onNavigate, appearance }: {
+  appearance: BoardAppearance; finding: ReviewFinding; proposal?: Proposal; read: RepertoireReviewRead; api: RepertoireReviewClient;
   session: RepertoireReviewSession; onNavigate?: RepertoireReviewViewProps["onNavigate"];
 }) {
   const existing = finding.kind === "common_blunder" ? finding.existing_card : null;
   return <Surface aria-label="Repertoire finding"><h3>{finding.label}</h3><CoverageEvidence finding={finding} />
     {existing ? <>
-      <PositionViewer position={finding.position} identity={finding.finding_id} />
+      <PositionViewer appearance={appearance} position={finding.position} identity={finding.finding_id} />
       <p>Response already covered by {existing.presentation_id} · {existing.introduced ? "introduced" : "unintroduced"}. Use this existing card.</p>
       <Button disabled={!onNavigate} onClick={() => onNavigate?.({ kind: existing.introduced ? "practice_existing" : "introduce_existing",
         repertoire_id: read.repertoire_id, presentation_id: existing.presentation_id, expected_revision: existing.revision })}>
         {existing.introduced ? "Practice existing card" : "Introduce existing card"}
       </Button>
-    </> : proposal ? <ProposalPanel key={`${proposal.proposal_id}/${proposal.proposal_revision}/${proposal.display_digest}`}
+    </> : proposal ? <ProposalPanel appearance={appearance} key={`${proposal.proposal_id}/${proposal.proposal_revision}/${proposal.display_digest}`}
       proposal={proposal} read={read} api={api} session={session} position={finding.position} finding={finding} /> : <>
-      <PositionViewer position={finding.position} identity={finding.finding_id} /><p>No content proposal supplied. Refresh when analysis is ready.</p>
+      <PositionViewer appearance={appearance} position={finding.position} identity={finding.finding_id} /><p>No content proposal supplied. Refresh when analysis is ready.</p>
     </>}
   </Surface>;
 }

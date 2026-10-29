@@ -189,7 +189,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   }), [checkPendingIntegrity, deferRepairDialog]);
   return props.children({
     topActions: <>
-          {<WorkbenchLaunch />}
+          {<WorkbenchLaunch appearance={{ theme: boardTheme, pieceSet }} />}
           {<SavedLocallyButton setShowImport={setShowImport} />}
           {<ServiceStatusPanel studyOnlyMode={studyOnlyMode} />}
           {<PendingDiscoverySaves
@@ -208,9 +208,9 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
                 onResume={() => openRepairDialog(pausedIntegrity.id)}
               />,
     content: <>
-        {currentView === "games" && <GameReviewView api={gameReviewApi} onReviewGap={() => changeWorkspace("repertoire")} />}
+        {currentView === "games" && <GameReviewView appearance={{ theme: boardTheme, pieceSet }} api={gameReviewApi} onReviewGap={() => changeWorkspace("repertoire")} />}
         {currentView === "repertoire" && (
-          <RepertoireAuditMount apiUrl={API_URL} request={fetch} onNavigate={intent => {
+          <RepertoireAuditMount appearance={{ theme: boardTheme, pieceSet }} apiUrl={API_URL} request={fetch} onNavigate={intent => {
             if (intent.kind === "import") setShowImport(true);
             else if (intent.kind === "settings") changeWorkspace("settings");
             else if (intent.kind === "manual_edit") setShowTree(true);

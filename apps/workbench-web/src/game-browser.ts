@@ -1,5 +1,5 @@
-import { Chessground } from "@lichess-org/chessground";
-import type { Api } from "@lichess-org/chessground/api";
+import { DEFAULT_BOARD_APPEARANCE, type BoardAppearance } from "@tempo/board-ui";
+import { mountBoard } from "./board.js";
 import { Chess } from "chess.js";
 import type { GamesReader, Game, GamePage } from './games-reader.js';
 import { gameSourceUrl } from "./game-source.js";
@@ -23,8 +23,8 @@ export function gameFrames(startingFen:string,moves:string[]){
   return frames;
 }
 
-export function mountGameBrowser(target:HTMLElement,reader:GamesReader,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void,options:{backLabel?:string}={}){
-  let active=true,requestGeneration=0,board:Api|undefined;
+export function mountGameBrowser(target:HTMLElement,reader:GamesReader,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void,options:{backLabel?:string;appearance?:BoardAppearance}={}){
+  let active=true,requestGeneration=0,board:ReturnType<typeof mountBoard>|undefined;
   const back=()=>{board?.destroy();onBack();};
   function detail(game:Game,selections:GamePage['selections']){
     try{
@@ -35,17 +35,17 @@ export function mountGameBrowser(target:HTMLElement,reader:GamesReader,runId:str
       const source=gameSourceUrl(game.provider,game.game_url);if(source){const link=node("a","Open original game");link.href=source;link.target="_blank";link.rel="noopener noreferrer";information.append(link);}
       const label=node("label","Game position");const position=node("select");position.setAttribute("aria-label","Game position");frames.forEach((frame,ply)=>{const option=node("option",`${ply}: ${frame.label}`);option.value=String(ply);position.append(option);});label.append(position);information.append(label);
       const observation=node("div");observation.setAttribute("aria-label","Accepted comparison");information.append(node("p",comparisonChronologyNotice),observation,node("p","These are frozen input observations. Unknown authority is not a repertoire miss or permission to create a card."));
-      let selectedPly=0;
+      let selectedPly=0,orientation=game.learner_color;
       function show(ply:number){
-        selectedPly=Math.max(0,Math.min(ply,frames.length-1));position.value=String(selectedPly);board!.set({fen:frames[selectedPly].fen});
+        selectedPly=Math.max(0,Math.min(ply,frames.length-1));position.value=String(selectedPly);board!.update({fen:frames[selectedPly].fen});
         observation.replaceChildren(node("p",`Actual move: ${game.moves[selectedPly]??"game ended"}`),node("p",`FEN: ${frames[selectedPly].fen}`));
         const contexts=game.contexts.filter(context=>context.ply===selectedPly);
         if(!contexts.length)observation.append(node("p","No selected-policy comparison at this position."));
         for(const context of contexts){const selection=selections.find(item=>item.policy_id===context.policy_id&&item.repertoire_id===context.repertoire_id);observation.append(node("p",`Policy ${selection?.repertoire_title??context.policy_id}: ${context.status} · ${context.reason.replaceAll("_"," ")} · source coverage ${context.coverage}${context.after_divergence===true?" · after divergence; consult the finding report for verified conclusions":""}`));if(context.expected_moves.length)observation.append(node("p",`Accepted moves: ${context.expected_moves.join(", ")}`));}
       }
       position.onchange=()=>show(Number(position.value));
-      const actions=node("div");actions.className="board-actions";actions.append(button("Previous position",()=>show(selectedPly-1)),button("Next position",()=>show(selectedPly+1)),button("Flip board",()=>board!.toggleOrientation()));boardPanel.append(actions);
-      section.append(boardPanel,information);target.append(section);board=Chessground(boardElement,{fen:frames[0].fen,orientation:game.learner_color,viewOnly:true,coordinates:true,animation:{enabled:false}});show(0);
+      const actions=node("div");actions.className="board-actions";actions.append(button("Previous position",()=>show(selectedPly-1)),button("Next position",()=>show(selectedPly+1)),button("Flip board",()=>{orientation=orientation==="white"?"black":"white";board!.update({orientation});}));boardPanel.append(actions);
+      section.append(boardPanel,information);target.append(section);board=mountBoard(boardElement,{fen:frames[0].fen,orientation,identity:game.game_id,appearance:options.appearance??DEFAULT_BOARD_APPEARANCE,label:"Game board surface"});show(0);
     }catch(error){onError(error);}
   }
   async function load(after?:string){

@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { Board } from "../src/Board.js";
 import type { BoardHandle, BoardProps } from "../src/types.js";
+import { DEFAULT_BOARD_APPEARANCE, resolveBoardAppearance } from "../src/appearance.js";
 
 const factory = vi.hoisted(() => ({ instances: [] as any[] }));
 vi.mock("../src/renderer.js", () => ({ createRenderer: vi.fn((_surface, config) => {
@@ -22,6 +23,40 @@ function mount(element: React.ReactNode) {
 }
 afterEach(() => {
   act(() => root?.unmount()); root = undefined; host?.remove(); factory.instances.length = 0;
+});
+
+it.each((["brown", "blue", "green"] as const).flatMap(theme =>
+  (["cburnett", "merida"] as const).map(pieceSet => ({ theme, pieceSet }))))(
+  "BUI-26 shared appearance renders $theme/$pieceSet without replacing the board",
+  appearance => {
+    mount(<Board {...props} />);
+    const api = factory.instances[0];
+    const surface = host.querySelector(".tempo-board-surface");
+    api.cancelMove.mockClear(); api.set.mockClear();
+    act(() => root!.render(<Board {...props} {...appearance} />));
+    expect(host.querySelector(".tempo-board-surface")).toBe(surface);
+    expect(surface?.classList.contains(`tempo-theme-${appearance.theme}`)).toBe(true);
+    expect(surface?.classList.contains(`tempo-pieces-${appearance.pieceSet}`)).toBe(true);
+    expect(factory.instances).toHaveLength(1);
+    expect(api.cancelMove).not.toHaveBeenCalled(); expect(api.set).not.toHaveBeenCalled();
+  },
+);
+
+it("BUI-27 invalid appearance values use the canonical defaults or an explicit saved fallback", () => {
+  expect(resolveBoardAppearance({ theme: "invalid", pieceSet: null })).toEqual(DEFAULT_BOARD_APPEARANCE);
+  expect(resolveBoardAppearance({ theme: "green", pieceSet: "invalid" }, { theme: "blue", pieceSet: "merida" }))
+    .toEqual({ theme: "green", pieceSet: "merida" });
+});
+
+it("BUI-28 renderer lifecycle facts report genuine resets and leave appearance-only input intact", () => {
+  const onRendererEvent = vi.fn();
+  mount(<Board {...props} onRendererEvent={onRendererEvent} />);
+  expect(onRendererEvent).toHaveBeenCalledWith({ type: "ready", changed: [] });
+  onRendererEvent.mockClear();
+  act(() => root!.render(<Board {...props} theme="blue" pieceSet="merida" onRendererEvent={onRendererEvent} />));
+  expect(onRendererEvent).not.toHaveBeenCalled();
+  act(() => root!.render(<Board {...props} positionRevision={1} onRendererEvent={onRendererEvent} />));
+  expect(onRendererEvent).toHaveBeenCalledWith({ type: "reset", changed: ["positionRevision"] });
 });
 
 it("BUI-09 Strict Mode constructs clean lifecycles, fences previous callbacks and destroys each instance once", () => {

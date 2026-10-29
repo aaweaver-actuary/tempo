@@ -1,3 +1,4 @@
+import { sharedBoardAppearance } from './board-appearance.mjs';
 /** The same shipped browser, authenticated reads, no second renderer or live origin. */
 import assert from 'node:assert/strict';
 import {expect} from '@playwright/test';
@@ -25,7 +26,7 @@ export async function runGamesOnlyScenario(browser,origin,fixtures,evidence){
       }catch(error){unexpected.push(error.message);await route.abort();}
     });
     page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>unexpected.push(error.message));
-    await page.goto(origin+'/?run=run');
+    await page.goto(origin+'/?run=run&boardTheme=blue&pieceSet=merida');
     await page.getByLabel('Intelligence origin',{exact:true}).fill(origin);await page.getByLabel('Workspace',{exact:true}).fill('fixture');await page.getByLabel('Caller credential',{exact:true}).fill('synthetic-caller');
     await page.getByRole('button',{name:'Connect',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Selected games',exact:true})).toBeVisible();
@@ -33,7 +34,7 @@ export async function runGamesOnlyScenario(browser,origin,fixtures,evidence){
     for(const name of ['Start analysis · 250 decisions','Continue · next 250 decisions','Retry','Cancel','Resume','Dismiss'])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
     const game=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'))??fixtures.games.items[0];assert.ok(game);
     await page.getByRole('button',{name:'Inspect game '+(game.provider_game_id??game.game_id),exact:true}).click();
-    await expect(page.getByLabel('Game chessboard',{exact:true})).toBeVisible();
+    await expect(page.getByLabel('Game chessboard',{exact:true})).toBeVisible();await sharedBoardAppearance(page,'Game chessboard');
     await page.getByRole('button',{name:'Next position',exact:true}).click();
     assert.equal(await page.getByLabel('Game position',{exact:true}).inputValue(),'1');
     await page.screenshot({path:resolve(evidence,'games-readonly-desktop.png'),fullPage:true});

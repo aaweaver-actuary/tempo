@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Board } from "@tempo/board-ui";
+import { Board, type BoardAppearance } from "@tempo/board-ui";
 // The package's exported stylesheet; root package registration belongs to #491.
-import "../../../packages/board-ui/styles/board.css";
+import "@tempo/board-ui/styles.css";
 import { Button } from "../../components/buttons/BaseButton";
 import type { Finding, GameDetail, GameSummary, ProviderSyncStatus, RecentGames } from "../product-api/contracts";
 import type { GameReviewClient } from "./api";
@@ -12,6 +12,7 @@ import "./game-review.css";
 
 export type GapReviewIntent = Pick<Finding, "provider" | "game_id" | "source_revision" | "repertoire_id" | "repertoire_revision" | "position_key" | "ply"> & { kind: "review_repertoire_gap" };
 export interface GameReviewViewProps {
+  appearance: BoardAppearance;
   api: GameReviewClient;
   repertoireId?: string;
   onReviewGap?: (intent: GapReviewIntent) => void;
@@ -36,7 +37,7 @@ function receiptFor(receipts: GameDetail["receipts"], finding: Finding) {
     && receipt.key.occurrence_ply === finding.ply && receipt.key.decision_id === finding.decision_id && receipt.source_revision === finding.source_revision);
 }
 
-export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewViewProps) {
+export function GameReviewView({ api, repertoireId, onReviewGap, appearance }: GameReviewViewProps) {
   const requests = useRef(new OwnedRequests());
   const operations = useRef(new OperationKeys());
   const syncBusy = useRef(new Set<string>());
@@ -194,7 +195,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       {detail.identity === selectionIdentity && detail.error && <div role="alert" className="game-review-error">{detail.error} <Button onClick={() => setDetailReload(value => value + 1)}>Retry game</Button></div>}
       {currentDetail && <><h2>{providerLabel(currentDetail.provider)} · {currentDetail.game_id}</h2><p className="game-review-muted">{gameTime(currentDetail)}</p>
         <div role="region" aria-label="Original game history" tabIndex={0} onKeyDown={historyKeys}>
-          <div className="game-review-board"><Board {...boardPosition(selectionIdentity, positions, currentDetail.moves, cursor, currentDetail.player_color)} /></div>
+          <div className="game-review-board"><Board {...appearance} {...boardPosition(selectionIdentity, positions, currentDetail.moves, cursor, currentDetail.player_color)} /></div>
           <div className="game-review-controls"><Button disabled={cursor === 0} onClick={() => setPly(0)}>First</Button><Button disabled={cursor === 0} onClick={() => setPly(cursor - 1)}>Previous</Button>
             <span role="status">Ply {cursor} of {currentDetail.moves.length}</span><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(cursor + 1)}>Next</Button><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(currentDetail.moves.length)}>Last</Button></div>
         </div>

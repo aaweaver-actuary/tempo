@@ -2,12 +2,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 
-/** Include generated worker bundles and shared imports, not just HTML references. */
+/** Include generated worker bundles, shared imports and packaged board images, not just HTML references. */
 export function offlineShellAssets(): Plugin {
   return {
     name: "tempo-offline-shell-assets",
     async writeBundle(outputOptions, bundle) {
-      const assetPaths = Object.keys(bundle).filter(path => /\.(?:js|mjs|css)$/.test(path)).sort();
+      const assetPaths = Object.keys(bundle).filter(path => /\.(?:js|mjs|css|svg)$/.test(path)).sort();
       if (!assetPaths.some(path => /study\.worker[^/]*\.js$/.test(path)))
         throw new Error("Offline shell build has no study worker");
       const serviceWorkerPath = resolve(outputOptions.dir!, "sw.js");

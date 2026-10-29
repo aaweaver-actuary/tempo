@@ -12,10 +12,10 @@ import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 
-const api = vi.hoisted(() => ({ state: { dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(),
+const api = vi.hoisted(() => ({ state: { drawable: {}, dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(),
   redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }));
 const createBoard = vi.hoisted(() => vi.fn((element: unknown, config: unknown) => { void element; void config; return api; }));
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: createBoard }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 const boardProps = { fen: STANDARD_FEN, locked: false, showHint: false,
   theme: "brown" as const, pieceSet: "cburnett" as const, onMove: vi.fn() };
@@ -155,10 +155,11 @@ it("read-only or unavailable input cancels the held move and ignores queued move
   render(<PersistentBoardShell />);
   const publisher = render(<Publisher snapshot={{ onMove }} />);
   api.cancelMove.mockClear();
+  const queuedConfig = api.set.mock.calls.findLast(([config]) => config.events)?.[0];
   publisher.rerender(<Publisher snapshot={{ onMove, unavailable: "Reconnect to continue" }} />);
   expect(api.cancelMove).toHaveBeenCalledTimes(1);
   expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ draggable: { enabled: false, showGhost: true } }));
-  const config = createBoard.mock.calls.at(-1)![1] as { movable: { events: { after: (from: string, to: string) => void } } };
+  const config = queuedConfig as { movable: { events: { after: (from: string, to: string) => void } } };
   act(() => config.movable.events.after("e2", "e4"));
   expect(onMove).not.toHaveBeenCalled();
 });
@@ -180,7 +181,7 @@ it("annotation, highlight, handler and appearance updates preserve drag without 
 it("select-only and free editing retain current handlers and disable input when locked", () => {
   const onSquareSelect = vi.fn(); const onFreeMove = vi.fn();
   const view = render(<Chessboard {...boardProps} selectOnly onSquareSelect={onSquareSelect} />);
-  const config = createBoard.mock.calls.at(-1)![1] as {
+  const config = api.set.mock.calls.findLast(([config]) => config.events)?.[0] as {
     events: { select: (square: string) => void }; movable: { events: { after: (from: string, to: string) => void } } };
   act(() => config.events.select("a4"));
   expect(onSquareSelect).toHaveBeenCalledExactlyOnceWith("a4");
@@ -207,7 +208,7 @@ it("a fixed twenty-update status workload produces no new publication, lease rel
 it("deferred Chessground events from a previous card cannot grade or annotate its replacement", () => {
   const oldMove = vi.fn(); const currentMove = vi.fn(); const oldDrawing = vi.fn(); const currentDrawing = vi.fn();
   const view = render(<Chessboard {...boardProps} positionKey="old-card" onMove={oldMove} onDrawnShapesChange={oldDrawing} />);
-  const initialConfig = createBoard.mock.calls.at(-1)![1] as {
+  const initialConfig = api.set.mock.calls.findLast(([config]) => config.events)?.[0] as {
     movable: { events: { after: (from: string, to: string) => void } };
     drawable: { onChange: (shapes: unknown[]) => void } };
   const queuedMove = initialConfig.movable.events.after;
@@ -235,9 +236,10 @@ it("Chessground drawing cannot mutate published annotations or shared defaults",
 
 it("editor mode transition refreshes geometry after the setup palette moves the board", () => {
   const view = render(<Chessboard {...boardProps} editMode />);
-  api.redrawAll.mockClear();
+  api.redrawAll.mockClear(); api.state.dom.bounds.clear.mockClear();
   view.rerender(<Chessboard {...boardProps} editMode={false} />);
-  expect(api.redrawAll).toHaveBeenCalledOnce();
+  expect(api.state.dom.bounds.clear).toHaveBeenCalledOnce();
+  expect(api.redrawAll).not.toHaveBeenCalled();
   expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ movable: expect.objectContaining({ free: false }) }));
 });
 

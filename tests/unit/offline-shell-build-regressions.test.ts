@@ -12,13 +12,14 @@ it("offline build inventories generated workers and shared imports for root and 
     const hook = offlineShellAssets().writeBundle!;
     const handler = typeof hook === "function" ? hook : hook.handler;
     const emittedFiles = { "assets/index-a.js": {}, "assets/study.worker-b.js": {},
-      "assets/shared-c.js": {}, "assets/style-d.css": {}, "assets/index-a.js.map": {} };
+      "assets/shared-c.js": {}, "assets/style-d.css": {}, "assets/wB-canonical.svg": {}, "assets/index-a.js.map": {} };
     await writeFile(join(directory, "sw.js"), workerSource);
     await handler.call({} as never, { dir: directory } as never, emittedFiles as never);
     const generatedWorker = await readFile(join(directory, "sw.js"), "utf8");
     expect(generatedWorker).toContain('"assets/study.worker-b.js"');
     expect(generatedWorker).toContain('"assets/shared-c.js"');
     expect(generatedWorker).toContain('"assets/style-d.css"');
+    expect(generatedWorker).toContain('"assets/wB-canonical.svg"');
     expect(generatedWorker).not.toContain('"assets/index-a.js.map"');
     // Inventory paths stay relative; the service worker resolves the active deployment scope.
     expect(generatedWorker).not.toContain('"/assets/study.worker-b.js"');

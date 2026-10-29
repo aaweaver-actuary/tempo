@@ -414,3 +414,12 @@ test("Python normalized distribution dependencies select their real component pr
   for (const owner of ["learning", "learning-review-application", "scheduling", "chess-core", "content-publication-contracts", "game-evidence-contracts"])
     assert.ok(selected.some(component => component.id === owner), "Missing declared producer: " + owner);
 });
+
+test("M02 declared board presentation subpaths allow public styles and reject private or traversing paths", () => {
+  const publicSubpaths = ["./appearance", "./styles.css", "./assets/*", "./notices/*"];
+  for (const path of ["appearance", "styles.css", "assets/merida/wP.svg", "notices/GPL-3.0.txt"])
+    assert.doesNotThrow(() => checkConsumer(`import "@tempo/board-ui/${path}";`, "@tempo/board-ui", [], publicSubpaths));
+  for (const path of ["dist/controller.js", "src/Board.tsx", "assets/../dist/controller.js", "styles.css/private"])
+    assert.throws(() => checkConsumer(`import "@tempo/board-ui/${path}";`, "@tempo/board-ui", [], publicSubpaths), /Private/);
+  assert.throws(() => checkConsumer('import "@tempo/board-ui/styles.css";', "@tempo/board-ui", []), /Private/);
+});

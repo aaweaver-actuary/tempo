@@ -1,11 +1,9 @@
-const CACHE = "tempo-static-v7";
+const CACHE = "tempo-static-v8";
 const BUILD_SHELL_ASSETS = [];
 const MAX_CACHE_ENTRIES = 120;
 const STATIC_DESTINATIONS = new Set(["script", "style", "image", "font", "worker", "manifest"]);
 const FETCHED_STATIC_DIRECTORIES = ["assets/", "data/", "ort/", "tempo-core/", "engines/"];
-const PIECE_ASSETS = ["w", "b"].flatMap((color) =>
-  ["P", "N", "B", "R", "Q", "K"].map((piece) => `pieces/merida/${color}${piece}.svg`));
-const SHELL_ASSETS = ["", "index.html", "favicon.svg", "tempo-icon.png", "manifest.webmanifest", ...PIECE_ASSETS];
+const SHELL_ASSETS = ["", "index.html", "favicon.svg", "tempo-icon.png", "manifest.webmanifest"];
 
 async function requiredShellUrls(cache) {
   const scope = new URL(self.registration.scope);

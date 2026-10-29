@@ -357,3 +357,19 @@ test('Games semantic reader resolves scope without engine progress and checks id
   wrong=true;await assert.rejects(()=>client.readScope('run'),/identity mismatch/);
   assert.ok(calls.every(call=>call.method==='GET'&&call.url.includes('/game-scopes')));
 });
+
+test('shared_board_appearance_launch_snapshot_saved_fallback_and_invalid_values',async()=>{
+ const {readWorkbenchAppearance}=await import('@tempo/workbench-web');
+ const values=new Map([['tempo-board-theme','green'],['tempo-piece-set','cburnett']]);
+ const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+ assert.deepEqual(readWorkbenchAppearance(new URL('https://workbench.test/?boardTheme=blue&pieceSet=merida'),storage),{theme:'blue',pieceSet:'merida'});
+ assert.deepEqual(readWorkbenchAppearance(new URL('https://workbench.test/?boardTheme=invalid'),storage),{theme:'blue',pieceSet:'merida'});
+ assert.deepEqual(readWorkbenchAppearance(new URL('https://workbench.test/'),storage),{theme:'blue',pieceSet:'merida'});
+ assert.equal(values.get('tempo-board-theme'),'blue');assert.equal(values.get('tempo-piece-set'),'merida');
+});
+test('shared_board_appearance_denied_storage_keeps_launch_values_or_shared_defaults',async()=>{
+ const {readWorkbenchAppearance}=await import('@tempo/workbench-web');
+ const storage={getItem(){throw new Error('denied');},setItem(){throw new Error('denied');}};
+ assert.deepEqual(readWorkbenchAppearance(new URL('https://workbench.test/?boardTheme=green&pieceSet=merida'),storage),{theme:'green',pieceSet:'merida'});
+ assert.deepEqual(readWorkbenchAppearance(new URL('https://workbench.test/?boardTheme=invalid&pieceSet=invalid'),storage),{theme:'brown',pieceSet:'cburnett'});
+});

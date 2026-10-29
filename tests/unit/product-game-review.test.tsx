@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Chess, DEFAULT_POSITION } from "chess.js";
@@ -66,7 +67,7 @@ beforeEach(() => { boards.length = 0; });
 
 it("renders every finding distinctly and labels uncertain source time without calling a gap forgetting", async () => {
   const findings = Object.keys(findingLabels).map((kind, index) => finding(kind as Finding["kind"], index + 1));
-  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings })) })} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings })) })} />);
   await selectFirst(); await readyBoard();
   for (const label of Object.values(findingLabels)) expect(screen.getByText(label)).toBeTruthy();
   expect(screen.getAllByText(/day precision; time unknown/)).toHaveLength(2);
@@ -80,7 +81,7 @@ it("renders every finding distinctly and labels uncertain source time without ca
 });
 
 it("supplies exact original FEN/history and marks the finding ply while stepping with the real board", async () => {
-  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [finding("opponent_gap", 4)] })) })} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [finding("opponent_gap", 4)] })) })} />);
   await selectFirst(); await readyBoard();
   const expected = new Chess();
   for (const move of moves.slice(0, 3)) expected.move(move);
@@ -111,7 +112,7 @@ it("preserves custom starting FEN, castling history and refuses truncated replay
 
 it("declines invalid history or mismatched finding positions instead of showing a partial board", async () => {
   const invalid = { ...detail(), moves: ["e1e8"] };
-  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => invalid) })} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi({ gameDetail: vi.fn(async () => invalid) })} />);
   await selectFirst();
   expect(await screen.findByText(/Original game history is incomplete or invalid/)).toBeTruthy();
   expect(screen.queryByRole("group", { name: /Original game board/ })).toBeNull();
@@ -120,7 +121,7 @@ it("declines invalid history or mismatched finding positions instead of showing 
 it("loads read-only with no imports or learning effects and displays empty games", async () => {
   const pending = deferred<Awaited<ReturnType<GameReviewClient["recentGames"]>>>();
   const api = fakeApi({ recentGames: vi.fn(() => pending.promise) });
-  render(<GameReviewView api={api} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />);
   expect(screen.getByText("Loading recent games…")).toBeTruthy();
   await act(async () => pending.resolve({ games: [], sync: idleSync }));
   expect(screen.getByText(/No imported games yet/)).toBeTruthy();
@@ -129,7 +130,7 @@ it("loads read-only with no imports or learning effects and displays empty games
 
 it("keeps list errors local and retries the read request", async () => {
   const api = fakeApi({ recentGames: vi.fn().mockRejectedValueOnce(new Error("Provider list unavailable")).mockResolvedValue({ games: [], sync: idleSync }) });
-  render(<GameReviewView api={api} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />);
   expect(await screen.findByText(/Provider list unavailable/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry recent games" }));
   expect(await screen.findByText(/No imported games yet/)).toBeTruthy();
@@ -140,7 +141,7 @@ it("shows detail loading/error and can retry without mutating another feature", 
   const pending = deferred<GameDetail>();
   const api = fakeApi({ gameDetail: vi.fn().mockImplementationOnce(() => pending.promise).mockResolvedValue(detail()) });
   const studyBefore = useTrainingStore.getState();
-  render(<GameReviewView api={api} />); await selectFirst();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst();
   expect(screen.getByText("Loading game…")).toBeTruthy();
   await act(async () => pending.reject(new Error("Game unavailable")));
   expect(await screen.findByText(/Game unavailable/)).toBeTruthy();
@@ -152,7 +153,7 @@ it("shows detail loading/error and can retry without mutating another feature", 
 it("deduplicates double feedback submission, preserves the key after failure, and keeps an actual pending receipt pending", async () => {
   const pending = deferred<LearningReceipt>();
   const api = fakeApi({ retryFeedback: vi.fn().mockImplementationOnce(() => pending.promise).mockResolvedValue(receipt()) });
-  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst(); await readyBoard();
   const button = screen.getByRole("button", { name: "Retry feedback at ply 1" });
   act(() => { button.click(); button.click(); });
   expect(api.retryFeedback).toHaveBeenCalledTimes(1);
@@ -166,7 +167,7 @@ it("deduplicates double feedback submission, preserves the key after failure, an
 });
 
 it.each(["applied", "settled", "held"] as const)("renders actual %s feedback status without claiming completion", async status => {
-  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [receipt(status)] })) })} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [receipt(status)] })) })} />);
   await selectFirst(); await readyBoard();
   expect(screen.getByText(`Study feedback: ${status}`)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
@@ -174,7 +175,7 @@ it.each(["applied", "settled", "held"] as const)("renders actual %s feedback sta
 
 it("shows explicit stale/conflicting owner failure", async () => {
   const stale = { ...receipt(), outcome: "stale_revision" as const, reason: "Source changed" };
-  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [stale] })) })} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [stale] })) })} />);
   await selectFirst(); await readyBoard();
   expect(screen.getByText("Feedback not applied: stale revision — Source changed")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
@@ -205,7 +206,7 @@ it("renders the shared encounter/legacy receipt union from the HTTP detail read"
     .mockResolvedValueOnce(new Response(JSON.stringify({ games: [firstSummary], sync: idleSync }), { status: 200 }))
     .mockResolvedValueOnce(new Response(JSON.stringify(detail({ findings: [introduced, unintroduced], receipts: [receipt("applied"), pending] })), { status: 200 }));
   const api = createGameReviewApi({ endpoints: { recentGames: "/games", gameDetail: () => "/detail", sync: "/sync", retryFeedback: "/feedback" }, fetch: fetchRequest });
-  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst(); await readyBoard();
   expect(screen.getByText("Study feedback: applied")).toBeTruthy();
   expect(screen.getByText(receiptLabel(pending))).toBeTruthy();
   expect(screen.getByText("Card not introduced").closest("li")?.textContent).not.toContain("available for Study");
@@ -217,7 +218,7 @@ it("preserves provider operation identity on retry and isolates failure from Stu
   const pending = deferred<Awaited<ReturnType<GameReviewClient["sync"]>>>();
   const api = fakeApi({ sync: vi.fn().mockImplementationOnce(() => pending.promise).mockImplementation(async ({ provider, operation_id }) => ({ provider, operation_id, status: "pending", error: null })) });
   const studyBefore = useTrainingStore.getState();
-  render(<GameReviewView api={api} />); await screen.findByRole("button", { name: /Lichess ·/ });
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await screen.findByRole("button", { name: /Lichess ·/ });
   const button = screen.getByRole("button", { name: "Sync Lichess" });
   act(() => { button.click(); button.click(); });
   expect(api.sync).toHaveBeenCalledTimes(1);
@@ -231,7 +232,7 @@ it("preserves provider operation identity on retry and isolates failure from Stu
 it("ignores late game detail after selection, even when transport ignores AbortSignal", async () => {
   const first = deferred<GameDetail>();
   const api = fakeApi({ gameDetail: vi.fn().mockImplementationOnce(() => first.promise).mockResolvedValue(detail({ ...secondSummary, findings: [] })) });
-  render(<GameReviewView api={api} />); await selectFirst();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst();
   const firstSignal = vi.mocked(api.gameDetail).mock.calls[0][0].signal;
   fireEvent.click(screen.getByRole("button", { name: /Chess.com · second-game/ })); await readyBoard();
   expect(firstSignal!.aborted).toBe(true);
@@ -247,7 +248,7 @@ it("refreshing to a newer game revision replaces the selection and fences obsole
     recentGames: vi.fn().mockResolvedValueOnce({ games: [firstSummary], sync: idleSync }).mockResolvedValue({ games: [{ ...firstSummary, source_revision: 2 }], sync: idleSync }),
     gameDetail: vi.fn().mockImplementationOnce(() => old.promise).mockResolvedValue(detail({ source_revision: 2, findings: [] })),
   });
-  render(<GameReviewView api={api} />); await selectFirst();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst();
   const oldSignal = vi.mocked(api.gameDetail).mock.calls[0][0].signal;
   fireEvent.click(screen.getByRole("button", { name: "Refresh games and status" }));
   await readyBoard();
@@ -260,7 +261,7 @@ it("refreshing to a newer game revision replaces the selection and fences obsole
 
 it("reuses an original failed provider operation supplied by the receiving owner", async () => {
   const api = fakeApi({ recentGames: vi.fn<GameReviewClient["recentGames"]>(async () => ({ games: [firstSummary], sync: [{ provider: "lichess", status: "failed", operation_id: "original-provider-operation", error: "Try again" }] })) });
-  render(<GameReviewView api={api} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />);
   fireEvent.click(await screen.findByRole("button", { name: "Retry Lichess" }));
   await waitFor(() => expect(api.sync).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.sync).mock.calls[0][0].operation_id).toBe("original-provider-operation");
@@ -269,7 +270,7 @@ it("reuses an original failed provider operation supplied by the receiving owner
 it("ignores a late feedback receipt from the previous selected game", async () => {
   const feedback = deferred<LearningReceipt>();
   const api = fakeApi({ retryFeedback: vi.fn(() => feedback.promise), gameDetail: vi.fn().mockResolvedValueOnce(detail()).mockResolvedValue(detail({ ...secondSummary, findings: [] })) });
-  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst(); await readyBoard();
   fireEvent.click(screen.getByRole("button", { name: "Retry feedback at ply 1" }));
   fireEvent.click(screen.getByRole("button", { name: /Chess.com · second-game/ }));
   await screen.findByRole("heading", { level: 2, name: "Chess.com · second-game" });
@@ -282,8 +283,8 @@ it("ignores a late feedback receipt from the previous selected game", async () =
 it("fences late detail after repertoire selection and aborts all owned work on unmount", async () => {
   const first = deferred<GameDetail>(); const second = deferred<GameDetail>();
   const api = fakeApi({ gameDetail: vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise) });
-  const view = render(<GameReviewView api={api} repertoireId="white" />); await selectFirst();
-  view.rerender(<GameReviewView api={api} repertoireId="another" />);
+  const view = render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="white" />); await selectFirst();
+  view.rerender(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} repertoireId="another" />);
   await waitFor(() => expect(api.gameDetail).toHaveBeenCalledTimes(2));
   expect(vi.mocked(api.gameDetail).mock.calls[0][0].signal!.aborted).toBe(true);
   await act(async () => first.resolve(detail())); expect(screen.queryByRole("group", { name: /Original game board/ })).toBeNull();
@@ -296,7 +297,7 @@ it("fences late detail after repertoire selection and aborts all owned work on u
 it("cancels sync and feedback on unmount and ignores late owner receipts", async () => {
   const sync = deferred<Awaited<ReturnType<GameReviewClient["sync"]>>>(); const feedback = deferred<LearningReceipt>();
   const api = fakeApi({ sync: vi.fn(() => sync.promise), retryFeedback: vi.fn(() => feedback.promise) });
-  const view = render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  const view = render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst(); await readyBoard();
   fireEvent.click(screen.getByRole("button", { name: "Sync Lichess" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry feedback at ply 1" }));
   view.unmount();
@@ -309,14 +310,14 @@ it("cancels sync and feedback on unmount and ignores late owner receipts", async
 it("emits only a scoped repertoire-gap navigation intent", async () => {
   const gap = finding("opponent_gap", 2); const onReviewGap = vi.fn();
   const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [gap] })) });
-  render(<GameReviewView api={api} onReviewGap={onReviewGap} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} onReviewGap={onReviewGap} />); await selectFirst(); await readyBoard();
   fireEvent.click(screen.getByRole("button", { name: "Review repertoire gap at ply 2" }));
   expect(onReviewGap).toHaveBeenCalledWith({ kind: "review_repertoire_gap", provider: gap.provider, game_id: gap.game_id, source_revision: gap.source_revision, repertoire_id: gap.repertoire_id, repertoire_revision: gap.repertoire_revision, position_key: gap.position_key, ply: gap.ply });
   expect(api.retryFeedback).not.toHaveBeenCalled(); expect(api.sync).not.toHaveBeenCalled();
 });
 
 it("handles history keys only inside the active history region without bubbling commands", async () => {
-  render(<GameReviewView api={fakeApi()} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={fakeApi()} />); await selectFirst(); await readyBoard();
   const outside = vi.fn(); document.body.addEventListener("keydown", outside);
   try {
     fireEvent.keyDown(screen.getByRole("group", { name: /Original game board/ }), { key: "ArrowRight" });
@@ -343,7 +344,7 @@ it("validates wire responses and sends explicit mutation identities through inje
 });
 
 it("keeps the new feature dependency boundary independent from Study/Tactics controllers and storage", () => {
-  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "../../../packages/board-ui/styles/board.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css"]);
+  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "@tempo/board-ui/styles.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css", "../../lib/operation-status"]);
   for (const name of ["GameReviewView.tsx", "state.ts", "api.ts"]) {
     const source = readFileSync(resolve("app/features/game-review", name), "utf8");
     const imports = [...source.matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)].map(match => match[1]);
@@ -359,8 +360,23 @@ it("does not offer legacy lapse retry for a pending confirmed-miss encounter rec
     admission_status: "pending", disposition: "existing_lapse", deferred_reason: null,
     reason: "existing_lapse_obligation" }, missed);
   const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [missed], receipts: [pending] })) });
-  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />); await selectFirst(); await readyBoard();
   expect(screen.getByText(/Disposition: existing lapse · Admission: pending/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
   expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+it("shared_board_appearance_game_replay_updates_without_losing_cursor_or_reloading", async () => {
+  const api = fakeApi();
+  const view = render(<GameReviewView appearance={{ theme: "blue", pieceSet: "merida" }} api={api} />);
+  await selectFirst(); await readyBoard();
+  fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
+  const board = view.container.querySelector("cg-board");
+  expect(view.container.querySelector(".tempo-theme-blue.tempo-pieces-merida")).not.toBeNull();
+  const loads = vi.mocked(api.gameDetail).mock.calls.length;
+  view.rerender(<GameReviewView appearance={{ theme: "green", pieceSet: "cburnett" }} api={api} />);
+  expect(view.container.querySelector("cg-board")).toBe(board);
+  expect(view.container.querySelector(".tempo-theme-green.tempo-pieces-cburnett")).not.toBeNull();
+  expect(screen.getByText(`Ply 1 of ${moves.length}`)).toBeTruthy();
+  expect(api.gameDetail).toHaveBeenCalledTimes(loads);
 });

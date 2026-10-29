@@ -1,7 +1,8 @@
-import type { BoardColor, BoardHandle, BoardMode, BoardProps, BoardShape, BoardTheme, DrawingEvent,
+import type { BoardAppearance, BoardInteractionSnapshot, BoardRendererEvent, BoardColor, BoardHandle, BoardMode, BoardProps, BoardShape, BoardTheme, DrawingEvent,
   InteractionEvent, MoveEvent, PieceRole, PieceSet, PositionIdentity, SelectEvent, Square } from "@tempo/board-ui";
 
 export interface PublicTypes {
+  appearance: BoardAppearance; diagnostic: BoardInteractionSnapshot; rendererEvent: BoardRendererEvent;
   color: BoardColor; handle: BoardHandle; mode: BoardMode; props: BoardProps; shape: BoardShape;
   theme: BoardTheme; drawing: DrawingEvent; interaction: InteractionEvent; move: MoveEvent;
   role: PieceRole; pieceSet: PieceSet; identity: PositionIdentity; select: SelectEvent; square: Square;

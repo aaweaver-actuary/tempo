@@ -25,6 +25,22 @@ function setup(props = base) {
 function move(config: Config) { config.movable!.events!.after!("e2", "e4", { premove: false }); }
 function draw(config: Config) { config.drawable!.onChange!([{ orig: "a1", brush: "red" }]); }
 
+it("BUI-29 diagnostic snapshots detach facts and sample bounds once during a held drag", () => {
+  const bounds = vi.fn(() => ({ left: 10, top: 20, width: 400, height: 400 }));
+  const piece = document.createElement("piece"); piece.style.transform = "translate(225px, 325px)";
+  const state = { dom: { bounds }, animation: { enabled: true, duration: 180 }, orientation: "white",
+    draggable: { current: { started: true, orig: "e2", origPos: [240, 350], element: piece } } };
+  const controller = new BoardController(); controller.attach({ state } as unknown as Api);
+  const first = controller.getInteractionSnapshot()!;
+  expect(first).toEqual({ bounds: { left: 10, top: 20, width: 400, height: 400 }, animation: { enabled: true, duration: 180 },
+    orientation: "white", drag: { started: true, origin: "e2", initialPointer: [240, 350], pieceCenter: [260, 370] } });
+  (first.bounds as { left: number }).left = 0;
+  (first.drag!.initialPointer as unknown as number[])[0] = 0;
+  expect(controller.getInteractionSnapshot(false)?.bounds.left).toBe(10);
+  expect(controller.getInteractionSnapshot(false)?.drag?.initialPointer).toEqual([240, 350]);
+  expect(bounds).toHaveBeenCalledOnce();
+});
+
 describe("held input and authoritative position", () => {
   it("BUI-01 equivalent props and fresh callbacks preserve held input and forward the latest handler once", () => {
     const oldHandler = vi.fn(); const latestHandler = vi.fn();

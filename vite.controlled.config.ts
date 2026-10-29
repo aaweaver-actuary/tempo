@@ -12,5 +12,5 @@ export default defineConfig({
   define: { __TEMPO_DEMO__: "false", __TEMPO_API_URL__: JSON.stringify("") },
   css: { postcss: { plugins: [tailwindcss()] } },
   plugins: [react(), offlineShellAssets()],
-  build: { outDir: process.env.TEMPO_CONTROLLED_BUILD_DIR, emptyOutDir: true, sourcemap: true, rollupOptions: { input: { index: resolve("static/index.html"), priority: resolve("static/study-priority-proof.html") } } },
+  build: { outDir: process.env.TEMPO_CONTROLLED_BUILD_DIR, emptyOutDir: true, sourcemap: true, rollupOptions: { input: { index: resolve("static/index.html"), priority: resolve("static/study-priority-proof.html"), boardAppearance: resolve("static/board-appearance-proof.html") } } },
 });

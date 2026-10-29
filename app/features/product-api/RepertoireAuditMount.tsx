@@ -1,3 +1,4 @@
+import type { BoardAppearance } from "@tempo/board-ui";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { RepertoireNavigationIntent } from "../repertoire-review/api";
 import { RepertoireReviewSession } from "../repertoire-review/state";
@@ -6,8 +7,8 @@ import { createProductRepertoireReviewApi } from "./repertoire-review-api";
 const Review = lazy(() => import("../repertoire-review/RepertoireReviewView").then(module => ({ default:module.RepertoireReviewView })));
 
 /** Root supplies its retained authoring view and existing authenticated fetch. */
-export function RepertoireAuditMount({ children, apiUrl, request, onNavigate }: {
-  children?: ReactNode;
+export function RepertoireAuditMount({ children, apiUrl, request, onNavigate, appearance }: {
+  appearance: BoardAppearance; children?: ReactNode;
   apiUrl: string;
   request: typeof globalThis.fetch;
   onNavigate: (intent: RepertoireNavigationIntent) => void;
@@ -76,7 +77,7 @@ export function RepertoireAuditMount({ children, apiUrl, request, onNavigate }: 
       </button>
       {error && <p role="alert">{error}</p>}
       {selected && <Suspense fallback={<p>Loading repertoire audit…</p>}>
-        <Review key={`${selected}:${auditVersion}`} api={api} repertoireId={selected} session={session} onNavigate={intent=>{
+        <Review appearance={appearance} key={`${selected}:${auditVersion}`} api={api} repertoireId={selected} session={session} onNavigate={intent=>{
           if(intent.kind==="import"||intent.kind==="manual_edit"||intent.kind==="settings")setTab("authoring");
           onNavigate(intent);
         }}/>

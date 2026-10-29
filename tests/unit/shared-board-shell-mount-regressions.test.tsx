@@ -8,6 +8,7 @@ import {
 } from "../../app/state/board-shell-store";
 
 const board = vi.hoisted(() => ({
+  cancelMove: vi.fn(), state: { drawable: {}, dom: { bounds: { clear: vi.fn() } } },
   set: vi.fn(),
   destroy: vi.fn(),
   redrawAll: vi.fn(),
@@ -22,7 +23,7 @@ const createBoard = vi.hoisted(() =>
   }),
 );
 
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: createBoard }));
 vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
   playChessMoveSound: vi.fn(),

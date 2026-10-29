@@ -1,4 +1,3 @@
-# Merida pieces
+# Shared board pieces
 
-Merida SVG pieces are an optional board theme. Keep filenames compatible with
-the CSS asset references in `app/globals.css`.
+Workbench imports the canonical assets and stylesheet from [`@tempo/board-ui`](../../../../packages/board-ui/README.md); it carries no separate piece set.

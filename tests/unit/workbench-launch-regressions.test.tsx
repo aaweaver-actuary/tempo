@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkbenchLaunch } from "../../app/components/workbench-launch";
@@ -11,9 +12,9 @@ const configured = "http://127.0.0.1:8150/?run=example-run&category=repertoire_m
 it("connected Workbench launcher is explicit, separate and side-effect free", () => {
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   vi.stubGlobal("__TEMPO_WORKBENCH_URL__", configured);
-  render(<WorkbenchLaunch />);
+  render(<WorkbenchLaunch appearance={DEFAULT_BOARD_APPEARANCE} />);
   const link = screen.getByRole("link", { name: "Open Workbench" });
-  expect(link.getAttribute("href")).toBe(configured);
+  expect(link.getAttribute("href")).toBe(configured + "&boardTheme=brown&pieceSet=cburnett");
   expect(link.getAttribute("target")).toBe("_blank");
   expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   fireEvent.pointerEnter(link); fireEvent.focus(link);
@@ -24,11 +25,11 @@ it("connected Workbench launcher is explicit, separate and side-effect free", ()
 
 it("connected Workbench launcher is absent when unconfigured or outside the local app", () => {
   vi.stubGlobal("__TEMPO_WORKBENCH_URL__", "");
-  const view = render(<WorkbenchLaunch />);
+  const view = render(<WorkbenchLaunch appearance={DEFAULT_BOARD_APPEARANCE} />);
   expect(screen.queryByRole("link")).toBeNull();
   vi.stubGlobal("__TEMPO_WORKBENCH_URL__", configured);
   vi.mocked(usesLocalApi).mockReturnValue(false);
-  view.rerender(<WorkbenchLaunch />);
+  view.rerender(<WorkbenchLaunch appearance={DEFAULT_BOARD_APPEARANCE} />);
   expect(screen.queryByRole("link")).toBeNull();
 });
 
@@ -83,4 +84,15 @@ it("connected Workbench Docker build accepts an optional public launcher setting
   const build = lines.indexOf("RUN npm run build:local");
   expect(build).toBeGreaterThan(0);
   expect(lines[build - 1]).toBe('ARG TEMPO_WORKBENCH_URL=""');
+});
+
+it("shared_board_appearance_workbench_launch_carries_the_current_selection", () => {
+  vi.stubGlobal("__TEMPO_WORKBENCH_URL__", configured);
+  const view = render(<WorkbenchLaunch appearance={{ theme: "blue", pieceSet: "merida" }} />);
+  const link = screen.getByRole("link", { name: "Open Workbench" });
+  const first = new URL(link.getAttribute("href")!);
+  expect(Object.fromEntries(first.searchParams)).toEqual({ run: "example-run", category: "repertoire_miss", dismissal: "open", boardTheme: "blue", pieceSet: "merida" });
+  view.rerender(<WorkbenchLaunch appearance={{ theme: "green", pieceSet: "cburnett" }} />);
+  expect(new URL(link.getAttribute("href")!).searchParams.get("boardTheme")).toBe("green");
+  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
 });

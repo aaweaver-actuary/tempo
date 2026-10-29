@@ -1,5 +1,3 @@
 # Chess piece assets
 
-Chess piece sets served by the board live here. The default Cburnett set and
-optional Merida set are third-party assets; licensing and attribution are in
-`THIRD_PARTY_NOTICES.md`.
+Canonical board CSS, Cburnett artwork and Merida SVGs belong to [`@tempo/board-ui`](../../packages/board-ui/README.md). Vite emits the required images with the board stylesheet; the offline shell inventories those generated SVGs.

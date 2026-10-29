@@ -4,12 +4,13 @@ import { Chessboard } from "../../app/components/chessboard";
 import { STANDARD_FEN } from "../../app/const";
 
 const board = vi.hoisted(() => ({
+  cancelMove: vi.fn(),
   set: vi.fn(),
   destroy: vi.fn(),
   redrawAll: vi.fn(),
   setAutoShapes: vi.fn(),
   setShapes: vi.fn(),
-  state: { dom: { bounds: Object.assign(vi.fn(), { clear: vi.fn() }) } },
+  state: { drawable: {}, dom: { bounds: Object.assign(vi.fn(), { clear: vi.fn() }) } },
 }));
 const createBoard = vi.hoisted(() =>
   vi.fn((element: unknown, config: unknown) => {
@@ -18,7 +19,7 @@ const createBoard = vi.hoisted(() =>
     return board;
   }),
 );
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: createBoard }));
 vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
   playChessMoveSound: vi.fn(),
@@ -141,7 +142,7 @@ it("forwards selected squares and drawn square markers with exact square identit
       pieceSet="cburnett"
     />,
   );
-  const config = createBoard.mock.calls.at(-1)?.[1] as {
+  const config = board.set.mock.calls.findLast(([config]) => config.events)?.[0] as {
     events?: { select?: (square: string) => void };
     drawable?: { onChange?: (shapes: unknown[]) => void };
   };

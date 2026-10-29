@@ -1,3 +1,5 @@
+import type { BoardInteractionSnapshot } from "@tempo/board-ui";
+
 export type TempoTiming = {
   operation: "board-ready" | "move-to-paint" | "view-switch" |
     "study-worker-queue" | "study-worker-compute" | "study-worker-roundtrip" |
@@ -149,12 +151,7 @@ export function measureTempoDragPhase(operation: TempoDragPhase) {
   };
 }
 
-function translatedPiecePosition(element: HTMLElement) {
-  const translate = element.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
-  return translate ? [Number(translate[1]), Number(translate[2])] : null;
-}
-
-export function installTempoDragCapture(surface: HTMLElement, api: import("@lichess-org/chessground/api").Api) {
+export function installTempoDragCapture(surface: HTMLElement, readSnapshot: (refreshBounds: boolean) => BoardInteractionSnapshot | null) {
   let session: TempoDragSession | undefined;
   let pendingEvents: TempoDragEvent[] = [];
   let frame = 0;
@@ -193,27 +190,27 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
     const captureStartedAtMs = performance.now();
     frame = 0;
     if (!pending || disposed) return;
-    const drag = api.state.draggable.current;
+    const snapshot = readSnapshot(!session || Boolean(session.endReason));
+    const drag = snapshot?.drag;
     if (!drag) { finish(released ? "drop" : "board-interruption"); return; }
     if (!drag.started) { frame = requestAnimationFrame(observeFrame); return; }
-    const element = typeof drag.element === "function" ? undefined : drag.element;
     if (!session || session.endReason) {
-      const bounds = api.state.dom.bounds();
-      const originalFile = drag.orig?.charCodeAt(0) - 97;
-      const originalRank = Number(drag.orig?.[1]) - 1;
-      const white = api.state.orientation === "white";
-      const translated = element && translatedPiecePosition(element);
+      const bounds = snapshot!.bounds;
+      const originalFile = drag.origin?.charCodeAt(0) - 97;
+      const originalRank = Number(drag.origin?.[1]) - 1;
+      const white = snapshot!.orientation === "white";
+      const pieceCenter = drag.pieceCenter;
       const centerX = Number.isFinite(originalFile) ? bounds.left + ((white ? originalFile : 7 - originalFile) + 0.5) * bounds.width / 8
-        : bounds.left + (translated?.[0] ?? 0) + bounds.width / 16;
+        : pieceCenter?.[0] ?? bounds.left + bounds.width / 16;
       const centerY = Number.isFinite(originalRank) ? bounds.top + ((white ? 7 - originalRank : originalRank) + 0.5) * bounds.height / 8
-        : bounds.top + (translated?.[1] ?? 0) + bounds.height / 16;
+        : pieceCenter?.[1] ?? bounds.top + bounds.height / 16;
       session = {
         id: nextDragId++, startedAtMs: performance.now(), endedAtMs: null, endReason: null,
-        orientation: api.state.orientation,
+        orientation: snapshot!.orientation,
         viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio },
         boardGeometry: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
-        animation: { enabled: api.state.animation.enabled, durationMs: api.state.animation.duration },
-        initialGrabOffsetCssPx: [drag.origPos[0] - centerX, drag.origPos[1] - centerY],
+        animation: { enabled: snapshot!.animation.enabled, durationMs: snapshot!.animation.duration },
+        initialGrabOffsetCssPx: [drag.initialPointer[0] - centerX, drag.initialPointer[1] - centerY],
         events: pendingEvents, frames: [], boardEvents: [], longTasks: [], phases: [],
         longTasksSupported: typeof PerformanceObserver !== "undefined" && PerformanceObserver.supportedEntryTypes.includes("longtask"),
         truncated: { events: pendingEventsTruncated, frames: false, boardEvents: false, longTasks: false, phases: false },
@@ -234,12 +231,11 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
       if (limitTimer !== undefined) clearTimeout(limitTimer);
       limitTimer = setTimeout(() => finish("capture-limit"), dragLimits.durationMs);
     }
-    const position = element && translatedPiecePosition(element);
-    const geometry = session.boardGeometry;
+    const position = drag.pieceCenter;
     // Chessground centers the piece under the pointer once dragging starts;
     // its initial grab offset must not be misclassified as sustained lag.
-    const xCssPx = position ? geometry.left + position[0] + geometry.width / 16 : null;
-    const yCssPx = position ? geometry.top + position[1] + geometry.height / 16 : null;
+    const xCssPx = position?.[0] ?? null;
+    const yCssPx = position?.[1] ?? null;
     const previous = session.frames.at(-1);
     if (session.frames.length < dragLimits.frames) {
       session.frames.push({ atMs, callbackAtMs: captureStartedAtMs,
@@ -326,7 +322,7 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
       // A resize/scroll can invalidate cached geometry; end this measurement
       // rather than fabricate displacement from stale bounds.
       if (kind === "redraw") finish("geometry-change");
-      else if (!api.state.draggable.current) finish("board-interruption");
+      else if (!readSnapshot(false)?.drag) finish("board-interruption");
     },
   };
 }

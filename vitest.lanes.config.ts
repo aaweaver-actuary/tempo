@@ -8,5 +8,5 @@ if (!lane || !inventory.lanes[lane]) throw new Error("Choose an explicitly owned
 export default defineConfig({
   resolve: moduleResolution,
   plugins: [react()],
-  test: { fakeTimers: frontendConfiguration.test?.fakeTimers, maxWorkers: 2, testTimeout: 15000, environment: "jsdom", include: inventory.lanes[lane], setupFiles: ["tests/unit/setup.ts"] },
+  test: { server: frontendConfiguration.test?.server, fakeTimers: frontendConfiguration.test?.fakeTimers, maxWorkers: 2, testTimeout: 15000, environment: "jsdom", include: inventory.lanes[lane], setupFiles: ["tests/unit/setup.ts"] },
 });

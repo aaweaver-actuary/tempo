@@ -5,6 +5,28 @@ export type Square = `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${1 | 2 | 
 export type BoardMode = "legal" | "free" | "select";
 export type BoardTheme = "brown" | "blue" | "green";
 export type PieceSet = "cburnett" | "merida";
+export interface BoardAppearance {
+  readonly theme: BoardTheme;
+  readonly pieceSet: PieceSet;
+}
+
+/** Detached presentation facts for optional caller-owned drag diagnostics. */
+export interface BoardInteractionSnapshot {
+  readonly orientation: BoardColor;
+  readonly bounds: { readonly left: number; readonly top: number; readonly width: number; readonly height: number };
+  readonly animation: { readonly enabled: boolean; readonly duration: number };
+  readonly drag: null | {
+    readonly started: boolean;
+    readonly origin: Square;
+    readonly initialPointer: readonly [number, number];
+    readonly pieceCenter: readonly [number, number] | null;
+  };
+}
+
+export interface BoardRendererEvent {
+  readonly type: "ready" | "reset" | "update" | "annotations" | "resize";
+  readonly changed: readonly string[];
+}
 export type PieceRole = "pawn" | "knight" | "bishop" | "rook" | "queen" | "king";
 
 export interface PositionIdentity {
@@ -63,6 +85,8 @@ export interface BoardProps extends PositionIdentity {
   readonly onSelect?: (event: SelectEvent) => void;
   readonly onDrawingChange?: (event: DrawingEvent) => void;
   readonly onInteraction?: (event: InteractionEvent) => void;
+  /** Optional facts only; the renderer does not record telemetry. */
+  readonly onRendererEvent?: (event: BoardRendererEvent) => void;
 }
 
 export interface BoardHandle {
@@ -73,4 +97,5 @@ export interface BoardHandle {
   clearInputBounds(): void;
   /** Keyboard seam; follows the same mode, lock, and supplied destinations. */
   selectSquare(square: Square | null): void;
+  getInteractionSnapshot(refreshBounds?: boolean): BoardInteractionSnapshot | null;
 }

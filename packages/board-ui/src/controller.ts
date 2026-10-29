@@ -2,7 +2,7 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { cancel as cancelDrawing } from "@lichess-org/chessground/draw";
-import type { BoardProps, BoardShape, Square } from "./types.js";
+import type { BoardInteractionSnapshot, BoardProps, BoardShape, Square } from "./types.js";
 import { copyDestinations, copyShapes, drawingShapes, rendererShapes, sameDestinations, sameShapes } from "./position.js";
 
 const brushes = {
@@ -18,6 +18,7 @@ function isSquare(value: string): value is Square { return /^[a-h][1-8]$/.test(v
 /** Internal adapter. A fresh instance owns each mounted Chessground lifecycle. */
 export class BoardController {
   private api?: Api;
+  private interactionBounds?: BoardInteractionSnapshot["bounds"];
   private props?: BoardProps;
   private generation = 0;
   private active = true;
@@ -72,6 +73,10 @@ export class BoardController {
       shapes: copyShapes(next.shapes), drawnShapes: copyShapes(next.drawnShapes) };
     const config: Config = {};
     if (invalidated) {
+      next.onRendererEvent?.({ type: "reset", changed: forceReset ? ["clearInput"] :
+        ["fen", "positionIdentity", "positionRevision", "orientation", "turn", "mode", "locked", "readOnly", "drawingEnabled", "destinations"]
+          .filter(key => key === "destinations" ? !sameDestinations(previous?.destinations, next.destinations) :
+            previous?.[key as keyof BoardProps] !== next[key as keyof BoardProps]) });
       this.generation += 1;
       this.api.cancelMove();
       // cancelMove only cancels piece input in Chessground 10.1.1. A held drawing
@@ -96,17 +101,23 @@ export class BoardController {
         config.movable = { showDests: next.showDestinations !== false };
     }
     if (modeChanged) this.clearInputBounds();
-    if (Object.keys(config).length) this.api.set(config);
+    if (Object.keys(config).length) {
+      this.api.set(config);
+      next.onRendererEvent?.({ type: "update", changed: Object.keys(config) });
+    }
     const autoShapes = next.shapes ?? [];
     const drawnShapes = next.drawnShapes ?? [];
     if (invalidated || !sameShapes(this.autoShapes, autoShapes)) {
       this.autoShapes = copyShapes(autoShapes);
       this.api.setAutoShapes(rendererShapes(autoShapes) as DrawShape[]);
+      next.onRendererEvent?.({ type: "annotations", changed: ["shapes"] });
     }
     if (invalidated || !sameShapes(this.drawnShapes, drawnShapes)) {
       this.drawnShapes = copyShapes(drawnShapes);
       this.api.setShapes(rendererShapes(drawnShapes) as DrawShape[]);
+      next.onRendererEvent?.({ type: "annotations", changed: ["drawnShapes"] });
     }
+    if (!previous) next.onRendererEvent?.({ type: "ready", changed: [] });
   }
 
   initialConfiguration(): Config {
@@ -120,7 +131,25 @@ export class BoardController {
 
   clearInput(): void { if (this.props) this.update(this.props, true); }
   clearInputBounds(): void { this.api?.state.dom.bounds.clear(); }
+  resized(): void { this.props?.onRendererEvent?.({ type: "resize", changed: ["size"] }); }
   selectSquare(square: Square | null): void { if (this.canInteract()) this.api?.selectSquare(square); }
+  getInteractionSnapshot(refreshBounds = true): BoardInteractionSnapshot | null {
+    if (!this.active || !this.api) return null;
+    const state = this.api.state;
+    const bounds = refreshBounds || !this.interactionBounds ? state.dom.bounds() : this.interactionBounds;
+    this.interactionBounds = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
+    const drag = state.draggable.current;
+    const element = drag && typeof drag.element !== "function" ? drag.element : undefined;
+    const translation = element?.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
+    return {
+      orientation: state.orientation,
+      bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+      animation: { enabled: state.animation.enabled, duration: state.animation.duration },
+      drag: drag && isSquare(drag.orig) ? { started: drag.started, origin: drag.orig, initialPointer: [...drag.origPos],
+        pieceCenter: translation ? [bounds.left + Number(translation[1]) + bounds.width / 16,
+          bounds.top + Number(translation[2]) + bounds.height / 16] : null } : null,
+    };
+  }
   destroy(): void {
     if (!this.active) return;
     this.active = false;

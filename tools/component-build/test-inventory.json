@@ -1,6 +1,8 @@
 {
   "version": 1,
-  "explicitRunnerFiles": ["tests/runner/product-stockfish-smoke.test.mjs"],
+  "explicitRunnerFiles": [
+    "tests/runner/product-stockfish-smoke.test.mjs"
+  ],
   "lanes": {
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
@@ -15,6 +17,7 @@
       "tests/unit/attempt-lifecycle-regressions.test.ts",
       "tests/unit/background-read-admission-regressions.test.ts",
       "tests/unit/background-workspace-regressions.test.tsx",
+      "tests/unit/board-appearance-consistency-regressions.test.tsx",
       "tests/unit/board-authoritative-restoration-regressions.test.tsx",
       "tests/unit/board-drag-preservation-regressions.test.tsx",
       "tests/unit/board-geometry-regressions.test.ts",
@@ -36,7 +39,6 @@
       "tests/unit/deletion-dialogs-regressions.test.tsx",
       "tests/unit/desktop-queue-regressions.test.ts",
       "tests/unit/discovery-admission-outbox-regressions.test.ts",
-      "tests/unit/pending-discovery-saves-regressions.test.tsx",
       "tests/unit/domain-boundary-regressions.test.tsx",
       "tests/unit/durable-engine-request-regressions.test.ts",
       "tests/unit/endgame-attempt-pending-regressions.test.ts",
@@ -71,6 +73,7 @@
       "tests/unit/operation-status-integration-regressions.test.ts",
       "tests/unit/opponent-reply-diagnostics-regressions.test.tsx",
       "tests/unit/outcome-flash-regressions.test.tsx",
+      "tests/unit/pending-discovery-saves-regressions.test.tsx",
       "tests/unit/pending-review-recovery-regressions.test.tsx",
       "tests/unit/pgn-import-dialog-regressions.test.tsx",
       "tests/unit/pgn-import-pending-regressions.test.ts",
@@ -89,12 +92,13 @@
       "tests/unit/prepared-queue-readiness-regressions.test.ts",
       "tests/unit/prepared-review-continuation-regressions.test.ts",
       "tests/unit/product-contracts.test.ts",
+      "tests/unit/product-fixture-reset-regressions.test.ts",
       "tests/unit/product-game-review-api-receipts.test.tsx",
       "tests/unit/product-game-review-composition.test.tsx",
       "tests/unit/product-game-review.test.tsx",
+      "tests/unit/product-game-sync-settings.test.tsx",
       "tests/unit/product-repertoire-integration.test.ts",
       "tests/unit/product-repertoire-review.test.tsx",
-      "tests/unit/product-fixture-reset-regressions.test.ts",
       "tests/unit/redis-admission-cleanup-regressions.test.ts",
       "tests/unit/repair-endgame-regressions.test.tsx",
       "tests/unit/repertoire-alternative-home-regressions.test.tsx",

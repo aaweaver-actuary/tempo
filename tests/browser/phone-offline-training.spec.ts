@@ -47,7 +47,7 @@ test("local Tempo shell opens after the network drops", async ({ page }) => {
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect(page.getByText(/Tempo update ready/)).toHaveCount(0);
   await expect.poll(() => page.evaluate(async () => Boolean(
-    await (await caches.open("tempo-static-v7")).match("/pieces/merida/wP.svg"),
+    (await (await caches.open("tempo-static-v8")).keys()).some(request => /\/assets\/wB-[^/]+\.svg$/.test(new URL(request.url).pathname)),
   ))).toBe(true);
   await page.context().setOffline(true);
   await page.reload();
@@ -112,11 +112,11 @@ test("prepared phone queue and study worker survive full offline reload and sync
   expect(await page.evaluate(() => ({ userAgent: navigator.userAgent, standalone: (navigator as Navigator & { standalone?: boolean }).standalone }))).toMatchObject({ standalone: true });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect.poll(() => page.evaluate(async () => {
-    const cache = await caches.open("tempo-static-v7");
+    const cache = await caches.open("tempo-static-v8");
     return (await cache.keys()).map((request) => new URL(request.url).pathname)
       .filter((path) => path.startsWith("/assets/")).length;
   })).toBeGreaterThanOrEqual(2);
-  await expect.poll(() => page.evaluate(async () => (await (await caches.open("tempo-static-v7")).keys())
+  await expect.poll(() => page.evaluate(async () => (await (await caches.open("tempo-static-v8")).keys())
     .some(request => /study\.worker[^/]*\.js$/.test(new URL(request.url).pathname)))).toBe(true);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.context().setOffline(true);

@@ -109,3 +109,9 @@ enforcement is independently owned and proved by Intelligence.
 `Games semantic reader resolves scope without engine progress and checks identity`
 uses only game-scope envelopes. The view/browser accept `GamesReader`, enabling
 substitution without an HTTP client or mutation capability.
+
+## Shared Board UI adoption
+
+- `shared_board_appearance_launch_snapshot_saved_fallback_and_invalid_values` and `shared_board_appearance_denied_storage_keeps_launch_values_or_shared_defaults` run in the regular public-entry Node suite.
+- Existing native selected-game, finding-detail and Games-only scenarios now launch with blue/Merida and check actual shared palette/image rendering. The existing 32-chessmen/geometry assertion selects `cg-board piece` because the shared renderer also retains its hidden construction-time drag ghost. Replay, mutation exclusion and navigation assertions are retained.
+- `src/board.tsx` owns one small React island per mounted board, with explicit update/destruction; `@tempo/board-ui` owns the rendering lifecycle. Installed qualification uses actual Board UI and Workbench tarballs with source removed.
