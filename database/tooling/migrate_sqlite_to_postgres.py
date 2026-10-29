@@ -47,6 +47,9 @@ COPY_TARGETS = {
     "gameplay_events": "gameplay_events_legacy",
 }
 
+# Bound rows per server fetch while preserving streaming and digest semantics.
+FINGERPRINT_BATCH_SIZE = 1_000
+
 
 def quote_sqlite_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
@@ -121,6 +124,7 @@ def destination_fingerprint(
     count = 0
     with destination.transaction():
         with destination.cursor(name=f"verify_{table_name}") as cursor:
+            cursor.itersize = FINGERPRINT_BATCH_SIZE
             cursor.execute(statement)
             for row in cursor:
                 update_row_digest(digest, row)
