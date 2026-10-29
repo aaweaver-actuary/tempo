@@ -64,15 +64,15 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
       metadata.labels["tempo.resource-owner"] !== owner || metadata.labels["tempo.resource-class"] !== "development" ||
       metadata.cpu <= 0 || metadata.cpu > 0.35e9 || metadata.memory <= 0 || metadata.memory > 192 * 1024 ** 2)
     throw new Error("Game sync fixture requires its existing owned and capped writer container");
-  const argumentsList = ["exec", "-i", "-e", `TEMPO_PACKAGED_PROVIDER_FIXTURE=${providerDirectory ? "1" : "0"}`, metadata.id, "python", "-", action, "--project", project!];
+  const argumentsList = ["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", "-e", `TEMPO_PACKAGED_PROVIDER_FIXTURE=${providerDirectory ? "1" : "0"}`, metadata.id, "python", "-", action, "--project", project!];
   if (fixture) argumentsList.push("--fixture-json", JSON.stringify(fixture));
   const result = spawnSync("docker", argumentsList, { encoding: "utf8", timeout: 120_000, maxBuffer: 256 * 1024,
     input: readFileSync(resolve("backend/tests/fixtures/product_game_sync_browser.py"), "utf8") });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Owned game sync fixture failed: ${result.stderr}`);
   const value = JSON.parse(result.stdout.trim().split("\n").at(-1)!);
-  if (action === "seed" && providerDirectory) {
-    writeFileSync(resolve(providerDirectory, "providers.json"), JSON.stringify(value.http_fixtures), { mode: 0o600 });
+  if (action === "seed") {
+    if (providerDirectory) writeFileSync(resolve(providerDirectory, "providers.json"), JSON.stringify(value.http_fixtures), { mode: 0o600 });
     delete value.http_fixtures;
   }
   if (action === "run" && providerDirectory) {
