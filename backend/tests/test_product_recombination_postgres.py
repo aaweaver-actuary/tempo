@@ -307,7 +307,8 @@ def test_native_shared_evidence_identity_serializes_different_routes_without_wai
 def current_owner_transaction(monkeypatch):
     """Actual retained owner schema on a separate DB in the task's own server.
 
-    Apply the complete ordered source DDL through allocated T22 migration 053.
+    Apply complete ordered source DDL through the migration owner's current
+    version, including C1's registered conflict controls after T22 migration 053.
     Runtime readiness registration/browser installation is separately qualified.
     """
     from tempo_legacy_database.adapters import postgres_store
@@ -328,7 +329,7 @@ def current_owner_transaction(monkeypatch):
     try:
         with psycopg.connect(owner_dsn) as raw:
             migrations = sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
-            migration_owner.validate_migration_history(migrations,[],expected_version=53)
+            migration_owner.validate_migration_history(migrations,[],expected_version=migration_owner.POSTGRES_SCHEMA_VERSION)
             for path in migrations:
                 registration = migration_owner.MODULE_MIGRATIONS.get(path.name)
                 if registration:
@@ -357,7 +358,7 @@ def seed_current_owner(database):
     return seed(database)
 
 
-def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None):
+def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None, prepared_recombination=None):
     """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
@@ -393,6 +394,8 @@ def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct"
         payload['review']['recorded_at']=now.isoformat()
     if prepared_next:
         payload['review']['prepared_next']=prepared_next
+    if prepared_recombination is not None:
+        payload['prepared_recombination']=prepared_recombination
     return learning_review_adapter.submit_legacy_review(database,payload),payload
 
 
@@ -618,6 +621,211 @@ def test_current_owner_rollover_suppresses_retired_components_beyond_first_proje
         assert retained()==before
         assert tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())==protected_origin
         assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
+
+
+def seal_c_source(database, *, conflicted=False):
+    """Current fixture publication/scan, after its complete source is built."""
+    total = database.execute_native("""SELECT
+        (SELECT count(*) FROM repertoire_lines WHERE repertoire_id='r11-repertoire')+
+        (SELECT count(*) FROM cards WHERE repertoire_id='r11-repertoire' AND archived=0)""").fetchone()[0]
+    database.execute_native("""UPDATE repertoire_integrity_state SET status=%s,scan_completed_sources=%s,
+        scan_total_sources=%s,checked_at=%s WHERE repertoire_id='r11-repertoire'""",
+        ('needs_repair' if conflicted else 'clean',total,total,datetime.now().astimezone().isoformat()))
+
+
+def seed_c_inventory(database, inventory):
+    from fixtures.product_recombination import seed_legacy_introduction_history
+    from tempo_evidence_math import opening_position_key
+    seed_legacy_introduction_history(database)
+    board = chess.Board()
+    board.push_uci('e2e4')
+    board.push_uci('c7c5')
+    start, stamp = board.fen(en_passant='fen'), datetime.now().astimezone().isoformat()
+    if inventory=='routes':
+        for index in range(70):
+            database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+                VALUES(%s,'r11-repertoire','Unrelated','white',%s,'["g1f3"]',%s)""", (f'unrelated-{index:03}',start,stamp))
+    else:
+        moves = ('g1f3','g8f6','f3g1','f6g8')*150
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES('unrelated-graph','r11-repertoire','Unrelated graph','white',%s,%s,%s)""", (start,json.dumps(moves),stamp))
+        for ply, uci in enumerate(moves):
+            if ply%2==0:
+                identifier, fen = f'unrelated-card-{ply:03}', board.fen(en_passant='fen')
+                key = opening_position_key(fen)
+                database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                    trained_color,canonical_route_source) VALUES(%s,'r11-repertoire','response',%s,%s,'new',%s,'white',0)""",
+                    (identifier,fen,json.dumps([uci]),stamp[:10]))
+                database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire',%s,0)", (identifier,))
+                database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+                    decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
+                    VALUES('r11-repertoire',1,'unrelated-graph',%s,%s,%s,%s,%s,'white','response',%s,%s,%s)""",
+                    (ply//2,identifier,key,fen,json.dumps([uci]),ply//2,ply//2,json.dumps([key])))
+            board.push_uci(uci)
+    seal_c_source(database)
+
+
+def prepare_c_review(transaction, identifier):
+    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    @contextmanager
+    def read():
+        with transaction() as database:
+            database.execute_native('SET TRANSACTION READ ONLY')
+            yield database
+    return prepare_recombination_review({'card_id':identifier,'review':{}},read_connection=read)['prepared_recombination']
+
+
+def c_review(transaction, identifier, monkeypatch, **options):
+    prepared = prepare_c_review(transaction,identifier)
+    with transaction() as database:
+        result,_ = ordinary_current_review(database,identifier,monkeypatch,prepared_recombination=prepared,**options)
+    return result
+
+
+def qualify_c_pair(transaction, monkeypatch):
+    for identifier, count in (('A',3),('B',2)):
+        for _ in range(count):
+            c_review(transaction,identifier,monkeypatch)
+
+
+def protect_c_state(database):
+    from app.queue_commands import issue_queue_head
+    from app.services.review_service import ensure_card_queued_after
+    seed_rollover_route(database,99)
+    identifier, repertoire = 'rollover-99-A','rollover-99-repertoire'
+    day = datetime.now().astimezone().date().isoformat()
+    ensure_card_queued_after(database,identifier,0,queue_date=day,preserve_order=False)
+    entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'", (identifier,day)).fetchone()[0]
+    assert issue_queue_head(database,dict(entry_id=entry,card_id=identifier,expected_revision=1,queue_date=day))['issued']
+    attempt = persist_split_checkpoint(database,identifier,entry,'response',repertoire_id=repertoire)
+    seed_rollover_obligation(database,'A','r11-repertoire')
+    return dict(entry=entry,attempt=attempt,candidate=dict(queue_entry_id=entry,card_id=identifier,revision=1,cycle=0,local_date=day),
+        origin=tuple(database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (entry,)).fetchone()),
+        evidence=tuple(database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt,)).fetchone()),
+        reviews=[tuple(row) for row in database.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()],
+        receipts=[tuple(row) for row in database.execute_native('SELECT * FROM review_attempt_receipts ORDER BY attempt_id').fetchall()],
+        obligation=tuple(database.execute_native('SELECT * FROM study_game_feedback').fetchone()))
+
+
+def assert_c_held(database, result, before):
+    assert result['persisted'] and result['recombination']['status']=='held'
+    assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==0
+    assert database.execute_native('SELECT count(*) FROM study_recombination_presentations').fetchone()[0]==0
+    after = [tuple(row) for row in database.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()]
+    assert len(after)==len(before['reviews'])+1 and after[:-1]==before['reviews']
+    receipts = [tuple(row) for row in database.execute_native('SELECT * FROM review_attempt_receipts ORDER BY attempt_id').fetchall()]
+    assert len(receipts)==len(before['receipts'])+1 and set(before['receipts'])<=set(receipts)
+    assert tuple(database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (before['entry'],)).fetchone())==before['origin']
+    assert tuple(database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (before['attempt'],)).fetchone())==before['evidence']
+    assert tuple(database.execute_native('SELECT * FROM study_game_feedback').fetchone())==before['obligation']
+
+
+@pytest.mark.parametrize('inventory',['routes','graphs'])
+def test_current_owner_small_join_survives_large_unrelated_repertoire_inventory(current_owner_transaction,monkeypatch,inventory):
+    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination,current_presentation_available
+    transaction = current_owner_transaction
+    with transaction() as database:
+        seed_c_inventory(database,inventory)
+        lines, graphs = tuple(database.execute_native("""SELECT
+            (SELECT count(*) FROM repertoire_lines WHERE repertoire_id='r11-repertoire'),
+            (SELECT count(*) FROM opening_graph_steps WHERE repertoire_id='r11-repertoire')""").fetchone())
+        assert (lines>64 and graphs<=256) if inventory=='routes' else (lines<=64 and graphs>256)
+    qualify_c_pair(transaction,monkeypatch)
+    result = c_review(transaction,'B',monkeypatch)
+    assert result['recombination']['status']=='applied',result
+    combined = result['recombination']['resulting_presentation_id']
+    with transaction() as database:
+        capture = database.execute_native("SELECT change_json->'source_capture' FROM study_recombination_changes").fetchone()[0]
+        assert capture['exhausted'] is True and capture['expected']==capture['visited']==lines
+        assert len(capture['lines'])==1 and len(capture['graphs'])==3
+        assert current_presentation_available(database,combined)
+        current = CurrentStudyRecombination(database).try_current('r11-route')
+        assert current is not None and any(m.presentation.presentation_id==combined and m.available for m in current.members)
+        assert database.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (combined,)).fetchone()[0]==0
+    result = c_review(transaction,combined,monkeypatch)
+    assert result['persisted'] and result['recombination']['clean_streak']==1
+    with transaction() as database:
+        assert database.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (combined,)).fetchone()[0]==1
+        assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==1
+
+
+@pytest.mark.parametrize('published_alternative',[True,False])
+def test_current_owner_late_source_conflict_blocks_join_without_truncation(current_owner_transaction,monkeypatch,published_alternative):
+    from tempo_evidence_math import opening_position_key
+    transaction = current_owner_transaction
+    with transaction() as database:
+        seed_c_inventory(database,'routes')
+    qualify_c_pair(transaction,monkeypatch)
+    with transaction() as database:
+        stamp, key = datetime.now().astimezone().isoformat(), opening_position_key(chess.STARTING_FEN)
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES('zz-late-conflict','r11-repertoire','New competing response','white',%s,'["d2d4"]',%s)""", (chess.STARTING_FEN,stamp))
+        if published_alternative:
+            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                trained_color,canonical_route_source) VALUES('c-competing','r11-repertoire','response',%s,'["d2d4"]','new',%s,'white',0)""", (chess.STARTING_FEN,stamp[:10]))
+            database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire','c-competing',0)")
+            database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+                decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
+                VALUES('r11-repertoire',1,'zz-late-conflict',0,'c-competing',%s,%s,'["d2d4"]','white','response',0,0,%s)""",
+                (key,chess.STARTING_FEN,json.dumps([key])))
+        database.execute_native("""INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at)
+            VALUES('c-conflict','r11-repertoire','multiple_responses',%s,%s,'white',%s,'["e2e4","d2d4"]','[]',%s,%s)""",
+            (key,chess.STARTING_FEN,'c'*64,stamp,stamp))
+        database.execute_native("""INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at)
+            VALUES('r11-repertoire','A','c-conflict','r11-scan:1',%s)""", (stamp,))
+        database.execute_native("UPDATE cards SET pending_validation=1 WHERE id='A'")
+        seal_c_source(database,conflicted=True)
+        before = protect_c_state(database)
+    prepared = prepare_c_review(transaction,'B')
+    capture = json.loads(prepared.source_json)
+    assert capture['visited']>64 and capture['exhausted'] is True
+    assert [row['id'] for row in capture['lines']]==['r11-route','zz-late-conflict']
+    with transaction() as database:
+        result,_ = ordinary_current_review(database,'B',monkeypatch,prepared_recombination=prepared,
+            recorded=True,prepared_next=before['candidate'])
+        assert 'conflicting_own_response' in result['recombination']['reason']
+        assert_c_held(database,result,before)
+
+
+@pytest.mark.parametrize('failure',['interrupted','truncated','oversized','source_changed','skipped_lock','missing'])
+def test_current_owner_incomplete_relevant_discovery_defers_without_changes(current_owner_transaction,monkeypatch,failure):
+    from tempo_legacy_database.adapters.study import recombination
+    from contextlib import nullcontext
+    transaction = current_owner_transaction
+    with transaction() as database:
+        seed_c_inventory(database,'routes')
+    qualify_c_pair(transaction,monkeypatch)
+    with transaction() as database:
+        before = protect_c_state(database)
+        if failure=='oversized':
+            database.execute_native("UPDATE repertoire_lines SET moves_json=%s WHERE id='unrelated-020'", ('["g1f3"]'+' '*65536,))
+        if failure=='missing':
+            database.execute_native("DELETE FROM repertoire_lines WHERE id='r11-route'")
+        seal_c_source(database)
+    page = recombination._source_route_page
+    with monkeypatch.context() as patch:
+        if failure in {'interrupted','truncated'}:
+            patch.setattr(recombination,'_source_route_page',lambda db,rep,after: page(db,rep,after) if not after else None if failure=='interrupted' else [])
+        prepared = prepare_c_review(transaction,'B')
+    expected = {'interrupted':'source_discovery_interrupted','truncated':'source_discovery_incomplete',
+        'oversized':'source_row_oversized','missing':'route_missing'}
+    if failure in expected:
+        assert prepared.reason==expected[failure]
+    if failure=='source_changed':
+        with transaction() as database:
+            database.execute_native("UPDATE repertoire_lines SET moves_json='[\"b1c3\"]' WHERE id='unrelated-020'")
+            seal_c_source(database)
+    with (transaction() if failure=='skipped_lock' else nullcontext()) as locked:
+        if locked:
+            locked.execute_native("SELECT id FROM repertoire_lines WHERE id='r11-route' FOR UPDATE")
+        with transaction() as database:
+            result,_ = ordinary_current_review(database,'B',monkeypatch,prepared_recombination=prepared,
+                recorded=True,prepared_next=before['candidate'])
+            if failure=='source_changed':
+                assert result['recombination']['reason']=='source_discovery_changed_or_incomplete'
+            if failure=='skipped_lock':
+                assert result['recombination']['reason']=='relevant_source_busy'
+            assert_c_held(database,result,before)
 
 
 def test_current_owner_recorded_review_with_unrelated_prepared_head_can_join(current_owner_transaction,monkeypatch):
