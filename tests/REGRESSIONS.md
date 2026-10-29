@@ -5491,6 +5491,35 @@ and independent first introduction/normal Study. Collection is not native proof.
 The restored `tests/runner/product-game-worker.test.mjs` selects the existing
 two process stop/kill cases with its original fixture; unchanged lifecycle
 evidence is reused rather than rerun for a settings-only repair.
+## C repertoire audit composition (#501)
+
+`backend/tests/test_product_repertoire_integration.py` owns the C-only source
+boundary: actual #492 manual preview/approval/replay and unchanged unrelated
+routes; route-local eligibility/stale preview; real in-process owner HTTP and
+read projection; exact borrowed command transaction/stable retry identity; and
+release of the current snapshot read connection. Semantic fixture stores are
+explicitly fake here; this file does not establish normal Study suspension.
+
+- `test_c_real_owner_manual_preview_approval_and_replay_preserve_unrelated_route`
+- `test_c_conflict_eligibility_is_route_local_and_stale_decision_rejected`
+- `test_c_unregistered_router_uses_real_owner_http_and_exact_approval`
+- `test_c_command_transport_reuses_exact_transaction_and_stable_retry_identity`
+- `test_c_current_snapshot_read_releases_borrowed_reader_before_returning`
+
+`tests/unit/product-repertoire-integration.test.ts` owns the concrete #500 client
+mapping, exact preview/decision payload and retry correlation, safe optional
+failure, 202 remaining pending, cancellation/scope rejection, and retention of
+the existing authoring view while audit enforcement requires an explicit command.
+
+`tests/browser/product-repertoire-review.spec.ts` owns the normal-product case
+`C exact conflict is enforced and manually resolved while unrelated issued Study and history survive`.
+It uses normal imports/queue/approval/UI, a verified disposable-only legacy-source
+conflict fixture, stale-decision rejection and reload. Its fixture never records
+a Study review or applies a fake learning effect. It runs the registered current-owner callbacks, HTTP/worker/navigation and ordered
+schema054 through the owning disposable PostgreSQL browser runner. Its real UI
+proof remains distinct from source/type checks and from genuine-data or installed
+acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
+
 ## Saved discovery mobile overlay
 
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.

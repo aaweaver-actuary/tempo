@@ -1314,5 +1314,54 @@
     "handler": "configure",
     "treatment": "foreground_command",
     "state": "blocked"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/repertoires/{repertoire_id}/conflicts",
+    "handler": "conflicts",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/repertoires/{repertoire_id}/changes/preview",
+    "handler": "preview",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/repertoires/{repertoire_id}/changes/decide",
+    "handler": "decide",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/repertoires/{repertoire_id}/review",
+    "handler": "review",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/repertoires/{repertoire_id}/proposals",
+    "handler": "pending",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/repertoires/{repertoire_id}/evidence",
+    "handler": "probability",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/repertoires/{repertoire_id}/audit",
+    "handler": "enforce",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

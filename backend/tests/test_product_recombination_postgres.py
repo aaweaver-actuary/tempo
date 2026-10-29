@@ -433,6 +433,193 @@ def qualify_before_final_review(transaction,monkeypatch):
                 ordinary_current_review(database,identifier,monkeypatch)
 
 
+def seed_rollover_route(database, index):
+    """Independent, published source, before any generated presentation exists."""
+    from tempo_evidence_math import opening_position_key
+    now = datetime.now().astimezone()
+    stamp, past = now.isoformat(), (now-timedelta(days=10)).isoformat()
+    repertoire, route = f"rollover-{index:02}-repertoire", f"rollover-{index:02}-route"
+    identifiers = tuple(f"rollover-{index:02}-{letter}" for letter in "ABC")
+    moves = ("e2e4","e7e5","g1f3","b8c6","f1b5")
+    database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Rollover','fixture',%s)", (repertoire,stamp))
+    database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+        VALUES(%s,%s,'Route','white',%s,%s,%s)""", (route,repertoire,chess.STARTING_FEN,json.dumps(moves),stamp))
+    database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire,stamp))
+    board = chess.Board()
+    for ply, move in enumerate(moves):
+        if ply%2==0:
+            identifier, start = identifiers[ply//2], board.fen(en_passant="fen")
+            key = opening_position_key(start)
+            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                introduced_at,first_correct_at,trained_color,canonical_route_source)
+                VALUES(%s,%s,'response',%s,%s,'learning',%s,%s,%s,'white',0)""",
+                (identifier,repertoire,start,json.dumps([move]),now.date().isoformat(),past[:10],past))
+            database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)", (repertoire,identifier))
+            database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+                decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
+                VALUES(%s,1,%s,%s,%s,%s,%s,%s,'white','response',%s,%s,%s)""",
+                (repertoire,route,ply//2,identifier,key,start,json.dumps([move]),ply//2,ply//2,json.dumps([key])))
+            # Retained unknown-assistance history prevents reclaiming an old
+            # introduction. It earns no clean streak, receipt or completion.
+            database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+                guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study',%s)""",
+                (identifier,past,'unknown-historical-assistance:'+identifier))
+        board.push_uci(move)
+    for kind in ("opening_graph_rebuild","integrity_scan"):
+        identity = f"{repertoire}-{kind}"
+        database.execute_native("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
+            VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)""", (identity,kind,repertoire,
+            json.dumps(dict(repertoire_id=repertoire,graph_generation=1)),stamp,stamp,stamp))
+    database.execute_native("""INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status,
+        scan_generation,scan_completed_sources,scan_total_sources) VALUES(%s,'clean',%s,'idle',%s,1,1)""",
+        (repertoire,stamp,f"{repertoire}-integrity_scan:1"))
+    return route, identifiers
+
+
+def seed_rollover_obligation(database, card, repertoire):
+    """Existing applied game obligation, not fabricated clean Study evidence."""
+    from app.study.game_feedback import effect_id
+    from app.contracts.product_v02.learning import GameLapse
+    from test_product_game_lapse import fixture as lapse_fixture
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    now = datetime.now().astimezone()
+    lapse = lapse_fixture('lapse',GameLapse)
+    decision = decision_identity(card,0,[])
+    lapse = lapse.model_copy(update={'key':lapse.key.model_copy(update={'decision_id':decision}),
+        'finding':lapse.finding.model_copy(update={'decision_id':decision,'presentation_id':card,'repertoire_id':repertoire})})
+    logical, deadline = effect_id(lapse.key), now+timedelta(days=2)
+    review_id = database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+        source_kind,source_ref) VALUES(%s,'again',%s,10,0,'game_lapse',%s) RETURNING id""",
+        (card,(now-timedelta(days=2)).isoformat(),logical)).fetchone()[0]
+    database.execute_native("""INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
+        card_id,card_revision,decision_id,received_at,detected_at,available_by,status,applied_at,review_id,updated_at)
+        VALUES(%s,%s,'1',%s,%s,%s,1,%s,%s,%s,%s,'applied',%s,%s,%s)""",
+        (logical,lapse.key.model_dump_json(),lapse.model_dump_json(),'a'*64,card,decision,
+         now-timedelta(days=2),now-timedelta(days=2),deadline,now-timedelta(days=2),review_id,now))
+    return logical, deadline
+
+
+def test_current_owner_rollover_suppresses_retired_components_beyond_first_projection_batch(current_owner_transaction,monkeypatch):
+    from datetime import date
+    from app import queue_commands
+    from app.services.queue_application import seed_queue, MISS_REASON
+    from app.services.queue_admission_adapter import QueueAdmissionAdapter
+    from app.services.review_service import ensure_card_queued_after
+    from fixtures.product_recombination import seed_legacy_introduction_history
+    from tempo_legacy_database.adapters.commands import queue as queue_storage
+    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination, current_presentation_available
+    transaction = current_owner_transaction
+    with transaction() as database:
+        seed_legacy_introduction_history(database)
+        routes = [("r11-route",("A","B","C"))]
+        routes += [seed_rollover_route(database,index) for index in range(1,17)]
+        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
+    combined, obligations = {}, {}
+    for route, identifiers in routes:
+        for identifier in (identifiers[0],identifiers[2],identifiers[1]):
+            for review_index in range(3):
+                with transaction() as database:
+                    if route in (routes[0][0],routes[-1][0]) and identifier==identifiers[1] and review_index==2:
+                        repertoire = database.execute_native('SELECT repertoire_id FROM cards WHERE id=%s', (identifiers[0],)).fetchone()[0]
+                        logical, deadline = seed_rollover_obligation(database,identifiers[0],repertoire)
+                        obligations[logical] = (identifiers[0],deadline)
+                    result,_ = ordinary_current_review(database,identifier,monkeypatch)
+        assert result['recombination']['status']=='applied', (route,result)
+        combined[route] = result['recombination']['resulting_presentation_id']
+    with transaction() as database:
+        ordered = [r[0] for r in database.execute_native("SELECT DISTINCT route_id FROM study_recombination_current ORDER BY route_id").fetchall()]
+        assert ordered==[route for route,_ in routes] and len(ordered)==17
+        originals = [identifier for _,identifiers in routes for identifier in identifiers]
+        assert database.execute_native("SELECT count(*) FROM cards WHERE id=ANY(%s) AND archived=0 AND superseded_by IS NULL", (originals,)).fetchone()[0]==51
+        assert database.execute_native("SELECT count(*) FROM review_attempt_receipts WHERE card_id=ANY(%s)", (originals,)).fetchone()[0]==153
+        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=ANY(%s)", (list(combined.values()),)).fetchone()[0]==0
+        # Roll forward beyond the actual scheduler dates; never change a source
+        # schedule to make this regression pass or pre-block its future rows.
+        rollover = date.fromisoformat(database.execute_native("SELECT max(due_date) FROM cards").fetchone()[0][:10])+timedelta(days=1)
+        day = rollover.isoformat()
+        assert rollover>date.today()
+        assert not database.execute_native("SELECT 1 FROM daily_queue WHERE queue_date=%s", (day,)).fetchone()
+        # A later independent membership of an otherwise retired original must
+        # remain usable. It does not authorize rejoining shared source cards.
+        independent = routes[8][1][0]
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rollover-independent','Independent','fixture',%s)", (datetime.now().astimezone().isoformat(),))
+        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('rollover-independent',%s,0)", (independent,))
+        # An unrelated actual issued head and partial evidence stay on their
+        # original day, identity and target while a different day's seed runs.
+        protected = 'rollover-protected'
+        today = date.today().isoformat()
+        past = (datetime.now().astimezone()-timedelta(days=10)).isoformat()
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Protected unrelated','fixture',%s)", (protected,past))
+        database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+            introduced_at,first_correct_at,trained_color,canonical_route_source)
+            VALUES(%s,%s,'response',%s,'["d2d4"]','learning',%s,%s,%s,'white',0)""",
+            (protected,protected,chess.STARTING_FEN,today,past[:10],past))
+        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)", (protected,protected))
+        database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+            guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study','unknown-protected-history')""", (protected,past))
+        ensure_card_queued_after(database,protected,0,queue_date=today,preserve_order=False)
+        entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'", (protected,today)).fetchone()[0]
+        assert queue_commands.issue_queue_head(database,dict(entry_id=entry,card_id=protected,expected_revision=1,queue_date=today))['issued']
+        attempt = persist_split_checkpoint(database,protected,entry,'response',repertoire_id=protected)
+        def retained():
+            return {table:[tuple(row) for row in database.execute_native(statement).fetchall()] for table,statement in {
+                'cards':"SELECT * FROM cards ORDER BY id",
+                'reviews':"SELECT * FROM reviews ORDER BY id",
+                'receipts':"SELECT * FROM review_attempt_receipts ORDER BY attempt_id",
+                'obligations':"SELECT * FROM study_game_feedback ORDER BY effect_key",
+                'changes':"SELECT * FROM study_recombination_changes ORDER BY command_id",
+            }.items()}
+        before = retained()
+        assert len(before['obligations'])==2
+        assert sum(n for _,n in QueueAdmissionAdapter(database).introduction_count_page(today,None).counts)==0
+        protected_origin = tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())
+        protected_attempt = tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())
+    for _ in range(2):
+        with transaction() as database:
+            seed_queue(database,day)
+            queued = {r[0] for r in database.execute_native("SELECT card_id FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchall()}
+            for route, identifiers in (routes[0],routes[-1]):
+                assert combined[route] in queued
+                assert not set(identifiers[:2]) & queued, (route,sorted(set(identifiers[:2]) & queued))
+                current = CurrentStudyRecombination(database).try_current(route)
+                assert current is not None
+                assert any(m.presentation.presentation_id==combined[route] and m.available for m in current.members)
+                assert current_presentation_available(database,combined[route])
+                entry_id = database.execute_native("SELECT id FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued'", (day,combined[route])).fetchone()[0]
+                assert queue_storage.prepare_available_attempt(database,True,entry_id,MISS_REASON)(day)['id']==entry_id
+            assert independent in queued
+            assert retained()==before
+            assert {r[0]:(r[1],r[2]) for r in database.execute_native('SELECT effect_key,card_id,available_by FROM study_game_feedback').fetchall()}==obligations
+            assert tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())==protected_origin
+            assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
+            assert database.execute_native("SELECT status FROM daily_queue WHERE id=%s", (entry,)).fetchone()[0]=='queued'
+            assert sum(n for _,n in QueueAdmissionAdapter(database).introduction_count_page(day,None).counts)==0
+    class RolloverDate(date):
+        @classmethod
+        def today(cls):
+            return rollover
+    monkeypatch.setattr(queue_commands,'date',RolloverDate)
+    expected = {combined[routes[0][0]],combined[routes[-1][0]]}
+    issued = set()
+    with transaction() as database:
+        # Exercise normal head issuance on the rolled-over day, then explicit
+        # bury commands to advance without inventing reviews or completions.
+        for _ in range(2*len(routes)+2):
+            head = queue_storage.prepare_queue_head(database,MISS_REASON)(day)
+            assert head is not None
+            identifier = database.execute_native('SELECT card_id FROM daily_queue WHERE id=%s', (head['id'],)).fetchone()[0]
+            assert queue_commands.issue_queue_head(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1,queue_date=day))['issued']
+            if identifier in expected:
+                issued.add(identifier)
+            queue_commands.bury_queue_entry(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1))
+            if issued==expected:
+                break
+        assert issued==expected
+        assert retained()==before
+        assert tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())==protected_origin
+        assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
+
+
 def test_current_owner_recorded_review_with_unrelated_prepared_head_can_join(current_owner_transaction,monkeypatch):
     from app.queue_commands import issue_queue_head
     from app.services.queue_application import seed_queue
@@ -698,11 +885,11 @@ def issued_split_fixture(transaction,monkeypatch):
     return combined,entry,other,day
 
 
-def persist_split_checkpoint(database,combined,entry,kind=None):
+def persist_split_checkpoint(database,combined,entry,kind=None,*,repertoire_id='r11-repertoire'):
     from app.services.opening_decision_evidence import decision_manifest
     from app.services.postgres_opening_evidence import persist_checkpoint
     from tempo_legacy_database.adapters.opening_evidence.storage import queue_context_rows
-    manifest=decision_manifest(dict(queue_context_rows(database,([entry],))[0]),'r11-repertoire')
+    manifest=decision_manifest(dict(queue_context_rows(database,([entry],))[0]),repertoire_id)
     now=datetime.now().astimezone().isoformat()
     decision=manifest['decisions'][0]
     events=[] if kind is None else [dict(sequence=1,decision_index=0,decision_id=decision['decision_id'],
