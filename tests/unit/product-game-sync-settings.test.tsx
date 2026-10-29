@@ -2,6 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { GameSyncSettings } from "../../app/product-composition/GameSyncSettings";
 
+vi.hoisted(() => vi.resetModules());
+vi.mock("../../app/const", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/const")>(), API_URL: "https://games.example",
+}));
+vi.mock("../../app/lib/study-connection", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/lib/study-connection")>(), LEARNING_URL: "https://learning.example",
+}));
+
 afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 const repertoires = [{ id: "white", name: "Synthetic white" }];
 const saved = { workspace_id: "legacy", provider: "lichess", account: "Learner",
@@ -81,8 +89,10 @@ it("replays the identical settings save after a lost acknowledgment without perm
 it("shows pending save honestly and reads the original completed receipt before accepting it", async () => {
   let operationId = "";
   let checks = 0;
+  const receiptUrls: string[] = [];
   const fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     if (url.includes("/operations/")) {
+      receiptUrls.push(url);
       checks += 1;
       return Promise.resolve(response(checks === 1 ? { operation_id: operationId, state: "queued" }
         : { operation_id: operationId, state: "complete", response: { ...saved, revision: 2 } }));
@@ -100,6 +110,8 @@ it("shows pending save honestly and reads the original completed receipt before 
   fireEvent.click(screen.getByRole("button", { name: "Retry settings save" }));
   await screen.findByText("Game sync settings saved.");
   expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  expect(receiptUrls).toEqual(Array(2).fill(`https://games.example/api/operations/${encodeURIComponent(operationId)}`));
+  expect(fetch.mock.calls.some(([url]) => String(url).startsWith("https://learning.example"))).toBe(false);
 });
 
 it("keeps a manual sync identity through transport failure and makes an acknowledged pending job explicit", async () => {

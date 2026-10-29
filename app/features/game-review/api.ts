@@ -38,7 +38,8 @@ export function createGameReviewApi({ endpoints, fetch: fetchRequest = globalThi
         if (!pending.operation_id || pending.operation_id !== requested)
           throw new Error("Game Review did not confirm the original operation. Retry the original request.");
       }
-      response = await confirmOperationResponse(response, { signal, fetch: fetchRequest });
+      const baseUrl = new URL(url, typeof window === "undefined" ? "http://tempo.local" : window.location.href).origin;
+      response = await confirmOperationResponse(response, { signal, fetch: fetchRequest, baseUrl });
       if (response.status === 202) {
         const pending = await response.json() as { operation_id: string };
         throw new PendingOperationError(pending.operation_id);

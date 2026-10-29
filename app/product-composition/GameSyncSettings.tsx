@@ -128,7 +128,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       pendingSave.current = pending;
       setUnconfirmed(true);
       let response = retry
-        ? await readOperationResponse(pending.operationId, { allowMissing: true, fetch: globalThis.fetch })
+        ? await readOperationResponse(pending.operationId, { allowMissing: true, fetch: globalThis.fetch, baseUrl: API_URL })
         : new Response(null, { status: 404 });
       if (response.status === 404) response = await fetch(`${gameReviewBase}/configuration`, {
         method: "POST", credentials: "same-origin",
@@ -136,7 +136,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       });
       if (response.status === 202 && (await response.clone().json() as { operation_id?: string }).operation_id !== pending.operationId)
         throw new Error("Game sync settings did not confirm the original save. Retry the original save to check its result.");
-      response = await confirmOperationResponse(response, { fetch: globalThis.fetch });
+      response = await confirmOperationResponse(response, { fetch: globalThis.fetch, baseUrl: API_URL });
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
           clearMutation(pending.operationId); pendingSave.current = null; setUnconfirmed(false);

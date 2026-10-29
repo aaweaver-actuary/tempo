@@ -50,3 +50,46 @@ it("settings hydration blocks premature editing then persists independent defens
   const savedRead = await (await fetch("/api/settings")).json();
   expect(savedRead).toMatchObject({ defensive_analysis_enabled: true, include_defensive_cards_in_daily_stack: false });
 });
+
+it("Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values", async () => {
+  const compatibility = { lichess_username: "SavedLichess", chesscom_username: "SavedChesscom", auto_sync_minutes: 17, major_mistake_cp: 275 };
+  const authoritativeSettings = { initial_depth: 6, ...compatibility };
+  vi.mocked(readWorkspaceResponse).mockImplementation(async () => Response.json(authoritativeSettings));
+  const legacyKeys = ["tempo-lichess-username", "tempo-chesscom-username"];
+  for (const key of legacyKeys) localStorage.setItem(key, "Retained browser value");
+  const reads = vi.spyOn(Storage.prototype, "getItem");
+  const writes = vi.spyOn(Storage.prototype, "setItem");
+  const submitted: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    const path = new URL(String(input), window.location.href).pathname;
+    if (path === "/api/settings" && options?.method === "PUT") {
+      submitted.push(JSON.parse(String(options.body)));
+      return Response.json(submitted.at(-1));
+    }
+    if (path === "/api/repertoires") return Response.json({ repertoires: [{ id: "synthetic", name: "Synthetic repertoire" }] });
+    if (path === "/api/product/game-review/configuration/lichess") return Response.json(null);
+    throw new Error(`Unexpected synthetic request: ${path}`);
+  }));
+  render(<SettingsView theme="brown" pieceSet="cburnett" sound={false}
+    onTheme={vi.fn()} onPieces={vi.fn()} onSound={vi.fn()} />);
+  const save = screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false));
+  fireEvent.click(screen.getByRole("tab", { name: "Games" }));
+  await screen.findByRole("region", { name: "Game sync settings" });
+  expect(screen.getByRole("button", { name: "Save game sync settings" })).toBeTruthy();
+  expect(screen.queryByLabelText("Lichess username")).toBeNull();
+  expect(screen.queryByLabelText("Chess.com username")).toBeNull();
+  expect(screen.queryByLabelText(/Automatic sync/)).toBeNull();
+  expect(screen.getByRole("heading", { name: "Existing imported-game analysis" })).toBeTruthy();
+  expect(screen.getByText(/Controls existing imported-game analysis and finding classification/)).toBeTruthy();
+  const threshold = screen.getByRole("spinbutton", { name: /Major mistake threshold/ }) as HTMLInputElement;
+  expect([threshold.value, threshold.min, threshold.max]).toEqual(["275", "25", "1000"]);
+  fireEvent.click(screen.getByRole("tab", { name: "Training" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: /Default initial prefix length/ }), { target: { value: "9" } });
+  fireEvent.click(save);
+  await waitFor(() => expect(submitted).toHaveLength(1));
+  expect(submitted[0]).toMatchObject({ initial_depth: 9, ...compatibility });
+  expect(reads.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
+  expect(writes.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
+  for (const key of legacyKeys) expect(localStorage.getItem(key)).toBe("Retained browser value");
+});

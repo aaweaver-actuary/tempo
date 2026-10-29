@@ -5591,3 +5591,9 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 
 - `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
 - `CI isolates cancellation, caches dependencies and requires split complete verification` retains verification cancellation, dependency caches and complete-plan/quality wiring after the obsolete publishing job is removed. Its existing PostgreSQL test-speedups wrapper remains the regular owner.
+
+## #590 Games Settings ownership and receipt origins
+
+- `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
+- `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
+- `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.

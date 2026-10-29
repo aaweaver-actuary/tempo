@@ -35,6 +35,8 @@ sequenceDiagram
   Note over Command,Games: Games mutation and operation receipt commit atomically
   Command-->>API: Completed result or pending operation
   API-->>Settings: Actual result / pending / failure
+  Settings->>API: Resolve original operation at Games API origin
+  Note over Settings,API: Selected Learning origin does not redirect Games receipt reads
   Settings->>Journal: Clear matching terminal save/run only
 ```
 
@@ -47,14 +49,22 @@ request, not completed acquisition or an available Study card. Legacy lapse
 retry keeps its existing current-finding/source fences; encounter redelivery
 is not exposed through that legacy command.
 
+Games save and recovery explicitly query receipts at the Games API origin. The
+shared status reader retains its selected Learning origin by default for Study;
+Game Review derives its override from the actual command endpoint. Legacy account
+and automatic-sync controls/browser mirroring are removed, while global settings
+retain loaded compatibility values for Next Opponent and the old sync consumers.
+The still-used finding threshold remains separate and uses the global save.
+
 This slice requires only the command gateway and schema already on main. It
 does not package or activate an optional provider worker, alter Study
 maintenance, or solve #581. The owning HTTP, native command and UI cases are
 `test_product_game_review_commands.py`,
 `test_product_game_review_commands_postgres.py`, and
 `product-game-sync-settings.test.tsx`. They are extracted from #558; prior
-evidence is retained there. The current-main extraction is **untested** under
-the user's no-new-tests instruction. It is not a merge or installation claim.
+evidence is retained there. Current focused qualification and exact tested
+revisions are recorded in PR #591; they do not establish installation or the
+complete Games-to-Study journey.
 
 ## Continuous-provider public priority intake (#489 / #491)
 
