@@ -53,11 +53,13 @@ The six `test_product_game_review_receipts.py` cases use typed owner facts and
 in-process HTTP; mutations/acquisition/queue calls are forbidden. No database,
 provider or user browser is started. The current composition lazily binds the
 public status operation to the actual Study owner using the existing reader
-credential and a read-only connection. Writer commands require their separate
-existing profile; reading does not construct a provider coordinator. The owning
+credential and a read-only connection. Configure, sync and legacy feedback retry
+dispatch through the existing durable command gateway; only its command worker
+borrows a writer transaction. See the [command and recovery view](../../../product_composition/README.md#durable-game-review-commands-and-settings-recovery-590).
+Reading does not construct a provider coordinator. The owning
 `test_product_game_review_composition.py` case traverses actual application
 registration/middleware and scripted owner SQL; it proves current pending status,
-contained 503 failure and writer refusal without a writer profile.
+contained 503 failure and pending command dispatch without an API writer profile.
 
 The paired receipt-only #490 view and #536 TypeScript fragment retain their
 captured-API-to-view proof. The current full-workspace navigation mounts this

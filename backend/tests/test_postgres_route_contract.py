@@ -76,21 +76,27 @@ print(json.dumps([
     }
 
 
-def test_postgres_route_contract_tracks_remaining_blocked_product_routes(monkeypatch):
+def test_postgres_route_contract_admits_durable_game_review_mutations(monkeypatch):
     declared_routes = json.loads(CONTRACT_PATH.read_text())
     blocked_routes = {(row["method"], row["path"], row["handler"])
                       for row in declared_routes if row["state"] == "blocked"}
 
-    # These writes remain refused until their durable command wiring lands.
-    assert blocked_routes == {
+    # The reader API now dispatches these writes through the durable command
+    # gateway. No provider execution or scheduling write happens in the reader.
+    assert blocked_routes == set()
+    game_review_writes = {
         ("POST", "/api/product/game-review/sync", "sync"),
         ("POST", "/api/product/game-review/feedback/retry", "retry_feedback"),
         ("POST", "/api/product/game-review/configuration", "configure"),
     }
+    assert {(row["method"], row["path"], row["handler"])
+            for row in declared_routes
+            if row["method"] == "POST" and row["path"].startswith("/api/product/game-review/")
+            and row["treatment"] == "foreground_command" and row["state"] == "staged"} == game_review_writes
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
 
     async def probe_routes():
-        for method, path, handler in sorted(blocked_routes):
+        for method, path, handler in sorted(game_review_writes):
             request = Request({
                 "type": "http", "method": method, "path": path,
                 "headers": [], "query_string": b"", "scheme": "http",
@@ -105,11 +111,8 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes(monkeyp
 
             response = await main.prioritize_foreground_requests(request, downstream)
             route = (method, path, handler)
-            assert response.status_code == 503, route
-            assert json.loads(response.body) == {
-                "detail": "This write route is awaiting its Celery cutover; use the current local Docker service.",
-            }, route
-            assert not downstream_called, route
+            assert response.status_code == 204, route
+            assert downstream_called, route
 
     asyncio.run(probe_routes())
 

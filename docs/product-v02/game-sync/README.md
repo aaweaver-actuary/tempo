@@ -1,5 +1,21 @@
 # Continuous provider synchronization (#491)
 
+## Independent command and Settings slice (#590)
+
+The current-main command slice exposes configure, manual sync and legacy lapse
+retry through the existing durable gateway while keeping the API reader-only.
+Games Settings retains original save bytes/manual-run identity across lost
+acknowledgment and tab unmount/reload. Pending, failed and completed operations
+remain distinct; a queued job does not imply provider completion or Study
+availability. See the [owning transaction/recovery view](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590).
+
+The slice adds no worker profile, provider activation, schema, permission or
+Study maintenance change. Packaging and #580/#581 settlement repairs remain
+separate. Source was extracted from #558 at `403c19e5` onto main `346d1741`;
+the reconciled candidate has not been tested under the user's no-new-tests
+instruction. Existing component evidence is historical evidence for its stated
+revision, not a new assembled acceptance result.
+
 ## Bounded Game Review receipt-read checkpoint
 
 The backend Game Review GET now preserves the current public owner's complete

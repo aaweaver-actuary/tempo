@@ -5565,6 +5565,19 @@ acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
 
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
 - **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
+## Durable Game Review commands and Settings recovery (#590)
+
+`backend/tests/test_product_game_review_commands.py` retains #558's named
+reader-only configure/run identity and strict immutable configuration-response
+regressions. `backend/tests/test_product_game_review_commands_postgres.py`
+retains its actual command receipt/replay/conflicting-ID/rollback case through
+the existing disposable PostgreSQL fixture. The mounted composition and exact
+route inventory/guard cases retain their owning suites.
+`tests/unit/product-game-sync-settings.test.tsx` retains the eight explicit
+scope, conflict, pending, lost-ack and unmount/remount cases; the original save
+bytes/manual-run ID survive until terminal confirmation. No provider packaging
+or Study maintenance cases are moved into these files. These are preserved
+regressions, not a claim that the current-main extraction was executed.
 
 ### #589 Study feedback claimed-slice recovery (extracted from #580)
 
@@ -5578,3 +5591,9 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 
 - `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
 - `CI isolates cancellation, caches dependencies and requires split complete verification` retains verification cancellation, dependency caches and complete-plan/quality wiring after the obsolete publishing job is removed. Its existing PostgreSQL test-speedups wrapper remains the regular owner.
+
+## #590 Games Settings ownership and receipt origins
+
+- `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
+- `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
+- `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
