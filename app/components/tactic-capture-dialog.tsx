@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Dialog } from "./dialog";
 import { Button } from "./buttons/BaseButton";
@@ -10,11 +10,12 @@ import type { BoardTheme, PieceSet } from "./chessboard";
 import { PositionFenField, PositionSolutionBoard, PositionSolutionTabs } from "./position-solution-editor";
 import { EMPTY_SETUP_FEN, solutionUciMoves, usePositionSolutionEditor } from "../hooks/use-position-solution-editor";
 import { asSanMove } from "../types";
-import { pendingTacticCapture, saveTacticCapture, type TacticCaptureRequest } from "../lib/tactic-capture-command";
+import { pendingTacticCapture, saveTacticCapture, type TacticCaptureDraft, type TacticCaptureRequest } from "../lib/tactic-capture-command";
 import { invalidateWorkspaceData } from "../lib/workspace-data";
 import { publishNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { parseChessComPuzzlePgn } from "../lib/tactic-capture-pgn";
+import { fetchLichessPuzzle, isLichessPuzzleId } from "../lib/tactic-capture-lichess";
 
 export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }: {
   theme: BoardTheme; pieceSet: PieceSet; onClose: () => void; onQueueChanged: () => void;
@@ -25,6 +26,13 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
   });
   const [pending, setPending] = useState(restored.request !== null || Boolean(restored.error));
   const [saving, setSaving] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const busy = useRef(false);
+  const active = useRef(true);
+  const acquisition = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const focusAfterSave = useRef(false);
+  const [savedVersion, setSavedVersion] = useState(0);
   const [error, setError] = useState(restored.error);
   const [source, setSource] = useState<TacticCaptureRequest["source_kind"]>(restored.request?.source_kind ?? "manual");
   const [reference, setReference] = useState(restored.request?.source_ref ?? "");
@@ -33,6 +41,7 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
   const [pgnExpanded, setPgnExpanded] = useState(false);
   const [pgnText, setPgnText] = useState("");
   const [pgnError, setPgnError] = useState("");
+  const [previewedInput, setPreviewedInput] = useState("");
   const [loadedPgnVersion, setLoadedPgnVersion] = useState(0);
   const [initialMoves] = useState(() => {
     if (!restored.request) return [];
@@ -42,7 +51,28 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
     } catch { return []; }
   });
   const editor = usePositionSolutionEditor(restored.request?.starting_fen ?? EMPTY_SETUP_FEN, initialMoves, true);
-  const locked = saving || pending;
+  const locked = saving || pending || fetching;
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; acquisition.current?.abort(); };
+  }, []);
+  useEffect(() => {
+    if (focusAfterSave.current && !locked) {
+      inputRef.current?.focus();
+      focusAfterSave.current = false;
+    }
+  }, [savedVersion, locked]);
+  function close() {
+    active.current = false;
+    acquisition.current?.abort();
+    onClose();
+  }
+  function changeInput(text: string) {
+    acquisition.current?.abort();
+    acquisition.current = null;
+    if (fetching) { busy.current = false; setFetching(false); }
+    setPgnText(text); setPreviewedInput(""); setPgnError("");
+  }
   function loadPgn() {
     if (locked) return;
     try {
@@ -52,6 +82,7 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
       setReference(imported.sourceRef ?? "");
       setUrl(imported.sourceUrl ?? "");
       setLoadedPgnVersion(version => version + 1);
+      setPreviewedInput(pgnText);
       setPgnError("");
       setError("");
     } catch (failure) {
@@ -59,43 +90,74 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
     }
   }
   async function save() {
-    setSaving(true); setError("");
+    if (busy.current || !active.current) return;
+    busy.current = true;
+    setError(""); setPgnError("");
+    const controller = new AbortController();
+    acquisition.current = controller;
     try {
-      const result = await saveTacticCapture(pending ? undefined : {
+      let draft: TacticCaptureDraft | undefined;
+      if (!pending && pgnText.trim() && pgnText !== previewedInput) {
+        const lichess = isLichessPuzzleId(pgnText);
+        if (lichess) setFetching(true);
+        const imported = lichess ? await fetchLichessPuzzle(pgnText, controller.signal) : parseChessComPuzzlePgn(pgnText);
+        if (controller.signal.aborted || !active.current) return;
+        editor.loadPositionAndSolution(imported.startingFen, imported.solutionSanMoves);
+        setLoadedPgnVersion(version => version + 1);
+        setSource(imported.sourceKind); setReference(imported.sourceRef ?? ""); setUrl(imported.sourceUrl ?? "");
+        setPreviewedInput(pgnText);
+        draft = { starting_fen: imported.startingFen, moves: solutionUciMoves(imported.startingFen, imported.solutionSanMoves),
+          source_kind: imported.sourceKind, source_ref: imported.sourceRef, source_url: imported.sourceUrl, note };
+      } else if (!pending) draft = {
         starting_fen: editor.startingFen, moves: solutionUciMoves(editor.startingFen, editor.moves),
         source_kind: source, source_ref: reference.trim() || null, source_url: url.trim() || null, note,
-      });
+      };
+      if (controller.signal.aborted || !active.current) return;
+      setFetching(false); setSaving(true);
+      const result = await saveTacticCapture(draft);
       invalidateWorkspaceData();
       onQueueChanged();
       publishNotification({ severity: "success", source: "tactic-capture",
         message: result.reused ? "Existing tactic added back to today’s queue." : "Added to today’s queue." });
-      onClose();
+      if (!active.current) return;
+      editor.loadPositionAndSolution(EMPTY_SETUP_FEN, []); editor.setTab("position");
+      setLoadedPgnVersion(version => version + 1);
+      setSource("manual"); setReference(""); setUrl(""); setNote("");
+      setPgnText(""); setPreviewedInput(""); setPending(false); setPgnExpanded(true);
+      focusAfterSave.current = true;
+      setSavedVersion(version => version + 1);
     } catch (failure) {
+      if (controller.signal.aborted || !active.current) return;
       setError(failure instanceof Error ? failure.message : "Could not save the capture. Retry to check its result.");
       try { setPending(pendingTacticCapture() !== null); } catch { setPending(true); }
-    } finally { setSaving(false); }
+    } finally {
+      if (acquisition.current === controller) {
+        acquisition.current = null; busy.current = false;
+        if (active.current) { setSaving(false); setFetching(false); }
+      }
+    }
   }
-  return <Dialog titleId="capture-tactic-title" onClose={onClose} className="card-editor tactic-capture">
-    <CloseButton onClose={onClose} />
+  return <Dialog titleId="capture-tactic-title" onClose={close} className="card-editor tactic-capture">
+    <CloseButton onClose={close} />
     <div className="editor-heading"><div><p className="eyebrow">Today’s training</p><h2 id="capture-tactic-title">Capture tactic</h2></div></div>
     {!usesLocalApi() ? <p>Durable tactic capture requires local Tempo. Open your local Tempo workspace to add a position to training.</p> : <>
       {pending && <p role="status">A capture is awaiting confirmation. Check its result before editing or creating another capture.</p>}
-      <fieldset disabled={locked} className="capture-editor">
         <div className="capture-pgn-input">
-          <div className="capture-input-toolbar">
+          <fieldset disabled={locked} className="capture-editor capture-input-toolbar">
             <PositionSolutionTabs editor={editor} requirePlayable />
             <Button disabled={locked} aria-expanded={pgnExpanded} aria-controls="capture-pgn-panel"
-              onClick={() => setPgnExpanded(expanded => !expanded)}>Paste Chess.com puzzle PGN</Button>
-          </div>
+              onClick={() => setPgnExpanded(expanded => !expanded)}>Paste puzzle PGN or Lichess ID</Button>
+          </fieldset>
           {pgnExpanded && <div id="capture-pgn-panel" className="capture-pgn-panel">
-            <label>Chess.com puzzle PGN<TextArea value={pgnText} rows={8} disabled={locked} spellCheck={false}
-              aria-describedby="capture-pgn-help" onChange={event => setPgnText(event.target.value)} /></label>
-            <p id="capture-pgn-help" className="editor-key-help">The first move sets up the puzzle; the remaining moves become its solution.
-              Load PGN replaces the position, solution, and source fields. Your note is kept.</p>
-            <Button disabled={locked} onClick={loadPgn}>Load PGN</Button>
+            <label>Puzzle Rush PGN or Lichess puzzle ID<TextArea ref={inputRef} value={pgnText} rows={5} disabled={saving || pending} spellCheck={false}
+              aria-describedby="capture-pgn-help" onChange={event => changeInput(event.target.value)} /></label>
+            <p id="capture-pgn-help" className="editor-key-help">Paste a Puzzle Rush export or a five-character Lichess puzzle ID, then Capture.
+              Load PGN is an optional preview for editing. Lichess is fetched only when you press Capture.</p>
+            <Button disabled={locked || isLichessPuzzleId(pgnText)} onClick={loadPgn}>Load PGN</Button>
             {pgnError && <p className="editor-error" role="alert">{pgnError}</p>}
           </div>}
         </div>
+      <fieldset disabled={locked} className="capture-editor">
         <div className="editor-layout">
           <PositionSolutionBoard key={loadedPgnVersion} editor={editor} theme={theme} pieceSet={pieceSet} setupControls locked={locked}
             orientation={editor.boardFen.trim().split(/\s+/)[1] === "b" ? "black" : "white"} enableSanEntry />
@@ -111,9 +173,10 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
         </div>
       </fieldset>
       {(error || editor.error) && <p className="editor-error" role="alert">{error || editor.error}</p>}
-      <div className="editor-actions"><Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" className="primary-button" pending={saving} disabled={saving || (!pending && (Boolean(editor.positionError) || !editor.moves.length || editor.pendingFen !== null))}
-          onClick={() => void save()}>{pending ? "Check pending capture" : "Add to training"}</Button></div>
+      <div className="editor-actions"><Button onClick={close}>Close</Button>
+        <Button variant="primary" className="primary-button" pending={saving || fetching}
+          disabled={saving || fetching || (!pending && !pgnText.trim() && (Boolean(editor.positionError) || !editor.moves.length || editor.pendingFen !== null))}
+          onClick={() => void save()}>{pending ? "Check pending capture" : "Capture"}</Button></div>
     </>}
   </Dialog>;
 }

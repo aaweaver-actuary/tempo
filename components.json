@@ -1872,6 +1872,34 @@
         "packages/study-session",
         "packages/chess-line"
       ]
+    },
+    {
+      "id": "study-game-priority",
+      "owner": "Study #487 / interface #482",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python backend/app/study/qualify_priority.py",
+      "inputs": [
+        "backend/app/study",
+        "backend/app/games",
+        "backend/app/contracts/product_v02",
+        "backend/app/product_composition/encounters",
+        "backend/app/product_composition/feedback_maintenance.py",
+        "database/tempo_legacy_database/adapters/queue_refresh/presentation.py",
+        "backend/tests/test_study_priority_interface.py",
+        "backend/tests/test_product_contracts.py",
+        "backend/tests/test_study_encounter_intake_boundary.py",
+        "backend/tests/test_product_deferred_priority_integration.py",
+        "backend/tests/test_product_encounter_integration.py",
+        "backend/tests/test_product_feedback_integration.py",
+        "backend/tests/test_product_game_lapse.py",
+        "backend/tests/test_product_game_lapse_postgres.py",
+        "backend/tests/test_scaled_game_priority_postgres.py",
+        "backend/tests/test_priority_ownership_pickup_postgres.py",
+        "backend/tests/product_encounter_fixtures.py",
+        "tools/component-build/check-interface-boundaries.mjs",
+        "tools/component-build/check-python.py"
+      ]
     }
   ]
 }

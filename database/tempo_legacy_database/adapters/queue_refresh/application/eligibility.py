@@ -147,6 +147,8 @@ def _block_unapproved_defense_queue_entries(db, day):
 
 
 def _restore_eligible_due_queue_entries(db, day):
+    from tempo_legacy_database.adapters.study.conflicts import held_queue_sql
+    conflict_hold = held_queue_sql(db)
     db.execute(
         """UPDATE daily_queue SET status='queued'
            WHERE queue_date=? AND status='blocked' AND card_id IN (
@@ -168,7 +170,7 @@ def _restore_eligible_due_queue_entries(db, day):
                          WHERE block.repertoire_id=eligible.id AND block.card_id=c.id
                      )
                  )
-           )""",
+           ) AND NOT (""" + conflict_hold + ")",
         (day, day),
     )
 
@@ -199,11 +201,18 @@ def _reset_unintroduced_opening_cards(database, queue_date: str) -> None:
 
 
 def _reset_stale_opening_introductions(database, queue_date: str) -> None:
-    database.execute(
-        """UPDATE cards SET state='new',introduced_at=NULL
+    statement = """UPDATE cards SET state='new',introduced_at=NULL
            WHERE content_type='opening' AND repertoire_id<>'__retained_cards__' AND state='learning' AND introduced_at<?
              AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
              AND NOT EXISTS(SELECT 1 FROM daily_queue queue
-                            WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
-        (queue_date, queue_date),
-    )
+                            WHERE queue.card_id=cards.id AND queue.queue_date=?)"""
+    from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
+    statement += " AND NOT (" + regrouped_card_sql(database, "cards.id") + ")"
+    from tempo_legacy_database.adapters.study.game_feedback import installed, retained_encounter_introduction_query
+    if installed(database):
+        statement += ' AND cards.id NOT IN (' + retained_encounter_introduction_query() + ')'
+        # Keep this owned PostgreSQL projection native: the legacy SQLite
+        # translator would rewrite its JSONB operator into a JSON-only function.
+        database.execute_native(statement.replace('?', '%s'), (queue_date, queue_date))
+        return
+    database.execute(statement, (queue_date, queue_date))

@@ -109,20 +109,47 @@ intentionally repaired rows or edit historical source bytes to make them match.
 
 ## Browser behavior
 
-Capture accepts manual/FEN authoring or **Paste Chess.com puzzle PGN**. Paste the
-puzzle export and click **Load PGN** to inspect and edit the position, solution,
-and source before **Add to training**. Loading alone does not save anything.
-Chess.com exports include a leading opponent/setup move: import advances that
-move, shows the resulting starting position, and uses the remaining mainline as
-the authored solution. The resulting side to move determines board orientation.
+Capture accepts manual/FEN authoring, the existing **Puzzle Rush PGN**, or a
+five-character **Lichess puzzle ID**. Expand **Paste puzzle PGN or Lichess ID**,
+paste, and press **Capture** once. Parsing/provider acquisition precedes the
+existing durable save command. On confirmed save or existing-card reuse the
+form clears, the input receives focus, and the same modal stays open. Closing is
+explicit. A brief notification distinguishes saved and reused cards. Note and
+source fields reset with the completed puzzle.
 
-A puzzle needs an explicit FEN and either `PuzzleID` or a Chess.com `/puzzles/`
-Link. `PuzzleID` and `Link` populate existing Reference and URL fields, Source
-becomes Puzzle Rush, and Note is preserved. Other metadata is unused. Invalid
-PGNs preserve the current capture; loading another valid PGN replaces it.
-URL validation, persistence, scheduling, and pending recovery still use the
-ordinary tactic capture pipeline. Arbitrary game-to-tactic PGN extraction is
-outside this feature.
+**Load PGN** remains an optional local preview: it replaces the position,
+solution and source fields, preserving Note, without saving. The preview remains
+editable before Capture. The retained Puzzle Rush parser advances the leading
+opponent/setup move and keeps the remaining mainline. Its existing `PuzzleID`
+and `Link` provenance and Puzzle Rush source kind are unchanged.
+
+Lichess is fetched only on Capture through the official public
+[`GET /api/puzzle/{id}`](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/tags/puzzles/api-puzzle-id.yaml).
+The adapter replays `game.pgn`, including the setup ply, and verifies its length
+against zero-based `initialPly`. Optional `puzzle.fen` is already after setup;
+its position must agree with replay (move clocks can differ). Without it, replay
+supplies the starting FEN. **All** `puzzle.solution` UCI moves are validated and
+retained; the CSV helper's drop-first-move rule does not apply. Side to move
+sets orientation. Source is `other`, Reference is the exact puzzle ID, and URL
+is `https://lichess.org/training/{id}`. The deterministic fixture derives from
+[the official API example](https://raw.githubusercontent.com/lichess-org/api/master/doc/specs/examples/puzzles-getPuzzleById.json.yaml).
+Acquisition is credential-free, bounded to ten seconds, and outside persistence.
+Changing input or closing cancels acquisition and fences late responses before
+any capture command. Invalid input/provider failure leaves input, note and the
+previous authored draft available for correction. Failed/uncertain writes retain
+the normalized draft and use existing pending-save recovery.
+
+Normal Chess.com puzzle export normalization from #541 remains **pending**: the
+repository only supplies the historical Puzzle Rush export. A representative,
+unedited normal-puzzle PGN, its puzzle URL/ID and expected first solver move are
+needed to establish header/setup semantics without guessing or falsely labeling
+it Puzzle Rush. Use manual/FEN authoring with Source **Other** meanwhile. This
+checkpoint does not claim #541's three-input acceptance is complete.
+
+The [capture interaction view](../app/components/README.md#tactic-capture)
+describes the changed acquisition/reset lifecycle. No API, schema, scheduler,
+persistence transaction or history/deduplication policy changed. Arbitrary
+full-game tactic extraction remains outside this feature.
 
 Capture opens on an empty board. Incomplete setup can be placed, removed, or
 freely dragged; malformed FEN text never reaches the board renderer. A playable
@@ -134,8 +161,8 @@ The browser persists exact request bytes and UUID before its first send. Pending
 and uncertain saves lock editing across close, reopen, and reload. Retry checks
 receipts and resends the same request when delivery is uncertain. Only confirmed
 terminal failure unlocks editing for a new capture. Durable success invalidates
-workspace data, signals the queue change, closes the dialog, and shows the new
-or reused-card confirmation. The dialog traps/restores focus and isolates its
+workspace data, signals the queue change, resets/refocuses the still-open dialog,
+and shows the new or reused-card confirmation. The dialog traps/restores focus and isolates its
 board from the underlying Solve attempt. Practice-demo capture explains that
 local Tempo is required. Only packaged-owned tactic cards receive Lichess links
 and original restoration controls.

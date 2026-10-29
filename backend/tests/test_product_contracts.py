@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 sys.path.insert(0, str(ROOT / "packages/evidence-math/src"))
 sys.path.insert(0, str(ROOT / "contracts/analysis-jobs/src"))
 from app.contracts.product_v02.games import Finding, GamePage, GameSummary, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, withdrawal_only_delivery
+from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.contracts.product_v02.presentation import GameDetail
 from app.contracts.product_v02.analysis import ProbabilityEvidence, EngineEvidence, Proposal, ProposalDecision, RankingInput, RankingOutput
@@ -31,6 +31,10 @@ MODELS.update({model.__name__: model for model in (ProbabilityEvidence, EngineEv
 
 def fixture(name):
     return json.loads((FIXTURES / f"{name}.json").read_text())["payload"]
+
+
+def encounter_fixture(name):
+    return json.loads((FIXTURES / "encounters" / f"{name}.json").read_text())["payload"]
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.json")), ids=lambda path: path.stem)
@@ -111,6 +115,29 @@ def test_current_availability_and_unchanged_introduced_content_are_expressible()
     assert not unknown.available and not unknown.introduction_matches_current_content
 
 
+@pytest.mark.parametrize("before_game", [True, False])
+def test_route_local_date_only_chronology_keeps_exact_game_source(before_game):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0]["introduced_before_game"] = before_game
+    value = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    binding, = value.decision_presentations
+    assert binding.route_id == "route-a" and binding.route_ply == 4
+    assert len(value.membership.routes) == 2  # Same response after a legal transposition.
+    assert binding.introduced_at is None  # Do not turn a supplied date into a timestamp.
+    assert binding.introduced_before_game is before_game
+    assert binding.introduction_game.game_id == "synthetic-transposed-game"
+    with pytest.raises(ValidationError): binding.introduction_game.source_revision = 2
+    changed = binding.introduction_game.model_copy(update={"source_revision": 2})
+    assert changed != binding.introduction_game  # Other/corrected sources do not share the proof.
+
+
+@pytest.mark.parametrize("field,value", [("route_id", None), ("route_ply", None), ("route_ply", 5), ("introduction_game", None), ("introduced_before_game", None)])
+def test_partial_or_wrong_occurrence_and_chronology_scope_is_rejected(field, value):
+    payload = fixture("snapshot-route-game-introduction")
+    payload["decision_presentations"][0][field] = value
+    with pytest.raises(ValidationError): RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+
 def test_contract_imports_have_no_runtime_side_effects():
     script = '''
 import builtins, sys
@@ -134,7 +161,7 @@ import app.contracts.product_v02.analysis
 
 
 # Explicit new product roots only. Legacy modules outside these roots are not audited.
-PRODUCT_ROOTS = {"games": ("backend/app/games/feedback",), "repertoire": ("backend/app/repertoire",), "study": ("backend/app/study/game_feedback.py",), "contracts": ("backend/app/contracts/product_v02",)}
+PRODUCT_ROOTS = {"games": ("backend/app/games",), "repertoire": ("backend/app/repertoire",), "study": ("backend/app/study/game_feedback.py", "backend/app/study/encounter_feedback.py", "backend/app/study/interfaces"), "contracts": ("backend/app/contracts/product_v02",)}
 
 
 def import_targets(source, module):
@@ -150,15 +177,37 @@ def import_targets(source, module):
 
 def boundary_errors(sources):
     errors = []
+    public_module = "app.study.interfaces.game_priority"
+    public_tree = ast.parse((ROOT / "backend/app/study/interfaces/game_priority.py").read_text())
+    public_exports = next(ast.literal_eval(node.value) for node in public_tree.body
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets))
     for item in sources:
         owner, source = item[:2]
         module = item[2] if len(item) > 2 else f"app.{owner}.module"
         for name in import_targets(source, module):
+            if owner == "games" and name in {"app.contracts.product_v02.learning.LearningFeedbackPort", "app.contracts.product_v02.learning.EncounterFeedbackPort"}:
+                errors.append(f"{owner}: consume the designated Study priority interface {name}")
+            # The supported Study surface contains only the unchanged pure
+            # contracts. All other Study implementation imports stay private.
+            if owner == "games" and (name == public_module or name.startswith(public_module + ".")):
+                if name != public_module and name.removeprefix(public_module + ".") not in public_exports:
+                    errors.append(f"{owner}: unavailable Study interface export {name}")
+                continue
+            if owner == "games" and name.startswith("app.") and not name.startswith(("app.games.", "app.contracts.", "app.chess.")):
+                errors.append(f"{owner}: unsupported application dependency {name}")
+                continue
             if name in {"app.main", "app.tasks"} or name.startswith(("app.main.", "app.tasks.")):
                 errors.append(f"{owner}: domain imports composition {name}")
             for sibling in ("games", "repertoire", "study"):
                 if sibling != owner and (name == f"app.{sibling}" or name.startswith(f"app.{sibling}.")):
                     errors.append(f"{owner}: private sibling import {name}")
+        if owner == "games":
+            tree = ast.parse(source)
+            aliases = {alias.asname or alias.name: public_module for node in ast.walk(tree)
+                if isinstance(node, ast.Import) for alias in node.names if alias.name == public_module}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and aliases.get(ast.unparse(node.value), ast.unparse(node.value)) == public_module and node.attr not in public_exports:
+                    errors.append(f"{owner}: unavailable Study interface member {node.attr}")
     return errors
 
 
@@ -194,6 +243,11 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert len(boundary_errors([("study", "import app.games.feedback"), ("games", "import app.study.game_feedback")])) == 2
     assert boundary_errors([("games", "from ...study.game_feedback import apply", "app.games.feedback.comparison")])
     assert boundary_errors([("games", "from app import main")])
+    assert boundary_errors([("games", "from app.services.queue_application import seed_queue")])
+    assert not boundary_errors([("games", "from app.study.interfaces.game_priority import EncounterFeedbackPort")])
+    assert boundary_errors([("games", "from app.contracts.product_v02.learning import EncounterFeedbackPort")])
+    assert boundary_errors([("games", "from app.study.interfaces.game_priority import PrivateStore")])
+    assert boundary_errors([("games", "import app.study.interfaces.game_priority as api\ndef hidden():\n    return api.PrivateStore()")])
     assert has_import_cycle({"app.contracts.one": "from .two import value", "app.contracts.two": "from .one import value"})
 
 
@@ -258,3 +312,81 @@ def test_join_plan_preserves_exact_route_cues_lineage_and_zero_streak(fault):
     elif fault == "wrong_connection": payload["connecting_cues"][0]["position_key"] = "other-position"
     else: payload["result"]["lineage"] = []
     with pytest.raises(ValidationError): JoinPlan.model_validate_json(json.dumps(payload))
+
+
+
+@pytest.mark.parametrize("path", sorted((FIXTURES / "encounters").glob("*.json")), ids=lambda path: path.stem)
+def test_next_release_encounter_values_round_trip_without_changing_lapse_wire(path):
+    document = json.loads(path.read_text())
+    model = {"GameEncounter": GameEncounter, "EncounterReceipt": EncounterReceipt}[document["model"]]
+    value = model.model_validate_json(json.dumps(document["payload"]))
+    assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("name", ["unintroduced-correct", "unintroduced-missed", "historical-missed"])
+def test_encounter_facts_preserve_frequency_and_historical_importance_without_lapse(name):
+    payload = encounter_fixture(name)
+    value = GameEncounter.model_validate_json(json.dumps(payload))
+    assert value.observation == ("matched" if value.played_uci == value.expected_uci else "missed")
+    assert value.decision.introduced_before_game is False
+    assert value.decision.introduction_game == value.source
+    if name == "historical-missed":
+        assert value.occurred_at < value.decision.introduced_at
+        assert value.observation == "missed"  # Still importance, even when lapse-ineligible.
+    original = fixture("lapse")
+    original["finding"]["introduced_before_game"] = False
+    with pytest.raises(ValidationError): GameLapse.model_validate_json(json.dumps(original))
+    payload["decision"]["presentation_id"] = "changed-caller-input"
+    assert value.decision.presentation_id == "existing-physical-card"
+    with pytest.raises(ValidationError): value.source.source_revision = 2
+
+
+@pytest.mark.parametrize("fault", ["key", "expected", "observation", "source_chronology"])
+def test_encounter_rejects_incoherent_source_and_response_claims(fault):
+    payload = encounter_fixture("unintroduced-missed")
+    if fault == "key": payload["key"]["game_id"] = "different-game"
+    elif fault == "expected": payload["expected_uci"] = "g1f3"
+    elif fault == "observation": payload["observation"] = "matched"
+    else: payload["decision"]["introduction_game"]["source_revision"] = 2
+    with pytest.raises(ValidationError): GameEncounter.model_validate_json(json.dumps(payload))
+
+
+def test_same_encounter_key_and_hold_survive_later_introduction_and_recomparison():
+    payload = encounter_fixture("unintroduced-missed")
+    original = GameEncounter.model_validate_json(json.dumps(payload))
+    payload["decision"].update(introduction="introduced", introduced_at="2026-10-26T13:00:00Z")
+    later = GameEncounter.model_validate_json(json.dumps(payload))
+    assert original.key.logical_id() == later.key.logical_id()
+    assert original.source == later.source and original.detected_at == later.detected_at
+    assert later.decision.introduced_before_game is False  # Admission cannot turn it into a lapse.
+    hold = GameEffectControl(key=original.key, source_revision=2, action="hold", reason="source_corrected")
+    assert hold.withdrawal is None and hold.key == later.key
+
+
+@pytest.mark.parametrize("fault", ["correct_lapse", "held_available", "deferred_available", "paused_deadline", "reasonless_pending", "miss_frequency_only"])
+def test_encounter_receipt_reports_disposition_and_control_deferral_honestly(fault):
+    payload = encounter_fixture("paused-introduction")
+    if fault == "correct_lapse": payload.update(observation="matched", disposition="existing_lapse")
+    elif fault == "held_available": payload.update(status="held", admission_status="available", deferred_reason=None)
+    elif fault == "deferred_available": payload["admission_status"] = "available"
+    elif fault == "paused_deadline": payload["available_by"] = "2026-10-28T12:00:00Z"
+    elif fault == "reasonless_pending": payload.update(deferred_reason=None, reason=None)
+    else: payload.update(disposition="frequency_only", admission_status="not_requested", deferred_reason=None)
+    with pytest.raises(ValidationError): EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("ordinary_control", ["zero_limit", "introduction_allowance", "study_only"])
+def test_encounter_first_introduction_cannot_defer_to_ordinary_controls(ordinary_control):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=ordinary_control, reason=ordinary_control)
+    with pytest.raises(ValidationError, match="targeted exception"):
+        EncounterReceipt.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("safety_guard", ["paused", "disabled", "active_attempt", "authority_unavailable", "unknown_chronology"])
+def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(safety_guard):
+    payload = encounter_fixture("paused-introduction")
+    payload.update(deferred_reason=safety_guard, reason=safety_guard)
+    receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
+    assert receipt.admission_status == "pending" and receipt.available_by is None
+    assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
