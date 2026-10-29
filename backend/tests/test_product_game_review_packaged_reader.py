@@ -3,7 +3,7 @@
 Run with the existing validation lock and explicit TEMPO_TEST_INSTANCE=disposable,
 TEMPO_TEST_COMPOSE_PROJECT=tempo-pg-regressions-<digits>-<hex>, and that stack's
 TEMPO_DEVELOPMENT_BUDGET_TOKEN. API, foreground-worker and PostgreSQL must already
-be running with schema52 and provisioned reader/writer profiles. Nothing here
+be running with the authoritative schema and provisioned reader/writer profiles. Nothing here
 creates a container, credential, role, grant, image, or application instance.
 Only three uniquely named synthetic receipt rows are seeded/removed by the
 existing writer. Collection performs no Docker, HTTP, database or fixture work.
@@ -17,6 +17,7 @@ import subprocess
 import uuid
 
 import pytest
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,7 @@ RUNTIME_FILES = {
     "database/tempo_legacy_database/adapters/study/game_feedback.py": "/app/tempo_legacy_database/adapters/study/game_feedback.py",
     "database/tempo_legacy_database/ddl/schema_version.py": "/app/tempo_legacy_database/ddl/schema_version.py",
     "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql": "/app/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
+    "database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql": "/app/tempo_legacy_database/ddl/migrations/053_study_recombination.sql",
 }
 
 
@@ -92,7 +94,7 @@ def connect(role):
         assert row[3] in payload["postgres_addresses"], ("Database address differs from owned fixture", row[3], payload["postgres_addresses"])
         assert row[4] == "tempo-disposable-postgres-test"
         versions = database.execute("SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()
-        assert [row[0] for row in versions] == list(range(1,53))
+        assert [row[0] for row in versions] == list(range(1,payload["schema_version"]+1))
         return database
     except BaseException:
         database.close()
@@ -128,7 +130,7 @@ with connect("tempo_reader") as database:
         pass
     else:
         raise AssertionError("Reader UPDATE must be rejected even in a read-write transaction")
-print(json.dumps({"schema":52,"role":"tempo_reader","select_grants":9,"update_rejected":True}))
+print(json.dumps({"schema":payload["schema_version"],"role":"tempo_reader","select_grants":9,"update_rejected":True}))
 '''
 
 SEED = r'''
@@ -224,7 +226,7 @@ def _exec_python(container, payload, body):
     return json.loads(_docker("exec", "-i", container["Id"], "python", "-", source=source).strip().splitlines()[-1])
 
 
-def test_packaged_game_review_schema52_reader_reads_current_receipt_without_write_privileges():
+def test_packaged_game_review_reader_reads_current_receipt_without_write_privileges():
     containers = _owned_containers()  # Reject ambient/live targets before any connection or seed.
     from app.games.feedback.coordinator import delivery_for
     from app.games.feedback.ports import SourceState
@@ -249,11 +251,12 @@ def test_packaged_game_review_schema52_reader_reads_current_receipt_without_writ
     addresses = [network["IPAddress"] for network in containers["postgres"]["NetworkSettings"]["Networks"].values()]
     assert addresses and all(addresses)
     payload = dict(identity=identity,source_key=source.source_key,operation_id=delivery.operation_id,
+        schema_version=POSTGRES_SCHEMA_VERSION,
         source=source.model_dump(mode="json"),delivery=delivery.model_dump(mode="json"),
         command=command.model_dump(mode="json"),effect_id=effect_id(command.key),postgres_addresses=addresses,
         runtime_hashes={target:hashlib.sha256((ROOT/path).read_bytes()).hexdigest() for path,target in RUNTIME_FILES.items()})
     preflight = _exec_python(containers["api"],payload,PREFLIGHT)
-    assert preflight == dict(schema=52,role="tempo_reader",select_grants=9,update_rejected=True)
+    assert preflight == dict(schema=POSTGRES_SCHEMA_VERSION,role="tempo_reader",select_grants=9,update_rejected=True)
     try:
         assert _exec_python(containers["foreground-worker"],payload,SEED)["effect_id"] == payload["effect_id"]
         proof = _exec_python(containers["api"],payload,PROOF)

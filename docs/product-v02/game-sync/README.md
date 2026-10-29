@@ -47,6 +47,13 @@ These are later release-owner commands, not actions executed by this lane.
 The process reuses the established writer profile, is capped at 0.15 CPU,
 256 MiB and 96 PIDs, and owns at most one HTTP connection and one bounded
 database section. It is absent from the default profile and Study readiness.
+The existing optional-service allocation is 1 CPU / 2048 MiB. Adding this profile
+with all baseline optional services would require 1.15 CPU / 2304 MiB and is not
+an approved allocation. A configuration with the existing Maia service absent
+and Games present would total 0.85 CPU / 1280 MiB; this is a conditional capacity
+calculation, not a claim that Maia is stopped or capacity is available on the
+user's host. Activation remains with the release owner; no other service's cap,
+global resource policy or running state is changed here.
 Saved recurrence uses the exact configured window; blank recurrence remains
 off. Manual jobs still drain with recurrence off. Changing configuration stops
 stale clients before their next unit; the opted-in process's restart policy
