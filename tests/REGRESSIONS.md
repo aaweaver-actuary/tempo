@@ -5447,3 +5447,19 @@ and rollback after actual graph enqueue. Its broker/Redis transport is substitut
 it does not qualify a running worker stack or a genuine private PGN. Eventual
 fixture-authorized command:
 `make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
+
+## Both-provider configured feedback delivery (#491)
+
+`backend/tests/test_product_sync_delivery.py` owns reader-only durable command
+dispatch/retry identity, changed-scope fencing before provider work and intake
+commit-before-ack without queue refresh. The existing mounted Game Review
+composition case now verifies its adopted command dispatch without a writer.
+`tests/unit/product-game-sync-settings.test.tsx` owns explicit account/window/
+filters, revision conflict, pending save and same-operation run retry.
+`backend/tests/test_product_provider_sync_native.py` selects the existing capped
+PostgreSQL fixture for both provider pagination/months, canonical publication,
+committed acknowledgment loss/restart, original effect replay, truthful unknowns,
+and independent first introduction/normal Study. Collection is not native proof.
+The restored `tests/runner/product-game-worker.test.mjs` selects the existing
+two process stop/kill cases with its original fixture; unchanged lifecycle
+evidence is reused rather than rerun for a settings-only repair.

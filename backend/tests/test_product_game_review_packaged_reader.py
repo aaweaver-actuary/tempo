@@ -189,9 +189,9 @@ with connect("tempo_reader") as database:
     assert receipt["admission_status"] == "pending" and receipt["available_by"] is None
     assert receipt["deferred_reason"] == "authority_unavailable" and receipt["observation_recorded"] is True
     assert receipt["source_digest"] == payload["command"]["source"]["source_digest"]
-    status,rejected = request("/api/product/game-review/sync",{"provider":"lichess","operation_id":payload["identity"]})
-    # In the real PostgreSQL HTTP stack, the existing Celery-cutover guard
-    # refuses this unadopted write route before the reader-only root factory.
+    status,rejected = request("/api/product/game-review/unregistered-write",{"operation_id":payload["identity"]})
+    # Only the three adopted commands dispatch through the durable gateway.
+    # The cutover guard still refuses arbitrary write paths at the API reader.
     assert status == 503 and rejected == {"detail":
         "This write route is awaiting its Celery cutover; use the current local Docker service."}
     assert snapshot() == before

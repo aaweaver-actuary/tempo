@@ -70,6 +70,14 @@ def test_mounted_game_review_reads_current_owner_without_a_writer_and_contains_f
     # Restore the lazy root's original cache at fixture teardown as well as the
     # patched connection/store factories, so this case cannot leak its fixture.
     monkeypatch.setattr(operations, "_services", {})
+    from app import command_dispatch
+    from fastapi.responses import JSONResponse
+    def dispatch(name, payload, *, idempotency_key):
+        assert name == "product_games.sync"
+        assert payload == {"provider":"lichess", "operation_id":"synthetic-sync"}
+        assert idempotency_key == "synthetic-sync"
+        return JSONResponse(status_code=202,content={"operation_id":idempotency_key,"state":"queued"})
+    monkeypatch.setattr(command_dispatch,"dispatch_command",dispatch)
 
     async def request():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(main.app), base_url="http://fixture") as client:
@@ -85,10 +93,12 @@ def test_mounted_game_review_reads_current_owner_without_a_writer_and_contains_f
             failed = await client.get(path)
             assert failed.status_code == 503
             assert failed.json() == {"detail": "game_review_read_unavailable"}
-            # The existing read-side root must not acquire a command credential.
-            rejected = await client.post("/api/product/game-review/sync", json={"provider":"lichess", "operation_id":"synthetic-sync"})
-            assert rejected.status_code == 503
-            assert rejected.json() == {"detail": "games_writer_profile_required"}
+            # Adopted writes now dispatch; the API still acquires no writer.
+            # Exercise the actual cutover allowlist as well as the lazy root.
+            monkeypatch.setattr(main.postgres_store,"configured",lambda:True)
+            pending = await client.post("/api/product/game-review/sync", json={"provider":"lichess", "operation_id":"synthetic-sync"})
+            assert pending.status_code == 202
+            assert pending.json() == {"operation_id":"synthetic-sync","state":"queued"}
     asyncio.run(request())
     assert calls.count("reader-profile") == 1
     assert calls.count("owner-status-select") == 2

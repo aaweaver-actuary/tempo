@@ -169,16 +169,24 @@ class CurrentGameReviewOperations:
         return self._read("game_detail", **request)
 
     def sync(self, **request):
-        return self._operations(writing=True).sync(**request)
+        from app.command_dispatch import dispatch_command
+        return dispatch_command("product_games.sync", request,
+            idempotency_key=request["operation_id"])
 
     def retry_feedback(self, **request):
-        return self._operations(writing=True).retry_feedback(**request)
+        from app.command_dispatch import dispatch_command
+        return dispatch_command("product_games.retry_feedback", {
+            **request, "finding": request["finding"].model_dump(mode="json")},
+            idempotency_key=request["operation_id"])
 
     def configuration(self, provider):
         return self._read("configuration", provider)
 
-    def configure(self, configuration, expected_revision):
-        return self._operations(writing=True).configure(configuration, expected_revision)
+    def configure(self, configuration, expected_revision, *, operation_id=None):
+        from app.command_dispatch import dispatch_command
+        return dispatch_command("product_games.configure", {
+            "configuration": configuration.model_dump(mode="json"), "expected_revision": expected_revision},
+            idempotency_key=operation_id)
 
 
 def current_game_review_router():
