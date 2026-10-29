@@ -189,7 +189,10 @@ test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
 test('emergency_isolated_frontend_change_selects_FAST', () => {
   const selection = selectFastLane(['app/components/prefix-comparison-dialog.tsx']);
   assert.equal(selection.tier,'FAST'); assert(selection.frontend.includes('tests/unit/prefix-comparison-regressions.test.tsx'));
-  assert.equal(selection.browser.length,0);
+  for (const key of ['backend','browser','nativeChecks']) assert.deepEqual(selection[key],[],key);
+  assert.equal(selection.node,true); assert.equal(selection.python,false);
+  assert.deepEqual(fastCommands(makeFastPlan(selection.paths,context)).map(([name])=>name),
+    ['conflicts','migrations','diff','lint','typecheck','frontend_inventory','frontend']);
 });
 test('emergency_tactics_grading_change_selects_STUDY', () => {
   assert.equal(selectFastLane(['backend/app/services/threat_grading.py']).tier,'STUDY');
@@ -514,4 +517,42 @@ test('spec_prose_selector_repair_retains_FULL_current_integration_qualification'
   assert(validateFastGate(plan, null, needs, pr, execution).length);
   assert(validateFastGate(plan, null, needs,
     {...pr, base: {...pr.base, sha: 'c'.repeat(40)}}, execution, completePlan()).length);
+});
+
+const unbridgedComponentPaths = [
+  'backend/app/services/queue_presentation.py',
+  'backend/app/study/interfaces/game_priority.py',
+  'backend/app/product_composition/game_review.py',
+];
+test('component_boundary_unbridged_native_and_packaged_proofs_retain_FULL', () => {
+  for (const path of unbridgedComponentPaths) {
+    const evidence = fixture(path);
+    assert.equal(evidence.plan.tier, 'FULL', path);
+    assert(evidence.plan.reasons.includes(`${path}: unknown or ambiguous ownership`));
+    // Generic FAST evidence cannot stand in for the unbridged owner fixtures.
+    assert(failures(evidence).length, path);
+    const needs = {...evidence.needs, quality: {result:'success'}};
+    assert(validateFastGate(evidence.plan, evidence.report, needs, pr, execution).length);
+    assert.deepEqual(validateFastGate(evidence.plan, null, needs, pr, execution, completePlan()), []);
+    for (const result of [undefined,'failure','skipped','cancelled']) {
+      assert(validateFastGate(evidence.plan, null, {...needs, quality:{result}}, pr, execution, completePlan()).length);
+    }
+    for (const current of [
+      {...pr, base:{...pr.base,sha:'c'.repeat(40)}},
+      {...pr, head:{sha:'c'.repeat(40)}}, {...pr,draft:true},
+    ]) assert(validateFastGate(evidence.plan, null, needs, current, execution, completePlan()).length);
+  }
+});
+test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL', () => {
+  for (const path of unbridgedComponentPaths) {
+    assert.equal(selectFastLane(['SPEC.md','app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+    for (const options of [{complete:true},{comparisonAvailable:false}]) {
+      assert.equal(selectFastLane([path],options).tier,'FULL',path);
+    }
+  }
+  for (const path of ['backend/app/study/interfaces/unknown.py',
+    'database/tempo_legacy_database/ddl/migrations/999_component.sql',
+    'backend/app/auth.py','scripts/ci-fast-run.mjs']) {
+    assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+  }
 });
