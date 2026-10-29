@@ -14,13 +14,17 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
+from qualification_cpu import positive_cpu, require_managed_docker, selected_cpus
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True, help="Clean task-owned checkout; only its recorded tracked revision is staged")
     parser.add_argument("--evidence", type=Path, required=True, help="New persistent evidence directory outside the checkout")
+    parser.add_argument("--cpus", type=positive_cpu, help="Explicit CPU allocation; otherwise the central selected-daemon allocation")
     options = parser.parse_args()
+    require_managed_docker()
+    cpus = selected_cpus(options.cpus)
     source, evidence = options.source.resolve(), options.evidence.resolve()
     if evidence == source or source in evidence.parents or evidence in source.parents:
         parser.error("Source and evidence must be separate, non-nested task directories")
@@ -37,7 +41,7 @@ def main():
     name = "tempo-" + owner
     report = {"complete": False, "owner": owner, "container": name, "image_reference": image,
               "started_utc": datetime.now(timezone.utc).isoformat(), "commands": [],
-              "limits": {"cpus": 2, "memory_bytes": 2 * 1024**3, "memory_swap_bytes": 2 * 1024**3,
+              "limits": {"cpus": cpus, "memory_bytes": 2 * 1024**3, "memory_swap_bytes": 2 * 1024**3,
                          "pids": 256, "watchdog_seconds": 1800, "cleanup_seconds": 300}}
     deadline = time.monotonic() + 1800
 
@@ -72,7 +76,8 @@ def main():
                 return None
             raise RuntimeError("Container presence is uncertain: " + result.stderr)
         state = json.loads(result.stdout)[0]
-        if state["Config"]["Labels"].get("tempo.resource-owner") != owner:
+        if (state["Config"]["Labels"].get("tempo.qualification-owner") != owner
+                or state["Config"]["Labels"].get("tempo.resource-owner") != os.environ["TEMPO_DEVELOPMENT_BUDGET_TOKEN"]):
             raise RuntimeError("Container ownership differs; refusing cleanup")
         return state
 
@@ -103,8 +108,8 @@ def main():
         report["source_mount"] = "Fresh git archive of source_revision; no .git, ignored files or caller working-tree files"
         daemon = json.loads(command("daemon capacity", ["docker", "info", "--format", "{{json .}}"] ).stdout)
         report["daemon"] = {key: daemon.get(key) for key in ("NCPU", "MemTotal", "OSType", "Architecture", "ServerVersion")}
-        if daemon["OSType"] != "linux" or daemon["NCPU"] < 2 or daemon["MemTotal"] < 2 * 1024**3:
-            raise RuntimeError("Daemon cannot supply the fixed container limits")
+        if daemon["OSType"] != "linux" or daemon["NCPU"] < cpus or daemon["MemTotal"] < 2 * 1024**3:
+            raise RuntimeError("Daemon cannot supply the selected container limits")
         stats = command("current usage", ["docker", "stats", "--no-stream", "--format", "{{json .}}"])
         current = [json.loads(line) for line in stats.stdout.splitlines() if line.strip()]
         powers = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3}
@@ -116,8 +121,8 @@ def main():
             used_memory += float(match[1]) * powers[match[2]]
         used_cpu = sum(float(row["CPUPerc"].rstrip("%")) for row in current)
         report["observed_other_usage"] = {"memory_bytes": used_memory, "cpu_percent": used_cpu}
-        if used_memory + 2 * 1024**3 > daemon["MemTotal"] or used_cpu + 200 > daemon["NCPU"] * 100:
-            raise RuntimeError("Insufficient observed headroom; limits will not be expanded")
+        if used_memory + 2 * 1024**3 > daemon["MemTotal"]:
+            raise RuntimeError("Insufficient observed memory headroom; limits will not be expanded")
         remaining_containers = command("prior recipe containers", ["docker", "ps", "-aq", "--filter", "label=tempo.test-suite=maia"]).stdout.strip()
         if remaining_containers:
             raise RuntimeError("Prior Maia recipe containers require ownership reconciliation before another run: " + remaining_containers)
@@ -128,9 +133,9 @@ def main():
             raise RuntimeError("Unexpected image OS/architecture")
         cache = Path(tempfile.mkdtemp(prefix="tempo-maia-npm-cache-", dir=evidence.parent))
         (evidence / "container-entry.sh").write_bytes(Path(__file__).with_suffix(".sh").read_bytes())
-        arguments = ["docker", "create", "--name", name, "--platform", "linux/arm64", "--init",
-                     "--label", "tempo.resource-owner=" + owner, "--label", "tempo.disposable=true", "--label", "tempo.test-suite=maia",
-                     "--cpus", "2", "--memory", "2g", "--memory-swap", "2g", "--pids-limit", "256",
+        arguments = ["docker", "run", "--detach", "--name", name, "--platform", "linux/arm64", "--init",
+                     "--label", "tempo.qualification-owner=" + owner, "--label", "tempo.disposable=true", "--label", "tempo.test-suite=maia",
+                     "--cpus", str(cpus), "--memory", "2g", "--memory-swap", "2g", "--pids-limit", "256",
                      "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                      "--user", str(os.getuid()) + ":" + str(os.getgid()),
                      "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m", "--network", "bridge",
@@ -143,13 +148,12 @@ def main():
                      "--env", "npm_config_update_notifier=false", installed["Id"],
                      "timeout", "--signal=TERM", "--kill-after=10s", "30m", "sh", "/evidence/container-entry.sh"]
         attempted = True
-        command("create bounded container", arguments)
+        command("launch admitted bounded container", arguments)
         state = inspect_container()
         limits = state["HostConfig"]
-        if (limits["NanoCpus"], limits["Memory"], limits["MemorySwap"], limits["PidsLimit"]) != (2_000_000_000, 2 * 1024**3, 2 * 1024**3, 256):
+        if (limits["NanoCpus"], limits["Memory"], limits["MemorySwap"], limits["PidsLimit"]) != (round(cpus * 1_000_000_000), 2 * 1024**3, 2 * 1024**3, 256):
             raise RuntimeError("Observed container limits differ")
         report["observed_limits"] = {key: limits[key] for key in ("NanoCpus", "Memory", "MemorySwap", "PidsLimit")}
-        command("start container", ["docker", "start", name])
         disconnected = False
         while True:
             if time.monotonic() >= deadline:

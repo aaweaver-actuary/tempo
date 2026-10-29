@@ -88,11 +88,12 @@ def pinned_uv(root, mode, timer, destination):
     return str(binary)
 
 
-def describe():
+def describe(cpus=None, mode=None):
+    allocation = cpu.partition_cpus(cpus, {"helper": 1, "postgres": 1}) if cpus is not None and mode != "artifacts" else {"helper": cpus, "postgres": None}
     return dict(work_seconds=WORK_SECONDS, cleanup_reserve_seconds=CLEANUP_SECONDS,
-        helper=dict(cpus=1, memory_mib=768, swap_mib=0, pids=128, tmpfs_mib=256, docker_socket=False),
-        postgres=dict(cpus=1, memory_mib=256, pids=256, tmpfs_mib=256, image=POSTGRES_IMAGE_ID),
-        native_total=dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1),
+        helper=dict(cpus=allocation["helper"], memory_mib=768, swap_mib=0, pids=128, tmpfs_mib=256, docker_socket=False),
+        postgres=dict(cpus=allocation["postgres"], memory_mib=256, pids=256, tmpfs_mib=256, image=POSTGRES_IMAGE_ID),
+        native_total=dict(containers=2, cpus=cpus, memory_mib=1024, pids=384, owned_internal_networks=1),
         own_packages=list(PACKAGES), own_artifacts=dict(wheels=6, sdists=6),
         backend_dependency_packages=list(BACKEND_DEPENDENCIES), backend_dependency_wheels=3,
         artifact_tests={name: count for name, _path, _tests, count, _mode in ARTIFACT_CASES},
@@ -112,6 +113,7 @@ def load(name, path):
 
 
 staging = load("legacy_qualification_staging", ROOT / "database/tempo_legacy_database/tooling/legacy_bridge/legacy_qualification_staging.py")
+cpu = load("qualification_cpu", ROOT / "scripts/qualification_cpu.py")
 
 
 def write(path, value):
@@ -125,19 +127,19 @@ def write(path, value):
     finally: os.close(descriptor)
 
 
-def helper_arguments(image, name, evidence, mode, *, source, source_sha256, network=None, env_file=None, report_relative=""):
+def helper_arguments(image, name, evidence, mode, *, source, source_sha256, network=None, env_file=None, report_relative="", cpus=None, total_cpus=None):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise ValueError("An explicitly approved local immutable helper image ID is required")
     args = ["run", "--name", name, "--label", "tempo.legacy-bridge-owner=" + name,
-        "--label", "tempo.disposable=true", "--cpus", "1", "--memory", "768m", "--memory-swap", "768m",
+        "--label", "tempo.disposable=true", "--cpus", str(cpu.positive_cpu(cpus)), "--memory", "768m", "--memory-swap", "768m",
         "--pids-limit", "128", "--tmpfs", "/tmp:rw,size=256m", "--init",
         "--mount", f"type=bind,source={source},target=/source,readonly",
         "--mount", f"type=bind,source={evidence},target=/evidence",
         "--network", network or "bridge", "--env", "TEMPO_QUALIFICATION_SOURCE_SHA256=" + source_sha256,
         "--env", "PYTHONDONTWRITEBYTECODE=1",
         "--env", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", "--env", "PYTHONPYCACHEPREFIX=/tmp/legacy-qualified-bytecode",
-        "--env", "UV_CONCURRENT_BUILDS=1",
-        "--env", "CARGO_BUILD_JOBS=1", "--env", "RAYON_NUM_THREADS=1", "--env", "OMP_NUM_THREADS=1"]
+        "--env", "TEMPO_QUALIFICATION_HELPER_CPUS=" + str(cpus),
+        "--env", "TEMPO_QUALIFICATION_CPUS=" + str(total_cpus)]
     if env_file: args += ["--env-file", str(env_file)]
     python = "python" if mode == "artifacts" else "/evidence/work/environment/bin/python"
     return [*args, "--entrypoint", python, image, "/source/database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py", "--inside", mode,
@@ -235,7 +237,9 @@ def verified_absence(result, identity):
 
 def verify_helper_caps():
     quota, period = map(int, Path("/sys/fs/cgroup/cpu.max").read_text().split())
-    if (quota != period or int(Path("/sys/fs/cgroup/memory.max").read_text()) != HELPER_MEMORY
+    expected_cpus = cpu.positive_cpu(os.environ.get("TEMPO_QUALIFICATION_HELPER_CPUS"))
+    if (period <= 0 or quota <= 0 or abs(quota / period - expected_cpus) > 1 / period
+            or int(Path("/sys/fs/cgroup/memory.max").read_text()) != HELPER_MEMORY
             or int(Path("/sys/fs/cgroup/memory.swap.max").read_text()) != 0
             or int(Path("/sys/fs/cgroup/pids.max").read_text()) != 128):
         raise RuntimeError("Helper must have exactly the approved cgroup caps")
@@ -285,7 +289,7 @@ def inside(mode, relative):
     root = Path("/evidence")
     destination = root / relative
     destination.mkdir(parents=True, exist_ok=True)
-    report = dict(complete=False, mode=mode, plan=describe(), commands=[])
+    report = dict(complete=False, mode=mode, plan=describe(cpu.positive_cpu(os.environ["TEMPO_QUALIFICATION_CPUS"]), mode), commands=[])
     write(destination / "inside.json", report)
     timer = Deadline(WORK_SECONDS[mode], report, receipt=destination / "inside.json")
     try:
@@ -353,6 +357,9 @@ def inside(mode, relative):
 
 
 def controller(args):
+    cpu.require_managed_docker()
+    total_cpus = cpu.selected_cpus(args.cpus)
+    allocation = cpu.partition_cpus(total_cpus, {"helper": 1, "postgres": 1}) if args.mode == "native" else {"helper": total_cpus}
     if not args.approved_window or not os.environ.get("TEMPO_DEVELOPMENT_BUDGET_TOKEN"):
         raise RuntimeError("An approved finite window and managed development ownership are required")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.helper_image_id or ""):
@@ -369,7 +376,7 @@ def controller(args):
         raise RuntimeError("Qualification requires a clean pinned source head")
     report = dict(complete=False, mode=args.mode, identity=identity, image=args.helper_image_id,
         source_head=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
-        plan=describe(), commands=[], cleanup_verified=False)
+        plan=describe(total_cpus, args.mode), cpu_allocation=allocation, commands=[], cleanup_verified=False)
     timer = Deadline(WORK_SECONDS[args.mode], report, receipt=directory / "host.json")
     def phase_expired(signum, frame): raise TimeoutError("Finite qualification phase expired")
     signal.signal(signal.SIGALRM, phase_expired)
@@ -409,6 +416,8 @@ def controller(args):
             fixture_module.IMAGE = POSTGRES_IMAGE_ID
             def bounded_docker(*arguments, check=True):
                 if arguments[0] == "run":
+                    arguments = list(arguments)
+                    arguments[arguments.index("--cpus") + 1] = str(allocation["postgres"])
                     arguments = ("run", "--memory-swap", "256m", *arguments[1:])
                 return timer.capture(["docker", *arguments], check=check)
             fixture_module.docker = bounded_docker
@@ -418,7 +427,7 @@ def controller(args):
             fixture.start()
             report["fixture"]["image_id"] = fixture.image_id
             limits = json.loads(timer.capture(["docker", "inspect", fixture.container, "--format", "{{json .HostConfig}}"]).stdout)
-            if (limits["NanoCpus"], limits["Memory"], limits["MemorySwap"], limits["PidsLimit"]) != (1000000000, 268435456, 268435456, 256):
+            if (limits["NanoCpus"], limits["Memory"], limits["MemorySwap"], limits["PidsLimit"]) != (round(allocation["postgres"] * 1_000_000_000), 268435456, 268435456, 256):
                 raise RuntimeError("PostgreSQL fixture caps differ from its approved allocation")
             network = identity + "-network"
             report["network"] = network
@@ -436,7 +445,8 @@ def controller(args):
             env_file.chmod(0o600)
         command = ["docker", *helper_arguments(args.helper_image_id, helper, stage.output, args.mode,
             source=stage.source, source_sha256=stage.record["source_manifest_sha256"],
-            network=network, env_file=env_file if args.mode == "native" else None, report_relative=relative)]
+            network=network, env_file=env_file if args.mode == "native" else None, report_relative=relative,
+            cpus=allocation["helper"], total_cpus=total_cpus)]
         timer.run(command, log=directory / "helper.log")
         if not json.loads((stage.output / relative / "inside.json").read_text())["complete"]:
             raise RuntimeError("Helper qualification was incomplete")
@@ -496,6 +506,7 @@ def controller(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cpus", type=cpu.positive_cpu, help="Selected total CPU allocation; defaults to central daemon allocation")
     parser.add_argument("--describe", action="store_true")
     parser.add_argument("--inside", choices=WORK_SECONDS)
     parser.add_argument("--mode", choices=WORK_SECONDS)
@@ -505,7 +516,7 @@ def main():
     parser.add_argument("--artifact-run", type=Path)
     parser.add_argument("--report-relative", default="")
     args = parser.parse_args()
-    if args.describe: print(json.dumps(describe(), indent=2)); return 0
+    if args.describe: print(json.dumps(describe(args.cpus, args.mode), indent=2)); return 0
     def interrupted(signum, frame): raise KeyboardInterrupt("Finite qualification interrupted")
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)

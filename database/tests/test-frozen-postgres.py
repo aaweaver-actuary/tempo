@@ -32,6 +32,7 @@ from app.services.frozen_maia_plan import create_plan
 from app.chess.cards import card_id
 from database.tooling.provision_postgres_roles import provision
 import chess
+from qualification_cpu import require_managed_docker, selected_cpus
 
 
 def command(arguments):
@@ -52,6 +53,8 @@ def model_provenance():
 
 
 def main():
+    require_managed_docker()
+    cpus = selected_cpus()
     # This disposable PostgreSQL proof owns local admission, not the separate
     # shared-host Redis/HTTP gate qualification or any ambient live endpoint.
     os.environ.pop('TEMPO_REDIS_URL',None)
@@ -65,11 +68,11 @@ def main():
     try:
         command(['docker','volume','create','--label','tempo.owner='+container,'--label','tempo.disposable=true',volume])
         command(['docker','run','-d','--name',container,'--label','tempo.owner='+container,'--label','tempo.disposable=true',
-                 '--cpus','1','--memory','384m','--pids-limit','256','-e','POSTGRES_PASSWORD='+password,
+                 '--cpus',str(cpus),'--memory','384m','--pids-limit','256','-e','POSTGRES_PASSWORD='+password,
                  '-p','127.0.0.1::5432','-v',volume+':/var/lib/postgresql','postgres:18.6-trixie'])
         caps=json.loads(command(['docker','container','inspect',container,'--format',
                                 '{"cpu_nanos":{{.HostConfig.NanoCpus}},"memory_bytes":{{.HostConfig.Memory}}}']))
-        assert caps=={'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+        assert caps=={'cpu_nanos':round(cpus*1_000_000_000),'memory_bytes':384*1024*1024}
         print(json.dumps({'stage':'frozen-native','pid':os.getpid(),'pgid':os.getpgid(0),
                           'container':container,'volume':volume,'observed_caps':caps}),flush=True)
         port=command(['docker','inspect',container,'--format','{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}'])

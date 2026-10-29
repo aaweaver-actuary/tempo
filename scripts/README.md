@@ -219,3 +219,45 @@ This view describes proposed source behavior. The owning
 use injected Docker capabilities; they do not establish a successful real
 1 CPU / 1536 MiB build or deployed resource isolation. Build errors, including
 OOM or time failures, remain failures without retrying at a higher allocation.
+
+
+## General qualification CPU allocation
+
+`qualification-window.mjs` composes the existing Study-aware development budget
+and managed Docker `run` adapter for Maia and frozen-order qualification:
+
+```sh
+node scripts/qualification-window.mjs maia /path/to/existing/python --source /task/checkout --evidence /task/evidence
+TEMPO_QUALIFICATION_CPUS=6 node scripts/qualification-window.mjs frozen /path/to/existing/python
+```
+
+Legacy artifact/native windows retain `legacy-bridge-window.mjs`; pass `--cpus`
+there or set caller-local `TEMPO_QUALIFICATION_CPUS`. The shared central
+`readDevelopmentCpuAllocation` validates explicit values and otherwise reads the
+selected Docker daemon. It is an allocation, not idle headroom or proof of Study
+responsiveness. No fixed general one/two-CPU ceiling remains in these launchers.
+Legacy native roles divide the selected total in their existing proportions;
+reports retain the actual total and per-container limits. `--describe` without
+an explicit CPU value stays resource-free and reports CPU values as unresolved.
+
+```mermaid
+flowchart LR
+  Window[Qualification window] --> Budget[Existing Study quiet and ownership admission]
+  Budget --> Adapter[Existing managed Docker run]
+  Adapter --> Fixture[Owned finite CPU and memory container]
+  Fixture --> Receipt[Selected and observed CPU allocation plus cleanup receipt]
+```
+
+Memory/swap/PID caps, finite deadlines, source staging, owned cleanup and Study
+quiet/admission remain. Maia uses admitted detached `run`, replacing its raw
+create/start lifecycle; neither launcher can silently run outside the managed
+window. Production inference threads/descriptors, Stockfish contracts, production
+Compose, Playwright isolation and deliberate low-resource Study-priority/control
+regressions are unchanged. Existing ownership fixtures and product-specific
+PostgreSQL regression profiles remain separate named controlled scenarios.
+
+These launcher changes are **untested by explicit instruction**: no mock tests,
+native stack or real inference was run. Old fixed-allocation plan assertions and
+mock calls that omit newly required CPU context need corresponding qualification
+updates before claiming their suites pass. Prior model/application evidence does
+not qualify changed launcher/admission behavior or prove installed responsiveness.

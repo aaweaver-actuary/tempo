@@ -37,14 +37,19 @@ CASES = (
 IMAGES = dict(helper='sha256:a095f09e905ecb00635b80387e17d195560a5752df83d970f94f1ada902ba3e2',
               postgres=shared.POSTGRES_IMAGE_ID,
               redis='sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499')
-CAPS = dict(helper=dict(cpus=1, memory_mib=768, pids=128, tmpfs_mib=256),
-            postgres=dict(cpus=.75, memory_mib=384, pids=128, tmpfs_mib=384),
-            redis=dict(cpus=.1, memory_mib=64, pids=32, tmpfs_mib=32, data_tmpfs_mib=32))
+CAPS = dict(helper=dict(memory_mib=768, pids=128, tmpfs_mib=256),
+            postgres=dict(memory_mib=384, pids=128, tmpfs_mib=384),
+            redis=dict(memory_mib=64, pids=32, tmpfs_mib=32, data_tmpfs_mib=32))
 
 
-def describe():
+def allocated_caps(cpus):
+    allocation = shared.cpu.partition_cpus(cpus, {"helper": 100, "postgres": 75, "redis": 10}) if cpus is not None else {kind: None for kind in CAPS}
+    return {kind: {**cap, "cpus": allocation[kind]} for kind, cap in CAPS.items()}
+
+
+def describe(cpus=None):
     return dict(prepared_only=True, work_seconds=WORK_SECONDS, cleanup_seconds=CLEANUP_SECONDS,
-        cases=list(CASES), caps=CAPS, total=dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
+        cases=list(CASES), caps=allocated_caps(cpus), total=dict(containers=3, cpus=cpus, memory_mib=1216, pids=288,
             extra_swap_mib=0, owned_internal_networks=1, published_ports=0),
         candidate_images=IMAGES, missing=['Redis candidate image/mount provenance verified during a later authorized preflight',
             'successful same-head284-case artifact receipt and retained qualified environment',
@@ -75,8 +80,8 @@ def qualified_artifacts(directory, head, helper_image):
     return inside['artifacts']
 
 
-def docker_arguments(kind, name, image, network):
-    cap = CAPS[kind]
+def docker_arguments(kind, name, image, network, *, caps):
+    cap = caps[kind]
     arguments = ['run', '--name', name, '--label', 'tempo.legacy-bridge-owner=' + name,
         '--label', 'tempo.disposable=true', '--cpus', str(cap['cpus']), '--memory', str(cap['memory_mib']) + 'm',
         '--memory-swap', str(cap['memory_mib']) + 'm', '--pids-limit', str(cap['pids']), '--network', network]
@@ -213,6 +218,9 @@ def inside():
 
 
 def host(options):
+    shared.cpu.require_managed_docker()
+    total_cpus = shared.cpu.selected_cpus(options.cpus)
+    caps = allocated_caps(total_cpus)
     if not options.approved_window or not os.environ.get('TEMPO_DEVELOPMENT_BUDGET_TOKEN'):
         raise ValueError('Fresh parent-approved finite window and managed budget owner are required')
     started = time.monotonic()
@@ -227,7 +235,7 @@ def host(options):
     directory = options.evidence.resolve() / identity
     directory.mkdir(parents=True, exist_ok=False)
     network, names = identity + '-network', {kind: identity + '-' + kind for kind in CAPS}
-    report = dict(complete=False, cleanup_verified=False, identity=identity, source_head=head, plan=describe(),
+    report = dict(complete=False, cleanup_verified=False, identity=identity, source_head=head, plan=describe(total_cpus),
         images=dict(helper=options.helper_image_id, postgres=options.postgres_image_id, redis=options.redis_image_id),
         artifact_hashes=artifacts, started_utc=datetime.now(timezone.utc).isoformat(), commands=[], names=names, network=network,
         mount_inventory=dict(images={}, containers={}, cleanup={}), container_ids={})
@@ -276,7 +284,7 @@ def host(options):
             shared.write(directory / 'host.json', report)
         timer.run(['docker', 'network', 'create', '--internal', '--label', 'tempo.legacy-bridge-owner=' + identity, network], maximum=15)
         for kind in ('postgres', 'redis'):
-            arguments = docker_arguments(kind, names[kind], report['images'][kind], network)
+            arguments = docker_arguments(kind, names[kind], report['images'][kind], network, caps=caps)
             arguments += ['--detach', '--network-alias', 'bridge-' + kind]
             if kind == 'postgres': arguments += ['--env-file', str(private / 'postgres.env')]
             arguments += [report['images'][kind]]
@@ -288,16 +296,18 @@ def host(options):
             if container['Image'] != report['images'][kind]: raise RuntimeError('Native service image changed')
             verify_container_mounts(kind, container)
             config = container['HostConfig']
-            cap = CAPS[kind]
+            cap = caps[kind]
             if (config['NanoCpus'], config['Memory'], config['MemorySwap'], config['PidsLimit']) != (
-                    int(cap['cpus'] * 1_000_000_000), cap['memory_mib'] * 1024**2, cap['memory_mib'] * 1024**2, cap['pids']):
+                    round(cap['cpus'] * 1_000_000_000), cap['memory_mib'] * 1024**2, cap['memory_mib'] * 1024**2, cap['pids']):
                 raise RuntimeError('Observed native service kernel caps differ: ' + kind)
             report.setdefault('observed_service_caps', {})[kind] = config
-        arguments = docker_arguments('helper', names['helper'], options.helper_image_id, network)
+        arguments = docker_arguments('helper', names['helper'], options.helper_image_id, network, caps=caps)
         arguments += ['--init', '--mount', f'type=bind,source={stage.source},target=/source,readonly',
             '--mount', f'type=bind,source={stage.qualified},target=/qualified,readonly',
             '--mount', f'type=bind,source={stage.output},target=/evidence', '--workdir', '/evidence',
             '--env', 'TEMPO_QUALIFICATION_SOURCE_SHA256=' + stage.record['source_manifest_sha256'],
+            '--env', 'TEMPO_QUALIFICATION_HELPER_CPUS=' + str(caps['helper']['cpus']),
+            '--env', 'TEMPO_QUALIFICATION_CPUS=' + str(total_cpus),
             '--env', 'TEMPO_BRIDGE_NATIVE_OWNED=' + identity, '--env', 'PYTHONDONTWRITEBYTECODE=1',
             '--env', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD=1', '--entrypoint', 'python', options.helper_image_id,
             '/source/database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_backend.py', '--inside']
@@ -367,6 +377,7 @@ def host(options):
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cpus', type=shared.cpu.positive_cpu, help='Selected total CPU allocation; defaults to central daemon allocation')
     parser.add_argument('--describe', action='store_true'); parser.add_argument('--inside', action='store_true')
     parser.add_argument('--mode', choices=['backend-native'], default='backend-native')
     parser.add_argument('--approved-window', action='store_true')
@@ -374,7 +385,7 @@ def main(arguments=None):
     parser.add_argument('--redis-image-id', type=image_id); parser.add_argument('--artifact-run', type=Path)
     parser.add_argument('--evidence', type=Path)
     options = parser.parse_args(arguments)
-    if options.describe: print(json.dumps(describe(), indent=2)); return 0
+    if options.describe: print(json.dumps(describe(options.cpus), indent=2)); return 0
     def interrupted(signum, frame): raise KeyboardInterrupt('Finite qualification interrupted')
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
