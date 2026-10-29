@@ -77,13 +77,15 @@ def main():
                 (manifest["unrelated_card"],)).fetchall()
             target_reviews = database.execute_native("SELECT id,source_kind FROM reviews WHERE card_id=%s ORDER BY id",
                 (manifest["card_id"],)).fetchall()
+            effects = database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s",
+                (manifest["card_id"],)).fetchone()[0]
         deliveries = tuple(Delivery.model_validate_json(row[0]) for row in rows)
         if any(item.command.key.game_id != manifest["game_id"] or
                item.command.decision.repertoire_id != manifest["repertoire_id"] for item in deliveries):
             raise RuntimeError("this fixture's exact persisted command is required")
         receipt = (CurrentStudyReceiptReads(connections, SystemClock()).encounter_status(deliveries[0].command.key)
                    if len(deliveries) == 1 else None)
-        print(json.dumps(dict(sources=sources, deliveries=[dict(state=item.state, attempts=item.attempts,
+        print(json.dumps(dict(sources=sources, effects=effects, deliveries=[dict(state=item.state, attempts=item.attempts,
             error=item.error, receipt=item.receipt.model_dump(mode="json") if item.receipt else None) for item in deliveries],
             receipt=receipt.model_dump(mode="json") if receipt else None,
             unrelated=dict(card=list(unrelated), reviews=[list(row) for row in history]),

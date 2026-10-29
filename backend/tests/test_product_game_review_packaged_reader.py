@@ -350,7 +350,7 @@ print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
         return detail.receipts[0]
 
     before = helper("settlement-state")
-    assert before["sources"] == len(before["deliveries"]) == 1
+    assert before["sources"] == before["effects"] == len(before["deliveries"]) == 1
     delivery, = before["deliveries"]
     assert delivery["state"] == "acknowledged" and delivery["attempts"] == 1 and delivery["error"] is None
     cached = delivery["receipt"]
@@ -367,11 +367,14 @@ print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
     # fixture does, so one valid transaction deferral cannot starve recovery.
     # Claim/admission/backoff, the 250ms transaction bound and assertions stay
     # unchanged; there is no direct sweep or queue mutation in the helper.
-    next_wake = 0.0
+    next_wake, wakes = 0.0, 0
+    wake_deadline = time.monotonic()+45
     def refreshed_receipt():
-        nonlocal next_wake
+        nonlocal next_wake, wakes
         value = current_receipt()
-        if value.admission_status == "pending" and time.monotonic() >= next_wake:
+        now = time.monotonic()
+        if value.admission_status == "pending" and next_wake <= now < wake_deadline and wakes < 23:
+            wakes += 1
             helper("refresh")
             next_wake = time.monotonic()+2
         return value
@@ -415,7 +418,7 @@ print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
     assert settled.owner_receipt_id == original.owner_receipt_id and settled.detected_at == original.detected_at
     assert current_receipt() == settled  # New reader request after normal saved review/reload.
     final = helper("settlement-state")
-    assert final["sources"] == len(final["deliveries"]) == 1
+    assert final["sources"] == final["effects"] == len(final["deliveries"]) == 1
     assert final["unrelated"] == protected_after_save
     assert [row[0] for row in final["target_reviews"]] == [saved["review_id"]]
     assert all(row[1] != "game_lapse" for row in final["target_reviews"])
