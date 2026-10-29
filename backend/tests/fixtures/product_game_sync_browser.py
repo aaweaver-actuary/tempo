@@ -68,7 +68,7 @@ def main():
         return
 
     if os.environ.get("TEMPO_PACKAGED_PROVIDER_FIXTURE") != "1":
-        return run_component_fixture(transaction, manifest)
+        return run_component_fixture(transaction, manifest, connections)
 
     # Readback only: the optional packaged CLI is the sole provider executor.
     with transaction() as database:
@@ -81,7 +81,7 @@ def main():
         print(json.dumps(dict(sources=sources, effects=effects, complete=complete and pending == 0, replayed=replayed)))
 
 
-def run_component_fixture(transaction, manifest):
+def run_component_fixture(transaction, manifest, connections):
     """Existing component fixture; never claimed as packaged CLI evidence."""
     from contextlib import contextmanager
     import httpx
@@ -222,7 +222,7 @@ def insert_fixture_game(database, provider, item, manifest, primary=False):
         return
     database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,played_at,
         speed,rated,color,result,start_fen,moves_json,content_hash)
-        VALUES(%s,%s,%s,'Learner',%s,'rapid',1,'white','draw',%s,%s,%s)""",
+        VALUES(%s,%s,%s,'Learner',%s,'rapid',1,'white','1/2-1/2',%s,%s,%s)""",
         (item["game_id"], "chess.com" if provider == "chesscom" else provider, item["source_id"],
          item["played_at"], manifest["start_fen"], json.dumps(item["moves"]), hashlib.sha256(item["pgn"].encode()).hexdigest()))
 
