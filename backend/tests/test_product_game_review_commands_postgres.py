@@ -49,4 +49,3 @@ def test_native_review_commands_commit_with_receipt_replay_and_rollback(owned_po
             AND provider='lichess' AND revision=1 AND payload=%s::jsonb""",(json.dumps(configuration),))
         database.execute_native("DELETE FROM operation_receipts WHERE operation_id IN ('native-config','native-run','native-rollback')")
         assert database.execute_native("SELECT COUNT(*) FROM product_feedback_configuration").fetchone()[0]==0
-
