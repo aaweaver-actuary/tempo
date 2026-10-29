@@ -307,7 +307,8 @@ def test_native_shared_evidence_identity_serializes_different_routes_without_wai
 def current_owner_transaction(monkeypatch):
     """Actual retained owner schema on a separate DB in the task's own server.
 
-    Apply the complete ordered source DDL through allocated T22 migration 053.
+    Apply complete ordered source DDL through the migration owner's current
+    version, including C1's registered conflict controls after T22 migration 053.
     Runtime readiness registration/browser installation is separately qualified.
     """
     from tempo_legacy_database.adapters import postgres_store
@@ -328,7 +329,7 @@ def current_owner_transaction(monkeypatch):
     try:
         with psycopg.connect(owner_dsn) as raw:
             migrations = sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
-            migration_owner.validate_migration_history(migrations,[],expected_version=53)
+            migration_owner.validate_migration_history(migrations,[],expected_version=migration_owner.POSTGRES_SCHEMA_VERSION)
             for path in migrations:
                 registration = migration_owner.MODULE_MIGRATIONS.get(path.name)
                 if registration:

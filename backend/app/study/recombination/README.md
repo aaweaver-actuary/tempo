@@ -195,9 +195,12 @@ sequenceDiagram
 [`recombination.py`](../../../../database/tempo_legacy_database/adapters/study/recombination.py)
 contains source DDL `SCHEMA`, also frozen in
 [`053_study_recombination.sql`](../../../../database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql).
-The store/adapter runs no DDL, opens no connection and commits nothing. 053 follows
-#491's published `f137d970` migration 052; source readiness is 53. Complete ordered
-DDL through 053 is exercised in the native fixture. Central registration remains
+The store/writer adapter runs no DDL, borrows its caller's transaction and never
+commits. Command preparation uses the existing read-connection lifecycle before
+that writer opens. Migration 053 follows
+#491's published `f137d970` migration 052. Current main registers C1 as migration
+054; the native fixture follows the migration owner's current readiness version,
+including those conflict controls. Earlier recorded R11 evidence used 053. Central registration remains
 with the serialized integration owner. Columns are source, not a live-schema claim.
 
 ```mermaid
