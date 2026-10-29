@@ -176,6 +176,17 @@ def prepare_contention_defer():
     return write_contention
 
 
+def defer_for_connection_failure(database, values):
+    return database.execute(
+        """UPDATE background_tasks SET state='retrying',
+           attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,
+           next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
+           last_error='database_connection_unavailable',updated_at=?
+           WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+        values,
+    ).rowcount
+
+
 def prepare_manual_retry():
     manual_phase = '' if postgres_store.configured() else ",phase='queued'"
 

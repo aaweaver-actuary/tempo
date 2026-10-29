@@ -106,6 +106,13 @@ def test_periodic_and_continuation_wakes_share_one_pending_delivery(wake_broker)
     assert len({result.id for result in results}) == 1
 
 
+def test_issue558_study_feedback_periodic_and_retry_wakes_are_coalesced(wake_broker):
+    published, _ = wake_broker
+    for _ in range(20):
+        celery_app.send_task('app.tasks.maintain_game_feedback', queue='foreground', countdown=1)
+    assert len(published) == 1
+
+
 @pytest.mark.parametrize('pending_marked', [False, True], ids=['generic-pending', 'marked-pending'])
 @pytest.mark.parametrize('canvas_option', [
     'link', 'link_list', 'link_error', 'link_error_list', 'chord', 'chain',
@@ -217,13 +224,13 @@ def test_wake_classes_are_independent_and_payload_commands_never_coalesce(wake_b
     for task_name in background_wakes.WAKE_TASK_NAMES:
         for _ in range(10):
             celery_app.send_task(task_name)
-    assert len(published) == 4
+    assert len(published) == 5  # Study feedback now participates in the same owner protocol.
     for _ in range(10):
         celery_app.send_task('app.tasks.execute_background_command', args=['receipt', 'command', {}])
         celery_app.send_task('app.tasks.poll_background_tasks', args=['legacy-payload'])
-    assert len(published) == 24
+    assert len(published) == 25
     assert all(background_wakes.WAKE_HEADER not in options.get('headers', {})
-               for _name, _args, _kwargs, options in published[4:])
+               for _name, _args, _kwargs, options in published[5:])
 
 
 def test_failed_wake_publication_releases_only_its_reservation(wake_broker, monkeypatch):
