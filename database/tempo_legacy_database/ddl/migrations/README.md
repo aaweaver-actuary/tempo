@@ -2,6 +2,12 @@
 
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
+C1 adds [054_product_repertoire_review.sql](054_product_repertoire_review.sql) after
+053, at source readiness 54. It registers the existing Repertoire approval
+[tables](../../../../backend/app/repertoire/changes/README.md) and Study conflict
+[holds/receipts](../../adapters/study/CONFLICTS.md). These owners share the caller
+transaction; no live migration or deployment is performed here.
+
 T22 adds [053_study_recombination.sql](053_study_recombination.sql) after
 independent 052, with source readiness 53. The
 [Study recombination chart](../../adapters/study/README.md) covers immutable
@@ -66,3 +72,5 @@ migration has been run by the feature implementation.
 - [048_frozen_opening_order.sql](048_frozen_opening_order.sql)
 - [049_study_priority_recovery.sql](049_study_priority_recovery.sql)
 - [050_learning_remediation.sql](050_learning_remediation.sql)
+
+- [054_product_repertoire_review.sql](054_product_repertoire_review.sql)

@@ -147,6 +147,8 @@ def _block_unapproved_defense_queue_entries(db, day):
 
 
 def _restore_eligible_due_queue_entries(db, day):
+    from tempo_legacy_database.adapters.study.conflicts import held_queue_sql
+    conflict_hold = held_queue_sql(db)
     db.execute(
         """UPDATE daily_queue SET status='queued'
            WHERE queue_date=? AND status='blocked' AND card_id IN (
@@ -168,7 +170,7 @@ def _restore_eligible_due_queue_entries(db, day):
                          WHERE block.repertoire_id=eligible.id AND block.card_id=c.id
                      )
                  )
-           )""",
+           ) AND NOT (""" + conflict_hold + ")",
         (day, day),
     )
 

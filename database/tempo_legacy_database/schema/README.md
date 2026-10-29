@@ -56,3 +56,8 @@ These are SQL views, not additional stored tables. DDL links define their projec
 | `public.gameplay_events` | [014_versioned_game_events.sql](../ddl/migrations/014_versioned_game_events.sql) |
 | `public.repertoire_comparisons` | [035_canonical_publication_freshness.sql](../ddl/migrations/035_canonical_publication_freshness.sql) |
 | `public.repertoire_decision_events` | [041_real_game_study_obligations.sql](../ddl/migrations/041_real_game_study_obligations.sql) |
+
+C1 migration [054](../ddl/migrations/054_product_repertoire_review.sql) adds the
+Repertoire-owned [preview/approval dictionary](../../../backend/app/repertoire/changes/README.md)
+and Study-owned [conflict hold/receipt dictionary](../adapters/study/CONFLICTS.md).
+Their exact logical queue/card references do not grant cross-owner writes.
