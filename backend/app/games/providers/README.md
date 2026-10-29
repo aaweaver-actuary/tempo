@@ -38,7 +38,7 @@ or wired into the product.
 ```mermaid
 flowchart LR
   Caller["Optional caller / coordinator"] -->|"account, UTC window, filters, continuation, bounds"| Adapter["fetch_chesscom_page"]
-  Adapter -->|"bounded listing + one month; injected client"| HTTP["httpx.AsyncClient / Chess.com public archives"]
+  Adapter -->|"bounded listing + fingerprint-bound month slice; injected client"| HTTP["httpx.AsyncClient / Chess.com public archives"]
   Adapter -->|"legal-game/account/result validation"| Normalizer["Games ingestion normalizer"]
   Adapter -->|"shared GamePage or typed checkpoint-preserving error"| Caller
 ```
@@ -47,3 +47,5 @@ The caller owns client lifetime, durable checkpoint/revision allocation, retry
 policy and scheduling. The adapter owns request-local acquisition/validation;
 it creates no storage or Study dependency. The exact limits, cancellation behavior,
 mutable-month semantics and focused evidence belong to #485's owner document.
+
+Task D adds [bounded Chess.com slices and archive replay](CHESSCOM.md#task-d-bounded-month-slices-prepared-source), [Lichess output budgets](LICHESS.md#task-d-emitted-page-budgets-and-delayed-completion), and the existing-job [historical reconciliation owner](../feedback/README.md#continuous-acquisition-and-historical-reconciliation--task-d). No provider adapter owns scheduling or storage.

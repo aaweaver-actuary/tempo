@@ -5597,3 +5597,26 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 - `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
 - `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
 - `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
+
+## #491 Task D — recurring collection and delayed visibility
+
+Owning suite: `backend/tests/test_product_continuous_sync.py`.
+
+- `test_manual_backfill_never_resets_forward_progress_and_reconciliation_is_independent`
+- `test_reconciliation_restart_freezes_scope_cursor_and_waits_from_completion`
+- `test_reconciliation_requires_explicit_integer_cadence`
+- `test_reconciliation_default_remains_disabled_and_stale_enqueue_retries_next_pass`
+- `test_dense_two_month_archive_exact_ids_with_record_position_and_byte_pages`
+- `test_archive_mutation_replays_month_without_mutating_record_provenance_and_v1_resumes`
+- `test_provider_429_retains_original_cursor_and_retry_after`
+- `test_lichess_budget_split_keeps_unconsumed_timestamp_ids`
+- `test_reconciliation_finds_late_provider_visibility_after_forward_overlap_exactly_once`
+- `test_provider_unfinished_exclusion_is_distinct_from_malformed_and_resource_failure`
+- `test_conflicting_archive_ids_are_detected_before_first_slice`
+- `test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_restart`
+
+Owning suite: `backend/tests/test_product_game_review_commands_postgres.py`.
+
+- `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
+
+Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fakes. The one selected native case reuses the existing owned disposable PostgreSQL fixture for stream/CAS/rollback/alias reads; no Study settlement suite is selected.

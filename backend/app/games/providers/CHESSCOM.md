@@ -3,7 +3,8 @@
 `await fetch_chesscom_page(account, window, client, *, continuation=None,
 speeds=("bullet", "blitz", "rapid", "classical"), rated_only=False,
 source_revision=1, timeout_seconds=10, cancelled=None,
-max_response_bytes=33554432) -> ChesscomGamePage` returns #482's immutable v0.2
+max_response_bytes=33554432, max_page_records=100, max_page_positions=10000,
+max_page_bytes=8388608) -> ChesscomGamePage` returns #482's immutable v0.2
 `GamePage` through a provider-local subtype. `ChesscomSourceRecord` extends only
 the shared `GameRecord` with `source_metadata`; `ChesscomGamePage` specializes
 only its records field so `model_dump_json()` preserves provider provenance.
@@ -58,7 +59,7 @@ corrections.
 ## Checkpoint and error contract
 
 The first call freezes the validated, sorted, deduplicated listing and processes
-at most one month. A successful `GamePage` has `saturated=False`; `complete=True`
+at most one bounded slice of one month. A successful `GamePage` has `saturated=False`; `complete=True`
 means the observed listing's requested window is exhausted. An empty legitimate
 listing or month can complete. Completion does not seal a mutable provider month:
 start a later overlapping poll with `continuation=None` and deduplicate by stable
@@ -75,11 +76,11 @@ HTML, malformed JSON and absent/wrong archive arrays cannot become empty success
 Persist the **whole returned page and its next continuation atomically** in the
 owning coordinator; only then request that continuation. If persistence fails,
 repeat the original input. The adapter does not commit anything. If month two
-fails after month one was saved, `ChesscomAcquisitionError.continuation` retries
-month two directly without listing or replaying month one. Its `complete=False`,
+fails after month one was saved, `ChesscomAcquisitionError.continuation` retains
+the saved input token for month two, without listing or replaying month one. Its `complete=False`,
 static `code`, `status_code`, `retryable` and validated `retry_after` describe the
 failure. A listing failure uses `continuation=None`. A failure during a first
-month supplies the newly frozen current-month token. No partial month escapes.
+month retains the original `None` continuation. No partial page escapes.
 
 429 and supplied numeric/HTTP-date Retry-After are returned to the caller; there
 is no inline retry or sleep. Timeout/network failures are sanitized. Cancellation
@@ -102,3 +103,40 @@ legitimate empty archives, typed bad URL/HTML/JSON/timeout/rate-limit/cancellati
 and import-boundary checks. There is no live account, database, browser or
 deployment qualification. T08/#489 owns durable checkpoint/retry cadence;
 T10/#491 owns product composition. See the canonical [boundary drawing](README.md).
+
+## Task D bounded month slices (prepared source)
+
+`fetch_chesscom_page` additionally accepts `max_page_records=100`,
+`max_page_positions=10000`, `max_page_bytes=8388608`. These bound emitted pages,
+independently of the existing whole-response HTTP bound. At most one month is
+requested per call, and at most the record limit's raw rows are considered in a
+slice, including exclusions. The existing legal-game validator supplies move
+counts; a record crossing a page budget stays unconsumed. A single record above
+the limit fails explicitly as `record_exceeds_page_budget`; it is never skipped.
+Serialized provenance is conservatively bounded below the coordinator's 16 MiB
+ceiling, reserving space for the bounded cursor and rejection metadata.
+
+Version 2 cursors retain the account/window/filter/revision binding and frozen
+month listing, plus the within-month offset and canonical identity/content
+fingerprint. Reordering an unchanged archive does not restart it. Changed
+content replays that month from zero inside the same frozen job; stable source
+and effect identity prevent duplicate logical effects. Snapshot identity stays
+in the cursor, never in source-record metadata. Conflicting duplicate source IDs
+within the requested window are rejected before any slice is emitted. Version 1
+cursors resume at their existing month boundary and then emit version 2.
+
+Errors retain the original input continuation, including a failure on the first
+month. No partial page escapes. Later-visible games or months missed by the
+frozen listing require a new reconciliation pass over the configured history.
+A continuously changing month may replay repeatedly; progress/completeness is
+not claimed until a pass finishes. A response exceeding the configured bound
+still fails without advancing. Safe fallback is retaining that job and using an
+explicit manual PGN import; this change does not add a provider snapshot API.
+
+`unfinished_game` now distinguishes the donor's unfinished/unsupported result
+refusal from `invalid_pgn_or_player`. Neither creates a source record. Task B owns
+whether exclusion reasons permit checkpoint advancement; malformed/account/
+identity failures must remain unresolved. Regular executable acquisition proof
+is in `test_product_continuous_sync.py` and the affected acquisition selection of
+`test_product_game_sync_integration.py`; the older standalone suite named above
+is absent at the Task D baseline.

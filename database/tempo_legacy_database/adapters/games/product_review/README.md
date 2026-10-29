@@ -105,3 +105,29 @@ blocked in local provider HTTP, normal Study issuance/save while blocked, gracef
 stop or forced kill, then another normal Study issuance/save. No Study restart
 is performed. These are disposable source proofs, not deployment or host latency
 guarantees. See [composition details](../../../../../docs/product-v02/game-sync/README.md).
+
+## Task D stream selection and namespace projections
+
+Prepared source, with focused owned-PostgreSQL evidence; deployment remains
+unverified. No table, column, key, FK or stored source bytes change. Existing job
+IDs distinguish `following:` and `reconciling:` streams by provider/configuration
+revision; the job specification/digest binds exact workspace/account/filter/
+repertoire/window scope. The existing request FK joins each stream to its durable
+job, whose JSON payload retains continuation, completeness and completion time.
+
+`continuous_state` returns at most two configured recurring providers. Each
+purpose lookup returns one job: oldest unfinished first, otherwise the greatest
+completed window end. An arbitrary manual request remains visible through
+`last_job` without replacing either stream pointer. The existing query/transaction
+limits remain enforced; no PGN processing or HTTP enters these sections.
+
+`enqueue_continuous` serializes with configuration writes, compares the expected
+stream state, rejects unfinished/replaced state and borrows the existing enqueue
+writer's exact transaction. The existing Games job writer remains authoritative.
+Reconciliation writes no forward `next_run_at`; a job/request failure rolls both
+back. See the canonical [scheduling flow](../../../../../backend/app/games/feedback/README.md#continuous-acquisition-and-historical-reconciliation--task-d).
+
+Recent summaries map stored `chess.com` to public `chesscom`. Source detail and
+canonical identity lookups accept both stored aliases, retain workspace fences
+and reject ambiguous rows. These are read projections: canonical IDs, digests,
+original PGNs and historical source metadata retain their stored spelling.
