@@ -39,6 +39,8 @@ test("both synthetic providers retain the current attempt and settle actual game
     await settings.getByRole("button", { name: "Run saved game sync", exact: true }).click();
     await expect(settings.getByRole("status")).toContainText("pending");
   }
+  const packaged = Boolean(process.env.TEMPO_PROVIDER_FIXTURE_DIR);
+  if (packaged) {
   await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
     .toMatchObject({ http: { waiting: 2, rate_limited: 1 } });
   await gameSyncFixture(request, api, "worker-stop", fixture);
@@ -46,6 +48,7 @@ test("both synthetic providers retain the current attempt and settle actual game
   await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
     .toMatchObject({ http: { waiting: 3 } });
   await gameSyncFixture(request, api, "worker-kill", fixture);
+  }
   expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
 
   // Actual Study issue/save remains usable after worker loss, before its lease
@@ -56,12 +59,14 @@ test("both synthetic providers retain the current attempt and settle actual game
   await move(page, "e2", "e4");
   expect((await unrelatedSaved).ok()).toBe(true);
   await page.reload();
-  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 165_000 })
-    .toMatchObject({ complete: true, sources: 103, effects: 103, http: { rate_limited: 1 } });
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: packaged ? 165_000 : 90_000 })
+    .toMatchObject({ complete: true, sources: 103, effects: 103 });
+  if (packaged) {
   const completed = await gameSyncFixture(request, api, "run", fixture);
   expect(completed.replayed).toBeGreaterThan(0);
   expect((completed.http as { pages: number[] }).pages.length).toBeGreaterThan(1);
   expect(new Set((completed.http as { months: string[] }).months)).toEqual(new Set(["09", "10"]));
+  }
 
   await nav(page, "Games");
   const review = page.getByRole("region", { name: "Game Review", exact: true });

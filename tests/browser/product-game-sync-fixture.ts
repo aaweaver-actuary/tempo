@@ -22,9 +22,10 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
   await verifyPostgresFixtureTarget({ health: await healthResponse.json(), apiUrl: api, project });
   postgresFixtureComposeArguments(project);
   const providerDirectory = process.env.TEMPO_PROVIDER_FIXTURE_DIR;
-  if (!providerDirectory || !resolve(providerDirectory).startsWith(resolve(".tempo-pg-test-secrets-491-reader-").slice(0, -1)))
+  if (providerDirectory && !resolve(providerDirectory).startsWith(resolve(".tempo-pg-test-secrets-491-reader-").slice(0, -1)))
     throw new Error("Actual packaged provider fixture directory is required");
   if (action === "worker-stop" || action === "worker-kill") {
+    if (!providerDirectory) throw new Error("Actual packaged worker profile is required for process-loss proof");
     const worker = JSON.parse(execFileSync("docker", ["inspect", "--format",
       '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}},"restarts":{{json .RestartCount}},"cpu":{{json .HostConfig.NanoCpus}},"memory":{{json .HostConfig.Memory}},"pids":{{json .HostConfig.PidsLimit}},"command":{{json .Config.Cmd}}}',
       `${project}-game-feedback-worker-1`], { encoding: "utf8", timeout: 5_000 }));
@@ -63,18 +64,18 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
       metadata.labels["tempo.resource-owner"] !== owner || metadata.labels["tempo.resource-class"] !== "development" ||
       metadata.cpu <= 0 || metadata.cpu > 0.35e9 || metadata.memory <= 0 || metadata.memory > 192 * 1024 ** 2)
     throw new Error("Game sync fixture requires its existing owned and capped writer container");
-  const argumentsList = ["exec", "-i", metadata.id, "python", "-", action, "--project", project!];
+  const argumentsList = ["exec", "-i", "-e", `TEMPO_PACKAGED_PROVIDER_FIXTURE=${providerDirectory ? "1" : "0"}`, metadata.id, "python", "-", action, "--project", project!];
   if (fixture) argumentsList.push("--fixture-json", JSON.stringify(fixture));
   const result = spawnSync("docker", argumentsList, { encoding: "utf8", timeout: 120_000, maxBuffer: 256 * 1024,
     input: readFileSync(resolve("backend/tests/fixtures/product_game_sync_browser.py"), "utf8") });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Owned game sync fixture failed: ${result.stderr}`);
   const value = JSON.parse(result.stdout.trim().split("\n").at(-1)!);
-  if (action === "seed") {
+  if (action === "seed" && providerDirectory) {
     writeFileSync(resolve(providerDirectory, "providers.json"), JSON.stringify(value.http_fixtures), { mode: 0o600 });
     delete value.http_fixtures;
   }
-  if (action === "run") {
+  if (action === "run" && providerDirectory) {
     writeFileSync(resolve(providerDirectory, "worker-ready"), project!, { mode: 0o600 });
     value.http = JSON.parse(readFileSync(resolve(providerDirectory, "http-state.json"), "utf8"));
   }

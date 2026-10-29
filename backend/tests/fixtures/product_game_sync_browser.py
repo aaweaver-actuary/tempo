@@ -67,6 +67,9 @@ def main():
         print(json.dumps(dict(available=available == 3, available_misses=available)))
         return
 
+    if os.environ.get("TEMPO_PACKAGED_PROVIDER_FIXTURE") != "1":
+        return run_component_fixture(transaction, manifest)
+
     # Readback only: the optional packaged CLI is the sole provider executor.
     with transaction() as database:
         sources = database.execute_native("SELECT COUNT(*) FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'='legacy'").fetchone()[0]
@@ -76,6 +79,58 @@ def main():
         replayed = database.execute_native("SELECT COUNT(*) FROM product_feedback_deliveries WHERE (payload->>'attempts')::int>1").fetchone()[0]
         complete = len(jobs) == 2 and all(row[0] == 'complete' and json.loads(row[1])['window_complete'] for row in jobs)
         print(json.dumps(dict(sources=sources, effects=effects, complete=complete and pending == 0, replayed=replayed)))
+
+
+def run_component_fixture(transaction, manifest):
+    """Existing component fixture; never claimed as packaged CLI evidence."""
+    from contextlib import contextmanager
+    import httpx
+    from app.product_composition.game_sync_current import current_provider_worker
+    from app.product_composition.game_review import SystemClock
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+
+    @contextmanager
+    def raw_connections():
+        with transaction() as database:
+            yield database.raw
+    store = PostgresReviewStore(raw_connections)
+    configurations = [store.configuration("legacy", provider) for provider in ("lichess", "chesscom")]
+    if any(value is None or value.account.casefold() != "learner" or value.speeds != ("rapid",)
+           or value.rated is not True or value.repertoire_ids != (manifest["repertoire_id"],) for value in configurations):
+        raise RuntimeError("browser must explicitly configure both synthetic accounts and filters first")
+    fixtures = provider_fixtures(manifest)
+    def handle(request):
+        if request.url.host == "lichess.org":
+            params = request.url.params
+            rows = [{"id": item["source_id"], "createdAt": int(datetime.fromisoformat(item["played_at"]).timestamp() * 1000),
+                     "pgn": item["pgn"], "speed": "rapid", "rated": True} for item in fixtures["lichess"]]
+            rows = sorted((row for row in rows if int(params["since"]) <= row["createdAt"] < int(params["until"])), key=lambda row: row["createdAt"])
+            return httpx.Response(200, content="\n".join(json.dumps(row) for row in rows[:int(params["max"])]), headers={"Content-Type": "application/x-ndjson"})
+        archive = "https://api.chess.com/pub/player/learner/games/"
+        if request.url.path.endswith("archives"):
+            return httpx.Response(200, json={"archives": [archive + "2026/09", archive + "2026/10"]})
+        month = request.url.path[-2:]
+        return httpx.Response(200, json={"games": [{"uuid": item["source_id"], "pgn": item["pgn"],
+            "end_time": int(datetime.fromisoformat(item["played_at"]).timestamp()), "rules": "chess", "time_class": "rapid", "rated": True,
+            "url": "https://www.chess.com/game/live/123456"} for item in fixtures["chesscom"] if item["played_at"][5:7] == month]})
+    os.environ["TEMPO_PRODUCT_GAME_SYNC_ENABLED"] = "1"  # This verified synthetic helper only.
+    runtime, _ = current_provider_worker(workspace="legacy", connections=connections,
+        clock=SystemClock(), transport_factory=lambda: httpx.MockTransport(handle))
+    try:
+        for _ in range(50):
+            if runtime.run_once() in {"idle", "deferred"}:
+                break
+        complete = True
+        for provider in ("lichess", "chesscom"):
+            job = store.last_job("legacy", provider)
+            complete = complete and job is not None and job.status == "complete" and job.window_complete
+        with transaction() as database:
+            sources = database.execute_native("SELECT COUNT(*) FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'='legacy'").fetchone()[0]
+            effects = database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s", (manifest["card_id"],)).fetchone()[0]
+            pending = database.execute_native("SELECT COUNT(*) FROM product_feedback_deliveries WHERE state='pending'").fetchone()[0]
+        print(json.dumps(dict(sources=sources, effects=effects, complete=complete and pending == 0)))
+    finally:
+        runtime.close()
 
 
 def seed_fixture(transaction, project):

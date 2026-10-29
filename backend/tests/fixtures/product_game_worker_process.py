@@ -99,7 +99,7 @@ def provider_http_fixture(directory, port):
                         url="https://www.chess.com/game/live/123456") for item in data["chesscom"] if item["played_at"][5:7] == month])).encode()
             else:
                 self.send_error(400); return
-            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.send_response(200); self.send_header("Content-Type", "application/x-ndjson" if provider == "lichess.org" else "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers()
             try: self.wfile.write(body)
             except BrokenPipeError: pass
     save()
