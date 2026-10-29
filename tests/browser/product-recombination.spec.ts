@@ -18,8 +18,9 @@ test("A08 normal Study joins only after saved clean reviews and retains confirme
     throw new Error("R11 requires the owning disposable PostgreSQL browser runner");
   const identity = `product-recombination-${randomUUID().replaceAll("-", "")}`;
   const fixture = <T>(action: string, ...args: string[]): T => JSON.parse(execFileSync("docker", ["compose", "-p", project,
-    "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "-e", "PYTHONPATH=/app", "schema", "python",
-    "/source/backend/tests/fixtures/product_recombination.py", action, identity, ...args], { encoding: "utf8", timeout: 30_000 }));
+    "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "schema", "python", "-c",
+    "import runpy,sys;sys.path.insert(0,'/app');runpy.run_path('/source/backend/tests/fixtures/product_recombination.py',run_name='__main__')",
+    action, identity, ...args], { encoding: "utf8", timeout: 30_000 }));
   const facts = fixture<{ protected_id: string }>("seed");
   const other = await context.newPage();
   await prepareUI(other);
