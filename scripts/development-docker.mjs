@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {readdir,readFile} from 'node:fs/promises';
-import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource} from './development-budget.mjs';
+import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource,readDevelopmentCpuAllocation} from './development-budget.mjs';
 
 export function managedDockerEnvironment(environment,directory) {
   const docker = environment.TEMPO_REAL_DOCKER ?? environment.PATH.split(delimiter)
@@ -59,7 +59,7 @@ export async function runManagedDocker(args) {
     try {
       const directory=process.env.TEMPO_DEVELOPMENT_BUDGET_DIRECTORY??join(tmpdir(),'tempo-development-resource-budget-v1.lock');
       if(existsSync(join(directory,'builder-lane')))throw new Error('The owned builder execution lane is occupied; no container may share its allocation');
-      const defaultCpus=option(args,'--cpus')===undefined?JSON.parse(inspect(['info','--format','{{json .NCPU}}'])):undefined;
+      const defaultCpus=option(args,'--cpus')===undefined?await readDevelopmentCpuAllocation({docker:inspect}):undefined;
       const request=managedContainerArguments(args,token,defaultCpus);
       assertDevelopmentCapacity(['component-test'],'new-component-container',inspect,{'component-test':request.limits});
       name=option(request.args,'--name')??'tempo-managed-'+randomUUID();

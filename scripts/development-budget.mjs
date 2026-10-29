@@ -50,6 +50,14 @@ export async function acquireDevelopmentAdmission({ directory = budgetDirectory(
 
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
 
+/** Selected daemon allocation, never a claim of idle CPU or Study safety. */
+export async function readDevelopmentCpuAllocation({ docker = defaultDocker } = {}) {
+  const cpus = JSON.parse(await docker(['info', '--format', '{{json .NCPU}}']));
+  if (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000))
+    throw new Error('Managed build limits require a positive finite daemon CPU allocation with an exact CPU quota');
+  return cpus;
+}
+
 async function inspectBuilder(name, docker) {
   try { return await docker(['buildx', 'inspect', name, '--timeout', '5s']); }
   catch (error) {
@@ -240,7 +248,7 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
     await quiet();
     // The daemon's allocation is a kernel cap, not evidence of idle headroom.
     const buildLimits = requestedLimits ?? snapshotBuildLimits({
-      cpus: JSON.parse(await docker(['info', '--format', '{{json .NCPU}}'])), memoryMiB: defaultMemoryMiB,
+      cpus: await readDevelopmentCpuAllocation({docker}), memoryMiB: defaultMemoryMiB,
     });
     const cpuPeriod = 100000, cpuQuota = buildLimits.cpus * cpuPeriod;
     const managedIds = (await docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}'])).trim();
