@@ -58,6 +58,14 @@ def test_native_review_commands_commit_with_receipt_replay_and_rollback(owned_po
         assert database.execute_native("SELECT COUNT(*) FROM product_feedback_sync_requests").fetchone()[0]==1
         rows=database.execute_native("SELECT operation_id,state FROM operation_receipts ORDER BY operation_id").fetchall()
         assert [tuple(row) for row in rows]==[("native-config","complete"),("native-rollback","failed"),("native-run","complete")]
+        # The module fixture is shared with the both-provider case. Remove only
+        # this command case's exact records, including its configured account.
+        database.execute_native("DELETE FROM product_feedback_sync_requests WHERE workspace_id='legacy' AND operation_id='native-run'")
+        database.execute_native("DELETE FROM product_feedback_jobs WHERE job_id='native-run'")
+        database.execute_native("""DELETE FROM product_feedback_configuration WHERE workspace_id='legacy'
+            AND provider='lichess' AND revision=1 AND payload=%s::jsonb""",(json.dumps(configuration),))
+        database.execute_native("DELETE FROM operation_receipts WHERE operation_id IN ('native-config','native-run','native-rollback')")
+        assert database.execute_native("SELECT COUNT(*) FROM product_feedback_configuration").fetchone()[0]==0
 
 
 class FixtureConnections:
