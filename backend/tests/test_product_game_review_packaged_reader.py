@@ -34,6 +34,7 @@ RUNTIME_FILES = {
     "database/tempo_legacy_database/ddl/schema_version.py": "/app/tempo_legacy_database/ddl/schema_version.py",
     "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql": "/app/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
     "database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql": "/app/tempo_legacy_database/ddl/migrations/053_study_recombination.sql",
+    "database/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql": "/app/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql",
 }
 
 
