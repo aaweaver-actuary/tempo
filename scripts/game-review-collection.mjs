@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { acquireTargetLock, targetKey, validateTarget } from './tempo-deployment.mjs';
+import { acquireTargetLock, targetKey, validateTarget, validateContainers } from './tempo-deployment.mjs';
 import { configurationFingerprint } from './tempo-runtime.mjs';
 
 export const serviceName = 'game-feedback-worker';
@@ -17,7 +17,8 @@ const collector = command => /(?:game_sync_current|game_worker)(?:\s|$)/.test(co
 const own = (container, target) => labels(container)['com.docker.compose.project'] === target.project &&
   labels(container)['com.docker.compose.service'] === serviceName &&
   labels(container)['tempo.collection.owner'] === owner &&
-  labels(container)['tempo.collection.mode'] === 'collect-only';
+  labels(container)['tempo.collection.mode'] === 'collect-only' &&
+  labels(container)['com.docker.compose.project.working_dir'] === target.root;
 
 export function collectionBlockers({ candidate, release, service, image, report, preview,
   containers, hostCommands, target, fingerprint }) {
@@ -33,9 +34,15 @@ export function collectionBlockers({ candidate, release, service, image, report,
       service?.environment?.TEMPO_PRODUCT_GAME_SYNC_ENABLED !== '1') blockers.push('collection_only_command_required');
   for (const flag of ['--overlap-seconds', '--reconcile-interval-seconds']) {
     const value = Number(command[command.indexOf(flag) + 1]);
-    if (!command.includes(flag) || !Number.isInteger(value) || (flag === '--overlap-seconds' ? value < 0 || value > 3600 : value < 60))
+    if (!command.includes(flag) || !/^\d+$/.test(String(command[command.indexOf(flag) + 1] ?? '')) || !Number.isInteger(value) || (flag === '--overlap-seconds' ? value < 0 || value > 3600 : value < 60))
       blockers.push('explicit_' + flag.slice(2).replaceAll('-', '_') + '_required');
   }
+  const environment = service?.environment ?? {};
+  if (environment.TEMPO_DATABASE_WRITE_URL !== 'postgresql://tempo_writer@postgres:5432/tempo' ||
+      environment.TEMPO_DATABASE_READ_URL !== 'postgresql://tempo_writer@postgres:5432/tempo' ||
+      environment.PGPASSFILE !== '/run/secrets/worker_pgpass' ||
+      !service?.secrets?.some(secret => secret.source === 'writer_pgpass' && secret.target === 'worker_pgpass'))
+    blockers.push('collector_database_role_or_secret_mismatch');
   if (Number(service?.mem_limit) !== 256 * 1024 * 1024 || Number(service?.pids_limit) !== 96 ||
       Number(service?.cpus ?? 0) !== 0 || service?.volumes?.length || service?.ports?.length ||
       service?.labels?.['tempo.collection.owner'] !== owner || service?.labels?.['tempo.collection.mode'] !== 'collect-only')
@@ -43,9 +50,11 @@ export function collectionBlockers({ candidate, release, service, image, report,
   if (hostCommands === null) blockers.push('host_process_inventory_unavailable');
   else if (hostCommands.some(collector)) blockers.push('host_collector_conflict');
   const peers = containers.filter(c => collector(textCommand(c)) || labels(c)['com.docker.compose.service'] === serviceName);
-  if (peers.some(c => !own(c, target) || c.Image !== release.images?.[serviceName] || !textCommand(c).includes('--collect-only') ||
-      Number(c.HostConfig?.Memory) !== 256 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
-      [c.HostConfig?.NanoCpus, c.HostConfig?.CpuQuota].some(value => Number(value ?? 0) > 0)) || peers.length > 1)
+  if (peers.some(c => !own(c, target) || !textCommand(c).includes('--collect-only') ||
+      c.Mounts?.some(mount => mount.Type === 'volume' || mount.Type === 'bind' && mount.Destination !== '/run/secrets/worker_pgpass') ||
+      (active(c) && (c.Image !== release.images?.[serviceName] || JSON.stringify(c.Config?.Cmd) !== JSON.stringify(service?.command) ||
+        Number(c.HostConfig?.Memory) !== 256 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
+        [c.HostConfig?.NanoCpus, c.HostConfig?.CpuQuota].some(value => Number(value ?? 0) > 0)))) || peers.length > 1)
     blockers.push('competing_or_unverified_collector');
   if (!report || report.read_only !== true || report.schema_version !== 1 ||
       ['identity', 'providers', 'collection', 'delivery'].some(section => report[section]?.availability !== 'available'))
@@ -86,7 +95,9 @@ export async function operateCollection(operation, { apply = false, inspect, loc
       if (!state.stopSafe) throw new Error('Collector identity/ownership unverified; no service stopped');
       if (state.running) await stop(state);
     }
-    return { ...state.output, operation, changed: operation === 'enable' ? !state.running : operation === 'disable' && state.running };
+    const changed = operation === 'enable' ? !state.running : operation === 'disable' && state.running;
+    const finalState = changed ? await inspect() : state;
+    return { ...finalState.output, operation, changed };
   } finally { releaseLock(); }
 }
 
@@ -121,13 +132,14 @@ export async function main(argv = process.argv.slice(2)) {
     if (docker(['info', '--format', '{{.ID}}']).trim() !== target.daemonId) throw new Error('Registered Docker daemon identity changed');
     if (!release.composeFiles?.length || !release.imageOverride) throw new Error('Frozen managed release receipt required');
     const prefix = ['compose', '--project-directory', target.root, '--project-name', target.project,
-      '--env-file', target.envFile, ...release.composeFiles.flatMap(file => ['-f', file]), '-f', release.imageOverride, '--profile', 'games-feedback'];
+      '--env-file', target.envFile, ...release.composeFiles.flatMap(file => ['-f', file]), '-f', release.imageOverride, '--profile', 'maintenance', '--profile', 'games-feedback'];
     compose = args => docker([...prefix, ...args]);
     const configuration = JSON.parse(compose(['config', '--format', 'json']));
     validateTarget(configuration, target);
     const service = configuration.services[serviceName];
     const ids = docker(['ps', '-aq']).trim().split(/\s+/).filter(Boolean);
     const containers = ids.length ? JSON.parse(docker(['inspect', ...ids])) : [];
+    validateContainers(containers, target);
     const api = containers.filter(c => active(c) && labels(c)['com.docker.compose.project'] === target.project &&
       labels(c)['com.docker.compose.service'] === 'api');
     let report = null, preview = null, image = null, hostCommands = null;
@@ -141,7 +153,7 @@ export async function main(argv = process.argv.slice(2)) {
     try { hostCommands = command('ps', ['-axo', 'command=']).split('\n').filter(line => !line.includes('game-review-collection.mjs')); } catch { /* Fail closed for enable. */ }
     const owned = containers.filter(c => labels(c)['com.docker.compose.project'] === target.project && labels(c)['com.docker.compose.service'] === serviceName);
     const running = owned.some(active);
-    const stopSafe = owned.every(c => own(c, target) && c.Image === release.images?.[serviceName] && textCommand(c).includes('--collect-only'));
+    const stopSafe = owned.every(c => own(c, target) && (!active(c) || c.Image === release.images?.[serviceName]) && textCommand(c).includes('--collect-only'));
     const blockers = collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
       fingerprint: configurationFingerprint(configuration) });
     if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');

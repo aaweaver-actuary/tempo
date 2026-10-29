@@ -5629,7 +5629,14 @@ Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fak
 Shared Settings registration belongs to the existing frontend lane (#603).
 `tests/runner/game-review-collection.test.mjs` owns explicit apply, read-only
 inspection, structured readiness, identity/resource checks, competing-runner
-refusal, target-lock release and idempotent start/stop.
+refusal, target-lock release and idempotent start/stop. It also proves new releases
+include the optional inactive profile without augmenting old frozen receipts, and
+empty launch arguments or mismatched writer roles cannot enable collection.
+`CLI builder fixture reports the requested unrestricted CPU and original memory policy`
+retains the actual requested kernel facts in the shared CLI fixture, without
+weakening production resource admission. `managed maintenance stops Games but
+application startup and readiness never require it` owns the release lifecycle
+boundary.
 
 Owning suite `backend/tests/test_cpu_resource_launchers.py`:
 

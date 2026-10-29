@@ -10,6 +10,7 @@ import subprocess
 import uuid
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 import pytest
 
 from test_product_game_lapse_postgres import ROOT, owned_postgres, case, retained_owner_case
@@ -37,7 +38,7 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
         with case.transaction() as db: yield db.raw
     with connections() as db:
         info = db.info
-        admin_dsn = info.dsn
+        admin_dsn = make_conninfo(info.dsn, password=info.password)
         port = info.port
         database_name = info.dbname
     manifests = [json.loads(p.read_text()) for p in (ROOT/'test-results/game-feedback-native').glob('*/fixture.json')]
@@ -49,7 +50,6 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
     roles = importlib.util.module_from_spec(module); module.loader.exec_module(roles)
     reader_password, writer_password = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
     roles.provision(admin_dsn, reader_password, writer_password)
-    from psycopg.conninfo import make_conninfo
     secret = tmp_path/'container.env'
     secret.write_text('\n'.join([
         'TEMPO_PRODUCT_GAME_SYNC_ENABLED=1',
@@ -93,7 +93,7 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
     protected_tables = ('cards','reviews','daily_queue','queue_attempt_origins','study_attempts','study_game_feedback','review_attempt_receipts')
     def study_rows():
         with connections() as db:
-            return {table: db.execute('SELECT to_jsonb(t) FROM '+table+' t ORDER BY to_jsonb(t)::text').fetchall() for table in protected_tables}
+            return {table: [row[0] for row in db.execute('SELECT to_jsonb(t) FROM '+table+' t ORDER BY to_jsonb(t)::text')] for table in protected_tables}
     before = study_rows()
     receipts = []
     def run(mode):
@@ -102,43 +102,73 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
         args = ['docker','run','--rm','--name',name,'--label','tempo.owner='+matches[0]['owner'],
             '--label','tempo.disposable=true','--read-only','--tmpfs','/tmp:rw,size=32m','--memory','256m','--pids-limit','96',
             '--network','container:'+pg['Id'],'--env-file',str(secret),'--mount','type=bind,src='+str(directory)+',dst=/qualification,readonly',
-            image,'python','-B','/qualification/entry.py',mode]
-        result = subprocess.run(args,capture_output=True,text=True,timeout=180)
-        receipts.append(dict(mode=mode,exit=result.returncode,stdout=result.stdout,stderr=result.stderr))
-        assert result.returncode == 0, result.stderr
-        return json.loads(result.stdout.strip().splitlines()[-1])
+            image,'python','-B','-c',"exec(compile(open('/qualification/entry.py').read(), '/qualification/entry.py', 'exec'))",mode]
+        try:
+            result = subprocess.run(args,capture_output=True,text=True,timeout=180)
+            receipts.append(dict(mode=mode,exit=result.returncode,stdout=result.stdout,stderr=result.stderr))
+            assert result.returncode == 0, result.stderr
+            return json.loads(result.stdout.strip().splitlines()[-1])
+        finally:
+            found = subprocess.run(['docker','inspect',name],capture_output=True,text=True)
+            if found.returncode == 0:
+                container = json.loads(found.stdout)[0]
+                assert container['Config']['Labels']['tempo.owner'] == matches[0]['owner']
+                assert container['Config']['Labels']['tempo.disposable'] == 'true' and container['Image'] == image
+                subprocess.run(['docker','rm','-f',container['Id']],check=True,capture_output=True,text=True)
+            absent = subprocess.run(['docker','inspect',name],capture_output=True,text=True)
+            assert absent.returncode != 0 and 'no such' in absent.stderr.lower()
+
     try:
         # Black repertoire is initially absent: actual retained sources must say unresolved.
         run('worker')
         store = PostgresCanonicalGamesStore(connections)
+        # A pre-existing uncertain attempt must be preserved byte-for-byte.
+        pending = store.pending_delivery(now)
+        assert pending is not None
+        store.save_delivery(pending.model_copy(update=dict(attempts=3, next_attempt_at=now+99999,
+            error='synthetic_uncertain_acknowledgment')))
         with connections() as db:
             sources = [r[0] for r in db.execute('SELECT payload FROM product_feedback_sources')]
             assert len(sources) == 820 and any(s['diagnostic'] for s in sources)
-            original_deliveries = db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id').fetchall()
+            original_deliveries = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')]
         assert study_rows() == before
         publish_black()
+        # Older games become visible after forward coverage passed their time.
+        late = dict(inputs['lichess'][0], id='latevisible')
+        inputs['lichess'].append(late)
+        inputs['lichess'].sort(key=lambda row: row['createdAt'])
+        inputs['chesscom']['09'].append(dict(inputs['chesscom']['09'][0], uuid='latevisible'))
+        review.enqueue(configs[0], configured_job(configs[0], 'manual-interleaved'), now+1)
         inputs['now'] += 601
         run('worker')  # Fresh packaged process: the actual reconciler revisits the same games.
         with connections() as db:
             sources = [r[0] for r in db.execute('SELECT payload FROM product_feedback_sources')]
-            assert all(s['diagnostic'] is None for s in sources)
+            assert len(sources) == 822 and all(s['diagnostic'] is None for s in sources)
+            assert sum(s['original']['source_game_id'] == 'latevisible' for s in sources) == 2
+            streams = review.continuous_state('legacy', inputs['now'])
+            assert len(streams) == 2
+            for state in streams:
+                assert state.forward_job.spec.window.start_at == '2026-10-01T12:00:00+00:00'
+                assert state.reconciliation_job.spec.window.start_at == '2026-09-30T12:00:00+00:00'
+                assert state.reconciliation_job.window_complete
+            assert store.load_job('manual-interleaved').status == 'complete'
             findings = [f for s in sources for f in s['findings']]
             assert any(f['repertoire_id'] == black_repertoire and f['expected_uci'] == ['e7e5'] and f['played_uci'] == 'c7c5' for f in findings)
             assert any(f['kind'] == 'opponent_gap' for f in findings)
             assert any(f['repertoire_id'] == repertoire for f in findings)
             for row in original_deliveries:
-                saved = db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t WHERE operation_id=%s',(row[0]['operation_id'],)).fetchone()
+                saved = db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t WHERE operation_id=%s',(row['operation_id'],)).fetchone()[0]
                 assert saved == row
-            stable_captures = db.execute('SELECT to_jsonb(t) FROM product_feedback_captures t ORDER BY source_key,source_revision,source_digest,comparison_revision').fetchall()
-            stable_commands = db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id').fetchall()
+            stable_captures = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_captures t ORDER BY source_key,source_revision,source_digest,comparison_revision')]
+            stable_commands = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')]
         inputs['now'] += 601
         run('worker')
         with connections() as db:
-            assert db.execute('SELECT to_jsonb(t) FROM product_feedback_captures t ORDER BY source_key,source_revision,source_digest,comparison_revision').fetchall() == stable_captures
-            assert db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id').fetchall() == stable_commands
+            assert [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_captures t ORDER BY source_key,source_revision,source_digest,comparison_revision')] == stable_captures
+            assert [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')] == stable_commands
         report = run('status')
         assert report['read_only'] and report['collection']['availability'] == 'available'
-        assert report['collection']['unique_games'] == 820
+        assert report['collection']['unique_games'] == 822
         assert study_rows() == before
         with patch.object(review_storage,'configured',lambda:True):
             with case.transaction() as db:
@@ -148,4 +178,9 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
                 assert result['persisted']
     finally:
         evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
-        (evidence/'packaged.json').write_text(json.dumps(dict(candidate=revision,image=image,schema=54,receipts=receipts),indent=2))
+        with connections() as db:
+            jobs = [row[0] for row in db.execute('SELECT payload FROM product_feedback_jobs ORDER BY job_id')]
+            counts = {table: db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in
+                ('product_feedback_sources','product_feedback_captures','product_feedback_deliveries')}
+        (evidence/'packaged.json').write_text(json.dumps(dict(candidate=revision,image=image,schema=54,
+            fixture_container=pg['Id'],jobs=jobs,counts=counts,receipts=receipts),indent=2))

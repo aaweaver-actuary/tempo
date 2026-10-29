@@ -108,10 +108,19 @@ export async function executeLifecycle(plan, actions) {
   }
 }
 
+// Package the optional profile in new releases, without activating it. Old frozen
+// receipts remain exact and are never augmented by current checkout files.
+export function releaseComposeFiles(target, { fallback = false, previous = null } = {}) {
+  if (fallback) return previous.composeFiles;
+  const optional = join(target.root, "docker-compose.games-feedback.yml");
+  return existsSync(optional) && !target.composeFiles.includes(optional)
+    ? [...target.composeFiles, optional] : target.composeFiles;
+}
+
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
   fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
   redisReadinessOptions = {}, readinessOptions = {}, buildImages = managedComposeBuild }) {
-  let composeFiles = fallback ? previous.composeFiles : target.composeFiles;
+  let composeFiles = releaseComposeFiles(target, { fallback, previous });
   let imageOverride = fallback ? previous.imageOverride : null;
   let configuration;
   let containers = [];
@@ -133,7 +142,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const stage = name => { operation.phase = name; atomicJson(journalPath, operation); log(`Tempo: ${name.replaceAll("_", " ")}`); };
 
   async function config() {
-    configuration = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
+    configuration = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
     validateTarget(configuration, target);
     for (const secret of Object.values(configuration.secrets ?? {})) {
       const text = readFileSync(secret.file, "utf8").trim();
@@ -213,7 +222,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     stage("preparing_images");
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
     mkdirSync(releaseDirectory, { recursive: true, mode: 0o700 });
-    composeFiles = target.composeFiles.map((source, index) => {
+    composeFiles = releaseComposeFiles(target).map((source, index) => {
       const destination = join(releaseDirectory, `${index}-${basename(source)}`);
       writeFileSync(destination, readFileSync(source), { mode: 0o600 }); return destination;
     });
@@ -444,7 +453,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function stopApplications({ preservePhase = false } = {}) {
     if (!preservePhase) stage("stopping_application_services");
     if (!stoppedServices.length) stoppedServices = await runningServices();
-    const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
+    // An explicitly enabled collector must not write through release maintenance.
+    // It stays off afterward; startServices never starts this optional profile.
+    const services = [...applicationServices, "postgres-backup", "game-feedback-worker"].filter(name => configuration.services[name]);
     await compose(["stop", "--timeout", "60", ...services], { echo: true });
   }
 

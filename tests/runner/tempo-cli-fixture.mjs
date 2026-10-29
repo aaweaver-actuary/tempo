@@ -155,7 +155,9 @@ async function fakeCommand() {
     if(operation==='create') {
       const name=args[args.indexOf('--name')+1];
       const owner=args.find(argument=>argument.startsWith('env.TEMPO_RESOURCE_OWNER='))?.split('=')[1];
-      machine.builders[name]={owner,bootstrapped:false};save();output(name);
+      const driverOption=key=>args.find(argument=>argument.startsWith(key+'='))?.slice(key.length+1);
+      machine.builders[name]={owner,bootstrapped:false,memory:Number.parseFloat(driverOption('memory'))*1024*1024,
+        cpuQuota:Number(driverOption('cpu-quota')??0),cpuPeriod:Number(driverOption('cpu-period')??0)};save();output(name);
     } else if(operation==='inspect') {
       const name=args[index+2],builder=machine.builders[name];
       if(!builder){console.error(`no builder "${name}" found`);process.exit(1);}
@@ -169,7 +171,7 @@ async function fakeCommand() {
     const container=args.find(argument=>argument.startsWith('buildx_buildkit_'));
     const builder=machine.builders?.[container.slice('buildx_buildkit_'.length,-1)];
     if(!builder?.bootstrapped){console.error(`No such container: ${container}`);process.exit(1);}
-    output([{ Config:{User:"1000:1000",Env:[`TEMPO_RESOURCE_OWNER=${builder.owner}`]}, HostConfig: { Memory: 2147483648, CpuQuota: 200000, CpuPeriod: 100000 } }]); process.exit(0);
+    output([{ Config:{User:"1000:1000",Env:[`TEMPO_RESOURCE_OWNER=${builder.owner}`]}, HostConfig: { Memory: builder.memory, NanoCpus: 0, CpuQuota: builder.cpuQuota, CpuPeriod: builder.cpuPeriod } }]); process.exit(0);
   }
   if (args.includes("info")) {
     if (args.includes("--format")) {

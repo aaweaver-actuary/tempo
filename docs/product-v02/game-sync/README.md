@@ -210,3 +210,7 @@ The [thin managed operator](../../../scripts/README.md#games-collection-operator
 provides read-only plan/status and explicit enable/disable for the independently
 installed collection-only profile. Source qualification, inactive installation,
 launch-input readiness and live activation are separate outcomes.
+
+The [Task G qualification receipt](../../validation/task-g-collection.md) separates
+packaged collection proof, known baseline gate failures, inactive installation
+and still-missing private launch inputs.

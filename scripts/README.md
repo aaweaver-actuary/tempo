@@ -250,8 +250,12 @@ inference, artifact installation, provider connectivity or installed services.
 optional Games service in an existing frozen managed release. It reuses Tempo's
 registration, deployment receipt, target validation and maintenance lock. It does
 not install a release, change saved settings, start dependencies or migrate data.
+New managed releases automatically freeze the available Games overlay and build
+its image, while leaving the profile inactive. Old frozen receipts remain exact.
 The managed release must already contain the labeled collection-only service and
-immutable candidate image. Ordinary `tempo start` does not start this profile.
+immutable candidate image before enabling. Missing overlap/cadence are packaged
+as empty arguments and block enable; no setting is guessed. Ordinary `tempo start` does not start this profile. Managed maintenance stops an
+enabled collector before its protected transition and leaves it inactive afterward.
 
 ```sh
 node /absolute/qualified/source/scripts/game-review-collection.mjs plan --candidate <40-character-commit>
@@ -273,8 +277,11 @@ and preserved. Existing accepted Study obligations keep their own lifecycle.
 
 Enable uses the frozen Compose graph with `--no-build --no-deps --pull never` and
 starts only `game-feedback-worker`. Its real `--follow` scheduler enqueues initial
-forward/reconciliation work. Disable stops only an identity-verified collector;
-checkpoint, source, capture and pending-command tables are retained. Neither
+forward/reconciliation work. Disable stops only an identity-verified collector. An owned, stopped collection-only
+container from the previous release may be recreated for the verified new image;
+a stopped delivery-capable peer still blocks enable. Source bind mounts, foreign
+working directories and durable worker volumes are refused. Disable preserves
+checkpoint, source, capture and pending-command tables. Neither
 operation drains Study delivery. Concurrent managed maintenance shares the target
 lock. Independent unmanaged launchers must respect that ownership; this wrapper
 cannot fence an arbitrary external process created after its inspection.
@@ -286,6 +293,9 @@ unverified until the exact release is inspected and accepted.
 flowchart LR
     Operator[Explicit plan/status/enable/disable] --> Wrapper[game-review-collection.mjs]
     Wrapper --> Registration[Existing target and frozen deployment receipt]
+    ManagedRelease[Normal managed release] --> FrozenProfile[Freeze and build optional inactive profile]
+    ManagedRelease --> Maintenance[Stop Games before protected maintenance]
+    FrozenProfile --> Registration
     Wrapper --> Reader[F read-only installed evidence]
     Wrapper --> Inventory[Image, resource and competing-process inspection]
     Wrapper --> Lock[Existing managed target lock]
