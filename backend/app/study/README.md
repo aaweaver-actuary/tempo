@@ -246,3 +246,40 @@ protected attempts. It proves forbidden queue calls during intake, once/replay,
 refresh failure/stale rollback and pickup with Games disabled. Existing encounter
 policy/native cases call acceptance and refresh explicitly; they do not restore a
 production inline path. Installed first-release lapse handling is unchanged.
+
+## Feedback sweep connection recovery (#589)
+
+Recovery-only extraction from #580 onto current main; candidate untested and
+deployment unverified. No #558 provider/API dependency is introduced. The registered
+`maintain_game_feedback` wake now uses the existing token-fenced coalescer.
+Post-claim connection failure is reconciled only after the failed writer closes.
+
+```mermaid
+sequenceDiagram
+    participant M as Study maintenance
+    participant W as Borrowed effect transaction
+    participant D as Durable task writer
+    participant B as Existing wake broker
+    M->>W: Execute one fenced effect and checkpoint
+    W-->>M: Connection failure; close failed transaction
+    M->>D: Fresh writer, defer matching ID/generation/lease
+    alt Original claim still owns checkpoint
+        D-->>M: Commit retrying, release lease, preserve checkpoint
+        M->>B: Coalesced wake after persisted eligibility
+    else Committed progress or successor owns task
+        D-->>M: No change
+    else Recovery database unavailable
+        D-->>M: Fail; retain normal lease recovery
+    end
+```
+
+Owner: [maintenance entry point](../tasks.py),
+[durable deferral](../services/durable_tasks.py) and
+[task storage](../../../database/tempo_legacy_database/adapters/durable_tasks/storage.py).
+Typed deadlines retain the existing durable exponential backoff; connection
+failures use a one-second delay and a fixed sanitized error category. Broker
+publication is advisory and occurs after commit; periodic recovery remains.
+Specific lock/deadlock/serialization handlers retain precedence over generic
+connection failures. Preparation, queue refresh/serving and diagnostics remain
+with #580/#581's separate owner. Existing regression sources were retained;
+no new tests, builds or runtime checks were run for this extracted candidate.

@@ -5566,6 +5566,14 @@ acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
 - **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
 
+### #589 Study feedback claimed-slice recovery (extracted from #580)
+
+Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake ownership:
+`test_issue558_study_feedback_periodic_and_retry_wakes_are_coalesced` in
+`backend/tests/test_background_wakes.py`. Named regressions cover typed deadline
+and connection loss after claim, fresh-writer recovery before wake, unchanged
+checkpoint/failure budget, successor generation and lost commit acknowledgment,
+and failed cleanup leaving normal lease recovery rather than a retry loop.
 ## Workflow publishing removal — October 29, 2026
 
 - `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
