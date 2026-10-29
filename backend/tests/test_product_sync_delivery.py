@@ -65,6 +65,20 @@ def test_edited_configuration_stops_stale_clients_before_provider_work(monkeypat
         with supplied["admission"]():pytest.fail("stale acquisition policy was used")
 
 
+def test_configuration_receipt_json_arrays_keep_strict_immutable_http_response(monkeypatch):
+    from app import command_dispatch
+    expected = configuration().model_dump(mode="json")
+    monkeypatch.setattr(command_dispatch,"dispatch_command",lambda *args,**kwargs:expected)
+    monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL",raising=False)
+    app=FastAPI();app.include_router(create_game_review_router(CurrentGameReviewOperations()))
+    with TestClient(app) as client:
+        response=client.post("/api/product/game-review/configuration",
+            json=dict(configuration=expected,expected_revision=0),headers={"Idempotency-Key":"strict-receipt"})
+    assert response.status_code==200 and response.json()==expected
+    parsed=SyncConfiguration.model_validate_json(response.text)
+    assert parsed.repertoire_ids==("white",) and parsed.speeds==("rapid",)
+
+
 def test_provider_root_commits_public_intake_before_ack_and_never_refreshes_queue(monkeypatch):
     from app.product_composition import provider_priority as root
     from app.product_composition import game_sync_current

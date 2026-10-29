@@ -4,8 +4,9 @@ from datetime import timezone
 from threading import Lock
 import os
 import time
+import json
 
-from app.games.feedback.review import GameReview, ReviewUnavailable
+from app.games.feedback.review import GameReview, ReviewUnavailable, SyncConfiguration
 from app.study.game_feedback import GameFeedback
 from app.repertoire import project_capture
 from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore, fence_imported_game
@@ -184,9 +185,13 @@ class CurrentGameReviewOperations:
 
     def configure(self, configuration, expected_revision, *, operation_id=None):
         from app.command_dispatch import dispatch_command
-        return dispatch_command("product_games.configure", {
+        result = dispatch_command("product_games.configure", {
             "configuration": configuration.model_dump(mode="json"), "expected_revision": expected_revision},
             idempotency_key=operation_id)
+        # The command receipt is JSON-native. Reparse through the immutable
+        # wire model before FastAPI's strict Python response validation; an
+        # actual pending JSONResponse must retain its operation envelope.
+        return SyncConfiguration.model_validate_json(json.dumps(result)) if isinstance(result, dict) else result
 
 
 def current_game_review_router():

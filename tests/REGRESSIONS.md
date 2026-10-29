@@ -5476,6 +5476,9 @@ fixture-authorized command:
 dispatch/retry identity, changed-scope fencing before provider work and intake
 commit-before-ack without queue refresh. The existing mounted Game Review
 composition case now verifies its adopted command dispatch without a writer.
+`test_configuration_receipt_json_arrays_keep_strict_immutable_http_response`
+prevents a committed settings save returning HTTP 500 when JSON command-receipt
+arrays reach the immutable tuple response model; pending envelopes stay intact.
 `tests/unit/product-game-sync-settings.test.tsx` owns explicit account/window/
 filters, revision conflict, pending save and same-operation run retry.
 `backend/tests/test_product_provider_sync_native.py` selects the existing capped
