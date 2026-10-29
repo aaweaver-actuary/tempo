@@ -180,6 +180,94 @@ def test_retained_import_requires_real_terminal_conflict_receipt(retained_import
     with pytest.raises(ChangeError): case.owner.read('rejected-import')
 
 
+def oversized_conflicting_import(case):
+    """Synthetic legal Black alternatives; no course or personal content."""
+    from app import pgn_import_commands as command
+    lines = [case.conflicted[index % 2] for index in range(1200)]
+    payload = command.prepare_import_payload('synthetic-large-conflict.pgn', 'black', 2, 1, lines)
+    payload['operation_id'] = 'rejected-import'
+    rows = [dict(id=f'import:{index}', start_fen=line['starting_fen'],
+        moves_json=json.dumps(line['moves']), trained_color='black')
+        for index, line in enumerate(payload['lines'])]
+    return payload, rows
+
+
+def test_oversized_import_conflict_keeps_bounded_machine_diagnostics(retained_import_case):
+    from app.pgn_import_validation import validate_sources
+    from app.command_gateway import MAX_HTTP_ERROR_DETAIL_BYTES
+    from fastapi import HTTPException
+    case = retained_import_case
+    payload, rows = oversized_conflicting_import(case)
+    before = json.dumps(payload, sort_keys=True)
+    with pytest.raises(HTTPException) as error:
+        validate_sources('rep', rows)
+    detail = error.value.detail
+    assert error.value.status_code == 409 and detail['code'] == 'repertoire_conflict'
+    assert len(json.dumps(detail, allow_nan=False).encode()) <= MAX_HTTP_ERROR_DETAIL_BYTES
+    assert detail['conflict_count'] == 1 and detail['affected_route_count'] == 1200
+    assert detail['conflicts_truncated'] is True
+    assert json.dumps(payload, sort_keys=True) == before
+    assert len(payload['lines']) == 1200 and case.state.published == []
+
+
+def test_oversized_conflict_gateway_receipt_reopens_exact_import(retained_import_case, monkeypatch):
+    from app import command_gateway as gateway, pgn_import_commands as command
+    from test_command_receipt_storage_boundary import writer
+    case = retained_import_case
+    payload, _ = oversized_conflicting_import(case)
+    digest = gateway.request_digest('imports.pgn.explicit', payload)
+    pending = ('imports.pgn.explicit', digest, 'pending', None, None, None)
+    # retained_import_case already substitutes the operation-lock transport.
+    raw, _ = writer(monkeypatch, [], [None, pending])
+    # Real importer strict guard and real gateway error projection; only the
+    # borrowed SQL transport is the existing unit boundary harness.
+    monkeypatch.setitem(gateway._handlers, 'imports.pgn.explicit',
+        lambda database, value: command._admit_pgn_import(database, value, explicit=True))
+    assert gateway.execute_command('rejected-import', 'imports.pgn.explicit', payload) is None
+    statement, parameters = raw.calls[-1]
+    assert 'error_json' in statement and parameters[1] == 'rejected-import'
+    case.state.row[1], case.state.row[4], case.state.row[9] = digest, parameters[0], json.dumps(payload)
+    held = case.owner.read('rejected-import')
+    assert json.loads(held.original_error_json)['detail']['code'] == 'repertoire_conflict'
+    assert json.loads(held.original_payload_json) == payload
+    assert len(json.loads(held.original_payload_json)['lines']) == 1200
+    # Reopening can produce a fresh explicit preview, never activate a winner.
+    preview = case.owner.preview('rejected-import', case.lines)
+    assert preview.retained == held and preview.publication_status == 'not_saved'
+    assert case.state.published == []
+
+
+def test_conflict_diagnostics_preserve_small_shape_and_whole_source_identities():
+    from app.pgn_import_validation import MAX_CONFLICT_DIAGNOSTIC_BYTES, validate_sources
+    from app.studies.repertoire_conflicts import conflicts_from_snapshot
+    from fastapi import HTTPException
+    rows = []
+    for white in sorted(move.uci() for move in chess.Board().legal_moves):
+        for _repeat in range(20):
+            for black in ['c7c5', 'e7e5']:
+                rows.append(dict(id=f'import:{len(rows)}', start_fen=chess.STARTING_FEN,
+                    moves_json=json.dumps([white, black]), trained_color='black'))
+    def complete(items):
+        return conflicts_from_snapshot(tuple((row['id'], 'rep', '', 'black',
+            row['start_fen'], row['moves_json']) for row in items))
+    with pytest.raises(HTTPException) as small:
+        validate_sources('rep', rows[:2])
+    assert small.value.detail == dict(code='repertoire_conflict',
+        message='Competing own responses need manual resolution; no content was saved.',
+        conflicts=list(complete(rows[:2])))
+    before = json.dumps(rows, sort_keys=True)
+    full = complete(rows)
+    with pytest.raises(HTTPException) as large:
+        validate_sources('rep', rows)
+    detail = large.value.detail
+    assert len(json.dumps(detail, allow_nan=False).encode()) <= MAX_CONFLICT_DIAGNOSTIC_BYTES
+    assert detail['conflict_count'] == len(full) == 20
+    assert detail['affected_route_count'] == len(rows) == 800
+    assert detail['conflicts_truncated'] is True and 0 < len(detail['conflicts']) < len(full)
+    assert detail['conflicts'] == list(full[:len(detail['conflicts'])])
+    assert json.dumps(rows, sort_keys=True) == before
+
+
 def snapshot(*routes):
     values = []
     for identifier, moves, repertoire in routes:

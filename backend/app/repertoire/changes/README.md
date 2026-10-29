@@ -275,6 +275,29 @@ receipts keep `imports.pgn.explicit`, stable new operation identity and exact
 #553 graph/integrity preparation pins. No optional work is broadly resumed.
 #501 owns transport/UI; this source hook adds no root route or Study write.
 
+Large conflict errors remain `409/repertoire_conflict`. The Repertoire-owned
+`pgn_import_validation` diagnostic response is bounded to 8 KiB, below the
+existing gateway's 16 KiB structured-error limit. Small responses keep their
+original shape. Oversized responses include exact `conflict_count` and
+`affected_route_count`, `conflicts_truncated=true`, and only whole conflict
+objects that fit; no partial source identity list is presented as complete.
+This bounds diagnostic display only. Every original source line/annotation
+remains in the retained request, with its existing hash and retry identity.
+The complete conflict detector and acceptance policy are unchanged. No winner
+is selected, no route is removed, and no generic gateway limit is raised.
+
+The owning regression executes the real strict importer and gateway error
+serializer through the existing borrowed-driver unit harness, then reopens the
+same complete retained payload through this owner. It also proves the small
+response contract and exact identities in bounded diagnostic samples. This
+serialization repair needs no database fixture, schema or new error framework.
+Named regressions in `backend/tests/test_product_repertoire_changes.py`:
+
+- `test_oversized_import_conflict_keeps_bounded_machine_diagnostics`
+- `test_oversized_conflict_gateway_receipt_reopens_exact_import`
+- `test_conflict_diagnostics_preserve_small_shape_and_whole_source_identities`
+
+
 ```mermaid
 sequenceDiagram
   participant UI as #501 transport/UI
@@ -283,6 +306,7 @@ sequenceDiagram
   participant Importer as Existing explicit importer
   UI->>Owner: read(original operation), preview(manual resolved lines)
   Owner->>Receipt: Read rejected payload/hash/error
+  Note over Owner,Receipt: Full source retained; oversized error diagnostics have explicit summary totals
   Owner-->>UI: Exact lines/cards + current source fence + display digest
   UI->>Receipt: Approved payload under stable new operation ID
   Receipt->>Owner: validate_approved_import in owning transaction
@@ -293,13 +317,12 @@ sequenceDiagram
   Receipt-->>UI: Same durable result on duplicate delivery
 ```
 
-The owner proof uses synthetic Black branching PGN, never Andy's absent genuine
-Taimanov file. The original independent owner composition passed its native case
-at `23099c78` (1 case, 2.72s) with real gateway/importer and a test handler wrapper.
-Its exact retry/rollback/stale-source/preservation evidence remains valid for the
-owner boundary. The current native regression removes that wrapper and asserts
-that the real registered explicit handler is used; executing this changed-hook
-case remains pending capacity admission. Root/UI/A05 acceptance stays #501-owned.
+The owner proof uses synthetic Black branching PGN; private course content is
+not included in committed fixtures. The actual registered-handler native case passed at `57f95aab` (1 case,
+2.79s), with no test handler override. Its transaction/protected-state evidence
+is reused for the unchanged owning writer, receipt and importer boundaries;
+it is not claimed rerun for the pure oversized-diagnostic serialization repair.
+Root/UI/A05 acceptance stays with the integration owner.
 
 The native case in `test_product_repertoire_changes_postgres.py` reuses the
 existing capped `test_product_game_lapse_postgres.owned_postgres` fixture and
