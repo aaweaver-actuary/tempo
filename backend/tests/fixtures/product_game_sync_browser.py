@@ -230,7 +230,10 @@ def seed_fixture(transaction, project):
     identities = {}
     for name, removed in (("primary", chess.D8), ("unrelated", chess.A8)):
         fresh = name == "primary"
-        card_id, repertoire = f"__t10-{name}-card-{token}", f"__t10-{name}-repertoire-{token}"
+        # The real authored-source capture intentionally excludes the reserved
+        # '__' repertoire namespace. Use ordinary, unique synthetic IDs so this
+        # fixture exercises that owner rather than a test-only source shortcut.
+        card_id, repertoire = f"fixture-t10-{name}-card-{token}", f"fixture-t10-{name}-repertoire-{token}"
         route, scan = repertoire + "-route", repertoire + "-scan"
         board = chess.Board(); board.remove_piece_at(removed)
         start = board.fen(en_passant="legal")
