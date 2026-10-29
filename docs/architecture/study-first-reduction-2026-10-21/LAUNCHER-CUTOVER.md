@@ -1,6 +1,8 @@
 # Launcher cutover spec (359-F / issue #369)
 
-Status: **source-backed specification only** (no launcher/runtime mutation in this issue).
+Historical programme reference. This document records the October 21–25 Study-first reduction/migration work. Current product scope and delivery order come from [SPEC](../../../SPEC.md); execution comes from [AGENTS](../../../AGENTS.md). Its retirement defaults, replacement-runtime requirements, migration sequence, source-reduction targets, and then-current task queue are not prerequisites or assignments for ordinary product features. Reuse a particular procedure only when the current assignment explicitly selects it and reconciles it with current requirements. Historical evidence and safety conditions are retained.
+
+Status: **historical source-backed proposal only** (no launcher/runtime mutation in this issue).
 Baseline reviewed: [`7d77ed1b25198dcd320e0265f777cc630f23775e`](https://github.com/aaweaver-actuary/tempo/commit/7d77ed1b25198dcd320e0265f777cc630f23775e).
 Upstream dependencies: #358 (live fingerprint), #267 (latest-history migration), #364 (Study artifact), #365 (Learning runtime), #367 (opt-in Study-only Compose).
 

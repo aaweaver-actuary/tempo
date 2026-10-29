@@ -1,11 +1,13 @@
 # Graph-preserving fresh-start disposition for #362
 
+Applicability: this records the October 25 graph-preserving fresh-start proposal for #362. It is not the current ordinary-feature retention policy. [SPEC](../SPEC.md) requires preserving the working installation's current content and learning history. The old-row disposal and no-drain statements below apply only to that separately selected transition, after current scope is reconciled and exact irreversible actions are authorized. Reading this document does not activate the proposal.
+
 Revised 2026-10-25 after the user's explicit fresh-start decision. Source names
 below were checked at `1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf`; they do not
 claim to identify the actual installation. **No live deletion, reset, migration,
 file removal or cutover has run.** There is no target live table count.
 
-The retained outcome is a **usable opening graph, necessary repertoire
+For that recorded fresh-start proposal, the retained outcome is a **usable opening graph, necessary repertoire
 definitions and any new verified graph recovery copy**. Old reviews/schedules,
 server receipts, background work, browser old envelopes and old backups need not
 migrate, drain, replay or be restored. Their presence is not an indefinite
@@ -100,6 +102,8 @@ separation. Their source maps remain useful only for resolving the exact keep an
 disposal sets; no cross-owner schema consolidation is proposed.
 
 ## Next executable slice and final confirmation boundary
+
+These are proposed transition steps, not the next step for unrelated features.
 
 1. Consume the closure owner's exact versioned graph/repertoire keep contract and
    verify its export/restore fixture preserves usable graph structure and required

@@ -21,20 +21,22 @@ def matching_repertoire(database, source_name, trained_color):
     ).fetchone()
 
 
-def clear_main_repertoire(database):
-    database.execute_native(
-        "UPDATE repertoires SET is_main=0 "
-        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
-    )
-
-
-def upsert_main_repertoire(database, repertoire_id, name, source_name, now):
+def save_repertoire(database, repertoire_id, name, source_name, now):
+    """Adding content never changes the user's current main selection."""
     database.execute_native(
         "INSERT INTO repertoires(id,name,source_name,created_at,is_main) "
-        "VALUES(%s,%s,%s,%s,1) ON CONFLICT(id) DO UPDATE SET "
-        "is_main=1,source_name=excluded.source_name",
-        (repertoire_id, name, source_name, now),
-    )
+        "VALUES(%s,%s,%s,%s,0) ON CONFLICT(id) DO UPDATE SET source_name=excluded.source_name",
+        (repertoire_id,name,source_name,now))
+
+
+def current_sources(database,repertoire_id,trained_color):
+    return database.execute_native("""
+        SELECT 'line:'||id id,start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=%s
+        UNION ALL
+        SELECT 'card:'||card.id,card.start_fen,card.moves_json,COALESCE(card.trained_color,%s)
+        FROM cards card WHERE card.content_type='opening' AND card.archived=0 AND card.superseded_by IS NULL
+        AND (card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.repertoire_id=%s AND link.card_id=card.id))
+        LIMIT 10001""",(repertoire_id,trained_color,repertoire_id,repertoire_id)).fetchall()
 
 
 def existing_lines(database, repertoire_id):
@@ -59,8 +61,7 @@ def insert_import_rows(database, lines_to_insert, depths_to_upsert, annotations_
                     break
         cursor.executemany(
             "INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) "
-            "VALUES(%s,%s) ON CONFLICT(line_id) DO UPDATE SET "
-            "learner_decision_count=excluded.learner_decision_count",
+            "VALUES(%s,%s) ON CONFLICT(line_id) DO NOTHING",
             depths_to_upsert,
         )
         cursor.executemany(

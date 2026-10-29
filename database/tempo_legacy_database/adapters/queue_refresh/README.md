@@ -98,7 +98,7 @@ All 55 original direct database sites are now delegated: admission writers cover
 
 [capacity.py](capacity.py) owns the original SQL builders, three direct route-validity queries and three bounded route-page queries. Its fixed row generator retains SQL/page/keyset order and returns rows; the application still constructs `CapacityRoute` objects, selects the deterministic winning route and preserves its original public API. The existing raw-reader parameter is retained solely as the same compatibility capability used by current callers; there is no new arbitrary query executor or framework. The application supplies the unchanged read budget. No root module imports application code.
 
-[presentation.py](presentation.py) additionally owns the three existing presentation-fact queries, optional legacy reader/default borrowed reader and PostgreSQL shadow-evidence predicate. It returns rows, reviewed-card IDs and available-entry IDs. Empty input still makes exactly one read; the original admission-kind/eligibility classification and legacy remediation checks remain in `queue_application.presentation_rows`. Attempt/teaching/evidence fields and relations are documented in the [queue/review dictionary](../../schema/study-queue-review-2/README.md), [queue/origin dictionary](../../schema/study-queue-review-1/README.md), [teaching-state dictionary](../../schema/study-queue-review-3/README.md) and [opening-evidence dictionary](../../schema/opening-evidence-1/README.md). Existing availability SQL is reused from its [root owner](../http_composition/availability.py).
+[presentation.py](presentation.py) additionally owns the three existing presentation-fact queries, optional legacy reader/default borrowed reader and PostgreSQL shadow-evidence predicate. It returns rows, reviewed-card IDs and available-entry IDs. Empty input still makes exactly one read; the original admission-kind/eligibility classification and legacy remediation checks remain in the narrow [`queue_presentation.presentation_rows`](../../../../backend/app/services/queue_presentation.py), reexported by `queue_application.presentation_rows`. Attempt/teaching/evidence fields and relations are documented in the [queue/review dictionary](../../schema/study-queue-review-2/README.md), [queue/origin dictionary](../../schema/study-queue-review-1/README.md), [teaching-state dictionary](../../schema/study-queue-review-3/README.md) and [opening-evidence dictionary](../../schema/opening-evidence-1/README.md). Existing availability SQL is reused from its [root owner](../http_composition/availability.py).
 
 ```mermaid
 flowchart LR
@@ -124,3 +124,18 @@ One-time source proof compares all 79 queue query/method/parameter/result expres
 [Foreground refresh projection](foreground.py) owns the unchanged named queue-projection write used after canonical task enqueue. Existing `queue_application` compatibility constant aliases it and request_queue_refresh_in_transaction calls it at the original point on the same borrowed transaction. Coordinated legacy review consumers use this same operation; no second SQL implementation or task/commit authority is introduced.
 
 [Queue application eligibility and seeding storage](application/README.md) holds complete original fixed queries and sparse unlock selection; application allowance/seed/unlock/phase/clock/feedback decisions remain outside. The category name identifies its consumer, not application policy inside the database tree. Randomization/quarantine/materialization/requeue queries now reside in the same root category; queue_application contains policy only with no SQL/direct driver/dialect operations. The existing queue_admission_adapter capacity-reader bridge is separated too: fixed borrowed rows stay root, pure deterministic route selection remains application code. Original public reader wrapper remains compatible.
+
+
+Native presentation captures now bind reviewed-card and available-entry IDs with
+arrays, so queue size does not generate a new SQL parser tree. The fixed
+`prepare_presentation_queries(miss_reason)` compiles immutable availability SQL
+before a short unit opens; no row data or eligibility result is cached. The
+native reader re-evaluates all original current availability predicates in the
+writer. Explicit legacy read callbacks and SQLite keep their original query
+shape. See [protected priority promotion](../study/review/README.md#actual-scale-protected-promotion).
+
+`priority_ownership_state` evaluates issued-origin, evidence-attempt and teaching
+membership as uncorrelated sets, avoiding a historical table scan per queued
+card when current-day statistics underestimate the queue. Its digest fields,
+row-version/ownership/protection guards and NULL-as-absent semantics are unchanged.
+No schema, writer, transaction boundary, public signature or timeout changed.

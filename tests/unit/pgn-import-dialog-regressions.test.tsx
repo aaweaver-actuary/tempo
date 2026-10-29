@@ -166,6 +166,30 @@ it("PGN admission polling yields foreground capacity while graph and queue publi
     expect(new Headers(options?.headers).get("X-Tempo-Work-Class")).toBe("background");
 });
 
+it("saved PGN stops waiting after its finite preparation window without a second import", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  await openDialog();
+  vi.mocked(fetch).mockImplementation(async () => Response.json({ repertoires: [{ id: "rep", name: "Opening", source_name: "opening.pgn", line_count: 1, card_count: 0, due_count: 0, graph_state: "refreshing" }] }));
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(screen.getByRole("heading", { name: "PGN saved" })).toBeTruthy();
+  expect(screen.getByText(/Preparation is pending/)).toBeTruthy();
+  expect(screen.getByText(/Planned/)).toBeTruthy();
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("saved conflicted publication remains held for manual resolution", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  await openDialog();
+  vi.mocked(fetch).mockResolvedValue(Response.json({ repertoires: [{ id: "rep", name: "Opening", source_name: "opening.pgn", line_count: 1, card_count: 0, due_count: 0, graph_state: "ready", integrity_status: "needs_repair" }] }));
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await screen.findByRole("heading", { name: "PGN saved" });
+  expect(screen.getByText(/held for manual integrity resolution/)).toBeTruthy();
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
+});
+
 it("acknowledged PGN import observes publication beyond 250 reads with exactly one actual POST", async () => {
   const actualCommand = await vi.importActual<typeof import("../../app/lib/pgn-import-command")>("../../app/lib/pgn-import-command");
   vi.mocked(savePgnImportCommand).mockImplementation(actualCommand.savePgnImportCommand);
@@ -424,7 +448,8 @@ it("acknowledged import needing integrity repair preserves its existing zero-adm
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByRole("heading", { name: "Imported" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "PGN saved" })).toBeTruthy();
+    expect(screen.getByText(/held for manual integrity resolution/)).toBeTruthy();
     expect(dialog.databaseUpdated).toHaveBeenCalledOnce();
     expect(repairRequested).toHaveBeenCalledOnce();
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/queue/window"))).toBe(false);

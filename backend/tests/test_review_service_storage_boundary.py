@@ -109,10 +109,8 @@ def test_review_protected_insert_keeps_nested_position_read_and_positional_order
     database = Borrowed([Cursor(), Cursor(value=(1,)), Cursor(value=(9,)),
                          Cursor(value={'id': 7}), Cursor(), Cursor(), Cursor()], events)
     rows = [dict(id=2, position=0), dict(id=7, position=9)]
-    fake_module(monkeypatch, 'app.services.queue_application',
-                presentation_rows=lambda connection, day: rows)
-    fake_module(monkeypatch, 'app.services.queue_ordering',
-                _priority_queue_order=lambda value: list(reversed(value)))
+    monkeypatch.setattr(application, 'presentation_rows', lambda connection, day: rows)
+    monkeypatch.setattr(application, '_priority_queue_order', lambda value: list(reversed(value)))
     application.ensure_card_queued_after(database, 'card', queue_date='day',
                                         protect_presented=True, preserve_order=False)
     parameters = [event[1] for event in events if isinstance(event, tuple)]
@@ -134,3 +132,25 @@ def test_review_receipt_clock_and_seed_follow_provenance_and_precede_borrowed_wr
     seed = int(hashlib.sha256(b'day').hexdigest()[:15], 16)
     assert events == [('fingerprint', ('entries', 'saved', 'activation'), 'before'),
                       'execute_lookup', 'clock', ('execute', ('day', seed, 'hash', 'timestamp'))]
+
+
+def test_protected_requeue_does_not_load_queue_seeding_or_worker_orchestration():
+    """Cold receiving promotion must not spend its writer budget loading a facade."""
+    import os
+    import subprocess
+    script = r"""
+import sys
+from unittest.mock import patch
+from app.services import review_service
+from tempo_legacy_database.adapters.queue_refresh import presentation
+rows=[dict(id=1,card_id='card',position=0,content_type='opening',admission_kind='new',
+           gameplay_priority_reason=None,cycle=0,attempt_state='clean')]
+with patch.object(review_service.storage,'queued_entry',return_value={'id':1}), \
+     patch.object(review_service.storage,'classify_entry'), \
+     patch.object(presentation,'presentation_facts',return_value=(rows,set(),{1})):
+    review_service.ensure_card_queued_after(object(),'card',queue_date='2026-10-26',
+                                           protect_presented=True,preserve_order=False)
+assert not ({'app.services.queue_application','app.services.durable_tasks',
+             'app.services.tactical_catalog'} & set(sys.modules))
+"""
+    subprocess.run([sys.executable,'-c',script],check=True,env=os.environ.copy())

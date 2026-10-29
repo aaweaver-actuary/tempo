@@ -1,0 +1,28 @@
+{
+  "model": "EncounterReceipt",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source_revision": 1,
+    "status": "pending",
+    "outcome": "accepted",
+    "owner_receipt_id": "synthetic-study-encounter-receipt",
+    "admitted_at": "2026-10-26T12:01:00Z",
+    "available_by": null,
+    "applied_at": null,
+    "reason": "paused_by_owner",
+    "interface_version": "0.2.1",
+    "detected_at": "2026-10-26T12:00:00Z",
+    "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "observation": "missed",
+    "observation_recorded": true,
+    "disposition": "first_introduction",
+    "admission_status": "pending",
+    "deferred_reason": "paused"
+  }
+}

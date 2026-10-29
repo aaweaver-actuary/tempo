@@ -39,8 +39,17 @@ def prepare_control_read(source, defensive_kinds):
     row_lock = ' FOR UPDATE' if postgres_store.configured() else ''
     settings_admission = (task_admission_sql('kind', defensive_kinds) if source == 'durable' else
                           search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
+    native_explicit = source == 'durable' and postgres_store.configured()
+    if native_explicit:
+        from ...authored_repertoires.pgn_import.preparation import receipt_scope
+        settings_admission = f"({settings_admission}) OR ({receipt_scope()})"
 
     def read_work(database, work_id):
+        if native_explicit:
+            return database.execute_native(
+                f"SELECT {state_column},({settings_admission}) AS settings_admitted "
+                f"FROM {table} WHERE {id_column}=%s{row_lock}", (work_id,),
+            ).fetchone()
         return database.execute(
             f"SELECT {state_column},({settings_admission}) AS settings_admitted "
             f"FROM {table} WHERE {id_column}=?{row_lock}",
@@ -124,6 +133,13 @@ def release_threat_lease(database, values):
 
 
 def durable_activity(database, values, defensive_kinds):
+    if postgres_store.configured():
+        from ...authored_repertoires.pgn_import.preparation import receipt_scope
+        admission = f"({task_admission_sql('kind', defensive_kinds)}) OR ({receipt_scope()})"
+        return database.execute_native(
+            f"SELECT *,NOT ({admission}) AS paused_by_settings "
+            "FROM background_tasks WHERE state!='complete' OR updated_at>=%s", values,
+        ).fetchall()
     return database.execute(
         f"SELECT *,NOT {task_admission_sql('kind', defensive_kinds)} AS paused_by_settings "
             "FROM background_tasks WHERE state!='complete' OR updated_at>=?",

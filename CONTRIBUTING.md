@@ -2,67 +2,46 @@
 
 ## Ownership and coordination
 
-Start with the adopted [component architecture](docs/architecture/component-reconstruction.md) and the [12-phase index and donor map in #192](https://github.com/aaweaver-actuary/tempo/issues/192). Refresh the relevant issue and current source before implementation. Historical audits are evidence about their dated baselines, not current execution policy.
+Start with [AGENTS.md](AGENTS.md), [SPEC.md](SPEC.md), and the assigned acceptance slice. Historical architecture programmes are references, not automatic prerequisites.
 
-- Keep each change bounded to one component and its real dependencies. Preserve existing user work and use an isolated branch based on current `main`; do not develop in the live study checkout.
-- Assign one owner to each shared contract, transaction boundary, migration boundary, and shared build configuration. Other contributors may implement in parallel against the agreed interface and fixtures.
-- Use independent PRs when changes can be reviewed, validated, and merged independently. Use a small explicit stack only when a consumer genuinely depends on a producer's unmerged contract; identify that dependency and validate the resulting integration.
-- Work from actual consumer/provider dependencies, not numbered phase order. Unrelated later work may proceed before an earlier phase is complete. Keep global-budget, learning-weight, probability-driven curriculum, and recurring-pattern features outside core reconstruction acceptance.
-- Do not install all repository dependencies for a local component task. Select the owning package's setup and tests from [docs/testing.md](docs/testing.md).
+Use an isolated task branch. Agree ownership for shared contracts, migrations, transaction boundaries, and build configuration. Prefer independent PRs; use a small explicit stack only for a real unmerged dependency. Name its base and the owner who will integrate it. Do not continually rebase or add newer dependencies merely because main advanced; actual conflict and qualification requirements still apply.
+
+Component workers own bounded delivery. The designated feature owner resolves dependencies and proves the assembled journey. A component worker does not inherit unrelated integration or installation work.
 
 ## Changes and review
 
-- Apply the project-wide [single-user MVP delivery policy](AGENTS.md#deliver-a-usable-single-user-mvp): prioritize common workflows, preserve essential safeguards, and track non-blocking edge cases with safe fallback, scope, user impact and follow-up acceptance criteria in linked issues. Their existence alone does not block delivery.
-- Preserve public behavior unless the task explicitly changes it. Add named regressions for user-reported defects fixed by the change, keep them in their regular owning component suite, and follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction). Deferred issues are not claims of fixes or regression coverage.
-- Explain why a legacy invariant or implementation detail is retired or moved, identify its new owner, and show the replacement proof. Protect user data, durable study state, and truthful error reporting.
-- Keep PRs focused. Describe the user-visible or architectural result, affected contracts and consumers, exact validation performed, and checks not run with reasons. Separate unrelated failures and name their evidence and owner; do not silently broaden the task to repair unrelated systems.
-- A draft state, issue status, or unrelated advancement of `main` alone does not establish that tests must be repeated. Reuse prior evidence only when the relevant source, dependencies, fixtures, commands, and toolchain inputs are unchanged. Failed, missing, cancelled, or zero-selected required checks never pass.
-- Distinguish implementation completion from hosted merge qualification. Documentation does not change workflows, required checks, or branch protection. Never claim a merge, deployment, or runtime activation that did not occur.
+Review the assigned behavior, changed contracts, affected consumers, and applicable safety invariants. For every proposed blocker, identify the violated acceptance requirement, concrete correctness/safety defect, or actual required gate. A concrete defect discovered during review remains actionable even if the original plan missed it.
+
+Use one coherent initial review. After repairs, review the changed portions and affected dependencies; do not restart unrelated audits or request additional reviewers without a new finding, material change, or actual review requirement. Do not impose an arbitrary review limit that prevents correcting real defects.
+
+Formatting preferences, alternate designs, speculative risks, and unrelated cleanup are not new release gates. Accessibility, broken user behavior, security, and enforced checks are not dismissed as formatting. Separate functional defects, harness/environment problems, and gate failures. Do not call an uncertain failure pre-existing without evidence.
+
+Use [docs/testing.md](docs/testing.md) for selection, regressions, and evidence reuse. An intentional requirement change can change an obsolete expectation; record the requirement and replacement proof. Do not weaken still-applicable assertions to obtain green results. A legitimate fixture repair must preserve what the test is meant to prove.
 
 ### Architecture impact and drawings
 
-Architecture-changing PR acceptance includes updating the affected source-truth
-[architecture drawings](docs/architecture/diagrams/README.md), with source links,
-ownership and failure boundaries. Cover the changed abstraction levels and key
-flows; do not regenerate unaffected views. Use the index's review procedure to
-check interfaces, dependency direction, data/transaction/effect ownership,
-asynchronous receipt semantics, shutdown and resource limits. Keep proposed work
-and unverified deployment claims separate from implemented source.
-
-Place canonical Mermaid blocks directly in the relevant owning directory's
-`README.md`, including component and detailed sequence views, so GitHub directory
-navigation renders the drawings. The central diagram README owns the system
-overview and links to those sections. Give a cross-component view one canonical
-README home and link from peers. When relocating a drawing, move its block and
-source notes, update links, and retain useful old anchors as pointers; do not copy
-the same drawing into multiple files. See the index's canonical placement table.
-
-Include an `Architecture impact:` statement in the PR: link the updated views and
-summarize the changed boundary, or write `Architecture impact: none` with a
-specific reason. A documentation correction can update a drawing without changing
-runtime architecture. Review real coupling, including named legacy exceptions;
-do not certify isolation from hidden controls or diagrams alone. In particular,
-Study must not call, import or wait for Games or share its lifecycle. Optional
-influence belongs at the Learning/queue owner's semantic interface, with no
-cross-component writes. Shared pure libraries are permitted.
-
-For documentation-only changes, follow the documentation row in
-[test selection](docs/testing.md#select-the-smallest-relevant-proof), validate
-links/source correspondence and Mermaid syntax using existing lightweight tooling
-when available, and inspect the GitHub rendering. Record unavailable tooling or
-rendering checks honestly; do not install a new toolchain or run full-system tests
-merely to edit drawings. Existing required checks, permissions and the single-user
-MVP policy still apply.
+Update affected canonical diagrams only for a materially changed boundary under [the drawing procedure](docs/architecture/diagrams/README.md#maintenance-and-review-procedure). The PR states the changed boundary and links its view, or `Architecture impact: none` with a brief reason. Instruction-only changes do not themselves change runtime architecture. Do not duplicate the procedure here or require unrelated drawings and rendering audits.
 
 ## Task resources and cleanup
 
-- The implementing agent owns cleanup of its disposable resources and eligible development checkout. An open or unmerged PR, pending review, or inconclusive audit is not by itself a reason to retain a redundant checkout.
-- Before removing a checkout, verify that required commits and unique local work are preserved on durable refs or in an appropriate verified artifact; inspect uncommitted, untracked, ignored, stashed, and unpushed work. Preserve necessary logs, traces, reports, and reproduction instructions outside the checkout, with the tested revision and commands recorded.
-- Confirm that no running agent, process, or mounted container still needs the checkout or resource. Uncertain ownership or unpreserved unique state requires retention with an explicit reason. Use `git worktree remove` for registered worktrees after these checks; do not force-remove dirty worktrees or delete branches as part of checkout cleanup.
-- Tear down only verified task-owned disposable resources. Preserve live study data, other tasks' resources, shared base images, and safe reusable caches. Never globally prune Docker resources or erase a volume whose ownership and disposable status are uncertain.
-- Keep inspection proportional to the task. Inspect Docker when the task used it or when a specific cleanup target requires checking container references; a documentation-only task does not need a Docker inventory as a prerequisite. An unavailable daemon is not permission to restart it or touch live services, and it need not block independently verified filesystem cleanup.
-- Report removed and retained resources, preserved evidence and refs, and any remaining cleanup blocker or retention condition. Perform eligible cleanup after preservation; do not leave it as an unspecified task for the user.
+The implementing agent owns its disposable resources and eligible checkout. Before deletion, preserve unique committed, uncommitted, untracked, ignored, stashed, or unpushed work as appropriate, and verify that no active agent, process, or mounted container still needs the target. Preserve necessary evidence outside a checkout being removed, with revision and reproduction commands.
+
+Use git worktree removal for registered worktrees. Never force-remove uncertain/dirty work, delete another owner's branch, globally prune Docker, remove live volumes, or discard reusable shared caches. An open PR alone does not justify retaining a redundant checkout; uncertain ownership or unique state does.
+
+Inspect only resources used by the task or implicated by the cleanup target. Documentation work does not require Docker inspection, daemon restart, or a host-wide inventory. Safely finish independent cleanup and report any precise retention condition.
 
 ## Handoff
 
-Report the branch/PR, changed ownership boundaries, validation commands and results, remaining implementation or tooling limits, and any exact external blocker. Include removed or retained task resources, preserved evidence and refs, and remaining cleanup conditions. Open one focused PR for one task, or update its existing PR. Do not merge unless the user explicitly requests it.
+Maintain one current summary in the existing PR/task:
+
+- Implemented: result and revision.
+- Demonstrated: assigned behavior/checks, environment, and tested revision.
+- Merge-qualified: actual applicable required-check status, or not established.
+- Installed: exact installed result, or not installed.
+- Remaining: blocker/limitation and next owner, including cleanup where relevant.
+
+Link concise commands/results and retained evidence; do not duplicate full logs or require another report file. Update stale readiness statements rather than adding competing summaries. Safe limitations may remain in the existing task; create separate issues only for useful independently tracked work.
+
+Component evidence is not assembled acceptance; synthetic acceptance is not genuine-data or installation evidence. A documentation-only result has no runtime demonstration. A draft PR is not merge-qualified merely because local checks pass.
+
+Open or update the assigned PR within existing permissions. Do not merge, deploy, or operate live services without authorization. Once local acceptance and scoped cleanup are complete, publish the handoff; a remaining gate does not assign more feature polishing.
