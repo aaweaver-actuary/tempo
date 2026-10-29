@@ -5474,3 +5474,7 @@ fixture-authorized command:
 
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
 - **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
+
+### Phone release planner fixture and inventory compatibility
+
+`tests/runner/ci-reliability.test.mjs` owns `negative controlled-browser fixtures remain compatible with the repository regression guard` and the existing `new unclassified specs fail planning and every test has nightly and release coverage`. They protect the negative controlled-browser fixture source from blocking planning and require every existing browser spec to remain classified. The controlled-browser registration suite retains its real generated exclusive, skipped, and TODO cases and their rejection/accounting assertions.

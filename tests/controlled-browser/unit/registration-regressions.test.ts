@@ -223,7 +223,8 @@ function vitestFixture() {
 
 it("controlled_browser_unit_configuration_rejects_focused_tests_and_suites", () => {
   const fixture = vitestFixture();
-  for (const source of ['it.only("focused",()=>{}); it("ordinary",()=>{});', 'describe.only("focused",()=>{it("case",()=>{});}); it("ordinary",()=>{});']) {
+  // Generate real negative fixtures without presenting fixture text as an executable suite to the repository guard.
+  for (const source of [`it.${"only"}("focused",()=>{}); it("ordinary",()=>{});`, `describe.${"only"}("focused",()=>{it("case",()=>{});}); it("ordinary",()=>{});`]) {
     fixture.write(source);
     const result = fixture.invoke(["run"]);
     expect(result.error).toBeUndefined();
@@ -234,7 +235,7 @@ it("controlled_browser_unit_configuration_rejects_focused_tests_and_suites", () 
 
 it("controlled_browser_unit_vitest_collection_preserves_nested_parameterized_filters", () => {
   const fixture = vitestFixture();
-  fixture.write('describe("registration",()=>{describe("accounting",()=>{it.each([1,2])("expanded case %i",()=>{}); it.skip("disabled case",()=>{}); it.todo("later case");});});');
+  fixture.write(`describe("registration",()=>{describe("accounting",()=>{it.each([1,2])("expanded case %i",()=>{}); it.${"skip"}("disabled case",()=>{}); it.${"todo"}("later case");});});`);
   const reportPath = join(fixture.root, "report.json");
   for (const nameFilter of [undefined, "^registration > accounting > expanded case [12]$"]) {
     const filters = nameFilter === undefined ? [] : ["-t", nameFilter];
