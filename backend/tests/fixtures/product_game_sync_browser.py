@@ -146,6 +146,7 @@ def seed_fixture(transaction, project):
     now = datetime(2026, 10, 26, 12, tzinfo=timezone.utc)
     identities = {}
     for name, removed in (("primary", chess.D8), ("unrelated", chess.A8)):
+        fresh = name == "primary"
         card_id, repertoire = f"__t10-{name}-card-{token}", f"__t10-{name}-repertoire-{token}"
         route, scan = repertoire + "-route", repertoire + "-scan"
         board = chess.Board(); board.remove_piece_at(removed)
@@ -160,12 +161,14 @@ def seed_fixture(transaction, project):
                                     (repertoire,title,now.isoformat()))
             database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,
                 state,due_date,introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
-                VALUES(%s,%s,'prefix',%s,'["e2e4"]','white','mature',%s,%s,1,20,%s,%s,20,'opening')""",
-                (card_id,repertoire,start,date.today().isoformat() if name == "unrelated" else due.date().isoformat(),
-                 (now-timedelta(days=6)).date().isoformat(),state,(now-timedelta(days=25)).isoformat()))
-            database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
-                internal_rating,guided,source_kind,source_ref) VALUES(%s,'correct',%s,10,20,'good',0,'study',%s)""",
-                (card_id,(now-timedelta(days=3)).isoformat(),"fixture-history:"+card_id))
+                VALUES(%s,%s,'prefix',%s,'["e2e4"]','white',%s,%s,%s,1,%s,%s,%s,%s,'opening')""",
+                (card_id,repertoire,start,"new" if fresh else "mature",date.today().isoformat(),
+                 None if fresh else (now-timedelta(days=6)).date().isoformat(),0 if fresh else 20,
+                 None if fresh else state,None if fresh else (now-timedelta(days=25)).isoformat(),0 if fresh else 20))
+            if not fresh:
+                database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+                    internal_rating,guided,source_kind,source_ref) VALUES(%s,'correct',%s,10,20,'good',0,'study',%s)""",
+                    (card_id,(now-timedelta(days=3)).isoformat(),"fixture-history:"+card_id))
             database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)", (repertoire,card_id))
             database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
                 VALUES(%s,%s,'Route','white',%s,'["e2e4"]',%s)""", (route,repertoire,start,now.isoformat()))
