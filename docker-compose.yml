@@ -85,7 +85,6 @@ services:
     restart: unless-stopped
 
   background-worker:
-    cpus: 0.35
     mem_limit: 448m
     build:
       context: .
@@ -111,7 +110,6 @@ services:
     restart: unless-stopped
 
   background-scheduler:
-    cpus: 0.05
     mem_limit: 96m
     build:
       context: .
@@ -134,7 +132,6 @@ services:
     restart: unless-stopped
 
   defense-engine:
-    cpus: 0.25
     mem_limit: 384m
     init: true
     build:
@@ -150,7 +147,6 @@ services:
     restart: unless-stopped
 
   maia-worker:
-    cpus: 0.3
     mem_limit: 1024m
     init: true
     build:
@@ -163,7 +159,6 @@ services:
     restart: unless-stopped
 
   postgres-backup:
-    cpus: 0.05
     mem_limit: 96m
     tmpfs: [/var/lib/postgresql]
     image: postgres:18.6-trixie

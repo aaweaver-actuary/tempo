@@ -31,7 +31,6 @@ services:
     restart: unless-stopped
 
   defense-engine:
-    cpus: 0.25
     mem_limit: 384m
     build:
       context: .
@@ -43,7 +42,6 @@ services:
     restart: unless-stopped
 
   analysis-worker:
-    cpus: 0.45
     mem_limit: 640m
     build:
       context: .
@@ -62,7 +60,6 @@ services:
     restart: unless-stopped
 
   maia-worker:
-    cpus: 0.3
     mem_limit: 1024m
     build:
       context: .

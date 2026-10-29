@@ -56,8 +56,6 @@ def test_minimal_installed_container_load_issue_review_without_backend_or_broker
         "no-new-privileges",
         "--pids-limit",
         "64",
-        "--cpus",
-        "1",
         "--memory",
         "256m",
         "--publish",

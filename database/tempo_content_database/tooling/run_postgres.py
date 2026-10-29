@@ -96,8 +96,7 @@ def main(arguments=None):
             secret.chmod(0o600)
             attempted_container = True
             docker("run", "--detach", "--name", identity, "--label", "tempo.owner=" + identity,
-                   "--label", "tempo.disposable=true", "--memory", "512m", "--cpus", "1",
-                   "--pids-limit", "256", "--mount", "type=volume,source=" + volume + ",target=/var/lib/postgresql",
+                   "--label", "tempo.disposable=true", "--memory", "512m", "--pids-limit", "256", "--mount", "type=volume,source=" + volume + ",target=/var/lib/postgresql",
                    "--publish", "127.0.0.1::5432", "--env-file", str(secret), image,
                    "postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=32")
         port = docker("inspect", identity, "--format", '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}').stdout.strip()

@@ -33,7 +33,6 @@ services:
           create_host_path: false
     networks:
       - tempo
-    cpus: 0.25
     mem_limit: 384m
     pids_limit: 128
     security_opt:

@@ -5,7 +5,6 @@ services:
   game-feedback-worker:
     profiles: [games-feedback]
     init: true
-    cpus: 0.15
     mem_limit: 256m
     pids_limit: 96
     build:
