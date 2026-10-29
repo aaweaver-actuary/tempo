@@ -19,6 +19,8 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
     current = storage.current_card_identity(database, card_id)
     if not current or any(current[column] != origin[column] for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")) or (origin["legacy"] and request.expected_revision is None and origin["revision"] != 1):
         raise ReviewConflict("card_revision_changed", "The card changed after this attempt. The completed result needs review.")
+    from .services.study_attempt_guard import guard_current_attempt
+    guard_current_attempt(database,request.queue_entry_id,card_id,origin['revision'])
     if origin["last_status"] in {"buried", "complete"} and not origin["review_result_json"]:
         raise ReviewConflict("queue_attempt_retired", "This queue attempt was retired without a saved review. The completed result needs review.")
     return {**origin, "id": origin["queue_entry_id"],
@@ -39,3 +41,6 @@ def validate_failure_marker(database, entry_id: int, card_id=None, expected_revi
         for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")
     ):
         raise ReviewConflict("queue_attempt_unprovable", "The guided attempt no longer matches this queue entry. Its completed review needs reconciliation.")
+
+    from .services.study_attempt_guard import guard_current_attempt
+    guard_current_attempt(database,entry_id,contexts[0]['card_id'],contexts[0]['revision'])

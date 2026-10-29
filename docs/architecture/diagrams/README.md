@@ -8,6 +8,13 @@ The [current backend organization view](../../../backend/app/README.md) maps the
 
 ## Source and status
 
+**SOURCE IMPLEMENTED / #503:** [Study recombination](../../../backend/app/study/recombination/README.md)
+owns the canonical saved-review, route-local join/split transaction, exact manual
+attempt confirmation and original-obligation targeting diagrams. Its six-table
+ER retains source content and immutable history. Migration 053/readiness 53 and
+changed native evidence are source qualification; A08 rerun and deployment are
+separate claims.
+
 **PROPOSED / #487:** [Study game feedback](../../../backend/app/study/README.md)
 owns the canonical receiver/transaction and normal Study recovery drawings;
 [its database chart](../../../database/tempo_legacy_database/adapters/study/README.md)
