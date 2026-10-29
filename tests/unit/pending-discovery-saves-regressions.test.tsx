@@ -63,6 +63,16 @@ function dispatch(type: string, detail?: unknown) {
     : new CustomEvent(type, { detail })));
 }
 
+function openDisclosure() {
+  const trigger = screen.getByText(/^Saves(?: \(\d+\))?$/);
+  const disclosure = trigger.closest("details") as HTMLDetailsElement;
+  expect(disclosure.open).toBe(false);
+  // jsdom does not model native disclosure visibility; browser coverage checks it.
+  fireEvent.click(trigger);
+  expect(disclosure.open).toBe(true);
+  return trigger;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   outbox.pending.mockReturnValue([...savedAdmissions]);
@@ -84,10 +94,11 @@ afterEach(() => {
 it("renders only persisted saves and makes no admission, feed, or proposal request", () => {
   const onQueueChanged = vi.fn().mockResolvedValue(undefined);
   render(<PendingDiscoverySaves onQueueChanged={onQueueChanged} />);
+  openDisclosure();
 
-  expect(screen.getByText(/Discovery pending-id/)).toBeTruthy();
-  expect(screen.getByText(/Discovery accepted-id/)).toBeTruthy();
-  expect(screen.getByText(/Discovery failed-id/)).toBeTruthy();
+  expect(screen.getByText("pending-id")).toBeTruthy();
+  expect(screen.getByText("accepted-id")).toBeTruthy();
+  expect(screen.getByText("failed-id")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Retry save" })).toHaveLength(1);
   expect(outbox.recover).toHaveBeenCalledTimes(1);
   expect(outbox.enqueue).not.toHaveBeenCalled();
@@ -100,6 +111,7 @@ it("retries a failed save by opportunity ID and blocks a retry while busy", asyn
   const retryRequest = new Promise<void>((resolve) => { finishRetry = resolve; });
   outbox.retry.mockReturnValue(retryRequest);
   const view = render(<PendingDiscoverySaves onQueueChanged={requests} interactionBlocked />);
+  openDisclosure();
   const blockedButton = screen.getByRole("button", { name: "Retry save" }) as HTMLButtonElement;
   expect(blockedButton.disabled).toBe(true);
   fireEvent.click(blockedButton);
@@ -118,6 +130,7 @@ it("retries a failed save by opportunity ID and blocks a retry while busy", asyn
 it("resolves the save notice and refreshes the queue only on confirmed queue events", async () => {
   const onQueueChanged = vi.fn().mockResolvedValue(undefined);
   render(<PendingDiscoverySaves onQueueChanged={onQueueChanged} />);
+  openDisclosure();
 
   dispatch(DISCOVERY_ADMISSIONS_CHANGED);
   dispatch("storage");
@@ -135,16 +148,17 @@ it("resolves the save notice and refreshes the queue only on confirmed queue eve
 
 it("shows storage-read errors without dropping records, then clears only that read error", async () => {
   render(<PendingDiscoverySaves onQueueChanged={requests} />);
+  openDisclosure();
   outbox.pending.mockImplementationOnce(() => { throw new Error("Saved discovery requests are invalid"); });
   dispatch(DISCOVERY_ADMISSIONS_CHANGED);
 
   expect(screen.getByText("Saved discovery requests are invalid")).toBeTruthy();
-  expect(screen.getByText(/Discovery pending-id/)).toBeTruthy();
+  expect(screen.getByText("pending-id")).toBeTruthy();
 
   outbox.pending.mockReturnValue([...savedAdmissions]);
   dispatch("storage");
   await waitFor(() => expect(screen.queryByText("Saved discovery requests are invalid")).toBeNull());
-  expect(screen.getByText(/Discovery pending-id/)).toBeTruthy();
+  expect(screen.getByText("pending-id")).toBeTruthy();
 });
 
 it.each(["flush", "retry", "queue refresh"] as const)(
@@ -157,6 +171,7 @@ it.each(["flush", "retry", "queue refresh"] as const)(
     if (source === "flush") outbox.flush.mockRejectedValue(new Error(failure));
     if (source === "retry") outbox.retry.mockRejectedValue(new Error(failure));
     render(<PendingDiscoverySaves onQueueChanged={onQueueChanged} />);
+    openDisclosure();
 
     if (source === "retry") fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
     if (source === "queue refresh")
@@ -175,6 +190,9 @@ it("cleans up on unmount and remounts one listener and timer set with saved reco
   const removeListener = vi.spyOn(window, "removeEventListener");
   const onQueueChanged = vi.fn().mockResolvedValue(undefined);
   const firstView = render(<PendingDiscoverySaves onQueueChanged={onQueueChanged} />);
+  openDisclosure();
+  // Drain the native toggle event before counting the component recovery timer.
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   expect(outbox.flush).toHaveBeenCalledTimes(1);
   expect(vi.getTimerCount()).toBe(1);
 
@@ -197,9 +215,12 @@ it("cleans up on unmount and remounts one listener and timer set with saved reco
   expect(outbox.flush).toHaveBeenCalledTimes(2);
 
   const secondView = render(<PendingDiscoverySaves onQueueChanged={onQueueChanged} />);
-  expect(screen.getByText(/Discovery pending-id/)).toBeTruthy();
-  expect(screen.getByText(/Discovery accepted-id/)).toBeTruthy();
-  expect(screen.getByText(/Discovery failed-id/)).toBeTruthy();
+  openDisclosure();
+  // Drain the native toggle event before counting the component recovery timer.
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.getByText("pending-id")).toBeTruthy();
+  expect(screen.getByText("accepted-id")).toBeTruthy();
+  expect(screen.getByText("failed-id")).toBeTruthy();
   expect(vi.getTimerCount()).toBe(1);
 
   const activeListenerCount = (eventName: string) => {
@@ -219,4 +240,47 @@ it("cleans up on unmount and remounts one listener and timer set with saved reco
   secondView.unmount();
   expect(vi.getTimerCount()).toBe(0);
   for (const eventName of trackedEvents) expect(activeListenerCount(eventName)).toBe(0);
+});
+
+it("four retained failed discovery requests stay collapsed until opened", () => {
+  const retained = ["a", "b", "c", "d"].map((digit, index) => ({
+    ...admission("failed", digit.repeat(64)),
+    error: index === 0 ? "'Active discovery not found'" : `Retained failure ${index}`,
+  }));
+  const original = structuredClone(retained);
+  outbox.pending.mockReturnValue(retained);
+  const view = render(<PendingDiscoverySaves onQueueChanged={requests} />);
+  const trigger = openDisclosure();
+  expect(trigger.textContent).toBe("Saves (4)");
+  expect(trigger.getAttribute("aria-label")).toBe("Saved discovery requests");
+  for (const record of retained) {
+    expect(screen.getByText(record.opportunityId, { exact: false })).toBeTruthy();
+    expect(screen.getByText(record.error)).toBeTruthy();
+  }
+  expect(screen.getAllByRole("button", { name: "Retry save" })).toHaveLength(4);
+  fireEvent.click(trigger);
+  expect((trigger.closest("details") as HTMLDetailsElement).open).toBe(false);
+  openDisclosure();
+  expect(retained).toEqual(original);
+  expect(outbox.retry).not.toHaveBeenCalled();
+  expect(outbox.enqueue).not.toHaveBeenCalled();
+  expect(requests).not.toHaveBeenCalled();
+  view.unmount();
+  render(<PendingDiscoverySaves onQueueChanged={requests} />);
+  expect((screen.getByText("Saves (4)").closest("details") as HTMLDetailsElement).open).toBe(false);
+});
+
+it("renders nothing without retained records or component errors", () => {
+  outbox.pending.mockReturnValue([]);
+  const { container } = render(<PendingDiscoverySaves onQueueChanged={requests} />);
+  expect(container.childElementCount).toBe(0);
+});
+
+it("keeps an error-only disclosure collapsed with the compact Saves label", () => {
+  outbox.pending.mockImplementation(() => { throw new Error("Storage unavailable"); });
+  render(<PendingDiscoverySaves onQueueChanged={requests} />);
+  expect(screen.getByText("Saves")).toBeTruthy();
+  expect((screen.getByText(/^Saves/).closest("details") as HTMLDetailsElement).open).toBe(false);
+  openDisclosure();
+  expect(screen.getByRole("alert").textContent).toBe("Storage unavailable");
 });
