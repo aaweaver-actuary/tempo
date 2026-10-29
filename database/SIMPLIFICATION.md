@@ -18,11 +18,16 @@ The seven compatibility, seven staged, thirteen operational and twelve remediati
 
 ### Graph-preserving fresh start without a table-count target
 
-The user's later 2026-10-25 decision supersedes the historical-state preservation gates in the [original #362 preparation](https://github.com/aaweaver-actuary/tempo/blob/4e0029a5767a83da210f73fb844e45640ffac11b/database/PERSISTENCE-DISPOSITION.md). Retain a usable opening graph, necessary repertoire definitions and any new verified graph recovery copy. Old reviews/schedules, server receipts, background jobs, browser old envelopes and old backups are no longer mandatory migration, drain or restore prerequisites. Previously authored maps and packets remain dated source history; they do not keep that abandoned requirement alive.
+The October 25 graph-preserving fresh start was a separately scoped historical
+proposal, recorded in the [dated #362 preparation](https://github.com/aaweaver-actuary/tempo/blob/4e0029a5767a83da210f73fb844e45640ffac11b/database/PERSISTENCE-DISPOSITION.md).
+See [PERSISTENCE-DISPOSITION.md](PERSISTENCE-DISPOSITION.md) for exact keep/disposal,
+graph-separation, and verified recovery boundaries. Ordinary feature delivery
+preserves the current installation's content, learning history, receipts and
+pending work under [SPEC](../SPEC.md).
 
-Use the [current bounded family disposition](PERSISTENCE-DISPOSITION.md) for the exact source names and graph-separation conditions. Background work, statistics, priority refresh, guided review and old recovery artifacts may be classified disposable without completing their work. Graph payload and old learning state can share a table, so an entire `cards` table or database is not a disposable target. Keep graph/repertoire ownership separate from optional producers; do not merge component stores or introduce a shared runtime merely to reduce a number.
-
-There is **no target live table count**. No live table/file deletion, reset, migration or cutover is authorized by these source documents. The next execution proposal must identify the actual target, exact graph keep set, exact disposal set and new verified graph recovery copy, then receive final confirmation for that specific irreversible action. Old receipts and broker/browser pending work do not need to drain before that graph-preserving fresh start.
+There is no target live table count. A transition requires an explicit current
+assignment and authorization for its exact irreversible actions. These source
+documents grant no authority to delete, reset, migrate, or cut over.
 
 ## Code opportunities observed during organization
 

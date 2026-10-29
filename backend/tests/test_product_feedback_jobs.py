@@ -360,7 +360,7 @@ def test_provider_extension_provenance_survives_base_projection():
     request = spec().model_copy(update={"filters": (("rated", "true"),)})
     h.store.enqueue(request)
     extended = ProviderRecord(**record().model_dump(), source_metadata=(("source_fingerprint", "raw-provider-json-hash"),))
-    h.page[0] = ProviderPage(**page(records=()).model_dump(exclude={"records"}), records=(extended,), filters=request.filters)
+    h.page[0] = ProviderPage(**page(records=()).model_dump(exclude={"records", "filters"}), records=(extended,), filters=request.filters)
     h.runner.run_once()
     capture = next(iter(h.store.captures.values()))
     assert json.loads(capture.provider_record_json)["source_metadata"] == [["source_fingerprint", "raw-provider-json-hash"]]

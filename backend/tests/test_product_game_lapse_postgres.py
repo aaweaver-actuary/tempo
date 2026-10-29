@@ -97,7 +97,7 @@ def owned_postgres(tmp_path_factory):
         # that exact checked-in module resource, verifying the registered digest;
         # never replace absent package metadata with a claimed installed pass.
         migrations = sorted(migration_owner.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
-        migration_owner.validate_migration_history(migrations, [], expected_version=51)
+        migration_owner.validate_migration_history(migrations, [], expected_version=migration_owner.POSTGRES_SCHEMA_VERSION)
         with psycopg.connect(**options) as raw:
             for path in migrations:
                 registration = migration_owner.MODULE_MIGRATIONS.get(path.name)

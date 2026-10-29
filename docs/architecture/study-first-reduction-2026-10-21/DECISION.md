@@ -1,6 +1,8 @@
 # Decision: Study-first reduction
 
-Adopted 2026-10-21; execution clarified 2026-10-22 after PR review. [Programme #357](https://github.com/aaweaver-actuary/tempo/issues/357) and [PLAN.md](./PLAN.md) govern the current task queue. This is not approval to merge implementation, deploy, destroy data or change live services.
+Historical programme reference. This document records the October 21–25 Study-first reduction/migration work. Current product scope and delivery order come from [SPEC](../../../SPEC.md); execution comes from [AGENTS](../../../AGENTS.md). Its retirement defaults, replacement-runtime requirements, migration sequence, source-reduction targets, and then-current task queue are not prerequisites or assignments for ordinary product features. Reuse a particular procedure only when the current assignment explicitly selects it and reconciles it with current requirements. Historical evidence and safety conditions are retained.
+
+Adopted 2026-10-21; execution clarified 2026-10-22 after PR review. [Programme #357](https://github.com/aaweaver-actuary/tempo/issues/357) and [PLAN.md](./PLAN.md) record the historical task queue. This is not approval to merge implementation, deploy, destroy data or change live services.
 
 ## Keep
 
