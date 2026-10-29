@@ -16,6 +16,8 @@ def maximum_position(db, day):
 
 
 def due_cards(db, day):
+    from tempo_legacy_database.adapters.study.conflicts import held_unscoped_card_sql
+    conflict_hold = held_unscoped_card_sql(db)
     return db.execute(
         """SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND COALESCE(pending_validation,0)=0
            AND (cards.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires rr
@@ -27,7 +29,8 @@ def due_cards(db, day):
                     WHERE exercise.id=cards.study_exercise_id AND exercise.status='published' AND study.archived=0)
              AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
                             WHERE burial.exercise_id=cards.study_exercise_id AND burial.study_day=?)))
-           AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id""",
+           AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)
+           AND NOT (""" + conflict_hold + ") ORDER BY due_date,id",
         (day, day, day),
     ).fetchall()
 

@@ -1014,3 +1014,57 @@ button {
 .study-connect input { width: 100%; min-height: 2.75rem; padding: .5rem; }
 .study-connect pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 .study-connection-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1rem; margin-top: var(--nav-height); padding: .5rem 1rem; }
+
+/* Saved discovery recovery is a header disclosure, never an inline header list. */
+.pending-discovery-saves { position: relative; min-width: 0; flex: 0 0 auto; }
+.pending-discovery-trigger {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.pending-discovery-trigger::-webkit-details-marker { display: none; }
+.pending-discovery-saves[open] > .pending-discovery-trigger { border-color: var(--muted); }
+.pending-discovery-panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 45;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(70dvh, calc(100dvh - var(--nav-height) - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 8px 30px #2223;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pending-discovery-panel h2 { margin: 0 0 var(--space-3); font-size: 16px; }
+.pending-discovery-records { display: grid; gap: var(--space-3); list-style: none; margin: 0; padding: 0; min-width: 0; }
+.pending-discovery-record { min-width: 0; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.pending-discovery-record p { min-width: 0; margin: 0 0 var(--space-2); overflow-wrap: anywhere; }
+.pending-discovery-identifier { overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .pending-discovery-panel {
+    position: fixed;
+    top: calc(var(--nav-height) + 8px);
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: min(70dvh, calc(100dvh - var(--nav-height) - 8px - 84px - env(safe-area-inset-bottom)));
+  }
+}

@@ -1,6 +1,8 @@
 # Execution plan: small, explicit Study-first tasks
 
-Revised 2026-10-22. Programme: [#357](https://github.com/aaweaver-actuary/tempo/issues/357). This replaces the earlier broad phase assignments, not the preserved source audit. Issue bodies hold the exact writable files, commands and acceptance; this document is their index, not a second task specification.
+Historical programme reference. This document records the October 21–25 Study-first reduction/migration work. Current product scope and delivery order come from [SPEC](../../../SPEC.md); execution comes from [AGENTS](../../../AGENTS.md). Its retirement defaults, replacement-runtime requirements, migration sequence, source-reduction targets, and then-current task queue are not prerequisites or assignments for ordinary product features. Reuse a particular procedure only when the current assignment explicitly selects it and reconciles it with current requirements. Historical evidence and safety conditions are retained.
+
+Original revision: 2026-10-22; historical programme [#357](https://github.com/aaweaver-actuary/tempo/issues/357).
 
 **Assign one ready leaf, never a parent programme.** Read [SMALL-TASKS.md](./SMALL-TASKS.md) for the execution contract. This plan authorizes isolated task work only; it does not authorize merging, deploying, modifying live data, deleting tables or changing hosted CI settings.
 

@@ -112,3 +112,101 @@ def test_issue225_downstream_redis_error_is_not_reported_as_admission_rejection(
     with pytest.raises(redis.ConnectionError, match='already have committed'):
         asyncio.run(main.prioritize_foreground_requests(request, downstream))
     assert not activity_gate.foreground_requests_active
+
+
+@pytest.fixture
+def observation_gate(monkeypatch):
+    from app.services import activity_gate as gate_module, study_priority
+    gate=gate_module.ApplicationActivityGate()
+    monkeypatch.setattr(main,'activity_gate',gate)
+    monkeypatch.setattr(gate_module,'activity_gate',gate)
+    monkeypatch.setattr(main.postgres_store,'configured',lambda:False)
+    monkeypatch.setattr(redis_admission_gate,'configured',lambda:False)
+    monkeypatch.setattr(study_priority,'_local_generation',1)
+    monkeypatch.setattr(study_priority,'_local_policy',dict(generation=1,
+        study_only_mode=True,expires_at_ms=10**16))
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL',raising=False)
+    return gate
+
+
+@pytest.mark.parametrize('path',[
+    '/api/health','/api/system/foreground-active',
+    '/api/system/foreground-requests-active','/api/system/tasks',
+])
+@pytest.mark.parametrize('headers',[[],[(b'x-tempo-work-class',b'foreground')]])
+def test_issue491_monitor_poll_cannot_mint_foreground_or_starve_work(observation_gate,path,headers):
+    import asyncio
+    from fastapi.responses import JSONResponse
+    from starlette.requests import Request
+    gate=observation_gate
+    async def scenario():
+        observing,worked=asyncio.Event(),asyncio.Event()
+        async def polling(request):
+            assert gate.in_background and not gate.foreground_requests_active
+            assert main.foreground_active()['active'] is False
+            observing.set()
+            await asyncio.wait_for(worked.wait(),1)
+            return JSONResponse({'observed':True})
+        async def background():
+            await asyncio.wait_for(observing.wait(),1)
+            with gate.background_job('game_feedback_history','poll-regression',yielding=True):
+                # Checks happen while the monitor request remains open.
+                for _ in range(3): gate.check_background_admission()
+            worked.set()
+        request=Request({'type':'http','method':'GET','path':path,'headers':headers,'query_string':b''})
+        response,_=await asyncio.gather(main.prioritize_foreground_requests(request,polling),background())
+        assert response.status_code==200
+    asyncio.run(scenario())
+    assert not gate.foreground_requests_active and not gate.in_background
+
+
+@pytest.mark.parametrize('path',['/api/health','/api/system/foreground-active','/api/system/tasks'])
+def test_issue491_monitor_never_clears_genuine_foreground_hold(observation_gate,path):
+    import asyncio
+    from fastapi.responses import JSONResponse
+    from starlette.requests import Request
+    from app.services.activity_gate import BackgroundAdmissionDeferred
+    gate=observation_gate
+    async def polling(request):
+        assert gate.in_background and main.foreground_active()['active'] is True
+        with pytest.raises(BackgroundAdmissionDeferred,match='foreground'):
+            gate.check_background_admission()
+        return JSONResponse({'active':True})
+    request=Request({'type':'http','method':'GET','path':path,'headers':[],'query_string':b''})
+    with gate.foreground():
+        assert asyncio.run(main.prioritize_foreground_requests(request,polling)).status_code==200
+        assert gate.foreground_requests_active
+    assert not gate.foreground_requests_active
+
+
+@pytest.mark.parametrize('method,path',[
+    ('GET','/api/queue/window'),('POST','/api/cards/card/review'),
+    ('POST','/api/system/browser-activity'),('GET','/api/system/tasks/task-one'),
+])
+def test_issue491_real_study_and_unknown_routes_keep_foreground_lease(observation_gate,method,path):
+    import asyncio
+    from fastapi.responses import JSONResponse
+    from starlette.requests import Request
+    from app.services.activity_gate import BackgroundAdmissionDeferred
+    gate=observation_gate
+    async def foreground(request):
+        assert gate.foreground_requests_active and not gate.in_background
+        with pytest.raises(BackgroundAdmissionDeferred):gate.check_background_admission()
+        return JSONResponse({'protected':True})
+    request=Request({'type':'http','method':method,'path':path,'headers':[],'query_string':b''})
+    assert asyncio.run(main.prioritize_foreground_requests(request,foreground)).status_code==200
+    assert not gate.foreground_requests_active
+
+
+def test_issue491_real_browser_input_quiet_lease_still_defers_and_expires(observation_gate,monkeypatch):
+    from app.services.activity_gate import BackgroundAdmissionDeferred
+    import app.services.activity_gate as gate_module
+    gate=observation_gate
+    now=[100.0]
+    monkeypatch.setattr(gate_module.time,'monotonic',lambda:now[0])
+    gate.record_browser_activity(3,session_id='actual-input')
+    with pytest.raises(BackgroundAdmissionDeferred):gate.check_background_admission()
+    assert main.foreground_active()['active'] is True
+    now[0]=103.001
+    gate.check_background_admission()
+    assert main.foreground_active()['active'] is False

@@ -335,6 +335,8 @@ export const importResultSchema = z.strictObject({
   shared_prefixes_reused: integer.optional(),
   descendant_decision_cards_created: integer.optional(),
   graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
+  preparation_state: z.enum(["pending", "ready", "held"]).optional(),
+  preparation: z.record(z.string(), z.union([z.string(), z.number().int()])).nullable().optional(),
   integrity: z.object({
     status: z.enum(["unchecked", "clean", "needs_repair"]),
     issue_count: integer,

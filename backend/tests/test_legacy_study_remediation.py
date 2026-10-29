@@ -412,6 +412,8 @@ def test_local_http_commands_only_dispatch_original_immutable_payloads(vertical,
 
 @pytest.mark.parametrize("method,path,work_class,status", [
     ("POST", "/api/game-evidence/legacy/deliveries", "background", 200),
+    ("POST", "/api/game-evidence/product/feedback", "background", 200),
+    ("GET", "/api/game-evidence/product/effect", "background", 200),
     ("POST", "/api/game-evidence/legacy/cards/physical-black/queue", "foreground", 200),
     ("GET", "/api/game-evidence/legacy/cards/physical-black", "foreground", 200),
     ("POST", "/api/game-evidence/legacy/cards/physical-black/unimplemented", None, 503),

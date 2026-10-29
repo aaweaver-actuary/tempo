@@ -124,32 +124,37 @@ export function PendingDiscoverySaves({
   if (admissions.length === 0 && !readError && !operationError) return null;
 
   return (
-    <section aria-label="Saved discovery requests">
-      <h2>Saved discovery requests</h2>
-      {readError && <p role="alert">{readError}</p>}
-      {operationError && <p role="alert">{operationError}</p>}
-      {admissions.length > 0 && (
-        <ul>
-          {admissions.map((admission) => (
-            <li key={admission.opportunityId}>
-              <p>
-                <strong>{admission.state}</strong>: Discovery {admission.opportunityId} · move {admission.selectedMoveUci}
-              </p>
-              {admission.error && <p role={admission.state === "failed" ? "alert" : "status"}>{admission.error}</p>}
-              {admission.state === "failed" && (
-                <Button
-                  type="button"
-                  disabled={interactionBlocked || retrying.has(admission.opportunityId)}
-                  pending={retrying.has(admission.opportunityId)}
-                  onClick={() => void retrySave(admission.opportunityId)}
-                >
-                  Retry save
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <details className="pending-discovery-saves">
+      <summary className="pending-discovery-trigger" aria-label="Saved discovery requests">
+        {admissions.length > 0 ? `Saves (${admissions.length})` : "Saves"}
+      </summary>
+      <section className="pending-discovery-panel" aria-label="Saved discovery requests">
+        <h2>Saved discovery requests</h2>
+        {readError && <p role="alert">{readError}</p>}
+        {operationError && <p role="alert">{operationError}</p>}
+        {admissions.length > 0 && (
+          <ul className="pending-discovery-records">
+            {admissions.map((admission) => (
+              <li className="pending-discovery-record" key={admission.opportunityId}>
+                <p>
+                  <strong>{admission.state}</strong>: Discovery <span className="pending-discovery-identifier">{admission.opportunityId}</span> · move {admission.selectedMoveUci}
+                </p>
+                {admission.error && <p role={admission.state === "failed" ? "alert" : "status"}>{admission.error}</p>}
+                {admission.state === "failed" && (
+                  <Button
+                    type="button"
+                    disabled={interactionBlocked || retrying.has(admission.opportunityId)}
+                    pending={retrying.has(admission.opportunityId)}
+                    onClick={() => void retrySave(admission.opportunityId)}
+                  >
+                    Retry save
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </details>
   );
 }

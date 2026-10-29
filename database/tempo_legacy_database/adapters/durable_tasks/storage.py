@@ -93,7 +93,7 @@ def prepare_task_upsert(prior=None, *, selected=False):
     return write_task
 
 
-def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds):
+def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds, *, explicit_imports_only=False):
     kind_clause = ''
     kind_parameters = []
     if kind is not None:
@@ -102,6 +102,9 @@ def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds):
     elif allowed_kinds is not None:
         kind_clause = ' AND kind IN (' + ','.join(('?' for _ in allowed_kinds)) + ')'
         kind_parameters.extend(allowed_kinds)
+    if explicit_imports_only:
+        from ..authored_repertoires.pgn_import.preparation import predicate
+        kind_clause += ' AND ' + predicate()
     reclaim_parameters = (now, now, *kind_parameters, now)
     reclaim_statement = f"""UPDATE background_tasks
                SET state='queued',lease_token=NULL,lease_expires_at=NULL,
@@ -110,23 +113,35 @@ def prepare_task_claim(kind, allowed_kinds, now, defensive_kinds):
                             WHERE state='leased' AND lease_expires_at<=?{kind_clause}
                             ORDER BY lease_expires_at,id LIMIT 1)
                AND state='leased' AND lease_expires_at<=? RETURNING id,kind,generation"""
+    # This fixed explicit-import predicate is already PostgreSQL JSONB SQL.
+    # Only convert this statement's bound parameter markers, not its dialect.
+    reclaim_native = (reclaim_statement.replace('?', '%s').replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)')
+                      if explicit_imports_only else None)
 
     def reclaim(database):
         if hasattr(database, 'execute_native'):
-            reclaimed = database.execute_native(postgres_store.postgres_sql(reclaim_statement).replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)'), reclaim_parameters).fetchall()
+            statement = reclaim_native or postgres_store.postgres_sql(reclaim_statement).replace('LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)')
+            reclaimed = database.execute_native(statement, reclaim_parameters).fetchall()
         else:
             reclaimed = database.execute(reclaim_statement, reclaim_parameters).fetchall()
         return reclaimed
 
-    def read_candidate(database, parameters):
-        return database.execute(
-            f"""SELECT * FROM background_tasks
+    # The receipt predicate limits this path to its current graph/integrity;
+    # ordinary claims retain the global Study-only and defensive admission gate.
+    admission_clause = 'TRUE' if explicit_imports_only else task_admission_sql('background_tasks.kind', defensive_kinds)
+    candidate_statement = f"""SELECT * FROM background_tasks
                     WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
                       AND {claimable('durable', 'background_tasks.id')}
-                      AND {task_admission_sql('background_tasks.kind', defensive_kinds)}
-                    ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1""",
-            parameters,
-        ).fetchone()
+                      AND {admission_clause}
+                    ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1"""
+    # Keep the receipt's native JSONB operators; SQLite translation changes
+    # them into json_extract_path_text(jsonb, ...), which PostgreSQL rejects.
+    candidate_native = candidate_statement.replace('?', '%s') if explicit_imports_only else None
+
+    def read_candidate(database, parameters):
+        if explicit_imports_only:
+            return database.execute_native(candidate_native + ' FOR UPDATE OF background_tasks SKIP LOCKED',parameters).fetchone()
+        return database.execute(candidate_statement,parameters).fetchone()
 
     return reclaim, read_candidate, kind_parameters
 
