@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { Chess } from "chess.js";
-import { Board } from "@tempo/board-ui";
-import "../../../packages/board-ui/styles/board.css";
+import { Board, type BoardAppearance } from "@tempo/board-ui";
+import "@tempo/board-ui/styles.css";
 import { Button } from "../../components/buttons/BaseButton";
 import { positionsFromMoves } from "../../hooks/use-board-history";
 import type { ReviewPosition } from "./api";
 
-export function PositionViewer({ position, identity }: { position: ReviewPosition; identity: string }) {
-  return <PositionHistory key={`${identity}/${position.target_fen}/${position.history_uci.join(",")}`} position={position} identity={identity} />;
+export function PositionViewer({ position, identity, appearance }: { position: ReviewPosition; identity: string; appearance: BoardAppearance }) {
+  return <PositionHistory key={`${identity}/${position.target_fen}/${position.history_uci.join(",")}`} position={position} identity={identity} appearance={appearance} />;
 }
 
-function PositionHistory({ position, identity }: { position: ReviewPosition; identity: string }) {
+function PositionHistory({ position, identity, appearance }: { position: ReviewPosition; identity: string; appearance: BoardAppearance }) {
   let positions: readonly string[] = [];
   let error: string | null = null;
   try {
@@ -26,7 +26,7 @@ function PositionHistory({ position, identity }: { position: ReviewPosition; ide
   const chess = new Chess(fen);
   const turn = chess.turn() === "w" ? "white" : "black";
   return <section className="repertoire-review-board" aria-label="Position and history">
-    <Board fen={fen} orientation={position.learner_color} turn={turn}
+    <Board {...appearance} fen={fen} orientation={position.learner_color} turn={turn}
       check={chess.isCheck() ? turn : false} mode="select" readOnly drawingEnabled={false}
       positionIdentity={`${identity}/${cursor}`} positionRevision={cursor}
       ariaLabel={cursor === positions.length - 1 ? "Repertoire target position" : `History position ${cursor}`} maxSize={560} />

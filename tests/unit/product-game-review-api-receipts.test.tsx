@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import fixture from "../fixtures/game-review-current-api.json";
@@ -24,7 +25,7 @@ it("renders the current API encounter as pending first introduction without a wr
     sync: "/forbidden-sync",
     retryFeedback: "/forbidden-feedback",
   } });
-  render(<GameReviewView api={api} />);
+  render(<GameReviewView appearance={DEFAULT_BOARD_APPEARANCE} api={api} />);
   const label = new RegExp(`Lichess · ${fixture.detail.game_id}`);
   fireEvent.click(await screen.findByRole("button", { name: label }));
   expect(await screen.findByText(/Disposition: first introduction · Admission: pending/)).toBeTruthy();

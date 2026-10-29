@@ -11,7 +11,7 @@ file or root application surface is owned by this feature.
 
 ## Public interface and ownership
 
-`GameReviewView({ api, repertoireId?, onReviewGap? })` accepts a typed injected
+`GameReviewView({ api, appearance, repertoireId?, onReviewGap? })` accepts a typed injected
 `GameReviewClient`. `createGameReviewApi` adapts injected fetch and endpoint URLs;
 composition supplies actual routes. Shared wire values and validators come from
 #482's `product-api/contracts.ts`; this module defines only screen capabilities
@@ -83,7 +83,7 @@ import { createGameReviewApi } from "./features/game-review/api";
 const gameReviewApi = createGameReviewApi({ endpoints: gameReviewEndpoints });
 
 // In the existing root route/surface switch, owned by #491:
-<GameReviewView api={gameReviewApi} repertoireId={selectedRepertoireId}
+<GameReviewView appearance={appearance} api={gameReviewApi} repertoireId={selectedRepertoireId}
   onReviewGap={intent => openRepertoire(intent.repertoire_id, intent.position_key)} />
 ```
 
@@ -118,3 +118,9 @@ The focused test is discovered by the existing unit glob. #491 coordinates the
 central regression inventory entry with #488's current `tests/REGRESSIONS.md`
 reservation. This component check does not establish hosted merge qualification,
 pixel layout, installed endpoints, live imports or receiving-owner persistence.
+
+Appearance is required input from composition and is passed through every nested
+board. The renderer and styles/assets have one owner: see the canonical
+[shared-board adoption drawing](../../../packages/board-ui/README.md#presentation-ownership).
+Changing appearance preserves selection and replay cursor; it starts no reads
+or commands and imports no application preferences/store.

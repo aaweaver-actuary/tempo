@@ -1,6 +1,7 @@
 import { studyUrl, studyHandoffNotice, intelligenceOrigin } from "./public-navigation.js";
-import { Chessground } from "@lichess-org/chessground";
-import type { Api } from "@lichess-org/chessground/api";
+import type { BoardAppearance } from "@tempo/board-ui";
+import { mountBoard } from "./board.js";
+import { readWorkbenchAppearance } from "./appearance.js";
 import { Chess } from "chess.js";
 import { gameSourceUrl } from "./game-source.js";
 import { mountGameBrowser, comparisonChronologyNotice } from "./game-browser.js";
@@ -16,13 +17,14 @@ function button(text:string,action:()=>void|Promise<void>){const value=node("but
 function field(label:string,value="",type="text"){const wrapper=node("label",label);const input=node("input");input.type=type;input.value=value;wrapper.append(input);return {wrapper,input};}
 function select(label:string,choices:Record<string,string>,value:string,onChange:(value:string)=>void){const wrapper=node("label",label);const input=node("select");input.setAttribute("aria-label",label);for(const [id,title]of Object.entries(choices)){const option=node("option",title);option.value=id;input.append(option);}input.value=value;input.onchange=()=>onChange(input.value);wrapper.append(input);return wrapper;}
 function record(value:unknown){return value as Record<string,unknown>;}
-export type WorkbenchOptions = { studyUrl?: string; intelligenceOrigin?: string };
+export type WorkbenchOptions = { studyUrl?: string; intelligenceOrigin?: string; appearance?: BoardAppearance };
 export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
+  const appearance = options.appearance ?? readWorkbenchAppearance(new URL(location.href));
   const studyDestination=studyUrl(options.studyUrl);
   const defaultIntelligenceOrigin=intelligenceOrigin(options.intelligenceOrigin)??"";
   function studyLink(){const link=node("a","Open Study");link.href=studyDestination!;link.target="_blank";link.rel="noopener noreferrer";return link;}
   const commands=new PendingCommands(sessionStorage);
-  let client:IntelligenceClient|undefined,board:Api|undefined,renderGeneration=0;
+  let client:IntelligenceClient|undefined,board:ReturnType<typeof mountBoard>|undefined,renderGeneration=0;
   let closeGameBrowser:(()=>void)|undefined;
   let gameInspectionAvailable=false;
   let runId=new URL(location.href).searchParams.get("run")??"",category=new URL(location.href).searchParams.get("category")??"",dismissal=new URL(location.href).searchParams.get("dismissal")??"",report:Report|undefined;
@@ -73,7 +75,7 @@ export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
     const generation=++renderGeneration;closeGameBrowser?.();closeGameBrowser=undefined;board?.destroy();board=undefined;content.replaceChildren();
     const toolbar=node("section");toolbar.className="toolbar";toolbar.append(node("h2","Analysis runs"),button("Refresh",()=>home()),button("Disconnect",()=>{client?.disconnect();client=undefined;sessionStorage.removeItem(key);connectionForm();}));content.append(toolbar);
     if(client!.readOnly){
-      closeGameBrowser=mountGamesView(content,client!,runId,value=>{runId=value;history();void home();},error);
+      closeGameBrowser=mountGamesView(content,client!,runId,value=>{runId=value;history();void home();},error,{appearance});
       // Keep only explicit refresh/disconnect; no saved mutation recovery/retry.
       content.prepend(toolbar);toolbar.querySelector("h2")!.textContent="Games · read only";
       return;
@@ -113,7 +115,7 @@ export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
       const progress=node("section");progress.className="progress";progress.append(node("p",`Ranking: ${String(record(run.scope).ranking_source??"actual")} · ${String(record(run.scope).ranking_evidence_id??"distinct selected games")}`));progress.append(node("h3","Scope and progress"),node("p",`Input ${String(record(run.scope).input_id)} · ${String(run.state)}`),node("p",Object.entries(record(run.progress)).map(([name,count])=>`${count} ${name}`).join(" · ")));
       const legacyRun=run.derivation_version!==2||run.recovery_required==="legacy_analysis_revision_required";
       if(legacyRun)progress.append(node("p","This older analysis requires a new revision before continuing. Cancel remains available."));
-      for(const action of (legacyRun?["cancel"]:["continue","retry","cancel","resume"])){progress.append(button(action==="continue"?"Continue · next 250 decisions":action[0].toUpperCase()+action.slice(1),async()=>{const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:run.revision,budget:250};status("Saving command…");try{await saveCommand(`/v1/analysis/runs/${encodeURIComponent(runId)}/commands`,command);status("Command confirmed; work may still be pending.");await home();}catch(value){error(value);}}));}if(gameInspectionAvailable)progress.append(button("Browse selected games",()=>{renderGeneration++;board?.destroy();board=undefined;status("Selected game scope");const scope=record(run.scope);closeGameBrowser=mountGameBrowser(content,client!,runId,{revision:Number(run.revision),input_id:String(scope.input_id),input_revision:Number(scope.input_revision)},()=>{void home();},error);}));else progress.append(node("p","Selected-game browsing is unavailable with this Intelligence version."));content.append(progress);
+      for(const action of (legacyRun?["cancel"]:["continue","retry","cancel","resume"])){progress.append(button(action==="continue"?"Continue · next 250 decisions":action[0].toUpperCase()+action.slice(1),async()=>{const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:run.revision,budget:250};status("Saving command…");try{await saveCommand(`/v1/analysis/runs/${encodeURIComponent(runId)}/commands`,command);status("Command confirmed; work may still be pending.");await home();}catch(value){error(value);}}));}if(gameInspectionAvailable)progress.append(button("Browse selected games",()=>{renderGeneration++;board?.destroy();board=undefined;status("Selected game scope");const scope=record(run.scope);closeGameBrowser=mountGameBrowser(content,client!,runId,{revision:Number(run.revision),input_id:String(scope.input_id),input_revision:Number(scope.input_revision)},()=>{void home();},error,{appearance});}));else progress.append(node("p","Selected-game browsing is unavailable with this Intelligence version."));content.append(progress);
       const filters=node("section");filters.className="filters";filters.append(select("Category",{"":"All categories",...labels},category,value=>{category=value;history();void load();}),select("Dismissal",{"":"All findings",open:"Open",dismissed:"Dismissed"},dismissal,value=>{dismissal=value;history();void load();}));content.append(filters);
       const findings=node("div");findings.id="findings";content.append(findings);await load();
     }catch(value){error(value);}
@@ -146,7 +148,7 @@ export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
       const query=new URLSearchParams({run_id:runId,generation:String(report!.generation)});const response=await client!.request(`/v1/analysis/findings/${encodeURIComponent(selected.finding_id)}?${query}`,detailSchema);
       if(generation!==renderGeneration)return;if(response.run_id!==runId||response.generation!==report!.generation||response.finding.finding_id!==selected.finding_id)throw new Error("Finding identity mismatch");const finding=response.finding;
       board?.destroy();content.replaceChildren(button("Back to findings",()=>home()));
-      const layout=node("section");layout.className="detail";const visual=node("div");const boardElement=node("div");boardElement.className="board cg-wrap";boardElement.setAttribute("aria-label","Finding chessboard");visual.append(boardElement);layout.append(visual);
+      const layout=node("section");layout.className="detail";const visual=node("div");const boardElement=node("div");boardElement.className="board";boardElement.setAttribute("aria-label","Finding chessboard");visual.append(boardElement);layout.append(visual);
       let orientation=finding.representative.learner_color;const chess=new Chess(finding.representative.fen);const candidate=finding.expected_moves[0]??String(record(record(finding.engine??{}).best??{}).moves instanceof Array?(record(record(finding.engine??{}).best??{}).moves as string[])[0]:"");
       const boardActions=node("div");boardActions.className="board-actions";visual.append(boardActions);
       const info=node("div");info.append(node("small",labels[finding.category]),node("h2",`Game ${finding.representative.game_id??"population evidence"} · ply ${finding.representative.ply??"—"}`),node("p",`Played: ${finding.representative.actual_move??"unavailable"}`),node("p",`Accepted: ${finding.expected_moves.join(", ")||"no accepted response established"}`),node("p",`Evidence: ${finding.evidence_status} · ${finding.dismissal_state}`),node("p",`Supporting games: ${finding.supporting_games.join(", ")||"none; model/population evidence"}`),node("p",finding.reason_codes.map(reason=>reason.replaceAll("_"," ")).join(" · ")));
@@ -175,9 +177,9 @@ export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
       if(report?.derivation_version!==2)info.append(node("p","Legacy report: engine repertoire associations are unverified. Start a new analysis revision before using them."));
       if(finding.lineage===null)info.append(node("p","Repertoire, policy and source lineage are unknown for this engine finding."));
       const provenance=node("details");provenance.append(node("summary","Provenance and uncertainty"),node("pre",JSON.stringify(finding,null,2)));info.append(provenance);layout.append(info);content.append(layout);
-      board=Chessground(boardElement,{fen:finding.representative.fen,orientation,viewOnly:true,coordinates:true,animation:{enabled:false}});
-      if(finding.engine){const moves=record(record(finding.engine).best??{}).moves;if(Array.isArray(moves)&&typeof moves[0]==="string")boardActions.append(button("Show engine move",()=>{chess.load(finding.representative.fen);chess.move(moves[0]);board!.set({fen:chess.fen()});}));}
-      boardActions.append(button("Flip board",()=>{orientation=orientation==="white"?"black":"white";board!.set({orientation});}),button("Decision position",()=>{chess.load(finding.representative.fen);board!.set({fen:chess.fen()});}),button("Show played move",()=>{chess.load(finding.representative.fen);if(finding.representative.actual_move){chess.move(finding.representative.actual_move);board!.set({fen:chess.fen()});}}),button("Show response",()=>{try{chess.load(finding.representative.fen);if(candidate){chess.move(candidate);board!.set({fen:chess.fen()});}else status("Response analysis unavailable or pending.");}catch(value){error(value);}}));
+      board=mountBoard(boardElement,{fen:finding.representative.fen,orientation,identity:finding.finding_id,appearance,label:"Finding board surface"});
+      if(finding.engine){const moves=record(record(finding.engine).best??{}).moves;if(Array.isArray(moves)&&typeof moves[0]==="string")boardActions.append(button("Show engine move",()=>{chess.load(finding.representative.fen);chess.move(moves[0]);board!.update({fen:chess.fen()});}));}
+      boardActions.append(button("Flip board",()=>{orientation=orientation==="white"?"black":"white";board!.update({orientation});}),button("Decision position",()=>{chess.load(finding.representative.fen);board!.update({fen:chess.fen()});}),button("Show played move",()=>{chess.load(finding.representative.fen);if(finding.representative.actual_move){chess.move(finding.representative.actual_move);board!.update({fen:chess.fen()});}}),button("Show response",()=>{try{chess.load(finding.representative.fen);if(candidate){chess.move(candidate);board!.update({fen:chess.fen()});}else status("Response analysis unavailable or pending.");}catch(value){error(value);}}));
     }catch(value){error(value);}
   }
   try{const saved=JSON.parse(sessionStorage.getItem(key)??"null") as Connection|null;if(saved){client=new IntelligenceClient(saved);void client.bootstrap().then(capabilities=>{gameInspectionAvailable=capabilities.capabilities.includes("selected-games-v1");return home();}).catch(value=>{connectionForm(saved);error(value);});}else connectionForm();}catch{connectionForm();}

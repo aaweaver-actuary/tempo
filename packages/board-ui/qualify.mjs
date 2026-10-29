@@ -51,8 +51,8 @@ try {
   await run("producer-typecheck", "npm", ["run", "typecheck"], producer);
   await run("producer-tests", "npm", ["test", "--", "--reporter=json", "--outputFile=" + join(output, "unit-results.json")], producer);
   const unitResults = JSON.parse(await readFile(join(output, "unit-results.json"), "utf8"));
-  assert.equal(unitResults.numTotalTests, 50, "Execute the complete local regression inventory");
-  assert.equal(unitResults.numPassedTests, 50);
+  assert.equal(unitResults.numTotalTests, 59, "Execute the complete local regression inventory");
+  assert.equal(unitResults.numPassedTests, 59);
   assert.equal(unitResults.numFailedTests, 0);
   assert.equal(unitResults.numPendingTests, 0);
   assert.equal(unitResults.numTodoTests, 0);

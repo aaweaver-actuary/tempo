@@ -43,11 +43,12 @@ it.each(["package_build", "production_build", "host_startup", "browser_execution
   const outputRoot = await temporary();
   const requested = selection();
   const stages: string[] = [];
+  const commands: Record<string, string[]> = {};
   const evidence = await runControlledBrowser(requested, {
     outputRoot,
     ...(failure === "host_startup" ? { startHost: async () => { throw new Error("Injected host startup failure"); } } : {}),
     runNode: async (stage: string, _args: string[], environment: Record<string, string>, paths: {buildDirectory: string; reportPath: string}) => {
-      stages.push(stage);
+      stages.push(stage); commands[stage] = _args;
       if (stage === failure) throw new Error("Injected child failure " + stage);
       if (stage === "production_build") { await mkdir(paths.buildDirectory); await writeFile(join(paths.buildDirectory, "index.html"), "unit host"); }
       if (stage === "browser_execution") {
@@ -65,6 +66,10 @@ it.each(["package_build", "production_build", "host_startup", "browser_execution
   expect(JSON.parse(await readFile(join(evidence.runDirectory, "evidence.json"), "utf8")).success).toBe(evidence.success);
   expect(stages.length).toBeGreaterThan(0);
   if (failure === "api_escape") expect(evidence.api_escapes).toHaveLength(1);
+  if (failure === "success") {
+    expect(commands.package_build_browser_intents ?? commands["package_build_browser-intents"]).toContain("database/browser-intents/tsconfig.json");
+    expect(commands["package_build_board-ui"]).toContain("packages/board-ui/tsconfig.json");
+  }
 });
 it("controlled_browser_missing_or_changed_real_asset_fails_instead_of_substituting", async () => {
   const root = await temporary();

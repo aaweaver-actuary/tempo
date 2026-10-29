@@ -11,7 +11,7 @@ import { positionsFromMoves, useBoardHistory } from "../../app/hooks/use-board-h
 import { letterShortcutsEnabled, setLetterShortcutsEnabled, usePopupKeyboard } from "../../app/lib/keyboard-shortcuts";
 import { Dialog } from "../../app/components/dialog";
 
-vi.mock("@lichess-org/chessground", () => ({ Chessground: () => ({ set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }) }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: () => ({ state: { drawable: {}, dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }) }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 const initialFen = new Chess().fen();
 const firstPosition = positionsFromMoves(initialFen, ["e4"])[1];

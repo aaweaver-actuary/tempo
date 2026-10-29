@@ -102,5 +102,16 @@ Wire-v1 contracts are untouched.
 No original assertions, native actions or selectors were weakened. The selected
 original proof fingerprints still match. Adaptations are setup-only: the browser-only
 move helper replaces the product-fixture import; phone contexts block workers;
-required local sounds/pieces/four tactic packs are declared; and context closure
+required local sounds/four tactic packs and generated package piece assets are declared; and context closure
 fences teardown polling. Original product-fixture exports retain their signatures.
+
+## Shared board appearance
+
+`npm run test:ui-isolated -- board-appearance.spec.ts` runs two bounded Chromium
+cases: actual consumer views/dialogs with semantic synthetic inputs, and real
+workspace navigation/reload plus held-input appearance updates. The fixture-only
+HTML entry is included by the controlled build, not a product route. The cases
+compare palette variables and actual piece images across all application call
+sites, including authored Studies publications, nested repertoire viewers and
+phone previews. Unexpected requests still fail the existing strict traffic gate.
+Workbench's separate installed-artifact browser lane owns its two board surfaces.

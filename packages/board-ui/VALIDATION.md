@@ -155,3 +155,26 @@ application regressions, #211/#250 binding ownership, and production behavior
 remain with their application owners. This is a reviewable package milestone,
 not complete #198 acceptance or hosted merge qualification. Nothing was pushed,
 opened as a PR, merged, deployed, activated live, or enabled in CI.
+
+## Shared-board adoption checkpoint — 2026-10-29
+
+Source now routes all fifteen production board entry points through the public
+renderer and package stylesheet. Practice/authoring policy and persistent shell
+leases stay in the application; Workbench has its own small React mount adapter.
+The canonical inventory and ownership drawing are in the package README.
+
+- Package qualification: 59 owning cases, producer typecheck/build/pack, installed
+  consumer declarations/exports/assets/build and source removal passed.
+- Installed native consumer: BUI-N01 through BUI-N05 passed on Chromium
+  153.0.8010.12 (Playwright 1.63.0 / revision 1243).
+- Actual application consumers: two isolated native cases passed, including
+  blue/Merida across views/dialogs/previews, phone layouts, navigation/reload and
+  a held drag through an appearance change.
+- Installed Workbench: 36 public-entry Node cases and eight native identities
+  passed with source removed, covering both boards and Games-only composition.
+
+Raw receipts, tarballs, input/artifact hashes, screenshots and traces are retained
+outside the disposable checkout in this task's shared-board evidence directory.
+The PR owns the exact final revision and command/evidence handoff. These are
+synthetic UI/package proofs; no installation, genuine-data acceptance, actual
+phone/Safari acceptance, full-system or hosted merge qualification is asserted.

@@ -69,7 +69,7 @@ describe("private repertoire API composition", () => {
       if (url.endsWith("/audit")) return new Response("unavailable",{status:503});
       throw new Error("Unexpected task request");
     });
-    render(createElement(RepertoireAuditMount,{apiUrl:"",request,onNavigate:vi.fn()},
+    render(createElement(RepertoireAuditMount,{appearance:{theme:"brown",pieceSet:"cburnett"},apiUrl:"",request,onNavigate:vi.fn()},
       createElement("p",null,"Retained authoring")));
     expect(screen.getByText("Retained authoring")).toBeTruthy();
     expect(request).not.toHaveBeenCalled();

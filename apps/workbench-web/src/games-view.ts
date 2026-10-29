@@ -1,10 +1,11 @@
+import type { BoardAppearance } from "@tempo/board-ui";
 /** Games-only composition: existing run reader + existing game browser, no commands. */
 import type { GamesReader } from "./games-reader.js";
 import { mountGameBrowser } from "./game-browser.js";
 
 export const frozenGamesNotice="These comparisons belong to the accepted input snapshot, not today's live repertoire. A fresh current-repertoire comparison is a separate explicit operation and is unavailable in this viewer.";
 
-export function mountGamesView(target:HTMLElement,reader:GamesReader,runId:string,onRun:(run:string)=>void,onError:(error:unknown)=>void){
+export function mountGamesView(target:HTMLElement,reader:GamesReader,runId:string,onRun:(run:string)=>void,onError:(error:unknown)=>void,options:{appearance?:BoardAppearance}={}){
   let active=true,closeBrowser:(()=>void)|undefined;
   const element=(tag:"h2"|"p"|"label"|"div",text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
   target.replaceChildren(element("h2","Games · read-only snapshot review"),element("p",frozenGamesNotice));
@@ -23,7 +24,7 @@ export function mountGamesView(target:HTMLElement,reader:GamesReader,runId:strin
       if(!runId){panel.append(element("p",runs.length?"Choose an existing scope to browse its games. Optional engine progress does not prevent viewing.":"No existing game scope is available. Viewing never creates an analysis run."));return;}
       const scope=await reader.readScope(runId);if(!active)return;
       target.insertBefore(element("p",`Run ${runId} · revision ${scope.revision} · accepted input ${scope.input_id} · input revision ${scope.input_revision}`),panel);
-      closeBrowser=mountGameBrowser(panel,reader,runId,scope,()=>onRun(""),onError,{backLabel:"Choose another game scope"});
+      closeBrowser=mountGameBrowser(panel,reader,runId,scope,()=>onRun(""),onError,{backLabel:"Choose another game scope",appearance:options.appearance});
     }catch(error){if(active)onError(error);}
   }
   void load();return ()=>{active=false;closeBrowser?.();};

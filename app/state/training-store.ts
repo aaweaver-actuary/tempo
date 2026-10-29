@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui/appearance";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import type {
@@ -199,8 +200,8 @@ const defaultState = {
     (_, index) => index % demoCards.length,
   ),
   queueNotice: "",
-  boardTheme: "brown" as BoardTheme,
-  pieceSet: "cburnett" as PieceSet,
+  boardTheme: DEFAULT_BOARD_APPEARANCE.theme,
+  pieceSet: DEFAULT_BOARD_APPEARANCE.pieceSet,
   isSoundEnabled: true,
   isDatabaseQueueActive: false,
   isOfflineQueueActive: false,

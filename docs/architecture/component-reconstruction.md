@@ -73,14 +73,13 @@ across the boundary. Coordinate shared contract changes with their owner.
 ### Board discovery example
 
 The merged [Board UI package](../../packages/board-ui/README.md) is implemented;
-its planned registry entry reflects deferred shared registration. It supplies
+its implemented registry entry records the public renderer, styles, assets and owning tests. It supplies
 presentation, geometry, supplied shapes, focus and typed input-event seams. It
 does not install application keyboard policy or compute engine/repertoire data.
-The [legacy board wrappers](../../app/components/README.md) still own interaction
-composition for existing app consumers. Workbench still constructs Chessground
-directly in its [game browser](../../apps/workbench-web/src/game-browser.ts) and
-[finding view](../../apps/workbench-web/src/workbench.ts); package delivery alone
-does not complete their adoption.
+The [application board adapter](../../app/components/README.md) owns interaction
+composition above the public renderer. Workbench also uses that renderer through
+its own small React mount adapter. The [adoption inventory](../../packages/board-ui/README.md#appearance-and-adopted-consumers)
+records all production call sites; source adoption does not establish deployment.
 
 For an explicitly assigned adoption task, reuse the renderer's public API and
 identify the needed interaction adapter. Screens supply position-scoped replay,

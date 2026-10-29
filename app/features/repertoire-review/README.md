@@ -61,7 +61,7 @@ export function RepertoireReviewMount({ api, repertoireId, navigate }: {
   navigate: (intent: RepertoireNavigationIntent) => void;
 }) {
   const [session] = useState(() => new RepertoireReviewSession());
-  return <RepertoireReviewView api={api} repertoireId={repertoireId}
+  return <RepertoireReviewView appearance={appearance} api={api} repertoireId={repertoireId}
     session={session} onNavigate={navigate} />;
 }
 ```
@@ -141,3 +141,9 @@ regression inventory when mounting. No central registration was edited here.
 Source-file TypeScript and ESLint are bounded to this feature/test; unchanged
 contract/board suites are reused, not rerun. No software installation is needed
 with the existing toolchain and compiled pure-package artifacts.
+
+Appearance is required input from composition and is passed through every nested
+board. The renderer and styles/assets have one owner: see the canonical
+[shared-board adoption drawing](../../../packages/board-ui/README.md#presentation-ownership).
+Changing appearance preserves selection and replay cursor; it starts no reads
+or commands and imports no application preferences/store.

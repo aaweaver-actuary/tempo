@@ -1,3 +1,4 @@
+import type { BoardAppearance } from "@tempo/board-ui";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Proposal } from "../product-api/contracts";
 import { Button } from "../../components/buttons/BaseButton";
@@ -8,6 +9,7 @@ import { PositionViewer } from "./PositionViewer";
 import { ProposalEvidence } from "./EvidencePanel";
 
 export interface ProposalPanelProps {
+  readonly appearance: BoardAppearance;
   readonly proposal: Proposal;
   readonly read: RepertoireReviewRead;
   readonly api: RepertoireReviewClient;
@@ -17,7 +19,7 @@ export interface ProposalPanelProps {
 }
 
 /** The parent keys by proposal binding/selection. This component owns no content. */
-export function ProposalPanel({ proposal, read, api, session, position, finding }: ProposalPanelProps) {
+export function ProposalPanel({ proposal, read, api, session, position, finding, appearance }: ProposalPanelProps) {
   useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
   const [preview, setPreview] = useState<Proposal | null>(null);
   const [validated, setValidated] = useState(false);
@@ -89,7 +91,7 @@ export function ProposalPanel({ proposal, read, api, session, position, finding 
   return <Surface className="repertoire-review-proposal" aria-label="Proposal detail">
     <h3>{displayed.title}</h3><p>{displayed.explanation}</p>
     <p>Proposal revision {displayed.proposal_revision} · source revision {displayed.source_revision}</p>
-    <PositionViewer position={position} identity={`${displayed.repertoire_id}/${displayed.proposal_id}/${displayed.display_digest}`} />
+    <PositionViewer appearance={appearance} position={position} identity={`${displayed.repertoire_id}/${displayed.proposal_id}/${displayed.display_digest}`} />
     <h4>Repertoire changes</h4>
     <DataTable><thead><tr><th>Route / position</th><th>Current move</th><th>Proposed move / content</th></tr></thead>
       <tbody>{displayed.edits.map((edit, index) => <tr key={`${edit.route_id}/${index}`}>

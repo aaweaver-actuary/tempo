@@ -7,6 +7,8 @@ that token; URLs, exports and durable command documents do not. Configure the ex
 browser origin in `TEMPO_INTELLIGENCE_ORIGINS`. No API proxy or live fallback exists.
 
 ```sh
+npm ci --prefix packages/board-ui --workspaces=false --ignore-scripts
+npm run build --prefix packages/board-ui --workspaces=false
 npm ci --prefix apps/workbench-web --workspaces=false
 npm test --prefix apps/workbench-web
 npm run test:browser --prefix apps/workbench-web -- /absolute/native/workbench-producer.json /absolute/evidence/browser
@@ -18,8 +20,10 @@ UI recommendations. Its games are explicitly synthetic. Native tests use a priva
 ephemeral static host, strict API interception, real storage/reload, desktop/phone
 boards and declared traffic. Restricted qualification packages the static build,
 removes source, installs the tarball and repeats public-client/native browser proof.
-No offline/service-worker claim is made. Piece SVGs reuse Tempo's Merida assets;
-Chessground base CSS is copied unchanged from its pinned 10.1.1 package.
+No offline/service-worker claim is made. Both board surfaces use the public `@tempo/board-ui` component and exported
+stylesheet/assets through `src/board.tsx`. There is no Workbench palette, piece
+copy or direct Chessground constructor. The qualifier packs the renderer and
+installs its artifact before removing source.
 
 Use the existing F2 `TEMPO_WORKBENCH_URL` launch setting to link this independent
 static origin. No Study source change or credential handoff is required.
@@ -78,7 +82,7 @@ flowchart TB
   subgraph Browser["PR322 browser"]
     Composition["Workbench<br/>connection/bootstrap owner"] -->|"games-readonly-v1 before<br/>pending command recovery"| View["mountGamesView /<br/>mountGameBrowser"]
     View -->|"GamesReader: listScopes,<br/>readScope, readGames"| Client["IntelligenceClient<br/>implements GamesReader"]
-    View -->|"supplied legal replay /<br/>rendering"| Board["Chess / Chessground<br/>libraries"]
+    View -->|"supplied read-only replay /<br/>appearance"| Board["@tempo/board-ui<br/>public Board + stylesheet"]
   end
   subgraph Server["PR322 server"]
     Client -->|"authenticated GET;<br/>workspace/origin checks"| API["games_api read routes only"]
@@ -229,3 +233,16 @@ the mode after bootstrap and retains connection/session ownership. Shared pure
 chess/render libraries and navigation are acceptable; Study never imports, calls
 or waits for the Games reader. Its shutdown owns only its board and pending UI
 responses. Deployment/resource isolation is a separate unverified rollout gate.
+
+## Shared appearance
+
+`WorkbenchOptions.appearance` injects a shared `BoardAppearance`. Normal startup
+uses validated `boardTheme` and `pieceSet` launch fields, then this origin's last
+saved `tempo-board-theme` / `tempo-piece-set` selection, then brown/CBurnett.
+`readWorkbenchAppearance` is the public bootstrap helper; denied storage leaves
+the launch snapshot/default usable. Filters and history retain launch fields.
+Already-open separate Workbench tabs keep their snapshot until the next launch
+from Tempo. No live cross-origin synchronization, opener, credential handoff,
+Study storage access or Study service dependency is introduced.
+
+Canonical [board ownership and adoption drawing](../../packages/board-ui/README.md#presentation-ownership).

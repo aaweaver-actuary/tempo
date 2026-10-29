@@ -246,3 +246,11 @@ Keep explanatory detail and source links beside each bounded view.
 This criterion preserves data, permissions, applicable gates, and independence
 of the changed path under [root working rules](../../../AGENTS.md). It does not
 assign unrelated extraction or waive safeguards.
+
+### Shared chessboard presentation
+
+The canonical [Board UI adoption/ownership view](../../../packages/board-ui/README.md#presentation-ownership)
+shows practice/authoring adapters, review inputs, Workbench launch snapshots,
+renderer lifecycle and shared styling. Its consumer inventory covers every
+production board call site. Runtime installation and device/resource isolation
+remain separate from source adoption.

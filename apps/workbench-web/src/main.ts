@@ -1,3 +1,4 @@
+import "@tempo/board-ui/styles.css";
 import { mountWorkbench } from "./index.js";
 declare const __TEMPO_STUDY_URL__: string;
 declare const __TEMPO_INTELLIGENCE_ORIGIN__: string;

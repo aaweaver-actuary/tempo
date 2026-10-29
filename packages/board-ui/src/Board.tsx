@@ -4,6 +4,7 @@ import { createRenderer } from "./renderer.js";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { BoardController } from "./controller.js";
 import { fitBoardSize } from "./position.js";
+import { resolveBoardAppearance } from "./appearance.js";
 import type { BoardHandle, BoardProps } from "./types.js";
 
 export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, ref) {
@@ -11,12 +12,15 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
   const surfaceRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<BoardController | null>(null);
   const [size, setSize] = useState(0);
+  const measuredSize = useRef(0);
+  const appearance = resolveBoardAppearance(props);
 
   useImperativeHandle(ref, () => ({
     focus: () => hostRef.current?.focus(),
     clearInput: () => controllerRef.current?.clearInput(),
     clearInputBounds: () => controllerRef.current?.clearInputBounds(),
     selectSquare: square => controllerRef.current?.selectSquare(square),
+    getInteractionSnapshot: refreshBounds => controllerRef.current?.getInteractionSnapshot(refreshBounds) ?? null,
   }), []);
 
   useLayoutEffect(() => {
@@ -50,7 +54,10 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
     let disposed = false;
     const measure = () => {
       if (disposed) return;
-      setSize(fitBoardSize(host.getBoundingClientRect().width, props.maxSize));
+      const nextSize = fitBoardSize(host.getBoundingClientRect().width, props.maxSize);
+      if (measuredSize.current && measuredSize.current !== nextSize) controllerRef.current?.resized();
+      measuredSize.current = nextSize;
+      setSize(previous => previous === nextSize ? previous : nextSize);
       controllerRef.current?.clearInputBounds();
     };
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
@@ -86,7 +93,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
     className={`tempo-board ${props.className ?? ""}`} style={props.style}
     data-position-identity={props.positionIdentity} data-position-revision={props.positionRevision}
     data-fen={props.fen} data-orientation={props.orientation} data-mode={props.mode}>
-    <div className={`tempo-board-surface tempo-theme-${props.theme ?? "brown"} tempo-pieces-${props.pieceSet ?? "cburnett"}`}
+    <div className={`tempo-board-surface tempo-theme-${appearance.theme} tempo-pieces-${appearance.pieceSet}`}
       style={{ width: size, height: size, visibility: size ? "visible" : "hidden" }}>
       <div className="cg-wrap" ref={surfaceRef} />
     </div>

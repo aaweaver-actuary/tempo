@@ -1,14 +1,12 @@
 # @tempo/board-ui
 
-First isolated Board UI renderer milestone for Tempo #198, under #192. This is
-an installable React presentation package, using the current Chessground
-10.1.1 and React 19.2.6 toolchain. React is a peer, and is never bundled into the
-library. No app, service, application store, chess rules, Rust/WASM, or backend
-is a build or runtime dependency.
+The shared presentation-only chessboard for Tempo practice, authoring, review,
+previews and independent Workbench. React is a peer; Chessground 10.1.1 is the
+private rendering implementation. No application store, service, chess rules,
+Rust/WASM or backend is a build/runtime dependency.
 
-This milestone does not adopt the renderer into Study or Workbench. #198 stays
-open. Shared component declaration, runner/CI registration, and production
-adoption have separate owners and gates below.
+Source adoption and package/build/browser qualification are separate from
+installation and actual-device acceptance. This change does not deploy a client.
 
 ## Install and render
 
@@ -112,11 +110,10 @@ observer notifications after cleanup.
 
 ## Package-local checks
 
-Repository-wide `npm run typecheck` resolves only the exact public
-`@tempo/board-ui` name to `src/index.ts` so the checked-in consumer fixtures are
-checked without installing the package. Private subpaths remain unresolved.
-This is source validation; the unchanged standalone consumer configuration and
-`qualify` command below own installed declarations and package-export proof.
+The root workspace and Workbench depend on the public built package. Root
+`build:packages` builds it before application development, type checks and tests;
+there is no source-only import alias. The standalone qualifier below verifies
+installed declarations, public exports, styles/assets and source absence.
 
 ```sh
 cd packages/board-ui
@@ -137,6 +134,9 @@ The application/services/root build configuration are never present. It checks
 one React copy, exactly twelve emitted SVG assets, and no private import path.
 Installs are offline and require the declared dependencies already cached by
 the initial narrow install; supply `npm_config_cache` when using a task cache.
+Offline consumer installation also needs cached resolution metadata for its
+declared dependencies and Chessground; prime those in a task-owned directory
+when absent.
 Each subprocess has a 120-second bound. Successful staging is removed after
 retaining tarball, input/artifact hashes, logs, unit JSON, lock, and consumer build.
 Failed staging is retained for diagnosis with its path in the receipt.
@@ -145,21 +145,80 @@ The qualifier does not run a browser. See [browser proof instructions](browser/R
 and [recorded evidence](VALIDATION.md). Unit adapter/DOM tests do not establish
 real held drag, pixel placement, focus traversal, or responsive rendering.
 
-## Remaining owners and gates
+## Appearance and adopted consumers
 
-1. Parent publication coordinator: inspect the local commit/payload, arrange
-   remote branch/PR publication, and keep #198 open.
-2. Parent resource coordinator: grant one serial, backend-free native browser
-   run on the installed consumer artifact. Resolve any resulting defects before
-   claiming interaction/visual acceptance.
-3. Shared build/registration owner (#202/M02 tooling): reconcile `components.json`,
-   root workspace/lock, affected selection, and hosted checks. Local tests remain
-   runnable now; this slice does not claim global discovery or merge qualification.
-4. Study/Workbench adoption owners (#198/M03, session work in M07): adapt stores,
-   identity/revision publications, keyboard/preferences/help, sound and legality
-   through the public API. Preserve current application regression ownership,
-   donor #211/#250 initial-binding and genuine identity cancellation proofs,
-   navigation, and production source-absence/native browser acceptance. Legacy
-   application renderer and its tests are unchanged by this slice.
+`BoardAppearance` contains `theme` (`brown`, `blue`, `green`) and `pieceSet`
+(`cburnett`, `merida`). `DEFAULT_BOARD_APPEARANCE` is brown/CBurnett;
+`resolveBoardAppearance` validates each supplied field against a caller-supplied
+validated fallback or that default. The pure `@tempo/board-ui/appearance` entry
+exports these values/types without importing React or the renderer.
+
+The package stylesheet is the only owner of board colors, coordinates, highlights,
+check cue, piece shadow and piece images. Consumers import `@tempo/board-ui/styles.css`;
+layout, frame allocation and available actions stay with each consumer. Existing
+`tempo-board-theme` and `tempo-piece-set` browser settings remain intact.
+
+| Production entry | Adapter / use |
+| --- | --- |
+| `app/components/board/persistent-board-shell.tsx` | One mounted board shared by practice and authored Studies publications |
+| `app/views/training_view.tsx` | Embedded opening practice fallback |
+| `app/views/defense_training_view.tsx` | Embedded defense/recognition fallback |
+| `app/views/study_exercise_runner.tsx` | Embedded exercise fallback |
+| `app/views/tactics_view.tsx` | Embedded tactic solving |
+| `app/views/endgames_view.tsx` | Saved material-only endgame preview |
+| `app/components/position-solution-editor.tsx` | Card editor and tactic capture: setup and solution |
+| `app/views/tree_browser.tsx` | Repertoire-tree dialog |
+| `app/components/canonical-prefix-dialog.tsx` | Canonical-prefix preview |
+| `app/components/opening-segmentation.tsx` | Both endpoints of each segment |
+| `app/components/repertoire-integrity-dialog.tsx` | Response-repair preview |
+| `app/features/game-review/GameReviewView.tsx` | Exact original game replay |
+| `app/features/repertoire-review/PositionViewer.tsx` | Conflicts, proposals, findings and lines/history |
+| `apps/workbench-web/src/game-browser.ts` | Selected games, including Games-only composition |
+| `apps/workbench-web/src/workbench.ts` | Analysis finding detail |
+
+The first eleven entries use the application `Chessboard` interaction adapter;
+review views inject appearance directly. Workbench's `mountBoard` is a small
+React root with `update`/`destroy`; it owns no chess effects or persistence.
+No production consumer constructs Chessground directly.
+
+### Presentation ownership
+
+```mermaid
+flowchart LR
+    Settings["Tempo composition<br/>saved theme + piece set"] --> App["Practice / authoring adapters<br/>legality, hints, sound, keyboard"]
+    Settings --> Review["Games / repertoire review<br/>read-only position + history"]
+    Settings -->|"non-secret launch snapshot"| Workbench["Independent Workbench composition<br/>saved appearance fallback"]
+    Workbench --> Mount["mountBoard<br/>update / destroy"]
+    App -->|"public props / input intents"| Board["@tempo/board-ui Board<br/>surface, geometry, display, input lifecycle"]
+    Review --> Board
+    Mount --> Board
+    Board --> Style["Canonical stylesheet + piece assets"]
+    Board --> Renderer["Private Chessground adapter"]
+    Board -.->|"optional detached diagnostic facts"| Diagnostics["Caller-owned bounded recording"]
+```
+
+Canonical source: `src/Board.tsx`, `src/controller.ts`, `styles/board.css`.
+Application policy remains in `app/components/board/chessboard.tsx`; review and
+Workbench keep their own position/navigation state. Each application shares its
+browser process; source separation does not prove deployed resource isolation.
+Study has no Workbench/Games service or lifecycle prerequisite.
+
+### Optional diagnostics
+
+`BoardHandle.getInteractionSnapshot(refreshBounds = true)` returns detached
+orientation, board bounds, animation and active-drag facts, never a renderer API,
+DOM node or mutable state. Caller-owned capture passes `false` during a hold to
+reuse initial geometry; scroll/resize ends its measurement. The optional
+`onRendererEvent` callback reports ready/reset/update/annotation/resize facts.
+Recording, storage and diagnostic opt-in remain entirely with callers. Mode
+transitions clear cached hit testing instead of rebuilding the board; owning
+regressions retain the geometry invariant.
 
 License/asset attribution: [third-party notices](notices/THIRD-PARTY.md).
+
+The component registry now declares the implemented package, peer dependency and
+public style/appearance/asset subpaths. The existing scoped component guard checks
+those declarations while continuing to reject private paths; JSX/peer handling
+and exported CSS file resolution are necessary for these concrete consumers.
+The offline shell owns generated SVG caching (cache v8); it no longer requires
+retired public-directory piece copies. Saved Study data is unaffected.

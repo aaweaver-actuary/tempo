@@ -1,4 +1,3 @@
 # Merida pieces
 
-Merida SVG pieces are an optional board theme. Keep filenames compatible with
-the CSS asset references in `app/globals.css`.
+The canonical SVGs and attribution are packaged by [`@tempo/board-ui`](../../../packages/board-ui/README.md). Application CSS imports the public package stylesheet.

@@ -20,7 +20,8 @@
 .tempo-board square.selected { background: rgba(20, 85, 30, 0.5); }
 .tempo-board square.move-dest { background: radial-gradient(rgba(20, 85, 30, 0.5) 19%, transparent 20%); }
 .tempo-board square.oc.move-dest { background: radial-gradient(transparent 79%, rgba(20, 85, 30, 0.5) 80%); }
-.tempo-board square.check { background: radial-gradient(ellipse at center, rgba(255, 35, 35, 0.6), transparent 75%); }
+.tempo-board square.check { background: radial-gradient(ellipse at center, rgba(255, 35, 35, 0.48) 0%, rgba(230, 20, 20, 0.38) 27%, rgba(205, 0, 0, 0.2) 56%, rgba(180, 0, 0, 0) 89%, rgba(158, 0, 0, 0) 100%); }
+.tempo-board piece { filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.18)); }
 .tempo-board coords { color: #222; font-weight: bold; }
 .tempo-board .tempo-pieces-merida piece.pawn.white { background-image: url("../assets/merida/wP.svg"); }
 .tempo-board .tempo-pieces-merida piece.knight.white { background-image: url("../assets/merida/wN.svg"); }

@@ -5597,3 +5597,20 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 - `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
 - `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
 - `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
+
+## Shared chessboard appearance
+
+- `tests/unit/board-appearance-consistency-regressions.test.tsx`: `shared_board_appearance_all_fifteen_production_entries_use_the_shared_renderer_boundary` and `shared_board_appearance_settings_updates_preserve_the_persistent_board_and_position`. All production entry points delegate to Board UI; application/Workbench cannot construct another renderer or paint their own board/pieces. Appearance changes preserve the persistent surface and FEN.
+- `tests/unit/product-game-review.test.tsx`: `shared_board_appearance_game_replay_updates_without_losing_cursor_or_reloading` — injected saved appearance reaches replay.
+- `tests/unit/product-repertoire-review.test.tsx`: `shared_board_appearance_repertoire_categories_and_proposals_follow_settings` — conflicts, proposals, findings and lines use the selected appearance.
+- `tests/unit/workbench-launch-regressions.test.tsx`: `shared_board_appearance_workbench_launch_carries_the_current_selection` — safe non-secret launch snapshot, preserving existing routing.
+
+Existing renderer-configuration fixtures now intercept Board UI's owning construction adapter instead of the retired application Chessground constructor. Their behavioral assertions remain in their regular suites.
+
+- `tests/controlled-browser/board-appearance.spec.ts`: `shared_board_appearance_actual_consumers_previews_and_phone_share_colors_and_pieces` and `shared_board_appearance_real_workspace_navigation_reload_and_held_input_preserve_the_board` run through the supported isolated browser lane.
+- `tests/unit/offline-shell-build-regressions.test.ts` and `tests/unit/storage-cache-regressions.test.ts` retain generated shared piece SVGs in the offline shell and require them before reporting ready. The package owns images; the existing service worker owns caching. Cache v8 changes only generated shell assets, never saved Study data.
+
+The existing `product-game-sync-settings.test.tsx` frontend suite was present on
+the main baseline but absent from the central discovery inventory. Its actual
+frontend ownership is registered here so the unchanged strict inventory gate
+can select the controlled-browser checks; no test is skipped or weakened.

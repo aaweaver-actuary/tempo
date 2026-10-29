@@ -8,7 +8,7 @@ import { PersistentBoardShell } from "../../app/components/board/persistent-boar
 import { asCardId, asFenString, asQueueEntryId, type PracticeCard } from "../../app/types";
 import type { StudySpecification } from "../../app/domain/study-exercises";
 
-vi.mock("@lichess-org/chessground", () => ({ Chessground: () => ({ set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }) }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: () => ({ state: { drawable: {}, dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }) }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 
 afterEach(() => vi.unstubAllGlobals());

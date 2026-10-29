@@ -1,3 +1,4 @@
+import type { BoardAppearance } from "@tempo/board-ui";
 import { useState } from "react";
 import { Button } from "../../components/buttons/BaseButton";
 import { Surface } from "../../components/ui";
@@ -6,8 +7,8 @@ import { PositionViewer } from "./PositionViewer";
 import { ProposalPanel } from "./ProposalPanel";
 import type { RepertoireReviewSession } from "./state";
 
-export function ConflictPanel({ conflict, read, api, session }: {
-  conflict: ConflictRow; read: RepertoireReviewRead; api: RepertoireReviewClient; session: RepertoireReviewSession;
+export function ConflictPanel({ conflict, read, api, session, appearance }: {
+  appearance: BoardAppearance; conflict: ConflictRow; read: RepertoireReviewRead; api: RepertoireReviewClient; session: RepertoireReviewSession;
 }) {
   const [choice, setChoice] = useState<string | null>(null);
   const selected = conflict.choices.find(item => item.move_uci === choice);
@@ -20,8 +21,8 @@ export function ConflictPanel({ conflict, read, api, session }: {
     <div className="repertoire-review-actions">{conflict.choices.map(item => <Button key={item.move_uci}
       aria-pressed={choice === item.move_uci} onClick={() => setChoice(item.move_uci)}>Choose {item.move_uci}</Button>)}</div>
     {selected
-      ? <ProposalPanel key={`${selected.proposal.proposal_id}/${selected.proposal.proposal_revision}/${selected.proposal.display_digest}`}
+      ? <ProposalPanel appearance={appearance} key={`${selected.proposal.proposal_id}/${selected.proposal.proposal_revision}/${selected.proposal.display_digest}`}
           proposal={selected.proposal} read={read} api={api} session={session} position={conflict.position} />
-      : <PositionViewer position={conflict.position} identity={conflict.conflict_id} />}
+      : <PositionViewer appearance={appearance} position={conflict.position} identity={conflict.conflict_id} />}
   </Surface>;
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD_APPEARANCE } from "@tempo/board-ui/appearance";
 import type { BoardKeyboardActions } from "../lib/keyboard-shortcuts";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Square } from "chess.js";
@@ -60,8 +61,8 @@ export const defaultBoardState: BoardShellSnapshot = {
   orientation: "white",
   interactionMode: "readonly",
   showHint: false,
-  theme: "brown",
-  pieceSet: "cburnett",
+  theme: DEFAULT_BOARD_APPEARANCE.theme,
+  pieceSet: DEFAULT_BOARD_APPEARANCE.pieceSet,
   shapes: [],
   drawnShapes: [],
   positionRevision: 0,

@@ -9,10 +9,10 @@ import { Chessboard } from "../../app/components/board/chessboard";
 import { STANDARD_FEN } from "../../app/const";
 
 const capturedBoard = vi.hoisted(() => ({ current: undefined as Api | undefined }));
-vi.mock("@lichess-org/chessground", async (importOriginal) => {
-  const implementation = await importOriginal<typeof import("@lichess-org/chessground")>();
-  return { ...implementation, Chessground: (...args: Parameters<typeof implementation.Chessground>) => {
-    capturedBoard.current = implementation.Chessground(...args);
+vi.mock("../../packages/board-ui/dist/renderer.js", async (importOriginal) => {
+  const implementation = await importOriginal<typeof import("../../packages/board-ui/dist/renderer.js")>();
+  return { ...implementation, createRenderer: (...args: Parameters<typeof implementation.createRenderer>) => {
+    capturedBoard.current = implementation.createRenderer(...args);
     return capturedBoard.current;
   } };
 });
@@ -59,7 +59,7 @@ function expectAuthoritativePosition(fen: string, lastMove?: readonly [string, s
   }
   expect(board.getFen()).toBe(fen.split(" ")[0]);
   expect(board.state.turnColor).toBe(chess.turn() === "w" ? "white" : "black");
-  expect(board.state.movable.dests).toEqual(destinations);
+  expect(board.state.movable.dests).toEqual(new Map([...destinations].map(([from, targets]) => [from, [...targets].sort()])));
   expect(board.state.check).toBe(chess.isCheck()
     ? chess.findPiece({ type: "k", color: chess.turn() })[0] : undefined);
   expect(board.state.lastMove).toEqual(lastMove);

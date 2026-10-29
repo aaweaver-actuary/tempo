@@ -33,7 +33,13 @@ the existing application suites or shared runner inventories.
 | BUI-24 | tests/repairs.test.tsx | Obsolete orientation DOM generation cannot schedule redraw or receive piece/drawing input |
 | BUI-25 (6 cases) | tests/boundaries.test.ts | Brown/blue/green, white/black orientations: stylesheet-derived color at all 64 square interiors has dark a1/h8 and light h1/a8 |
 
-25 identities expand to 50 test cases. The real Chessground cases use jsdom and
+| BUI-26 (6 cases) | tests/Board.test.tsx | All themes/piece sets reuse the mounted surface without resetting input |
+| BUI-27 | tests/Board.test.tsx | Invalid appearance inputs use shared defaults or a validated saved fallback |
+| BUI-28 | tests/Board.test.tsx | Optional lifecycle facts distinguish genuine reset from appearance-only updates |
+| BUI-29 | tests/controller.test.ts | Detached drag facts retain initial geometry sampling without private API exposure |
+
+
+29 identities expand to 59 test cases. The real Chessground cases use jsdom and
 do not establish native browser behavior. `consumer/public-types.ts` and
 `consumer/smoke.mjs` additionally check every public type, real built export,
 React render, CSS/assets/notices, and private export rejection after source

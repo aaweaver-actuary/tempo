@@ -11,10 +11,10 @@ import { playChessMoveSound } from "../../app/lib/move-sound";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
 
-const boardApi = vi.hoisted(() => ({ state: { dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(),
+const boardApi = vi.hoisted(() => ({ state: { drawable: {}, dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(),
   cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }));
 const createBoard = vi.hoisted(() => vi.fn((element: unknown, config: Config) => { void element; void config; return boardApi; }));
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+vi.mock("../../packages/board-ui/dist/renderer.js", () => ({ createRenderer: createBoard }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 
 beforeEach(() => {

@@ -59,12 +59,15 @@
         "intelligenceOriginForBuild",
         "studyHandoffNotice",
         "studyUrl",
-        "studyUrlForBuild"
+        "studyUrlForBuild",
+        "readWorkbenchAppearance"
       ],
       "dependencies": [
-        "@lichess-org/chessground",
         "chess.js",
-        "zod"
+        "zod",
+        "@tempo/board-ui",
+        "react",
+        "react-dom"
       ],
       "buildInputs": [
         "src",
@@ -1016,21 +1019,90 @@
     {
       "id": "board-ui",
       "type": "library",
-      "maintainer": "Tempo / #199",
-      "status": "planned",
+      "maintainer": "Tempo / shared board presentation",
+      "status": "implemented",
       "root": "packages/board-ui",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "Board",
+        "fitBoardSize",
+        "DEFAULT_BOARD_APPEARANCE",
+        "resolveBoardAppearance",
+        "BoardAppearance",
+        "BoardHandle",
+        "BoardProps",
+        "BoardShape",
+        "BoardTheme",
+        "PieceSet",
+        "BoardInteractionSnapshot",
+        "BoardRendererEvent",
+        "BoardColor",
+        "BoardMode",
+        "DrawingEvent",
+        "InteractionEvent",
+        "MoveEvent",
+        "PieceRole",
+        "PositionIdentity",
+        "SelectEvent",
+        "Square"
+      ],
+      "dependencies": [
+        "react",
+        "@lichess-org/chessground"
+      ],
+      "buildInputs": [
+        "src",
+        "styles",
+        "assets",
+        "notices",
+        "LICENSE",
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "build.mjs",
+        "tests",
+        "vitest.config.ts",
+        "REGRESSIONS.md",
+        "consumer",
+        "qualify.mjs"
+      ],
+      "buildCommand": "npm ci --ignore-scripts --workspaces=false && npm run build",
+      "artifact": {
+        "name": "@tempo/board-ui",
+        "version": "0.1.0",
+        "format": "npm tarball"
+      },
+      "tests": [
+        {
+          "owner": "board-ui",
+          "kind": "node",
+          "cwd": ".",
+          "command": "npm --prefix packages/board-ui test",
+          "inputs": [
+            "packages/board-ui/src",
+            "packages/board-ui/tests",
+            "packages/board-ui/styles",
+            "packages/board-ui/assets",
+            "packages/board-ui/package.json",
+            "packages/board-ui/package-lock.json",
+            "packages/board-ui/vitest.config.ts"
+          ]
+        }
+      ],
+      "toolchain": {
+        "node": ">=22.13.0"
+      },
       "dataOwnership": {
-        "authority": null,
+        "authority": "Presentation only; callers own chess rules, preferences and durable effects",
         "databases": [],
         "migrations": []
-      }
+      },
+      "testInventory": "REGRESSIONS.md",
+      "publicSubpaths": [
+        "./appearance",
+        "./styles.css",
+        "./assets/*",
+        "./notices/*"
+      ]
     },
     {
       "id": "study-session",

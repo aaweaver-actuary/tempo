@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import type { Api } from "@lichess-org/chessground/api";
+import type { BoardInteractionSnapshot } from "@tempo/board-ui";
 import {
   installTempoDragCapture, tempoDragDiagnostics, resetTempoDragDiagnostics,
   disableTempoDragDiagnostics, recordTempoDragPhase,
@@ -21,7 +21,16 @@ function fixture() {
     dom: { bounds: vi.fn(() => ({ left: 10, top: 20, width: 400, height: 400 })) },
     orientation: "white", animation: { enabled: true, duration: 180 },
   };
-  const capture = installTempoDragCapture(surface, { state } as unknown as Api);
+  let cachedBounds: ReturnType<typeof state.dom.bounds> | undefined;
+  const capture = installTempoDragCapture(surface, (refreshBounds): BoardInteractionSnapshot => {
+    const bounds = refreshBounds || !cachedBounds ? state.dom.bounds() : cachedBounds;
+    cachedBounds = bounds;
+    const drag = state.draggable.current;
+    const translation = drag?.element.style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+    return { orientation: state.orientation as "white" | "black", bounds, animation: { ...state.animation },
+      drag: drag ? { started: drag.started, origin: drag.orig as "e2", initialPointer: [...drag.origPos],
+        pieceCenter: translation ? [bounds.left + Number(translation[1]) + bounds.width / 16, bounds.top + Number(translation[2]) + bounds.height / 16] : null } : null };
+  });
   fixtureCaptures.push(capture);
   function start() {
     const grab: [number, number] = state.orientation === "black" ? [190, 100] : [240, 350];
