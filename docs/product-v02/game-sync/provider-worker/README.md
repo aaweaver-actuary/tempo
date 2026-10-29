@@ -7,10 +7,10 @@ that the card was already known at the time. Preserve real timestamps, source/ca
 identity and retry receipts; never invent chronology or completed Study work.
 There is no coaching, explanation or engine requirement.
 
-This is an **untested source extraction** of #558 `403c19e5`, based on main
-`346d1741` (includes #586). No tests, builds, provider imports/HTTP, containers,
-services, settings writes or activation were run for this extraction. The donor's
-retained receipts below are historical evidence, not a pass for this final diff.
+This source was extracted from #558 `403c19e5`, based on main `346d1741`
+(includes #586). PR #592 records current bounded qualification: CLI help/import,
+rendered Compose and the existing component tests. The donor receipts below remain
+historical evidence; none establishes activation or end-to-end settlement.
 
 ## Owned files and dependencies
 
@@ -48,7 +48,7 @@ never replace an outstanding continuation with a new window. Recurrence off
 remains off, even in the follow process; manual queued jobs may still drain.
 `--preview --follow --overlap-seconds N` is the existing query-only preview.
 These describe interfaces, not authorization or instructions to start anything.
-No CLI command was executed here.
+`--help` was checked during qualification; executable and preview modes were not run.
 
 End-to-end dependencies stay separately tracked: #590 supplies durable
 command/API/Settings and exact route transitions, #589 owns claimed-feedback
@@ -193,3 +193,15 @@ configuration. The owning correction must select every exact same-color snapshot
 and preserve their complete conflict/mapping evidence; no-match must remain
 honestly unresolved. It is outside this four-file packaging lease and is proposed
 to the coordinator for explicit ownership, not silently patched here.
+
+## Existing process-stop fixture repair
+
+The regular `test_product_game_sync_integration.py` file referenced a missing
+`backend/tests/fixtures/product_game_worker_process.py`. Qualification reproduced
+two failures before the child could reach local HTTP. Restore only the existing
+published local-process helper from #558: it rewrites transport to loopback, uses
+in-memory Games state and the real optional runner, and opens no database. The
+existing terminate/kill cases remain the regression owners and retain their
+native ordinary-Study review assertions. This fixture repair changes no provider
+production behavior or activation policy. Exact initial and repaired results are
+recorded in the PR, including verified disposable PostgreSQL cleanup.
