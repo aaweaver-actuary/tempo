@@ -7,6 +7,7 @@ Every use rereads/fences actual source rows in the same borrowed transaction.
 from __future__ import annotations
 
 import json
+import copy
 from datetime import date
 
 import chess
@@ -53,6 +54,7 @@ class CurrentOwnerDecisions:
         self.authority = LegacyAuthorityToken.model_validate(source['authority'])
         self.proof = LegacyScopedCatalogueProof.model_validate(source['catalogue_scope'])
         self.snapshot = RepertoireSnapshot.model_validate_json(snapshot.model_dump_json())
+        self._prepared_encounter = None
         _require(source['authority'] == source['observed_after']
                  and snapshot.membership.digest == source['export_digest']
                  and snapshot.membership.source_revision == fingerprint(source['authority'])
@@ -64,6 +66,40 @@ class CurrentOwnerDecisions:
                     ('source_digest','graph_digest','catalogue_digest')}, 'retained_owner_scope_mismatch')
         _require(len(source['tables']['repertoire_lines']) <= 64 and len(source['graphs']) <= 256
                  and len(source['tables']['cards']) <= 128, 'retained_owner_scope_exceeds_bound')
+
+    def bind(self, database):
+        """Reuse already validated retained facts; current database fences still run."""
+        bound = copy.copy(self)
+        bound.database = database
+        return bound
+
+    def prepare_encounter(self, command):
+        """Validate retained executable before binding a writer; current rows remain fenced."""
+        cards = [row for row in self.source['tables']['cards'] if row['id'] == command.decision.presentation_id]
+        _require(len(cards) == 1, 'current_owner_card_changed')
+        self._validate_executable(command, cards[0], priority_only=True)
+        self._prepared_encounter = command.model_dump_json()
+        return self
+
+    def _validate_executable(self, command, actual, *, priority_only):
+        key, proof, source = command.key, self.proof, self.source
+        finding = command.decision if priority_only else command.finding
+        expected_uci = (command.expected_uci,) if priority_only else finding.expected_uci
+        card_id = finding.presentation_id
+        moves = json.loads(actual['moves_json'])
+        _require(1 <= len(moves) <= 40, 'current_owner_executable_exceeds_bound')
+        board, matching = chess.Board(actual['start_fen']), []
+        _require(actual['trained_color'] == proof.scope.learner_color == source['game']['color'],
+                 'current_owner_learner_color_changed')
+        for offset, uci in enumerate(moves):
+            _require(chess.Move.from_uci(uci) in board.legal_moves, 'current_owner_illegal_executable')
+            if (decision_identity(card_id,offset,moves[:offset]) == key.decision_id
+                    and board.turn == (actual['trained_color'] == 'white')
+                    and canonical_fen_key(board.fen(en_passant='legal')) == finding.position_key
+                    and expected_uci == (uci,)):
+                matching.append(offset)
+            board.push_uci(uci)
+        _require(len(matching) == 1, 'current_owner_decision_not_in_executable')
 
     def current(self, lapse):
         return self._current(lapse)
@@ -170,20 +206,8 @@ class CurrentOwnerDecisions:
         _require(not blocked and (priority_only or actual['revision'] == 1) and not any(actual[k] for k in
                  ('archived','pending_validation','superseded_by')) and actual['content_type'] == 'opening',
                  'current_owner_card_unavailable_or_changed_content_introduction_unproved')
-        moves = json.loads(actual['moves_json'])
-        _require(1 <= len(moves) <= 40, 'current_owner_executable_exceeds_bound')
-        board, matching = chess.Board(actual['start_fen']), []
-        _require(actual['trained_color'] == proof.scope.learner_color == source['game']['color'],
-                 'current_owner_learner_color_changed')
-        for offset, uci in enumerate(moves):
-            _require(chess.Move.from_uci(uci) in board.legal_moves, 'current_owner_illegal_executable')
-            if (decision_identity(card_id,offset,moves[:offset]) == key.decision_id
-                    and board.turn == (actual['trained_color'] == 'white')
-                    and canonical_fen_key(board.fen(en_passant='legal')) == finding.position_key
-                    and expected_uci == (uci,)):
-                matching.append(offset)
-            board.push_uci(uci)
-        _require(len(matching) == 1, 'current_owner_decision_not_in_executable')
+        if not priority_only or self._prepared_encounter != command.model_dump_json():
+            self._validate_executable(command, actual, priority_only=priority_only)
         mappings = tuple(item for item in self.snapshot.decision_presentations
             if item.decision_id == key.decision_id)
         # Route provenance is not a second physical target. Prove every other
@@ -250,14 +274,15 @@ def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot
 
 
 def current_owner_encounter_feedback(database, *, retained_owner_capture, snapshot, clock,
-                                     introductions, introduction_policy, prepared_priority=None):
+                                     introductions, introduction_policy, prepared_priority=None, prepared_decisions=None):
     """Internal Study refresh factory on its own borrowed writer transaction.
 
     Compose #495's current_owner_encounter_introductions externally. No new
     schema, connection, commit, live policy default or producer lifecycle.
     """
     from app.study.encounter_feedback import EncounterFeedback
-    decisions = CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot)
+    decisions = (prepared_decisions.bind(database) if prepared_decisions is not None else
+                 CurrentOwnerDecisions(database, retained_owner_capture=retained_owner_capture, snapshot=snapshot))
 
     class RetainedIntroductionTarget:
         def admit_encounter(self, day, *, repertoire_id, decision_id, target):

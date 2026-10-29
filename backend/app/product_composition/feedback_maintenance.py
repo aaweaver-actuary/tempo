@@ -9,7 +9,7 @@ from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
 from tempo_legacy_database.adapters.games.authority import acceptance as source_owner
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, installed
 from tempo_legacy_database.adapters.study.game_feedback_authority import (
-    CurrentDecisionUnavailable, current_owner_game_feedback, current_owner_encounter_feedback,
+    CurrentDecisionUnavailable, CurrentOwnerDecisions, current_owner_game_feedback, current_owner_encounter_feedback,
 )
 
 from app.contracts.product_v02.learning import GameEffectControl
@@ -19,6 +19,7 @@ from app.services.durable_tasks import (advance_task_slice_in_transaction, claim
     complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice)
 from app.study.game_feedback import GameFeedback, effect_id
 from .retained_game import retained_canonical_game
+from app.services.feedback_diagnostics import feedback_stage
 
 KIND = "study_game_feedback"
 
@@ -37,6 +38,7 @@ def claim_feedback_sweep():
 def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
                            capture=capture_game, clock=None):
     """One effect and durable cursor per transaction; all reads close first."""
+    feedback_stage('read_effect', task)
     write = write or (lambda: connection(background=True))
     clock = clock or (lambda: datetime.now(timezone.utc))
     payload = task.get("payload")
@@ -49,6 +51,7 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
     captured = snapshot = None
     reason = None
     if observed is not None and observed.status == "pending":
+        feedback_stage('capture')
         try:
             repertoire_id = (observed.encounter.decision.repertoire_id if observed.encounter is not None
                              else observed.lapse.finding.repertoire_id)
@@ -59,13 +62,25 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
             # Keep the obligation. The durable sweep exposes this hold reason
             # and proceeds fairly; its next generation retries missing facts.
             reason = getattr(error, "reason", None) or "current_source_unavailable"
-    prepared_priority = None
+    prepared_priority = prepared_introduction = prepared_decisions = None
+    due_refresh_needed = False
     if observed is not None and observed.encounter is not None and captured is not None:
+        feedback_stage('prepare')
         # Study alone loads queue/introduction capabilities, before its writer.
         from app.services.queue_priority_promotion import prepare_priority_promotion
         from app.services.queue_admission_adapter import current_owner_encounter_introductions
         from app.study.encounter_feedback import EncounterIntroductionPolicy
+        from app.services.encounter_preparation import prepare_encounter_introduction
+        prepared_decisions = CurrentOwnerDecisions(None, retained_owner_capture=captured, snapshot=snapshot).prepare_encounter(observed.encounter)
+        target = observed.encounter.decision.model_copy(update={
+            'repertoire_revision': prepared_decisions.authority.scope_source_revision + 1})
+        from app.study.introductions.encounter import PreparedEncounterIntroduction, introduction_target_identity
+        captured_card = next(row for row in captured['tables']['cards'] if row['id'] == observed.card_id)
+        prepared_introduction = (prepare_encounter_introduction(target, read=read)
+            if captured_card['introduced_at'] is None else PreparedEncounterIntroduction(
+                introduction_target_identity(target), '', (), 'encounter_preparation_required'))
         prepared_priority = prepare_priority_promotion(clock().date().isoformat(),observed.card_id,read=read)
+    feedback_stage('effect_writer')
     with write() as database:
         slice_admitted = lock_current_slice(database, task)
         if not slice_admitted:
@@ -95,12 +110,22 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
                 # task-generation/lease fence above. There is no distinct global
                 # Study-pause field; cap/Study-only never supply this Boolean.
                 introductions = current_owner_encounter_introductions(database,
-                    allowance="encounter_exception", paused=not slice_admitted)
-                current_owner_encounter_feedback(database, retained_owner_capture=captured,
+                    allowance="encounter_exception", paused=not slice_admitted,
+                    prepared_introduction=prepared_introduction)
+                receipt = current_owner_encounter_feedback(database, retained_owner_capture=captured,
                     snapshot=snapshot, clock=clock, introductions=introductions,
                     introduction_policy=EncounterIntroductionPolicy("encounter_exception"),
-                    prepared_priority=prepared_priority
+                    prepared_priority=prepared_priority, prepared_decisions=prepared_decisions
                 ).refresh_encounter(observed.key)
+                due_refresh_needed = receipt is not None and receipt.reason == "due_queue_refresh_pending"
         advance_task_slice_in_transaction(database, task, next_phase="scan",
             next_payload={"after": effect_id(observed.key), "hold_reason": reason})
+    if due_refresh_needed:
+        feedback_stage('request_due_refresh')
+        # Queue work owns its task-first lock order; all effect locks are closed.
+        from app.services.queue_application import ensure_due_refresh_in_transaction
+        from app.services.queue_refresh_wakeup import wake_queue_refresh
+        with write() as database:
+            ensure_due_refresh_in_transaction(database, clock().date().isoformat())
+        wake_queue_refresh()
     return False
