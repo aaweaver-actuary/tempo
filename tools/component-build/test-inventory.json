@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "explicitRunnerFiles": ["tests/runner/product-maia-probability-smoke.test.mjs"],
+  "explicitRunnerFiles": ["tests/runner/product-maia-probability-smoke.test.mjs", "tests/runner/product-stockfish-smoke.test.mjs"],
   "lanes": {
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
@@ -182,6 +182,8 @@
     ],
     "runners": [
       "tests/runner/product-maia-probability.test.mjs",
+      "tests/runner/product-stockfish.test.mjs",
+      "tests/runner/public-surface-stockfish.test.mjs",
       "tests/runner/ci-browser-shards.test.mjs",
       "tests/runner/ci-development.test.mjs",
       "tests/runner/ci-fast-lane.test.mjs",

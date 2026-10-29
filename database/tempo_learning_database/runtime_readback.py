@@ -66,7 +66,7 @@ def _connection_info(dsn, parse, *, database, role, port):
 
 _SESSION = (
     "SELECT current_database(),session_user,current_user,"
-    "inet_server_addr()::text,inet_server_port(),"
+    "host(inet_server_addr()),inet_server_port(),"
     "current_setting('transaction_read_only'),current_setting('default_transaction_read_only')"
 )
 _ROLE = (

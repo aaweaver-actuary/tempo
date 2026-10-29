@@ -13,9 +13,9 @@ def test_runtime_database_readback_contract_cases():
     cases = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(cases)
     suite = unittest.TestLoader().loadTestsFromModule(cases)
-    assert suite.countTestCases() == 22, "All 22 owning cases must be selected exactly once"
+    assert suite.countTestCases() == 23, "All 23 owning cases must be selected exactly once"
     output = StringIO()
     result = unittest.TextTestRunner(stream=output, verbosity=2).run(suite)
     print(output.getvalue())
-    assert result.testsRun == 22, output.getvalue()
+    assert result.testsRun == 23, output.getvalue()
     assert not result.failures and not result.errors and not result.skipped, output.getvalue()

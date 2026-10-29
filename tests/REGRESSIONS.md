@@ -1,3 +1,17 @@
+## T18 bounded proposal policy
+
+`backend/tests/test_product_proposals.py` owns the pure proposal regressions:
+exact continuation preference and explicit familiar candidates outside the top
+five; exact 30/31 CP acceptance for both colors; mate, bounded, incompatible and
+unknown evidence; distinct-position outliers; separate common-blunder frequency
+and loss thresholds; existing-card preparation without learning effects; exact
+displayed additions and approval/source revalidation; bounded scans and optional
+failures. `test_existing_card_route_local_mapping_matches_actual_target` rejects
+reuse or replacement through a foreign route/ply while retaining matching and
+unscoped mappings. The suite includes the scoped dependency/cycle guard and
+concrete-infrastructure import rejection. It uses fake ports only and does not
+establish A07 product acceptance. See the [owner interface and examples](../backend/app/analysis/proposals/README.md).
+
 ## T22 Study recombination and immutable presentation provenance
 
 `backend/tests/test_product_recombination_application.py` owns genuine saved
@@ -62,6 +76,21 @@ index/snapshot source cases live in `test_product_position_index.py` and
 [classification owner inventory](../packages/game-classification/REGRESSIONS.md).
 Study lapse/deadline/hold/settlement cases are listed in its
 [owner README](../backend/app/study/README.md#focused-checks).
+
+## T12 Standalone Explorer evidence
+
+`backend/tests/test_product_explorer.py` owns the fake-HTTP/cache/clock proof for
+partial/zero/missing samples, retained unknown mass, explicit population and
+cache-key scope, legal/count validation, safe auth/rate-limit/timeout/cancellation
+diagnostics, credential exclusion and complete shared-contract round trips.
+`test_provider_offline_never_calls_study` reuses the current T01 scoped import/
+cycle guard over this component and its declared public facade;
+`test_public_interface_preserves_types_and_cold_import_starts_no_work` checks
+identity-compatible exports and a fresh import with network/private-runtime
+access denied. The owner command is
+`make python-file FILE=backend/tests/test_product_explorer.py`.
+No provider connectivity, persistence, user D04 setting or #501 product wiring
+is established by this component proof.
 
 ## T06 Study-owned game lapse and durable withdrawal fence
 
