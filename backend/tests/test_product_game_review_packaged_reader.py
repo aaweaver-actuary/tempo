@@ -3,10 +3,16 @@
 Run with the existing validation lock and explicit TEMPO_TEST_INSTANCE=disposable,
 TEMPO_TEST_COMPOSE_PROJECT=tempo-pg-regressions-<digits>-<hex>, and that stack's
 TEMPO_DEVELOPMENT_BUDGET_TOKEN. API, foreground-worker and PostgreSQL must already
-be running with schema52 and provisioned reader/writer profiles. Nothing here
+be running with the authoritative schema and provisioned reader/writer profiles. Nothing here
 creates a container, credential, role, grant, image, or application instance.
 Only three uniquely named synthetic receipt rows are seeded/removed by the
 existing writer. Collection performs no Docker, HTTP, database or fixture work.
+
+The separately selected settlement case consumes the existing Games fixture's
+one acknowledged command. It publishes the registered Study sweep and saves
+ordinary reviews through the real reader API/command worker, without seeding
+or directly mutating Study state. Its owning controller supplies and cleans the
+already verified disposable stack and exact synthetic manifest.
 """
 import hashlib
 import json
@@ -17,6 +23,7 @@ import subprocess
 import uuid
 
 import pytest
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +39,8 @@ RUNTIME_FILES = {
     "database/tempo_legacy_database/adapters/study/game_feedback.py": "/app/tempo_legacy_database/adapters/study/game_feedback.py",
     "database/tempo_legacy_database/ddl/schema_version.py": "/app/tempo_legacy_database/ddl/schema_version.py",
     "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql": "/app/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
+    "database/tempo_legacy_database/ddl/migrations/053_study_recombination.sql": "/app/tempo_legacy_database/ddl/migrations/053_study_recombination.sql",
+    "database/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql": "/app/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql",
 }
 
 
@@ -92,7 +101,7 @@ def connect(role):
         assert row[3] in payload["postgres_addresses"], ("Database address differs from owned fixture", row[3], payload["postgres_addresses"])
         assert row[4] == "tempo-disposable-postgres-test"
         versions = database.execute("SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()
-        assert [row[0] for row in versions] == list(range(1,53))
+        assert [row[0] for row in versions] == list(range(1,payload["schema_version"]+1))
         return database
     except BaseException:
         database.close()
@@ -128,7 +137,7 @@ with connect("tempo_reader") as database:
         pass
     else:
         raise AssertionError("Reader UPDATE must be rejected even in a read-write transaction")
-print(json.dumps({"schema":52,"role":"tempo_reader","select_grants":9,"update_rejected":True}))
+print(json.dumps({"schema":payload["schema_version"],"role":"tempo_reader","select_grants":9,"update_rejected":True}))
 '''
 
 SEED = r'''
@@ -189,9 +198,9 @@ with connect("tempo_reader") as database:
     assert receipt["admission_status"] == "pending" and receipt["available_by"] is None
     assert receipt["deferred_reason"] == "authority_unavailable" and receipt["observation_recorded"] is True
     assert receipt["source_digest"] == payload["command"]["source"]["source_digest"]
-    status,rejected = request("/api/product/game-review/sync",{"provider":"lichess","operation_id":payload["identity"]})
-    # In the real PostgreSQL HTTP stack, the existing Celery-cutover guard
-    # refuses this unadopted write route before the reader-only root factory.
+    status,rejected = request("/api/product/game-review/unregistered-write",{"operation_id":payload["identity"]})
+    # Only the three adopted commands dispatch through the durable gateway.
+    # The cutover guard still refuses arbitrary write paths at the API reader.
     assert status == 503 and rejected == {"detail":
         "This write route is awaiting its Celery cutover; use the current local Docker service."}
     assert snapshot() == before
@@ -224,7 +233,7 @@ def _exec_python(container, payload, body):
     return json.loads(_docker("exec", "-i", container["Id"], "python", "-", source=source).strip().splitlines()[-1])
 
 
-def test_packaged_game_review_schema52_reader_reads_current_receipt_without_write_privileges():
+def test_packaged_game_review_reader_reads_current_receipt_without_write_privileges():
     containers = _owned_containers()  # Reject ambient/live targets before any connection or seed.
     from app.games.feedback.coordinator import delivery_for
     from app.games.feedback.ports import SourceState
@@ -249,14 +258,167 @@ def test_packaged_game_review_schema52_reader_reads_current_receipt_without_writ
     addresses = [network["IPAddress"] for network in containers["postgres"]["NetworkSettings"]["Networks"].values()]
     assert addresses and all(addresses)
     payload = dict(identity=identity,source_key=source.source_key,operation_id=delivery.operation_id,
+        schema_version=POSTGRES_SCHEMA_VERSION,
         source=source.model_dump(mode="json"),delivery=delivery.model_dump(mode="json"),
         command=command.model_dump(mode="json"),effect_id=effect_id(command.key),postgres_addresses=addresses,
         runtime_hashes={target:hashlib.sha256((ROOT/path).read_bytes()).hexdigest() for path,target in RUNTIME_FILES.items()})
     preflight = _exec_python(containers["api"],payload,PREFLIGHT)
-    assert preflight == dict(schema=52,role="tempo_reader",select_grants=9,update_rejected=True)
+    assert preflight == dict(schema=POSTGRES_SCHEMA_VERSION,role="tempo_reader",select_grants=9,update_rejected=True)
     try:
         assert _exec_python(containers["foreground-worker"],payload,SEED)["effect_id"] == payload["effect_id"]
         proof = _exec_python(containers["api"],payload,PROOF)
         assert proof["writer_command_rejected"] and proof["fixture_rows_unchanged"]
     finally:
         assert _exec_python(containers["foreground-worker"],payload,CLEANUP) == {"fixture_cleanup_verified":True}
+
+
+def test_packaged_provider_acknowledgment_reaches_independent_study_and_settles():
+    """One actual receipt: CLI acknowledgment -> real sweep -> HTTP save/reload.
+
+    Requires the existing controller's explicit one-game manifest and packaged
+    image. No startup, credentials, clock substitution or queue write is here.
+    """
+    import time
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    from app.contracts.product_v02.presentation import GameDetail
+
+    containers = _owned_containers()
+    manifest_path = Path(os.environ.get("TEMPO_GAME_SYNC_FIXTURE_MANIFEST", "")).resolve()
+    assert manifest_path.parent.parent == ROOT.resolve()
+    assert manifest_path.parent.name.startswith(".tempo-pg-test-secrets-491-reader-")
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["project"] == os.environ["TEMPO_TEST_COMPOSE_PROJECT"]
+    assert re.fullmatch(r"[a-f0-9]{32}", manifest["token"])
+    assert manifest["repertoire_id"] == "fixture-t10-primary-repertoire-" + manifest["token"]
+    assert manifest["expected_misses"] == 1
+    image = os.environ.get("TEMPO_GAME_SYNC_IMAGE_ID", "")
+    assert re.fullmatch(r"sha256:[a-f0-9]{64}", image)
+    for service in ("api", "foreground-worker"):
+        assert containers[service]["Image"] == image
+    assert "--queues=foreground" in containers["foreground-worker"]["Config"]["Cmd"]
+    bindings = containers["api"]["NetworkSettings"]["Ports"]["8000/tcp"]
+    assert len(bindings) == 1 and bindings[0]["HostIp"] == "127.0.0.1"
+    base = "http://127.0.0.1:" + bindings[0]["HostPort"]
+    preflight = _exec_python(containers["api"], dict(runtime_hashes={
+        target: hashlib.sha256((ROOT/path).read_bytes()).hexdigest()
+        for path, target in {**RUNTIME_FILES,
+            "backend/app/product_composition/provider_priority.py": "/app/app/product_composition/provider_priority.py",
+            "backend/app/product_composition/feedback_maintenance.py": "/app/app/product_composition/feedback_maintenance.py",
+            "backend/app/product_composition/game_sync_current.py": "/app/app/product_composition/game_sync_current.py",
+            "backend/app/tasks.py": "/app/app/tasks.py",
+        }.items()}), """
+assert not os.environ.get('TEMPO_DATABASE_WRITE_URL')
+for path, digest in payload['runtime_hashes'].items():
+    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest, path
+print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
+""")
+    assert preflight == dict(reader_has_no_writer=True, packaged_hashes_match=True)
+
+    def helper(action):
+        output = _docker("exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable",
+            containers["foreground-worker"]["Id"], "python", "-", action,
+            "--project", manifest["project"], "--fixture-json", json.dumps(manifest),
+            source=(ROOT/"backend/tests/fixtures/product_game_sync_browser.py").read_text())
+        return json.loads(output.strip().splitlines()[-1])
+
+    def request(path, body=None, operation=None):
+        headers = {"Content-Type": "application/json"}
+        if operation:
+            headers["Idempotency-Key"] = operation
+        query = Request(base+path, data=None if body is None else json.dumps(body).encode(), headers=headers)
+        try:
+            with urlopen(query, timeout=10) as response:
+                return response.status, json.load(response)
+        except HTTPError as response:
+            return response.code, json.load(response)
+
+    def wait_for(read, predicate):
+        deadline = time.monotonic()+45
+        while True:
+            value = read()
+            if predicate(value):
+                return value
+            assert time.monotonic() < deadline, value
+            time.sleep(.5)
+
+    def current_receipt():
+        status, body = request("/api/product/game-review/games/lichess/" + manifest["game_id"])
+        assert status == 200, body
+        detail = GameDetail.model_validate_json(json.dumps(body))
+        assert len(detail.receipts) == 1
+        return detail.receipts[0]
+
+    before = helper("settlement-state")
+    assert before["sources"] == before["effects"] == len(before["deliveries"]) == 1
+    delivery, = before["deliveries"]
+    assert delivery["state"] == "acknowledged" and delivery["attempts"] == 1 and delivery["error"] is None
+    cached = delivery["receipt"]
+    assert cached["observation_recorded"] and cached["disposition"] == "first_introduction"
+    assert cached["admission_status"] == "pending"
+    assert helper("inspect")["active"] == manifest["original_active"]
+    assert before["target_reviews"] == []
+    original = current_receipt()
+    assert original.owner_receipt_id == cached["owner_receipt_id"]
+    assert original.admission_status == "pending" and original.available_by is None
+
+    # Beat is deliberately absent from this finite fixture. Supply bounded
+    # wakes through the SAME registered/coalesced task, as the existing browser
+    # fixture does, so one valid transaction deferral cannot starve recovery.
+    # Claim/admission/backoff, the 250ms transaction bound and assertions stay
+    # unchanged; there is no direct sweep or queue mutation in the helper.
+    next_wake, wakes = 0.0, 0
+    wake_deadline = time.monotonic()+45
+    def refreshed_receipt():
+        nonlocal next_wake, wakes
+        value = current_receipt()
+        now = time.monotonic()
+        if value.admission_status == "pending" and next_wake <= now < wake_deadline and wakes < 23:
+            wakes += 1
+            helper("refresh")
+            next_wake = time.monotonic()+2
+        return value
+    available = wait_for(refreshed_receipt, lambda value: value.admission_status == "available")
+    assert available.owner_receipt_id == original.owner_receipt_id
+    assert available.detected_at == original.detected_at
+    after_refresh = helper("settlement-state")
+    assert after_refresh["unrelated"] == before["unrelated"]
+    assert after_refresh["target_reviews"] == []  # First introduction is no fabricated review.
+    assert helper("inspect")["active"] == manifest["original_active"]
+
+    def head(expected):
+        status, body = wait_for(lambda: request("/api/queue/today"),
+            lambda value: value[0] == 200 and bool(value[1].get("cards")))
+        assert status == 200 and body["cards"][0]["id"] == expected, body
+        return body["cards"][0]
+
+    def save(card, name):
+        attempt = "settlement-" + name + "-" + manifest["token"]
+        body = dict(outcome="correct", guided=False, queue_entry_id=card["queue_entry_id"],
+                    expected_revision=card["revision"], attempt_id=attempt)
+        path = "/api/cards/" + card["id"] + "/review"
+        status, result = request(path, body, attempt)
+        if status == 202:
+            assert result["operation_id"] == attempt
+            _, receipt = wait_for(lambda: request("/api/operations/"+attempt),
+                lambda value: value[0] == 200 and value[1]["state"] in {"complete", "failed"})
+            assert receipt["state"] == "complete", receipt
+            result = receipt["response"]
+        else:
+            assert status == 200, result
+        assert result["persisted"] is True
+        repeated_status, repeated = request(path, body, attempt)
+        assert repeated_status == 200 and repeated["review_id"] == result["review_id"]
+        return result
+
+    save(head(manifest["unrelated_card"]), "protected")
+    protected_after_save = helper("settlement-state")["unrelated"]
+    saved = save(head(manifest["card_id"]), "target")
+    settled = wait_for(current_receipt, lambda value: value.admission_status == "settled")
+    assert settled.owner_receipt_id == original.owner_receipt_id and settled.detected_at == original.detected_at
+    assert current_receipt() == settled  # New reader request after normal saved review/reload.
+    final = helper("settlement-state")
+    assert final["sources"] == final["effects"] == len(final["deliveries"]) == 1
+    assert final["unrelated"] == protected_after_save
+    assert [row[0] for row in final["target_reviews"]] == [saved["review_id"]]
+    assert all(row[1] != "game_lapse" for row in final["target_reviews"])

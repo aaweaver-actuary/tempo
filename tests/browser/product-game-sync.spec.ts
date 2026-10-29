@@ -1,0 +1,104 @@
+import { test, expect, api, nav, move } from "./product-fixtures";
+import { prepareUI } from "./ui-fixtures";
+import { gameSyncFixture } from "./product-game-sync-fixture";
+
+test("both synthetic providers retain the current attempt and settle actual game feedback through normal Study", async ({ page, request }) => {
+  // Forced process loss retains the production 120-second lease. The bound
+  // includes that real expiry; the test never edits a lease or advances clocks.
+  test.setTimeout(300_000);
+  const fixture = await gameSyncFixture(request, api, "seed");
+  await prepareUI(page);
+  const board = page.locator(".persistent-board-shell .board-frame").first();
+  await expect(board).toHaveAttribute("data-fen", fixture.unrelated_fen);
+  let original: Record<string, unknown>;
+  await expect.poll(async () => {
+    original = await gameSyncFixture(request, api, "inspect", fixture);
+    return (original.active as { issued_as_head: number }).issued_as_head;
+  }).toBe(1);
+
+  await page.route("**/api/product/game-review/games", route => route.fulfill({ status: 503, body: "unavailable" }));
+  await nav(page, "Games");
+  await expect(page.getByRole("alert").filter({ hasText: "Game Review request failed" })).toBeVisible();
+  expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
+  await page.unroute("**/api/product/game-review/games");
+
+  await nav(page, "Settings");
+  await page.getByRole("tab", { name: "Games", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Game sync settings", exact: true });
+  for (const provider of ["lichess", "chesscom"]) {
+    await settings.getByLabel("Game provider").selectOption(provider);
+    await expect(settings.getByLabel("Game account")).toBeEnabled();
+    await settings.getByLabel("Game account").fill("Learner");
+    await settings.getByLabel("Games from (UTC)").fill("2026-09-01T00:00");
+    await settings.getByLabel("Games until (UTC)").fill("2026-11-01T00:00");
+    await settings.getByRole("checkbox", { name: "rapid", exact: true }).check();
+    await settings.getByRole("checkbox", { name: "Game sync fixture repertoire", exact: true }).check();
+    await settings.getByLabel("Rated games").selectOption("rated");
+    await settings.getByRole("button", { name: "Save game sync settings", exact: true }).click();
+    await expect(settings.getByText("Game sync settings saved.", { exact: true })).toBeVisible();
+    await settings.getByRole("button", { name: "Run saved game sync", exact: true }).click();
+    await expect(settings.getByRole("status")).toContainText("pending");
+  }
+  const packaged = Boolean(process.env.TEMPO_PROVIDER_FIXTURE_DIR);
+  if (packaged) {
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
+    .toMatchObject({ http: { waiting: 2, rate_limited: 1 } });
+  await gameSyncFixture(request, api, "worker-stop", fixture);
+  expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
+    .toMatchObject({ http: { waiting: 3 } });
+  await gameSyncFixture(request, api, "worker-kill", fixture);
+  }
+  expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
+
+  // Actual Study issue/save remains usable after worker loss, before its lease
+  // can recover. This is the unrelated attempt issued before provider startup.
+  await nav(page, "Train");
+  await expect(board).toHaveAttribute("data-fen", fixture.unrelated_fen);
+  const unrelatedSaved = page.waitForResponse(response => response.url().includes(`/cards/${fixture.unrelated_card}/review`) && response.request().method() === "POST");
+  await move(page, "e2", "e4");
+  expect((await unrelatedSaved).ok()).toBe(true);
+  await page.reload();
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: packaged ? 165_000 : 90_000 })
+    .toMatchObject({ complete: true, sources: 103, effects: 103 });
+  if (packaged) {
+  const completed = await gameSyncFixture(request, api, "run", fixture);
+  expect(completed.replayed).toBeGreaterThan(0);
+  expect((completed.http as { pages: number[] }).pages.length).toBeGreaterThan(1);
+  expect(new Set((completed.http as { months: string[] }).months)).toEqual(new Set(["09", "10"]));
+  }
+
+  await nav(page, "Games");
+  const review = page.getByRole("region", { name: "Game Review", exact: true });
+  await review.getByRole("button").filter({ hasText: `Lichess · ${fixture.game_id}` }).click();
+  const encounter = review.getByRole("status").filter({ hasText: "Encounter recorded" });
+  // The independent worker may already have consumed the accepted obligation.
+  // Pending-without-availability is covered at the API/view and native intake
+  // boundaries; this browser journey must establish actual availability.
+  await expect(encounter).toBeVisible();
+  await expect.poll(() => gameSyncFixture(request, api, "refresh", fixture), { timeout: 30_000 })
+    .toMatchObject({ available: true, available_misses: 3 });
+  // Reopen the stored read after the independently owned Study sweep. This
+  // view's recent-list refresh does not re-request an unchanged selected game.
+  await nav(page, "Train");
+  await nav(page, "Games");
+  await review.getByRole("button").filter({ hasText: `Lichess · ${fixture.game_id}` }).click();
+  await expect(encounter).toContainText("Study feedback: applied");
+  await expect(encounter).toContainText("Admission: available for Study");
+  await expect(review.locator(".game-review-finding")).toContainText(fixture.card_id);
+  await review.getByRole("button", { name: "Show position before ply 1", exact: true }).click();
+  await expect(review.locator(".board-frame")).toHaveAttribute("data-fen", fixture.start_fen);
+  await expect(review.getByText("Ply 0 of 1", { exact: true })).toBeVisible();
+
+  await nav(page, "Train");
+  await page.reload();
+  await expect(board).toHaveAttribute("data-fen", fixture.start_fen);
+  const saved = page.waitForResponse(response => response.url().includes(`/cards/${fixture.card_id}/review`) && response.request().method() === "POST");
+  await move(page, "e2", "e4");
+  expect((await saved).ok()).toBe(true);
+  await expect.poll(async () => (await gameSyncFixture(request, api, "inspect", fixture)).settled).toBe(3);
+  await page.reload();
+  await nav(page, "Games");
+  await review.getByRole("button").filter({ hasText: `Lichess · ${fixture.game_id}` }).click();
+  await expect(review.getByRole("status").filter({ hasText: "Encounter recorded" })).toContainText("Study feedback: settled");
+});

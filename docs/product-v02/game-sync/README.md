@@ -28,6 +28,44 @@ This separate follow-on branch is based on frozen retained-history `0db8c980`.
 It changes no live service, source account, setting or installed schema. Provider
 activation, browser mounting and deployment remain unqualified.
 
+## Current provider delivery candidate (#491)
+
+The remaining sync candidate is based on `adfc8de8`, preserving the merged #554
+reader/schema52 behavior. Settings → Games supplies explicit per-provider
+account, UTC window, speeds, rated policy, repertoires and recurrence. Configure
+and manual run use the existing durable command gateway; reader HTTP receives
+no write credential. An uncertain save/run retains its operation identity.
+
+Only an explicitly started `games-feedback` Compose profile runs acquisition:
+
+```sh
+docker compose --profile games-feedback up -d --no-deps game-feedback-worker
+docker compose stop game-feedback-worker
+```
+
+These are later release-owner commands, not actions executed by this lane.
+The process reuses the established writer profile, is capped at 0.15 CPU,
+256 MiB and 96 PIDs, and owns at most one HTTP connection and one bounded
+database section. It is absent from the default profile and Study readiness.
+The existing optional-service allocation is 1 CPU / 2048 MiB. Adding this profile
+with all baseline optional services would require 1.15 CPU / 2304 MiB and is not
+an approved allocation. A configuration with the existing Maia service absent
+and Games present would total 0.85 CPU / 1280 MiB; this is a conditional capacity
+calculation, not a claim that Maia is stopped or capacity is available on the
+user's host. Activation remains with the release owner; no other service's cap,
+global resource policy or running state is changed here.
+Saved recurrence uses the exact configured window; blank recurrence remains
+off. Manual jobs still drain with recurrence off. Changing configuration stops
+stale clients before their next unit; the opted-in process's restart policy
+rebuilds clients from the new saved scope. No account/filter is inferred.
+
+The concrete root binds durable public priority intake only. Accepted/pending
+stays distinct from available; Study independently refreshes accepted obligations.
+New provider evidence and retained-history replay use the same canonical source
+identity and published repertoire generation. No engine, new migration, queue
+writer, live activation or automatic history pass is added. Assembled provider,
+browser and process results are still the #491 delivery owner's acceptance.
+
 ## Public interface and ownership
 
 The root supplies the receiving owner's existing
@@ -110,10 +148,9 @@ allocates ingestion/sync interfaces to #491, root wiring to #501 and guards to
 commit; it is not in this branch or the checked published main/#501 baseline.
 No owner paths, interface map or receiving export names are guessed or duplicated.
 
-Source migration052 was reused unchanged from published `f137d970`. It adds only
-Games tables. Readiness remains schema051, so ordered upgrade/readiness number
-and packaged reader/writer role qualification require a coordinated owner window.
-No live migration or activation is authorized from this lane.
+Source migration052 remains unchanged from published `f137d970`. The merged
+#554 aligned readiness to schema52 and qualified its packaged reader boundary.
+No schema/grant change or live migration/activation is authorized in this lane.
 
 Prepared read-only next-window preview, after candidate schema/configuration:
 
@@ -122,13 +159,12 @@ python -m app.product_composition.game_sync_current --workspace legacy \
   --preview --follow --overlap-seconds 300
 ```
 
-It reports `executable=false`. Default run still refuses a missing qualified
-receiver. After decoupled intake/native/profile qualification, the release owner
-can explicitly bind it using saved settings and the existing writer process,
+It reports `executable=false` because preview never dispatches work. The concrete
+optional entry point now binds the public receiver using saved settings and the existing writer process,
 `TEMPO_PRODUCT_GAME_SYNC_ENABLED=1`, `TEMPO_DATABASE_WRITE_URL`, and the existing
 `TEMPO_DATABASE_READ_URL` for previews. `--follow --overlap-seconds 300 --once
 --max-units 50` selects at most one due window per configured provider, then drains
-bounded units. This is preparation, not a working live activation command yet.
+bounded units. Live activation remains release-owned and pending qualification.
 
 Window completeness, compared/unresolved positions, pending/held receipts and
 actual Study availability are distinct. Zero eligible misses is never all-correct.

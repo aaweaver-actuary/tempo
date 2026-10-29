@@ -13,8 +13,11 @@ The shared public contract is
 [`EncounterFeedbackPort`](../contracts/product_v02/learning.py), owned by the
 receiving contract/Study owners. Games' coordinator uses only its semantic
 accept/control/status methods. No replacement DTO or compatibility export is
-introduced. #487 supplies the durable intake implementation and refresh; root
-composition alone will wire that implementation after its public checkpoint.
+introduced. `provider_priority.py` now binds the published durable intake in
+the optional process: bounded source capture closes before the writer opens,
+then existing source fences and Study's intake share its short transaction.
+The returned receipt is acknowledged only after commit. This path does not
+request a queue refresh or wait for availability.
 
 `PostgresCanonicalGamesStore` implements #489's `SourceIdentity` port. Strict PGN
 normalization verifies raw proof first; Games then binds the retained canonical
@@ -38,12 +41,29 @@ sequenceDiagram
   Refresh->>Intake: Consume accepted obligations independently
 ```
 
-The earlier unqualified inline adapter/native fixture were removed from the
-follow-on branch. Their earlier passing preparation checks do not qualify this
-boundary. The default CLI stays blocked. Six public-port failure/replay cases,
-two factory-injection cases and the focused import/DAG guard cover the producer
-boundary. Receiver obligation durability/refresh and packaged profile/readiness
-qualification remain owner dependencies. See the
+The full workspace's explicit configure/run/legacy-retry commands use the
+existing Celery command gateway. The API retains its reader credential; bounded
+Games mutations borrow the command owner's transaction and commit with the
+durable command receipt. Provider HTTP is confined to the optional process.
+
+```mermaid
+sequenceDiagram
+  participant Settings as Explicit Games settings / manual run
+  participant API as Reader HTTP API
+  participant Command as Existing command worker / writer
+  participant Games as Games configuration / jobs
+  participant Worker as Separately opted-in provider process
+  Settings->>API: Configure or run with original operation identity
+  API->>Command: Existing durable command dispatch
+  Command->>Games: Borrowed transaction: settings/job + command receipt
+  Command-->>API: Complete or pending operation
+  Worker->>Games: Claim one bounded unit / saved recurrence
+  Note over API,Worker: API startup never launches or waits for optional worker
+```
+
+Changed-boundary qualification is recorded in #491; earlier donor evidence
+alone does not qualify this assembly. The CLI requires the explicit opt-in and
+configured scopes. See the
 [bounded commands and coverage](../../../docs/product-v02/game-sync/README.md).
 The frozen qualified retained-history release remains unchanged.
 

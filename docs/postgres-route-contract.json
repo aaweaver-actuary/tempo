@@ -1292,14 +1292,14 @@
     "path": "/api/product/game-review/sync",
     "handler": "sync",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/product/game-review/feedback/retry",
     "handler": "retry_feedback",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "GET",
@@ -1313,7 +1313,7 @@
     "path": "/api/product/game-review/configuration",
     "handler": "configure",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "GET",

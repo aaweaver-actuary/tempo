@@ -5483,6 +5483,27 @@ it does not qualify a running worker stack or a genuine private PGN. Eventual
 fixture-authorized command:
 `make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
 
+## Both-provider configured feedback delivery (#491)
+
+`backend/tests/test_product_sync_delivery.py` owns reader-only durable command
+dispatch/retry identity, changed-scope fencing before provider work and intake
+commit-before-ack without queue refresh. The existing mounted Game Review
+composition case now verifies its adopted command dispatch without a writer.
+`test_configuration_receipt_json_arrays_keep_strict_immutable_http_response`
+prevents a committed settings save returning HTTP 500 when JSON command-receipt
+arrays reach the immutable tuple response model; pending envelopes stay intact.
+`test_default_intake_failure_is_locatable_without_private_payload_or_changed_retry`
+retains the exact retry exception while reporting bounded stage/error codes,
+including writer-commit failures, without private game IDs, SQL parameters or PGN.
+`tests/unit/product-game-sync-settings.test.tsx` owns explicit account/window/
+filters, revision conflict, pending save and same-operation run retry.
+`backend/tests/test_product_provider_sync_native.py` selects the existing capped
+PostgreSQL fixture for both provider pagination/months, canonical publication,
+committed acknowledgment loss/restart, original effect replay, truthful unknowns,
+and independent first introduction/normal Study. Collection is not native proof.
+The restored `tests/runner/product-game-worker.test.mjs` selects the existing
+two process stop/kill cases with its original fixture; unchanged lifecycle
+evidence is reused rather than rerun for a settings-only repair.
 ## C repertoire audit composition (#501)
 
 `backend/tests/test_product_repertoire_integration.py` owns the C-only source
