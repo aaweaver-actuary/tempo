@@ -90,7 +90,99 @@ receipt and original deadline. Source JSON expression indexes serve bounded
 workspace/provider/canonical-game lookups; full PGNs are excluded from recent
 summary reads.
 
-## Native evidence
+## Read-only collection observations — Task F
+
+[`CollectionObservations`](../collection_observations.py) supplies the bounded
+read projection used by the explicit
+[`game_collection_status`](../../../../../backend/app/product_composition/game_collection_status.py)
+command. It reuses `DedicatedGamesConnections(read_only=True)` and existing
+Games/source/configuration tables. It creates no schema, reporting database,
+worker, command or provider client. SQL remains in database adapters. Each query
+uses its own short reader transaction; the report is a sampled observation,
+not one atomic cross-section snapshot. Timeouts/permission/schema failures yield
+an unavailable section, never invented zero counts. Study failures remain local
+to the selected receipt read.
+
+```sh
+PYTHONPATH=backend:database backend/.venv/bin/python -B \
+  -m app.product_composition.game_collection_status --workspace legacy --limit 20
+```
+
+The process requires the existing `TEMPO_DATABASE_READ_URL` and installed backend
+dependencies. It never uses `TEMPO_DATABASE_WRITE_URL`. Use `--provider lichess`
+or `--provider chesscom` (`chess.com` is also accepted), and optional
+`--game-id <provider-game-id>` to inspect one retained game. IDs are resolved
+through Games storage; a missing/ambiguous capture remains unresolved. No game is
+imported or compared by reading status. No HTTP route is added. Importing the
+command starts nothing and opens no connection.
+
+JSON `schema_version=1` always has `read_only`, `identity`, `providers`,
+`collection`, `selected_game`, `delivery`, and `unresolved`. `selected_game` is null
+without a selection. Read sections carry `availability=available|unavailable`;
+unavailable sections omit unknowable counts. Exit 2 means a required read section
+was unavailable; missing configuration or an unresolved comparison is a reported
+operational state, not a command failure. Argument errors also exit 2.
+
+- `identity`: UTC observation time, source candidate revision where Git is
+  available, actual database role/read-only setting/schema. Runtime revision is
+  unknown unless established independently; source revision is not installation.
+- `providers.items`: saved configuration and exact required-field presence;
+  active jobs (including jobs without configuration), latest requested job,
+  frozen window/spec, checkpoint/page facts, continuation **presence** only and
+  acquisition-window counts. Explicit null rated/recurrence values stay null.
+  Selected repertoire readiness reuses the existing bounded Repertoire reader
+  and published projection; it reports source sizes/limits, actual route colors,
+  publication/mapping availability or the owner's prefix/mixed-color diagnostic.
+  No selection is inferred from `is_main`, legacy accounts or saved recurrence.
+- `collection`: distinct normalized provider/source-game identities (canonical
+  Chess.com spelling), distinct own-response occurrences, unresolved evidence and
+  recent summaries. Repeated captures are not counted. The unpartitioned retained
+  legacy library is counted separately and is never called compared/captured by
+  this workflow. Invalid unnormalized captures have no trustworthy workspace/game
+  attribution and are not counted as acquired normalized games.
+- `selected_game`: raw/canonical revisions, canonical ID, learner color, retained
+  findings and per-repertoire first-departure/first-own-miss summaries. This is
+  precisely [Agent B's retained-finding rule](https://github.com/aaweaver-actuary/tempo/blob/a8d74f077a3ea2e4fe49144d0c4f1abd9aa52bd2/backend/app/games/feedback/README.md#durable-factual-comparison-and-consumer-handoff--task-b)
+  (`a8d74f07`, PR #600), not a second classifier. Correct covered encounters and
+  correct physical-mapping ambiguity are not departures; later authorized
+  reentry does not erase the first departure. An empty finding list cannot prove
+  comparison completion. Unknown/conflicting membership and source diagnostics
+  remain unresolved independently of acquisition completion.
+- `delivery`: pending **logical** effects, separate pending controls and
+  acknowledged delivery records. Acknowledged is not applied/available. The
+  selected game's current receipt uses `CurrentStudyReceiptReads` through its
+  public status capability; absent receipts are `not_delivered`, and unavailable
+  receipt reads never fall back to cached availability. Global delivery
+  disablement and execution mode remain unknown without runtime evidence.
+
+Default output redacts private identifiers, accounts, positions/moves and
+free-form diagnostics. `--private` retains private scope/findings for a local
+artifact; credentials, continuation values and PGNs are never selected. Keep that
+output outside Git in a private directory (0700), files 0600. Lists default to
+20, hard maximum 100; selected findings/deliveries cap at 1000/100 and expose
+truncation. Total output caps at 256 KiB; overflow returns a valid explicit
+truncation result rather than partial JSON or completion claims.
+
+```mermaid
+flowchart LR
+  CLI["Explicit status CLI / composition"] --> Reader["CollectionObservations / SELECT only"]
+  Reader --> Games["Existing Games jobs, configuration, sources, deliveries"]
+  Reader --> Legacy["Retained Games library / separate count"]
+  CLI --> Repertoire["Existing bounded Repertoire read + public projection"]
+  Reader --> Port["Injected public receipt status capability"]
+  Port --> Receipt["CurrentStudyReceiptReads / receiving-owner read"]
+  Reader --> JSON["Bounded observations / explicit uncertainty"]
+```
+
+This view describes source wiring, not installed deployment or resource
+isolation. There is no Study-to-status dependency and no admission/queue effect.
+Owning proof: `make python-file FILE=backend/tests/test_game_collection_status.py`.
+Its synthetic native cases reuse the existing task-owned PostgreSQL fixture,
+create a SELECT-only login, prove read-only enforcement/unchanged rows, duplicate
+capture/alias counts and receipt-independent collection status. G owns shared
+test/manifest registration; no central inventory is changed by this component.
+
+## Existing native evidence
 
 The assigned #491 backend integration file proves configuration/new-connection
 readback, no stale account overwrite, configured enqueue, inert reads, original
