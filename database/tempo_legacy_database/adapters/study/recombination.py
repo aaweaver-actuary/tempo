@@ -654,10 +654,56 @@ def is_current_occurrence(database,occurrence):
     return False
 
 
+def _suppress_replaced_presentations(database, day):
+    """Complete queue exclusion from accepted lineage, without route recapture.
+
+    Recovery may skip busy routes or stop at its batch bound; retirement cannot.
+    A retained physical identity with an independent current membership remains
+    usable because the legacy queue cannot identify its route occurrence.
+    """
+    database.execute_native("""WITH replaced_uses AS MATERIALIZED (
+        SELECT DISTINCT retired->>0 presentation_id, change.change_json->>'route_id' route_id,
+            change.change_json->'results'->0->'presentation'->>'repertoire_id' repertoire_id
+        FROM study_recombination_changes change,
+            jsonb_array_elements(change.change_json->'retired_uses') retired
+        WHERE retired->1->>'route_id'=change.change_json->>'route_id'
+          AND EXISTS(SELECT 1 FROM study_recombination_current current
+              WHERE current.route_id=change.change_json->>'route_id')
+          AND NOT EXISTS(SELECT 1 FROM study_recombination_current current
+              WHERE current.route_id=change.change_json->>'route_id' AND current.presentation_id=retired->>0)
+          AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(change.change_json->'results') result,
+              jsonb_array_elements(result->'presentation'->'components') component
+              WHERE NOT EXISTS(SELECT 1 FROM study_recombination_current current
+                  JOIN study_recombination_presentations presentation ON presentation.presentation_id=current.presentation_id
+                  WHERE current.route_id=change.change_json->>'route_id'
+                    AND current.decision_id=component->>'decision_id'
+                    AND presentation.result_json->'presentation'->>'route_id'=current.route_id
+                    AND presentation.result_json->'presentation'->>'repertoire_id'=
+                        result->'presentation'->>'repertoire_id'))
+        ) UPDATE daily_queue queue SET status='blocked' FROM cards card
+        WHERE queue.card_id=card.id AND queue.queue_date=%s AND queue.status='queued'
+          AND EXISTS(SELECT 1 FROM replaced_uses replaced
+              WHERE replaced.presentation_id=card.id AND replaced.repertoire_id=card.repertoire_id)
+          AND NOT EXISTS(SELECT 1 FROM repertoire_cards membership WHERE membership.card_id=card.id
+              AND NOT EXISTS(SELECT 1 FROM replaced_uses replaced
+                  WHERE replaced.presentation_id=card.id AND replaced.repertoire_id=membership.repertoire_id))
+          AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step JOIN opening_graph_publications publication
+              ON publication.repertoire_id=step.repertoire_id AND publication.generation=step.generation AND publication.state='ready'
+              WHERE step.card_id=card.id AND NOT EXISTS(SELECT 1 FROM replaced_uses replaced
+                  WHERE replaced.presentation_id=card.id AND replaced.route_id=step.line_id
+                    AND replaced.repertoire_id=step.repertoire_id))
+          AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+              WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id AND origin.issued_as_head=1)
+          AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+              WHERE attempt.card_id=card.id AND attempt.state<>'complete'
+                AND NOT EXISTS(SELECT 1 FROM review_attempt_receipts receipt WHERE receipt.attempt_id=attempt.attempt_id))""", (day,))
+
+
 def project_current_presentations(database, day, *, limit=16):
-    """Queue recovery only: no new join, scheduler transition or producer call."""
+    """Complete retirement exclusion, then bounded optional queue recovery."""
     if not installed(database):
         return
+    _suppress_replaced_presentations(database,day)
     from app.services.review_service import ensure_card_queued_after
     routes = database.execute_native("SELECT DISTINCT route_id FROM study_recombination_current ORDER BY route_id LIMIT %s", (limit,)).fetchall()
     for row in routes:
@@ -670,17 +716,6 @@ def project_current_presentations(database, day, *, limit=16):
         if current is None:
             # Never change an issued attempt for an unavailable/busy capture.
             continue
-        active_ids = [m.presentation.presentation_id for m in current.members]
-        retired = database.execute_native("""SELECT DISTINCT retired->>0 id FROM study_recombination_changes c,
-            jsonb_array_elements(c.change_json->'retired_uses') retired
-            WHERE c.change_json->>'route_id'=%s UNION SELECT p.presentation_id FROM study_recombination_presentations p
-            WHERE p.result_json->'presentation'->>'route_id'=%s AND NOT(p.presentation_id=ANY(%s))""", (route_id,route_id,active_ids)).fetchall()
-        for identifier in retired:
-            if identifier[0] in active_ids:
-                continue
-            database.execute_native("""UPDATE daily_queue q SET status='blocked' WHERE q.queue_date=%s AND q.card_id=%s
-                AND q.status='queued' AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins o
-                    WHERE o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.issued_as_head=1)""", (day,identifier[0]))
         for member in current.members:
             identifier = member.presentation.presentation_id
             if member.available and identifier in {r[0] for r in database.execute_native(
