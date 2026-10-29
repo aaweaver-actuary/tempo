@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "explicitRunnerFiles": ["tests/runner/product-maia-probability-smoke.test.mjs"],
   "lanes": {
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
@@ -174,6 +175,7 @@
       "tests/unit/component-packaging-regressions.test.ts"
     ],
     "runners": [
+      "tests/runner/product-maia-probability.test.mjs",
       "tests/runner/ci-browser-shards.test.mjs",
       "tests/runner/ci-development.test.mjs",
       "tests/runner/ci-fast-lane.test.mjs",
