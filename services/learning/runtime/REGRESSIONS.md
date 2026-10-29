@@ -327,6 +327,19 @@ leave ordinary review usable, and exercises both owner migrations against
 PostgreSQL, including idempotency, exact unrelated-state preservation, recreation
 fences and mixed-ownership rollback. `test_endgame_calculation_removed.py` proves
 missing routes without a database/provider and absent handlers/configuration.
+`test_pre_retirement_v1_stage_replay_preserves_digest` and
+`test_pre_retirement_v1_staged_publication_activates_and_replays` cover ordinary
+opening/Tactics historical explicit-null facts, exact V1 byte identity, pending
+activation and idempotent replay. `test_pre_retirement_v2_stage_replay_preserves_digest`
+and `test_pre_retirement_v2_staged_publication_activates_and_replays` cover the
+same contract for V2 opening canonical identity. Historical fixtures are built
+independently of the current execution-fact serializer. Both activation cases
+start with directly stored historical bytes and prove one materialized card,
+one receipt, the completed original operation, and unchanged bytes/digest.
+`test_retired_endgame_v2_publications_cannot_create_new_cards` and
+`test_retired_endgame_nonnull_metadata_rejected_for_ordinary_publications`
+preserve rejection of actual Endgames and even empty non-null metadata in V1
+opening/Tactics and V2 openings, alongside the existing V1 retired-content test.
 The registered filenames remain stable so regular-suite discovery retains the
 replacement retirement proofs. Historical saved-practice receipts below describe
 the earlier implementation, not current behavior.

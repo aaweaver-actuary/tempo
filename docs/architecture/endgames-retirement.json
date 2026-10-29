@@ -1,7 +1,7 @@
 {
   "version": 1,
   "reviewed_base": "c63c894733dd7b358e4a734ba91244fd49727489",
-  "scope": "Full Endgames product retirement; chess endgame phases, endgame-themed Tactics and historical migrations remain. Source implementation does not operate live databases.",
+  "scope": "Full Endgames product retirement; chess endgame phases, endgame-themed Tactics and historical migrations remain. Source implementation does not operate live databases. Null-only legacy endgame publication metadata remains to preserve ordinary historical payload identity and immutable digests; Endgames execution and non-null metadata remain rejected.",
   "search_expression": "endgame|tablebase|syzygy|gaviota|draw_hold_user_moves|drawHoldUserMoves",
   "entries": [
     {
@@ -6942,12 +6942,19 @@
     "tests/browser/visual-baselines/train-1920.png",
     "tests/browser/visual-baselines/train-390.png",
     "tests/browser/visual-baselines/train-768.png",
-    "tests/unit/api-schema-parity-regressions.test.ts"
+    "tests/unit/api-schema-parity-regressions.test.ts",
+    "services/learning/runtime/tests/test_content_bridge.py",
+    "services/learning/runtime/tests/test_publications.py",
+    "tests/browser/visual-baselines/training-feedback-phone.png",
+    "tools/analysis-restoration/a_bridge/REGRESSIONS.md",
+    "tools/analysis-restoration/a_bridge/tests/test_schema_bindings.py"
   ],
   "deployment_status": "Uninstalled; explicit owner migrations with writers stopped required. Cold browser backup mirrors sanitize only on validated import/restore; serving queues and pending commands sanitize independently.",
   "qualification_limitations": [
     "https://github.com/aaweaver-actuary/tempo/issues/609",
-    "Required CI planning is blocked by an existing unclassified product-game-feedback.spec.ts browser spec; safeguards retained.",
+    "All four missing browser specs are registered once. The inventory owner executed 45 cases: 34 passed and 11 failed; remaining missing critical recovery coverage, regression registration and source mapping are tracked in issue #609 without weakening gates.",
+    "Hosted qualification is determined by the current ready-PR Verify Tempo run for PR #610; local validation alone does not establish merge readiness.",
+    "Held-drag diagnostic completed 0/60 combinations and timed out at 600000 ms waiting for the unavailable Discoveries button. GitHub Actions is disabled for this repository; qualification remains blocked (issue #609).",
     "Cold browser backup mirrors sanitize on explicit validated import/restore, not during ordinary Study startup."
   ]
 }

@@ -2,17 +2,147 @@ from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import Event
-import json, uuid
+import hashlib, json, uuid
 import chess, psycopg, pytest
 from fastapi import HTTPException
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from tempo_chess_core import card_id
+from tempo_content_publication_contracts.v1 import Publication
 from tempo_learning_runtime.frozen_maia_math import content_fingerprint
 from tempo_learning_runtime import gateway, publications
 from tempo_learning_database.connections import connection
 from concurrency_helpers import extend_gate_budget, wait_for_lock
 from test_runtime import activate, bundle, head, review_payload, submit
+
+
+def pre_retirement_publication_document(payload):
+    """Frozen c63c8947 ordinary-fact wire shape, independent of ExecutionFacts."""
+    facts = []
+    for fact in payload["facts"]:
+        facts.append({
+            "card_id": fact["card_id"],
+            "content_type": fact["content_type"],
+            "memberships": fact.get("memberships", []),
+            "trained_color": fact.get("trained_color"),
+            "due_date": fact["due_date"],
+            "parent_card_id": fact.get("parent_card_id"),
+            "route_order": fact.get("route_order", 0),
+            "integrity_allowed": fact.get("integrity_allowed", True),
+            "legacy_specification": fact.get("legacy_specification"),
+            "study_id": fact.get("study_id"),
+            "exercise_id": fact.get("exercise_id"),
+            "sibling_group": fact.get("sibling_group"),
+            "source_ref": fact.get("source_ref"),
+            "source_fen": fact.get("source_fen"),
+            "endgame": None,
+            "defense": fact.get("defense"),
+        })
+    return {
+        "schema_version": payload["schema_version"],
+        "publication": Publication.model_validate(
+            payload["publication"]
+        ).model_dump(mode="json"),
+        "facts": facts,
+        "repertoire_limits": payload.get("repertoire_limits", {}),
+        "frozen_order": payload.get("frozen_order"),
+    }
+
+
+def seed_pre_retirement_publication(case, payload, encoded):
+    publication = payload["publication"]
+    fingerprint = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    case.query(
+        "INSERT INTO learning.accepted_publications"
+        "(publication_id,generation,digest,payload_json) "
+        "VALUES(%s,%s,%s,%s)",
+        (
+            publication["publication_id"],
+            publication["publication_generation"],
+            fingerprint,
+            encoded,
+        ),
+    )
+    return fingerprint
+
+
+@pytest.mark.parametrize("family", ["opening", "tactic"])
+def test_pre_retirement_v1_stage_replay_preserves_digest(case, family):
+    payload = bundle([(family, {
+        "type": "move_line", "accepted_lines": [["e2e4"]],
+        "mode": "single", "grading_policy": "reference",
+    })])
+    payload["publication"]["built_at"] = "2026-10-29T12:00:00+00:00"
+    for fact in payload["facts"]:
+        fact["due_date"] = "2026-10-29"
+    document = pre_retirement_publication_document(payload)
+    for fact in document["facts"]:
+        assert "endgame" in fact and fact["endgame"] is None
+        keys = list(fact)
+        assert keys.index("endgame") + 1 == keys.index("defense")
+    encoded = json.dumps(document, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    fingerprint = seed_pre_retirement_publication(case, payload, encoded)
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications WHERE state='staged'")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+    response = stage(case, payload)
+    assert response.status_code == 200, response.text
+    replay = stage(case, payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == response.json()
+    accepted = case.query(
+        "SELECT digest,payload_json FROM learning.accepted_publications "
+        "WHERE publication_id=%s AND generation=%s",
+        (payload["publication"]["publication_id"], payload["publication"]["publication_generation"]),
+    )
+    assert [tuple(row) for row in accepted] == [(fingerprint, encoded)]
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+
+
+@pytest.mark.parametrize("family", ["opening", "tactic"])
+def test_pre_retirement_v1_staged_publication_activates_and_replays(case, family):
+    payload = bundle([(family, {
+        "type": "move_line", "accepted_lines": [["e2e4"]],
+        "mode": "single", "grading_policy": "reference",
+    })])
+    payload["publication"]["built_at"] = "2026-10-29T12:00:00+00:00"
+    for fact in payload["facts"]:
+        fact["due_date"] = "2026-10-29"
+    document = pre_retirement_publication_document(payload)
+    for fact in document["facts"]:
+        assert "endgame" in fact and fact["endgame"] is None
+        keys = list(fact)
+        assert keys.index("endgame") + 1 == keys.index("defense")
+    encoded = json.dumps(document, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    fingerprint = seed_pre_retirement_publication(case, payload, encoded)
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications WHERE state='staged'")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+    request = activation(payload)
+    response = publication_command(case, "activate", request)
+    assert response.status_code == 200, response.text
+    replay = publication_command(case, "activate", request)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == response.json()
+    assert [tuple(row) for row in case.query("SELECT id,content_type FROM learning.cards")] == [
+        (payload["facts"][0]["card_id"], family)
+    ]
+    assert case.query("SELECT COUNT(*) FROM learning.activation_receipts")[0][0] == 1
+    operation = case.client.get(
+        "/internal/publications/operations/" + request["activation_id"],
+        headers={"Authorization": "Bearer " + case.configuration.operator_token},
+    )
+    assert operation.status_code == 200, operation.text
+    assert operation.json()["state"] == "complete"
+    assert operation.json()["response"] == response.json()
+    accepted = case.query(
+        "SELECT digest,payload_json FROM learning.accepted_publications "
+        "WHERE publication_id=%s AND generation=%s",
+        (payload["publication"]["publication_id"], payload["publication"]["publication_generation"]),
+    )
+    assert [tuple(row) for row in accepted] == [(fingerprint, encoded)]
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
 
 
 def stage(case, payload):

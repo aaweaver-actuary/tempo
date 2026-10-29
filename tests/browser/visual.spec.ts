@@ -209,6 +209,20 @@ test("board-unavailable", async ({ page }) => {
 test("training-feedback-phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareVisualUI(page);
+  await page.route("**/api/repertoires/visual-repertoire/move-membership?**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    expect(request.method()).toBe("GET");
+    expect(url.searchParams.get("fen")).toBe(
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    );
+    expect(url.searchParams.get("move_uci")).toBe("d2d4");
+    expect(url.searchParams.get("cursor")).toBe("");
+    expect(url.searchParams.has("source_token")).toBe(false);
+    await route.fulfill({ status: 200, json: {
+      verified: false, source_token: "visual-repertoire-v1", next_cursor: null,
+    } });
+  });
   await expect(
     page.getByText("Spanish opening", { exact: true }).first(),
   ).toBeVisible();

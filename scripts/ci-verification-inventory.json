@@ -184,10 +184,10 @@
   "families": {
     "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
     "activity": ["activity-tray.spec.ts"],
-    "training": ["opening-progression.spec.ts", "phone-opening-study.spec.ts", "pending-discovery-saves-mobile.spec.ts", "training-prefetch.spec.ts", "training-critical-path.spec.ts", "post-review-progression.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts", "study-only-mode.spec.ts", "redis-admission-recovery.spec.ts", "training-queue-contention.spec.ts"],
-    "repertoire": ["prefix-split-training.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts", "content-deletion.spec.ts"],
+    "training": ["opening-progression.spec.ts", "phone-opening-study.spec.ts", "pending-discovery-saves-mobile.spec.ts", "training-prefetch.spec.ts", "training-critical-path.spec.ts", "post-review-progression.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts", "study-only-mode.spec.ts", "redis-admission-recovery.spec.ts", "training-queue-contention.spec.ts", "frozen-opening-order.spec.ts", "product-recombination.spec.ts"],
+    "repertoire": ["prefix-split-training.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts", "content-deletion.spec.ts", "product-repertoire-review.spec.ts"],
     "studies": ["studies.spec.ts"],
-    "games": ["paste-analysis.spec.ts", "real-game-feedback.spec.ts"],
+    "games": ["paste-analysis.spec.ts", "real-game-feedback.spec.ts", "product-game-feedback.spec.ts"],
     "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],
     "workspace": ["product-fixture-reset.spec.ts", "accessibility.spec.ts", "layout.spec.ts", "workspace-flows.spec.ts", "cross-browser.spec.ts"],
     "pinned": ["visual.spec.ts", "performance.spec.ts"]

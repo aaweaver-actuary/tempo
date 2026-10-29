@@ -16,6 +16,7 @@ import psycopg
 import pytest
 from tempo_learning_runtime import publication_bridge
 from test_runtime import bundle, activate, head, review_payload, submit
+from test_publications import pre_retirement_publication_document, seed_pre_retirement_publication
 
 
 def content_bundle(count=1):
@@ -47,6 +48,95 @@ def content_bundle(count=1):
     payload['publication']['definitions']=definitions
     payload['facts']=facts
     return payload
+
+
+def test_pre_retirement_v2_stage_replay_preserves_digest(case):
+    payload = content_bundle(1)
+    payload["publication"]["built_at"] = "2026-10-29T12:00:00+00:00"
+    for fact in payload["facts"]:
+        fact["due_date"] = "2026-10-29"
+    document = pre_retirement_publication_document(payload)
+    for fact in document["facts"]:
+        assert "endgame" in fact and fact["endgame"] is None
+        keys = list(fact)
+        assert keys.index("endgame") + 1 == keys.index("defense")
+    document["source_digest"] = payload["source_digest"]
+    document["routes"] = [
+        publication_bridge.Route.model_validate(route).model_dump(mode="json")
+        for route in payload["routes"]
+    ]
+    document["legacy_aliases"] = payload.get("legacy_aliases", {})
+    encoded = publication_bridge.canonical(document)
+    fingerprint = seed_pre_retirement_publication(case, payload, encoded)
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications WHERE state='staged'")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+    response = stage_v2(case, payload)
+    assert response.status_code == 200, response.text
+    replay = stage_v2(case, payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == response.json()
+    accepted = case.query(
+        "SELECT digest,payload_json FROM learning.accepted_publications "
+        "WHERE publication_id=%s AND generation=%s",
+        (payload["publication"]["publication_id"], payload["publication"]["publication_generation"]),
+    )
+    assert [tuple(row) for row in accepted] == [(fingerprint, encoded)]
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+
+
+def test_pre_retirement_v2_staged_publication_activates_and_replays(case):
+    payload = content_bundle(1)
+    payload["publication"]["built_at"] = "2026-10-29T12:00:00+00:00"
+    for fact in payload["facts"]:
+        fact["due_date"] = "2026-10-29"
+    document = pre_retirement_publication_document(payload)
+    for fact in document["facts"]:
+        assert "endgame" in fact and fact["endgame"] is None
+        keys = list(fact)
+        assert keys.index("endgame") + 1 == keys.index("defense")
+    document["source_digest"] = payload["source_digest"]
+    document["routes"] = [
+        publication_bridge.Route.model_validate(route).model_dump(mode="json")
+        for route in payload["routes"]
+    ]
+    document["legacy_aliases"] = payload.get("legacy_aliases", {})
+    encoded = publication_bridge.canonical(document)
+    fingerprint = seed_pre_retirement_publication(case, payload, encoded)
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications WHERE state='staged'")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+    request = request_for(payload)
+    response = case.client.post(
+        "/internal/publications/v2/activate", json=request,
+        headers={"Authorization": "Bearer " + case.configuration.operator_token},
+    )
+    assert response.status_code == 200, response.text
+    replay = case.client.post(
+        "/internal/publications/v2/activate", json=request,
+        headers={"Authorization": "Bearer " + case.configuration.operator_token},
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == response.json()
+    assert [tuple(row) for row in case.query("SELECT id,content_type FROM learning.cards")] == [
+        (payload["facts"][0]["card_id"], "opening")
+    ]
+    assert case.query("SELECT COUNT(*) FROM learning.activation_receipts")[0][0] == 1
+    operation = case.client.get(
+        "/internal/publications/operations/" + request["activation_id"],
+        headers={"Authorization": "Bearer " + case.configuration.operator_token},
+    )
+    assert operation.status_code == 200, operation.text
+    assert operation.json()["state"] == "complete"
+    assert operation.json()["response"] == response.json()
+    accepted = case.query(
+        "SELECT digest,payload_json FROM learning.accepted_publications "
+        "WHERE publication_id=%s AND generation=%s",
+        (payload["publication"]["publication_id"], payload["publication"]["publication_generation"]),
+    )
+    assert [tuple(row) for row in accepted] == [(fingerprint, encoded)]
+    assert case.query("SELECT COUNT(*) FROM learning.accepted_publications")[0][0] == 1
 
 
 def stage_v2(case,payload):

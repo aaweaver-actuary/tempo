@@ -7,6 +7,7 @@ type VisualQueueCard = {
   id: string; queue_entry_id: number; start_fen: string; moves: string[];
   content_type: "opening"; repertoire_name: string; repertoire_source: string;
   first_correct_at: string; trained_color: "white";
+  repertoire_id?: string;
 };
 export type VisualRepertoireLine = {
   id: string; repertoire_id: string; repertoire_name: string; name: string;
@@ -15,6 +16,7 @@ export type VisualRepertoireLine = {
 export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[], repertoireLines?: VisualRepertoireLine[], activityResponse?: ActivityResponse) {
   let activeTrainingCards = trainingCards ?? [{
     id: "visual-card",
+    repertoire_id: "visual-repertoire",
     queue_entry_id: 1,
     start_fen: startFen,
     moves,

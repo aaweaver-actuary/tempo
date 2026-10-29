@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart LR
-  content[Existing accepted Content document<br/>optional V2 repertoire display title] --> models[Learning document / legal / hash validation<br/>title consistency and owned-membership scope]
+  content[Existing accepted Content document<br/>optional V2 repertoire display title] --> models[Learning document / legal / hash validation<br/>null-only legacy endgame metadata; retired execution rejected<br/>title consistency and owned-membership scope]
   models --> staging[Immutable staging and generation decisions]
   staging --> stored[Accepted publication storage]
   prepare[V2 preparation after closing read connection] --> activation[Activation replay / revision / alias decisions]
@@ -25,6 +25,11 @@ flowchart LR
 | --- | --- |
 | [publications.py](../../../../services/learning/runtime/src/tempo_learning_runtime/publications.py) retains `ExecutionFacts` / v1 bundle validation, legal moves/learner turn, completeness/parent cycles/frozen identity checks, serialized hash, immutable staging and generation gates. Activation retains receipt/revision/definition/family/ownership decisions, stable repertoire/card lock selection, typed family and frozen rank projection/fingerprints, exact opening-graph verification, timestamps and refresh. Retirement retains revision checks, lifecycle orchestration and response. | [Publication operations](../publications.py) retain complete accepted/serving/receipt reads and writes, existing advisory/row locks, scalar v1 card/membership/study/defense/graph/frozen operations and existing retirement updates. No operation opens or commits a connection. |
 | [publication_bridge.py](../../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py) retains v2 route/decision and alias models, canonical hashes, physical alias fallback, status mapping, exact operation validation/fencing and preparation context lifecycle. Activation retains historical alias/adoption/revision comparisons and original ordering of card, alias, membership, integrity and route row construction, retirement/supersession selection and clocks. | [Bridge operations](../publication_bridge.py) retain complete read projections, sorted set-based card advisory/row locks, original PostgreSQL JSONB wrapping and bound set-based writes. Identical accepted/serving/receipt operations are imported from the same owner's publication adapter, with a single implementation. |
+
+The null-only legacy `endgame` fact preserves ordinary V1 stored-byte identity
+and V2 canonical digests across retirement. Omission serializes as null; non-null
+metadata and the retired content type are rejected. This changes document
+compatibility, with no new storage writer, schema, migration or transaction owner.
 
 Preparation still closes its read connection before document/model work and before entering gateway dispatch. The prepared digest is rechecked against immutable staging under writer locks. Publication → sorted removed/new repertoire ownership → card locks → execution/queue effects retains the original order. V1 keeps per-card locks; v2 keeps one ordered set-based advisory statement. Application composition still makes all conflict/replay/adoption/retirement decisions and owns required atomicity with the gateway receipt. Existing card schedule/review history and accepted physical identity retain the original upsert behavior. Generic SQL execution ports or an additional writer were not introduced.
 

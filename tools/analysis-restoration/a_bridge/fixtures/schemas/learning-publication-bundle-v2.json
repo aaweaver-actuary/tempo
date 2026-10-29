@@ -245,6 +245,11 @@
           "title": "Due Date",
           "type": "string"
         },
+        "endgame": {
+          "default": null,
+          "title": "Endgame",
+          "type": "null"
+        },
         "exercise_id": {
           "anyOf": [
             {

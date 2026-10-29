@@ -41,6 +41,8 @@ class ExecutionFacts(BaseModel):
     sibling_group: str | None = None
     source_ref: str | None = None
     source_fen: str | None = None
+    # Preserve ordinary pre-retirement publication bytes and immutable digests.
+    endgame: None = None
     defense: dict | None = None
 
     @field_validator("memberships")

@@ -754,3 +754,112 @@ Both passed cleanly.
 ## October 29 full Endgames retirement
 
 Supersedes earlier saved-Endgames serving claims. The owner native runner executed the four affected files with 56 passing tests against disposable PostgreSQL, including both owner upgrades/rollback, ordinary review, publications and defense boundaries. Container, volume and temporary-data cleanup were confirmed by the native receipt. This is source qualification; installation, deployment and actual-device acceptance remain unverified.
+
+
+## PR #610 ordinary publication compatibility repair — October 29, 2026
+
+Source: uncommitted repair over `ce8d2571ac6af96cba01a0cd69775e0f9e1ae563`
+(reviewed base `c63c894733dd7b358e4a734ba91244fd49727489`). The native
+receipt binds the actual runtime/test/dependency source hashes; its revision
+field alone is not a claim that unchanged HEAD was tested. Supporting commands,
+source fingerprints, initial failures and retained receipts are under
+`/private/tmp/tempo-pr610-repair-evidence`.
+
+Command: `services/learning/runtime/.venv/bin/python /private/tmp/pr610-native.py`
+(the exact script is retained as `/private/tmp/tempo-pr610-repair-evidence/pr610-native.py`).
+Using Python 3.12.12, the existing `tempo_learning_database.tooling.run_postgres.main`
+ran the prompt's twelve explicit node selections with `fixture_profile="essential"`
+and `evidence_directory="test-results/pr610-publication-compatibility"`.
+The selection was the four `test_pre_retirement_v1/v2_*` staging/activation
+regressions; the existing V1 and new V2 retired-publication rejection;
+`test_retired_endgame_nonnull_metadata_rejected_for_ordinary_publications`;
+`test_retired_endgame_routes_leave_ordinary_review_usable`;
+`test_publication_is_immutable_complete_and_activation_rechecks_latest_generation`;
+`test_A_activation_response_loss_replays_original_operator_receipt`;
+`test_v2_normalized_expansion_remains_bounded_when_compact_raw_body_fits`; and
+`test_v2_receiver_change_keeps_v1_definition_v2_count_and_alias_limits`.
+Collected/executed: **16 passed, zero skips**, one existing deprecation warning.
+Final receipt: `test-results/pr610-publication-compatibility/run-7ae34af3da1a27ea/native.json`.
+`complete`, `container_absent`, `volume_absent` and
+`temporary_test_data_removed` are all true. The first run had six new assertion
+failures comparing adapter row objects with tuples; comparisons now use row
+values, retaining exact byte/digest and materialized-card assertions.
+
+`services/learning/runtime/.venv/bin/tempo-learning publication-schema` generated
+the V2 fixture. Its entire parsed document equals a second fresh CLI export.
+`uv run --project tools/analysis-restoration/a_bridge --locked --no-editable pytest tools/analysis-restoration/a_bridge/tests/test_schema_bindings.py -q`
+passed **12 cases**. This is serialized-contract consumer proof, not database or
+bridge integration qualification.
+
+`node --test tests/runner/ci-reliability.test.mjs` executed all **45 cases:
+34 passed, 11 failed, zero skips**. All four requested browser specs are registered
+once, and the complete-family/ambiguous-mapping validators pass. The remaining
+failures expose an absent fail-closed critical recovery title, a missing existing
+CI regression registration, and the absent ordinary opening-segmentation source
+mapping. Static comparison confirms these conditions in both the reviewed base
+and head; no base-suite pass or dynamic base reproduction is claimed. Critical
+registrations, mapping policy and assertions were not weakened or changed.
+
+`npm run typecheck` passed after the initial browser fixture edits. Later
+held-drag stage diagnostics and the single-measure freshness repair require the
+final type check recorded below. Initial pinned phone/warm results: correct
+wrong-move feedback reached the existing screenshot assertion; the baseline
+still showed retired Endgames/Builder navigation. The warm case exposed that
+`measureTempoOperation` clears its previous same-name measure; the fixture now clears
+that stale measure before taking each count baseline. Every sample still
+requires count growth from actual input. Original failed traces, images and
+logs were retained before the next invocation. A first temporary selection
+matched zero tests; it is recorded as unavailable evidence, never a pass.
+
+Earlier 56-case migration/retirement evidence above is retained for unchanged
+migration behavior and is not relabelled as a new run. Hosted qualification,
+held-drag completion, installation and actual-device behavior are not established
+by these focused checks. No live database or service was operated on.
+
+
+Final browser fixture verification: `npm run typecheck` passed after the timing
+freshness repair and stage diagnostics. The temporary pinned runner differed
+from `scripts/test-visual.mjs` only in its inner selection:
+`npm ci --no-audit && npx playwright test --config playwright.visual.config.ts --grep '(training-feedback-phone|warm workspace and Study move responsiveness)$' --update-snapshots`.
+Both selected cases passed (2 collected/executed, zero retries). Only
+`training-feedback-phone.png` was updated, after inspection showed the intended
+retired navigation/toolbar difference with correct wrong-move feedback intact.
+The new PNG equals the independently inspected failed-run actual image exactly.
+The warm report contains five board-ready samples, five fresh move samples,
+five switches per workspace, zero interaction long tasks, and 34 Chromium Event
+Timing samples. View-switch p95: Tactics 31.37 ms, Train 35.84 ms (limit 300 ms).
+Report/traces and prior failures are retained under
+`/private/tmp/tempo-pr610-repair-evidence/phone-warm-final` and `phone-warm-first`.
+The run's embedded HEAD label is supplemented by the task's source fingerprints;
+these were uncommitted fixture changes over the reviewed head, not unchanged HEAD.
+
+
+Held-drag diagnostic: `node scripts/pr610-held-diagnostic.mjs` used the same
+pinned runner, selecting only `held-piece drag baseline separates workloads and capture overhead`.
+One test executed and failed at its unchanged **600,000 ms** budget, zero retries.
+Completed combinations: **0/60**. Stages establish repetition 0, idle,
+capture on, cold context: navigation and board-input readiness completed;
+`getByRole("button", {name: "Discoveries", exact: true}).click()` never completed.
+The current application has no Discoveries/Back-to-work control. Static source
+comparison shows the same unavailable UI path at the reviewed base and head;
+this is not a dynamic base performance reproduction. A replacement synthetic
+request would not prove the original application workload. No workloads,
+assertions, timeouts, Stockfish or positive controls were weakened, and
+`held-drag-fixtures.ts` was unchanged. No verification rerun was justified without
+an in-scope repair. Logs, stage report, partial performance report and screenshots are
+retained in `/private/tmp/tempo-pr610-repair-evidence/held-final` and
+`held-diagnostic.log`; exact runner sources are retained beside them. Trace
+collection failed with ENOENT because the overlapping phone follow-up reused
+the shared Playwright output directory and removed in-progress trace files.
+This agent-caused artifact limitation is retained explicitly; screenshots and
+stage/source correspondence establish the unavailable control, not a trace-backed
+performance proof.
+
+The pinned diagnostic container and its anonymous dependency volume are absent
+(`cleanup.json`); reusable npm cache remains. Both exact temporary runner files
+were removed. GitHub's repository Actions-permissions endpoint reports
+`enabled: false`; supported ready-PR qualification cannot execute while that
+external setting remains disabled. Hosted status must be determined against
+the pushed candidate and recorded in PR #610/#609; local passes are not merge
+qualification. No merge, deployment, live-data operation or primary-checkout
+archival was performed.

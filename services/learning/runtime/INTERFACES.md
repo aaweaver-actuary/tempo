@@ -92,7 +92,10 @@ Idempotency-Key values and durable payload normalization remain legacy protocol.
 Supported families: card/opening review and reconciliation, required opening
 checkpoints, five typed Study specifications (including self-assessment), tactical
 discovery attempts, defense recognition/move attempts.
-Endgames routes and execution facts are retired; new publications cannot recreate the family.
+Endgames routes and execution remain retired; new publications cannot recreate the family.
+The legacy `endgame` publication property is accepted only as null, preserving
+ordinary historical payload identity and immutable digests. Omitted metadata
+serializes as null; non-null metadata and `content_type="endgame"` remain rejected.
 
 `POST /internal/evidence` accepts the existing discriminated Game Evidence v1/v2 contracts. The default adapter uses `tempo-learning-remediation` on the same borrowed transaction; its per-query tuple cursors do not change the shared row factory. A workspace-bound evidence credential authorizes the producer's observed facts. Learning derives publication, decision position, complete accepted alternatives and immutable card revision from its own active definitions. There is no source database import or network lookup inside this boundary.
 

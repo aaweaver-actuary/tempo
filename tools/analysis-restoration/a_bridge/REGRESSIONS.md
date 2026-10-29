@@ -140,3 +140,10 @@ retains raw route context while excluding deleted graph-card identities. Changed
 published generation, learner ranges, decision keys, overlapping coverage and
 source-availability disagreement fail before output; no depth/graph rebuild or
 schedule reset substitutes for source facts.
+
+
+`test_endgames_retirement_schema_allows_only_null_compatibility_metadata` owns
+the generated Learning schema consumer contract: optional null-only legacy
+metadata, ordinary opening acceptance, and continued rejection of non-null
+metadata, retired content type and unknown fields. It validates the complete
+JSON Schema document without importing Learning runtime implementation.
