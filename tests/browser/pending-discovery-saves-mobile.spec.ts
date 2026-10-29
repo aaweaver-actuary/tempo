@@ -92,7 +92,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     for (const record of records) {
       const identifier = panel.getByText(record.opportunityId, { exact: true });
       await expect(identifier).toBeVisible();
-      const row = panel.getByRole("listitem").filter({ has: identifier });
+      const row = panel.getByRole("listitem").filter({ hasText: record.opportunityId });
       await expect(row.locator("strong")).toHaveText("failed");
       await expect(row).toContainText("move g1f3");
       await expect(row.getByRole("alert")).toHaveText(record.error!);
