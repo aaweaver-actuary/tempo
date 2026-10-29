@@ -9,10 +9,41 @@
 | Operation group | Existing facts and effects | Canonical fields and constraints |
 | --- | --- | --- |
 | Tactical reservation/publication | Takes the same card-edit advisory lock, reads the daily limit and locked rotation/progress, checks pack activation, ensures the tactics repertoire/card, writes progress/introduction, appends only after the same queue-position lock/recheck, then advances rotation. Application code retains deletion, quota, rotation and already-admitted decisions; daily tactic counting/lock authority is reused. | [Tactic activation/progress/introduction/rotation fields](../../schema/practice-families-1/README.md), [card and queue fields](../../schema/study-queue-review-1/README.md), [repertoires](../../schema/authored-content-3/README.md), [settings](../../schema/runtime-metadata/README.md). |
-| Unseen introduction reconciliation | Locks the exact eligible queue/card entry; keeps its introduction or removes the entry and resets the unreviewed card, after the same application-owned per-repertoire allowance and real-game-miss decision. Explicit admissions, retained cards and reviewed historical introductions retain their existing exclusions. | [Queue/card fields](../../schema/study-queue-review-1/README.md), [review evidence](../../schema/study-queue-review-2/README.md), [current repertoire dictionary](../../schema/authored-content-3/README.md). |
+| Unseen introduction reconciliation | Locks the exact eligible queue/card entry; keeps its introduction or removes the entry and resets the unreviewed card, after the same application-owned per-repertoire allowance and required-work retention decision as ordinary reconciliation. That decision includes an already-applied, same-definition Study encounter introduction as well as a real-game miss. Explicit admissions, retained cards and reviewed historical introductions retain their existing exclusions. | [Queue/card fields](../../schema/study-queue-review-1/README.md), [review evidence](../../schema/study-queue-review-2/README.md), [current repertoire dictionary](../../schema/authored-content-3/README.md). |
 | Due and Study admission | Locks the selected card, then the queue-date position boundary; rechecks the existing due/Study predicate, quota and sibling burial; appends at the same computed position. Due predicates retain integrity, published-study, burial, archive, validation and existing-membership filters. | [Cards and queue](../../schema/study-queue-review-1/README.md), [studies/exercises/burials](../../schema/study-queue-review-2/README.md), [integrity-card blocks/membership](../../schema/authored-content-2/README.md). |
 
 The linked schema READMEs remain canonical for **every stored field/type**, primary/composite key, enforced FK/delete action and unique tuple. This bounded ER view shows relevant enforced links only. `o|` on the repertoire/exercise side denotes nullable card references; the queue always references one card.
+
+### Retaining an encounter introduction during quota reconciliation (#581)
+
+**Proposed source correction; untested and deployment unverified.** The sliced
+PostgreSQL path now reuses the existing
+[`QueueAdmissionAdapter.has_outstanding_miss`](../../../../backend/app/services/queue_admission_adapter.py)
+retention predicate already used by ordinary reconciliation. Its legacy name
+does not classify an encounter as a recall miss: the Study-owned
+[`retains_encounter_introduction`](../study/game_feedback.py) projection requires
+an applied effect, matching current physical revision and an existing
+`introduced_at`. A pending observation or queue priority label alone grants
+nothing. A later evidence hold does not reverse an actual historical admission.
+
+```mermaid
+flowchart LR
+    Slice[PostgreSQL unseen-entry slice] --> Lock[Lock the current queue and card entry]
+    Lock --> Allowance{Ordinary allowance remains?}
+    Allowance -->|yes| Keep[Keep introduction and entry]
+    Allowance -->|no| Retention[Existing Study required-work retention predicate]
+    Retention --> Applied[Applied same-revision encounter introduction or real-game miss]
+    Applied -->|present| Keep
+    Applied -->|absent| Reset[Existing removal and unreviewed-introduction reset]
+```
+
+The caller still owns its task fence and transaction; this change adds no
+writer, queue insertion, review, scheduling effect, permission exception or
+Games call. Current eligibility filters and quota accounting are unchanged.
+The failure run retained no post-review rows, so the historical deletion is
+not asserted as an observed fact. Source tracing establishes the missing
+retention branch; normal target pickup and saved-review settlement remain
+unverified until separately authorized validation.
 
 ```mermaid
 erDiagram

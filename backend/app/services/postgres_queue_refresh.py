@@ -21,6 +21,7 @@ from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_f
 from . import queue_application, queue_ordering, frozen_opening_order
 from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
 from .queue_application import AdmittedOpeningProposal
+from .queue_admission_adapter import QueueAdmissionAdapter
 from app.chess.cards import card_id
 from .real_game_feedback import MISS_REASON
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
@@ -269,7 +270,10 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
     limit = _current_opening_limit(database, candidate["repertoire_id"])
     if limit is None:
         return False
-    if introduced_count < limit or has_outstanding_real_game_miss(database, candidate["card_id"]):
+    # Share ordinary reconciliation's Study-owned retention fact. An applied
+    # same-definition encounter introduction survives a zero ordinary allowance;
+    # pending observations alone still grant no introduction or queue entry.
+    if introduced_count < limit or QueueAdmissionAdapter(database).has_outstanding_miss(candidate["card_id"]):
         admissions.keep_unseen_introduction(database, queue_date, candidate["card_id"])
         return True
     admissions.remove_unseen_entry(database, candidate["id"])
