@@ -1,14 +1,16 @@
 # Standalone Explorer probability evidence
 
-T12 / #493 implemented source, unmerged and deployment-unverified. Public
-operation, all input/output/diagnostic types, examples, limits and reuse are in
+T12 / #493 implemented source, proposed for independent main integration and
+deployment-unverified. The supported [public interface](interfaces/__init__.py)
+re-exports the existing client, values and capabilities without startup work.
+Public operation, all input/output/diagnostic types, examples, limits and reuse are in
 [EXPLORER.md](EXPLORER.md). These are the canonical affected architecture views.
 
 ## Dependencies and state owners
 
 ```mermaid
 flowchart LR
-  Composition["#501 composition: explicit settings and optional work"] -->|"fetch request, credential and cancellation"| Explorer["ExplorerClient: bounded acquisition"]
+  Composition["#501 composition: explicit settings and optional work"] -->|"supported probability.interfaces API"| Explorer["ExplorerClient: bounded acquisition"]
   Explorer -->|"get/put immutable result"| Cache["Injected cache: owns storage and short transactions"]
   Explorer -->|"one bounded GET; closes transport"| HTTP["Injected request-owned HTTP transport"]
   Explorer -->|"constructs immutable values"| Shared["T01 ProbabilityEvidence and public evidence-math"]
@@ -16,7 +18,7 @@ flowchart LR
   Explorer -.->|"source-adapted acquisition; no runtime import"| Donor["Intelligence provider donor (unchanged)"]
 ```
 
-Sources: [client](explorer.py), [capabilities](ports.py),
+Sources: [public interface](interfaces/__init__.py), [client](explorer.py), [capabilities](ports.py),
 [shared values](../../contracts/product_v02/analysis.py),
 [evidence-math public API](../../../../packages/evidence-math/README.md).
 The diagram's #501 composition/#494 consumption is an integration seam, not an

@@ -63,6 +63,21 @@ index/snapshot source cases live in `test_product_position_index.py` and
 Study lapse/deadline/hold/settlement cases are listed in its
 [owner README](../backend/app/study/README.md#focused-checks).
 
+## T12 Standalone Explorer evidence
+
+`backend/tests/test_product_explorer.py` owns the fake-HTTP/cache/clock proof for
+partial/zero/missing samples, retained unknown mass, explicit population and
+cache-key scope, legal/count validation, safe auth/rate-limit/timeout/cancellation
+diagnostics, credential exclusion and complete shared-contract round trips.
+`test_provider_offline_never_calls_study` reuses the current T01 scoped import/
+cycle guard over this component and its declared public facade;
+`test_public_interface_preserves_types_and_cold_import_starts_no_work` checks
+identity-compatible exports and a fresh import with network/private-runtime
+access denied. The owner command is
+`make python-file FILE=backend/tests/test_product_explorer.py`.
+No provider connectivity, persistence, user D04 setting or #501 product wiring
+is established by this component proof.
+
 ## T06 Study-owned game lapse and durable withdrawal fence
 
 `backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:

@@ -2,7 +2,9 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 import chess
@@ -14,8 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 for relative in ("packages/evidence-math/src", "contracts/analysis-jobs/src"):
     sys.path.insert(0, str(ROOT / relative))
 
-from app.analysis.probability.explorer import ExplorerClient
-from app.analysis.probability.ports import ExplorerRequest, ExplorerResult
+from app.analysis.probability.interfaces import ExplorerClient, ExplorerRequest, ExplorerResult
 from app.contracts.product_v02.analysis import PopulationSelection, ProbabilityEvidence
 from tempo_evidence_math import move_universe
 
@@ -186,8 +187,8 @@ def test_provider_offline_never_calls_study():
     # repeating its owning tests. Reuse relative import resolution/cycle proof.
     from test_product_contracts import boundary_errors, has_import_cycle, import_targets
     folder = ROOT / "backend/app/analysis/probability"
-    modules = {"app.analysis.probability." + path.stem: path.read_text()
-               for path in folder.glob("*.py")}
+    modules = {"app.analysis.probability." + ".".join(path.relative_to(folder).with_suffix("").parts): path.read_text()
+               for path in folder.rglob("*.py")}
     assert not boundary_errors([("analysis", source, name) for name, source in modules.items()])
     assert not has_import_cycle(modules)
     for name, source in modules.items():
@@ -196,6 +197,39 @@ def test_provider_offline_never_calls_study():
                        for target in targets)
     result = fetch(status=503)
     assert result.diagnostic.code == "provider_unavailable"
+
+
+def test_public_interface_preserves_types_and_cold_import_starts_no_work():
+    from app.analysis.probability import interfaces
+    from app.analysis.probability.explorer import ExplorerClient as ExistingClient
+    from app.analysis.probability.ports import ExplorerRequest as ExistingRequest, ExplorerResult as ExistingResult
+    assert interfaces.ExplorerClient is ExistingClient
+    assert interfaces.ExplorerRequest is ExistingRequest
+    assert interfaces.ExplorerResult is ExistingResult
+    assert set(interfaces.__all__) == {
+        "Cancellation", "DiagnosticCode", "ExplorerCache", "ExplorerClient", "ExplorerDiagnostic",
+        "ExplorerProbabilityProvider", "ExplorerRequest", "ExplorerResult",
+    }
+    script = '''
+import builtins, socket
+original = builtins.__import__
+def checked(name, *args, **kwargs):
+    if name.startswith(("app.study", "app.games", "app.repertoire", "app.main", "app.tasks", "tempo_intelligence")):
+        raise AssertionError("optional boundary imported private runtime: " + name)
+    return original(name, *args, **kwargs)
+def denied(*args, **kwargs):
+    raise AssertionError("public interface initiated network work")
+socket.socket.connect = denied
+socket.create_connection = denied
+builtins.__import__ = checked
+from app.analysis.probability.interfaces import ExplorerClient
+client = ExplorerClient(transport_factory=denied)
+'''
+    environment = dict(os.environ, PYTHONPATH=os.pathsep.join(map(str, (
+        ROOT / "backend", ROOT / "packages/evidence-math/src", ROOT / "contracts/analysis-jobs/src"))))
+    result = subprocess.run([sys.executable,"-c",script],cwd=ROOT,env=environment,
+                            capture_output=True,text=True,timeout=15)
+    assert result.returncode == 0, result.stderr
 
 
 def test_complete_distribution_round_trip():

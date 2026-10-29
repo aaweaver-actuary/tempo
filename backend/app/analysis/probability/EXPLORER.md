@@ -1,10 +1,17 @@
 # Explorer acquisition contract (T12 / #493)
 
-Implemented source, proposed for integration; no runtime activation or deployment
-is implied. Uses T01 [ProbabilityEvidence](../../contracts/product_v02/analysis.py)
-from #513 `2db98217`, unchanged. [Boundary drawings](README.md) are canonical.
+Implemented source, proposed for independent main integration; no runtime
+activation or deployment is implied. Uses main's T01
+[ProbabilityEvidence](../../contracts/product_v02/analysis.py), byte-equivalent
+to #513 `2db98217`. [Boundary drawings](README.md) are canonical.
 
 ## Public operation
+
+Import the supported acquisition API from
+`app.analysis.probability.interfaces`. Its explicit exports re-export this
+component's existing client/values/capabilities by identity. Direct imports from
+`explorer.py`/`ports.py` remain compatible. Importing or constructing the client
+starts no transport, connection or optional work.
 
 `ExplorerClient(transport_factory=..., cache=None, clock=..., base_url=...).fetch(
 request: ExplorerRequest, *, credential: str | None,
@@ -119,9 +126,11 @@ inventory and unknown distributions use public `tempo_evidence_math` exports.
 
 `make python-file FILE=backend/tests/test_product_explorer.py` is the regular
 owning proof, using only fake transport/cache/clock and synthetic populations.
-It extends T01's scoped import/cycle guard over this boundary without editing
-the shared guard. Central regression/dependency registration belongs to #501;
-no test inventory or dependency lock is changed by this component. Actual
-provider connectivity, persistence and product acceptance are unverified and
-belong to integration; no donor regression is needed because donor source is
-unchanged.
+It extends current T01's scoped import/cycle guard over this boundary and public
+facade without editing the shared guard; cold-import and identity proofs cover
+the supported public interface. The regular suite is registered in
+[`tests/REGRESSIONS.md`](../../../../tests/REGRESSIONS.md#t12-standalone-explorer-evidence).
+Actual dependency/runtime/cache wiring belongs to #501; no dependency lock is
+changed here. Actual provider connectivity, persistence and product acceptance
+remain unverified and belong to integration; no donor regression is needed
+because donor source is unchanged.
