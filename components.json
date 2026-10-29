@@ -1801,6 +1801,20 @@
   ],
   "suites": [
     {
+      "id": "postgres-backup-lifecycle",
+      "owner": "database backup tooling",
+      "kind": "node",
+      "requiresDocker": true,
+      "cwd": ".",
+      "command": "node tools/component-build/test-node.mjs database/tests/backup-daemon",
+      "inputs": [
+        "docker-compose.yml",
+        "docker-compose.postgres.yml",
+        "database/tooling/cli/backup.mjs",
+        "database/tests/backup-daemon"
+      ]
+    },
+    {
       "id": "learning",
       "owner": "learning",
       "kind": "postgres",

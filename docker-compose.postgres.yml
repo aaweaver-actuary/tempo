@@ -157,19 +157,54 @@ services:
     mem_limit: 96m
     image: postgres:18.6-trixie
     entrypoint: ["sh", "-ec"]
+    stop_signal: SIGTERM
     command:
       - |
+        shutdown_requested=0
+        child=
+        request_shutdown() {
+          shutdown_requested=1
+          if [ -n "$${child}" ]; then
+            # A child may have exited immediately before the signal arrived.
+            kill -TERM "$${child}" 2>/dev/null || ! kill -0 "$${child}" 2>/dev/null
+          fi
+        }
+        trap request_shutdown TERM INT
+        run_child() {
+          [ "$${shutdown_requested}" -eq 0 ] || exit 0
+          "$$@" &
+          child=$$!
+          # A trap may run between launch and assignment of the child's PID.
+          if [ "$${shutdown_requested}" -ne 0 ]; then request_shutdown; fi
+          child_status=0
+          if wait "$${child}"; then :; else child_status=$$?; fi
+          if [ "$${shutdown_requested}" -ne 0 ]; then
+            # An interrupted wait is not evidence of child completion.
+            while kill -0 "$${child}" 2>/dev/null; do
+              if wait "$${child}"; then :; else child_status=$$?; fi
+            done
+            # Reap even when the child exited between wait and the liveness check.
+            # Its signal status (or an already-reaped result) is expected here only.
+            if wait "$${child}"; then :; else :; fi
+            child=
+            exit 0
+          fi
+          child=
+          [ "$${shutdown_requested}" -eq 0 ] || exit 0
+          return "$${child_status}"
+        }
         while :; do
+          [ "$${shutdown_requested}" -eq 0 ] || exit 0
           stamp=$$(date -u +%Y%m%dT%H%M%SZ)
           partial=/backups/tempo-$${stamp}.dump.partial
           finished=/backups/tempo-$${stamp}.dump
-          pg_dump -h postgres -U tempo -d tempo -Fc -f "$${partial}"
-          pg_restore -l "$${partial}" >/dev/null
-          mv "$${partial}" "$${finished}"
-          sha256sum "$${finished}" > "$${finished}.sha256"
-          find /backups -name 'tempo-*.dump' -mtime +30 -delete
-          find /backups -name 'tempo-*.dump.sha256' -mtime +30 -delete
-          sleep 86400
+          run_child pg_dump -h postgres -U tempo -d tempo -Fc -f "$${partial}"
+          run_child pg_restore -l "$${partial}" >/dev/null
+          run_child mv "$${partial}" "$${finished}"
+          run_child sh -ec 'exec sha256sum "$$1" > "$$1.sha256"' sh "$${finished}"
+          run_child find /backups -name 'tempo-*.dump' -mtime +30 -delete
+          run_child find /backups -name 'tempo-*.dump.sha256' -mtime +30 -delete
+          run_child sleep 86400
         done
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
