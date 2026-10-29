@@ -229,20 +229,25 @@ class GameSyncRuntime:
 
 
 def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesStore,
-                     snapshots: RepertoireSnapshotPort, learning: LearningFeedbackPort | EncounterFeedbackPort,
+                     snapshots: RepertoireSnapshotPort,
+                     learning: LearningFeedbackPort | EncounterFeedbackPort | None = None,
                      clock: Clock, max_page_records: int = 100,
                      max_page_positions: int = 10000,
                      normalizer=None,
                      source_identity=None,
                      encounter_feedback=False,
+                     delivery_enabled: bool = True,
                      admission=None,
                      transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
     """Wire published concrete seams; the caller selects when bounded units run.
 
-    A caller supplies explicit policies for both providers. The existing #487
-    owner is the sole Learning writer. Nothing starts at construction; no
-    startup/readiness hook is registered with the ordinary Study application.
+    A caller supplies explicit policies for configured providers. A receiver is
+    required unless delivery is explicitly disabled; collection retains original
+    encounter commands without accepting them into Learning. Nothing starts at
+    construction; no startup/readiness hook is registered with ordinary Study.
     """
+    if delivery_enabled and learning is None:
+        raise ValueError("delivery_enabled_receiver_required")
     if not 1<=len(policies)<=2 or len({policy.provider for policy in policies})!=len(policies):
         raise ValueError("one_explicit_policy_per_configured_provider_required")
     stop = Event()
@@ -254,5 +259,5 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
         source_identity=source_identity,
         clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions,
         encounter_feedback=encounter_feedback)
-    return GameSyncRuntime(FeedbackRunner(coordinator), stop,
+    return GameSyncRuntime(FeedbackRunner(coordinator, delivery_enabled=delivery_enabled), stop,
                            (provider.acquisition.cancel for provider in providers.values()),admission=admission)
