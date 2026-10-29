@@ -7,7 +7,8 @@ import { verifySelection } from '../../scripts/ci-fast-run.mjs';
 import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
 import { postgresTestStages, executePostgresTestPlan } from '../../database/tests/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../database/tests/postgres-test-options.mjs';
-import { certificate, readCertificateSources } from '../../scripts/ci-certified-tests.mjs';
+import { certificate, readCertificateSources, validateCertificate } from '../../scripts/ci-certified-tests.mjs';
+import { resolvePython } from '../../scripts/resolve-python.mjs';
 const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40),draft:false};
 const pr = {number:217,state:'open',draft:false,merge_commit_sha:'e'.repeat(40),head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
 const execution = {id:123,attempt:1};
@@ -55,13 +56,18 @@ test('issue239_javascript_fixture_consumers_invalidate_dependency_certificate', 
   } finally { if (consumerCreated) rmSync(consumerPath); }
 });
 test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', () => {
-  const selection = selectFastLane(['database/tests/check_postgres_redis_admission.py']);
-  assert.equal(selection.tier, 'STUDY');
-  assert.deepEqual(selection.nativeChecks, ['redis-fixture-isolation']);
-  assert(selection.backend.includes('backend/tests/test_redis_admission_fixture.py'));
-  assert(selection.browser.some(value => value.file === 'redis-admission-recovery.spec.ts'));
-  assert.equal(selection.browser.length, fastInventory.studyBrowser.length + 1);
-  assert(!selection.backend.includes('backend/tests/test_game_sync.py'));
+  for (const path of ['database/tests/check_postgres_redis_admission.py',
+    'database/tests/check_postgres_redis_fixture_isolation.py']) {
+    const selection = selectFastLane([path]);
+    assert.equal(selection.tier, 'STUDY', path);
+    assert.deepEqual(selection.nativeChecks, ['redis-fixture-isolation']);
+    assert(selection.nativeCases['redis-fixture-isolation'].length > 0);
+    assert(selection.backend.includes('backend/tests/test_redis_admission_fixture.py'));
+    assert(selection.browser.some(value => testIdentity(value)
+      === 'chromium:redis-admission-recovery.spec.ts:test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate'));
+    assert.equal(selection.browser.length, fastInventory.studyBrowser.length + 1);
+    assert(!selection.backend.includes('backend/tests/test_game_sync.py'));
+  }
 });
 test('issue239_shared_and_unknown_changes_expand_certified_selection', () => {
   for (const path of ['database/tests/test-postgres-docker.mjs', 'scripts/ci-fast-lane-inventory.json',
@@ -72,6 +78,8 @@ test('issue239_shared_and_unknown_changes_expand_certified_selection', () => {
 test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_closed', () => {
   const sources = readCertificateSources();
   const candidate = 'database/tests/check_postgres_redis_admission.py';
+  assert.equal(validateCertificate(certificate, sources), true);
+  assert.equal(selectFastLane([candidate], {certificateSources:sources}).tier, 'STUDY');
   for (const changed of [
     {...sources,'backend/app/new_consumer.py':'import check_postgres_redis_admission'},
     {...sources,[candidate]:sources[candidate]+'\nimport new_dependency\n'},
@@ -80,10 +88,52 @@ test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_c
     {...sources,[candidate]:sources[candidate]+'\nquery = "update unknown_shared_table set value=1"\n'},
     {...sources,[candidate]:sources[candidate]+"\nrelation_name = 'unknown_shared_table'\n"},
     {...sources,'tests/browser/redis-admission-recovery.spec.ts':sources['tests/browser/redis-admission-recovery.spec.ts']+'\ntest("new case", async () => {});\n'},
-    {...sources,'database/tests/check_postgres_redis_fixture_isolation.py':sources['database/tests/check_postgres_redis_fixture_isolation.py']+'\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n'},
     {...sources,[candidate]:undefined},
-  ]) assert.equal(selectFastLane([candidate],{certificateSources:changed}).tier,'FULL');
+  ]) {
+    assert.equal(validateCertificate(certificate, changed), false);
+    assert.equal(selectFastLane([candidate],{certificateSources:changed}).tier,'FULL');
+  }
   assert(Object.keys(certificate.dependencies).includes(candidate));
+});
+test('issue239_unknown_native_class_is_rejected_after_dependency_certificate_validation', () => {
+  const certificateSources = readCertificateSources();
+  const path = 'database/tests/check_postgres_redis_fixture_isolation.py';
+  assert.equal(selectFastLane([path], {certificateSources}).tier, 'STUDY');
+  certificateSources[path] += '\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n';
+  // Native class shape has its own collection guard after dependency validation.
+  assert.equal(validateCertificate(certificate, certificateSources), true);
+  const selection = selectFastLane([path], {certificateSources});
+  assert.equal(selection.tier, 'FULL');
+  assert(selection.reasons.includes('Unknown native fixture collection'));
+});
+test('issue239_exact_database_certificate_exceptions_preserve_explicit_FULL_and_missing_ownership', () => {
+  const certificateSources = readCertificateSources();
+  assert.equal(validateCertificate(certificate, certificateSources), true);
+  for (const path of ['database/tests/check_postgres_redis_admission.py',
+    'database/tests/check_postgres_redis_fixture_isolation.py']) {
+    assert.equal(selectFastLane([path], {certificateSources}).tier, 'STUDY');
+    const explicitFull = structuredClone(fastInventory); explicitFull.fullPaths.push(path);
+    const unregistered = structuredClone(fastInventory);
+    unregistered.certifiedTests = unregistered.certifiedTests.filter(mapping => !mapping.paths.includes(path));
+    const ambiguous = structuredClone(fastInventory);
+    ambiguous.certifiedTests.push(ambiguous.certifiedTests.find(mapping => mapping.paths.includes(path)));
+    const missingTest = structuredClone(fastInventory);
+    missingTest.certifiedTests.find(mapping => mapping.paths.includes(path)).backend = ['backend/tests/test_missing_fixture.py'];
+    for (const inventory of [explicitFull, unregistered, ambiguous, missingTest]) {
+      assert.equal(selectFastLane([path], {inventory, certificateSources}).tier, 'FULL', path);
+    }
+    for (const options of [{complete:true}, {comparisonAvailable:false}]) {
+      assert.equal(selectFastLane([path], {...options, certificateSources}).tier, 'FULL');
+    }
+  }
+  // A certificate mapping cannot exempt any other database or security path.
+  for (const path of ['database/tempo_legacy_database/adapters/study/game_feedback.py',
+    'database/tempo_legacy_database/ddl/migrations/999_fixture.sql',
+    'database/tests/uncertified_redis_fixture.py', 'backend/app/auth.py']) {
+    const inventory = structuredClone(fastInventory);
+    inventory.certifiedTests.push({...inventory.certifiedTests[3], paths:[path]});
+    assert.equal(selectFastLane([path], {inventory, certificateSources}).tier, 'FULL', path);
+  }
 });
 test('issue239_mixed_certified_changes_union_evidence_and_complete_boundaries_stay_FULL', () => {
   const selection = selectFastLane(['tests/browser/support/redis-admission-cleanup.ts','backend/tests/test_redis_admission_fixture.py']);
@@ -104,11 +154,13 @@ test('issue239_native_and_added_browser_evidence_is_mandatory_and_revision_bound
   assert.deepEqual(failures(fixture(candidate)),[]);
   for (const mutate of [
     value => delete value.report.native,
+    value => delete value.report.native.checks['redis-fixture-isolation'],
     value => value.report.native.head='c'.repeat(40),
     value => value.report.native.planHash='wrong',
     value => value.report.native.runId++,
     value => value.report.native.attempt++,
     value => value.report.native.checks['unexpected']={},
+    value => value.report.native.checks['redis-fixture-isolation'].expected=[],
     value => value.report.native.checks['redis-fixture-isolation'].tests=[],
     value => { value.report.native.checks['redis-fixture-isolation'].tests.pop(); value.report.native.checks['redis-fixture-isolation'].expected=value.report.native.checks['redis-fixture-isolation'].expected.slice(0,-1); },
     value => value.report.native.checks['redis-fixture-isolation'].tests[0].status='skipped',
@@ -138,7 +190,10 @@ test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
 test('emergency_isolated_frontend_change_selects_FAST', () => {
   const selection = selectFastLane(['app/components/prefix-comparison-dialog.tsx']);
   assert.equal(selection.tier,'FAST'); assert(selection.frontend.includes('tests/unit/prefix-comparison-regressions.test.tsx'));
-  assert.equal(selection.browser.length,0);
+  for (const key of ['backend','browser','nativeChecks']) assert.deepEqual(selection[key],[],key);
+  assert.equal(selection.node,true); assert.equal(selection.python,false);
+  assert.deepEqual(fastCommands(makeFastPlan(selection.paths,context)).map(([name])=>name),
+    ['conflicts','migrations','diff','lint','typecheck','frontend_inventory','frontend']);
 });
 test('emergency_tactics_grading_change_selects_STUDY', () => {
   assert.equal(selectFastLane(['backend/app/services/threat_grading.py']).tier,'STUDY');
@@ -218,15 +273,17 @@ test('emergency_workflow_runs_full_only_when_selected_and_pins_fast_head', () =>
 
 test('emergency_wrong_runtime_and_late_full_request_cannot_qualify', () => {
   const evidence = fixture(); evidence.report.runtime.architecture = 'x64'; assert(failures(evidence).length);
-  const backend = fixture('backend/app/services/lichess_client.py'); assert.deepEqual(failures(backend),[]);
+  const backend = fixture('backend/app/games/providers/lichess.py'); assert.deepEqual(failures(backend),[]);
   backend.report.runtime.python = 'Python 3.11.0'; assert(failures(backend).length);
   const late = fixture(); assert(validateFastGate(late.plan,late.report,late.needs,{...pr,labels:[{name:'ci:full'}]},execution).length);
 });
 
 test('emergency_inactive_provider_adapter_selects_FAST_without_durability', () => {
-  const selection = selectFastLane(['backend/app/services/lichess_client.py']);
-  assert.equal(selection.tier,'FAST'); assert(selection.backend.includes('backend/tests/test_game_sync.py'));
+  const selection = selectFastLane(['backend/app/games/providers/lichess.py']);
+  assert.equal(selection.tier,'FAST');
+  assert.deepEqual(selection.backend, ['backend/tests/test_game_sync.py','backend/tests/test_postgres_game_sync_windows.py']);
   assert.equal(selection.browser.length,0); assert.equal(selection.python,true);
+  assert.equal(selectFastLane(['backend/app/services/lichess_client.py']).tier,'FULL');
 });
 
 test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
@@ -380,4 +437,185 @@ test('issue543_complete_comparison_and_late_full_requirements_still_apply_to_pro
   const prose = fixture(reviewedInstructionPaths[0]);
   assert.deepEqual(failures(prose), []);
   assert(validateFastGate(prose.plan, prose.report, prose.needs, {...pr, labels: [{name: 'ci:full'}]}, execution).length);
+});
+
+test('spec_prose_exact_root_path_uses_only_existing_static_FAST_commands', () => {
+  for (const paths of [['SPEC.md'], ['SPEC.md', ...reviewedInstructionPaths]]) {
+    const selected = selectFastLane(paths);
+    assert.equal(selected.tier, 'FAST');
+    assert.equal(selected.node, false); assert.equal(selected.python, false);
+    for (const key of ['frontend', 'backend', 'browser', 'nativeChecks']) assert.deepEqual(selected[key], [], key);
+    assert.deepEqual(fastCommands(makeFastPlan(paths, context)), [
+      ['conflicts', 'node', ['scripts/check-merge-conflicts.mjs']],
+      ['migrations', 'node', ['database/tooling/check-migration-inventory.mjs']],
+      ['diff', 'git', ['diff', '--check', `${context.base}...${context.head}`]],
+    ]);
+  }
+});
+test('spec_prose_sensitive_unknown_and_dependency_companions_remain_FULL', () => {
+  for (const path of [
+    'database/tempo_legacy_database/ddl/migrations/999_spec.sql',
+    '.github/workflows/pages.yml', 'scripts/ci-fast-lane.mjs',
+    'scripts/ci-verification-plan.mjs', 'tests/runner/ci-fast-lane.test.mjs',
+    'app/unknown-source.ts', 'package.json', 'backend/requirements.txt',
+    'OTHER.md', 'backend/SPEC.md', '/SPEC.md', 'backend/../SPEC.md',
+  ]) assert.equal(selectFastLane(['SPEC.md', path]).tier, 'FULL', path);
+});
+test('spec_prose_companion_preserves_existing_STUDY_requirements', () => {
+  const path = 'app/lib/review-outbox.ts';
+  const current = selectFastLane([path]);
+  const combined = selectFastLane(['SPEC.md', path]);
+  assert.equal(combined.tier, 'STUDY');
+  for (const key of ['frontend', 'backend', 'browser', 'nativeChecks', 'node', 'python']) {
+    assert.deepEqual(combined[key], current[key], key);
+  }
+});
+test('spec_prose_renames_classify_both_sides_and_deletions_remain_sensitive', () => {
+  for (const [before, after] of [
+    ['scripts/ci-fast-lane.mjs', 'SPEC.md'],
+    ['SPEC.md', 'scripts/ci-fast-lane.mjs'],
+  ]) {
+    const paths = changedPathsFromNameStatus(`R100\0${before}\0${after}\0`);
+    assert.deepEqual(paths, [before, after].sort());
+    assert.equal(selectFastLane(paths).tier, 'FULL');
+  }
+  const deleted = changedPathsFromNameStatus('D\0scripts/ci-fast-lane.mjs\0M\0SPEC.md\0');
+  assert.deepEqual(deleted, ['SPEC.md', 'scripts/ci-fast-lane.mjs']);
+  assert.equal(selectFastLane(deleted).tier, 'FULL');
+});
+test('spec_prose_complete_and_unavailable_comparison_remain_FULL', () => {
+  for (const options of [{complete: true}, {comparisonAvailable: false}]) {
+    assert.equal(selectFastLane(['SPEC.md'], options).tier, 'FULL');
+  }
+});
+test('spec_prose_late_full_readiness_runtime_and_head_guards_remain_required', () => {
+  const prose = fixture('SPEC.md');
+  assert.deepEqual(failures(prose), []);
+  for (const current of [
+    {...pr, labels: [{name: 'ci:full'}]}, {...pr, draft: true},
+    {...pr, draft: undefined}, {...pr, head: {sha: 'c'.repeat(40)}},
+  ]) assert(validateFastGate(prose.plan, prose.report, prose.needs, current, execution).length);
+  const draftPlan = {...prose.plan, draft: true}; draftPlan.hash = planHash(draftPlan);
+  assert(validateFastGate(draftPlan, prose.report, prose.needs, pr, execution).length);
+  for (const [key, value] of [['node', 'v0.0.0'], ['platform', 'other'], ['architecture', 'other']]) {
+    const altered = fixture('SPEC.md'); altered.report.runtime[key] = value;
+    assert(failures(altered).length, key);
+  }
+  for (const mutate of [
+    value => value.report.head = 'c'.repeat(40),
+    value => value.report.commands.pop(),
+    value => value.report.commands[0].exit_code = 1,
+    value => value.needs.fast.result = 'skipped',
+  ]) { const altered = fixture('SPEC.md'); mutate(altered); assert(failures(altered).length); }
+  assert.deepEqual(validateFastGate(prose.plan, prose.report, prose.needs,
+    {...pr, base: {...pr.base, sha: 'c'.repeat(40)}}, execution), []);
+});
+test('spec_prose_selector_repair_retains_FULL_current_integration_qualification', () => {
+  const plan = makeFastPlan(['SPEC.md', 'scripts/ci-fast-lane.mjs'], context);
+  assert.equal(plan.tier, 'FULL');
+  const needs = {selection: {result: 'success'}, quality: {result: 'success'}};
+  assert.deepEqual(validateFastGate(plan, null, needs, pr, execution, completePlan()), []);
+  assert(validateFastGate(plan, null, needs, pr, execution).length);
+  assert(validateFastGate(plan, null, needs,
+    {...pr, base: {...pr.base, sha: 'c'.repeat(40)}}, execution, completePlan()).length);
+});
+
+const unbridgedComponentPaths = [
+  'backend/app/services/queue_presentation.py',
+  'backend/app/study/interfaces/game_priority.py',
+  'backend/app/product_composition/game_review.py',
+];
+test('component_boundary_unbridged_native_and_packaged_proofs_retain_FULL', () => {
+  for (const path of unbridgedComponentPaths) {
+    const evidence = fixture(path);
+    assert.equal(evidence.plan.tier, 'FULL', path);
+    assert(evidence.plan.reasons.includes(`${path}: unknown or ambiguous ownership`));
+    // Generic FAST evidence cannot stand in for the unbridged owner fixtures.
+    assert(failures(evidence).length, path);
+    const needs = {...evidence.needs, quality: {result:'success'}};
+    assert(validateFastGate(evidence.plan, evidence.report, needs, pr, execution).length);
+    assert.deepEqual(validateFastGate(evidence.plan, null, needs, pr, execution, completePlan()), []);
+    for (const result of [undefined,'failure','skipped','cancelled']) {
+      assert(validateFastGate(evidence.plan, null, {...needs, quality:{result}}, pr, execution, completePlan()).length);
+    }
+    for (const current of [
+      {...pr, base:{...pr.base,sha:'c'.repeat(40)}},
+      {...pr, head:{sha:'c'.repeat(40)}}, {...pr,draft:true},
+    ]) assert(validateFastGate(evidence.plan, null, needs, current, execution, completePlan()).length);
+  }
+});
+test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL', () => {
+  for (const path of unbridgedComponentPaths) {
+    assert.equal(selectFastLane(['SPEC.md','app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+    for (const options of [{complete:true},{comparisonAvailable:false}]) {
+      assert.equal(selectFastLane([path],options).tier,'FULL',path);
+    }
+  }
+  for (const path of ['backend/app/study/interfaces/unknown.py',
+    'database/tempo_legacy_database/ddl/migrations/999_component.sql',
+    'backend/app/auth.py','scripts/ci-fast-run.mjs']) {
+    assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+  }
+});
+
+const similaritySources = ['backend/app/analysis/similarity/features.py','backend/app/analysis/similarity/retrieval.py'];
+test('similarity_exact_sources_select_counted_owning_FAST_without_optional_runtime', () => {
+  for (const paths of similaritySources.map(path => [path]).concat([similaritySources])) {
+    const plan = makeFastPlan(paths, context);
+    assert.equal(plan.tier,'FAST'); assert.equal(plan.node,false); assert.equal(plan.python,true);
+    assert.deepEqual(plan.backend,['backend/tests/test_product_similarity.py']);
+    for (const key of ['frontend','browser','nativeChecks']) assert.deepEqual(plan[key],[],key);
+    const commands = fastCommands(plan);
+    assert.deepEqual(commands.map(([name])=>name),['conflicts','migrations','diff','python_static','backend_inventory','backend']);
+    for (const [name, command, args] of commands.slice(3)) {
+      assert.equal(command,'env',name);
+      assert.deepEqual(args.slice(0,2),[
+        'PYTHONPATH=backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src',
+        resolvePython(),
+      ],name);
+    }
+    assert(commands.at(-2)[2].includes('scripts/ci-collect-backend.py'));
+    assert(commands.at(-1)[2].includes('--junitxml=test-results/fast-lane/backend.xml'));
+  }
+  assert.equal(fastCommands(makeFastPlan(['backend/app/games/providers/lichess.py'],context))
+    .find(([name])=>name==='backend')[1],resolvePython());
+});
+test('similarity_backend_collection_results_and_bound_environment_are_mandatory', () => {
+  const baseline = fixture(similaritySources[0]);
+  assert.deepEqual(failures(baseline),[]);
+  for (const mutate of [
+    value => delete value.report.backend,
+    value => value.report.backend.expected=[],
+    value => value.report.backend.tests=[],
+    value => value.report.backend.tests[0].status='skipped',
+    value => value.report.backend.tests[0].status='failed',
+    value => value.report.backend.tests.push(value.report.backend.tests[0]),
+    value => value.report.commands.at(-1).args=value.report.commands.at(-1).args.slice(1),
+    value => value.report.runtime.python='Python 0.0.0',
+    value => value.report.head='c'.repeat(40),
+  ]) { const evidence=fixture(similaritySources[0]); mutate(evidence); assert(failures(evidence).length); }
+  for (const current of [{...pr,draft:true},{...pr,head:{sha:'c'.repeat(40)}},
+    {...pr,labels:[{name:'ci:full'}]}]) {
+    assert(validateFastGate(baseline.plan,baseline.report,baseline.needs,current,execution).length);
+  }
+  assert.deepEqual(validateFastGate(baseline.plan,baseline.report,baseline.needs,
+    {...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution),[]);
+});
+test('similarity_mapping_is_exact_and_mixed_or_complete_changes_stay_conservative', () => {
+  for (const path of ['backend/app/analysis/similarity/new_helper.py',
+    'backend/app/repertoire/position_index.py','packages/evidence-math/src/tempo_evidence_math/_identity.py',
+    'backend/app/auth.py','database/tempo_legacy_database/ddl/migrations/999_similarity.sql',
+    'scripts/ci-fast-commands.mjs','backend/pyproject.toml']) {
+    assert.equal(selectFastLane([...similaritySources,path]).tier,'FULL',path);
+  }
+  for (const options of [{complete:true},{comparisonAvailable:false}]) {
+    assert.equal(selectFastLane(similaritySources,options).tier,'FULL');
+  }
+  const renamed=changedPathsFromNameStatus('R100\0backend/app/auth.py\0backend/app/analysis/similarity/features.py\0');
+  assert.equal(selectFastLane(renamed).tier,'FULL');
+  const study=selectFastLane([...similaritySources,'app/lib/review-outbox.ts']);
+  assert.equal(study.tier,'STUDY'); assert(study.backend.includes('backend/tests/test_product_similarity.py'));
+  const inventory=structuredClone(fastInventory);
+  inventory.sources.push(inventory.sources.find(mapping=>mapping.paths.includes(similaritySources[0])));
+  assert.equal(selectFastLane(similaritySources,{inventory}).tier,'FULL');
 });
