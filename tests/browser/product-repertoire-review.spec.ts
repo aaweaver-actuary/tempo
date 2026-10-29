@@ -26,7 +26,7 @@ async function fixture(request:APIRequestContext,action:"seed"|"readback",repert
   expect(metadata.labels["com.docker.compose.project"]).toBe(project);
   expect(metadata.labels["com.docker.compose.service"]).toBe(service);
   expect(metadata.id).toMatch(/^[a-f0-9]{12,64}$/);
-  const result=spawnSync("docker",["exec","-i",metadata.id,"python","-",action,repertoireId],{
+  const result=spawnSync("docker",["exec","-i","-e","TEMPO_TEST_INSTANCE=disposable",metadata.id,"python","-",action,repertoireId],{
     input:readFileSync("backend/tests/fixtures/product_repertoire.py","utf8"),encoding:"utf8",timeout:15_000,maxBuffer:256*1024,
   });
   expect(result.status,result.stderr).toBe(0);
