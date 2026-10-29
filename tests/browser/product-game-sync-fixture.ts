@@ -26,7 +26,7 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
     throw new Error("Actual packaged provider fixture directory is required");
   if (action === "worker-stop" || action === "worker-kill") {
     const worker = JSON.parse(execFileSync("docker", ["inspect", "--format",
-      '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}},"cpu":{{json .HostConfig.NanoCpus}},"memory":{{json .HostConfig.Memory}},"pids":{{json .HostConfig.PidsLimit}},"command":{{json .Config.Cmd}}}',
+      '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}},"restarts":{{json .RestartCount}},"cpu":{{json .HostConfig.NanoCpus}},"memory":{{json .HostConfig.Memory}},"pids":{{json .HostConfig.PidsLimit}},"command":{{json .Config.Cmd}}}',
       `${project}-game-feedback-worker-1`], { encoding: "utf8", timeout: 5_000 }));
     if (!/^[a-f0-9]{64}$/.test(worker.id) || !worker.running ||
         worker.labels["com.docker.compose.project"] !== project || worker.labels["com.docker.compose.service"] !== "game-feedback-worker" ||
@@ -39,8 +39,17 @@ export async function gameSyncFixture(request: APIRequestContext, api: string,
     // process, service, startup journal or allocation is touched.
     const signal = action === "worker-stop" ? "SIGTERM" : "SIGKILL";
     const source = `import os, signal\nfrom pathlib import Path\nexpected = [b'python', b'-m', b'app.product_composition.game_sync_current', b'--workspace', b'legacy']\nchildren = Path('/proc/1/task/1/children').read_text().split()\nworkers = [int(pid) for pid in children if Path('/proc/' + pid + '/cmdline').read_bytes().rstrip(b'\\0').split(b'\\0') == expected]\nassert len(workers) == 1, 'Exact optional CLI child required'\nos.kill(workers[0], signal.${signal})\n`;
-    execFileSync("docker", ["exec", worker.id, "python", "-c", source], { timeout: 10_000 });
-    return { signalled: action, container: worker.id };
+    const signalled = spawnSync("docker", ["exec", worker.id, "python", "-c", source], { timeout: 10_000, encoding: "utf8" });
+    // Killing init's main child also ends the exec helper. An expected 137 is
+    // accepted only with independently observed restart of this same container.
+    if (signalled.error || (signalled.status !== 0 && !(action === "worker-kill" && signalled.status === 137)))
+      throw new Error(`Exact worker signal failed: ${signalled.stderr}`);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const restarts = Number(execFileSync("docker", ["inspect", "--format", "{{.RestartCount}}", worker.id], { encoding: "utf8", timeout: 5_000 }));
+      if (restarts > worker.restarts) return { signalled: action, container: worker.id, restarts };
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error("Actual optional worker did not restart after verified process loss");
   }
   // Execute inside the existing capped writer slot. Starting another Compose
   // service would require the parent runner's process-owned startup journal.
