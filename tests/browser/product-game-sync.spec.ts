@@ -3,7 +3,9 @@ import { prepareUI } from "./ui-fixtures";
 import { gameSyncFixture } from "./product-game-sync-fixture";
 
 test("both synthetic providers retain the current attempt and settle actual game feedback through normal Study", async ({ page, request }) => {
-  test.setTimeout(180_000);
+  // Forced process loss retains the production 120-second lease. The bound
+  // includes that real expiry; the test never edits a lease or advances clocks.
+  test.setTimeout(300_000);
   const fixture = await gameSyncFixture(request, api, "seed");
   await prepareUI(page);
   const board = page.locator(".persistent-board-shell .board-frame").first();
@@ -37,9 +39,29 @@ test("both synthetic providers retain the current attempt and settle actual game
     await settings.getByRole("button", { name: "Run saved game sync", exact: true }).click();
     await expect(settings.getByRole("status")).toContainText("pending");
   }
-  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 90_000 })
-    .toMatchObject({ complete: true, sources: 103, effects: 103 });
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
+    .toMatchObject({ http: { waiting: 2, rate_limited: 1 } });
+  await gameSyncFixture(request, api, "worker-stop", fixture);
   expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 45_000 })
+    .toMatchObject({ http: { waiting: 3 } });
+  await gameSyncFixture(request, api, "worker-kill", fixture);
+  expect((await gameSyncFixture(request, api, "inspect", fixture)).active).toEqual(original!.active);
+
+  // Actual Study issue/save remains usable after worker loss, before its lease
+  // can recover. This is the unrelated attempt issued before provider startup.
+  await nav(page, "Train");
+  await expect(board).toHaveAttribute("data-fen", fixture.unrelated_fen);
+  const unrelatedSaved = page.waitForResponse(response => response.url().includes(`/cards/${fixture.unrelated_card}/review`) && response.request().method() === "POST");
+  await move(page, "e2", "e4");
+  expect((await unrelatedSaved).ok()).toBe(true);
+  await page.reload();
+  await expect.poll(() => gameSyncFixture(request, api, "run", fixture), { timeout: 165_000 })
+    .toMatchObject({ complete: true, sources: 103, effects: 103, http: { rate_limited: 1 } });
+  const completed = await gameSyncFixture(request, api, "run", fixture);
+  expect(completed.replayed).toBeGreaterThan(0);
+  expect((completed.http as { pages: number[] }).pages.length).toBeGreaterThan(1);
+  expect(new Set((completed.http as { months: string[] }).months)).toEqual(new Set(["09", "10"]));
 
   await nav(page, "Games");
   const review = page.getByRole("region", { name: "Game Review", exact: true });
@@ -64,11 +86,7 @@ test("both synthetic providers retain the current attempt and settle actual game
   await expect(review.getByText("Ply 0 of 1", { exact: true })).toBeVisible();
 
   await nav(page, "Train");
-  await expect(board).toHaveAttribute("data-fen", fixture.unrelated_fen);
-  const unrelatedSaved = page.waitForResponse(response => response.url().includes(`/cards/${fixture.unrelated_card}/review`) && response.request().method() === "POST");
-  await move(page, "e2", "e4");
-  expect((await unrelatedSaved).ok()).toBe(true);
-  await page.keyboard.press("Enter");
+  await page.reload();
   await expect(board).toHaveAttribute("data-fen", fixture.start_fen);
   const saved = page.waitForResponse(response => response.url().includes(`/cards/${fixture.card_id}/review`) && response.request().method() === "POST");
   await move(page, "e2", "e4");

@@ -1,16 +1,14 @@
 """Synthetic T10 browser fixture, executable only in its verified disposable stack.
 
-The Node caller verifies Compose/container/DB identity before launching this
-one-off source-mounted helper. No live DSN or fixture fallback is accepted.
+The Node caller verifies Compose/container/DB identity before supplying this
+helper over stdin. Production code resolves from the package, without overlays.
 """
 import argparse
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
-import sys
 from urllib.parse import urlparse
 
 
@@ -25,8 +23,8 @@ def main():
             or not re.fullmatch(r"tempo-pg-regressions-\d+-[a-f0-9]+", options.project)
             or dsn.hostname != "postgres" or dsn.path != "/tempo"):
         raise RuntimeError("verified disposable PostgreSQL browser stack required")
-    root = Path(__file__).resolve().parents[3]
-    sys.path[:0] = [str(root / "backend"), str(root / "database"), str(root / "backend/tests")]
+    # Production modules resolve exclusively from the packaged worker. Only
+    # this synthetic helper is supplied over stdin; there is no source overlay.
     from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
 
     connections = DedicatedGamesConnections(os.environ["TEMPO_DATABASE_WRITE_URL"])
@@ -39,7 +37,7 @@ def main():
                 with transaction() as database:
                     for item in rows[offset:offset+20]:
                         insert_fixture_game(database, provider, item, manifest)
-        print(json.dumps(manifest))
+        print(json.dumps(dict(manifest, http_fixtures=provider_fixtures(manifest))))
         return
 
     manifest = json.loads(options.fixture_json or "null")
@@ -58,19 +56,10 @@ def main():
         return
 
     if options.action == "refresh":
-        # A separate Study execution after producer shutdown; retain the actual
-        # durable task, foreground, source and lease admission guards.
-        from app.product_composition.feedback_maintenance import claim_feedback_sweep, execute_feedback_sweep
-        from app.services.activity_gate import activity_gate
-        from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-        try:
-            with activity_gate.background_job("study_game_feedback", "fixture", yielding=True):
-                for _ in range(8):
-                    task = claim_feedback_sweep()
-                    if task is None or execute_feedback_sweep(task):
-                        break
-        except BackgroundAdmissionDeferred:
-            pass
+        # Dispatch the registered, independently owned task through real Celery.
+        # Do not manufacture a queue or run Study refresh inside Games intake.
+        from app.celery_app import celery_app
+        celery_app.send_task("app.tasks.maintain_game_feedback", queue="foreground")
         with transaction() as database:
             available = database.execute_native("""SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s
                 AND status='applied' AND payload_json::jsonb->'command'->>'observation'='missed'""",
@@ -78,54 +67,15 @@ def main():
         print(json.dumps(dict(available=available == 3, available_misses=available)))
         return
 
-    from contextlib import contextmanager
-    import httpx
-    from app.product_composition.game_sync_current import current_provider_worker
-    from app.product_composition.game_review import SystemClock
-    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
-
-    @contextmanager
-    def raw_connections():
-        with transaction() as database:
-            yield database.raw
-    store = PostgresReviewStore(raw_connections)
-    configurations = [store.configuration("legacy", provider) for provider in ("lichess", "chesscom")]
-    if any(value is None or value.account.casefold() != "learner" or value.speeds != ("rapid",)
-           or value.rated is not True or value.repertoire_ids != (manifest["repertoire_id"],) for value in configurations):
-        raise RuntimeError("browser must explicitly configure both synthetic accounts and filters first")
-    fixtures = provider_fixtures(manifest)
-    def handle(request):
-        if request.url.host == "lichess.org":
-            params = request.url.params
-            rows = [{"id": item["source_id"], "createdAt": int(datetime.fromisoformat(item["played_at"]).timestamp() * 1000),
-                     "pgn": item["pgn"], "speed": "rapid", "rated": True} for item in fixtures["lichess"]]
-            rows = sorted((row for row in rows if int(params["since"]) <= row["createdAt"] < int(params["until"])), key=lambda row: row["createdAt"])
-            return httpx.Response(200, content="\n".join(json.dumps(row) for row in rows[:int(params["max"])]), headers={"Content-Type": "application/x-ndjson"})
-        archive = "https://api.chess.com/pub/player/learner/games/"
-        if request.url.path.endswith("archives"):
-            return httpx.Response(200, json={"archives": [archive + "2026/09", archive + "2026/10"]})
-        month = request.url.path[-2:]
-        return httpx.Response(200, json={"games": [{"uuid": item["source_id"], "pgn": item["pgn"],
-            "end_time": int(datetime.fromisoformat(item["played_at"]).timestamp()), "rules": "chess", "time_class": "rapid", "rated": True,
-            "url": "https://www.chess.com/game/live/123456"} for item in fixtures["chesscom"] if item["played_at"][5:7] == month]})
-    os.environ["TEMPO_PRODUCT_GAME_SYNC_ENABLED"] = "1"  # This verified synthetic helper only.
-    runtime, _ = current_provider_worker(workspace="legacy", connections=connections,
-        clock=SystemClock(), transport_factory=lambda: httpx.MockTransport(handle))
-    try:
-        for _ in range(50):
-            if runtime.run_once() in {"idle", "deferred"}:
-                break
-        complete = True
-        for provider in ("lichess", "chesscom"):
-            job = store.last_job("legacy", provider)
-            complete = complete and job is not None and job.status == "complete" and job.window_complete
-        with transaction() as database:
-            sources = database.execute_native("SELECT COUNT(*) FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'='legacy'").fetchone()[0]
-            effects = database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s", (manifest["card_id"],)).fetchone()[0]
-            pending = database.execute_native("SELECT COUNT(*) FROM product_feedback_deliveries WHERE state='pending'").fetchone()[0]
-        print(json.dumps(dict(sources=sources, effects=effects, complete=complete and pending == 0)))
-    finally:
-        runtime.close()
+    # Readback only: the optional packaged CLI is the sole provider executor.
+    with transaction() as database:
+        sources = database.execute_native("SELECT COUNT(*) FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'='legacy'").fetchone()[0]
+        effects = database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s", (manifest["card_id"],)).fetchone()[0]
+        pending = database.execute_native("SELECT COUNT(*) FROM product_feedback_deliveries WHERE state='pending'").fetchone()[0]
+        jobs = database.execute_native("SELECT status,payload::text FROM product_feedback_jobs").fetchall()
+        replayed = database.execute_native("SELECT COUNT(*) FROM product_feedback_deliveries WHERE (payload->>'attempts')::int>1").fetchone()[0]
+        complete = len(jobs) == 2 and all(row[0] == 'complete' and json.loads(row[1])['window_complete'] for row in jobs)
+        print(json.dumps(dict(sources=sources, effects=effects, complete=complete and pending == 0, replayed=replayed)))
 
 
 def seed_fixture(transaction, project):
@@ -157,7 +107,7 @@ def seed_fixture(transaction, project):
                 state,due_date,introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
                 VALUES(%s,%s,'prefix',%s,'["e2e4"]','white','mature',%s,%s,1,20,%s,%s,20,'opening')""",
                 (card_id,repertoire,start,date.today().isoformat() if name == "unrelated" else due.date().isoformat(),
-                 (now-timedelta(days=6)).isoformat(),state,(now-timedelta(days=25)).isoformat()))
+                 (now-timedelta(days=6)).date().isoformat(),state,(now-timedelta(days=25)).isoformat()))
             database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
                 internal_rating,guided,source_kind,source_ref) VALUES(%s,'correct',%s,10,20,'good',0,'study',%s)""",
                 (card_id,(now-timedelta(days=3)).isoformat(),"fixture-history:"+card_id))
