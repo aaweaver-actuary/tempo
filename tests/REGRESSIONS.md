@@ -1,3 +1,25 @@
+## T22 Study recombination and immutable presentation provenance
+
+`backend/tests/test_product_recombination_application.py` owns genuine saved
+evidence, fresh AB/ABC streaks, conservative scheduling, exact retries, active
+member holds, original obligation identity/deadline and confirmed final-decision
+splits. Its scoped dependency/cycle guard protects the pure application seam.
+
+`backend/tests/test_product_recombination_postgres.py` owns the private transaction
+contract and actual `test_current_owner_*` source/issuance/evidence/review/queue
+boundary. Changed regressions prove exact issued-head confirmation, rollback on
+response/assistance or changed intent, original history/manifest retention,
+zero actual introduction allowance and unreviewed-fragment day-rollover recovery.
+`tests/unit/prefix-split-pending-regressions.test.ts` retains the exact displayed
+attempt across pending retries and preserves legacy request serialization.
+
+`tests/browser/product-recombination.spec.ts` owns A08's real board reviews,
+fresh combined streaks, manual split and reload with another issued attempt
+unchanged. It stages only deliberate extra practice in a guarded disposable
+fixture, seeds no qualifying review and intercepts no Study API. Presence is not
+a browser pass; exact execution results belong to the current #503 delivery PR.
+See the [canonical owner diagrams and current limits](../backend/app/study/recombination/README.md).
+
 ## Product v0.2 game-feedback composition
 
 `backend/tests/test_product_game_history.py` owns bounded retained-library preview,
@@ -5372,6 +5394,15 @@ installed artifacts, deployment and full-system qualification remain unverified.
 | Encounter projection preserves equivalent-route provenance and differing availability/chronology while emitting one deterministic target | `backend/tests/test_product_encounter_projection.py` |
 | 62 equivalent route bindings persist one Study effect/receipt/queue entry across a fresh history recomparison | `backend/tests/test_product_game_history_postgres.py::test_equivalent_route_history_persists_one_effect_and_receipt_under_recomparison` |
 
+## Continuous provider synchronization preparation (#491)
+
+| Behavior | Owning test |
+| --- | --- |
+| Explicit contiguous forward windows keep stable restart identity, unfinished cursor/backoff, provider independence and configured filters | `backend/tests/test_product_continuous_sync.py` |
+| Current publication owner and reader/writer separation are enforced; missing qualified receiver or real admission prevents work | `backend/tests/test_product_continuous_sync.py` |
+| Games acknowledges accepted/pending encounter evidence without inline queue work, private availability polling or replaying a fresh command after lost acknowledgment | `backend/tests/test_product_priority_intake_boundary.py` |
+| Explicit provider assembly requires the exact public priority intake and fails before source access when it is absent | `backend/tests/test_product_provider_feedback.py` |
+
 ## Study priority ownership with historical evidence (#488)
 
 `backend/tests/test_priority_ownership_pickup_postgres.py::test_historical_evidence_ownership_pickup_commits_within_existing_budget_and_replays`
@@ -5409,3 +5440,33 @@ identity, committed sentinel, init reaping, graceful signal forwarding and exact
 cleanup. It does not identify the historical executable or operate live services.
 The existing backend suite discovers the file; use the regular `make python-file`
 selection for its finite native proof. No dedicated qualifier or CI gate is added.
+## Explicit authored PGN preparation in Study-only
+
+`backend/tests/test_explicit_pgn_validation.py` owns the synthetic branching Black
+fixture, repeat snapshot, illegal-tail rejection, competing-own-response hold
+and finite route bound. `test_pgn_import_storage_boundary.py` covers preserved
+main selection/training depth, existing batching/certification and exact explicit
+graph pin. `test_explicit_pgn_scope.py` covers fixed receipt/generation/manual-pause
+SQL scope (including native JSONB syntax) and evaluates actual candidate predicates over supplied facts without
+a database: current receipt-scoped graph/integrity can prepare with Study-only
+on, while missing receipts, paused work, ordinary optional/old work and defensive
+admission retain their guards. Resume eligibility and Activity's settings-pause
+projection use that same exact receipt scope; manual pause still blocks claims
+until resumed, and legacy SQLite/settings guards remain. `test_explicit_pgn_preparation.py` covers leased kind/phase/body recheck, transaction recheck, unchanged
+daily-queue priority and unrelated paused work. These fake-driver tests do not
+prove native locking, atomicity or complete worker execution.
+`tests/unit/pgn-import-dialog-regressions.test.tsx` adds finite saved/pending and
+manual held publication outcomes, retaining cancellation and one-POST recovery.
+Existing pending-import tests own same-key duplicate/retry identity. This feature
+requires native disposable-fixture and assembled proof before merge qualification;
+it is not installed and no genuine Taimanov file has been supplied.
+
+`backend/tests/test_explicit_pgn_import_postgres.py::test_native_explicit_black_import_round_trip_preserves_study`
+owns the source/native explicit-command → receipt-pinned graph/integrity → normal
+Study queue round trip, using the existing `owned_postgres` fixture. It covers
+branching Black sources, same-key replay, pause/resume, saved versus ready
+projections, quota hold, main/history/issued-attempt/accepted-feedback preservation,
+and rollback after actual graph enqueue. Its broker/Redis transport is substituted;
+it does not qualify a running worker stack or a genuine private PGN. Eventual
+fixture-authorized command:
+`make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.

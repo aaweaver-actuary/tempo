@@ -1,5 +1,54 @@
 # One imported game to ordinary Study (#488)
 
+## Continuous-provider public priority intake (#489 / #491)
+
+The optional Games process receives an `EncounterFeedbackPort` from the
+composition root. `create_current_provider_worker(priority_intake=...)` requires
+that public capability before any source read/claim. It does not construct a
+Study receiver, borrow a Study writer, or promote/rebuild a queue. Accepted/pending
+means immutable evidence was accepted; actual availability belongs to Study's
+independent refresh and public receipt status.
+
+The shared public contract is
+[`EncounterFeedbackPort`](../contracts/product_v02/learning.py), owned by the
+receiving contract/Study owners. Games' coordinator uses only its semantic
+accept/control/status methods. No replacement DTO or compatibility export is
+introduced. #487 supplies the durable intake implementation and refresh; root
+composition alone will wire that implementation after its public checkpoint.
+
+`PostgresCanonicalGamesStore` implements #489's `SourceIdentity` port. Strict PGN
+normalization verifies raw proof first; Games then binds the retained canonical
+ID/revision/fingerprint before comparison. Source publication, captures, original
+outbox and cursor commit atomically. Raw PGN/acquisition provenance stays separate.
+Changed source or an identity race is quarantined/rolled back, never relabeled.
+
+```mermaid
+sequenceDiagram
+  participant Provider as Optional Games worker
+  participant Source as Games source / outbox owner
+  participant Intake as Public idempotent priority intake
+  participant Refresh as Independent Study-owned refresh
+  Provider->>Source: Verify / bind / compare immutable source
+  Source->>Source: Atomic canonical + capture + original command + checkpoint
+  Source-->>Provider: Committed original evidence
+  Provider->>Intake: accept_encounter(original command)
+  Intake-->>Provider: accepted / pending durable receipt
+  Provider->>Source: Acknowledge exact outbox delivery
+  Note over Provider,Intake: Acceptance does not rebuild or wait for queue availability
+  Refresh->>Intake: Consume accepted obligations independently
+```
+
+The earlier unqualified inline adapter/native fixture were removed from the
+follow-on branch. Their earlier passing preparation checks do not qualify this
+boundary. The default CLI stays blocked. Six public-port failure/replay cases,
+two factory-injection cases and the focused import/DAG guard cover the producer
+boundary. Receiver obligation durability/refresh and packaged profile/readiness
+qualification remain owner dependencies. See the
+[bounded commands and coverage](../../../docs/product-v02/game-sync/README.md).
+The frozen qualified retained-history release remains unchanged.
+
+## First-release evidence
+
 This unmerged integration under [#481](https://github.com/aaweaver-actuary/tempo/issues/481)
 implements the first game-feedback slice of [SPEC v0.2](https://github.com/aaweaver-actuary/tempo/blob/5d5673e43c722786a101c12d26a214649a909502/SPEC.md).
 It has not been installed by this lane. The focused native and ordinary-Study

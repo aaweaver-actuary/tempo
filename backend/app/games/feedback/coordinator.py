@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Mapping
 
 from tempo_game_classification import resolve_equivalent_mapping
@@ -12,7 +13,7 @@ from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterR
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,
-                    GamesStore, JobState, Normalizer, PageCommit, SourceState)
+                    GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
 
 
 def stable_id(*parts: object) -> str:
@@ -92,6 +93,7 @@ class Coordinator:
     def __init__(self, *, providers: Mapping[str, Acquisition], normalizer: Normalizer,
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
                  learning: LearningFeedbackPort | EncounterFeedbackPort, clock: Clock,
+                 source_identity: SourceIdentity | None = None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
@@ -101,6 +103,7 @@ class Coordinator:
         self.encounter_feedback = encounter_feedback
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
+        self.source_identity = source_identity
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
@@ -141,6 +144,17 @@ class Coordinator:
                 if (normalized.workspace_id, normalized.source_revision, normalized.source_digest) != (
                         spec.workspace_id, record.source_revision, record.source_digest):
                     raise ValueError("normalization provenance differs from captured source")
+                if self.source_identity is not None:
+                    verified = normalized
+                    normalized = self.source_identity.bind_source(verified, record=record, spec=spec)
+                    if (normalized.workspace_id, normalized.starting_fen, normalized.moves,
+                            normalized.learner_color) != (verified.workspace_id, verified.starting_fen,
+                            verified.moves, verified.learner_color):
+                        raise ValueError("canonical source differs from verified history")
+                    def instant(value):
+                        return None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if instant(normalized.played_at) != instant(verified.played_at):
+                        raise ValueError("canonical source differs from verified occurrence")
                 positions += len(normalized.moves)
                 if positions > self.max_page_positions:
                     raise AcquisitionFailure("page_position_budget_exceeded", retryable=False)
@@ -149,7 +163,7 @@ class Coordinator:
                     raise AcquisitionFailure("comparison_finding_budget_exceeded", retryable=False)
                 for finding in findings:
                     if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
-                            spec.provider, normalized.game_id, record.source_revision, record.source_digest):
+                            spec.provider, normalized.game_id, normalized.source_revision, normalized.source_digest):
                         raise ValueError("comparison provenance differs from captured source")
                     if finding.repertoire_id not in spec.repertoire_ids or not any(
                             finding.repertoire_id in snapshot.membership.scope_repertoire_ids
@@ -158,14 +172,19 @@ class Coordinator:
                 if self.encounter_feedback:
                     encounters = project_encounters(normalized, findings=findings, snapshots=snapshots,
                         source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
-                            source_revision=record.source_revision, source_digest=record.source_digest),
-                        detected_at=self.clock.utc_now(), occurred_at=record.played_at,
-                        payload_digest=record.source_digest)
+                            source_revision=normalized.source_revision, source_digest=normalized.source_digest),
+                        detected_at=self.clock.utc_now(), occurred_at=(normalized.played_at
+                            if record.time_precision in {"second", "millisecond"} else None),
+                        payload_digest=normalized.source_digest)
             except ValueError:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
                 boundary = True
             fingerprint = stable_id(record.model_dump(mode="json", exclude={"source_revision"}))
             changed = previous is not None and fingerprint != previous.record_fingerprint
+            if self.source_identity is not None and previous and previous.normalized is not None and normalized is not None:
+                changed = changed or (previous.normalized.game_id, previous.normalized.source_revision,
+                    previous.normalized.source_digest) != (normalized.game_id,
+                    normalized.source_revision, normalized.source_digest)
             held = changed or bool(previous and previous.quarantined) or diagnostic is not None
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
@@ -195,7 +214,7 @@ class Coordinator:
                     effect_key = GameEffectKey(workspace_id=spec.workspace_id, provider=spec.provider,
                         game_id=finding.game_id, decision_id=finding.decision_id, occurrence_ply=finding.ply)
                     lapse = GameLapse(key=effect_key, finding=finding, detected_at=self.clock.utc_now(),
-                        occurred_at=record.played_at, payload_digest=record.source_digest)
+                        occurred_at=normalized.played_at, payload_digest=normalized.source_digest)
                     effects.append(lapse)
                     occupied_keys.add((finding.decision_id, finding.ply))
                     deliveries.append(delivery_for(key, lapse))

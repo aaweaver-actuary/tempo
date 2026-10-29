@@ -26,7 +26,8 @@ _CLEANUP_CANDIDATE_PAGE_SIZE = 256
 
 
 def request_graph_rebuild_in_transaction(
-    database: postgres_store.PostgresConnection, repertoire_id: str, local_day: str,
+    database: postgres_store.PostgresConnection, repertoire_id: str, local_day: str, *,
+    origin_import_operation_id: str | None = None,
 ) -> dict[str, Any]:
     """Enqueue a new graph generation after all imported and staged generations."""
     storage.lock_graph_task(database, repertoire_id)
@@ -41,7 +42,8 @@ def request_graph_rebuild_in_transaction(
     return enqueue_task_in_transaction(
         database, "opening_graph_rebuild", repertoire_id,
         {"repertoire_id": repertoire_id, "local_day": local_day,
-         "after_line_id": "", "step_offset": 0, "after_card_id": ""},
+         "after_line_id": "", "step_offset": 0, "after_card_id": "",
+         **({"origin_import_operation_id":origin_import_operation_id} if origin_import_operation_id else {})},
         priority=40, minimum_generation=minimum_generation,
     )
 
@@ -250,8 +252,8 @@ def classify_graph_cards_in_transaction(
             raise RuntimeError("Published graph card disappeared before classification")
         kind = "prefix" if classification[0] else "response"
         next_state = "new" if classification[1] else "locked"
-        if 'maintenance_scope' in task and storage.protected_card(database, card_id, kind):
-            raise ValueError('Selected rebuild would reclassify a protected card; stop for diagnosis')
+        if ('maintenance_scope' in task or task.get('explicit_import_preparation')) and storage.protected_card(database, card_id, kind):
+            raise ValueError('Rebuild would reclassify a protected card; stop for diagnosis')
         storage.classify_card(database, kind, next_state, study_day, card_id)
     return advance_task_slice_in_transaction(
         database, task, next_phase="classify",
@@ -376,6 +378,8 @@ def cleanup_graph_cards_in_transaction(
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
+    if task.get('explicit_import_preparation') and prepared.obsolete_card_ids:
+        raise ValueError('Explicit import would retire existing graph cards; review content separately')
     if 'maintenance_scope' in task and prepared.obsolete_card_ids:
         protected = storage.protected_queue_entry(database, (list(prepared.obsolete_card_ids), payload['local_day']))
         if protected:
@@ -410,6 +414,8 @@ def finalize_graph_in_transaction(
     request_integrity_scan_in_transaction(
         database, str(task["payload"]["repertoire_id"]),
         int(task["generation"]), str(task["payload"]["local_day"]),
+        **({"origin_import_operation_id":task["payload"]["origin_import_operation_id"],
+            "origin_graph_task_id":task["id"]} if task["payload"].get("origin_import_operation_id") else {}),
     )
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Opening graph lease changed before finalization")
