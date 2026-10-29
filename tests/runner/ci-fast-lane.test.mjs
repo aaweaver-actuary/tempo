@@ -381,3 +381,84 @@ test('issue543_complete_comparison_and_late_full_requirements_still_apply_to_pro
   assert.deepEqual(failures(prose), []);
   assert(validateFastGate(prose.plan, prose.report, prose.needs, {...pr, labels: [{name: 'ci:full'}]}, execution).length);
 });
+
+test('spec_prose_exact_root_path_uses_only_existing_static_FAST_commands', () => {
+  for (const paths of [['SPEC.md'], ['SPEC.md', ...reviewedInstructionPaths]]) {
+    const selected = selectFastLane(paths);
+    assert.equal(selected.tier, 'FAST');
+    assert.equal(selected.node, false); assert.equal(selected.python, false);
+    for (const key of ['frontend', 'backend', 'browser', 'nativeChecks']) assert.deepEqual(selected[key], [], key);
+    assert.deepEqual(fastCommands(makeFastPlan(paths, context)), [
+      ['conflicts', 'node', ['scripts/check-merge-conflicts.mjs']],
+      ['migrations', 'node', ['database/tooling/check-migration-inventory.mjs']],
+      ['diff', 'git', ['diff', '--check', `${context.base}...${context.head}`]],
+    ]);
+  }
+});
+test('spec_prose_sensitive_unknown_and_dependency_companions_remain_FULL', () => {
+  for (const path of [
+    'database/tempo_legacy_database/ddl/migrations/999_spec.sql',
+    '.github/workflows/pages.yml', 'scripts/ci-fast-lane.mjs',
+    'scripts/ci-verification-plan.mjs', 'tests/runner/ci-fast-lane.test.mjs',
+    'app/unknown-source.ts', 'package.json', 'backend/requirements.txt',
+    'OTHER.md', 'backend/SPEC.md', '/SPEC.md', 'backend/../SPEC.md',
+  ]) assert.equal(selectFastLane(['SPEC.md', path]).tier, 'FULL', path);
+});
+test('spec_prose_companion_preserves_existing_STUDY_requirements', () => {
+  const path = 'app/lib/review-outbox.ts';
+  const current = selectFastLane([path]);
+  const combined = selectFastLane(['SPEC.md', path]);
+  assert.equal(combined.tier, 'STUDY');
+  for (const key of ['frontend', 'backend', 'browser', 'nativeChecks', 'node', 'python']) {
+    assert.deepEqual(combined[key], current[key], key);
+  }
+});
+test('spec_prose_renames_classify_both_sides_and_deletions_remain_sensitive', () => {
+  for (const [before, after] of [
+    ['scripts/ci-fast-lane.mjs', 'SPEC.md'],
+    ['SPEC.md', 'scripts/ci-fast-lane.mjs'],
+  ]) {
+    const paths = changedPathsFromNameStatus(`R100\0${before}\0${after}\0`);
+    assert.deepEqual(paths, [before, after].sort());
+    assert.equal(selectFastLane(paths).tier, 'FULL');
+  }
+  const deleted = changedPathsFromNameStatus('D\0scripts/ci-fast-lane.mjs\0M\0SPEC.md\0');
+  assert.deepEqual(deleted, ['SPEC.md', 'scripts/ci-fast-lane.mjs']);
+  assert.equal(selectFastLane(deleted).tier, 'FULL');
+});
+test('spec_prose_complete_and_unavailable_comparison_remain_FULL', () => {
+  for (const options of [{complete: true}, {comparisonAvailable: false}]) {
+    assert.equal(selectFastLane(['SPEC.md'], options).tier, 'FULL');
+  }
+});
+test('spec_prose_late_full_readiness_runtime_and_head_guards_remain_required', () => {
+  const prose = fixture('SPEC.md');
+  assert.deepEqual(failures(prose), []);
+  for (const current of [
+    {...pr, labels: [{name: 'ci:full'}]}, {...pr, draft: true},
+    {...pr, draft: undefined}, {...pr, head: {sha: 'c'.repeat(40)}},
+  ]) assert(validateFastGate(prose.plan, prose.report, prose.needs, current, execution).length);
+  const draftPlan = {...prose.plan, draft: true}; draftPlan.hash = planHash(draftPlan);
+  assert(validateFastGate(draftPlan, prose.report, prose.needs, pr, execution).length);
+  for (const [key, value] of [['node', 'v0.0.0'], ['platform', 'other'], ['architecture', 'other']]) {
+    const altered = fixture('SPEC.md'); altered.report.runtime[key] = value;
+    assert(failures(altered).length, key);
+  }
+  for (const mutate of [
+    value => value.report.head = 'c'.repeat(40),
+    value => value.report.commands.pop(),
+    value => value.report.commands[0].exit_code = 1,
+    value => value.needs.fast.result = 'skipped',
+  ]) { const altered = fixture('SPEC.md'); mutate(altered); assert(failures(altered).length); }
+  assert.deepEqual(validateFastGate(prose.plan, prose.report, prose.needs,
+    {...pr, base: {...pr.base, sha: 'c'.repeat(40)}}, execution), []);
+});
+test('spec_prose_selector_repair_retains_FULL_current_integration_qualification', () => {
+  const plan = makeFastPlan(['SPEC.md', 'scripts/ci-fast-lane.mjs'], context);
+  assert.equal(plan.tier, 'FULL');
+  const needs = {selection: {result: 'success'}, quality: {result: 'success'}};
+  assert.deepEqual(validateFastGate(plan, null, needs, pr, execution, completePlan()), []);
+  assert(validateFastGate(plan, null, needs, pr, execution).length);
+  assert(validateFastGate(plan, null, needs,
+    {...pr, base: {...pr.base, sha: 'c'.repeat(40)}}, execution, completePlan()).length);
+});
