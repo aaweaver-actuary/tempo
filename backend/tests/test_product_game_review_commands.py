@@ -56,5 +56,3 @@ def test_configuration_receipt_json_arrays_keep_strict_immutable_http_response(m
     assert response.status_code==200 and response.json()==expected
     parsed=SyncConfiguration.model_validate_json(response.text)
     assert parsed.repertoire_ids==("white",) and parsed.speeds==("rapid",)
-
-
