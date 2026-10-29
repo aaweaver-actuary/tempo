@@ -2,6 +2,8 @@
 
 Version 0.2 · October 26, 2026 · Single-user, local-first product
 
+Next-release encounter amendment · October 27, 2026 · Approved targets, not installation claims.
+
 ## 1. Purpose and authority
 
 Tempo helps Andy recall his repertoire, learn from his games, prepare for likely opponent replies and common mistakes, and develop longer connected sequences without losing focused practice on difficult moves.
@@ -19,7 +21,7 @@ The first useful feature must not depend on completing an independent Learning r
 | ID | Outcome |
 | --- | --- |
 | R01 | Preserve responsive Study, existing learning history, and reliable review saving. |
-| R02 | Import Lichess and Chess.com games; bring genuine misses on existing introduced cards back to Study within 1–2 days, with at least the learning impact of a Study miss. |
+| R02 | Import Lichess and Chess.com games; bring genuine misses on existing introduced cards back to Study within 1–2 days, with at least the learning impact of a Study miss. Actual encounters with approved repertoire decisions still unintroduced receive priority first introduction. |
 | R03 | Report uncovered opponent responses separately from recall failures. |
 | R04 | Find likely missing repertoire moves using rating-appropriate Explorer and Maia evidence. |
 | R05 | Prefer exact repertoire continuations and familiar responses from similar positions when repairing gaps. |
@@ -55,11 +57,17 @@ A qualifying game miss must have **at least as strong an impact as a Study Again
 
 Apply each logical game/decision effect once. A subsequent genuine Study review updates learning state and settles the corresponding obligation through the same owner. Preserve occurrence time separately from processing time; late imports must not rewind newer learning state. The precise late-evidence policy is a bounded implementation choice, not a prerequisite for the first recent-game case.
 
+An actual covered encounter can justify first introduction whether the expected move was played or missed. Study rechecks current admission and the exact approved mapping; first introduction uses fresh scheduling, with no fake Again, completed review, or backdated introduction. Reuse the same logical game/decision/occurrence identity so later introduction cannot turn the old event into a lapse.
+
+Persist deduplicated historical importance separately from lapse eligibility for both introduced and unintroduced decisions, including misses before introduction or followed by later learning. Correct encounters supply frequency evidence. Do not rewind later learning or reopen settled debt as a new lapse.
+
 ### G03 — Availability is not completion
 
 The card must become available for Study within **1–2 days of detecting/admitting the qualifying miss**, even when Andy does not study. Do not interpret the requirement as a promise that he completes a review in that period.
 
 The obligation survives days without Study, queue rebuilds, restarts, and retries. Daily introduction limits must not silently erase it. Recover overdue obligations when the application resumes. An unrelated active attempt is never replaced underneath the learner.
+
+Encounter first introductions use the same availability goal with honest safety holds. The approved targeted exception bypasses ordinary new-card caps, including zero allowance, and Study-only without changing global settings or ordinary introductions. Full manual pause and foreground, maintenance, security, source, legality, and conflict guards remain effective; report deferral honestly rather than promising availability while held. Use bounded, idempotent batches, not an invented reserve cap.
 
 ### G04 — Optional producers fail independently
 
@@ -91,7 +99,7 @@ Preserve missing/unknown probability mass. Do not renormalize a partial Explorer
 
 Rank eligible, approved, unintroduced opening decisions by expected encounter likelihood, evidence support, and uncertainty—not a statistical-significance test. Deduplicate shared decisions and transpositions. Required reviews and admitted game misses take precedence over discretionary new introductions.
 
-Use one global opening introduction budget with user-selected relative repertoire weights. Depth should follow likely useful encounters rather than requiring every ancestor to reach an arbitrary maturity threshold. Changes to this policy belong to Study's introduction owner; optional analysis supplies rankings, not direct queue writes. Retain the last usable ranking or the existing safe order when evidence is unavailable.
+For discretionary introductions, use one global opening introduction budget with user-selected relative repertoire weights. G03 governs the real-game encounter exception. Depth should follow likely useful encounters rather than requiring every ancestor to reach an arbitrary maturity threshold. Changes to this policy belong to Study's introduction owner; optional analysis supplies rankings, not direct queue writes. Retain the last usable ranking or the existing safe order when evidence is unavailable.
 
 ### S03 — Familiar candidates first, engine-checked in the actual position
 
@@ -172,6 +180,8 @@ Keep **Study**, **Tactics**, **Game review**, **Repertoire**, and small **Settin
 ## 8. Delivery and bounded acceptance
 
 Deliver through the current product, one useful slice at a time. R11 is a separate Study slice and does not block game feedback. Exact-conflict work can proceed independently. Maia refines a useful Explorer-based path; engines are unnecessary for the first game miss.
+
+The immediately next practical bundle reuses the first matching, evidence, delivery, and Study path for bounded already-imported history, first introduction, and historical importance. Full synchronization, new UI, and engines are not prerequisites; existing approved repertoire content needs no new engine evaluation. Target acceptance reports scanned/matched/unresolved/remaining facts and correct versus missed encounters, demonstrates actual first admission with ordinary allowance zero and Study-only on, full-pause deferral, preserved later learning, and no duplicate effect on resume. These are required proofs, not claims of installation.
 
 | Slice | Observable acceptance |
 | --- | --- |

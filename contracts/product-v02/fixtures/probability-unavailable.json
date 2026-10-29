@@ -1,0 +1,48 @@
+{
+  "model": "ProbabilityEvidence",
+  "payload": {
+    "interface_version": "0.2.0",
+    "evidence_id": "synthetic-explorer-evidence",
+    "position": {
+      "fen_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "legal_moves": [
+        "a2a3",
+        "a2a4",
+        "b1a3",
+        "b1c3",
+        "b2b3",
+        "b2b4",
+        "c2c3",
+        "c2c4",
+        "d2d3",
+        "d2d4",
+        "e2e3",
+        "e2e4",
+        "f2f3",
+        "f2f4",
+        "g1f3",
+        "g1h3",
+        "g2g3",
+        "g2g4",
+        "h2h3",
+        "h2h4"
+      ]
+    },
+    "provider": "lichess_explorer",
+    "model": null,
+    "basis": "population",
+    "population": {
+      "rating_min": 1600,
+      "rating_max": 2000,
+      "time_controls": [
+        "rapid",
+        "classical"
+      ]
+    },
+    "personal_account": null,
+    "observed_at": null,
+    "distribution": null,
+    "counts": null,
+    "unavailable_reason": "provider_unavailable"
+  }
+}

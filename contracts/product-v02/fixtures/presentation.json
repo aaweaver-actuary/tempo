@@ -1,0 +1,26 @@
+{
+  "model": "Presentation",
+  "payload": {
+    "interface_version": "0.2.0",
+    "presentation_id": "existing-A",
+    "revision": 1,
+    "repertoire_id": "white",
+    "repertoire_revision": 1,
+    "variant": "standard",
+    "learner_color": "white",
+    "route_id": "route-a",
+    "components": [
+      {
+        "decision_id": "decision-e4",
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "response_uci": "e2e4",
+        "resulting_position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -"
+      }
+    ],
+    "opponent_cues": [],
+    "clean_streak": 3,
+    "introduced": true,
+    "lineage": [],
+    "recorded_parent_id": null
+  }
+}

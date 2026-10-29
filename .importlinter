@@ -93,6 +93,7 @@ ignore_imports =
     app.games.** -> app.games.**
     app.games.** -> app.contracts.**
     app.games.** -> app.chess.**
+    app.games.** -> app.study.interfaces.game_priority
 unmatched_ignore_imports_alerting = none
 broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
 

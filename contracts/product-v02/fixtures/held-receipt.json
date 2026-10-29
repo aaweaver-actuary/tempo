@@ -1,0 +1,20 @@
+{
+  "model": "LearningReceipt",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-game",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source_revision": 2,
+    "status": "held",
+    "outcome": "accepted",
+    "owner_receipt_id": "study-owner-receipt",
+    "admitted_at": null,
+    "available_by": null,
+    "applied_at": null,
+    "reason": "source_changed_before_original_arrived"
+  }
+}

@@ -146,10 +146,22 @@ def is_postgres_connection(database) -> bool:
     return isinstance(database, PostgresConnection)
 
 
+def prepare_presentation_queries(miss_reason: str):
+    """Compile immutable availability SQL before opening a short read/write unit.
+
+    Native array parameters keep this one query shape at every queue/page size.
+    No data, eligibility result or mutable authority is cached here.
+    """
+    return postgres_store.postgres_sql(available_attempt_sql(miss_reason))
+
+
 def presentation_facts(database, day, miss_reason: str, *, read=None, after_entry_id=None, limit=None):
     """Capture eligibility and attempt protection without changing membership."""
+    native = read is None and isinstance(database, PostgresConnection)
     if read is None:
-        read = lambda statement, parameters: database.execute(statement, parameters).fetchall()
+        read = (lambda statement, parameters: database.execute_native(
+                    statement.replace('?', '%s'), parameters).fetchall()) if native else (
+                    lambda statement, parameters: database.execute(statement, parameters).fetchall())
     # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
     presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
                  if postgres_store.configured() else "0")
@@ -174,6 +186,14 @@ def presentation_facts(database, day, miss_reason: str, *, read=None, after_entr
     rows = [dict(row) for row in read(statement, tuple(parameters))]
     if not rows:
         return rows, set(), set()
+    if native:
+        reviewed = {row[0] for row in database.execute_native(
+            "SELECT DISTINCT card_id FROM reviews WHERE invalidated_at IS NULL AND card_id=ANY(%s)",
+            ([row['card_id'] for row in rows],)).fetchall()}
+        eligible = {row[0] for row in database.execute_native(
+            prepare_presentation_queries(miss_reason) + " AND q.id=ANY(%s)",
+            (day, [row['id'] for row in rows])).fetchall()}
+        return rows, reviewed, eligible
     placeholders = ','.join('?' for _ in rows)
     reviewed = {row[0] for row in read(
         "SELECT DISTINCT card_id FROM reviews WHERE invalidated_at IS NULL AND card_id IN (" + placeholders + ")",
@@ -183,3 +203,28 @@ def presentation_facts(database, day, miss_reason: str, *, read=None, after_entr
                                      (day, *(row['id'] for row in rows)))}
 
     return rows, reviewed, eligible
+
+
+def priority_ownership_state(database, day):
+    """Fence queued ownership/identity and issuance, not derived eligibility policy.
+
+    The target's current admission/content/source is independently fenced by Study.
+    Ordering never grants eligibility to another card. Changed owners or protected
+    attempts invalidate prepared positions; no whole-queue domain query runs here.
+    Uncorrelated membership sets avoid a historical-evidence scan per queued row
+    when current-day statistics underestimate queue size. Nullable legacy evidence
+    IDs must remain False, matching the original EXISTS predicates.
+    """
+    return database.execute_native("""WITH owned AS (
+        SELECT q.id,jsonb_build_array(q.id,q.card_id,q.xmin::text,c.xmin::text,
+            COALESCE((q.id,c.id,c.revision) IN (SELECT o.queue_entry_id,o.card_id,o.revision
+                FROM queue_attempt_origins o WHERE o.issued_as_head=1),FALSE),
+            q.id IN (SELECT a.queue_entry_id FROM opening_evidence_attempts a
+                WHERE a.queue_entry_id IS NOT NULL),
+            c.id IN (SELECT t.card_id FROM teaching_states t))::text value
+        FROM daily_queue q JOIN cards c ON c.id=q.card_id
+        WHERE q.queue_date=%s AND q.status='queued'
+    ) SELECT encode(sha256(convert_to(
+        COALESCE((SELECT string_agg(value,',' ORDER BY id) FROM owned),'') || '|' ||
+        COALESCE((SELECT xmin::text FROM frozen_opening_activation WHERE id=1),'') || '|' ||
+        COALESCE((SELECT xmin::text FROM settings WHERE id=1),''),'UTF8')),'hex')""",(day,)).fetchone()[0]

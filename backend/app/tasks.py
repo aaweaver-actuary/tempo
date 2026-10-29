@@ -38,6 +38,8 @@ from . import settings_commands  # noqa: F401 - registers foreground settings co
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
+from .product_composition.feedback_commands import register_commands as register_product_feedback_commands
+register_product_feedback_commands()
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
@@ -286,6 +288,37 @@ def bounded_maintenance(function):
     return bounded
 
 
+@celery_app.task(name="app.tasks.maintain_game_feedback", base=CoalescedWakeTask)
+@bounded_maintenance
+def maintain_game_feedback() -> bool:
+    """Resume one persisted Study effect without the optional Games worker."""
+    from .product_composition.feedback_maintenance import claim_feedback_sweep, execute_feedback_sweep
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+    task = None
+    try:
+        with activity_gate.background_job("study_game_feedback", "one-slice", yielding=True):
+            task = claim_feedback_sweep()
+            if task is None:
+                return False
+            complete = execute_feedback_sweep(task)
+        if not complete:
+            celery_app.send_task("app.tasks.maintain_game_feedback", countdown=1, queue="foreground")
+        return True
+    except BackgroundAdmissionDeferred:
+        if task is not None:
+            defer_task_for_foreground(task)
+        return False
+    except CurrentDecisionUnavailable as error:
+        _LOGGER.info("Study feedback maintenance deferred: %s", error.reason)
+        if task is not None:
+            defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+        return False
+    except (LockNotAvailable, DeadlockDetected, SerializationFailure, TransactionTimeout):
+        if task is not None:
+            defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+        return False
+
+
 @celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)
 @bounded_maintenance
 def recover_operations() -> bool:
@@ -326,6 +359,13 @@ def poll_background_tasks(self) -> bool:
         if queue_refresh_wake:
             wake_queue_refresh_after_foreground_denial()
         return False
+    if claimed_task is None and study_only_enabled():
+        try:
+            activity_gate.check_background_admission()
+            with activity_gate.background_job('dispatch','explicit-import',yielding=True):
+                claimed_task=claim_task(explicit_imports_only=True)
+        except BackgroundAdmissionDeferred:
+            return False
     if claimed_task is None:
         return False
     return _execute_claimed_background_slice(
@@ -395,9 +435,13 @@ def _execute_claimed_background_slice(
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"], yielding=True):
         try:
             activity_gate.check_background_admission()
-            if claimed_task['kind'] not in STUDY_TASK_KINDS and study_only_enabled():
-                defer_task_for_foreground(claimed_task)
-                return False
+            explicit_origin = claimed_task.get('payload', {}).get('origin_import_operation_id')
+            if claimed_task['kind'] not in STUDY_TASK_KINDS and (study_only_enabled() or explicit_origin):
+                from .services.explicit_repertoire_import import permitted_delivery
+                if not permitted_delivery(claimed_task):
+                    defer_task_for_foreground(claimed_task)
+                    return False
+                claimed_task={**claimed_task,'explicit_import_preparation':True}
             if defer_paused_defensive_task(claimed_task):
                 return False
             if not current_delivery(claimed_task):

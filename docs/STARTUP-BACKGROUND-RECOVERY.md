@@ -1,5 +1,30 @@
 # Startup and background recovery
 
+## PostgreSQL init supervision
+
+The production and independent disposable PostgreSQL definitions use Docker
+`init: true`. Init owns PID 1 and reaps unrelated adopted children; PostgreSQL
+remains responsible for its own database backends. Image, healthcheck, resource,
+connection-pool and transaction settings are unchanged.
+
+The owning regression is
+`backend/tests/test_postgres_init_supervision.py::test_orphan_exit_two_is_reaped_by_init_without_postgres_recovery`,
+selected with `make python-file FILE=backend/tests/test_postgres_init_supervision.py`.
+It compares one no-init and one init-enabled container using an already-present
+image, isolated temporary storage and no exposed ports or production credentials.
+The artificial orphan exits normally with code 2. The fixed case requires the
+original held backend and committed sentinel to survive, actual orphan reaping,
+normal readiness, graceful shutdown and verified task-owned cleanup. A passing
+comparison demonstrates the mechanism and mitigation, not the identity of historical PID 499653 or an API
+pool's recovery after a database restart.
+
+This source setting is not an installation claim. Applying it requires a
+separately approved PostgreSQL container recreation; a Compose restart does not
+apply changed container configuration. That release must verify its exact target,
+existing image and data volume through the established preservation/shutdown
+procedure. Preserve #547, accepted priority receipts, reviews, attempts, queue
+origins and unsent browser intents. No live recreation command is supplied here.
+
 ## Repair checklist and finding status
 
 - [x] Historical startup cause reproduced: the API image required schema 17 while the PostgreSQL migration ledger contained versions 1–16; API lifespan startup failed. On 2026-09-29 the selected Docker context had no product containers or images and port 8000 was not listening, so the current live state is unverified. No live migration has been run.

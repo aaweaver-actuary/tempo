@@ -255,6 +255,27 @@ def test_postgres_graph_classifies_eight_cards_after_publication(monkeypatch):
     assert transitions[-1][0] == "integrity"
 
 
+def test_explicit_import_cannot_reclassify_existing_learned_or_issued_card(monkeypatch):
+    import pytest
+    monkeypatch.setattr(postgres_opening_graph, 'lock_current_slice', lambda *a: True)
+    monkeypatch.setattr(postgres_opening_graph.storage, 'classification', lambda *a: (True, True))
+    monkeypatch.setattr(postgres_opening_graph.storage, 'protected_card', lambda *a: True)
+    monkeypatch.setattr(postgres_opening_graph.storage, 'classify_card', lambda *a: pytest.fail('Protected card mutated'))
+    task = {'explicit_import_preparation': True, 'payload': {'local_day': '2026-10-28'}}
+    with pytest.raises(ValueError, match='protected card'):
+        postgres_opening_graph.classify_graph_cards_in_transaction(object(), task, ('existing-card',))
+
+
+def test_explicit_import_cannot_retire_existing_membership_or_active_queue(monkeypatch):
+    import pytest
+    monkeypatch.setattr(postgres_opening_graph, 'lock_current_slice', lambda *a: True)
+    monkeypatch.setattr(postgres_opening_graph, 'remove_obsolete_graph_memberships', lambda *a: pytest.fail('Existing content retired'))
+    task = {'explicit_import_preparation': True, 'generation': 2, 'payload': {'repertoire_id': 'rep'}}
+    prepared = postgres_opening_graph.PreparedGraphCleanupSlice(('existing-card',), 'existing-card')
+    with pytest.raises(ValueError, match='retire existing graph cards'):
+        postgres_opening_graph.cleanup_graph_cards_in_transaction(object(), task, prepared)
+
+
 def test_postgres_graph_integrity_refreshes_two_cards_before_cleanup(monkeypatch):
     statements = []
     transitions = []
