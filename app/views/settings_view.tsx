@@ -708,7 +708,7 @@ export default function SettingsView({
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
           {activeSection === "games" && <CurrentGameSyncSettings />}
-          <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
+          <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
           <label>
             <span>Lichess username</span>
             <TextInput disabled={!settingsLoaded}
