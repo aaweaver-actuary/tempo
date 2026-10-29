@@ -26,8 +26,12 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
         'database/PERSISTENCE-DISPOSITION.md','database/SIMPLIFICATION.md'].includes(path))) {
       reasons.push(`${path}: prose`); continue;
     }
+    // Only these reviewed fixture paths may reach certificate validation below.
+    // Explicit FULL paths and every other invariant/unknown path still fail closed.
+    const certifiedDatabaseFixture = ['database/tests/check_postgres_redis_admission.py',
+      'database/tests/check_postgres_redis_fixture_isolation.py'].includes(path);
     if (inventory.fullPaths.includes(path)
-      || /(?:auth|security|database|postgres_store|postgres_readiness|command_executor|redis_admission_gate)/i.test(path)
+      || (!certifiedDatabaseFixture && /(?:auth|security|database|postgres_store|postgres_readiness|command_executor|redis_admission_gate)/i.test(path))
       || /^docker|\.ya?ml$|\.lock$/.test(path)) { full(`${path}: global invariant or qualification infrastructure`); continue; }
     if (certifications.length) {
       try { certificateValid ??= validateCertificate(certificate, certificateSources ?? readCertificateSources()); }
