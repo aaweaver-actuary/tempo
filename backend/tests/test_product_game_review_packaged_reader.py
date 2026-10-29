@@ -362,10 +362,20 @@ print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
     assert original.owner_receipt_id == cached["owner_receipt_id"]
     assert original.admission_status == "pending" and original.available_by is None
 
-    # Only broker publication occurs in the helper. The real registered task
-    # performs default capture/admission in the separate foreground worker.
-    helper("refresh")
-    available = wait_for(current_receipt, lambda value: value.admission_status == "available")
+    # Beat is deliberately absent from this finite fixture. Supply bounded
+    # wakes through the SAME registered/coalesced task, as the existing browser
+    # fixture does, so one valid transaction deferral cannot starve recovery.
+    # Claim/admission/backoff, the 250ms transaction bound and assertions stay
+    # unchanged; there is no direct sweep or queue mutation in the helper.
+    next_wake = 0.0
+    def refreshed_receipt():
+        nonlocal next_wake
+        value = current_receipt()
+        if value.admission_status == "pending" and time.monotonic() >= next_wake:
+            helper("refresh")
+            next_wake = time.monotonic()+2
+        return value
+    available = wait_for(refreshed_receipt, lambda value: value.admission_status == "available")
     assert available.owner_receipt_id == original.owner_receipt_id
     assert available.detected_at == original.detected_at
     after_refresh = helper("settlement-state")
