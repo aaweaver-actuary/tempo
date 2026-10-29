@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
-import { evaluateQuality, deploymentAllowed } from "../../scripts/ci-quality.mjs";
+import { evaluateQuality } from "../../scripts/ci-quality.mjs";
 import { executeLayer, layerCommands, browserResults } from "../../scripts/ci-run-layer.mjs";
 import { postgresTestStages } from "../../database/tests/postgres-test-plan.mjs";
 
@@ -431,14 +431,20 @@ test("split complete coverage preserves every PostgreSQL product scenario", () =
   assert(runner.includes('randomBytes(4).toString("hex")')); assert(runner.includes("verifyProjectIsUnused"));
 });
 
-test("deployment requires complete verification and scheduled or verification-only runs cannot deploy", () => {
-  const common = { event: "push", ref: "refs/heads/main", scope: "complete", quality: "success" };
-  assert(deploymentAllowed(common));
-  for (const override of [{ event: "schedule" }, { event: "pull_request" }, { event: "merge_group" }, { scope: "targeted" }, { quality: "failure" }, { ref: "refs/heads/feature" }, { event: "workflow_dispatch", verificationOnly: true }]) assert.equal(deploymentAllowed({ ...common, ...override }), false);
-  assert(deploymentAllowed({ ...common, event: "workflow_dispatch", verificationOnly: false }));
+test("workflow verification has no Pages publishing", () => {
   const workflow = readFileSync(".github/workflows/pages.yml", "utf8");
+  for (const name of readdirSync(".github/workflows").filter(name => /\.ya?ml$/.test(name))) {
+    const source = readFileSync(`.github/workflows/${name}`, "utf8");
+    assert(!/actions\/(?:configure-pages|upload-pages-artifact|deploy-pages)@/.test(source), `${name} must not publish Pages`);
+    assert(!/^\s*(?:pages-build|deploy):\s*$/m.test(source), `${name} must not own Pages publishing jobs`);
+    assert(!/^\s*(?:pages|id-token):\s*write\s*$/m.test(source), `${name} must not request publishing permissions`);
+  }
+  assert(!workflow.includes("verification_only"));
+  for (const event of ["push", "pull_request", "release", "merge_group", "schedule", "workflow_dispatch"])
+    assert(workflow.includes(`  ${event}:`), `${event} verification must remain available`);
+  assert(workflow.includes("  merge-gate:\n"));
+  assert(workflow.includes("node scripts/ci-quality.mjs"));
   assert(workflow.includes("cron: '0 7 * * *'")); assert(workflow.includes("if: always() && needs.plan.result == 'success'\n    needs: [plan,"));
-  assert.equal(workflow.split("inputs.verification_only == false").length - 1, 2);
   for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    if: needs.plan.outputs.${layer} == 'true'\n    uses: ./.github/workflows/${layer === "browser" ? "verify-browser" : "verify-layer"}.yml`));
   assert(workflow.includes("lifecycle: ${{ steps.inventory.outputs.lifecycle }}"));
   assert(workflow.includes("  lifecycle:\n    needs: plan\n    if: needs.plan.outputs.lifecycle == 'true'\n    uses: ./.github/workflows/verify-layer.yml"));

@@ -85,11 +85,6 @@ export function evaluateQuality(plan, needs, reports, { development = false, cur
   return { success: failures.length === 0, failures, nonblocking };
 }
 
-export function deploymentAllowed({ event, ref, scope, quality, verificationOnly = true }) {
-  return quality === "success" && scope === "complete" && ref === "refs/heads/main"
-    && (event === "push" || (event === "workflow_dispatch" && !verificationOnly));
-}
-
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const planPath = "test-results/ci/plan.json";
   const plan = existsSync(planPath) ? JSON.parse(readFileSync(planPath, "utf8")) : null;

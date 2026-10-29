@@ -5578,3 +5578,16 @@ scope, conflict, pending, lost-ack and unmount/remount cases; the original save
 bytes/manual-run ID survive until terminal confirmation. No provider packaging
 or Study maintenance cases are moved into these files. These are preserved
 regressions, not a claim that the current-main extraction was executed.
+
+### #589 Study feedback claimed-slice recovery (extracted from #580)
+
+Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake ownership:
+`test_issue558_study_feedback_periodic_and_retry_wakes_are_coalesced` in
+`backend/tests/test_background_wakes.py`. Named regressions cover typed deadline
+and connection loss after claim, fresh-writer recovery before wake, unchanged
+checkpoint/failure budget, successor generation and lost commit acknowledgment,
+and failed cleanup leaving normal lease recovery rather than a retry loop.
+## Workflow publishing removal — October 29, 2026
+
+- `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
+- `CI isolates cancellation, caches dependencies and requires split complete verification` retains verification cancellation, dependency caches and complete-plan/quality wiring after the obsolete publishing job is removed. Its existing PostgreSQL test-speedups wrapper remains the regular owner.

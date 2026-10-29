@@ -271,6 +271,16 @@ def execute_background_command(
 _maintenance_cooldowns = {}
 
 
+def _wake_feedback_retry(eligible_at):
+    """Advisory wake after the recovery transaction; periodic recovery survives loss."""
+    try:
+        celery_app.send_task('app.tasks.maintain_game_feedback', eta=eligible_at,
+                             queue='foreground', retry=False, ignore_result=True)
+    except Exception as error:
+        _LOGGER.warning('Study feedback wake unavailable error_class=%s; durable retry retained',
+                        type(error).__name__)
+
+
 def bounded_maintenance(function):
     """Setup failures retain durable work and release worker capacity with backoff."""
     @wraps(function)
@@ -317,9 +327,21 @@ def maintain_game_feedback() -> bool:
         if task is not None:
             defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
         return False
-    except (LockNotAvailable, DeadlockDetected, SerializationFailure, TransactionTimeout):
+    except TransactionTimeout:
+        if task is None:
+            raise
+        defer_task_for_transaction_timeout(task, TransactionTimeout('transaction_deadline'),
+                                           wake=_wake_feedback_retry)
+        return False
+    except (LockNotAvailable, DeadlockDetected, SerializationFailure):
         if task is not None:
             defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+        return False
+    except (psycopg.OperationalError, psycopg.InterfaceError):
+        if task is None:
+            raise
+        from .services.durable_tasks import defer_task_for_connection_failure
+        defer_task_for_connection_failure(task, wake=_wake_feedback_retry)
         return False
 
 

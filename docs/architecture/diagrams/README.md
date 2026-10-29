@@ -6,6 +6,9 @@ Database table/key/field views live in the [database directory index](../../../d
 
 The [current backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; reviewing or relocating source does not establish deployment isolation.
 
+The [verification workflow view](../../../.github/workflows/README.md#verification-without-publishing)
+records source-only checks and the removal of Pages publication.
+
 ## Source and status
 
 **SOURCE IMPLEMENTED / #503:** [Study recombination](../../../backend/app/study/recombination/README.md)
