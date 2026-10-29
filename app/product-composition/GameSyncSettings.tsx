@@ -4,6 +4,7 @@ import { Button } from "../components/buttons/BaseButton";
 import { createGameReviewApi } from "../features/game-review/api";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "../lib/operation-status";
 import { API_URL } from "../const";
+import { readPendingProductGameSync, storePendingProductGameSync, clearPendingProductGameSync } from "../../database/browser/adapters/games-analysis/game-sync";
 
 const configurationSchema = z.object({
   workspace_id: z.string(), provider: z.enum(["lichess", "chesscom"]), account: z.string().min(1),
@@ -21,11 +22,34 @@ const client = createGameReviewApi({ fetch: (...argumentsList) => globalThis.fet
   sync: `${gameReviewBase}/sync`, retryFeedback: `${gameReviewBase}/feedback/retry`,
 } });
 type PendingSave = { operationId: string; body: string };
+const pendingMutationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("save"), operationId: z.string().min(1).max(128), body: z.string() }).strict(),
+  z.object({ kind: z.literal("run"), provider: z.enum(["lichess", "chesscom"]), operation_id: z.string().min(1).max(128) }).strict(),
+]);
+
+function recoverMutation(scope: string, workspaceId: string) {
+  try {
+    const raw = typeof window === "undefined" ? null : readPendingProductGameSync(scope);
+    const pending = raw === null ? null : pendingMutationSchema.parse(JSON.parse(raw));
+    let provider: Provider = pending?.kind === "run" ? pending.provider : "lichess";
+    if (pending?.kind === "save") {
+      const body = z.object({ expected_revision: z.number().int().nonnegative(), configuration: configurationSchema }).parse(JSON.parse(pending.body));
+      if (body.configuration.workspace_id !== workspaceId) throw new Error("workspace mismatch");
+      provider = body.configuration.provider;
+    }
+    return { pending, provider, error: "" };
+  } catch {
+    return { pending: null, provider: "lichess" as Provider,
+      error: "The original Games request could not be read. Restore browser data before starting another request." };
+  }
+}
 
 export function GameSyncSettings({ workspaceId, repertoires }: {
   workspaceId: string; repertoires: readonly { id: string; name: string }[];
 }) {
-  const [provider, setProvider] = useState<Provider>("lichess");
+  const scope = `${gameReviewBase}:${workspaceId}`;
+  const [recovery] = useState(() => recoverMutation(scope, workspaceId));
+  const [provider, setProvider] = useState<Provider>(recovery.provider);
   const [loaded, setLoaded] = useState<Configuration | null>(null);
   const [account, setAccount] = useState("");
   const [start, setStart] = useState("");
@@ -38,14 +62,22 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [generation, setGeneration] = useState(0);
-  const pendingSave = useRef<PendingSave | null>(null);
-  const pendingRun = useRef<{ provider: Provider; operation_id: string } | null>(null);
-  const [unconfirmed, setUnconfirmed] = useState(false);
-  const [runPending, setRunPending] = useState(false);
+  const pendingSave = useRef<PendingSave | null>(recovery.pending?.kind === "save" ? recovery.pending : null);
+  const pendingRun = useRef<{ provider: Provider; operation_id: string } | null>(recovery.pending?.kind === "run"
+    ? { provider: recovery.pending.provider, operation_id: recovery.pending.operation_id } : null);
+  const [unconfirmed, setUnconfirmed] = useState(recovery.pending?.kind === "save");
+  const [runPending, setRunPending] = useState(recovery.pending?.kind === "run");
+
+  function clearMutation(operationId: string) {
+    const raw = readPendingProductGameSync(scope);
+    const current = raw === null ? null : pendingMutationSchema.parse(JSON.parse(raw));
+    if (current && (current.kind === "save" ? current.operationId : current.operation_id) === operationId)
+      clearPendingProductGameSync(scope);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError(recovery.error); setMessage("");
     setLoaded(null); setAccount(""); setStart(""); setEnd("");
     setSpeeds([]); setRepertoires([]); setRated(""); setInterval("");
     void (async () => {
@@ -70,7 +102,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       }
     })();
     return () => controller.abort();
-  }, [provider, generation]);
+  }, [provider, generation, recovery.error]);
 
   async function save() {
     setMessage(""); setError("");
@@ -83,7 +115,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
     setBusy(true);
     try {
       const retry = pendingSave.current !== null;
-      if (!pendingSave.current) pendingSave.current = { operationId: crypto.randomUUID(),
+      const pending = pendingSave.current ?? { operationId: crypto.randomUUID(),
         body: JSON.stringify({ expected_revision: loaded?.revision ?? 0, configuration: {
           workspace_id: workspaceId, provider, account: account.trim(),
           window: { start_at: new Date(start + "Z").toISOString(), end_at: new Date(end + "Z").toISOString(), precision: "millisecond" },
@@ -92,7 +124,8 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
           revision: (loaded?.revision ?? 0) + 1,
         } }),
       };
-      const pending = pendingSave.current;
+      storePendingProductGameSync(scope, { kind: "save", ...pending });
+      pendingSave.current = pending;
       setUnconfirmed(true);
       let response = retry
         ? await readOperationResponse(pending.operationId, { allowMissing: true, fetch: globalThis.fetch })
@@ -106,15 +139,18 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       response = await confirmOperationResponse(response, { fetch: globalThis.fetch });
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
-          pendingSave.current = null; setUnconfirmed(false);
+          clearMutation(pending.operationId); pendingSave.current = null; setUnconfirmed(false);
         }
         throw new Error(response.status === 409 ? "Settings changed or a sync is still active. Refresh after it finishes before saving." : "Could not save game sync settings. Retry the original save to confirm its result.");
       }
       setLoaded(configurationSchema.parse(await response.json()));
-      pendingSave.current = null; setUnconfirmed(false);
+      clearMutation(pending.operationId); pendingSave.current = null; setUnconfirmed(false);
       setMessage("Game sync settings saved.");
     } catch (failure) {
-      if (failure instanceof FailedOperationError) { pendingSave.current = null; setUnconfirmed(false); }
+      if (failure instanceof FailedOperationError) {
+        try { clearMutation(failure.operationId); pendingSave.current = null; setUnconfirmed(false); }
+        catch { setError("The save result is known, but its original browser request could not be cleared. Reopen Settings to recover it."); return; }
+      }
       setError(failure instanceof PendingOperationError ? "Game sync settings are still pending. Retry the original save to check its result."
         : failure instanceof Error ? failure.message : "Could not save settings. Retry the original save to confirm its result.");
     }
@@ -124,20 +160,25 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
   async function run() {
     setBusy(true); setError(""); setMessage("");
     try {
-      if (!pendingRun.current) pendingRun.current = { provider, operation_id: crypto.randomUUID() };
+      const pending = pendingRun.current ?? { provider, operation_id: crypto.randomUUID() };
+      storePendingProductGameSync(scope, { kind: "run", ...pending });
+      pendingRun.current = pending;
       setRunPending(true);
       const result = await client.sync(pendingRun.current);
-      pendingRun.current = null; setRunPending(false);
+      clearMutation(pending.operation_id); pendingRun.current = null; setRunPending(false);
       setMessage(`${provider === "lichess" ? "Lichess" : "Chess.com"} sync: ${result.status}.`);
     } catch (failure) {
-      if (failure instanceof FailedOperationError) { pendingRun.current = null; setRunPending(false); }
+      if (failure instanceof FailedOperationError) {
+        try { clearMutation(failure.operationId); pendingRun.current = null; setRunPending(false); }
+        catch { setError("The run result is known, but its original browser request could not be cleared. Reopen Settings to recover it."); return; }
+      }
       setError(failure instanceof Error ? failure.message : "Could not request sync. Retry the original request to check its result.");
     }
     finally { setBusy(false); }
   }
 
   const toggle = (values: string[], value: string) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
-  const controlsDisabled = busy || unconfirmed || runPending;
+  const controlsDisabled = busy || unconfirmed || runPending || Boolean(recovery.error);
   return <section aria-label="Game sync settings">
     <h2>Game sync</h2>
     <p>Choose the games to import. Recurring sync uses this exact UTC window; change it when you want a different range.</p>
@@ -159,8 +200,8 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
     </label>)}</fieldset>
     <label>Recurring sync interval (seconds; blank is off)<input type="number" min={60} max={86400} value={interval} disabled={controlsDisabled} onChange={event => setInterval(event.target.value)} /></label>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-    <Button pending={busy} disabled={runPending} onClick={() => void save()}>{unconfirmed ? "Retry settings save" : "Save game sync settings"}</Button>
-    <Button disabled={busy || !loaded || unconfirmed} onClick={() => void run()}>{runPending ? "Retry saved game sync" : "Run saved game sync"}</Button>
+    <Button pending={busy} disabled={runPending || Boolean(recovery.error)} onClick={() => void save()}>{unconfirmed ? "Retry settings save" : "Save game sync settings"}</Button>
+    <Button disabled={busy || !loaded || unconfirmed || Boolean(recovery.error)} onClick={() => void run()}>{runPending ? "Retry saved game sync" : "Run saved game sync"}</Button>
     <Button disabled={controlsDisabled} onClick={() => setGeneration(value => value + 1)}>Refresh game sync settings</Button>
   </section>;
 }

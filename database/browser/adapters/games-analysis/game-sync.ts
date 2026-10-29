@@ -11,3 +11,17 @@ export function storePendingGameSync(pending: object): void {
 export function clearPendingGameSync(): void {
   localStorage.removeItem(pendingKey);
 }
+
+const productPendingKey = (scope: string) => `tempo-pending-product-game-sync-v1:${encodeURIComponent(scope)}`;
+
+export function readPendingProductGameSync(scope: string): string | null {
+  return localStorage.getItem(productPendingKey(scope));
+}
+
+export function storePendingProductGameSync(scope: string, pending: object): void {
+  localStorage.setItem(productPendingKey(scope), JSON.stringify(pending));
+}
+
+export function clearPendingProductGameSync(scope: string): void {
+  localStorage.removeItem(productPendingKey(scope));
+}

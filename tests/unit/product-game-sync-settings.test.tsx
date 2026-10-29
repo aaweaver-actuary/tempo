@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { GameSyncSettings } from "../../app/product-composition/GameSyncSettings";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 const repertoires = [{ id: "white", name: "Synthetic white" }];
 const saved = { workspace_id: "legacy", provider: "lichess", account: "Learner",
   window: { start_at: "2026-10-01T00:00:00Z", end_at: "2026-11-01T00:00:00Z", precision: "millisecond" },
@@ -119,5 +119,59 @@ it("keeps a manual sync identity through transport failure and makes an acknowle
   expect((screen.getByLabelText("Game provider") as HTMLSelectElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Retry saved game sync" }));
   await screen.findByText("Lichess sync: pending.");
+  expect(posts[1].body).toBe(posts[0].body);
+});
+
+it("recovers the original lost-ack settings operation and immutable bytes after the Games tab remounts", async () => {
+  const posts: RequestInit[] = [];
+  const fetch = vi.fn((url: string, init?: RequestInit) => {
+    if (url.includes("/operations/")) return Promise.resolve(new Response(null, { status: 404 }));
+    if (init?.method !== "POST") return Promise.resolve(response({ ...saved, revision: posts.length ? 2 : 1 }));
+    posts.push(init);
+    return posts.length === 1 ? Promise.reject(new TypeError("acknowledgment lost"))
+      : Promise.resolve(response({ ...saved, revision: 2 }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  const first = render(<GameSyncSettings workspaceId="legacy" repertoires={repertoires} />);
+  await waitFor(() => expect((screen.getByLabelText("Game account") as HTMLInputElement).value).toBe("Learner"));
+  fireEvent.click(screen.getByRole("button", { name: "Save game sync settings" }));
+  await screen.findByRole("alert");
+  first.unmount();
+  render(<GameSyncSettings workspaceId="legacy" repertoires={repertoires} />);
+  const retry = await screen.findByRole("button", { name: "Retry settings save" });
+  await waitFor(() => expect((screen.getByLabelText("Game account") as HTMLInputElement).value).toBe("Learner"));
+  expect((screen.getByLabelText("Game account") as HTMLInputElement).disabled).toBe(true);
+  expect(screen.queryByText("Game sync settings saved.")).toBeNull();
+  fireEvent.click(retry);
+  await screen.findByText("Game sync settings saved.");
+  expect(posts).toHaveLength(2);
+  expect(posts[1].body).toBe(posts[0].body);
+  expect(posts[1].headers).toEqual(posts[0].headers);
+  expect(JSON.parse(String(posts[1].body)).expected_revision).toBe(1);
+});
+
+it("recovers the same lost-ack manual run after unmount without creating a second operation", async () => {
+  const posts: RequestInit[] = [];
+  const fetch = vi.fn((_url: string, init?: RequestInit) => {
+    if (init?.method !== "POST") return Promise.resolve(response(saved));
+    posts.push(init);
+    return posts.length === 1 ? Promise.reject(new TypeError("acknowledgment lost")) : Promise.resolve(response({
+      provider: "lichess", status: "pending", operation_id: JSON.parse(String(init.body)).operation_id, error: null,
+    }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  const first = render(<GameSyncSettings workspaceId="legacy" repertoires={repertoires} />);
+  await waitFor(() => expect((screen.getByLabelText("Game account") as HTMLInputElement).value).toBe("Learner"));
+  fireEvent.click(screen.getByRole("button", { name: "Run saved game sync" }));
+  await screen.findByRole("alert");
+  first.unmount();
+  render(<GameSyncSettings workspaceId="legacy" repertoires={repertoires} />);
+  const retry = await screen.findByRole("button", { name: "Retry saved game sync" });
+  await waitFor(() => expect((screen.getByLabelText("Game account") as HTMLInputElement).value).toBe("Learner"));
+  expect((screen.getByLabelText("Game provider") as HTMLSelectElement).disabled).toBe(true);
+  expect(screen.queryByText("Lichess sync: pending.")).toBeNull();
+  fireEvent.click(retry);
+  await screen.findByText("Lichess sync: pending.");
+  expect(posts).toHaveLength(2);
   expect(posts[1].body).toBe(posts[0].body);
 });
