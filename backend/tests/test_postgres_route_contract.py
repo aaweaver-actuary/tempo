@@ -24,17 +24,19 @@ TREATMENTS = {
 
 def test_postgres_route_contract_matches_registered_endpoints():
     declared_routes = json.loads(CONTRACT_PATH.read_text())
-    actual_routes = {
+    registered_routes = [
         (method, route.path, route.name)
         for route in app.routes if route.path.startswith("/api")
         for method in route.methods - {"HEAD", "OPTIONS"}
-    }
+    ]
+    actual_routes = set(registered_routes)
     declared_keys = {
         (row["method"], row["path"], row["handler"])
         for row in declared_routes
     }
 
     assert len(declared_routes) == len(declared_keys)
+    assert len(registered_routes) == len(actual_routes)
     assert declared_keys == actual_routes
     assert all(row["treatment"] in TREATMENTS for row in declared_routes)
     assert all(row["state"] in {"staged", "blocked"} for row in declared_routes)
@@ -48,12 +50,42 @@ def test_postgres_route_contract_matches_registered_endpoints():
                if row["method"] != "GET")
 
 
-def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
+def test_postgres_route_contract_tracks_remaining_blocked_product_routes(monkeypatch):
     declared_routes = json.loads(CONTRACT_PATH.read_text())
-    blocked_handlers = {row["handler"] for row in declared_routes
-                        if row["state"] == "blocked"}
+    blocked_routes = {(row["method"], row["path"], row["handler"])
+                      for row in declared_routes if row["state"] == "blocked"}
 
-    assert blocked_handlers == set()
+    # These writes remain refused until their durable command wiring lands.
+    assert blocked_routes == {
+        ("POST", "/api/product/game-review/sync", "sync"),
+        ("POST", "/api/product/game-review/feedback/retry", "retry_feedback"),
+        ("POST", "/api/product/game-review/configuration", "configure"),
+    }
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+
+    async def probe_routes():
+        for method, path, handler in sorted(blocked_routes):
+            request = Request({
+                "type": "http", "method": method, "path": path,
+                "headers": [], "query_string": b"", "scheme": "http",
+                "server": ("test", 80),
+            })
+            downstream_called = False
+
+            async def downstream(_request):
+                nonlocal downstream_called
+                downstream_called = True
+                return Response(status_code=204)
+
+            response = await main.prioritize_foreground_requests(request, downstream)
+            route = (method, path, handler)
+            assert response.status_code == 503, route
+            assert json.loads(response.body) == {
+                "detail": "This write route is awaiting its Celery cutover; use the current local Docker service.",
+            }, route
+            assert not downstream_called, route
+
+    asyncio.run(probe_routes())
 
 
 def test_staged_postgres_mutations_pass_the_runtime_write_guard(monkeypatch):

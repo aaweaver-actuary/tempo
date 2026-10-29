@@ -1223,5 +1223,96 @@
     "handler": "legacy_card_status",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-evidence/product/feedback",
+    "handler": "receive_product_feedback",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-evidence/product/effect",
+    "handler": "product_effect_status",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-history/preview",
+    "handler": "preview",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-history/start",
+    "handler": "start",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-history/run-ready",
+    "handler": "run_ready",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-history/resume",
+    "handler": "resume",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/game-history/runs/{run_id}",
+    "handler": "status",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/game-review/games",
+    "handler": "recent_games",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/game-review/games/{provider}/{game_id}",
+    "handler": "game_detail",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-review/sync",
+    "handler": "sync",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-review/feedback/retry",
+    "handler": "retry_feedback",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/game-review/configuration/{provider}",
+    "handler": "configuration",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-review/configuration",
+    "handler": "configure",
+    "treatment": "foreground_command",
+    "state": "blocked"
   }
 ]
