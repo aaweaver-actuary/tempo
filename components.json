@@ -261,16 +261,16 @@
         {
           "owner": "content",
           "kind": "python",
-          "cwd": "services/content",
-          "command": "python run_suite.py pure",
-          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"]
+          "cwd": ".",
+          "command": "python services/content/run_suite.py pure",
+          "inputs": ["services/content/tests", "services/content/fixtures", "services/content/src", "services/content/run_suite.py", "services/content/pyproject.toml", "services/content/uv.lock", "database/tempo_content_database/tests/unit"]
         },
         {
           "owner": "content",
           "kind": "postgres",
-          "cwd": "services/content",
-          "command": "python ../../database/tempo_content_database/tooling/run_postgres.py",
-          "inputs": ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"]
+          "cwd": ".",
+          "command": "python database/tempo_content_database/tooling/run_postgres.py",
+          "inputs": ["database/tempo_content_database/tooling/run_postgres.py", "database/tempo_content_database/tests/test_postgres.py", "database/tempo_content_database/tooling/benchmark.py", "services/content/run_suite.py", "services/content/src", "services/content/fixtures", "services/content/pyproject.toml", "services/content/uv.lock"]
         }
       ],
       "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"], "postgresql": "18"},
