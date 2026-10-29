@@ -18,6 +18,125 @@ from app.repertoire.changes.ports import ChangeError
 from tempo_legacy_database.adapters.authored_repertoires.product_changes import PostgresChangeStore, SCHEMA_SQL
 
 
+def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypatch):
+    """Existing native fixture + real gateway/importer; no second import engine.
+
+    The real registered explicit handler validates retained approval before its
+    sole importer/refresh invocation. This is owner proof, not root/UI assembly.
+    """
+    from contextlib import contextmanager
+    from datetime import date
+    import json
+    from app import main, pgn_import_commands, queue_commands
+    from app import command_gateway as gateway
+    from app.chess.pgn import parse_pgn
+    from app.repertoire.changes.imports import retained_imports
+    from app.services import redis_admission_gate
+    from tempo_legacy_database.adapters import postgres_store
+    from test_explicit_pgn_import_postgres import _protected_state
+    from test_product_game_lapse import NOW
+
+    class PolicyDate(date):
+        @classmethod
+        def today(cls): return NOW.date()
+
+    monkeypatch.setattr(main, 'date', PolicyDate)
+    monkeypatch.setattr(queue_commands, 'date', PolicyDate)
+    monkeypatch.setattr(pgn_import_commands, 'date', PolicyDate)
+
+    @contextmanager
+    def transport(*, read_only=False, **_options):
+        with case.transaction() as db:
+            if read_only: db.execute_native('SET TRANSACTION READ ONLY')
+            yield db
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(postgres_store, 'connection', transport)
+    monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    assert gateway._handlers['imports.pgn.explicit'] is pgn_import_commands.explicit_pgn_import
+    with case.transaction() as db:
+        db.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0,timezone=%s WHERE id=1', ('UTC',))
+        db.execute_native("UPDATE repertoires SET is_main=1 WHERE id='white'")
+        db.execute_native("UPDATE cards SET trained_color='white' WHERE id=%s", (case.card_id,))
+        assert case.service(db).accept_lapse(case.lapse).status == 'applied'
+        entry = db.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",
+            (case.card_id,)).fetchone()[0]
+    issue = 'retained-protected-' + uuid4().hex
+    assert gateway.execute_command(issue, 'queue.issue_head', dict(entry_id=entry,
+        card_id=case.card_id, expected_revision=1, queue_date=NOW.date().isoformat())) == {'issued': True}
+    operation = 'conflicted-' + uuid4().hex
+    name = operation + '.pgn'
+    games, lines = parse_pgn('1. e4 c5 (1... e5) 2. Nf3 e6 *')
+    original = pgn_import_commands.prepare_import_payload(name, 'black', 2, games, lines)
+    original['operation_id'] = operation
+    gateway.record_operation_attempt(operation, 'imports.pgn.explicit', original, background=False)
+    assert gateway.execute_command(operation, 'imports.pgn.explicit', original) is None
+    with case.transaction() as db:
+        rejected = dict(db.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone())
+        assert rejected['state'] == 'failed'
+        assert json.loads(rejected['error_json'])['detail']['code'] == 'repertoire_conflict'
+        assert db.execute_native('SELECT count(*) FROM repertoires WHERE source_name=%s', (name,)).fetchone()[0] == 0
+        protected = _protected_state(db, case.card_id, issue)
+        main_before = [tuple(row) for row in db.execute_native('SELECT id,is_main FROM repertoires ORDER BY id').fetchall()]
+        _, resolved = parse_pgn('1. e4 c5 2. Nf3 (2. Nc3 e6) e6 *')
+        preview = retained_imports(db).preview(operation, tuple(resolved))
+    with case.transaction() as db:
+        assert retained_imports(db).read(operation).original_payload_json == rejected['payload_json']
+    approval = 'approved-' + uuid4().hex
+    payload = preview.approval_payload(approval)
+    gateway.record_operation_attempt(approval, 'imports.pgn.explicit', payload, background=False)
+
+    @contextmanager
+    def roll_back_after_handler(*, read_only=False, **options):
+        with transport(read_only=read_only, **options) as db:
+            yield db
+            raise RuntimeError('owned outer rollback after publication')
+
+    with monkeypatch.context() as rollback:
+        rollback.setattr(postgres_store, 'connection', roll_back_after_handler)
+        with pytest.raises(RuntimeError, match='outer rollback'):
+            gateway.execute_command(approval, 'imports.pgn.explicit', payload)
+    with case.transaction() as db:
+        assert db.execute_native('SELECT count(*) FROM repertoires WHERE source_name=%s', (name,)).fetchone()[0] == 0
+        assert db.execute_native('SELECT state FROM operation_receipts WHERE operation_id=%s', (approval,)).fetchone()[0] != 'complete'
+        assert dict(db.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()) == rejected
+        assert _protected_state(db, case.card_id, issue) == protected
+    result = gateway.execute_command(approval, 'imports.pgn.explicit', payload)
+    assert result['preparation_state'] == 'pending' and result['cards_admitted_today'] == 0
+    assert gateway.execute_command(approval, 'imports.pgn.explicit', payload) == result
+    with case.transaction() as db:
+        assert dict(db.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()) == rejected
+        assert _protected_state(db, case.card_id, issue) == protected
+        assert db.execute_native('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1').fetchone()[0] == 1
+        assert [(row[0], row[1]) for row in db.execute_native('SELECT id,is_main FROM repertoires ORDER BY id').fetchall()
+            if row[0] != result['repertoire_id']] == main_before
+        assert db.execute_native('SELECT is_main FROM repertoires WHERE id=%s', (result['repertoire_id'],)).fetchone()[0] == 0
+        assert db.execute_native('SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s', (result['repertoire_id'],)).fetchone()[0] == 2
+        stale = retained_imports(db).preview(operation, tuple(resolved))
+    # A real intervening owner-source change invalidates an existing-target
+    # preview, even though its proposed import would otherwise deduplicate.
+    with case.transaction() as db:
+        db.execute_native('UPDATE repertoires SET name=%s WHERE id=%s',
+            ('changed after displayed preview', result['repertoire_id']))
+    stale_id = 'stale-' + uuid4().hex
+    stale_payload = stale.approval_payload(stale_id)
+    gateway.record_operation_attempt(stale_id, 'imports.pgn.explicit', stale_payload, background=False)
+    assert gateway.execute_command(stale_id, 'imports.pgn.explicit', stale_payload) is None
+    with case.transaction() as db:
+        failed = db.execute_native('SELECT state,error_json FROM operation_receipts WHERE operation_id=%s', (stale_id,)).fetchone()
+        assert failed[0] == 'failed' and json.loads(failed[1])['status_code'] == 409
+        assert json.loads(failed[1])['detail']['code'] == 'stale_or_unapproved_import_preview'
+        assert db.execute_native('SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s', (result['repertoire_id'],)).fetchone()[0] == 2
+        assert dict(db.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()) == rejected
+        assert _protected_state(db, case.card_id, issue) == protected
+
+
+# Reuse the existing capped fixture; collection alone opens no database.
+from test_product_game_lapse_postgres import case, owned_postgres  # noqa: E402,F401
+
+
 @pytest.fixture
 def database():
     dsn = os.environ.get("TEMPO_492_TEST_DSN")

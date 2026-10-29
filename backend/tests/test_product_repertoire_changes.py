@@ -14,6 +14,260 @@ from app.repertoire.changes.application import conflict_report, study_eligibilit
 from app.repertoire.changes.ports import ChangeError
 
 
+@pytest.fixture
+def retained_import_case(monkeypatch):
+    """Pure transport seam; real parser, segment generator and conflict policy."""
+    from types import SimpleNamespace
+    from psycopg.pq import TransactionStatus
+    from app.chess.pgn import parse_pgn
+    from app.command_gateway import request_digest
+    from app import pgn_import_commands
+    from app.repertoire.changes import retained
+    from tempo_legacy_database.adapters.authored_repertoires import product_changes, product_imports
+    from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
+    from tempo_legacy_database.adapters.commands.receipts import storage as receipts
+    from tempo_legacy_database.adapters.postgres_store import TempoRow
+
+    class Rows:
+        def fetchall(self): return []
+
+    class Database:
+        raw = SimpleNamespace(info=SimpleNamespace(transaction_status=TransactionStatus.INTRANS))
+        def execute_native(self, *_args): return Rows()
+
+    parsed = parse_pgn('1. e4 c5 (1... e5) 2. Nf3 e6 *')
+    lines = parsed[1] if isinstance(parsed, tuple) else parsed
+    original = pgn_import_commands.prepare_import_payload('black-conflict.pgn', 'black', 2, 1, lines)
+    original['operation_id'] = 'rejected-import'
+    error = dict(status_code=409, detail=dict(code='repertoire_conflict', conflicts=['retained original evidence']))
+    row = ['imports.pgn.explicit', request_digest('imports.pgn.explicit', original), 'failed', None,
+        json.dumps(error), 1, None, None, None, json.dumps(original), 0, 1]
+    state = SimpleNamespace(row=row, target=None, source=None, published=[], locks=[])
+    monkeypatch.setattr(receipts, 'operation_status', lambda *_args: TempoRow(tuple(str(index) for index in range(12)), tuple(state.row)))
+    monkeypatch.setattr(receipts, 'lock_operation', lambda *_args: state.locks.append('operation'))
+    monkeypatch.setattr(storage, 'matching_repertoire', lambda *_args: (state.target,) if state.target else None)
+    monkeypatch.setattr(storage, 'current_sources', lambda *_args: [])
+    monkeypatch.setattr(storage, 'deleted_card_ids', lambda *_args: [])
+    monkeypatch.setattr(storage, 'lock_main_repertoire', lambda *_args: state.locks.append('main'))
+    monkeypatch.setattr(product_imports, 'current_snapshot', lambda *_args: state.source)
+    monkeypatch.setattr(retained, 'lock_retained_sources', lambda *_args: state.locks.append('graph'))
+    monkeypatch.setattr(product_changes, 'lock_sources', lambda *_args: state.locks.append('sources'))
+    def publish(_database, payload):
+        state.published.append(payload)
+        return dict(repertoire_id=state.target or 'new-real-id', preparation_state='pending')
+    monkeypatch.setattr(pgn_import_commands, 'explicit_pgn_import', publish)
+    database = Database()
+    owner = product_imports.RetainedImports(database)
+    good = parse_pgn('1. e4 c5 2. Nf3 (2. Nc3 e6) e6 *')
+    good_lines = good[1] if isinstance(good, tuple) else good
+    return SimpleNamespace(owner=owner, database=database, state=state, lines=tuple(good_lines),
+        conflicted=tuple(lines), original=original)
+
+
+def test_retained_import_reopens_original_failed_evidence_after_reload(retained_import_case):
+    from app.repertoire.changes.imports import retained_imports
+    case = retained_import_case
+    held = case.owner.read('rejected-import')
+    assert retained_imports(case.database).read('rejected-import') == held
+    assert json.loads(held.original_payload_json) == case.original
+    assert json.loads(held.original_error_json)['detail']['conflicts'] == ['retained original evidence']
+    assert case.state.published == [] and case.state.locks == []
+
+
+def test_retained_import_preview_displays_exact_black_branches_and_new_cards(retained_import_case):
+    case = retained_import_case
+    preview = case.owner.preview('rejected-import', case.lines)
+    body = json.loads(preview.approved_payload_json)
+    assert [line['moves'] for line in body['lines']] == [line.moves for line in case.lines]
+    assert preview.target_repertoire_id is None and preview.publication_status == 'not_saved'
+    assert preview.display_digest == preview.content_digest()
+    assert {change.presentation_id for change in preview.card_changes} == set(body['segment_ids'])
+    assert all(change.action == 'add' and change.learner_color == 'black' for change in preview.card_changes)
+    assert case.state.published == []
+    edited = case.owner.preview('rejected-import', case.lines[:1])
+    assert edited.display_digest != preview.display_digest
+
+
+def test_retained_import_conflicting_or_invalid_edit_never_publishes(retained_import_case):
+    from app.chess.pgn import ParsedLine
+    from fastapi import HTTPException
+    case = retained_import_case
+    with pytest.raises(HTTPException) as error:
+        case.owner.preview('rejected-import', case.conflicted)
+    assert error.value.status_code == 409
+    bad = ParsedLine(chess.STARTING_FEN, ['e2e4', 'e7e5', 'e2e3'], [])
+    with pytest.raises((HTTPException, ValueError)):
+        case.owner.preview('rejected-import', (bad,))
+    assert case.state.published == []
+
+
+@pytest.mark.parametrize('fault', ['source', 'target', 'evidence', 'payload', 'display', 'same_operation'])
+def test_retained_import_approval_refuses_stale_or_changed_display(retained_import_case, fault):
+    case = retained_import_case
+    if fault == 'source':
+        case.state.target = 'rep'
+        case.state.source = snapshot(('a', ['e2e4', 'c7c5'], 'rep'))
+    preview = case.owner.preview('rejected-import', case.lines)
+    payload = preview.approval_payload('approved-import')
+    if fault == 'source':
+        case.state.source = case.state.source.model_copy(update={'membership': case.state.source.membership.model_copy(update={'revision': 2})})
+    elif fault == 'target': case.state.target = 'created-after-preview'
+    elif fault == 'evidence': case.state.row[9] = json.dumps(case.original | {'source_name': 'changed.pgn'})
+    elif fault == 'payload': payload['depth'] = 3
+    elif fault == 'display': payload['retained_import_preview']['card_changes'] = []
+    else: payload['operation_id'] = 'rejected-import'
+    with pytest.raises(ChangeError): case.owner.apply(payload)
+    assert case.state.published == []
+
+
+def test_retained_import_apply_uses_borrowed_importer_with_new_operation(retained_import_case):
+    case = retained_import_case
+    original = tuple(case.state.row)
+    preview = case.owner.preview('rejected-import', case.lines)
+    result = case.owner.apply(preview.approval_payload('approved-import'))
+    assert result['preparation_state'] == 'pending'
+    assert tuple(case.state.row) == original
+    assert len(case.state.published) == 1
+    assert case.state.published[0]['operation_id'] == 'approved-import'
+    assert 'retained_import_preview' not in case.state.published[0]
+    assert case.state.locks == ['operation', 'main']
+
+
+def test_retained_import_command_reports_stale_approval_as_conflict(retained_import_case):
+    from app.repertoire.changes.imports import apply_approved_import
+    from fastapi import HTTPException
+    case = retained_import_case
+    preview = case.owner.preview('rejected-import', case.lines)
+    case.state.target = 'created-after-preview'
+    with pytest.raises(HTTPException) as error:
+        apply_approved_import(case.database, preview.approval_payload('approved-import'))
+    assert error.value.status_code == 409 and error.value.detail['code'] == 'stale_import_target'
+    assert case.state.published == []
+
+
+@pytest.mark.parametrize('approved', [False, True])
+def test_explicit_import_retained_hook_validates_then_publishes_once(monkeypatch, approved):
+    from app import pgn_import_commands as command
+    from app.repertoire.changes import imports
+    database = object()
+    raw = {'operation_id': 'stable-approval'}
+    if approved: raw['retained_import_preview'] = {'display': 'bound'}
+    validated = {'operation_id': 'stable-approval', 'lines': ['exact approved source']}
+    calls = []
+    def validate(db, payload):
+        assert db is database and payload is raw
+        calls.append('validate')
+        return validated
+    def admit(db, payload, *, explicit):
+        assert db is database and explicit
+        assert payload is (validated if approved else raw)
+        calls.append('admit')
+        return {'preparation_state': 'pending'}
+    monkeypatch.setattr(imports, 'validate_approved_import', validate)
+    monkeypatch.setattr(command, '_admit_pgn_import', admit)
+    # Invoke the command body; the existing refresh decorator surrounds it once.
+    assert command.explicit_pgn_import.__wrapped__(database, raw) == {'preparation_state': 'pending'}
+    assert calls == (['validate', 'admit'] if approved else ['admit'])
+
+
+@pytest.mark.parametrize('fault', ['discarded', 'complete', 'non_conflict', 'wrong_command'])
+def test_retained_import_requires_real_terminal_conflict_receipt(retained_import_case, fault):
+    case = retained_import_case
+    if fault == 'discarded': case.state.row[9] = None
+    elif fault == 'complete': case.state.row[2] = 'complete'
+    elif fault == 'non_conflict': case.state.row[4] = json.dumps(dict(status_code=422, detail='invalid source'))
+    else: case.state.row[0] = 'cards.review'
+    with pytest.raises(ChangeError): case.owner.read('rejected-import')
+
+
+def oversized_conflicting_import(case):
+    """Synthetic legal Black alternatives; no course or personal content."""
+    from app import pgn_import_commands as command
+    lines = [case.conflicted[index % 2] for index in range(1200)]
+    payload = command.prepare_import_payload('synthetic-large-conflict.pgn', 'black', 2, 1, lines)
+    payload['operation_id'] = 'rejected-import'
+    rows = [dict(id=f'import:{index}', start_fen=line['starting_fen'],
+        moves_json=json.dumps(line['moves']), trained_color='black')
+        for index, line in enumerate(payload['lines'])]
+    return payload, rows
+
+
+def test_oversized_import_conflict_keeps_bounded_machine_diagnostics(retained_import_case):
+    from app.pgn_import_validation import validate_sources
+    from app.command_gateway import MAX_HTTP_ERROR_DETAIL_BYTES
+    from fastapi import HTTPException
+    case = retained_import_case
+    payload, rows = oversized_conflicting_import(case)
+    before = json.dumps(payload, sort_keys=True)
+    with pytest.raises(HTTPException) as error:
+        validate_sources('rep', rows)
+    detail = error.value.detail
+    assert error.value.status_code == 409 and detail['code'] == 'repertoire_conflict'
+    assert len(json.dumps(detail, allow_nan=False).encode()) <= MAX_HTTP_ERROR_DETAIL_BYTES
+    assert detail['conflict_count'] == 1 and detail['affected_route_count'] == 1200
+    assert detail['conflicts_truncated'] is True
+    assert json.dumps(payload, sort_keys=True) == before
+    assert len(payload['lines']) == 1200 and case.state.published == []
+
+
+def test_oversized_conflict_gateway_receipt_reopens_exact_import(retained_import_case, monkeypatch):
+    from app import command_gateway as gateway, pgn_import_commands as command
+    from test_command_receipt_storage_boundary import writer
+    case = retained_import_case
+    payload, _ = oversized_conflicting_import(case)
+    digest = gateway.request_digest('imports.pgn.explicit', payload)
+    pending = ('imports.pgn.explicit', digest, 'pending', None, None, None)
+    # retained_import_case already substitutes the operation-lock transport.
+    raw, _ = writer(monkeypatch, [], [None, pending])
+    # Real importer strict guard and real gateway error projection; only the
+    # borrowed SQL transport is the existing unit boundary harness.
+    monkeypatch.setitem(gateway._handlers, 'imports.pgn.explicit',
+        lambda database, value: command._admit_pgn_import(database, value, explicit=True))
+    assert gateway.execute_command('rejected-import', 'imports.pgn.explicit', payload) is None
+    statement, parameters = raw.calls[-1]
+    assert 'error_json' in statement and parameters[1] == 'rejected-import'
+    case.state.row[1], case.state.row[4], case.state.row[9] = digest, parameters[0], json.dumps(payload)
+    held = case.owner.read('rejected-import')
+    assert json.loads(held.original_error_json)['detail']['code'] == 'repertoire_conflict'
+    assert json.loads(held.original_payload_json) == payload
+    assert len(json.loads(held.original_payload_json)['lines']) == 1200
+    # Reopening can produce a fresh explicit preview, never activate a winner.
+    preview = case.owner.preview('rejected-import', case.lines)
+    assert preview.retained == held and preview.publication_status == 'not_saved'
+    assert case.state.published == []
+
+
+def test_conflict_diagnostics_preserve_small_shape_and_whole_source_identities():
+    from app.pgn_import_validation import MAX_CONFLICT_DIAGNOSTIC_BYTES, validate_sources
+    from app.studies.repertoire_conflicts import conflicts_from_snapshot
+    from fastapi import HTTPException
+    rows = []
+    for white in sorted(move.uci() for move in chess.Board().legal_moves):
+        for _repeat in range(20):
+            for black in ['c7c5', 'e7e5']:
+                rows.append(dict(id=f'import:{len(rows)}', start_fen=chess.STARTING_FEN,
+                    moves_json=json.dumps([white, black]), trained_color='black'))
+    def complete(items):
+        return conflicts_from_snapshot(tuple((row['id'], 'rep', '', 'black',
+            row['start_fen'], row['moves_json']) for row in items))
+    with pytest.raises(HTTPException) as small:
+        validate_sources('rep', rows[:2])
+    assert small.value.detail == dict(code='repertoire_conflict',
+        message='Competing own responses need manual resolution; no content was saved.',
+        conflicts=list(complete(rows[:2])))
+    before = json.dumps(rows, sort_keys=True)
+    full = complete(rows)
+    with pytest.raises(HTTPException) as large:
+        validate_sources('rep', rows)
+    detail = large.value.detail
+    assert len(json.dumps(detail, allow_nan=False).encode()) <= MAX_CONFLICT_DIAGNOSTIC_BYTES
+    assert detail['conflict_count'] == len(full) == 20
+    assert detail['affected_route_count'] == len(rows) == 800
+    assert detail['conflicts_truncated'] is True and 0 < len(detail['conflicts']) < len(full)
+    assert detail['conflicts'] == list(full[:len(detail['conflicts'])])
+    assert json.dumps(rows, sort_keys=True) == before
+
+
 def snapshot(*routes):
     values = []
     for identifier, moves, repertoire in routes:
@@ -249,7 +503,7 @@ def test_engine_mate_inconclusive_or_wrong_history_never_manufactures_acceptance
 
 def test_raw_pgn_parser_rejects_illegal_tail_instead_of_importing_recovered_prefix():
     from app.chess.pgn import parse_pgn
-    with pytest.raises(ValueError, match="invalid_pgn_source"):
+    with pytest.raises(ValueError, match="illegal tail"):
         parse_pgn('[Event "Task 492 invalid"]\n\n1. e4 e5 2. e4 *')
     games, lines = parse_pgn('[Event "Task 492 legal branches"]\n\n1. e4 (1. d4 d5) e5 2. Nf3 *')
     assert games == 1 and {tuple(line.moves) for line in lines} == {
@@ -322,14 +576,14 @@ def test_legacy_import_guard_stops_conflict_before_any_source_write(monkeypatch)
     from fastapi import HTTPException
     monkeypatch.setattr(command.storage, "lock_main_repertoire", lambda *_: None)
     monkeypatch.setattr(command.storage, "matching_repertoire", lambda *_: ("rep",))
-    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(),))
+    monkeypatch.setattr(command.storage, "current_sources", lambda *_: (dict(source_row(), id="line:old"),))
     payload = dict(source_name="task492.pgn", trained_color="white", depth=3, games_found=1,
         unique_lines=1, imported_segments_count=1, decision_segments_count=1, prefix_segments_count=0,
         segment_ids=[], prefix_segment_ids=[], lines=[dict(starting_fen=chess.STARTING_FEN,
             moves=["d2d4"], annotations=[])])
     with pytest.raises(HTTPException) as error:
         command.admit_pgn_import.__wrapped__(object(), payload)
-    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+    assert error.value.status_code == 409 and error.value.detail['code'] == "repertoire_conflict"
 
 
 def test_legacy_branch_guard_stops_conflict_before_insert(monkeypatch):

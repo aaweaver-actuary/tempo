@@ -67,32 +67,20 @@ required in the publication command.
 
 ## Current import/edit guard coverage
 
-Reserved existing entries now call the same pure `validate_source_rows` before
-source changes: `pgn_import_commands.admit_pgn_import`,
+This branch ports the previously qualified private C1 owner from PR #520 onto
+integration `adfc8de8` (including merged #553 and #554). It does **not** claim
+that the old shared command hooks are already present on this integration base.
+The current importer already rejects conflicting/invalid sources through
+`pgn_import_validation.validate_sources` before writes, preserves main selection,
+and retains its failed command payload. Its parser rejects illegal tails.
+
+Three existing C1 regressions demonstrate missing shared hooks in
 `branch_commands.add_repertoire_branch`, `card_commands.revise_card`, and
-`integrity_repair_commands.resolve_integrity_issue`. The new owner storage
-projection locks the existing repertoire row and reads at most 10,001 source
-lines/current opening-card memberships, rejecting overflow. Imports keep their
-existing main-repertoire lock; repairs keep their existing graph-task-first lock.
-Per-card edits lock repertoire IDs in sorted order before existing card locks.
-No old card/history writer was rewritten. New commands return
-`conflict_pending_resolution` before importing competing alternatives. The
-existing operation payload is not discarded; UI retention/manual import-preview
-resolution is still an integration task, not an automatic winner selection.
-
-`app.chess.pgn.parse_pgn` rejects parser-recovered illegal tails rather than
-returning a falsely valid legal prefix. Legal lines/variations/annotations retain
-existing behavior. Its existing root upload endpoint still needs #501's bounded
-`ValueError` → 422 translation; no root file was edited here.
-
-Still unwired: root router registration; current-owner snapshot/publication
-composition; persistent import-preview UI; existing non-command SQLite repair,
-analysis-paste, discovery acceptance and independent Content bridge importer.
-`services/content/.../bridge/application.py::map_import` still builds accepted
-own alternatives; it must not be exposed as a bypass around this approval owner.
-There is no claim that every legacy mutation path is now covered. Existing
-PostgreSQL graph/integrity invalidation and current-certificate fences remain in
-place; their owning Study eligibility adapter still rejects stale publication.
+`integrity_repair_commands.resolve_integrity_issue`. The old owner branch has
+those narrow guards; adopting them requires the shared-file reservation. Only the reserved `explicit_pgn_import` C2 dispatch is changed; no branch/card/repair
+command file is edited by this lane. These failures remain
+visible; the focused passing selection explicitly excludes those three cases.
+Root router/schema registration and Study suspension remain #501's responsibility.
 
 ## Transactions and stored evidence
 
@@ -243,3 +231,107 @@ is introduced. Root/schema/test registration, actual Study suspension and normal
 product/browser acceptance remain integration-owned. Authored-route auditing and
 physical-definition update authority are kept distinct; card-only legacy issues
 still retain the existing integrity-report owner rather than a second snapshot.
+
+## Retained conflicted import (C2)
+
+**Owner checkpoint; explicit-command hook implemented, changed-hook native proof pending.**
+`imports.py` is the public facade; the borrowed PostgreSQL adapter is
+[`product_imports.py`](../../../../database/tempo_legacy_database/adapters/authored_repertoires/product_imports.py).
+There is no new table, importer, worker, connection factory or Study writer.
+
+- `retained_imports(database).read(operation_id) -> RetainedImport` reopens a real
+  terminal `repertoire_conflict` receipt. The original command, hash, payload and
+  rejection stay exact evidence. Discarded, complete, non-import, non-conflict or
+  hash-mismatched receipts fail closed. A browser fingerprint is not authority.
+- `.preview(operation_id, tuple[ParsedLine, ...]) -> ImportPreview` takes manually
+  supplied resolved lines. It recomputes all segment/count identities with the
+  existing importer, validates against the current target and shows every exact
+  proposed line/annotation/card addition or reuse, including tombstone exclusions.
+  Original alternatives remain in the retained evidence. Opponent branches are
+  retained when supplied; the owner never chooses a winner. Existing target
+  source is not rewritten by this import; C1 handles an existing-source conflict
+  first, followed by a fresh C2 preview.
+- `preview.approval_payload(new_operation_id) -> dict` binds the full display,
+  original request, current target/source fence and current card definitions.
+  Editing means a fresh preview/digest and explicit acceptance. New repertoire
+  identity is truthfully unknown until admission. The caller retains one stable
+  new operation ID for duplicate/lost-response delivery; it cannot reuse the
+  immutable failed original ID.
+- `validate_approved_import(database, payload) -> dict` is the existing explicit
+  command's integration capability. It requires the borrowed owning transaction,
+  takes the original-operation/main/graph/transition/repertoire source fences,
+  reconstructs the exact preview and returns only the validated ordinary import
+  payload. It locks/reads, never publishes or changes the rejected receipt.
+  Changed target/source/evidence/display/body is refused before source writes.
+- `apply_approved_import(database, payload) -> dict` remains available for direct
+  owner composition. It validates then invokes the existing decorated explicit
+  importer once on the same transaction.
+
+`pgn_import_commands.explicit_pgn_import` now checks for
+`retained_import_preview`, calls `validate_approved_import`, and follows its
+existing single admission path. Its existing publication-refresh decorator runs
+once; the hook does not recursively call the decorated publisher. Ordinary
+payloads bypass the new guard and retain their prior behavior. Existing gateway
+receipts keep `imports.pgn.explicit`, stable new operation identity and exact
+#553 graph/integrity preparation pins. No optional work is broadly resumed.
+#501 owns transport/UI; this source hook adds no root route or Study write.
+
+Large conflict errors remain `409/repertoire_conflict`. The Repertoire-owned
+`pgn_import_validation` diagnostic response is bounded to 8 KiB, below the
+existing gateway's 16 KiB structured-error limit. Small responses keep their
+original shape. Oversized responses include exact `conflict_count` and
+`affected_route_count`, `conflicts_truncated=true`, and only whole conflict
+objects that fit; no partial source identity list is presented as complete.
+This bounds diagnostic display only. Every original source line/annotation
+remains in the retained request, with its existing hash and retry identity.
+The complete conflict detector and acceptance policy are unchanged. No winner
+is selected, no route is removed, and no generic gateway limit is raised.
+
+The owning regression executes the real strict importer and gateway error
+serializer through the existing borrowed-driver unit harness, then reopens the
+same complete retained payload through this owner. It also proves the small
+response contract and exact identities in bounded diagnostic samples. This
+serialization repair needs no database fixture, schema or new error framework.
+Named regressions in `backend/tests/test_product_repertoire_changes.py`:
+
+- `test_oversized_import_conflict_keeps_bounded_machine_diagnostics`
+- `test_oversized_conflict_gateway_receipt_reopens_exact_import`
+- `test_conflict_diagnostics_preserve_small_shape_and_whole_source_identities`
+
+
+```mermaid
+sequenceDiagram
+  participant UI as #501 transport/UI
+  participant Owner as Repertoire C2 owner
+  participant Receipt as Existing command receipts
+  participant Importer as Existing explicit importer
+  UI->>Owner: read(original operation), preview(manual resolved lines)
+  Owner->>Receipt: Read rejected payload/hash/error
+  Note over Owner,Receipt: Full source retained; oversized error diagnostics have explicit summary totals
+  Owner-->>UI: Exact lines/cards + current source fence + display digest
+  UI->>Receipt: Approved payload under stable new operation ID
+  Receipt->>Owner: validate_approved_import in owning transaction
+  Owner->>Receipt: Recheck retained original under operation lock
+  Owner-->>Receipt: Validated ordinary payload; rejected receipt unchanged
+  Receipt->>Importer: Existing single admission path, same transaction
+  Importer-->>Receipt: Saved, preparation pending; no readiness bypass
+  Receipt-->>UI: Same durable result on duplicate delivery
+```
+
+The owner proof uses synthetic Black branching PGN; private course content is
+not included in committed fixtures. The actual registered-handler native case passed at `57f95aab` (1 case,
+2.79s), with no test handler override. Its transaction/protected-state evidence
+is reused for the unchanged owning writer, receipt and importer boundaries;
+it is not claimed rerun for the pure oversized-diagnostic serialization repair.
+Root/UI/A05 acceptance stays with the integration owner.
+
+The native case in `test_product_repertoire_changes_postgres.py` reuses the
+existing capped `test_product_game_lapse_postgres.owned_postgres` fixture and
+checked-in registry (current schema53/module050). It proves rejected import
+without activation, reload read, exact approved Black branches/cards, honest
+saved/pending status, preserved main/history/issued attempt/accepted game receipt,
+same-result duplicate delivery, outer rollback and actual stale-source409. Its
+disposable settings timezone is UTC. Both shared validation reservations and
+aggregate resource limits apply. Held rehearsal resources belong to their owner;
+no capacity reclamation or restart is performed by this lane. A passing owner
+case never establishes installation, genuine-file acceptance or assembled A05.

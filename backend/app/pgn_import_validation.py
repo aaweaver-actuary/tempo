@@ -4,6 +4,32 @@ import chess
 from fastapi import HTTPException
 from app.studies.repertoire_conflicts import conflicts_from_snapshot
 
+MAX_CONFLICT_DIAGNOSTIC_BYTES = 8 * 1024
+
+
+def _conflict_detail(conflicts):
+    """Bound only diagnostics; complete request/source evidence stays retained.
+
+    Keep whole conflict objects/identities when they fit, never a partial route
+    list that could look complete. This owner budget stays below the existing
+    command-receipt structured-error limit; the boundary regression checks it.
+    """
+    detail = {'code': 'repertoire_conflict',
+              'message': 'Competing own responses need manual resolution; no content was saved.',
+              'conflicts': list(conflicts)}
+    if len(json.dumps(detail, allow_nan=False).encode('utf-8')) <= MAX_CONFLICT_DIAGNOSTIC_BYTES:
+        return detail
+    detail.update(conflicts=[], conflict_count=len(conflicts),
+        affected_route_count=len({line_id for conflict in conflicts
+            for move in conflict['moves'] for line_id in move['line_ids']}),
+        conflicts_truncated=True)
+    for conflict in conflicts:
+        detail['conflicts'].append(conflict)
+        if len(json.dumps(detail, allow_nan=False).encode('utf-8')) > MAX_CONFLICT_DIAGNOSTIC_BYTES:
+            detail['conflicts'].pop()
+            break
+    return detail
+
 
 def validate_sources(repertoire_id, sources):
     if len(sources)>10000:
@@ -27,4 +53,4 @@ def validate_sources(repertoire_id, sources):
         snapshot.append((row['id'],repertoire_id,'',row['trained_color'],row['start_fen'],row['moves_json']))
     conflicts=conflicts_from_snapshot(tuple(snapshot))
     if conflicts:
-        raise HTTPException(409,{'code':'repertoire_conflict','message':'Competing own responses need manual resolution; no content was saved.','conflicts':list(conflicts)})
+        raise HTTPException(409, _conflict_detail(conflicts))
