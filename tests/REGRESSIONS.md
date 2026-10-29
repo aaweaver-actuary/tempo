@@ -5469,3 +5469,8 @@ and rollback after actual graph enqueue. Its broker/Redis transport is substitut
 it does not qualify a running worker stack or a genuine private PGN. Eventual
 fixture-authorized command:
 `make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
+
+## Saved discovery mobile overlay
+
+- **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
+- **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
