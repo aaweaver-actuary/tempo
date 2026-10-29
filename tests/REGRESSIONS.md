@@ -5408,3 +5408,33 @@ identity, committed sentinel, init reaping, graceful signal forwarding and exact
 cleanup. It does not identify the historical executable or operate live services.
 The existing backend suite discovers the file; use the regular `make python-file`
 selection for its finite native proof. No dedicated qualifier or CI gate is added.
+## Explicit authored PGN preparation in Study-only
+
+`backend/tests/test_explicit_pgn_validation.py` owns the synthetic branching Black
+fixture, repeat snapshot, illegal-tail rejection, competing-own-response hold
+and finite route bound. `test_pgn_import_storage_boundary.py` covers preserved
+main selection/training depth, existing batching/certification and exact explicit
+graph pin. `test_explicit_pgn_scope.py` covers fixed receipt/generation/manual-pause
+SQL scope (including native JSONB syntax) and evaluates actual candidate predicates over supplied facts without
+a database: current receipt-scoped graph/integrity can prepare with Study-only
+on, while missing receipts, paused work, ordinary optional/old work and defensive
+admission retain their guards. Resume eligibility and Activity's settings-pause
+projection use that same exact receipt scope; manual pause still blocks claims
+until resumed, and legacy SQLite/settings guards remain. `test_explicit_pgn_preparation.py` covers leased kind/phase/body recheck, transaction recheck, unchanged
+daily-queue priority and unrelated paused work. These fake-driver tests do not
+prove native locking, atomicity or complete worker execution.
+`tests/unit/pgn-import-dialog-regressions.test.tsx` adds finite saved/pending and
+manual held publication outcomes, retaining cancellation and one-POST recovery.
+Existing pending-import tests own same-key duplicate/retry identity. This feature
+requires native disposable-fixture and assembled proof before merge qualification;
+it is not installed and no genuine Taimanov file has been supplied.
+
+`backend/tests/test_explicit_pgn_import_postgres.py::test_native_explicit_black_import_round_trip_preserves_study`
+owns the source/native explicit-command → receipt-pinned graph/integrity → normal
+Study queue round trip, using the existing `owned_postgres` fixture. It covers
+branching Black sources, same-key replay, pause/resume, saved versus ready
+projections, quota hold, main/history/issued-attempt/accepted-feedback preservation,
+and rollback after actual graph enqueue. Its broker/Redis transport is substituted;
+it does not qualify a running worker stack or a genuine private PGN. Eventual
+fixture-authorized command:
+`make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.

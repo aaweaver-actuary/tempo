@@ -1394,14 +1394,19 @@ async def import_pgn(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     from .services.study_mode import study_only_enabled
-    if study_only_enabled():
-        raise HTTPException(409, "Imports are paused by Study-only mode. Turn it off in Settings to import this PGN.")
+    if study_only_enabled() and not postgres_store.configured():
+        raise HTTPException(409,"Explicit preparation in Study-only mode requires the supported PostgreSQL backend.")
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
     if trained_color not in {"white", "black"}:
         raise HTTPException(400, "trained_color must be white or black")
     import_started_at = time.perf_counter()
-    games, lines = parse_pgn((await file.read()).decode("utf-8-sig"))
+    try:
+        raw_pgn=await file.read(8*1024*1024+1)
+        if len(raw_pgn)>8*1024*1024: raise ValueError("PGN exceeds the 8 MiB import limit")
+        games, lines = parse_pgn(raw_pgn.decode("utf-8-sig"))
+    except (ValueError,UnicodeDecodeError) as error:
+        raise HTTPException(422,str(error)) from error
     parsed_at = time.perf_counter()
     if not lines:
         raise HTTPException(422, "No playable lines were found")
@@ -1413,11 +1418,10 @@ async def import_pgn(
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         from .pgn_import_commands import prepare_import_payload
-        return dispatch_command(
-            "imports.pgn.admit",
-            prepare_import_payload(file.filename, trained_color, depth, games, lines),
-            idempotency_key=idempotency_key,
-        )
+        operation_id=idempotency_key or str(uuid.uuid4())
+        payload=prepare_import_payload(file.filename,trained_color,depth,games,lines)
+        payload["operation_id"]=operation_id
+        return dispatch_command("imports.pgn.explicit",payload,idempotency_key=operation_id)
     imported_segments = [
         segment
         for line in lines
