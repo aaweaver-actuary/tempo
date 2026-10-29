@@ -290,6 +290,33 @@ test("M02 runners lane shares generic Node accounting without building packages"
   assert.notEqual(unmatched.status, 0);
   assert.equal(JSON.parse(unmatched.stdout.trim().split("\n").at(-1)).passed, 0);
 });
+test("M02 explicit-only runner ownership stays strict without ordinary execution", t => {
+  const directory = laneFixture(t);
+  const inventoryPath = join(directory, "tools/component-build/test-inventory.json");
+  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  const runner = join(directory, "tools/component-build/test-lane.mjs");
+  const smoke = "tests/runner/manual-smoke.test.mjs";
+  writeFileSync(join(directory, smoke), 'throw new Error("Explicit smoke ran automatically");');
+  const save = () => writeFileSync(inventoryPath, JSON.stringify(inventory));
+  const list = () => spawnIsolatedNode([runner, "runners", "--list"], { cwd: directory, encoding: "utf8" });
+  assert.notEqual(list().status, 0); // Present but unregistered.
+  inventory.explicitRunnerFiles = [smoke]; save();
+  const valid = list();
+  assert.equal(valid.status, 0, valid.stdout + valid.stderr);
+  assert.deepEqual(JSON.parse(valid.stdout).selectedFiles, ["tests/runner/example.test.mjs"]);
+  assert.equal(JSON.parse(valid.stdout).inventory.runnerFiles, 2);
+  const ordinary = spawnIsolatedNode([runner, "runners"], { cwd: directory, encoding: "utf8" });
+  assert.equal(ordinary.status, 0, ordinary.stdout + ordinary.stderr);
+  assert.equal(JSON.parse(ordinary.stdout.trim().split("\n").at(-1)).passed, 1);
+  for (const invalid of [[smoke, smoke], [smoke, "tests/runner/example.test.mjs"], ["tests/runner/absent.test.mjs"]]) {
+    inventory.explicitRunnerFiles = invalid; save();
+    assert.notEqual(list().status, 0);
+  }
+  inventory.explicitRunnerFiles = [smoke]; save();
+  writeFileSync(join(directory, "tests/runner/unowned.test.mjs"), "");
+  assert.notEqual(list().status, 0); // Explicit declarations cannot hide unknown files.
+  assert.equal(existsSync(join(directory, "build-calls")), false);
+});
 test("M02 unrelated lanes execute without controlled browser modules", t => {
   for (const lane of ["frontend", "integration", "runners"]) {
     const directory = laneFixture(t);
