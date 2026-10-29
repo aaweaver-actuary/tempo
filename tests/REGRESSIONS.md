@@ -1,3 +1,17 @@
+## T18 bounded proposal policy
+
+`backend/tests/test_product_proposals.py` owns the pure proposal regressions:
+exact continuation preference and explicit familiar candidates outside the top
+five; exact 30/31 CP acceptance for both colors; mate, bounded, incompatible and
+unknown evidence; distinct-position outliers; separate common-blunder frequency
+and loss thresholds; existing-card preparation without learning effects; exact
+displayed additions and approval/source revalidation; bounded scans and optional
+failures. `test_existing_card_route_local_mapping_matches_actual_target` rejects
+reuse or replacement through a foreign route/ply while retaining matching and
+unscoped mappings. The suite includes the scoped dependency/cycle guard and
+concrete-infrastructure import rejection. It uses fake ports only and does not
+establish A07 product acceptance. See the [owner interface and examples](../backend/app/analysis/proposals/README.md).
+
 ## T22 Study recombination and immutable presentation provenance
 
 `backend/tests/test_product_recombination_application.py` owns genuine saved
