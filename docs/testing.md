@@ -97,6 +97,16 @@ boundary requires them.
 
 The existing prose/FAST selection also covers exactly root `SPEC.md`, `.github/skills/domain-model-alignment-review/SKILL.md`, `backend/ORGANIZATION.md`, `database/PERSISTENCE-DISPOSITION.md`, and `database/SIMPLIFICATION.md`. Other skill files, adjacent helpers, database/source/configuration paths and unknown changes retain their existing classification. Mixed changes retain executable requirements; this selector repair itself remains infrastructure/FULL. Common FAST static checks and revision/readiness gates are unchanged.
 
+Exactly `backend/app/analysis/similarity/features.py` and `retrieval.py` in the same
+directory select `backend/tests/test_product_similarity.py` through FAST's existing
+Python inventory, JUnit and exact-case validation. Commands explicitly bind the
+five pure source-package roots needed by its immutable repertoire index/contracts,
+including child Python's import-isolation proof. Its legal in-memory fixtures,
+actual index and scoped boundary/cycle guard need no database/browser/engine.
+Adjacent unknown files and dependency/contract changes retain conservative
+classification. This prospective mapping does not qualify historical #523 or its
+engine/proposal/runtime integration; this infrastructure repair retains FULL.
+
 Separate local development evidence, configured CI execution, actually enforced hosted requirements, and installation qualification. Verify hosted settings when a merge claim depends on them; do not infer requirements solely from a historical document or infer permission to bypass project acceptance from an absent setting. Current classification/freshness rules may force broader work than local policy. Report that mismatch for a separately assigned correction. Do not change or bypass those rules in an ordinary feature or instruction task.
 
 The following exact paths retain FULL because their component qualification is not
@@ -107,7 +117,7 @@ mapping or evidence that native/cross-owner proof is dispensable.
 | --- | --- |
 | `backend/app/services/queue_presentation.py` | `test_queue_refresh_read_database_split.py` has callback/native-shape tests; actual PostgreSQL proof is `test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts`. Its owned PostgreSQL fixture and counted case are not in FAST/STUDY; even the registered priority qualifier's `REQUIRED` list does not select this case. |
 | `backend/app/study/interfaces/game_priority.py` | Public cross-owner contract: `test_study_priority_interface.py`, the boundary case in `test_product_contracts.py`, and registered `study-game-priority` native qualification. FAST/STUDY does not invoke that suite, provision its owner fixtures/images/lock, or bind its expected/executed cases and runtime to the CI plan/report. |
-| `backend/app/product_composition/game_review.py` | `test_product_game_review_composition.py` and `test_product_game_review_receipts.py` need the actual `test_product_game_review_packaged_reader.py` proof. That test requires an already-owned disposable API/foreground-worker/PostgreSQL stack, budget token, packaged source hashes and reader/writer profiles; it creates none. Its schema-52 fixture expectation also needs reconciliation with current schema metadata (53). Generic backend pytest is not this fixture bridge. |
+| `backend/app/product_composition/game_review.py` | `test_product_game_review_composition.py` and `test_product_game_review_receipts.py` need the actual `test_product_game_review_packaged_reader.py` proof. That test requires an already-owned disposable API/foreground-worker/PostgreSQL stack, budget token, packaged source hashes and reader/writer profiles; it creates none. Its schema-52 fixture expectation also needs reconciliation with newer schema metadata. Generic backend pytest is not this fixture bridge. |
 
 The first two native owners use `test_product_game_lapse_postgres.py`'s capped,
 labelled PostgreSQL 18.6 fixture. Discover the priority suite with

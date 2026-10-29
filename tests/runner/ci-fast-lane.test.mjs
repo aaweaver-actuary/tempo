@@ -8,6 +8,7 @@ import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verificat
 import { postgresTestStages, executePostgresTestPlan } from '../../database/tests/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../database/tests/postgres-test-options.mjs';
 import { certificate, readCertificateSources, validateCertificate } from '../../scripts/ci-certified-tests.mjs';
+import { resolvePython } from '../../scripts/resolve-python.mjs';
 const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40),draft:false};
 const pr = {number:217,state:'open',draft:false,merge_commit_sha:'e'.repeat(40),head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
 const execution = {id:123,attempt:1};
@@ -555,4 +556,66 @@ test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL'
     'backend/app/auth.py','scripts/ci-fast-run.mjs']) {
     assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
   }
+});
+
+const similaritySources = ['backend/app/analysis/similarity/features.py','backend/app/analysis/similarity/retrieval.py'];
+test('similarity_exact_sources_select_counted_owning_FAST_without_optional_runtime', () => {
+  for (const paths of similaritySources.map(path => [path]).concat([similaritySources])) {
+    const plan = makeFastPlan(paths, context);
+    assert.equal(plan.tier,'FAST'); assert.equal(plan.node,false); assert.equal(plan.python,true);
+    assert.deepEqual(plan.backend,['backend/tests/test_product_similarity.py']);
+    for (const key of ['frontend','browser','nativeChecks']) assert.deepEqual(plan[key],[],key);
+    const commands = fastCommands(plan);
+    assert.deepEqual(commands.map(([name])=>name),['conflicts','migrations','diff','python_static','backend_inventory','backend']);
+    for (const [name, command, args] of commands.slice(3)) {
+      assert.equal(command,'env',name);
+      assert.deepEqual(args.slice(0,2),[
+        'PYTHONPATH=backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src',
+        resolvePython(),
+      ],name);
+    }
+    assert(commands.at(-2)[2].includes('scripts/ci-collect-backend.py'));
+    assert(commands.at(-1)[2].includes('--junitxml=test-results/fast-lane/backend.xml'));
+  }
+  assert.equal(fastCommands(makeFastPlan(['backend/app/games/providers/lichess.py'],context))
+    .find(([name])=>name==='backend')[1],resolvePython());
+});
+test('similarity_backend_collection_results_and_bound_environment_are_mandatory', () => {
+  const baseline = fixture(similaritySources[0]);
+  assert.deepEqual(failures(baseline),[]);
+  for (const mutate of [
+    value => delete value.report.backend,
+    value => value.report.backend.expected=[],
+    value => value.report.backend.tests=[],
+    value => value.report.backend.tests[0].status='skipped',
+    value => value.report.backend.tests[0].status='failed',
+    value => value.report.backend.tests.push(value.report.backend.tests[0]),
+    value => value.report.commands.at(-1).args=value.report.commands.at(-1).args.slice(1),
+    value => value.report.runtime.python='Python 0.0.0',
+    value => value.report.head='c'.repeat(40),
+  ]) { const evidence=fixture(similaritySources[0]); mutate(evidence); assert(failures(evidence).length); }
+  for (const current of [{...pr,draft:true},{...pr,head:{sha:'c'.repeat(40)}},
+    {...pr,labels:[{name:'ci:full'}]}]) {
+    assert(validateFastGate(baseline.plan,baseline.report,baseline.needs,current,execution).length);
+  }
+  assert.deepEqual(validateFastGate(baseline.plan,baseline.report,baseline.needs,
+    {...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution),[]);
+});
+test('similarity_mapping_is_exact_and_mixed_or_complete_changes_stay_conservative', () => {
+  for (const path of ['backend/app/analysis/similarity/new_helper.py',
+    'backend/app/repertoire/position_index.py','packages/evidence-math/src/tempo_evidence_math/_identity.py',
+    'backend/app/auth.py','database/tempo_legacy_database/ddl/migrations/999_similarity.sql',
+    'scripts/ci-fast-commands.mjs','backend/pyproject.toml']) {
+    assert.equal(selectFastLane([...similaritySources,path]).tier,'FULL',path);
+  }
+  for (const options of [{complete:true},{comparisonAvailable:false}]) {
+    assert.equal(selectFastLane(similaritySources,options).tier,'FULL');
+  }
+  const renamed=changedPathsFromNameStatus('R100\0backend/app/auth.py\0backend/app/analysis/similarity/features.py\0');
+  assert.equal(selectFastLane(renamed).tier,'FULL');
+  const study=selectFastLane([...similaritySources,'app/lib/review-outbox.ts']);
+  assert.equal(study.tier,'STUDY'); assert(study.backend.includes('backend/tests/test_product_similarity.py'));
+  const inventory=structuredClone(fastInventory);
+  inventory.sources.push(inventory.sources.find(mapping=>mapping.paths.includes(similaritySources[0])));
+  assert.equal(selectFastLane(similaritySources,{inventory}).tier,'FULL');
 });
