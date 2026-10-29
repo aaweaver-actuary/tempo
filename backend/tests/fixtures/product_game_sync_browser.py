@@ -103,7 +103,12 @@ def main():
                 "legacy_game_changed_or_accepted_during_export","explicit_decision_scope_exceeds_bound_or_is_invalid",
                 "canonical_imported_source_changed","capture_time_requires_timezone",
                 "retained_owner_capture_required","retained_owner_capture_changed","retained_owner_projection_mismatch",
-                "retained_owner_scope_mismatch","retained_owner_scope_exceeds_bound","borrowed_owner_writer_transaction_required"}
+                "retained_owner_scope_mismatch","retained_owner_scope_exceeds_bound","borrowed_owner_writer_transaction_required",
+                "snapshot_comparison_game_mismatch","invalid_source_position","illegal_source_move",
+                "unsupported_chronology_provider","snapshot_capture_exceeds_bound","invalid_owner_capture",
+                "snapshot_graph_unavailable","snapshot_revision_changed","snapshot_game_scope_mismatch",
+                "snapshot_scope_revision_mismatch","snapshot_scope_completeness_unknown","snapshot_source_digest_mismatch",
+                "duplicate_source_route","snapshot_source_revision_mismatch","canonical_prefix_snapshot_unsupported"}
             reason = getattr(error,"reason",None)
             if not isinstance(reason,str) or reason not in safe_codes:
                 reason = str(error) if type(error) is ValueError and str(error) in safe_codes else None
