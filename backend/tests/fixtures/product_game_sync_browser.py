@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh", "prepare-intake-probe", "intake-probe", "prepare-settlement-probe", "settlement-state"))
+    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh", "prepare-intake-probe", "intake-probe", "prepare-settlement-probe", "settlement-state", "feedback-diagnostics"))
     parser.add_argument("--project", required=True)
     parser.add_argument("--fixture-json")
     options = parser.parse_args()
@@ -29,6 +29,19 @@ def main():
 
     connections = DedicatedGamesConnections(os.environ["TEMPO_DATABASE_WRITE_URL"])
     transaction = connections.writer
+
+    if options.action == 'feedback-diagnostics':
+        with transaction() as database:
+            rows = database.execute_native("""SELECT id,generation,state,phase,attempt_count,
+                next_attempt_at,lease_expires_at,lease_token IS NOT NULL AS lease_present,
+                last_error IS NOT NULL AS error_present,
+                CASE WHEN last_error IN ('database_connection_unavailable','transaction_deadline')
+                     THEN last_error END AS error_category,
+                transaction_timeout_count FROM background_tasks
+                WHERE kind='study_game_feedback' ORDER BY id LIMIT 4""").fetchall()
+        # Deliberately omit payloads, lease tokens and provider/connection data.
+        print(json.dumps([dict(row) for row in rows], default=str))
+        return
 
     if options.action in {"seed", "prepare-intake-probe", "prepare-settlement-probe"}:
         manifest = seed_fixture(transaction, options.project)

@@ -7,6 +7,7 @@ import json
 import random
 import sqlite3
 import uuid
+from typing import Callable
 
 from tempo_legacy_database.connections import read_connection, background_read_connection
 from tempo_legacy_database.adapters import postgres_store
@@ -420,7 +421,7 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *
         return submit_background_write(operation, label=f"yield:{task_id}")
 
 
-def defer_task_for_connection_failure(task: dict, *, wake=None) -> bool:
+def defer_task_for_connection_failure(task: dict, *, wake: Callable[[datetime], None] | None = None) -> bool:
     """Reconcile an unchanged claim on a fresh writer after connection loss."""
     eligible_at = _now() + timedelta(seconds=1)
     def operation(database):
@@ -437,7 +438,7 @@ def defer_task_for_connection_failure(task: dict, *, wake=None) -> bool:
     return changed
 
 
-def defer_task_for_transaction_timeout(task: dict, error: Exception, *, wake=None) -> bool:
+def defer_task_for_transaction_timeout(task: dict, error: Exception, *, wake: Callable[[datetime], None] | None = None) -> bool:
     """Preserve a checkpoint and cool repeated deadline failures down to 60 s.
 
     A transaction deadline is not evidence of a competing lock. Keep its error

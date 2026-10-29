@@ -5546,3 +5546,16 @@ Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake owners
 and connection loss after claim, fresh-writer recovery before wake, unchanged
 checkpoint/failure budget, successor generation and lost commit acknowledgment,
 and failed cleanup leaving normal lease recovery rather than a retry loop.
+
+### #558 prepared first-introduction transaction scope
+
+`backend/tests/test_feedback_preparation.py` owns closed-page chess preparation,
+complete 1,025-route discovery, immutable/stale source bindings, no writer route
+scan/chess replay, due-refresh progress preservation and payload-free diagnostics.
+`test_issue558_prepared_first_introduction_yields_due_work_and_commits_once`,
+`test_issue558_prepared_source_rejects_inserted_conflicting_route`, and
+`test_issue558_postgres_connection_recovery_fences_checkpoint_and_successor` in
+`backend/tests/test_encounter_introductions_postgres.py` own actual storage proof
+under the unchanged 250ms writer limit, due-first ordering, protected attempts,
+rollback, no fabricated reviews, replay and generation fences. Registration is
+not a claim that native qualification or assembled settlement has passed.

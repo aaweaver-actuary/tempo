@@ -12,6 +12,11 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 REQUIRED = (
+    "backend/tests/test_feedback_maintenance_recovery.py",
+    "backend/tests/test_feedback_preparation.py",
+    "backend/tests/test_encounter_introductions_postgres.py::test_issue558_prepared_first_introduction_yields_due_work_and_commits_once",
+    "backend/tests/test_encounter_introductions_postgres.py::test_issue558_prepared_source_rejects_inserted_conflicting_route",
+    "backend/tests/test_encounter_introductions_postgres.py::test_issue558_postgres_connection_recovery_fences_checkpoint_and_successor",
     "backend/tests/test_study_priority_interface.py",
     "backend/tests/test_product_contracts.py::test_new_product_boundaries_do_not_import_composition_or_private_siblings",
     "backend/tests/test_study_encounter_intake_boundary.py::test_intake_never_calls_queue_and_commits_once_when_refresh_fails",

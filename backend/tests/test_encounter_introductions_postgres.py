@@ -1,7 +1,6 @@
-"""Exact encounter admission on existing schema051, with no weighted D tables.
+"""Exact encounter admission on current additive schema, with no weighted D tables.
 
-Use the existing capped task-owned PostgreSQL fixture. Schema051 is unchanged
-published feedback-owner source, assembled for this qualification only.
+Use the existing capped task-owned PostgreSQL fixture and ordered migrations.
 """
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
@@ -34,7 +33,8 @@ def canonical_transaction(owned_postgres):
     migrations = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migrations)
     files = sorted(migrations.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
-    assert files[-1].name == '051_study_game_feedback.sql'
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    assert int(files[-1].name[:3]) == POSTGRES_SCHEMA_VERSION
     with psycopg.connect(**owned_postgres) as raw:
         for path in files:
             registration = migrations.MODULE_MIGRATIONS.get(path.name)
@@ -106,6 +106,90 @@ def add_routes(database,repertoire,moves,count):
         identity = uuid.uuid4().hex
         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,'white',?,?,?)",
             (identity,repertoire,identity,chess.STARTING_FEN,json.dumps(moves),DAY))
+
+
+def test_issue558_prepared_first_introduction_yields_due_work_and_commits_once(encounter_case, monkeypatch):
+    from app.services.encounter_preparation import prepare_encounter_introduction
+    from app.services import queue_admission_adapter
+    from app.services.postgres_queue_refresh import _admit_one_due_card
+    transaction, repertoire, card, mapping = encounter_case
+    with transaction() as database:
+        add_routes(database, repertoire, ['d2d4','d7d5','c2c4'], 1024)
+        target = mapping(database)
+        protected = tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?', (card+'-active',)).fetchone())
+    prepared = prepare_encounter_introduction(target, read=transaction)
+    assert prepared.reason is None
+    monkeypatch.setattr(queue_admission_adapter.CurrentEncounterIntroductions, '_routes',
+                        lambda *_: pytest.fail('prepared writer repeated complete discovery'))
+    monkeypatch.setattr(queue_admission_adapter, '_playable_introduction',
+                        lambda *_, **__: pytest.fail('prepared writer replayed chess'))
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        assert admit(database, target, allowance='encounter_exception', prepared_introduction=prepared).reason == 'due_queue_refresh_pending'
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (card,)).fetchone()[0] is None
+    # Existing queue owner admits one due card in its own short transaction.
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        assert _admit_one_due_card(database, DAY, card+'-due')
+    with pytest.raises(RuntimeError, match='caller rollback'):
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            assert admit(database, target, allowance='encounter_exception', prepared_introduction=prepared).status == 'introduced'
+            raise RuntimeError('caller rollback')
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        assert admit(database, target, allowance='encounter_exception', prepared_introduction=prepared).status == 'introduced'
+        assert admit(database, target, allowance='encounter_exception', prepared_introduction=prepared).status == 'already_introduced'
+    with transaction() as database:
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?', (card,)).fetchone()[0] == 1
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (card,)).fetchone()[0] == 0
+        assert tuple(database.execute('SELECT * FROM daily_queue WHERE card_id=?', (card+'-active',)).fetchone()) == protected
+        assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE card_id=ANY(?) ORDER BY position', ([card,card+'-due'],)).fetchall()] == [card+'-due',card]
+
+
+def test_issue558_prepared_source_rejects_inserted_conflicting_route(encounter_case):
+    from app.services.encounter_preparation import prepare_encounter_introduction
+    transaction, repertoire, card, mapping = encounter_case
+    with transaction() as database:
+        target = mapping(database)
+    prepared = prepare_encounter_introduction(target, read=transaction)
+    assert prepared.reason is None
+    with transaction() as database:
+        add_routes(database, repertoire, ['e2e4','e7e5','f1c4'], 1)
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        result = admit(database, target, allowance='encounter_exception', prepared_introduction=prepared)
+        assert result.status == 'deferred'
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (card,)).fetchone()[0] is None
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?', (card,)).fetchone()[0] == 0
+
+
+def test_issue558_postgres_connection_recovery_fences_checkpoint_and_successor(canonical_transaction):
+    from datetime import datetime, timedelta, timezone
+    from tempo_legacy_database.adapters.durable_tasks import storage
+    identity = 'recovery-' + uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    try:
+        with canonical_transaction() as database:
+            database.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,phase,payload_json,
+                attempt_count,next_attempt_at,lease_token,lease_expires_at,created_at,updated_at)
+                VALUES(?,'study_game_feedback',?,1,'leased','scan','{"after":"retained"}',1,?,'original',?,?,?)""",
+                (identity,identity,now.isoformat(),(now+timedelta(seconds=60)).isoformat(),now.isoformat(),now.isoformat()))
+        with canonical_transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            assert storage.defer_for_connection_failure(database, ((now+timedelta(seconds=1)).isoformat(),now.isoformat(),identity,1,'original')) == 1
+        with canonical_transaction() as database:
+            row = dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (identity,)).fetchone())
+            assert row['state'] == 'retrying' and row['phase'] == 'scan' and row['payload_json'] == '{"after":"retained"}'
+            assert row['lease_token'] is None and row['attempt_count'] == 0 and row['transaction_timeout_count'] == 0
+            database.execute("UPDATE background_tasks SET generation=2,state='leased',lease_token='successor' WHERE id=?", (identity,))
+        with canonical_transaction() as database:
+            assert storage.defer_for_connection_failure(database, (now.isoformat(),now.isoformat(),identity,1,'original')) == 0
+            assert database.execute('SELECT lease_token FROM background_tasks WHERE id=?', (identity,)).fetchone()[0] == 'successor'
+    finally:
+        with canonical_transaction() as database:
+            database.execute('DELETE FROM background_task_events WHERE task_id=?', (identity,))
+            database.execute('DELETE FROM background_tasks WHERE id=?', (identity,))
 
 
 @pytest.mark.parametrize('allowance',['ordinary','encounter_exception'])

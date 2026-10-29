@@ -378,7 +378,14 @@ print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
             helper("refresh")
             next_wake = time.monotonic()+2
         return value
-    available = wait_for(refreshed_receipt, lambda value: value.admission_status == "available")
+    try:
+        available = wait_for(refreshed_receipt, lambda value: value.admission_status == "available")
+    except Exception:
+        try:
+            print('Study feedback task state before cleanup:', json.dumps(helper('feedback-diagnostics')))
+        except Exception as diagnostic_error:
+            print('Study feedback task state unavailable:', type(diagnostic_error).__name__)
+        raise
     assert available.owner_receipt_id == original.owner_receipt_id
     assert available.detected_at == original.detected_at
     after_refresh = helper("settlement-state")

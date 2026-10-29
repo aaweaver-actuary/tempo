@@ -216,6 +216,8 @@ eager-intake toggle or fallback, and Games removal cannot prevent Study pickup.
 
 The internal refresh factory `current_owner_encounter_feedback` alone receives
 `introductions`, `introduction_policy` and optional immutable `prepared_priority`.
+The independent sweep additionally uses the [prepared introduction path](introductions/README.md#prepared-independent-study-sweep--558-repair),
+with source validation before its writer and commit-time current-row fences.
 The existing #495 canonical capability uses `allowance="encounter_exception"`,
 `paused=actual_whole_operation_pause` and the exact current `target` mapping.
 This targeted first-introduction exception bypasses ordinary new-card cap and
