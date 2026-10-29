@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readHostStudyActivity } from '../../scripts/host-study-activity.mjs';
 import { acquireDevelopmentBudget, assertDevelopmentCapacity, composeResourceLimits, resourceBudgets,
-  waitForStudyQuiet, managedBuild, reconcileDevelopmentBuilder, reconcileDevelopmentBudget } from '../../scripts/development-budget.mjs';
+  waitForStudyQuiet, managedBuild, managedComposeBuild, reconcileDevelopmentBuilder, reconcileDevelopmentBudget } from '../../scripts/development-budget.mjs';
 
 test('study budget serializes independent development owners and never removes another owner', async () => {
   const parent = await mkdtemp(join(tmpdir(),'tempo-budget-test-'));
@@ -114,14 +114,23 @@ test('independent development processes serialize one shared owner under concurr
 async function builderFixture(run) {
   const parent = await mkdtemp(join(tmpdir(), 'tempo-builder-regression-'));
   const directory = join(parent, 'lock');
-  const state = { builder: false, container: false, commands: [] };
+  const state = { builder: false, container: false, commands: [], peers: [] };
   const absent = message => { const error = new Error(message); error.stderr = message; throw error; };
   const docker = async args => {
     state.commands.push(args);
-    if (args[0] === 'ps') return '';
+    if (args[0] === 'ps') return state.peers.map(container => container.Id).join('\n');
+    if (args[0] === 'inspect' && state.peers.some(container => args.includes(container.Id))) {
+      assert.deepEqual(args.slice(1), state.peers.map(container => container.Id));
+      return JSON.stringify(state.peers);
+    }
     if (args[0] === 'buildx' && args[1] === 'create') {
       state.name = args[args.indexOf('--name') + 1];
       state.token = args.find(value => value.startsWith('env.TEMPO_RESOURCE_OWNER=')).split('=')[1];
+      state.requestedHost = {
+        Memory: Number(args.find(value => value.startsWith('memory=')).slice(7, -1)) * 1024**2,
+        CpuQuota: Number(args.find(value => value.startsWith('cpu-quota=')).split('=')[1]),
+        CpuPeriod: Number(args.find(value => value.startsWith('cpu-period=')).split('=')[1]),
+      };
       const journal = JSON.parse(await readFile(join(directory, 'resources', encodeURIComponent(`builder:${state.name}`)), 'utf8'));
       assert.equal(journal.token, state.token, 'creation is preceded by a durable ownership record');
       if (state.failBeforeCreate) throw new Error('create failed without effects');
@@ -146,7 +155,7 @@ async function builderFixture(run) {
       const name = args.at(-1);
       if (!state.container) return absent(`No such container: ${name}`);
       return JSON.stringify([{ Config: { User: '1000:1000', Env: [`TEMPO_RESOURCE_OWNER=${state.foreignOwner ?? state.token}`] },
-        HostConfig: { Memory: 2048 * 1024**2, CpuQuota: 200000, CpuPeriod: 100000 } }]);
+        HostConfig: { ...state.requestedHost, ...state.kernelLimits } }]);
     }
     throw new Error(`Unexpected Docker operation: ${JSON.stringify(args)}`);
   };
@@ -259,6 +268,141 @@ test('A11 inherited ownership cannot admit a second builder execution lane', () 
     },{...options,token:lease.token});
     assert.equal(state.builder,false);
   } finally {await lease.release();}
+}));
+
+test('A14 managed build defaults and explicit lower limits bind creation and exact readback', async t => {
+  for (const limits of [undefined, {cpus:1, memoryMiB:1536}, {cpus:0.5, memoryMiB:512}]) {
+    await t.test(limits ? JSON.stringify(limits) : 'unchanged defaults', () => builderFixture(async ({directory, state, options}) => {
+      let builds = 0;
+      assert.equal(await managedBuild(async () => { builds++; return 'built'; }, {...options, limits}), 'built');
+      assert.equal(builds, 1);
+      assert.deepEqual(state.requestedHost, {
+        Memory:(limits?.memoryMiB ?? 2048) * 1024**2,
+        CpuQuota:(limits?.cpus ?? 2) * 100000, CpuPeriod:100000,
+      });
+      assert.equal(state.builder, false);
+      assert.equal(state.container, false);
+      await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
+    }));
+  }
+});
+
+test('A15 invalid or over-budget build limits fail before ownership, hooks or Docker', async t => {
+  const invalid = [null, {}, {cpus:1}, {memoryMiB:1536},
+    ...[0, -1, NaN, Infinity, '1', true, 0.000001].map(cpus => ({cpus, memoryMiB:1536})),
+    ...[0, -1, NaN, Infinity, '1536', true, 1536.5].map(memoryMiB => ({cpus:1, memoryMiB})),
+    {cpus:2.00001, memoryMiB:1536}, {cpus:1, memoryMiB:2049}];
+  for (const [index, limits] of invalid.entries()) {
+    await t.test(String(index), () => builderFixture(async ({directory, state, options}) => {
+      await assert.rejects(managedBuild(async () => assert.fail('invalid build executed'), {
+        ...options, limits, prepare:async () => assert.fail('invalid preparation executed'),
+        quiet:async () => assert.fail('invalid request waited for quiet'),
+      }), /Managed build limits/);
+      assert.deepEqual(state.commands, []);
+      await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
+    }));
+  }
+});
+
+function builderPeer(cpus = 1, memoryMiB = 512) {
+  return {Id:'peer-owned-container', HostConfig:{NanoCpus:cpus * 1e9, Memory:memoryMiB * 1024**2},
+    Config:{Labels:{'tempo.resource-owner':'peer-owner', 'com.docker.compose.project':'peer-project',
+      'com.docker.compose.service':'postgres'}}};
+}
+
+test('A16 lower build snapshot admits existing peers at the ceiling and preserves them through cleanup', () => builderFixture(async ({directory, state, options}) => {
+  const limits = {cpus:1, memoryMiB:1536};
+  state.peers = [builderPeer()];
+  const peerSnapshot = structuredClone(state.peers);
+  await managedBuild(async () => {}, {...options, limits, prepare:async () => {
+    // Neither a caller hook nor an await may change the admitted allocation.
+    limits.cpus = 2; limits.memoryMiB = 2048;
+  }});
+  assert.deepEqual(state.requestedHost, {Memory:1536 * 1024**2, CpuQuota:100000, CpuPeriod:100000});
+  assert.deepEqual(state.peers, peerSnapshot);
+  assert(!state.commands.some(args => args.includes('rm') && args.includes('peer-owned-container')));
+  await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
+}));
+
+test('A17 aggregate build admission rejects CPU or memory overflow without touching peers', async t => {
+  for (const [name, peer, limits] of [
+    ['CPU overflow', builderPeer(1.01, 512), {cpus:1, memoryMiB:1536}],
+    ['memory overflow', builderPeer(1, 513), {cpus:1, memoryMiB:1536}],
+    ['default still reserves full budget', builderPeer(0.1, 1), undefined],
+  ]) {
+    await t.test(name, () => builderFixture(async ({directory, state, options}) => {
+      state.peers = [peer];
+      const peerSnapshot = structuredClone(state.peers);
+      await assert.rejects(managedBuild(async () => assert.fail('overflow build executed'), {...options, limits}), /exceed the aggregate/);
+      assert.deepEqual(state.peers, peerSnapshot);
+      assert.deepEqual(state.commands.map(args => args[0]), ['ps', 'inspect']);
+      await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
+    }));
+  }
+});
+
+test('A18 builder cgroup mismatch fails without fallback and verifies cleanup before release', async t => {
+  for (const kernelLimits of [
+    {Memory:2048 * 1024**2}, {Memory:1024 * 1024**2}, {Memory:0},
+    {CpuQuota:200000}, {CpuQuota:50000}, {CpuQuota:-1},
+    {CpuPeriod:200000}, {CpuQuota:50000, CpuPeriod:50000}, {NanoCpus:2e9},
+  ]) {
+    await t.test(JSON.stringify(kernelLimits), () => builderFixture(async ({directory, state, options}) => {
+      state.kernelLimits = kernelLimits;
+      state.peers = [builderPeer()];
+      const peerSnapshot = structuredClone(state.peers);
+      await assert.rejects(managedBuild(async () => assert.fail('mismatched build executed'), {
+        ...options, limits:{cpus:1, memoryMiB:1536},
+      }), /kernel limits do not match/);
+      assert.equal(state.commands.filter(args => args[0] === 'buildx' && args[1] === 'create').length, 1);
+      assert.equal(state.builder, false);
+      assert.equal(state.container, false);
+      assert.deepEqual(state.peers, peerSnapshot);
+      await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
+    }));
+  }
+});
+
+test('A19 lower build retains journal and lane on failed cleanup and excludes inherited builders', () => builderFixture(async ({directory, state, options}) => {
+  const lease = await acquireDevelopmentBudget({directory});
+  state.peers = [builderPeer()];
+  const peerSnapshot = structuredClone(state.peers);
+  const lowerOptions = {...options, token:lease.token, limits:{cpus:1, memoryMiB:1536}};
+  await assert.rejects(managedBuild(async () => {
+    await assert.rejects(managedBuild(async () => assert.fail('concurrent lower build executed'), lowerOptions), /execution lane is occupied/);
+    state.failRemoval = true;
+    throw new Error('original lower build failed');
+  }, lowerOptions), error => {
+    assert(error instanceof AggregateError);
+    assert.match(error.message, /cleanup incomplete/);
+    assert(error.errors.some(cause => /original lower build failed/.test(cause.message)));
+    return true;
+  });
+  assert.equal(state.builder, true);
+  assert.equal((await readdir(join(directory, 'resources'))).length, 1);
+  assert((await readdir(directory)).includes('builder-lane'));
+  await assert.rejects(lease.release(), /verified cleanup/);
+  await assert.rejects(managedBuild(async () => assert.fail('retained lane reused'), lowerOptions), /execution lane is occupied/);
+  assert.equal(state.commands.filter(args => args[0] === 'buildx' && args[1] === 'create').length, 1);
+  assert.deepEqual(state.peers, peerSnapshot);
+}));
+
+test('A20 Compose build forwards explicit limits and preserves build failures after verified cleanup', () => builderFixture(async ({directory, state, options}) => {
+  state.peers = [builderPeer()];
+  const peerSnapshot = structuredClone(state.peers);
+  const failure = new Error('lower-memory build failed');
+  let builds = 0;
+  await assert.rejects(managedComposeBuild(async () => JSON.stringify({target:{app:{context:'.'}}}), async args => {
+    builds++;
+    assert.deepEqual(args.slice(0, 4), ['buildx', 'bake', '--builder', state.name]);
+    throw failure;
+  }, {...options, limits:{cpus:1, memoryMiB:1536}}), error => error === failure);
+  assert.equal(builds, 1);
+  assert.deepEqual(state.requestedHost, {Memory:1536 * 1024**2, CpuQuota:100000, CpuPeriod:100000});
+  assert.equal(state.builder, false);
+  assert.equal(state.container, false);
+  assert.deepEqual(state.peers, peerSnapshot);
+  await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
 }));
 
 test('B independent host sessions expire separately while stale or malformed producers deny admission', async () => {
