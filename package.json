@@ -52,7 +52,8 @@
     "test:component": "node tools/component-build/test-lane.mjs",
     "build:study": "npm run build:packages && TEMPO_TARGET=study vite build --config vite.static.config.ts",
     "build:workbench": "npm run build --prefix apps/workbench-web",
-    "test:workbench": "npm test --prefix apps/workbench-web"
+    "test:workbench": "npm test --prefix apps/workbench-web",
+    "release:session": "node scripts/release-workflow/release-session.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",

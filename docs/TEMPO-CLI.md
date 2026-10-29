@@ -156,6 +156,18 @@ Diagnostic execution still returns zero when it reports a verification blocker;
 invalid targets and operational command failures retain their existing failure
 exit codes. `tempo logs` does not wait for GitHub verification.
 
+## Operator release controller
+
+The version-1 release owner may use
+[`npm run release:session`](../scripts/release-workflow/README.md) to prepare and
+execute the reviewed controller with fresh private inputs and a matching release
+authorization. It calls the existing runtime/budget/backup owners, records each
+phase, announces actual availability before optional checks, and returns exact
+owned resources to their coordinator. It does not run automatically on import,
+change the normal `tempo start` command, operate the version-2 rehearsal, or grant
+deployment/resource authority. See its linked input, migration/recovery and
+evidence limitations before a separately authorized use.
+
 ## Operator update and post-update evidence
 
 After this repair is merged, run diagnostics and the read-only plan first.

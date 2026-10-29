@@ -8,6 +8,31 @@ Scripts should be orchestration and verification entry points, not a second
 application layer. If a script gains product logic, move that logic into a
 tested backend or frontend module and keep the script thin.
 
+## Version-1 operator release session
+
+The [release controller](release-workflow/README.md) exposes the reviewed private
+workflow through `npm run release:session -- ...`. It delegates allocation,
+BuildKit, backup, migration, history verification and service operations to the
+existing owners below. It does not replace the normal user CLI or operate the
+version-2 rehearsal. Its integration performs no live release.
+
+```mermaid
+flowchart LR
+  Prepare[Clean current main, CI and frozen input validation] --> Allocate[Existing current budget owner]
+  Allocate --> Build[Managed build and artifact verification]
+  Build --> Runtime[Existing runtime: guarded shutdown and conditional backup/migration]
+  Runtime --> Receipt[Readiness, actual service identity and authoritative receipt]
+  Receipt --> Available[Immediate availability event]
+  Available --> Checks[Bounded read-only and isolated UI checks]
+  Checks --> Handback[Exact owned cleanup and owner handback]
+```
+
+Availability and final closeout are distinct outcomes. No pending migration means
+the controller skips backup/migration rather than fabricating new verification.
+The selected backup command/signal can be applied without reconciling unrelated
+dependency configuration. Current CPU policy comes from the selected checkout's
+allocation interface, including #586; no historical two-CPU ceiling is copied.
+
 ## Normal launcher Study boundary
 
 Source preparation for [#359](https://github.com/aaweaver-actuary/tempo/issues/359):
