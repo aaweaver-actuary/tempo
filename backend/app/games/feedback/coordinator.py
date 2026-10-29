@@ -63,10 +63,12 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
         if not any(finding.repertoire_id in snapshot.membership.scope_repertoire_ids
                    and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
             raise ValueError("encounter finding is outside supplied snapshot scope")
-        # Missing introduction chronology blocks a lapse, not an exact encounter fact.
-        unknown_chronology = (finding.kind == "known_unavailable"
-                              and finding.diagnostic == "introduction_evidence_unavailable")
-        if ((finding.kind not in {"known_unintroduced", "confirmed_miss"} and not unknown_chronology)
+        # Chronology limits lapse eligibility, not relevance of an exact encounter.
+        chronology_only = (finding.kind == "known_unavailable" and finding.diagnostic in {
+            "introduction_evidence_unavailable", "game_occurrence_time_not_exact",
+            "chronology_requires_timezone", "conflicting_introduction_chronology",
+        })
+        if ((finding.kind not in {"known_unintroduced", "confirmed_miss"} and not chronology_only)
                 or finding.membership != "present" or len(finding.expected_uci) != 1):
             continue
         mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
