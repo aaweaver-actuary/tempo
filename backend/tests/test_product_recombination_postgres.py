@@ -552,6 +552,7 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
         assert database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()
         assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id IN ('A','B') AND status='queued'").fetchone()
         assert PostgresGameFeedbackStore(database).get(lapse.key).available_by==deadline
+        assert database.execute_native("SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s AND status='queued'", (combined,)).fetchone()[0] == 'product_game_lapse'
     # The real preparation reader closes its initial connection. Prove current
     # target labels survive that callback boundary with PostgreSQL, not mocks.
     from app.services.queue_presentation import presentation_rows
@@ -559,12 +560,14 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
     def bounded_read(statement, parameters=()):
         calls.append(statement)
         with transaction() as database:
-            return database.execute(statement, parameters).fetchall()
+            rows = database.execute(statement, parameters).fetchall()
+            calls[-1] = (statement, tuple(tuple(row) for row in rows))
+            return rows
     visible = presentation_rows(None, now.date().isoformat(), read=bounded_read, limit=16)
     target = next(row for row in visible if row['card_id'] == combined)
     assert target['admission_kind'] == 'review'
-    assert target['gameplay_priority_reason'] == 'product_game_lapse'
-    assert sum('FROM study_game_feedback' in statement for statement in calls) == 1
+    assert target['gameplay_priority_reason'] == 'product_game_lapse', calls
+    assert sum('FROM study_game_feedback' in statement for statement, _ in calls) == 1
     with transaction() as database:
         reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
         settled = PostgresGameFeedbackStore(database).get(lapse.key)

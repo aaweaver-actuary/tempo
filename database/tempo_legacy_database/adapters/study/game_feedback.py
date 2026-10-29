@@ -260,9 +260,9 @@ def owed_feedback_card_ids(database, card_ids, *, read=None, include_regrouped=F
                     SELECT 1 FROM study_recombination_current current
                     JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
                     WHERE current.presentation_id=requested.card_id AND current.decision_id=effect.decision_id
-                      AND json_extract_path_text(CAST(p.result_json AS json),'presentation','repertoire_id')=COALESCE(
-                        json_extract_path_text(CAST(effect.payload_json AS json),'finding','repertoire_id'),
-                        json_extract_path_text(CAST(effect.payload_json AS json),'command','decision','repertoire_id')))))"""
+                      AND json_extract_path_text(json_extract_path(CAST(p.result_json AS json),'presentation'),'repertoire_id')=COALESCE(
+                        json_extract_path_text(json_extract_path(CAST(effect.payload_json AS json),'finding'),'repertoire_id'),
+                        json_extract_path_text(json_extract_path(json_extract_path(CAST(effect.payload_json AS json),'command'),'decision'),'repertoire_id')))))"""
         rows = read(statement, ids) if read is not None else database.execute_native(statement, ids).fetchall()
         return {row[0] for row in rows}
     if read is not None:
