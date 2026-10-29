@@ -14,9 +14,10 @@ historical evidence; none establishes activation or end-to-end settlement.
 
 ## Owned files and dependencies
 
-The exact slice is `game_sync_current.py`, `provider_priority.py`, the separate
+The original packaging slice is `game_sync_current.py`, `provider_priority.py`, the separate
 [`docker-compose.games-feedback.yml`](../../../../docker-compose.games-feedback.yml)
-overlay and this README. The intake adapter retains the donor's exact bytes.
+overlay and this README. Qualification additionally restores the small synthetic
+process helper documented below. The intake adapter retains the donor's exact bytes.
 The worker root adds early validation through the existing pure forward-window
 policy.
 Only the `game-feedback-worker` service is copied from its Compose file. Current
@@ -172,7 +173,7 @@ readiness using its existing approved path, obtain a redacted current saved-conf
 snapshot through the already authorized read route if needed, account for the new
 optional allocation, and combine #590/#589/#581 at their declared boundaries.
 Token values, account identifiers and private payloads must stay out of this
-handoff and PR. There is no merge qualification, deployment or activation claim.
+handoff and PR. These readiness observations do not establish merge qualification, deployment or activation.
 
 
 ## API/Settings coordination and mixed-side finding
