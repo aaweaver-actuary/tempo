@@ -117,6 +117,23 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
             if row[0] != result['repertoire_id']] == main_before
         assert db.execute_native('SELECT is_main FROM repertoires WHERE id=%s', (result['repertoire_id'],)).fetchone()[0] == 0
         assert db.execute_native('SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s', (result['repertoire_id'],)).fetchone()[0] == 2
+        stale = retained_imports(db).preview(operation, tuple(resolved))
+    # A real intervening owner-source change invalidates an existing-target
+    # preview, even though its proposed import would otherwise deduplicate.
+    with case.transaction() as db:
+        db.execute_native('UPDATE repertoires SET name=%s WHERE id=%s',
+            ('changed after displayed preview', result['repertoire_id']))
+    stale_id = 'stale-' + uuid4().hex
+    stale_payload = stale.approval_payload(stale_id)
+    gateway.record_operation_attempt(stale_id, 'imports.pgn.explicit', stale_payload, background=False)
+    assert gateway.execute_command(stale_id, 'imports.pgn.explicit', stale_payload) is None
+    with case.transaction() as db:
+        failed = db.execute_native('SELECT state,error_json FROM operation_receipts WHERE operation_id=%s', (stale_id,)).fetchone()
+        assert failed[0] == 'failed' and json.loads(failed[1])['status_code'] == 409
+        assert json.loads(failed[1])['detail']['code'] == 'stale_or_unapproved_import_preview'
+        assert db.execute_native('SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s', (result['repertoire_id'],)).fetchone()[0] == 2
+        assert dict(db.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()) == rejected
+        assert _protected_state(db, case.card_id, issue) == protected
 
 
 # Reuse the existing capped fixture; collection alone opens no database.
