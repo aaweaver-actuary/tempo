@@ -309,7 +309,7 @@ The existing immutable CI plan adds a blocking `lifecycle` layer. Its sensitivit
 
 The backend ordinary exemption is limited to exact reviewed service files and root domain command handlers, API modules, contracts and models listed in the lifecycle inventory. It does not exempt all of `backend/app/` or `backend/app/services/`, or introduce suffix-based exemptions for future command/API modules. New service or root modules require lifecycle until explicitly reviewed and classified; existing sensitive rules still override exact ordinary exemptions. Normal product tests and `tests/REGRESSIONS.md` remain ordinary companions to domain changes.
 
-Every complete, nightly, main, merge-group, manual and publishing verification requires lifecycle. Ordinary unrelated PRs record it explicitly as inapplicable, with the corresponding workflow skip and aggregate explanation. Broad browser coverage alone does not make overall verification complete: the overall scope is complete only when lifecycle and the existing full browser/pinned coverage are selected. Browser selection, critical cases, pinned applicability and parallelism are unchanged.
+Every complete, nightly, main, merge-group and manual verification requires lifecycle. Ordinary unrelated PRs record it explicitly as inapplicable, with the corresponding workflow skip and aggregate explanation. Broad browser coverage alone does not make overall verification complete: the overall scope is complete only when lifecycle and the existing full browser/pinned coverage are selected. Browser selection, critical cases, pinned applicability and parallelism are unchanged.
 
 The hashed plan captures the expected PostgreSQL mode and ordered scenario inventory. Layer and quality checks require the matching revision, plan hash, exact scenario inventory and successful results including cleanup; a missing, cancelled, unexpectedly skipped, failed or stale selected lifecycle result blocks quality. The release CLI requires `lifecycle / verify` in complete exact-main CI evidence. No previous-revision results are reused.
 
@@ -319,7 +319,7 @@ The PostgreSQL runner invokes the Compose image build once; startup, recovery re
 
 Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
 
-CI retains npm caching and adds pip downloads plus Rust compiler/dependency caches after toolchain setup. Workflow cancellation is scoped to the same PR or ref, and only superseded PR runs are cancelled. Pages deployment has its own non-cancelling concurrency group. All full-gate stages and pinned visual/performance settings remain required and unchanged. Vitest worker counts and test isolation are intentionally unchanged pending measurements.
+CI retains npm caching and adds pip downloads plus Rust compiler/dependency caches after toolchain setup. Workflow cancellation is scoped to the same PR or ref, and only superseded PR runs are cancelled. Workflows verify source only; they do not publish GitHub Pages. All full-gate stages and pinned visual/performance settings remain required and unchanged. Vitest worker counts and test isolation are intentionally unchanged pending measurements.
 
 ## Runner regression coverage
 
@@ -481,11 +481,12 @@ resource cleanup. Artifacts upload with `always()` and missing reports fail
 skipped jobs, absent commands, skipped tests and collection mismatches fail
 aggregation. Only plan-recorded inapplicability allows a skip.
 
-Complete verification runs nightly at **07:00 UTC**, on demand, for merge-group candidates when the owner enables a merge queue, and on main
-before practice-demo publishing. Scheduled runs and manual runs with the
-(default) **verification only** option cannot deploy. Publishing additionally
-requires complete scope and successful `quality` on main. Same-PR runs
-supersede each other; deployment concurrency remains non-cancelling. No
+Complete verification runs nightly at **07:00 UTC**, on demand, for merge-group
+candidates when the owner enables a merge queue, and on main. All workflow events
+perform verification only: Pages build/upload/deployment jobs, publishing
+permissions and the former manual publishing option have been removed. The
+existing hosted site is retained; merging source does not publish it. Same-PR
+runs supersede each other; main verification remains non-cancelling. No
 repository settings were changed by the historical browser-selection work. At
 emergency-policy inspection on October 12, main required `quality` with
 strict=true. The replacement settings and rollback are specified in the
