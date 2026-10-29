@@ -85,7 +85,6 @@ export enum FeedbackEnum {
 export enum ViewEnum {
   Train = "train",
   Tactics = "tactics",
-  Endgames = "endgames",
   Repertoire = "repertoire",
   Builder = "builder",
   Compare = "compare",

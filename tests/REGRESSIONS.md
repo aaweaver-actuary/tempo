@@ -1076,7 +1076,7 @@ Quiet notifications (October 2, 2026):
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |
 | Board clipped at narrow viewport | `local import respects the daily limit and keeps the Black Study queue playable`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
-| Removed endgame calculation silently calls an external provider | `removed tablebase calculation rejects locally without external-provider fallback` |
+| Retired Endgames reappears in navigation or removes chess-themed Tactics | `Endgames has no navigation or menu entry while Train and Tactics remain`; `ending-themed packs remain legal playable Tactics` |
 | Engine not usable in production | `production Stockfish returns playable engine moves without clipping the board` |
 | Maia runtime/module loading errors, including production JavaScript MIME type | `Maia initializes matching runtime assets and returns legal playable probabilities` |
 | Board controls fall below the viewport | Board-and-controls bounds assertions in every browser workspace regression |
@@ -1472,9 +1472,10 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - A queued graph rebuild publishes after its repertoire is deleted and fails on a foreign key: `backend/tests/test_postgres_cutover.py::test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal`.
 - A confirmed PostgreSQL repertoire deletion remains visible while the training queue refreshes: `tests/browser/workspace-flows.spec.ts::sample deletion uses repertoire identity and does not delete its same-filename sibling`.
 - Removed legacy template generation still dispatches new calculation: `backend/tests/test_postgres_cutover.py::test_removed_endgame_template_generation_rejects_before_dispatch`.
-- Endgame template admission looks complete while its write is pending or retries with a new operation ID: `tests/unit/endgame-template-pending-regressions.test.ts::endgame admission remains pending and reuses its operation ID`.
-- Saved legacy attempt recovery must retain its original immutable payload instead of regenerating: `backend/tests/test_postgres_cutover.py::test_saved_endgame_pending_receipt_recovers_without_preparation`. Former provider/cache/generation cases are retired because calculation is removed.
-- A pending endgame attempt creates a second position or loses its operation ID: `tests/unit/endgame-attempt-pending-regressions.test.ts::a pending endgame attempt keeps its operation ID and does not create another position`.
+- Retired Endgames journals or imported backups revive practice: `tests/unit/endgame-template-pending-regressions.test.ts` preserves unrelated pending saves, checksum validation before writes, selective mirror cleanup and transaction rollback.
+- Retired Endgames commands are redelivered: `tests/unit/endgame-attempt-pending-regressions.test.ts::retired endgame intents settle without delivery and preserve unrelated pending reviews`.
+- Retired endpoints reenter a foreground handler: `test_retired_endgame_pending_receipt_cannot_reenter_feature_handler` in `backend/tests/test_postgres_cutover.py`.
+- Retirement deletes another practice family: both `backend/tests/test_endgames_retirement.py` SQLite tests and Learning's `test_native_endgames_retirement_preserves_other_families_and_fences_recreation` exercise preservation and rollback.
 - PostgreSQL migration 002 is applied but the API rejects its own current schema at startup: `backend/tests/test_postgres_cutover.py::test_postgres_startup_accepts_latest_checked_in_schema`.
 - Opening-graph traversal holds a PostgreSQL read transaction or per-line slicing changes graph identity: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal`.
 - Opening-graph staging writes an unbounded line or loses its cursor on replay: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor`.
@@ -5597,3 +5598,6 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 - `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
 - `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
 - `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
+
+
+October 29 full-retirement amendment: earlier dated Endgames saved-line, provider and material-guard entries are historical. Current owning filenames retain retirement, replay-discard, data-preservation and route-absence regressions; see [the exact source manifest](../docs/architecture/endgames-retirement.json). No deleted feature behavior remains an acceptance requirement.

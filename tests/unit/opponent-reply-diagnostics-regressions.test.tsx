@@ -227,10 +227,10 @@ it("opponent_reply_handled_failure_closes_its_diagnostic_phase", async () => {
 });
 
 
-it("real Home preserves saved endgame queue lines, plays them and submits the ordinary review", async () => {
+it("real Home preserves saved middlegame queue lines, plays them and submits the ordinary review", async () => {
   const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
   const reviews: unknown[] = [];
-  await mountTraining({ content_type: "endgame", start_fen: fen, moves: ["a2a3"] }, reviews);
+  await mountTraining({ content_type: "middlegame", start_fen: fen, moves: ["a2a3"] }, reviews);
   vi.useRealTimers();
   expect(useTrainingStore.getState().getCard().moves).toEqual(["Ra3+"]);
   await act(async () => { await useBoardShellStore.getState().board.onMove?.("a2", "a3"); });

@@ -5,7 +5,7 @@ import { canOpenWorkspace } from '../../app/lib/study-workspace-policy';
 import type { View } from '../../app/types';
 
 it('independent Study rejects direct optional-workspace intents while legacy navigation remains', () => {
-  const supported: View[] = ['train', 'tactics', 'endgames', 'settings'];
+  const supported: View[] = ['train', 'tactics', 'settings'];
   const optional: View[] = ['games', 'builder', 'repertoire', 'studies', 'insights', 'compare', 'progress', 'statistics'];
   for (const view of supported) expect(canOpenWorkspace(view, true)).toBe(true);
   for (const view of optional) expect(canOpenWorkspace(view, true)).toBe(false);

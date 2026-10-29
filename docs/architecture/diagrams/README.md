@@ -246,3 +246,5 @@ Keep explanatory detail and source links beside each bounded view.
 This criterion preserves data, permissions, applicable gates, and independence
 of the changed path under [root working rules](../../../AGENTS.md). It does not
 assign unrelated extraction or waive safeguards.
+
+**IMPLEMENTED SOURCE / Endgames retirement:** the canonical [browser compatibility view](../../../app/README.md#retired-practice) and owner practice-family ER views remove the retired workspace/storage. Legacy migration 055 and Learning migration 0004 own deletion; installation is unverified.

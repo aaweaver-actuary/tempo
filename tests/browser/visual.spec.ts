@@ -81,23 +81,13 @@ for (const viewport of [
   for (const workspace of [
     "Train",
     "Tactics",
-    "Endgames",
     "Repertoire",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await prepareVisualUI(page);
-      if (workspace === "Endgames")
-        await page.evaluate(() => {
-          Math.random = () => 0.5;
-        });
       await navigate(page, workspace);
-      if (workspace === "Endgames")
-        await expect(page.locator(".board-frame")).toHaveAttribute(
-          "data-fen",
-          "8/8/8/7R/K7/8/8/6k1 w - - 0 1",
-        );
       if (workspace === "Settings") {
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeVisible();
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).not.toBeChecked();

@@ -16,7 +16,7 @@ from tempo_legacy_database.adapters.authored_repertoires.card_deletion.storage i
 )
 
 RETAINED_REPERTOIRE_ID = "__retained_cards__"
-SYSTEM_REPERTOIRE_IDS = ("__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__", "__defense__", RETAINED_REPERTOIRE_ID)
+SYSTEM_REPERTOIRE_IDS = ("__tactics__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__", "__defense__", RETAINED_REPERTOIRE_ID)
 
 
 @dataclass(frozen=True)

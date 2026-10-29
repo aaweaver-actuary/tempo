@@ -57,7 +57,6 @@ export type TempoSettings = {
 
   timezone: string;
   major_mistake_cp: number;
-  draw_hold_user_moves: number;
   coverage_target: number;
   arrow_metric: "stockfish" | "lichess" | "masters";
 };
@@ -109,7 +108,6 @@ export class Settings {
       },
       timezone: "local",
       major_mistake_cp: 100,
-      draw_hold_user_moves: 20,
       coverage_target: 90,
 
       arrow_metric: "stockfish",

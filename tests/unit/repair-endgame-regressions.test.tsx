@@ -2,7 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { Chess } from "chess.js";
 import { expect, it, vi } from "vitest";
 import CardEditor from "../../app/views/card_editor";
-import { probeTablebase } from "../../app/utils/tablebase";
 import {
   asCardId,
   asFenString,
@@ -47,13 +46,6 @@ it("repair uses the shared board and arrows navigate the complete solution; Esca
   );
   fireEvent.keyDown(window, { key: "Escape" });
   expect(onClose).toHaveBeenCalledOnce();
-});
-
-it("removed tablebase calculation rejects locally without external-provider fallback", async () => {
-  const request = vi.spyOn(globalThis, "fetch");
-  await expect(probeTablebase(new Chess().fen())).rejects.toThrow("calculation has been removed");
-  expect(request).not.toHaveBeenCalled();
-  request.mockRestore();
 });
 
 it("card repair offers Lichess restoration only for explicitly packaged tactics", () => {

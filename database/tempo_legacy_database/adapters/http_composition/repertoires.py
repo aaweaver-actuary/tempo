@@ -99,7 +99,7 @@ def line_rows(database):
         """SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
                                   r.name repertoire_name,r.is_main
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY r.created_at,l.created_at""",
+                           WHERE r.id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY r.created_at,l.created_at""",
     ).fetchall()
 
 
@@ -169,14 +169,14 @@ def record_teaching_state(database, identifier, revision, ply, taught_at):
 
 def selectable_repertoire(database, identifier):
     return database.execute(
-        "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
+        "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
         (identifier,),
     ).fetchone()
 
 
 def select_main_repertoire(database, identifier):
     database.execute(
-        "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
+        "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
         (identifier,),
     )
 

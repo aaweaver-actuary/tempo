@@ -9,7 +9,6 @@ import {
   repertoiresResponseSchema,
   progressResponseSchema,
   gamesSummarySchema,
-  endgameTemplatesSchema,
   tacticProgressSchema,
 } from "../schemas";
 
@@ -77,8 +76,6 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
     case "/api/games/summary": {
       return parseWorkspaceData(gamesSummarySchema, raw, "games");
     }
-    case "/api/endgames/templates":
-      return parseWorkspaceData(endgameTemplatesSchema, raw, "endgame templates");
     default:
       return raw;
   }

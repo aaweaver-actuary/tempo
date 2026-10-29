@@ -5,7 +5,6 @@ export { expect };
 export const boardWorkspaces = [
   "Train",
   "Tactics",
-  "Endgames",
 ];
 export const viewports = [
   { width: 320, height: 568 },
@@ -59,12 +58,6 @@ export async function prepareUI(page: Page) {
     ])
       localStorage.setItem(key, "false");
   });
-  await page.route("https://tablebase.lichess.ovh/**", (route) =>
-    route.abort(),
-  );
-  await page.route("**/api/endgames/probe", (route) =>
-    route.fulfill({ status: 410, json: { detail: "On-demand endgame calculation has been removed" } }),
-  );
   await page.goto("/");
 }
 export async function noPageOverflow(page: Page) {

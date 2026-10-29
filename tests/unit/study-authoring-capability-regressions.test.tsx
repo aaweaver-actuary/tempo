@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TacticalCatalogPanel } from "../../app/components/tactical-catalog";
-vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div data-testid="endgame-board" /> }));
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
-vi.mock("../../app/utils/tablebase", () => ({ probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })) }));
 beforeEach(() => { vi.resetModules(); vi.stubGlobal("__TEMPO_STUDY__", true); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it.each(["capture", "delete"])("pr291 R3 unsupported %s rejects before reading retained data, storage mutation or network", async kind => {
@@ -24,11 +22,11 @@ it("pr291 R3 read-only catalog preserves pack selection without activation actio
   fireEvent.click(screen.getByRole("button", { name: /Easy.*Pack 1/ })); expect(select).toHaveBeenCalledWith(pack);
 });
 
-it("independent Endgames preserves saved practice without calculation or authoring requests", async () => {
+it("retired workspace intents are rejected in both Study and legacy composition without requests", async () => {
   const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
-  const { default: Endgames } = await import("../../app/views/endgames_view");
-  render(<Endgames theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("calculation has been removed");
-  expect(screen.queryByRole("button", { name: /Add to daily training|Edit material|Practice material/ })).toBeNull();
+  const { canOpenWorkspace } = await import("../../app/lib/study-workspace-policy");
+  const view = "endgames" as import("../../app/types").View;
+  expect(canOpenWorkspace(view, true)).toBe(false);
+  expect(canOpenWorkspace(view, false)).toBe(false);
   expect(fetcher).not.toHaveBeenCalled();
 });

@@ -51,7 +51,7 @@ it("stale sessions cannot overwrite or release a replacement owner", () => {
   expect(useBoardShellStore.getState().board.showHint).toBe(false);
 });
 it("all board owner pairs clear transient fields on acquisition", () => {
-  const owners = ["train", "tactics", "endgames", "builder", "games"] as const;
+  const owners = ["train", "tactics", "builder", "games"] as const;
   for (const source of owners)
     for (const destination of owners.filter((owner) => owner !== source)) {
       const store = useBoardShellStore.getState();

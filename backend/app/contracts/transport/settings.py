@@ -22,7 +22,6 @@ class Settings(BaseModel):
     engine_line_window_cp: int = Field(default=30, ge=0, le=300)
     major_mistake_cp: int = Field(default=100, ge=25, le=1000)
     light_first_interval_days: int = Field(default=7, ge=1, le=90)
-    draw_hold_user_moves: int = Field(default=20, ge=5, le=100)
     coverage_reply_denominator: int = Field(default=100, ge=2, le=10000)
     coverage_cumulative_target: int = Field(default=95, ge=50, le=100)
     coverage_horizon_fullmoves: int = Field(default=15, ge=4, le=40)

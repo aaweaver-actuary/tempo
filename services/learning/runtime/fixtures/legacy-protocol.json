@@ -133,8 +133,5 @@
       "light_first_interval_days": 7
     }
   },
-  "endgame_templates": {
-    "templates": []
-  },
   "tactic_progress": {}
 }

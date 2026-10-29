@@ -51,10 +51,6 @@ from .contracts.transport.tactics import (
     TacticAttemptRequest,
     TacticActivationRequest,
 )
-from .contracts.transport.endgames import (
-    EndgameTemplateRequest,
-    EndgameProbeRequest,
-)
 from .contracts.transport.game_analysis import (
     GameAnalysisCandidate,
     GameAnalysisEvaluation,
@@ -134,8 +130,6 @@ __all__ = [
     'TacticCaptureResponse',
     'TacticAttemptRequest',
     'TacticActivationRequest',
-    'EndgameTemplateRequest',
-    'EndgameProbeRequest',
     'GameAnalysisCandidate',
     'GameAnalysisEvaluation',
     'GameAnalysisRequest',

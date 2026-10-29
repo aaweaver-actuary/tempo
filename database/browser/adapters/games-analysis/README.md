@@ -1,6 +1,6 @@
 # Durable sync and retained practice command outboxes
 
-Current source definitions for the legacy game synchronization, Endgames and
+Current source definitions for the legacy game synchronization and
 Tactics command outboxes. Each adapter owns only its existing `localStorage`
 read, JSON write or deletion. The corresponding application module still owns
 validation, request bytes, operation identity, receipt interpretation, replay,
@@ -35,8 +35,6 @@ product Games uses its separate scoped recovery key below. There is no index.
 
 | Owner / adapter | Exact key or formula | Serialized value and existing application contract |
 | --- | --- | --- |
-| Endgames attempt — [endgame-attempt.ts](endgame-attempt.ts) | `tempo-pending-endgame-attempt-v1` | JSON `{ operationId: string, templateId: string }`; [attempt command](../../../../app/lib/endgame-attempt-command.ts). |
-| Endgames template admission — [endgame-template.ts](endgame-template.ts) | `tempo-pending-endgame-template-v1` | JSON `{ operationId: string, body: string }`. `body` is the exact request JSON for `name`, `white_material`, `black_material`, `trained_color`, `goal_mix` (all strings); [template command](../../../../app/lib/endgame-template-command.ts). |
 | Game synchronization — [game-sync.ts](game-sync.ts) | `tempo-pending-game-sync-command-v1` | JSON `{ operationId: string, body: string }`. `body` is exact request JSON from `Record<string, unknown>`; [sync command](../../../../app/lib/game-sync-command.ts). |
 | Configured product Games — [game-sync.ts](game-sync.ts) | `tempo-pending-product-game-sync-v1:${encodeURIComponent(scope)}`, where scope is the Game Review endpoint plus workspace ID | One unresolved `{kind:"save",operationId,body}` or `{kind:"run",provider,operation_id}` record; [Games settings](../../../../app/product-composition/GameSyncSettings.tsx) owns validation and recovery. Save bytes and run identity survive tab unmount/reload. Only a confirmed terminal response removes the matching operation; loading current settings does not imply success. |
 | Tactic capture — [tactic-capture.ts](tactic-capture.ts) | `tempo-pending-tactic-capture-v1` | JSON `{ body: string }` containing exact transport JSON. Inner request fields: `capture_id: UUID string`, `starting_fen: string`, `moves: string[]`, `source_kind: "puzzle_rush", "game", "manual" or "other"`, optional nullable `source_ref/source_url: string`, `note: string`; [capture request schema and command](../../../../app/lib/tactic-capture-command.ts). The inner `capture_id` is the operation identity. |
@@ -71,7 +69,7 @@ have a separate integration owner.
 
 The unused finding-card, exclusion, finding-decision, defensive-scan and guided-review
 browser clients and their five exclusive adapters are retired. The retained
-game-sync, Endgames attempt/template and Tactics capture adapters above are unchanged.
+game-sync and Tactics capture adapters above are unchanged.
 Historical implementation and exact payload shapes remain in
 [source snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb/database/browser/adapters/games-analysis).
 
@@ -84,3 +82,5 @@ The [Study connection inspector](../../study-connection-storage.ts) is unchanged
 its existing retained-practice key selection does not cover these optional keys.
 This retirement does not inspect or certify their settlement. No live browser
 data or server history was inspected or changed.
+
+Retired Endgames keys are removed only by the explicit practice-retirement adapter in [study-connection-storage.ts](../../study-connection-storage.ts); no retained Games or Tactics journal is cleared.

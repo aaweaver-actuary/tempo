@@ -1,4 +1,4 @@
-"""Fixed progress, tactic and saved endgame facts; practice policy stays outside."""
+"""Fixed progress, tactic facts; practice policy stays outside."""
 
 
 def card_state_rows(database):
@@ -40,16 +40,3 @@ def tactic_progress_rows(database):
     return database.execute(
         "SELECT deck_id,puzzle_id,clean_pass_at FROM tactic_progress WHERE clean_pass_at IS NOT NULL OR puzzle_id NOT IN(SELECT puzzle_id FROM tactic_introductions) OR puzzle_id IN(SELECT puzzle_id FROM tactic_discovery_attempts) ORDER BY deck_id,puzzle_id",
     ).fetchall()
-
-
-def endgame_templates(database):
-    return database.execute(
-        "SELECT * FROM endgame_templates WHERE enabled=1 ORDER BY created_at",
-    ).fetchall()
-
-
-def saved_endgame_payload(database, operation_id):
-    return database.execute(
-        "SELECT payload_json FROM operation_receipts WHERE operation_id=?",
-        (operation_id,),
-    ).fetchone()

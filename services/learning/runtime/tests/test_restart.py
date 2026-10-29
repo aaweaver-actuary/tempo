@@ -32,7 +32,6 @@ def server(case, tmp_path, maintenance=False, origins=()):
         TEMPO_LEARNING_ORIGINS=",".join(["http://localhost:5173", f"http://127.0.0.1:{port}", *origins]),
         TEMPO_LEARNING_HOSTS="127.0.0.1",
         TEMPO_LEARNING_MAINTENANCE="1" if maintenance else "0",
-        TEMPO_LEARNING_TABLEBASE_URL="",
     )
     if case.configuration.evidence_token:
         evidence_token = tmp_path / "evidence-credential"

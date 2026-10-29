@@ -107,13 +107,10 @@ bounded-slice contract in `docs/BACKGROUND-WORK.md`: claim one item, close
 SQLite before computation or network I/O, then publish one idempotent result.
 
 
-### Removed on-demand endgame calculation
+### Endgames retirement
 
-Probe, generated-template admission and new generated-attempt routes return 410.
-Their provider/cache/generation paths and generator implementation are removed;
-queued template-generation commands also decline without calculation. Existing
-immutable attempt receipts retain template binding and canonical status/result
-recovery. Saved cards, attempts, history and ordinary review storage are not
-migrated or deleted. See the canonical
-[Learning request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
-and [saved browser practice policy](../app/README.md#saved-endgame-practice-after-calculation-removal).
+The feature routes, request models and command handlers are removed. Ordered
+[migration 055](../database/tempo_legacy_database/ddl/migrations/055_retire_endgames.sql)
+removes its cards, linked practice/history and three tables, preserving unrelated
+Study/Tactics and replay fences. This is source implementation, not live operation.
+See the [browser/source diagram](../app/README.md#retired-practice).

@@ -1,6 +1,6 @@
 # Legacy backend: Practice Families (2)
 
-Tactic, defense, threat and endgame exercise/progress/attempt facts and tablebase cache.
+Tactic, defense and threat exercise/progress/attempt facts.
 
 **Current source schema, deployment unverified.** Owner: Legacy backend; SQL schema `public`. Derived from checked-in DDL at the `14ad5754` baseline with file relocation only. No live database was queried. [Database index](../../README.md).
 

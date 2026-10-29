@@ -26,7 +26,7 @@ def _seed_cards() -> None:
             (today,),
         )
         for index, content_type in enumerate(
-            ["opening", "tactic", "endgame", "middlegame"] * 2
+            ["opening", "tactic", "middlegame"] * 2
         ):
             card_id = f"review-{index}"
             db.execute(
@@ -40,7 +40,7 @@ def _seed_cards() -> None:
                 (card_id, f"{today}T00:00:00+00:00"),
             )
         for index, content_type in enumerate(
-            ["opening", "tactic", "endgame", "middlegame"] * 2
+            ["opening", "tactic", "middlegame"] * 2
         ):
             db.execute(
                 """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,introduced_at)

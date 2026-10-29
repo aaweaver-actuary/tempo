@@ -10,7 +10,6 @@ export type RawUciMoveSequence = string;
 export enum QueueContentTypeEnum {
   Opening = "opening",
   Middlegame = "middlegame",
-  Endgame = "endgame",
   Tactic = "tactic",
   Defense = "defense",
   StudyExercise = "study_exercise",

@@ -1,3 +1,5 @@
+import { retirePortablePractice } from "../../app/domain/retired-practice";
+import { isRetiredPracticeCard } from "../../app/domain/retired-practice";
 export const TEMPO_DB_VERSION = 1;
 
 import { portableSnapshotSchema, storedRecordSchema } from "../../app/domain/schemas";
@@ -111,8 +113,6 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   repertoire_cards: "syncMetadata",
   tactic_progress: "syncMetadata",
   tactic_captures: "syncMetadata",
-  endgame_templates: "syncMetadata",
-  endgame_attempts: "syncMetadata",
   game_accounts: "syncMetadata",
   game_move_analysis: "syncMetadata",
   gameplay_events: "syncMetadata",
@@ -200,6 +200,7 @@ export async function importPortableSnapshot(
   const checksum = await snapshotChecksum(snapshot);
   if (checksum !== snapshot.checksum)
     throw new Error("Snapshot checksum mismatch");
+  snapshot = { ...snapshot, tables: retirePortablePractice(snapshot.tables) };
   const database = await openTempoDatabase();
   const stores = [
     ...new Set(
@@ -208,8 +209,47 @@ export async function importPortableSnapshot(
         .filter(Boolean),
     ),
   ];
+  // This is an explicit, checksum-validated import, never cleanup during a read/open.
+  // All affected mirror stores participate in this one import transaction; intents
+  // and prepared phone reviews are in other databases and are never cleared here.
+  const retirementStores: TempoStore[] = ["cards", "reviews", "queues", "syncMetadata", "repertoires"];
+  if (!retirementStores.every(store => database.objectStoreNames.contains(store)))
+    throw new Error("The browser mirror has an incompatible schema. Keep its data.");
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(stores, "readwrite");
+    const transaction = database.transaction([...new Set([...stores, ...retirementStores])], "readwrite");
+    let retirementError: Error | undefined;
+    const removed = new Set<unknown>();
+    const cursor = transaction.objectStore("cards").openCursor();
+    cursor.onsuccess = () => {
+      const entry = cursor.result;
+      if (entry) {
+        const row = entry.value as StoredRecord<Record<string, unknown>>;
+        if (isRetiredPracticeCard(row.value)) {
+          if (typeof row.value.id !== "string" || !row.value.id) {
+            retirementError = new Error("Retired mirror card identity is missing. Keep its data.");
+            transaction.abort(); return;
+          }
+          removed.add(row.value.id); entry.delete();
+        }
+        else if (row.value?.repertoire_id === "__endgames__") {
+          retirementError = new Error("The retired mirror repertoire contains unrelated cards. Keep its data.");
+          transaction.abort(); return;
+        }
+        entry.continue(); return;
+      }
+      for (const store of retirementStores.filter(store => store !== "cards")) {
+        const linked = transaction.objectStore(store).openCursor();
+        linked.onsuccess = () => {
+          const current = linked.result;
+          if (!current) return;
+          const row = current.value as StoredRecord<Record<string, unknown>>;
+          if (removed.has(row.value?.card_id) ||
+              (store === "syncMetadata" && /^(endgame_templates|endgame_attempts|tablebase_cache):/.test(row.key)) ||
+              (store === "repertoires" && row.value?.id === "__endgames__")) current.delete();
+          current.continue();
+        };
+      }
+    };
     for (const [table, rows] of Object.entries(snapshot.tables)) {
       const store = TABLE_TO_STORE[table];
       if (!store) continue;
@@ -224,7 +264,7 @@ export async function importPortableSnapshot(
     }
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+    transaction.onabort = () => reject(retirementError ?? transaction.error);
   });
   const imported = Object.fromEntries(
     Object.entries(snapshot.tables).map(([table, rows]) => [

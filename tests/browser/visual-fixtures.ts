@@ -57,7 +57,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
       engine_line_window_cp: 30,
       major_mistake_cp: 100,
       light_first_interval_days: 7,
-      draw_hold_user_moves: 20,
     };
     const fixtures: Record<string, unknown> = {
       "/api/health": {
@@ -180,8 +179,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
         timeline: [],
         adherence: 1,
       },
-      "/api/endgames/probe": { category: "win", moves: [] },
-      "/api/endgames/templates": { templates: [] },
       "/api/tactics/catalog": {
         version: 1,
         groups: [

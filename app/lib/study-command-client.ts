@@ -4,12 +4,12 @@ import { notifications, publishNotification, resolveNotification } from "./notif
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
-import { endgameAttemptSchema } from "../domain/schemas";
+import { retireLegacyPracticeCommands } from "../../database/browser/study-connection-storage";
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";
 
-type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "endgame-command" | "burial-command" | "settings-command";
-const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "endgame-command", "burial-command", "settings-command"];
+type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "burial-command" | "settings-command";
+const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "burial-command", "settings-command"];
 
 type FrozenStudyRequest = { body: Record<string, unknown>; headers: Record<string, string>; scope: string };
 type RejectionReceipt = { type: "rejected"; requestId: string; attemptId: string; status: number; message: string; details?: unknown };
@@ -66,7 +66,6 @@ function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
   if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
   if (record.kind === "defense-command" && !["correct", "incorrect", "needs_analysis", "ambiguous", "illegal", "ready_for_move"].includes(String(body.status)))
     throw new Error("The service did not return a recognized defense assessment.");
-  if (record.kind === "endgame-command") endgameAttemptSchema.parse(body);
   if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
   if (record.kind === "settings-command") studySettingsSchema.parse(body);
   if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
@@ -81,6 +80,11 @@ async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
   } catch (error) { return rejectionFromError(record, error); }
 }
 for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, deliver, checkReceipt);
+// An old tab may have retained this kind. Discard it locally without another POST.
+const retiredCommandKind = "endgame-command";
+const discardRetiredCommand = async () => ({ state: "discarded" as const,
+  receipt: { type: "retired", message: "Retired practice request discarded." } });
+registerStudyDeliveryAdapter(retiredCommandKind, discardRetiredCommand, discardRetiredCommand);
 
 function practiceScope(scope: string) { return scope.endsWith(":self-assess") ? scope.slice(0, -12) : scope; }
 function boundaryKey(scope: string) { return `practice-reset:${practiceScope(scope)}`; }
@@ -122,13 +126,14 @@ let recovery: { store: IntentStore; signal: AbortSignal | undefined; promise: Pr
 /** Bounded, persistent round-robin recovery, including commands no longer in the issued queue. */
 export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw signal.reason;
+  retireLegacyPracticeCommands();
   const store = await studyIntentStore();
   if (signal?.aborted) throw signal.reason;
   // Pass cancellation belongs to its caller; the session still shares immutable command work.
   if (recovery?.store === store && recovery.signal === signal) return recovery.promise;
   const promise = (async () => {
     const coordinator = await studySession();
-    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind));
+    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind) || record.kind === retiredCommandKind);
     const cursorKey = "study-command-recovery:cursor";
     let cursor = await store.checkpoint(cursorKey);
     let cursorOwned = true;
@@ -144,6 +149,7 @@ export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> 
         if (signal?.aborted) throw signal.reason;
         if (!isStudyIntentStoreCurrent(store)) return;
         if (result.state === "discarded") {
+          if (record.kind === retiredCommandKind) continue;
           publishNotification({ severity: "warning", source: "study recovery", key: noticeKey, message: (result.receipt as RejectionReceipt).message });
           continue;
         }

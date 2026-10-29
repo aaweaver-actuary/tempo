@@ -749,3 +749,8 @@ Both passed cleanly.
 - No live deployment or host qualification was performed.
 - No production data migration or cutover is claimed.
 - No browser full-product matrix is claimed.
+
+
+## October 29 full Endgames retirement
+
+Supersedes earlier saved-Endgames serving claims. The owner native runner executed the four affected files with 56 passing tests against disposable PostgreSQL, including both owner upgrades/rollback, ordinary review, publications and defense boundaries. Container, volume and temporary-data cleanup were confirmed by the native receipt. This is source qualification; installation, deployment and actual-device acceptance remain unverified.

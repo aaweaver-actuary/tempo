@@ -47,7 +47,6 @@ register_current_repertoire_commands()
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
-from . import endgame_commands  # noqa: F401 - registers foreground endgame templates
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
 from . import analysis_paste_commands  # noqa: F401 - registers foreground analysis paste

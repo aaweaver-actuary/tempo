@@ -21,7 +21,7 @@
 - [queue_position_lock.py](queue_position_lock.py): existing queue-position advisory lock boundary.
 - [postgres_readiness.py](postgres_readiness.py): four existing PostgreSQL readiness fact queries on the same reader scope. [Operational health decisions](../../../backend/app/operations/README.md) retain HTTP/Celery/status evaluation outside database.
 
-[Command persistence](commands/README.md) groups the existing account/activity/annotation/endgame/teaching operations; the daily-statistics command helper is retired. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.
+[Command persistence](commands/README.md) groups the existing account/activity/annotation/teaching operations; the daily-statistics command helper is retired. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.
 
 [Legacy Games command storage](games/README.md) groups game/sync/finding/analysis lease/publication operations. Existing legacy shared-card/queue/feedback coupling remains disclosed at its original composition callers; this move adds no owner permissions or Study dependency.
 

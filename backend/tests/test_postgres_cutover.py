@@ -1440,12 +1440,9 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
 
 
 def test_removed_endgame_probe_rejects_without_provider_or_database(monkeypatch):
-    import asyncio
-    from fastapi import HTTPException
     from app import main
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(main.probe_endgame(object()))
-    assert error.value.status_code == 410
+    assert not hasattr(main, "probe_endgame")
+    assert all(route.path != "/api/endgames/probe" for route in main.app.routes)
 
 
 def test_postgres_card_validation_remains_available_without_a_write_worker(monkeypatch):
@@ -2122,28 +2119,18 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
 
 
 def test_removed_endgame_template_generation_rejects_before_dispatch(monkeypatch):
-    from fastapi import HTTPException
     from app import main
-    with pytest.raises(HTTPException) as error:
-        main.create_endgame(object())
-    assert error.value.status_code == 410
+    assert not hasattr(main, "create_endgame")
+    assert all(route.path != "/api/endgames/templates" for route in main.app.routes)
     assert not hasattr(main, "tablebase")
     assert not hasattr(main, "generate_position")
 
 
-def test_saved_endgame_pending_receipt_recovers_without_preparation(monkeypatch):
-    import asyncio
+def test_retired_endgame_pending_receipt_cannot_reenter_feature_handler(monkeypatch):
     from app import main
-    class Reader:
-        def execute(self, statement, parameters):
-            assert "payload_json FROM operation_receipts" in statement
-            return SimpleNamespace(fetchone=lambda: {"payload_json": json.dumps({"template_id": "template"})})
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main, "read_operation", lambda *args, **kwargs: {"operation_id": "saved", "state": "pending"})
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Reader()))
-    response = asyncio.run(main.create_endgame_attempt("template", "saved"))
-    assert response.status_code == 202
-    assert response.headers["location"] == "/api/operations/saved"
+    from app import command_gateway
+    assert not hasattr(main, "create_endgame_attempt")
+    assert not any(name.startswith("endgames.") for name in command_gateway._handlers)
 
 
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):

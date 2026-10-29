@@ -38,15 +38,10 @@ def test_reconciliation_retains_handled_conflict_savepoint_order(monkeypatch,con
     assert events==['begin_reconciliation','review',*(['rollback_reconciliation'] if conflict else []),'release_reconciliation']
 
 
-def test_saved_endgame_rechecks_retirement_under_card_lock_before_clock_or_insert(monkeypatch):
-    events=[]
-    monkeypatch.setattr(api.storage,'active_endgame_template',lambda *_: dict(card_id='card'))
-    monkeypatch.setattr(api.storage,'lock_endgame_card',lambda *_: events.append('card lock') or (1,))
-    monkeypatch.setattr(api.storage,'endgame_enabled',lambda *_: events.append('template recheck') or (0,))
-    monkeypatch.setattr(api.storage,'insert_endgame_attempt',lambda *_: pytest.fail('Retired template reached write'))
-    monkeypatch.setattr(api,'datetime',SimpleNamespace(now=lambda *_: pytest.fail('Retired template read clock')))
-    with pytest.raises(HTTPException) as error:api.save_endgame_attempt(None,dict(template_id='template'))
-    assert error.value.status_code==409 and events==['card lock','template recheck']
+def test_retired_practice_handler_is_absent_from_learning_commands():
+    api.register_handlers()
+    assert 'endgames.attempt.create' not in api.gateway._handlers
+    assert not hasattr(api, 'save_endgame_attempt')
 
 
 @pytest.mark.parametrize('matching',[False,True])

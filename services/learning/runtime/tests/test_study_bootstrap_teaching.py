@@ -107,13 +107,11 @@ def test_learning_move_membership_uses_accepted_routes_without_content_service(c
     assert case.client.get(f"/api/cards/{card}/move-membership", params=parameters).status_code == 409
 
 
-def test_learning_endgame_list_retains_actual_frontend_envelope(case):
-    from test_endgames import endgame_bundle
-    activate(case, endgame_bundle())
+def test_learning_endgame_list_is_retired_without_affecting_bootstrap(case):
+    activate(case, bundle())
     response = case.client.get("/api/endgames/templates")
-    assert response.status_code == 200
-    assert set(response.json()) == {"templates"}
-    assert response.json()["templates"][0]["id"] == "template-a"
+    assert response.status_code == 404
+    assert case.client.get("/api/study/bootstrap").status_code == 200
 
 
 def test_learning_move_membership_preserves_all_accepted_executable_alternatives(case):

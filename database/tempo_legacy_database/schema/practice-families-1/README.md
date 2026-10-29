@@ -1,6 +1,6 @@
 # Legacy backend: Practice Families (1)
 
-Tactic, defense, threat and endgame exercise/progress/attempt facts and tablebase cache.
+Tactic, defense and threat exercise/progress/attempt facts.
 
 **Current source schema, deployment unverified.** Owner: Legacy backend; SQL schema `public`. Derived from checked-in DDL at the `14ad5754` baseline with file relocation only. No live database was queried. [Database index](../../README.md).
 
@@ -17,16 +17,6 @@ erDiagram
     text attempt_id PK
     text candidate_id FK
     bigint queue_entry_id FK
-  }
-  endgame_attempts {
-    text id PK
-    text template_id FK
-  }
-  endgame_templates {
-    text id PK
-  }
-  tablebase_cache {
-    text fen_key PK
   }
   tactic_captures {
     text id PK
@@ -55,7 +45,6 @@ erDiagram
   cards ||..o{ defense_attempts : "card_id"
   threat_training_candidates ||..o{ defense_recognition_submissions : "candidate_id"
   daily_queue ||..o{ defense_recognition_submissions : "queue_entry_id"
-  endgame_templates ||..o{ endgame_attempts : "template_id"
   cards ||..o{ tactic_captures : "card_id"
   imported_games ||..o{ tactical_opportunities : "game_id"
 ```
@@ -96,51 +85,6 @@ Primary key: (`attempt_id`). DDL: [001_initial.sql](../../ddl/migrations/001_ini
 | `created_at` | `text` | no |  |
 
 Foreign key delete actions: (`candidate_id`) CASCADE, (`queue_entry_id`) CASCADE.
-
-### `public.endgame_attempts`
-
-Primary key: (`id`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `id` | `text` | no | PK |
-| `template_id` | `text` | no | FK template_id → public.endgame_templates(`id`) |
-| `start_fen` | `text` | no |  |
-| `target` | `text` | no |  |
-| `status` | `text` | no |  |
-| `user_moves` | `bigint` | no |  |
-| `created_at` | `text` | no |  |
-| `completed_at` | `text` | yes |  |
-
-Foreign key delete actions: (`template_id`) CASCADE.
-
-### `public.endgame_templates`
-
-Primary key: (`id`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `id` | `text` | no | PK |
-| `card_id` | `text` | no |  |
-| `name` | `text` | no |  |
-| `white_material` | `text` | no |  |
-| `black_material` | `text` | no |  |
-| `trained_color` | `text` | no |  |
-| `goal_mix` | `text` | no |  |
-| `enabled` | `bigint` | no |  |
-| `created_at` | `text` | no |  |
-
-Unique tuples (including non-partial simple unique indexes): (`card_id`).
-
-### `public.tablebase_cache`
-
-Primary key: (`fen_key`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `fen_key` | `text` | no | PK |
-| `response_json` | `text` | no |  |
-| `fetched_at` | `text` | no |  |
 
 ### `public.tactic_captures`
 
@@ -241,3 +185,5 @@ Primary key: (`id`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql
 Unique tuples (including non-partial simple unique indexes): (`game_id`, `analysis_version`, `ply`, `motif`).
 
 Foreign key delete actions: (`game_id`) CASCADE.
+
+Endgames tables are removed by the owner’s ordered [retirement migration](../../ddl/migrations/055_retire_endgames.sql). Prior applied migrations remain historical source; live schema is unverified.

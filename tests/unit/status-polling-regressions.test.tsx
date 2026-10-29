@@ -338,7 +338,7 @@ it("sync_status_unmounted_responses_cannot_resolve_new_session_incidents", async
 
 const syncSettings = { initial_depth: 8, timezone: "America/New_York", new_cards_per_day: 5,
   lichess_username: "player", chesscom_username: "", auto_sync_minutes: 2, engine_line_window_cp: 50,
-  major_mistake_cp: 100, light_first_interval_days: 3, draw_hold_user_moves: 20 };
+  major_mistake_cp: 100, light_first_interval_days: 3 };
 it("passive_status_throttling_preserves_game_acquisition_and_pending_commands", async () => {
   visibility = "hidden";
   const posts: Array<{ body: string; key: string }> = [];

@@ -18,7 +18,7 @@ test("training startup does not preload unrelated workspace requests", async ({ 
   await expect(page.getByText("Spanish opening", { exact: true }).first()).toBeVisible();
   await page.waitForTimeout(400);
   expect(requestedPaths).toContain("/api/repertoire/lines");
-  for (const unrelatedPath of ["/api/games/summary", "/api/progress", "/api/endgames/templates"])
+  for (const unrelatedPath of ["/api/games/summary", "/api/progress"])
     expect(requestedPaths).not.toContain(unrelatedPath);
 });
 
@@ -487,7 +487,7 @@ test('import waits for saved settings before writing a repertoire', async ({page
   const pendingSettings = new Promise<void>(resolve => { releaseSettings = resolve; });
   await page.route('**/api/settings', async route => {
     await pendingSettings;
-    await route.fulfill({json:{initial_depth:2,timezone:'local',new_cards_per_day:2,lichess_username:'',chesscom_username:'',auto_sync_minutes:3,engine_line_window_cp:30,major_mistake_cp:100,light_first_interval_days:7,draw_hold_user_moves:20}});
+    await route.fulfill({json:{initial_depth:2,timezone:'local',new_cards_per_day:2,lichess_username:'',chesscom_username:'',auto_sync_minutes:3,engine_line_window_cp:30,major_mistake_cp:100,light_first_interval_days:7}});
   });
   await prepareUI(page);
   await navigate(page,'Repertoire'); await page.getByRole('button',{name:/Import PGN/}).click();

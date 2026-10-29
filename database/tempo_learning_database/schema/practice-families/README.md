@@ -1,6 +1,6 @@
 # Learning runtime: Practice Families
 
-Tactic, defense, threat and endgame exercise/progress/attempt facts and tablebase cache.
+Tactic, defense and threat exercise/progress/attempt facts.
 
 **Current source schema, deployment unverified.** Owner: Learning runtime; SQL schema `learning`. Derived from checked-in DDL at the `14ad5754` baseline with file relocation only. No live database was queried. [Database index](../../README.md).
 
@@ -20,23 +20,12 @@ erDiagram
   defense_recognition_submissions {
     text attempt_id PK
   }
-  endgame_attempts {
-    text id PK
-    text template_id FK
-  }
-  endgame_templates {
-    text id PK
-  }
-  tablebase_cache {
-    text fen_key PK
-  }
   tactic_discovery_attempts {
     text id PK
   }
   tactic_progress {
     text puzzle_id PK
   }
-  endgame_templates ||..o{ endgame_attempts : "template_id"
 ```
 
 ## Data dictionary
@@ -92,51 +81,6 @@ Primary key: (`attempt_id`). DDL: [0001_core.sql](../../ddl/migrations/0001_core
 | `recognition_correct` | `bigint` | no |  |
 | `created_at` | `text` | no |  |
 
-### `learning.endgame_attempts`
-
-Primary key: (`id`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `id` | `text` | no | PK |
-| `template_id` | `text` | no | FK template_id → learning.endgame_templates(`id`) |
-| `start_fen` | `text` | no |  |
-| `target` | `text` | no |  |
-| `status` | `text` | no |  |
-| `user_moves` | `bigint` | no |  |
-| `created_at` | `text` | no |  |
-| `completed_at` | `text` | yes |  |
-
-Foreign key delete actions: (`template_id`) CASCADE.
-
-### `learning.endgame_templates`
-
-Primary key: (`id`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `id` | `text` | no | PK |
-| `card_id` | `text` | no |  |
-| `name` | `text` | no |  |
-| `white_material` | `text` | no |  |
-| `black_material` | `text` | no |  |
-| `trained_color` | `text` | no |  |
-| `goal_mix` | `text` | no |  |
-| `enabled` | `bigint` | no |  |
-| `created_at` | `text` | no |  |
-
-Unique tuples (including non-partial simple unique indexes): (`card_id`).
-
-### `learning.tablebase_cache`
-
-Primary key: (`fen_key`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.sql).
-
-| Field | SQL type | Null allowed | Keys |
-| --- | --- | --- | --- |
-| `fen_key` | `text` | no | PK |
-| `response_json` | `text` | no |  |
-| `fetched_at` | `text` | no |  |
-
 ### `learning.tactic_discovery_attempts`
 
 Primary key: (`id`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.sql).
@@ -161,3 +105,5 @@ Primary key: (`puzzle_id`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.
 | `clean_pass_at` | `text` | yes |  |
 | `admitted_at` | `text` | yes |  |
 | `admission_mode` | `text` | no |  |
+
+Endgames tables are removed by the owner’s ordered [retirement migration](../../ddl/migrations/0004_retire_endgames.sql). Prior applied migrations remain historical source; live schema is unverified.

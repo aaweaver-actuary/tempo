@@ -10,7 +10,6 @@
     "defense_new_cards_per_day": 5,
     "defensive_analysis_enabled": false,
     "discovery_window_days": 90,
-    "draw_hold_user_moves": 20,
     "engine_line_window_cp": 30,
     "include_defensive_cards_in_daily_stack": true,
     "initial_depth": 6,

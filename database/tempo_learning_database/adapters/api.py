@@ -16,27 +16,12 @@ def release_reconciliation(database):
     database.execute_native("RELEASE SAVEPOINT review_reconciliation")
 
 
-def active_endgame_template(database, template_id):
-    return database.execute(
-        "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (template_id,)
-    ).fetchone()
 
 
-def lock_endgame_card(database, card_id):
-    return database.execute(
-        "SELECT serving_active FROM cards WHERE id=? FOR UPDATE", (card_id,)
-    ).fetchone()
 
 
-def endgame_enabled(database, template_id):
-    return database.execute("SELECT enabled FROM endgame_templates WHERE id=?", (template_id,)).fetchone()
 
 
-def insert_endgame_attempt(database, attempt_id, template_id, fen, target, created_at):
-    database.execute(
-        "INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES(?,?,?,?,?)",
-        (attempt_id, template_id, fen, target, created_at),
-    )
 
 
 def light_first_interval_days(database):

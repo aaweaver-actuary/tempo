@@ -1,3 +1,4 @@
+import { withoutRetiredPractice } from "../domain/retired-practice";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { confirmOperationResponse } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
@@ -5,9 +6,19 @@ import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { learningDayKey as localDayKey } from "./study-connection";
-import { readPreparedTraining, updatePreparedTraining } from "../../database/browser/prepared-training-storage";
+import { readPreparedTraining as readStoredPreparedTraining, updatePreparedTraining } from "../../database/browser/prepared-training-storage";
 import type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
-export { readPreparedTraining } from "../../database/browser/prepared-training-storage";
+/** Retire known removed cards atomically before rendering or replaying a saved queue. */
+export async function readPreparedTraining(): Promise<PreparedTraining | null> {
+  const current = await readStoredPreparedTraining();
+  if (!current || withoutRetiredPractice(current.cards).length === current.cards.length) return current;
+  return updatePreparedTraining(saved => {
+    if (!saved) throw new Error("Prepared queue changed during retirement; reload training.");
+    const cards = withoutRetiredPractice(saved.cards);
+    const removed = new Set(saved.cards.filter(card => !cards.includes(card)).map(card => card.id));
+    return { ...saved, cards, attempts: saved.attempts.filter(attempt => !removed.has(attempt.cardId)) };
+  });
+}
 export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
@@ -67,7 +78,8 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
     throw new Error(envelope.projection.last_error ?? "Daily queue preparation failed. Check the computer worker and retry.");
   if (!envelope.local_date || (!independentStudy && (envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)))
     throw new Error("The daily queue is not fully prepared yet");
-  const cards = (independentStudy ? envelope.cards.slice(0, 1) : envelope.cards).map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
+  const retainedCards = withoutRetiredPractice(envelope.cards);
+  const cards = (independentStudy ? retainedCards.slice(0, 1) : retainedCards).map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
   const preparedAt = (raw as { prepared_at: string }).prepared_at;
   return updatePreparedTraining((current) => {
     if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))

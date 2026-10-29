@@ -47,18 +47,13 @@ import {
   asFenString,
   asTeachingCardKey,
   asTeachingMoveKey,
-  asUciMove,
-  asSanMove,
 } from "../types";
-import { canonicalFenKey } from "../utils/canonical-line";
 import { lookupRepertoireAlternative, type RepertoireAlternativeSnapshot } from "../lib/repertoire-alternative-index";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
-import EndgamesView from "./endgames_view";
-import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { Chess, Move, Square } from "chess.js";
@@ -849,8 +844,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     if (
       isLocked ||
       step >= card.moves.length ||
-      currentTurn !== trainedColor(card) ||
-      (card.kind === "endgame" && !hasSavedEndgameLine(card))
+      currentTurn !== trainedColor(card)
     )
       return;
     const position = new Chess(currentFenString);
@@ -1461,7 +1455,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   const boardWorkspace = [
     "train",
     "tactics",
-    "endgames",
     "studies",
     "games",
   ].includes(currentView);
@@ -1628,16 +1621,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         {currentView === "tactics" && (
           <>
             <TacticsView
-              theme={boardTheme}
-              pieceSet={pieceSet}
-              onQueueChanged={() => void refreshDatabaseQueue()}
-              useSharedBoard
-            />
-          </>
-        )}
-        {currentView === "endgames" && (
-          <>
-            <EndgamesView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}

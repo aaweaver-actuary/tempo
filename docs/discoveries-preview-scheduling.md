@@ -18,7 +18,7 @@ items neither occupy that buffer nor acquire automatic retry demand. There is no
 
 Home supplies `speculativePreparationPaused` from its existing workspace and
 attempt state. Player/guided/opponent-reply training phases and the tactics,
-endgames and Builder workspaces pause closed-tray preparation. Existing editing
+Builder workspaces pause closed-tray preparation. Existing editing
 `interactionBlocked` also pauses it. This new prop does not alter board input,
 interaction timing, or the existing safe-break modal rules.
 

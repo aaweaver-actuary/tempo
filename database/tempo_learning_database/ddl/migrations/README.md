@@ -9,3 +9,5 @@ Order/dependencies: [manifest.json](manifest.json).
 - [0001_core.sql](0001_core.sql)
 - [0002_evidence_revisions.sql](0002_evidence_revisions.sql)
 - [0003_content_bridge.sql](0003_content_bridge.sql)
+
+- [0004_retire_endgames.sql](0004_retire_endgames.sql) — explicit Endgames retirement; no live migration performed by this implementation.

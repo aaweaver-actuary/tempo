@@ -54,7 +54,13 @@ export async function readRetainedStudyData(registeredOfflineDatabases: () => st
     });
   }
   const legacy = Object.fromEntries(Object.keys(localStorage).filter(key =>
-    /^tempo-(?:pending-(?:training|teaching|endgame|burial|tactic-capture-v1$|card-delete-v1$)|bury-(?:operation|identity)|seen-moves|first-clean-passes)/.test(key))
+    /^tempo-(?:pending-(?:training|teaching|burial|tactic-capture-v1$|card-delete-v1$)|bury-(?:operation|identity)|seen-moves|first-clean-passes)/.test(key))
     .map(key => [key, localStorage.getItem(key)]).filter(([,value]) => value && value !== "[]"));
   return { databases, legacy };
+}
+
+/** Explicit feature retirement only; never clears another practice journal. */
+export function retireLegacyPracticeCommands() {
+  for (const key of ["tempo-pending-endgame-attempt-v1", "tempo-pending-endgame-template-v1"])
+    localStorage.removeItem(key);
 }

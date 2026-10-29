@@ -275,7 +275,7 @@ def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
         assert published_steps[-1]["last_decision_index"] == 6
 
 
-def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
+def test_tactic_admission_survives_endgames_retirement(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         tactic = client.post("/api/tactics/attempt", json={
@@ -285,19 +285,8 @@ def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
         assert tactic.status_code == 200
         assert tactic.json()["mode"] == "normal"
 
-        endgame = client.post("/api/endgames/templates", json={
-            "name": "Rook + king", "white_material": "KR", "black_material": "K", "trained_color": "white", "goal_mix": "both",
-        })
-        assert endgame.status_code == 200
-        repeated = client.post("/api/endgames/templates", json={
-            "name": "Rook + king", "white_material": "KR", "black_material": "K", "trained_color": "white", "goal_mix": "both",
-        })
-        assert repeated.status_code == 200
-        assert repeated.json()["card_id"] == endgame.json()["card_id"]
-        assert repeated.json()["already_exists"] is True
-
-        queue = wait_for_daily_queue(client, 2)["cards"]
-        assert {card["content_type"] for card in queue} == {"tactic", "endgame"}
+        queue = wait_for_daily_queue(client, 1)["cards"]
+        assert {card["content_type"] for card in queue} == {"tactic"}
 
 
 def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch):

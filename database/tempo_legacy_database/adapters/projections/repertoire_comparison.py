@@ -28,7 +28,7 @@ def opening_card_digest(database):
 def repertoire_rows(database):
     return [dict(row) for row in database.execute(
             "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
-            "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
+            "WHERE id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
         )]
 
 

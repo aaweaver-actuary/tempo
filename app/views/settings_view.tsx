@@ -43,7 +43,6 @@ type SettingsValues = {
   engine_line_window_cp: number;
   major_mistake_cp: number;
   light_first_interval_days: number;
-  draw_hold_user_moves: number;
   coverage_reply_denominator: number;
   coverage_cumulative_target: number;
   coverage_horizon_fullmoves: number;
@@ -94,7 +93,6 @@ export default function SettingsView({
     engine_line_window_cp: 30,
     major_mistake_cp: 100,
     light_first_interval_days: 7,
-    draw_hold_user_moves: 20,
     coverage_reply_denominator: 100,
     coverage_cumulative_target: 95,
     coverage_horizon_fullmoves: 15,
@@ -241,7 +239,6 @@ export default function SettingsView({
         engine_line_window_cp: values.engine_line_window_cp,
         major_mistake_cp: values.major_mistake_cp,
         light_first_interval_days: values.light_first_interval_days,
-        draw_hold_user_moves: values.draw_hold_user_moves,
         coverage_reply_denominator: values.coverage_reply_denominator,
         coverage_cumulative_target: values.coverage_cumulative_target,
         coverage_horizon_fullmoves: values.coverage_horizon_fullmoves,
@@ -477,21 +474,6 @@ export default function SettingsView({
               value={values.light_first_interval_days}
               onChange={(event) =>
                 update("light_first_interval_days", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>
-              Draw hold length
-              <small>User moves required in endgame studies</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="5"
-              max="100"
-              value={values.draw_hold_user_moves}
-              onChange={(event) =>
-                update("draw_hold_user_moves", Number(event.target.value))
               }
             />
           </label>

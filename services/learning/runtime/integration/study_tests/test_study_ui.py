@@ -9,7 +9,6 @@ import pytest
 from test_restart import server
 from test_runtime import activate, bundle
 from test_families import SPECIFICATIONS, defense_definition
-from test_endgames import endgame_bundle
 
 
 def publication_for(scenario):
@@ -25,7 +24,7 @@ def publication_for(scenario):
         payload["publication"]["definitions"][0]["starting_fen"] = definition["anchor"]["position"]["start_fen"]
         payload["facts"][0]["defense"] = definition
         return payload
-    return endgame_bundle() if scenario.startswith("endgame") else bundle()
+    return bundle()
 
 
 
@@ -68,13 +67,10 @@ def study_assets(control=None, control_key=None):
         thread.join(timeout=5)
 
 
-@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-saved-line", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect", "service-unavailable-browser-online", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary", "bootstrap-body-interruption-browser-online"])
+@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect", "service-unavailable-browser-online", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary", "bootstrap-body-interruption-browser-online"])
 def test_production_study_learning_native(case, tmp_path, scenario):
     activate(case, publication_for(scenario))
     extra = {}
-    if scenario == "endgame-material-unavailable":
-        # Historical material-only cards carry a position but no authored line.
-        case.query("UPDATE learning.cards SET moves_json='[]' WHERE content_type='endgame'")
     if scenario not in ["teaching", "next-load"]:
         case.query("UPDATE learning.cards SET first_correct_at='2026-01-01T12:00:00Z'")
     root = Path(__file__).resolve().parents[5]
@@ -98,7 +94,7 @@ def test_production_study_learning_native(case, tmp_path, scenario):
         assert proof["complete"] is True
         assert not proof["unexpected_requests"]
     reviews = case.query("SELECT COUNT(*) FROM learning.reviews")[0][0]
-    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "defense-uncovered", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"] else 1)
+    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "defense-uncovered", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"] else 1)
     if scenario in ["multi-authority-resume", "registered-authority-recovery"]:
         # The two browser authorities forward to one installed Learning database;
         # this proves origin isolation and real receipt recovery, not two DBs.

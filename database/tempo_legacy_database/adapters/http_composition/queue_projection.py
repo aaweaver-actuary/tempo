@@ -65,7 +65,7 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
                                   COALESCE(r.name,study.title,'Study') repertoire_name,
                                   COALESCE(r.source_name,'Study') repertoire_source,
                                   COALESCE(r.is_main,0) is_main,study.id study_id,
-                                  COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
+                                  COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            LEFT JOIN repertoires r ON r.id=COALESCE(
                                (SELECT linked.id FROM repertoires linked

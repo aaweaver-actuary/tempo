@@ -24,7 +24,6 @@ from .models import (
     ReviewRequest,
     QueueAttemptFailureRequest,
     TacticAttemptRequest,
-    EndgameProbeRequest,
     DefenseAttemptRequest,
     DefenseRecognitionRequest,
 )
@@ -42,7 +41,6 @@ from .defense import (
     submit_defense_attempt,
     submit_defense_recognition,
 )
-from tempo_learning_database.adapters import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
@@ -61,23 +59,6 @@ def reconcile(database, payload):
     return result
 
 
-def save_endgame_attempt(db, payload):
-    template = storage.active_endgame_template(db, payload["template_id"])
-    if template is None:
-        raise HTTPException(409, "Endgame template unavailable")
-    card = storage.lock_endgame_card(db, template["card_id"])
-    # Retirement acquires this same card lock before disabling the template.
-    current = storage.endgame_enabled(db, payload["template_id"])
-    if not card or not card[0] or not current[0]:
-        raise HTTPException(409, "Endgame definition retired")
-    attempt_id = uuid.uuid4().hex
-    storage.insert_endgame_attempt(db, attempt_id, payload["template_id"], payload["fen"], payload["target"], datetime.now(timezone.utc).isoformat())
-    return {
-        "id": attempt_id,
-        "fen": payload["fen"],
-        "target": payload["target"],
-        "moves": payload["moves"],
-    }
 
 
 def register_handlers():
@@ -103,7 +84,6 @@ def register_handlers():
             write_database=db,
         ),
         "opening_evidence.checkpoint": lambda db, p: evidence.persist_checkpoint(db, p),
-        "endgames.attempt.create": save_endgame_attempt,
         "publication.activate": activate,
         "publication.activate.v2": publication_bridge.activate,
         "publication.retire": retire,
@@ -673,27 +653,8 @@ def create_app(configuration: Configuration):
             idempotency_key or "defense-attempt:" + request.attempt_id,
         )
 
-    @app.post("/api/endgames/probe")
-    async def probe(request: EndgameProbeRequest):
-        raise HTTPException(410, "On-demand endgame calculation has been removed")
 
-    @app.get("/api/endgames/templates")
-    def templates():
-        return {"templates": endgame_store.active_templates()}
 
-    @app.post("/api/endgames/templates/{identifier}/attempt")
-    def endgame_attempt(identifier: str, idempotency_key: str | None = Header(None)):
-        # Recover only an already-recorded immutable position. Never generate a
-        # replacement or create a new operation identity after removal.
-        if idempotency_key:
-            prior = endgame_store.prior_attempt(idempotency_key)
-            if prior:
-                payload = json.loads(prior["payload_json"])
-                if (prior["command_name"] != "endgames.attempt.create"
-                        or payload.get("template_id") != identifier):
-                    raise HTTPException(409, "Operation ID was already used for another request")
-                return gateway.dispatch("endgames.attempt.create", payload, idempotency_key)
-        raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
 
     @app.get("/internal/publications/operations/{operation_id}")
     def publication_operation(operation_id: str):

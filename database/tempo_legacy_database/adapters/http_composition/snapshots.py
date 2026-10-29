@@ -37,8 +37,6 @@ def portable_table_rows(database):
         "prefix_splits",
         "tactic_progress",
         "tactic_captures",
-        "endgame_templates",
-        "endgame_attempts",
         "game_accounts",
         "imported_games",
         "game_move_analysis",
