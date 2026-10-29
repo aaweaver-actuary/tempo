@@ -204,6 +204,8 @@ def _reset_stale_opening_introductions(database, queue_date: str) -> None:
              AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
              AND NOT EXISTS(SELECT 1 FROM daily_queue queue
                             WHERE queue.card_id=cards.id AND queue.queue_date=?)"""
+    from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
+    statement += " AND NOT (" + regrouped_card_sql(database, "cards.id") + ")"
     from tempo_legacy_database.adapters.study.game_feedback import installed, retained_encounter_introduction_query
     if installed(database):
         statement += ' AND cards.id NOT IN (' + retained_encounter_introduction_query() + ')'
