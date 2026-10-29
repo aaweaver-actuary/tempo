@@ -5667,7 +5667,7 @@ Owning suite `backend/tests/test_legacy_bridge_qualification_plan.py`:
 - `test_ordinary_qualification_cpu_is_unrestricted_without_daemon_or_subprocess`
 - `test_explicit_qualification_caps_partition_exactly_and_preserve_helper_safeguards`
 
-Owning suite `backend/tests/test_product_collection_release.py`:
+Owning suite `database/tests/games_collection/test_packaged_collection.py`:
 
 - `test_packaged_collection_retains_deviations_reconciles_and_never_delivers`
 

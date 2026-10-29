@@ -45,6 +45,10 @@ The legacy schema still co-locates Games and Study tables, and existing backend 
 
 The subsequent [backend organization checklist](../backend/ORGANIZATION.md) separates logical application owners and transport contracts. The [shared timing contract](../backend/app/contracts/runtime_timing.py) now removes one PostgreSQL instrumentation reverse import; admission, writer and other technical composition seams remain pending. This changes no stored schema or resource authority.
 
+The explicit [packaged Games collection qualification](tests/games_collection/README.md)
+owns its synthetic SQL proof in this tree and reuses the established disposable
+migration/cleanup fixture. It adds no schema or storage relationship.
+
 ## Before merge
 
 Schema/storage relationship changes must keep affected owner diagrams and data dictionaries accurate. Follow the [diagram procedure](../docs/architecture/diagrams/README.md#maintenance-and-review-procedure) for review and [test selection](../docs/testing.md#select-the-smallest-relevant-proof) for proof. This does not require a live census or unrelated full-schema audit. See [the acceptance rule](../AGENTS.md#keep-database-charts-accurate-before-merge).

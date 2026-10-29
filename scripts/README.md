@@ -314,5 +314,8 @@ The regular runner suite owns switch refusal/idempotency/locking proof. The
 `games-collection-release` shared suite runs the pinned packaged candidate against
 the existing disposable PostgreSQL fixture, controlled real HTTP, original role
 provisioning and ordinary Study owner. Supply `TEMPO_COLLECTION_TEST_IMAGE` as the
-immutable image ID with this source commit's OCI revision label. No production
+immutable image ID with this source commit's OCI revision label. To reuse the
+recorded runtime image across operator/documentation-only changes, also set
+`TEMPO_COLLECTION_TEST_REVISION` to its original exact source commit; the suite
+verifies every Dockerfile COPY input and rejects untracked runtime additions. No production
 source is mounted into that image; only synthetic qualification inputs are mounted.

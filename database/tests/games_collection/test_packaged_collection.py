@@ -7,19 +7,37 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import sys
+import shlex
 import uuid
 
 import psycopg
 from psycopg.conninfo import make_conninfo
 import pytest
 
+# Reuse the existing disposable setup owner; no second migration/cleanup authority.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'backend/tests'))
 from test_product_game_lapse_postgres import ROOT, owned_postgres, case, retained_owner_case
 
 
 def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(case, tmp_path):
     image = os.environ.get('TEMPO_COLLECTION_TEST_IMAGE')
     assert image, 'Set TEMPO_COLLECTION_TEST_IMAGE to the immutable qualified candidate image ID'
-    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    revision = os.environ.get('TEMPO_COLLECTION_TEST_REVISION', head)
+    assert len(revision) == 40 and all(c in '0123456789abcdef' for c in revision)
+    # Reuse this immutable image only when every production COPY input is exact.
+    # Operator, external harness and documentation changes do not relabel it.
+    dockerfile = (ROOT / 'backend/Dockerfile').read_text()
+    inputs = ['backend/Dockerfile']
+    for line in dockerfile.splitlines():
+        if line.startswith('COPY '):
+            parts = shlex.split(line)
+            assert not parts[1].startswith(('--', '[')), 'Unsupported COPY form needs explicit qualification input binding'
+            inputs.extend(parts[1:-1])
+    subprocess.run(['git', 'diff', '--exit-code', revision, '--', *inputs], cwd=ROOT, check=True, capture_output=True)
+    assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard','--',*inputs],cwd=ROOT,text=True).strip()
+
     inspected = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
     assert image == inspected['Id'] and inspected['Config']['Labels']['org.opencontainers.image.revision'] == revision
     repertoire, captured, _, _ = retained_owner_case(case, False)

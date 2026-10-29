@@ -27,7 +27,7 @@ installed-release claim.
 | `test_collect_only_current_worker_persists_evidence_without_study_effects` | 1 passed on actual PostgreSQL, including unavailable comparison → reconciliation |
 | `node tools/component-build/test-lane.mjs runners development-budget` | 94 passed, no skips |
 | `node tools/component-build/test-lane.mjs runners game-review-collection` | 10 passed, no skips |
-| `TEMPO_COLLECTION_TEST_IMAGE=<immutable image above> TEMPO_COMPONENT_PYTHON=<scoped interpreter wrapper> node tools/component-build/test-lane.mjs --suite games-collection-release` | 1 packaged acceptance passed, no skips; 42.41 seconds in the recorded registered run |
+| `TEMPO_COLLECTION_TEST_IMAGE=<immutable image above> TEMPO_COLLECTION_TEST_REVISION=bb7a4879fa217d56fe069d265421d8553d7e07f7 TEMPO_COMPONENT_PYTHON=<scoped interpreter wrapper> node tools/component-build/test-lane.mjs --suite games-collection-release` | 1 packaged acceptance passed, no skips; 33.02 seconds in the final recorded registered run |
 | Whole `runners tempo-cli.test` lane | Initially 193 passed / 18 failed; after correcting the Task A fake-builder metadata, the exact 18-case recheck had 15 passed / 3 existing failures |
 | Selected Games suite manifest, inactive Compose resolution, AST/Node syntax, conflict and whitespace checks | Passed |
 
