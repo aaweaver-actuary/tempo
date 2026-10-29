@@ -88,6 +88,7 @@
       "tests/unit/prefix-split-training-regressions.test.tsx",
       "tests/unit/prepared-queue-readiness-regressions.test.ts",
       "tests/unit/prepared-review-continuation-regressions.test.ts",
+      "tests/unit/product-contracts.test.ts",
       "tests/unit/product-fixture-reset-regressions.test.ts",
       "tests/unit/redis-admission-cleanup-regressions.test.ts",
       "tests/unit/repair-endgame-regressions.test.tsx",
