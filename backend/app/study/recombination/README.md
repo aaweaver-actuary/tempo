@@ -1,11 +1,12 @@
 # Study recombination owner — #503
 
-Current delivery port: qualified R11 source `04cd9535` is assembled on integration
-`adfc8de8`, with reserved normal-Study hooks and additive migration 053 after
-schema 52. Frozen #502 policy is unchanged. Current encounter fields, deferred
-intake, guarded priority writes and #547 bounded reads are retained. Current-base
-native/A08 qualification is pending; the earlier `cc9694bc` board pass is evidence
-for its original stack, not current merge qualification or installation.
+Current delivery: the bounded R11 feature is assembled on integration `adfc8de8`,
+with reserved normal-Study hooks and additive migration 053 after schema 52.
+Frozen #502 policy is unchanged. Current encounter fields, deferred intake,
+guarded priority writes and #547 bounded reads are retained. The actual-board
+A08 case passed at `3a3317261c352f6faec4399f2d5e91db6908dc27`; native, UI and
+required Games→Study boundary evidence is recorded below. This is source and
+disposable assembled acceptance, not merge qualification or installation.
 
 Study-owned implementation for SPEC v0.2 C01–C04 / A08. It consumes
 [#502's pure policy](POLICY.md) at `86debb32` and #482's immutable
@@ -309,21 +310,30 @@ The retained UI's first teaching pass on a fresh composite is an actual assisted
 review and earns no clean streak. A08 then requires three fresh whole-sequence
 clean reviews; it seeds no combined first-correct or prior-review facts.
 
-Central regression/schema/diagram registration links this owner. The changed
-native split/admission selection passes five cases, and the browser-intent file
-passes three. The actual-refresh regression passes at `e5a3e4b8`, preserving the
-`unintroduced_member` guard and retained unknown-assistance fixture history.
-The single corrected A08 run at `cc9694bcb0542855c12247febdb5d964c7841edc`
-passed: **1 passed**, browser stage 105.53 seconds. It saved genuine A/C/B reviews,
-created AB then ABC after fresh whole-sequence reviews, applied the visible
-confirmed split, and passed the original-card/history, fresh-lineage,
-unrelated-attempt and retired-ABC queue assertions. The final queue read uses the
-existing endpoint's supported `limit=20` and checks HTTP success before reading
-its payload. No product behavior was changed for that request correction.
-The runner completed cleanup in 4.08 seconds; its exact disposable containers,
-volumes, networks and images were verified absent, and the nontruncating shared
-validation lock was released. Existing unchanged focused evidence is reused;
-no broad suite was run. This result qualifies the bounded disposable A08 scenario.
-Live resource isolation and later #495/#501 composition remain unverified.
-No live join/review, history reset, graph migration resumption, deployment or merge
-is performed by this task.
+Central regression/schema/diagram registration links this owner. Current-base
+application and public-import files pass 17 and three cases; #547's unchanged
+bounded-reader file passes ten. The native requirement is covered without
+repeating unchanged cases: six private transaction and two adapter cases pass at
+`4a4793db`, eleven current-owner cases pass at `00e10f3c`, and the repaired real
+callback/obligation/settlement case passes at `8f388b19`. The latter proves that
+translated nested repertoire paths retain the generated target's priority label.
+The current legacy and product admission readers both exclude explicit generated
+identities from introduction charges. Split-intent units pass three cases and
+the scoped TypeScript check passes. The existing required Games→Study selection
+`python backend/app/study/qualify_priority.py` passes all 15 cases at `3a331726`.
+
+The single corrected current-base A08 run at
+`3a3317261c352f6faec4399f2d5e91db6908dc27` passed: **1 passed**, browser stage
+99.09 seconds. It saved genuine A/C/B reviews, created AB then ABC only after
+fresh whole-sequence reviews, applied the visible confirmed split, and passed
+original-card/history, fresh-lineage, unrelated-attempt and retired-ABC queue
+assertions. Its guarded fixture preserves the image's declared pure-library
+source paths instead of replacing PYTHONPATH. No completed clean review or
+combined first-correct fact is seeded. The earlier bootstrap failure is retained
+as fixture evidence, not counted as a pass.
+
+Runner cleanup completed in 4.13 seconds and released the nontruncating validation
+lock. Existing unchanged pure policy and scheduling evidence is reused. No broad
+suite was run. Hosted merge qualification and live resource isolation remain
+unverified. This task performs no live join/review, history reset, graph migration
+resumption, deployment or merge.

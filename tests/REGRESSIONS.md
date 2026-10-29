@@ -17,7 +17,7 @@ attempt across pending retries and preserves legacy request serialization.
 fresh combined streaks, manual split and reload with another issued attempt
 unchanged. It stages only deliberate extra practice in a guarded disposable
 fixture, seeds no qualifying review and intercepts no Study API. Presence is not
-a browser pass; exact execution results belong to #503 / draft #528.
+a browser pass; exact execution results belong to the current #503 delivery PR.
 See the [canonical owner diagrams and current limits](../backend/app/study/recombination/README.md).
 
 ## Product v0.2 game-feedback composition
