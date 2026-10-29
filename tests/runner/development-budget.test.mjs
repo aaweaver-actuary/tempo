@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readHostStudyActivity } from '../../scripts/host-study-activity.mjs';
 import { acquireDevelopmentBudget, assertDevelopmentCapacity, composeResourceLimits, resourceBudgets,
-  waitForStudyQuiet, managedBuild, managedComposeBuild, runWithDevelopmentBudget, reconcileDevelopmentBuilder, reconcileDevelopmentBudget } from '../../scripts/development-budget.mjs';
+  waitForStudyQuiet, readDevelopmentCpuAllocation, managedBuild, managedComposeBuild, runWithDevelopmentBudget, reconcileDevelopmentBuilder, reconcileDevelopmentBudget } from '../../scripts/development-budget.mjs';
 
 test('study budget serializes independent development owners and never removes another owner', async () => {
   const parent = await mkdtemp(join(tmpdir(),'tempo-budget-test-'));
@@ -42,7 +42,7 @@ test('study budget treats active and unavailable control as deferral and admits 
 });
 
 test('aggregate development limits include all services and reject an additional concurrent stack', () => {
-  const limits = composeResourceLimits(Object.keys(resourceBudgets.developmentServices),'owner');
+  const limits = composeResourceLimits(Object.keys(resourceBudgets.developmentServices).filter(name=>name!=='game-feedback-worker'),'owner');
   assert.equal(Object.keys(limits.services).length,10);
   const existing = [{HostConfig:{NanoCpus:2e9,Memory:2*1024**3},Config:{Labels:{
     'com.docker.compose.project':'another-project','com.docker.compose.service':'postgres'}}}];
@@ -52,10 +52,12 @@ test('aggregate development limits include all services and reject an additional
     args[0] === 'ps' ? 'owned-container' : JSON.stringify(existing)));
 });
 
-test('optional application services share the one CPU and two GiB policy', () => {
-  const limits = Object.values(resourceBudgets.optionalServices);
-  assert.equal(limits.reduce((sum,item)=>sum+item.memoryMiB,0),2048);
-  assert.ok(Math.abs(limits.reduce((sum,item)=>sum+item.cpus,0)-1)<1e-9);
+test('optional inventory has unrestricted CPU and retains existing memory plus the Games allocation', () => {
+  const {['game-feedback-worker']:games,...existing}=resourceBudgets.optionalServices;
+  assert.equal(Object.values(existing).reduce((sum,item)=>sum+item.memoryMiB,0),2048);
+  assert.deepEqual(games,{memoryMiB:256,pidsLimit:96});
+  assert(Object.values(resourceBudgets.optionalServices).every(item=>!Object.hasOwn(item,'cpus')));
+  assert.throws(()=>composeResourceLimits(Object.keys(resourceBudgets.optionalServices),'owner',resourceBudgets.optionalServices),/aggregate.*memory budget/);
 });
 
 
@@ -67,8 +69,8 @@ test('rootless builder and one execution lane preserve individual limits and agg
   assert.equal(Object.hasOwn(resourceBudgets.development, 'cpus'), false, 'No aggregate CPU ceiling');
   const profiles = [resourceBudgets.developmentServices,resourceBudgets.legacyDevelopmentServices];
   for(const profile of profiles) {
-    assert(Object.values(profile).every(item=>Number.isFinite(item.cpus)&&item.cpus>0));
-    assert(Object.values(profile).reduce((sum,item)=>sum+item.memoryMiB,0)<=2048);
+    assert(Object.values(profile).every(item=>!Object.hasOwn(item,'cpus')));
+    assert(Object.entries(profile).filter(([name])=>name!=='game-feedback-worker').reduce((sum,[,item])=>sum+item.memoryMiB,0)<=2048);
   }
 });
 
@@ -88,7 +90,10 @@ test('managed component Docker preserves explicit caps and adds bounded defaults
   assert(requested.args.includes('tempo.resource-class=development'));
   const bounded=managedContainerArguments(['run','image'],'token',8);
   assert.deepEqual(bounded.limits,{cpus:8,memoryMiB:512});
-  assert.throws(()=>managedContainerArguments(['run','image'],'token'),/finite/);
+  const unrestricted=managedContainerArguments(['run','image'],'token');
+  assert.equal(unrestricted.limits.cpus,undefined);
+  assert.equal(unrestricted.limits.memoryMiB,512);
+  assert(!unrestricted.args.includes('--cpus'));
   assert.throws(()=>managedContainerArguments(['run','--cpus','0','image'],'token'),/finite/);
   assert.throws(()=>managedContainerArguments(['run','--cpus','Infinity','image'],'token'),/finite/);
   assert.throws(()=>managedContainerArguments(['run','--memory','unlimited','image'],'token'),/finite/);
@@ -133,8 +138,8 @@ async function builderFixture(run) {
       state.buildConfig = await readFile(args[args.indexOf('--buildkitd-config') + 1], 'utf8');
       state.requestedHost = {
         Memory: Number(args.find(value => value.startsWith('memory=')).slice(7, -1)) * 1024**2,
-        CpuQuota: Number(args.find(value => value.startsWith('cpu-quota=')).split('=')[1]),
-        CpuPeriod: Number(args.find(value => value.startsWith('cpu-period=')).split('=')[1]),
+        CpuQuota: Number(args.find(value => value.startsWith('cpu-quota='))?.split('=')[1] ?? -1),
+        CpuPeriod: Number(args.find(value => value.startsWith('cpu-period='))?.split('=')[1] ?? 100000),
       };
       const journal = JSON.parse(await readFile(join(directory, 'resources', encodeURIComponent(`builder:${state.name}`)), 'utf8'));
       assert.equal(journal.token, state.token, 'creation is preceded by a durable ownership record');
@@ -275,16 +280,16 @@ test('A11 inherited ownership cannot admit a second builder execution lane', () 
   } finally {await lease.release();}
 }));
 
-test('A14 daemon CPU defaults and explicit build limits bind creation and exact readback', async t => {
-  for (const limits of [undefined, {cpus:1, memoryMiB:1536}, {cpus:0.5, memoryMiB:512}, {cpus:4, memoryMiB:1536}, {cpus:8, memoryMiB:512}]) {
-    await t.test(limits ? JSON.stringify(limits) : 'daemon CPU allocation', () => builderFixture(async ({directory, state, options}) => {
+test('A14 unrestricted defaults and explicit build limits bind creation and exact readback', async t => {
+  for (const limits of [undefined, {memoryMiB:1536}, {cpus:1, memoryMiB:1536}, {cpus:0.5, memoryMiB:512}, {cpus:4, memoryMiB:1536}, {cpus:8, memoryMiB:512}]) {
+    await t.test(limits ? JSON.stringify(limits) : 'unrestricted CPU', () => builderFixture(async ({directory, state, options}) => {
       let builds = 0;
       assert.equal(await managedBuild(async () => { builds++; return 'built'; }, {...options, limits}), 'built');
       assert.equal(builds, 1);
       assert.equal(state.buildConfig, '[worker.oci]\n', 'BuildKit owns worker fanout within the verified container limits');
       assert.deepEqual(state.requestedHost, {
         Memory:(limits?.memoryMiB ?? 2048) * 1024**2,
-        CpuQuota:(limits?.cpus ?? 8) * 100000, CpuPeriod:100000,
+        CpuQuota:limits?.cpus === undefined ? -1 : limits.cpus * 100000, CpuPeriod:100000,
       });
       assert.equal(state.builder, false);
       assert.equal(state.container, false);
@@ -294,7 +299,7 @@ test('A14 daemon CPU defaults and explicit build limits bind creation and exact 
 });
 
 test('A15 invalid or over-budget build limits fail before ownership, hooks or Docker', async t => {
-  const invalid = [null, {}, {cpus:1}, {memoryMiB:1536},
+  const invalid = [null, {}, {cpus:1}, {cpus:null,memoryMiB:1536},
     ...[0, -1, NaN, Infinity, '1', true, 0.000001].map(cpus => ({cpus, memoryMiB:1536})),
     ...[0, -1, NaN, Infinity, '1536', true, 1536.5].map(memoryMiB => ({cpus:1, memoryMiB})),
     {cpus:Number.MAX_SAFE_INTEGER, memoryMiB:1536}, {cpus:1, memoryMiB:2049}];
@@ -303,7 +308,7 @@ test('A15 invalid or over-budget build limits fail before ownership, hooks or Do
       await assert.rejects(managedBuild(async () => assert.fail('invalid build executed'), {
         ...options, limits, prepare:async () => assert.fail('invalid preparation executed'),
         quiet:async () => assert.fail('invalid request waited for quiet'),
-      }), /Managed build limits/);
+      }), /(?:Managed build limits|CPU limits)/);
       assert.deepEqual(state.commands, []);
       await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
     }));
@@ -341,7 +346,7 @@ test('A17 aggregate build admission rejects memory overflow without touching pee
       const peerSnapshot = structuredClone(state.peers);
       await assert.rejects(managedBuild(async () => assert.fail('overflow build executed'), {...options, limits}), /exceed the aggregate/);
       assert.deepEqual(state.peers, peerSnapshot);
-      assert.deepEqual(state.commands.map(args => args[0]), limits ? ['ps', 'inspect'] : ['info', 'ps', 'inspect']);
+      assert.deepEqual(state.commands.map(args => args[0]), ['ps', 'inspect']);
       await assert.rejects(readFile(join(directory, 'owner.json')), {code:'ENOENT'});
     }));
   }
@@ -477,13 +482,13 @@ test('A25 development command preserves caller compiler fanout and otherwise use
   }
 });
 
-test('A26 missing or invalid daemon CPU allocation fails without a fallback builder', async t => {
-  for(const daemonCpus of [0, -1, null, '8', true]) {
-    await t.test(JSON.stringify(daemonCpus), () => builderFixture(async ({directory,state,options}) => {
-      state.daemonCpus = daemonCpus;
-      await assert.rejects(managedBuild(async () => assert.fail('invalid daemon allocation executed'), options), /Managed build limits/);
-      assert.deepEqual(state.commands.map(args=>args[0]), ['info']);
-      await assert.rejects(readFile(join(directory,'owner.json')), {code:'ENOENT'});
+test('A26 finite-only consumers reject invalid daemon allocation while ordinary builders need none', async t => {
+  for(const daemonCpus of [0,-1,null,'8',true]) {
+    await t.test(JSON.stringify(daemonCpus), () => builderFixture(async ({state,options}) => {
+      await assert.rejects(readDevelopmentCpuAllocation({docker:async()=>JSON.stringify(daemonCpus)}),/Managed build limits/);
+      state.daemonCpus=daemonCpus;
+      await managedBuild(async()=>{},options);
+      assert(!state.commands.some(args=>args[0]==='info'));
     }));
   }
 });
@@ -545,10 +550,10 @@ test('B refused legacy control is not confirmed inactivity', async () => {
   assert.equal(waits,1);
 });
 
-test('registered Stockfish container qualification acquires Docker admission while listing remains lightweight', async () => {
+test('registered backup container qualification acquires Docker admission while listing remains lightweight', async () => {
   const {componentSelectionNeedsBudget}=await import('../../tools/component-build/component-tests.mjs');
-  assert.equal(componentSelectionNeedsBudget(['--component','stockfish']),true);
-  assert.equal(componentSelectionNeedsBudget(['--component','stockfish','--list']),false);
+  assert.equal(componentSelectionNeedsBudget(['--suite','postgres-backup-lifecycle']),true);
+  assert.equal(componentSelectionNeedsBudget(['--suite','postgres-backup-lifecycle','--list']),false);
 });
 
 test('expected independent control cannot be mistaken for absence before its first successful publication', async () => {
@@ -583,7 +588,7 @@ test('managed Docker capability survives a sanitized worker environment and cann
     const result=spawnSync(wrapper,['run','--name','owned','image'],{env:sanitized,encoding:'utf8'});
     assert.equal(result.status,0,result.stderr);
     assert.equal(result.stderr,'','Expected absence probes must not corrupt the worker diagnostic stream');
-    const args=JSON.parse(result.stdout);assert(args.includes('tempo.resource-owner='+lease.token));assert(args.includes('--cpus'));assert(args.includes('--memory'));assert.equal(args[args.indexOf('--cpus')+1],'8');
+    const args=JSON.parse(result.stdout);assert(args.includes('tempo.resource-owner='+lease.token));assert(!args.includes('--cpus'));assert(args.includes('--memory'));
     const before=await readFile(log,'utf8');await lease.release();lease=undefined;
     const stale=spawnSync(wrapper,['run','image'],{env:sanitized,encoding:'utf8'});
     assert.notEqual(stale.status,0);assert.equal(await readFile(log,'utf8'),before,'A released capability invoked Docker');
@@ -773,4 +778,65 @@ test('healthy idle snapshot with stalled publisher allows a new essential reques
     await exited;
     await rm(directory, {recursive:true, force:true});
   }
+});
+
+
+test('A28 Games generated limits preserve memory PID and ownership without restoring a CPU quota', () => {
+  for(const allocations of [resourceBudgets.developmentServices,resourceBudgets.optionalServices]) {
+    const {services}=composeResourceLimits(['game-feedback-worker'],'owner',allocations);
+    assert.deepEqual(services['game-feedback-worker'],{mem_limit:'256m',pids_limit:96,
+      labels:{'tempo.resource-owner':'owner','tempo.resource-class':'development'}});
+  }
+});
+
+test('A29 unrestricted owned containers retain memory accounting and reject missing limits', () => {
+  const allocations={probe:{memoryMiB:256}};
+  for(const CpuQuota of [0,-1]) {
+    const peer={HostConfig:{NanoCpus:0,CpuQuota,CpuPeriod:100000,Memory:1792*1024**2},Config:{Labels:{}}};
+    const docker=args=>args[0]==='ps'?'peer':JSON.stringify([peer]);
+    assert.doesNotThrow(()=>assertDevelopmentCapacity(['probe'],'owned',docker,allocations));
+    peer.HostConfig.Memory=1793*1024**2;
+    assert.throws(()=>assertDevelopmentCapacity(['probe'],'owned',docker,allocations),/aggregate.*memory budget/);
+    peer.HostConfig.Memory=0;
+    assert.throws(()=>assertDevelopmentCapacity([],'owned',docker,allocations),/unbounded resources/);
+  }
+  assert.throws(()=>composeResourceLimits(['probe'],'owner',{probe:{}}),/memory/);
+  for(const cpus of [null,0,-1,Infinity,NaN,0.000001])
+    assert.throws(()=>composeResourceLimits(['probe'],'owner',{probe:{cpus,memoryMiB:256}}),/positive finite/);
+});
+
+test('A30 unrestricted builder rejects an unexpected quota and retains verified cleanup', () => builderFixture(async ({state,options}) => {
+  state.kernelLimits={CpuQuota:50000,CpuPeriod:100000};
+  await assert.rejects(managedBuild(async()=>assert.fail('unexpected quota executed'),options),/kernel limits/);
+  assert.equal(state.builder,false);
+  assert.equal(state.container,false);
+}));
+
+test('A31 qualification window leaves ordinary CPU unrestricted and validates explicit caps without daemon queries', async () => {
+  const directory=await mkdtemp(join(tmpdir(),'tempo-qualification-window-'));
+  const lease=await acquireDevelopmentBudget({directory:join(directory,'budget')});
+  const {spawnSync}=await import('node:child_process');
+  const fakeDocker=join(directory,'docker'), fakePython=join(directory,'python'), log=join(directory,'docker-calls');
+  try {
+    await writeFile(fakeDocker,`#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(log)},'unexpected Docker query');process.exit(91);\n`,{mode:0o700});
+    await writeFile(fakePython,`#!${process.execPath}\nrequire('node:fs').writeFileSync(process.env.TEMPO_CPU_TEST_RECEIPT,JSON.stringify({cpu:process.env.TEMPO_QUALIFICATION_CPUS??null,owner:process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,args:process.argv.slice(2)}));\n`,{mode:0o700});
+    for(const [index,cpus] of [undefined,'4','0','Infinity'].entries()) {
+      const receipt=join(directory,'receipt-'+index+'.json');
+      const env={...process.env,TEMPO_REAL_DOCKER:fakeDocker,TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,
+        TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:lease.directory,TEMPO_CPU_TEST_RECEIPT:receipt};
+      if(cpus===undefined)delete env.TEMPO_QUALIFICATION_CPUS;else env.TEMPO_QUALIFICATION_CPUS=cpus;
+      const result=spawnSync(process.execPath,[fileURLToPath(new URL('../../scripts/qualification-window.mjs',import.meta.url)),
+        '--managed-child','frozen',fakePython],{env,encoding:'utf8'});
+      if(index<2) {
+        assert.equal(result.status,0,result.stderr);
+        const recorded=JSON.parse(await readFile(receipt,'utf8'));
+        assert.equal(recorded.cpu,cpus??null);assert.equal(recorded.owner,lease.token);
+        assert(recorded.args[0].endsWith('/database/tests/test-frozen-postgres.py'));
+      } else {
+        assert.notEqual(result.status,0);assert.match(result.stderr,/positive finite/);
+        await assert.rejects(readFile(receipt),{code:'ENOENT'});
+      }
+    }
+    await assert.rejects(readFile(log),{code:'ENOENT'});
+  } finally {await lease.release();await rm(directory,{recursive:true,force:true});}
 });

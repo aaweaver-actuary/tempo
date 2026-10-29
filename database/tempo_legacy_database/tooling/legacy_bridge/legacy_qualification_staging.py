@@ -14,6 +14,7 @@ import zipfile
 PACKAGE_PARTS = {'hatch_build.py', 'database', 'src', 'schemas', 'fixtures', 'examples', 'tests', 'integration', 'migrations',
                  'run_suite.py', 'pyproject.toml', 'uv.lock', 'README.md', 'REGRESSIONS.md'}
 SOURCE_FILES = {'database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py', 'database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_backend.py',
+                'scripts/qualification_cpu.py',
                 'database/tempo_legacy_database/tooling/legacy_bridge/legacy_qualification_staging.py', 'database/tooling/apply_postgres_migrations.py',
                 'database/tooling/provision_postgres_roles.py',
                 'contracts/requirements-test.lock', 'services/learning/application/qualification.py',

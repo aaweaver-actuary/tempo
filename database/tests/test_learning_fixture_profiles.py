@@ -135,7 +135,7 @@ class LearningFixtureProfilesTests(unittest.TestCase):
         elif arguments[0] == "run":
             self.container_present = True
         elif arguments[:2] == ("container", "inspect"):
-            return json.dumps({"cpu_nanos": 1_000_000_000, "memory_bytes": 512 * 1024 * 1024})
+            return json.dumps({"cpu_nanos": 0, "memory_bytes": 512 * 1024 * 1024})
         elif arguments[:2] == ("container", "ls"):
             return "owned-container" if self.container_present else ""
         elif arguments[:2] == ("volume", "ls"):

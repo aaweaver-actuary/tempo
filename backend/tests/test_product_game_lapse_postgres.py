@@ -3,7 +3,7 @@
 Run: make python-file FILE=backend/tests/test_product_game_lapse_postgres.py
 Requires existing Docker daemon/image postgres:18.6-trixie and backend Python
 dependencies. No install/pull/restart, external DSN, existing DB or live settings.
-One unique labelled container, 1 CPU/384MiB/128 PIDs, 512MiB tmpfs, loopback-only
+One unique labelled container, unrestricted CPU/384MiB/128 PIDs, 512MiB tmpfs, loopback-only
 ephemeral port; startup <=45s, command <=180s in the outer validation window.
 The fixture applies checked-in source DDL in the owner's ordered/pinned registry,
 retains nonsecret identity/cleanup evidence in test-results/game-feedback-native,
@@ -61,7 +61,7 @@ def owned_postgres(tmp_path_factory):
         report["image_id"] = image
         report["container_id"] = docker("run", "--detach", "--name", container,
             "--label", "tempo.owner=" + identity, "--label", "tempo.disposable=true",
-            "--memory", "384m", "--memory-swap", "384m", "--cpus", "1", "--pids-limit", "128",
+            "--memory", "384m", "--memory-swap", "384m", "--pids-limit", "128",
             "--tmpfs", "/var/lib/postgresql:rw,size=512m", "--publish", "127.0.0.1::5432",
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
             "-c", "max_connections=16").stdout.strip()

@@ -48,7 +48,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (request.operation === 'start') {
       const result = withDevelopmentStartup(['postgres'], project,
         () => (startupResult = spawnSync('docker', request.arguments, { encoding: 'utf8', timeout: 15000 })),
-        { allocations: { postgres: { cpus: 1, memoryMiB: 256 } }, oneOff: true });
+        { allocations: { postgres: { memoryMiB: 256 } }, oneOff: true });
       reply({ status: result.status, stdout: result.stdout, stderr: result.stderr });
     } else if (request.operation === 'reconcile') {
       reconcileDevelopmentStartup(project);
@@ -148,7 +148,7 @@ def require_owned(container, fixture, container_id=None):
 def verify_limits(container):
     limits = container["HostConfig"]
     if (limits["NanoCpus"], limits["Memory"], limits["MemorySwap"], limits["PidsLimit"]) != (
-            1_000_000_000, 268_435_456, 268_435_456, 256):
+            0, 268_435_456, 268_435_456, 256):
         raise RuntimeError("PostgreSQL fixture resource limits differ from the allocation")
     bindings = container["NetworkSettings"]["Ports"]
     if (set(bindings) != {"5432/tcp"} or len(bindings["5432/tcp"]) != 1
