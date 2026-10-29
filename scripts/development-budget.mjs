@@ -104,34 +104,41 @@ function snapshotBuildLimits(limits) {
   if (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000) ||
       !Number.isSafeInteger(memoryMiB) || !(memoryMiB > 0))
     throw new Error('Managed build limits require positive finite CPUs with an exact CPU quota and positive integer memoryMiB');
-  if (cpus > resourceBudgets.development.cpus || memoryMiB > resourceBudgets.development.memoryMiB)
-    throw new Error('Managed build limits exceed the aggregate development budget');
+  if (memoryMiB > resourceBudgets.development.memoryMiB)
+    throw new Error('Managed build limits exceed the aggregate development memory budget');
   return Object.freeze({ cpus, memoryMiB });
 }
 
 export function assertDevelopmentCapacity(requestedServices, project, docker = args =>
   execFileSync('docker', args, { encoding: 'utf8' }), allocations = resourceBudgets.developmentServices,
-  builderLimits = resourceBudgets.development) {
-  const build = project === '__builder' ? snapshotBuildLimits(builderLimits) : undefined;
+  builderLimits) {
+  const build = project === '__builder' && builderLimits !== undefined ? snapshotBuildLimits(builderLimits) : undefined;
   const ids = docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}']).trim().split(/\s+/).filter(Boolean);
   const existing = ids.length ? JSON.parse(docker(['inspect', ...ids])) : [];
-  let cpus = build?.cpus ?? 0;
-  let memory = build?.memoryMiB ?? 0;
+  let memory = project === '__builder' ? build?.memoryMiB ?? resourceBudgets.development.memoryMiB : 0;
   for (const container of existing) {
     const host = container.HostConfig;
     const limit = host.NanoCpus / 1e9 || host.CpuQuota / host.CpuPeriod;
-    if (!(limit > 0) || !(host.Memory > 0)) throw new Error('An existing managed development container has unbounded resources');
-    cpus += limit; memory += host.Memory / 1024 / 1024;
+    if (!Number.isFinite(limit) || !(limit > 0) || !Number.isFinite(host.Memory) || !(host.Memory > 0))
+      throw new Error('An existing managed development container has unbounded resources');
+    memory += host.Memory / 1024 / 1024;
   }
   for (const name of new Set(requestedServices)) {
     if (existing.some(container => container.Config.Labels['com.docker.compose.project'] === project &&
       container.Config.Labels['com.docker.compose.service'] === name)) continue;
     const limit = allocations[name];
     if (!limit) throw new Error(`No development resource allocation for ${name}`);
-    cpus += limit.cpus; memory += limit.memoryMiB;
+    validateDevelopmentAllocation(limit);
+    memory += limit.memoryMiB;
   }
-  if (cpus > resourceBudgets.development.cpus + 1e-9 || memory > resourceBudgets.development.memoryMiB)
-    throw new Error('New development work would exceed the aggregate study-protection budget; existing resources were left untouched');
+  if (memory > resourceBudgets.development.memoryMiB)
+    throw new Error('New development work would exceed the aggregate study-protection memory budget; existing resources were left untouched');
+}
+
+function validateDevelopmentAllocation(limit) {
+  if (!Number.isFinite(limit.cpus) || !(limit.cpus > 0) ||
+      !Number.isFinite(limit.memoryMiB) || !(limit.memoryMiB > 0))
+    throw new Error('Development allocations require positive finite CPU and memory limits');
 }
 
 const synchronousDocker = args => execFileSync('docker', args, {encoding:'utf8',timeout:5000});
@@ -207,11 +214,11 @@ export function reconcileDevelopmentStartup(project,{directory=budgetDirectory()
 
 export async function managedBuild(build, { docker = defaultDocker, quiet = waitForStudyQuiet,
   directory = budgetDirectory(), token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,
-  limits = resourceBudgets.development,
-  prepare = async path => writeFile(path, '[worker.oci]\nmax-parallelism = 1\n') } = {}) {
+  limits,
+  prepare = async path => writeFile(path, '[worker.oci]\n') } = {}) {
   // Validate and copy before acquiring ownership or yielding to caller hooks.
-  const buildLimits = snapshotBuildLimits(limits);
-  const cpuPeriod = 100000, cpuQuota = buildLimits.cpus * cpuPeriod;
+  const requestedLimits = limits === undefined ? undefined : snapshotBuildLimits(limits);
+  const defaultMemoryMiB = resourceBudgets.development.memoryMiB;
   const lease = token ? undefined : await acquireDevelopmentBudget({ directory });
   token ??= lease.token;
   const name = `tempo-budget-builder-${randomUUID()}`;
@@ -231,6 +238,11 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
     const buildConfig = join(buildDirectory, 'buildkitd.toml');
     await prepare(buildConfig);
     await quiet();
+    // The daemon's allocation is a kernel cap, not evidence of idle headroom.
+    const buildLimits = requestedLimits ?? snapshotBuildLimits({
+      cpus: JSON.parse(await docker(['info', '--format', '{{json .NCPU}}'])), memoryMiB: defaultMemoryMiB,
+    });
+    const cpuPeriod = 100000, cpuQuota = buildLimits.cpus * cpuPeriod;
     const managedIds = (await docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}'])).trim();
     const managedContainers = managedIds ? await docker(['inspect', ...managedIds.split(/\s+/)]) : '[]';
     assertDevelopmentCapacity([], '__builder', args => args[0] === 'ps' ? managedIds : managedContainers,
@@ -285,13 +297,13 @@ export function composeResourceLimits(services, owner, allocations = resourceBud
   const limits = Object.fromEntries(services.map(name => {
     const limit = allocations[name];
     if (!limit) throw new Error(`No bounded development allocation for ${name}`);
+    validateDevelopmentAllocation(limit);
     return [name, { cpus: limit.cpus, mem_limit: `${limit.memoryMiB}m`,
       labels: { 'tempo.resource-owner': owner, 'tempo.resource-class': 'development' } }];
   }));
-  const cpus = Object.values(limits).reduce((sum, limit) => sum + limit.cpus, 0);
   const memory = services.reduce((sum, name) => sum + allocations[name].memoryMiB, 0);
-  if (cpus > resourceBudgets.development.cpus + 1e-9 || memory > resourceBudgets.development.memoryMiB)
-    throw new Error(`Development allocation exceeds the aggregate ${resourceBudgets.development.cpus}-CPU/${resourceBudgets.development.memoryMiB}-MiB budget`);
+  if (memory > resourceBudgets.development.memoryMiB)
+    throw new Error(`Development allocation exceeds the aggregate ${resourceBudgets.development.memoryMiB}-MiB memory budget`);
   return { services: limits };
 }
 
@@ -391,8 +403,7 @@ export async function runWithDevelopmentBudget(command, argumentsList, { cwd = p
 function run(command, argumentsList, cwd, signal, token, directory) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, argumentsList, { cwd, signal, stdio: 'inherit', env: { ...process.env,
-      TEMPO_DEVELOPMENT_BUDGET_TOKEN: token, TEMPO_DEVELOPMENT_BUDGET_DIRECTORY: directory, CARGO_BUILD_JOBS: '1', CMAKE_BUILD_PARALLEL_LEVEL: '1',
-      RAYON_NUM_THREADS: '1', UV_CONCURRENT_BUILDS: '1' } });
+      TEMPO_DEVELOPMENT_BUDGET_TOKEN: token, TEMPO_DEVELOPMENT_BUDGET_DIRECTORY: directory } });
     try { if (child.pid) setPriority(child.pid, 10); } catch { /* Kernel container caps remain the hard resource boundary. */ }
     let failure;
     child.on('error', error => { failure = error; if (!child.pid) reject(error); });

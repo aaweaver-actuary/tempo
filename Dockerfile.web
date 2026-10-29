@@ -1,5 +1,4 @@
 FROM rust:1.91-slim AS core
-ENV CARGO_BUILD_JOBS=1 RAYON_NUM_THREADS=1 CMAKE_BUILD_PARALLEL_LEVEL=1
 RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./

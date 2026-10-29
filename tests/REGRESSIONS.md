@@ -4989,18 +4989,36 @@ service budgets, rootless build confinement and bounded/labelled component Docke
 invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
 checks and listing do not acquire a heavy-work lease.
 
-`A14 managed build defaults and explicit lower limits bind creation and exact readback`,
+`A14 daemon CPU defaults and explicit build limits bind creation and exact readback`,
 `A15 invalid or over-budget build limits fail before ownership, hooks or Docker`,
 `A16 lower build snapshot admits existing peers at the ceiling and preserves them through cleanup`,
-`A17 aggregate build admission rejects CPU or memory overflow without touching peers`,
+`A17 aggregate build admission rejects memory overflow without touching peers`,
 `A18 builder cgroup mismatch fails without fallback and verifies cleanup before release`,
 `A19 lower build retains journal and lane on failed cleanup and excludes inherited builders`,
 and `A20 Compose build forwards explicit limits and preserves build failures after verified cleanup`
-in that same registered runner own per-build allocation. They retain the default
-2 CPU / 2048 MiB policy and prove explicit 1 CPU / 1536 MiB limits with injected
-Docker readback, caller mutation, CPU/memory overcommit, peer preservation,
+in that same registered runner own per-build allocation. The corrected policy
+uses daemon CPU allocation by default, preserves requested individual CPU caps
+and retains the aggregate 2048 MiB memory ceiling. They prove explicit
+1 CPU / 1536 MiB limits with injected Docker readback, caller mutation,
+memory overcommit, peer preservation,
 failed cleanup and lane exclusion. Real lower-memory build success remains
 separate, unproved operational evidence.
+
+`A21 explicit builder CPUs above two and peer CPU totals do not override memory or isolation`,
+`A22 higher CPU requests retain finite container limits and the separate aggregate memory ceiling`,
+`A23 higher CPU builders still defer on active or unavailable Study and release only their own lane`,
+`A24 retained unlabelled Learning and PostgreSQL still block a 1536 MiB builder on memory`,
+`A25 development command preserves caller compiler fanout and otherwise uses standard runtime defaults`,
+`A26 missing or invalid daemon CPU allocation fails without a fallback builder`,
+and `A27 production web image leaves compiler fanout to standard runtime defaults`
+own removal of the obsolete fixed two-CPU/internal-fanout policy. A14 covers
+default daemon allocation and explicit 4/8 CPU cgroups; the existing sanitized
+adapter proof checks daemon-derived default CPUs. A13's competing child fixture
+now requests 1536 MiB each so its retained admission race is governed by actual
+memory overflow rather than the deliberately removed CPU sum. The selected
+PostgreSQL diagnostic-allocation consumer likewise accepts higher explicit CPUs
+and retains memory-overflow denial. These are synthetic source checks, not
+permission to omit known peers or a demonstration of real Study responsiveness.
 
 `scripts/check-inference-priority-images.mjs` additionally runs actual engine and
 Maia images at their optional-service kernel limits. Stockfish may require the
