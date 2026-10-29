@@ -181,10 +181,11 @@ kernel limit; it is not evidence of idle headroom or real-world Study latency.
 Memory/OOM failures remain failures.
 
 Callers needing the same CPU allocation can import
-`readDevelopmentCpuAllocation({docker})` from `development-budget.mjs`. It is an
-asynchronous read of the selected daemon's reported numeric CPU allocation,
-using the same positive/finite/quota validation as the builder and managed Docker
-adapter. The optional injected `docker(args)` returns command output. No lease,
+`readDevelopmentCpuAllocation({cpus, docker})` from `development-budget.mjs`. It
+validates an optional explicit numeric CPU value, or asynchronously reads the
+selected daemon's reported CPU allocation when omitted, using the same
+positive/finite/quota validation as the builder and managed Docker adapter.
+The optional injected `docker(args)` returns command output. No lease,
 workload or reservation is created. Consumers with an explicit allocated CPU
 value should keep that value rather than replace it with daemon capacity. No
 new CPU environment variable is introduced.

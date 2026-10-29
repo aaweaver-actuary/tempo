@@ -50,9 +50,9 @@ export async function acquireDevelopmentAdmission({ directory = budgetDirectory(
 
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
 
-/** Selected daemon allocation, never a claim of idle CPU or Study safety. */
-export async function readDevelopmentCpuAllocation({ docker = defaultDocker } = {}) {
-  const cpus = JSON.parse(await docker(['info', '--format', '{{json .NCPU}}']));
+/** Explicit or selected daemon allocation; never an idle CPU or Study safety claim. */
+export async function readDevelopmentCpuAllocation({ cpus, docker = defaultDocker } = {}) {
+  if (cpus === undefined) cpus = JSON.parse(await docker(['info', '--format', '{{json .NCPU}}']));
   if (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000))
     throw new Error('Managed build limits require a positive finite daemon CPU allocation with an exact CPU quota');
   return cpus;
