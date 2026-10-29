@@ -328,6 +328,27 @@ def test_stale_existing_mapping_cannot_be_reused_for_replacement_or_practice():
     assert result.proposal is None
 
 
+@pytest.mark.parametrize("kind", ["common_blunder", "covered_outlier"])
+@pytest.mark.parametrize("route_id,route_ply,matched", [
+    ("synthetic-route", 0, True), ("other-route", 0, False), ("synthetic-route", 2, False),
+])
+def test_existing_card_route_local_mapping_matches_actual_target(kind, route_id, route_ply, matched):
+    goal = target(kind=kind, previous_response_uci="e2e4")
+    payload = mapping(goal, "e2e4").model_dump(mode="json") | {"route_id": route_id, "route_ply": route_ply}
+    card = DecisionPresentation.model_validate_json(json.dumps(payload))
+    displayed = DisplayedCardChange(action="update", presentation_id=card.presentation_id,
+        expected_revision=card.presentation_revision, starting_fen=goal.context.target_fen,
+        moves=("d2d4",), learner_color="white")
+    goal = replace(goal, existing_card=card, displayed_card_changes=(displayed,))
+    choices = [familiar("e2e4", exact_fen=goal.context.target_fen), familiar("d2d4", 2)]
+    result = coordinator(goal, choices).propose(goal)
+    if matched:
+        assert result.status == ("existing_card" if kind == "common_blunder" else "proposal")
+    else:
+        assert result.status == "inconclusive" and result.proposal is None and result.existing_card is None
+        assert result.reason == "existing_card_identity_or_introduction_unproved"
+
+
 def test_no_content_or_learning_side_effects():
     goal = target()
     before = repr(goal)

@@ -140,6 +140,8 @@ def _card_is_displayed(target: ProposalTarget, card: DisplayedCardChange, move: 
 def _existing_matches(target: ProposalTarget, position_key: str) -> bool:
     card = target.existing_card
     return (card is not None and card.available
+            and (card.route_id is None or (card.route_id, card.route_ply)
+                 == (target.route_id, len(target.context.history_uci)))
             and (card.repertoire_id, card.repertoire_revision, card.position_key, card.selected_response_uci)
             == (target.repertoire_id, target.source_revision, position_key, target.previous_response_uci))
 

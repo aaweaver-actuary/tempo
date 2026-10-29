@@ -1,8 +1,9 @@
 # Bounded proposal policy (#499)
 
 Pure optional Analysis implementation of SPEC v0.2 P01/P02, S03–S05, R05/R07/R10
-and A07's policy boundary. It consumes #482/#513 `2db98217` unchanged. Source is
-unmerged; normal-product adoption and deployment isolation are unverified.
+and A07's policy boundary. Its shared analysis contract is unchanged from
+#482/#513 `2db98217` and is now present on main. This component remains unmerged;
+normal-product adoption and deployment isolation are unverified.
 
 ## Public interface and ownership
 
@@ -110,8 +111,11 @@ card must describe the same legal response. Nothing creates cards automatically.
 
 An available approved existing response returns its actual presentation and an
 `introduction_candidate` (explicitly unintroduced) or `practice_candidate`
-(introduced with matching current content). Unknown/stale mappings remain
-inconclusive. This output is no game lapse, Study Again, admission, completed
+(introduced with matching current content). When a mapping declares `route_id`
+and `route_ply`, both must match this target's actual route and replay depth;
+same-position mappings for another occurrence cannot be reused or updated.
+Unscoped mappings retain the existing exact-position contract. Unknown/stale
+mappings remain inconclusive. This output is no game lapse, Study Again, admission, completed
 introduction or review. Only #501 may route a confirmed action to Study or the
 ranking path; a displayed preparation is not a recorded recall failure.
 
