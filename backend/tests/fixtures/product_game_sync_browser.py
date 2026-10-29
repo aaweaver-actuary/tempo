@@ -60,6 +60,7 @@ def main():
         if dsn.username != "tempo_writer" or os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED") != "1":
             raise RuntimeError("probe requires the real opted-in disposable writer profile")
         from app.games.feedback.ports import Delivery
+        from tempo_learning_remediation import RemediationError
         from app.product_composition.game_review import SystemClock
         from app.product_composition.game_sync_current import current_provider_worker, current_sync_admission
         with transaction() as database:
@@ -106,6 +107,8 @@ def main():
             reason = getattr(error,"reason",None)
             if not isinstance(reason,str) or reason not in safe_codes:
                 reason = str(error) if type(error) is ValueError and str(error) in safe_codes else None
+            if isinstance(error,RemediationError) and isinstance(error.reason,str) and re.fullmatch(r"legacy_[a-z_]{1,90}",error.reason):
+                reason = error.reason  # Existing owner's fixed capture reason, never arbitrary exception text.
             sqlstate = getattr(error,"sqlstate",None)
             try:
                 unchanged = protected() == before
