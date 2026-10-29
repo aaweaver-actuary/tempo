@@ -86,18 +86,30 @@ def retained_imports(database):
     return RetainedImports(database)
 
 
-def apply_approved_import(database, payload: dict):
-    """Owner command handler: validate fences then use the sole real importer.
-
-    Integration must invoke this inside imports.pgn.explicit's gateway handler
-    when retained_import_preview is present. Ordinary import behavior is kept by
-    that handler. The explicit-import receipt then pins normal preparation.
-    """
+def _import_command(operation):
     from fastapi import HTTPException
     from pydantic import ValidationError
     try:
-        return retained_imports(database).apply(payload)
+        return operation()
     except ChangeError as error:
         raise HTTPException(409, {"code": str(error), "message": str(error)}) from error
     except ValidationError as error:
         raise HTTPException(422, {"code": "invalid_import_approval"}) from error
+
+
+def validate_approved_import(database, payload: dict) -> dict:
+    """Fence and unwrap approval inside the existing decorated import command.
+
+    The command retains its sole admission and publication-refresh invocation.
+    This capability locks/reads only; it does not publish or settle a receipt.
+    """
+    return _import_command(lambda: retained_imports(database).validate(payload))
+
+
+def apply_approved_import(database, payload: dict):
+    """Validate then invoke the sole real importer on the borrowed transaction.
+
+    For direct owner composition. Existing explicit-command wiring calls the
+    validation capability instead so its publication wrapper executes once.
+    """
+    return _import_command(lambda: retained_imports(database).apply(payload))

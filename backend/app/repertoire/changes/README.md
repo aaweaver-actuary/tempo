@@ -76,8 +76,8 @@ and retains its failed command payload. Its parser rejects illegal tails.
 Three existing C1 regressions demonstrate missing shared hooks in
 `branch_commands.add_repertoire_branch`, `card_commands.revise_card`, and
 `integrity_repair_commands.resolve_integrity_issue`. The old owner branch has
-those narrow guards; adopting them requires the shared-file reservation. No
-shared command file was changed in this checkpoint. These failures remain
+those narrow guards; adopting them requires the shared-file reservation. Only the reserved `explicit_pgn_import` C2 dispatch is changed; no branch/card/repair
+command file is edited by this lane. These failures remain
 visible; the focused passing selection explicitly excludes those three cases.
 Root router/schema registration and Study suspension remain #501's responsibility.
 
@@ -233,7 +233,7 @@ still retain the existing integrity-report owner rather than a second snapshot.
 
 ## Retained conflicted import (C2)
 
-**Owner checkpoint; explicit-command hook and native execution pending.**
+**Owner checkpoint; explicit-command hook implemented, changed-hook native proof pending.**
 `imports.py` is the public facade; the borrowed PostgreSQL adapter is
 [`product_imports.py`](../../../../database/tempo_legacy_database/adapters/authored_repertoires/product_imports.py).
 There is no new table, importer, worker, connection factory or Study writer.
@@ -256,23 +256,24 @@ There is no new table, importer, worker, connection factory or Study writer.
   identity is truthfully unknown until admission. The caller retains one stable
   new operation ID for duplicate/lost-response delivery; it cannot reuse the
   immutable failed original ID.
-- `apply_approved_import(database, payload) -> dict` requires the caller's owning
-  transaction. It shares discard's original-operation advisory fence, imports'
-  main-selection fence, then the existing graph/transition/repertoire lock order
-  for an existing target. It reopens and reconstructs the entire preview, refuses
-  changed targets/source/evidence/display/body, and invokes the existing explicit
-  importer on the same borrowed transaction. It never edits the rejected receipt.
+- `validate_approved_import(database, payload) -> dict` is the existing explicit
+  command's integration capability. It requires the borrowed owning transaction,
+  takes the original-operation/main/graph/transition/repertoire source fences,
+  reconstructs the exact preview and returns only the validated ordinary import
+  payload. It locks/reads, never publishes or changes the rejected receipt.
+  Changed target/source/evidence/display/body is refused before source writes.
+- `apply_approved_import(database, payload) -> dict` remains available for direct
+  owner composition. It validates then invokes the existing decorated explicit
+  importer once on the same transaction.
 
-The integration hook is deliberately small: `pgn_import_commands.explicit_pgn_import`
-must delegate payloads containing `retained_import_preview` to
-`apply_approved_import`; ordinary payloads keep the existing path. Until that
-shared hook is admitted, **do not dispatch C2 approval payloads to the normal
-command**: the old payload model ignores unknown fields. The private facade is
-usable for preview/owner composition; the assembled dispatch is not ready.
-#501 owns transport/UI and uses `imports.pgn.explicit` with the stable new
-idempotency key. Its existing gateway provides same-result replay and atomically
-commits the importer result. Keeping that command name preserves #553's exact
-receipt-scoped graph/integrity admission. No optional work is broadly resumed.
+`pgn_import_commands.explicit_pgn_import` now checks for
+`retained_import_preview`, calls `validate_approved_import`, and follows its
+existing single admission path. Its existing publication-refresh decorator runs
+once; the hook does not recursively call the decorated publisher. Ordinary
+payloads bypass the new guard and retain their prior behavior. Existing gateway
+receipts keep `imports.pgn.explicit`, stable new operation identity and exact
+#553 graph/integrity preparation pins. No optional work is broadly resumed.
+#501 owns transport/UI; this source hook adds no root route or Study write.
 
 ```mermaid
 sequenceDiagram
@@ -284,31 +285,29 @@ sequenceDiagram
   Owner->>Receipt: Read rejected payload/hash/error
   Owner-->>UI: Exact lines/cards + current source fence + display digest
   UI->>Receipt: Approved payload under stable new operation ID
-  Note over Receipt,Owner: Shared explicit-command hook still pending
-  Receipt->>Owner: apply_approved_import in owning transaction
+  Receipt->>Owner: validate_approved_import in owning transaction
   Owner->>Receipt: Recheck retained original under operation lock
-  Owner->>Importer: Existing explicit importer, same transaction
+  Owner-->>Receipt: Validated ordinary payload; rejected receipt unchanged
+  Receipt->>Importer: Existing single admission path, same transaction
   Importer-->>Receipt: Saved, preparation pending; no readiness bypass
   Receipt-->>UI: Same durable result on duplicate delivery
 ```
 
-The changed owner proof uses synthetic Black branching PGN, never Andy's absent
-Taimanov file. The pure/adapter suite and scoped boundary guard ran; native C2
-was collected only. `test_native_retained_import_approval_retry_and_outer_rollback`
-in the existing PostgreSQL suite reuses `test_product_game_lapse_postgres`'s capped
-fixture and real gateway/importer. Its only handler wrapper represents the pending
-shared hook, so even an eventual pass establishes owner composition, not root/UI
-assembly. It asserts held import without activation, reload read, exact approved
-branches, saved/pending status, main/history/active attempt/accepted game receipt
-preservation, same-result retry and outer rollback with no completed receipt.
-Native stale-source and publication races remain to execute at the same boundary.
-The existing approved fixture follows the checked-in PostgreSQL migration registry
-(current main is schema53, including module050). Current main through #559 at
-`39796fd1` is merged into this feature branch because its queue/presentation and
-accepted-game-effect changes affect the protected-state proof. The native test
-sets its disposable settings timezone to UTC rather than inheriting host-local
-time. The final node collects without a database. Its execution remains blocked
-by capacity: the observed other-owner disposable stack already reserves the full
-2-CPU development ceiling. Do not stop or reuse that stack; its coordinator must
-release capacity before this existing capped fixture can run. No container,
-credential or database was created during this qualification attempt.
+The owner proof uses synthetic Black branching PGN, never Andy's absent genuine
+Taimanov file. The original independent owner composition passed its native case
+at `23099c78` (1 case, 2.72s) with real gateway/importer and a test handler wrapper.
+Its exact retry/rollback/stale-source/preservation evidence remains valid for the
+owner boundary. The current native regression removes that wrapper and asserts
+that the real registered explicit handler is used; executing this changed-hook
+case remains pending capacity admission. Root/UI/A05 acceptance stays #501-owned.
+
+The native case in `test_product_repertoire_changes_postgres.py` reuses the
+existing capped `test_product_game_lapse_postgres.owned_postgres` fixture and
+checked-in registry (current schema53/module050). It proves rejected import
+without activation, reload read, exact approved Black branches/cards, honest
+saved/pending status, preserved main/history/issued attempt/accepted game receipt,
+same-result duplicate delivery, outer rollback and actual stale-source409. Its
+disposable settings timezone is UTC. Both shared validation reservations and
+aggregate resource limits apply. Held rehearsal resources belong to their owner;
+no capacity reclamation or restart is performed by this lane. A passing owner
+case never establishes installation, genuine-file acceptance or assembled A05.

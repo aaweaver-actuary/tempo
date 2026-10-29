@@ -95,9 +95,10 @@ class RetainedImports:
             excluded_deleted_card_ids=deleted, display_digest="0" * 64)
         return preview.model_copy(update={"display_digest": preview.content_digest()})
 
-    def apply(self, payload: dict):
+    def validate(self, payload: dict) -> dict:
+        """Fence the approved display without invoking any content writer."""
         from psycopg.pq import TransactionStatus
-        from app.pgn_import_commands import ImportPayload, explicit_pgn_import
+        from app.pgn_import_commands import ImportPayload
         from app.repertoire.changes.retained import lock_retained_sources
         from .product_changes import lock_sources
         if self.database.raw.info.transaction_status != TransactionStatus.INTRANS:
@@ -117,7 +118,11 @@ class RetainedImports:
             [ParsedAnnotation(note.fen_key, note.comment, note.arrows, note.squares) for note in line.annotations])
             for line in approved.lines)
         current = self.preview(preview.retained.operation_id, lines)
-        validated = verify_import_approval(preview, current, payload)
+        return verify_import_approval(preview, current, payload)
+
+    def apply(self, payload: dict):
+        from app.pgn_import_commands import explicit_pgn_import
+        validated = self.validate(payload)
         # The surrounding gateway savepoint rolls back importer writes and its
         # receipt together. Never update or clear the rejected source receipt.
         return explicit_pgn_import(self.database, validated)

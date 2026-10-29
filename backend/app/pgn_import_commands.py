@@ -167,6 +167,9 @@ def admit_pgn_import(database,raw_payload):
 
 @refresh_game_publications_after_mutation
 def explicit_pgn_import(database,raw_payload):
+    if "retained_import_preview" in raw_payload:
+        from app.repertoire.changes.imports import validate_approved_import
+        raw_payload = validate_approved_import(database, raw_payload)
     return _admit_pgn_import(database,raw_payload,explicit=True)
 
 

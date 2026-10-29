@@ -21,8 +21,8 @@ from tempo_legacy_database.adapters.authored_repertoires.product_changes import 
 def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypatch):
     """Existing native fixture + real gateway/importer; no second import engine.
 
-    The explicit handler wrapper below is the pending shared-hook contract.
-    This establishes the owner transaction when executed, not root/UI assembly.
+    The real registered explicit handler validates retained approval before its
+    sole importer/refresh invocation. This is owner proof, not root/UI assembly.
     """
     from contextlib import contextmanager
     from datetime import date
@@ -30,7 +30,7 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
     from app import main, pgn_import_commands, queue_commands
     from app import command_gateway as gateway
     from app.chess.pgn import parse_pgn
-    from app.repertoire.changes.imports import retained_imports, apply_approved_import
+    from app.repertoire.changes.imports import retained_imports
     from app.services import redis_admission_gate
     from tempo_legacy_database.adapters import postgres_store
     from test_explicit_pgn_import_postgres import _protected_state
@@ -55,10 +55,7 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
     monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
     monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
-    original_handler = gateway._handlers['imports.pgn.explicit']
-    monkeypatch.setitem(gateway._handlers, 'imports.pgn.explicit',
-        lambda db, payload: apply_approved_import(db, payload)
-        if 'retained_import_preview' in payload else original_handler(db, payload))
+    assert gateway._handlers['imports.pgn.explicit'] is pgn_import_commands.explicit_pgn_import
     with case.transaction() as db:
         db.execute_native('UPDATE settings SET study_only_mode=1,new_cards_per_day=0,timezone=%s WHERE id=1', ('UTC',))
         db.execute_native("UPDATE repertoires SET is_main=1 WHERE id='white'")

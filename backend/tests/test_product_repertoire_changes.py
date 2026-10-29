@@ -145,6 +145,31 @@ def test_retained_import_command_reports_stale_approval_as_conflict(retained_imp
     assert case.state.published == []
 
 
+@pytest.mark.parametrize('approved', [False, True])
+def test_explicit_import_retained_hook_validates_then_publishes_once(monkeypatch, approved):
+    from app import pgn_import_commands as command
+    from app.repertoire.changes import imports
+    database = object()
+    raw = {'operation_id': 'stable-approval'}
+    if approved: raw['retained_import_preview'] = {'display': 'bound'}
+    validated = {'operation_id': 'stable-approval', 'lines': ['exact approved source']}
+    calls = []
+    def validate(db, payload):
+        assert db is database and payload is raw
+        calls.append('validate')
+        return validated
+    def admit(db, payload, *, explicit):
+        assert db is database and explicit
+        assert payload is (validated if approved else raw)
+        calls.append('admit')
+        return {'preparation_state': 'pending'}
+    monkeypatch.setattr(imports, 'validate_approved_import', validate)
+    monkeypatch.setattr(command, '_admit_pgn_import', admit)
+    # Invoke the command body; the existing refresh decorator surrounds it once.
+    assert command.explicit_pgn_import.__wrapped__(database, raw) == {'preparation_state': 'pending'}
+    assert calls == (['validate', 'admit'] if approved else ['admit'])
+
+
 @pytest.mark.parametrize('fault', ['discarded', 'complete', 'non_conflict', 'wrong_command'])
 def test_retained_import_requires_real_terminal_conflict_receipt(retained_import_case, fault):
     case = retained_import_case
