@@ -5574,3 +5574,7 @@ Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake owners
 and connection loss after claim, fresh-writer recovery before wake, unchanged
 checkpoint/failure budget, successor generation and lost commit acknowledgment,
 and failed cleanup leaving normal lease recovery rather than a retry loop.
+## Workflow publishing removal — October 29, 2026
+
+- `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
+- `CI isolates cancellation, caches dependencies and requires split complete verification` retains verification cancellation, dependency caches and complete-plan/quality wiring after the obsolete publishing job is removed. Its existing PostgreSQL test-speedups wrapper remains the regular owner.

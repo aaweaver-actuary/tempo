@@ -894,11 +894,11 @@ test("CI isolates cancellation, caches dependencies and requires split complete 
   assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
   const layers = readFileSync(join(root, ".github/workflows/verify-layer.yml"), "utf8");
   assert(layers.includes("cache: pip"));
-  assert.equal((workflow + layers).split("uses: Swatinem/rust-cache@v2").length - 1, 2);
+  assert(layers.includes("uses: Swatinem/rust-cache@v2"));
   assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));
   assert(workflow.includes("node scripts/ci-quality.mjs"));
-  assert(workflow.includes("needs.plan.outputs.scope == 'complete'"));
-  assert(workflow.includes("group: tempo-pages-deployment\n      cancel-in-progress: false"));
+  assert(workflow.includes("node scripts/ci-verification-plan.mjs --base \"$TEMPO_BASE\" --complete"));
+  assert(!workflow.includes("tempo-pages-deployment"));
 });
 
 
