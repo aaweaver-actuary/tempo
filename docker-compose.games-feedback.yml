@@ -11,10 +11,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    # This profile is for ongoing repertoire-miss intake, not fixed-window backfill.
+    # This prepared profile collects durable Games evidence without Study delivery.
     # No overlap value or saved window is inferred from historical jobs.
     command: ["python", "-m", "app.product_composition.game_sync_current", "--workspace", "legacy",
-      "--follow", "--overlap-seconds", "${TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS:?Set an explicit follow overlap (0..3600 seconds, smaller than each recurring seed window)}"]
+      "--collect-only", "--follow", "--overlap-seconds", "${TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS:?Set an explicit follow overlap (0..3600 seconds, smaller than each recurring seed window)}",
+      "--reconcile-interval-seconds", "${TEMPO_PRODUCT_GAME_SYNC_RECONCILE_INTERVAL_SECONDS:?Set an explicit reconciliation interval of at least 60 seconds; requires assembled Task D scheduler}"]
     environment:
       TEMPO_PRODUCT_GAME_SYNC_ENABLED: "1"
       TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
