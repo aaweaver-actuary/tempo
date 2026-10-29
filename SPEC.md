@@ -21,7 +21,7 @@ The first useful feature must not depend on completing an independent Learning r
 | ID | Outcome |
 | --- | --- |
 | R01 | Preserve responsive Study, existing learning history, and reliable review saving. |
-| R02 | Import Lichess and Chess.com games; bring genuine misses on existing introduced cards back to Study within 1–2 days, with at least the learning impact of a Study miss. Actual encounters with approved repertoire decisions still unintroduced receive priority first introduction. |
+| R02 | Import Lichess and Chess.com games; move the corresponding eligible Study card for a genuine covered repertoire miss to the front of the queue within 1–2 days, regardless of whether it was introduced before the game. Actual encounters with approved repertoire decisions still unintroduced receive priority first introduction. |
 | R03 | Report uncovered opponent responses separately from recall failures. |
 | R04 | Find likely missing repertoire moves using rating-appropriate Explorer and Maia evidence. |
 | R05 | Prefer exact repertoire continuations and familiar responses from similar positions when repairing gaps. |
@@ -40,12 +40,12 @@ Separate provider adapters fetch games into one typed PGN representation. Preser
 
 A pure comparer reads an immutable repertoire snapshot and normalized game. It distinguishes:
 
-- A confirmed own-move miss on a card introduced before the game.
+- A genuine own-move miss on an exactly mapped approved repertoire decision, regardless of whether its card was introduced before the game.
 - An uncovered opponent reply or a missing own continuation.
 - A covered decision whose card is unintroduced or unavailable.
 - Ambiguous identity, an exact-response conflict, or the intentional end of repertoire coverage.
 
-Only a confirmed recall miss produces a lapse effect. Missing content, ambiguity, and unintroduced material must not be mislabeled as forgetting. Keep the original game position, expected response, played response, and exact mapped decision/card visible.
+A genuine covered miss establishes importance and queue priority without proving that Andy knew the card at game time. Calling it a miss or a needed introduction does not change that priority requirement. Preserve actual timestamps and their precision; do not fabricate prior knowledge, a lapse, or an introduction date. Missing content, ambiguous mappings, and conflicts retain their existing integrity guards. Keep the original game position, expected response, played response, and exact mapped decision/card visible.
 
 Do not generate a cascade of downstream misses after leaving coverage. Comparison may resume at an exact re-entered/transposed position only when repertoire and card mapping are unambiguous. A later reentry does not erase or relabel an earlier gap.
 
@@ -53,13 +53,13 @@ Do not generate a cascade of downstream misses after leaving coverage. Compariso
 
 Study/Learning owns schedules, review effects, priority, queue admission, and settlement. Game feedback submits a typed command through that owner; it never writes learning tables or becomes a second scheduler.
 
-A qualifying game miss must have **at least as strong an impact as a Study Again**, not just a cosmetic priority label. The implementation default is the same lapse scheduling transition plus a durable high-priority obligation. Record game provenance honestly: this is game evidence, not a fabricated completed Study attempt.
+A genuine covered game miss receives a durable high-priority obligation that moves the corresponding currently eligible card to the front of ordinary Study. Historical knowledge or introduction chronology is not a prerequisite for reinforcement; the card may need review or first introduction under the existing Study owner. Preserve its current schedule and later learning; no special lapse classification or fabricated Again/completed Study attempt is required to give it priority. Record the actual game provenance honestly.
 
 Apply each logical game/decision effect once. A subsequent genuine Study review updates learning state and settles the corresponding obligation through the same owner. Preserve occurrence time separately from processing time; late imports must not rewind newer learning state. The precise late-evidence policy is a bounded implementation choice, not a prerequisite for the first recent-game case.
 
 An actual covered encounter can justify first introduction whether the expected move was played or missed. Study rechecks current admission and the exact approved mapping; first introduction uses fresh scheduling, with no fake Again, completed review, or backdated introduction. Reuse the same logical game/decision/occurrence identity so later introduction cannot turn the old event into a lapse.
 
-Persist deduplicated historical importance separately from lapse eligibility for both introduced and unintroduced decisions, including misses before introduction or followed by later learning. Correct encounters supply frequency evidence. Do not rewind later learning or reopen settled debt as a new lapse.
+Persist deduplicated historical importance for both introduced and unintroduced decisions, including misses before introduction or followed by later learning. Priority reinforcement does not depend on retrospective lapse eligibility. Correct encounters supply frequency evidence. Do not rewind later learning or reopen settled debt as a new lapse.
 
 ### G03 — Availability is not completion
 
@@ -185,7 +185,7 @@ The immediately next practical bundle reuses the first matching, evidence, deliv
 
 | Slice | Observable acceptance |
 | --- | --- |
-| A — One game to Study | **A01:** One already-imported real miss maps to the actual existing introduced card, becomes available within D01, and receives D02's learning effect. **A02:** Duplicate replay has one effect; an unrelated active attempt survives; the obligation remains available across an off-day/restart. |
+| A — One game to Study | **A01:** One already-imported genuine covered miss maps to the actual approved repertoire card and moves that currently eligible card to the front of ordinary Study within D01, with D02's durable priority. No proof that the card was introduced or known before the game is required. **A02:** Duplicate replay has one effect; an unrelated active attempt survives; the obligation remains available across an off-day/restart. |
 | B — Continuous game feedback | **A03:** Both providers import incrementally without silent truncation. Gaps, unintroduced cards, conflicts, ambiguous identities, and route reentry are classified correctly. **A04:** Provider failure leaves Study/Tactics usable and work retryable. |
 | C — Exact repertoire audit | **A05:** A same-position own-response conflict blocks affected Study, is resolved manually, and leaves opponent branches and other memberships intact. Detectors do not mutate inputs. |
 | D — Introductions | **A06:** With other eligibility equal, a 20%-reach decision precedes a 2%-reach decision; a transposed duplicate gets no extra slot. Personal evidence can change ordering; budget/weights and unavailable-provider fallback are respected. |
@@ -201,7 +201,7 @@ Existing actual required checks are not silently waived. If an obsolete gate no 
 | ID | State | Policy |
 | --- | --- | --- |
 | D01 | Decided | Availability within 1–2 days, including days without Study; not forced completion. |
-| D02 | Decided outcome | A game lapse has at least the impact of Study Again. Default: owning scheduler's lapse transition plus a durable priority obligation. |
+| D02 | Decided outcome | A genuine covered repertoire miss earns durable priority at the front of ordinary Study for the corresponding eligible card, whether it needs review or first introduction. Historical knowledge/introduction chronology and a special lapse/Again classification are not prerequisites; preserve current schedules, later learning, and genuine review history. |
 | D03 | Decided | Strict one-own-response rule within a repertoire; affected material is blocked until manual resolution. |
 | D04 | Open for likelihood ranking | Select rating band and time controls. Does not block game feedback or exact audits. |
 | D05 | Corrected and decided | Default candidate tolerance is **30 CP, not 300 CP**. Record any explicit contextual policy. |
