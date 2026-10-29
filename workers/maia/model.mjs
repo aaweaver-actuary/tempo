@@ -20,6 +20,20 @@ export function descriptorModelVersion(descriptor) {
   return `maia3-v1-${sha256(canonicalJson(significant)).slice(0, 16)}`;
 }
 
+/** Ordered model tensors; the v1 single-rating API remains unchanged. */
+export function resolveRatingInputs(input, { legacy = false } = {}) {
+  if (input.ratings === undefined) {
+    validateRating(input.rating, { legacy });
+    return { elo_self: input.rating, elo_oppo: input.rating };
+  }
+  if (input.rating !== undefined || !input.ratings || Object.keys(input.ratings).sort().join(",") !== "elo_oppo,elo_self") {
+    throw new MaiaError("unsupported_rating", "Choose explicit ordered ratings or the legacy single rating");
+  }
+  validateRating(input.ratings.elo_self, { legacy });
+  validateRating(input.ratings.elo_oppo, { legacy });
+  return { elo_self: input.ratings.elo_self, elo_oppo: input.ratings.elo_oppo };
+}
+
 async function readAsset(path) {
   try { return await readFile(path); } catch (error) {
     throw new MaiaError(error.code === "ENOENT" ? "model_asset_missing" : "model_asset_unavailable", `Cannot read Maia asset ${path}`, { cause: error });
@@ -115,14 +129,14 @@ export async function createModel(options = {}) {
       if (running) throw new MaiaError("worker_busy", "Only one Maia inference may execute at a time", { retryable: true });
       const input = structuredClone(job);
       if (input.model_id !== identity.model_id || input.model_version !== identity.model_version) throw new MaiaError("unsupported_model", "Requested model identity is not installed");
-      validateRating(input.rating, { legacy: legacyRatings });
+      const ratings = resolveRatingInputs(input, { legacy: legacyRatings });
       const prepared = preparePosition(input.fen, input.legal_moves, moveIndex, reverseIndex);
       running = true;
       try {
         const feeds = {
           tokens: new ort.Tensor("float32", prepared.tokens, [1, 64, 12]),
-          elo_self: new ort.Tensor("float32", Float32Array.of(input.rating), [1]),
-          elo_oppo: new ort.Tensor("float32", Float32Array.of(input.rating), [1]),
+          elo_self: new ort.Tensor("float32", Float32Array.of(ratings.elo_self), [1]),
+          elo_oppo: new ort.Tensor("float32", Float32Array.of(ratings.elo_oppo), [1]),
         };
         onInferenceStart?.();
         const output = await session.run(feeds);
