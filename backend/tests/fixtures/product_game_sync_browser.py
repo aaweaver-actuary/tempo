@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh"))
+    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh", "prepare-intake-probe", "intake-probe"))
     parser.add_argument("--project", required=True)
     parser.add_argument("--fixture-json")
     options = parser.parse_args()
@@ -30,8 +30,21 @@ def main():
     connections = DedicatedGamesConnections(os.environ["TEMPO_DATABASE_WRITE_URL"])
     transaction = connections.writer
 
-    if options.action == "seed":
+    if options.action in {"seed", "prepare-intake-probe"}:
         manifest = seed_fixture(transaction, options.project)
+        if options.action == "prepare-intake-probe":
+            from app.games.feedback.review import SyncConfiguration
+            from app.product_composition.game_review import create_game_review, SystemClock
+            clock = SystemClock()
+            review = create_game_review(workspace="legacy", connections=connections, learning=None, clock=clock)
+            configuration = SyncConfiguration.model_validate_json(json.dumps(dict(workspace_id="legacy",provider="lichess",
+                account="Learner",window=dict(start_at="2026-09-01T00:00:00Z",end_at="2026-11-01T00:00:00Z",precision="second"),
+                repertoire_ids=[manifest["repertoire_id"]],speeds=["rapid"],rated=True,interval_seconds=None,revision=1)))
+            review.configure(configuration,0)
+            review.sync(provider="lichess",operation_id="intake-probe-"+manifest["token"])
+            data = provider_fixtures(manifest)
+            print(json.dumps(dict(manifest,http_fixtures=dict(lichess=data["lichess"][:1],chesscom=[],intake_probe=True))))
+            return
         for provider, rows in provider_fixtures(manifest).items():
             for offset in range(0, len(rows), 20):
                 with transaction() as database:
@@ -43,6 +56,68 @@ def main():
     manifest = json.loads(options.fixture_json or "null")
     if not isinstance(manifest, dict) or manifest.get("project") != options.project:
         raise RuntimeError("this fixture's exact manifest is required")
+    if options.action == "intake-probe":
+        if dsn.username != "tempo_writer" or os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED") != "1":
+            raise RuntimeError("probe requires the real opted-in disposable writer profile")
+        from app.games.feedback.ports import Delivery
+        from app.product_composition.game_review import SystemClock
+        from app.product_composition.game_sync_current import current_provider_worker, current_sync_admission
+        with transaction() as database:
+            rows = database.execute_native("SELECT payload::text FROM product_feedback_deliveries WHERE state='pending'").fetchall()
+        if len(rows) != 1:
+            print(json.dumps(dict(stage="published_outbox",pending_commands=len(rows),
+                error_type="ExactCliPublishedCommandRequired")))
+            raise SystemExit(2)
+        command = Delivery.model_validate_json(rows[0][0]).command
+        if (command.key.game_id != manifest["game_id"] or command.decision.repertoire_id != manifest["repertoire_id"]):
+            raise RuntimeError("pending command differs from this exact synthetic source")
+
+        def protected():
+            with transaction() as database:
+                cards = database.execute_native("SELECT id,state,introduced_at,due_date,fsrs_card_json FROM cards WHERE id=ANY(%s) ORDER BY id",
+                    ([manifest["card_id"],manifest["unrelated_card"]],)).fetchall()
+                reviews = database.execute_native("SELECT id,card_id,rating,reviewed_at FROM reviews ORDER BY id").fetchall()
+                queue = database.execute_native("SELECT id,card_id,status,position,cycle FROM daily_queue ORDER BY id").fetchall()
+                return tuple(tuple(row) for row in cards),tuple(tuple(row) for row in reviews),tuple(tuple(row) for row in queue)
+
+        before, stage = protected(), "controls"
+        runtime, _ = current_provider_worker(workspace="legacy",connections=connections,clock=SystemClock())
+        intake = runtime.runner.coordinator.learning
+        try:
+            with current_sync_admission():
+                stage = "capture"
+                captured = intake.capture(command.decision.repertoire_id,command.key.game_id,(command.key.occurrence_ply-1,))
+                stage = "projection"
+                from app.repertoire import project_capture
+                from app.product_composition.retained_game import retained_canonical_game
+                project_capture(captured,comparison_game=retained_canonical_game(captured))
+                stage = "intake_or_commit"
+                receipt = intake.accept_encounter(command)
+            assert protected() == before, "intake changed ordinary cards/history/queue"
+            print(json.dumps(dict(stage="committed",receipt=receipt.model_dump(mode="json"),ordinary_state_unchanged=True)))
+        except Exception as error:
+            # This action accepts only the manifest's synthetic command. Never
+            # print traceback/SQL parameters/PGN, even in diagnostic evidence.
+            safe_codes = {"one_explicit_existing_game_required","legacy_game_already_accepted_use_retained_preview",
+                "legacy_game_changed_or_accepted_during_export","explicit_decision_scope_exceeds_bound_or_is_invalid",
+                "canonical_imported_source_changed","capture_time_requires_timezone",
+                "retained_owner_capture_required","retained_owner_capture_changed","retained_owner_projection_mismatch",
+                "retained_owner_scope_mismatch","retained_owner_scope_exceeds_bound","borrowed_owner_writer_transaction_required"}
+            reason = getattr(error,"reason",None)
+            if not isinstance(reason,str) or reason not in safe_codes:
+                reason = str(error) if type(error) is ValueError and str(error) in safe_codes else None
+            sqlstate = getattr(error,"sqlstate",None)
+            try:
+                unchanged = protected() == before
+            except Exception:
+                unchanged = None
+            print(json.dumps(dict(stage=stage,error_type=type(error).__name__,reason=reason,
+                sqlstate=sqlstate if isinstance(sqlstate,str) and re.fullmatch(r"[0-9A-Z]{5}",sqlstate) else None,
+                ordinary_state_unchanged=unchanged)))
+            raise SystemExit(2)
+        finally:
+            runtime.close()
+        return
     if options.action == "inspect":
         with transaction() as database:
             row = database.execute_native("""SELECT queue.id,queue.card_id,queue.status,queue.position,queue.cycle,

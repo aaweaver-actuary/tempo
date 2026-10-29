@@ -106,3 +106,51 @@ def test_provider_root_commits_public_intake_before_ack_and_never_refreshes_queu
         operation_stopped=lambda:False,capture=capture)
     assert intake.accept_encounter(command) is receipt
     assert events==["controls",("capture",("white","canonical",(2,))),"open","accepted_pending","commit"]
+
+
+@pytest.mark.parametrize("stage,expected", [
+    ("capture", "code=one_explicit_existing_game_required"),
+    ("intake", "code=42703"),
+    ("intake", "code=retained_owner_projection_mismatch"),
+    ("commit", "code=unclassified"),
+])
+def test_default_intake_failure_is_locatable_without_private_payload_or_changed_retry(monkeypatch, caplog, stage, expected):
+    from app.product_composition import provider_priority as root
+    from app.product_composition import game_sync_current
+    from psycopg.errors import UndefinedColumn
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+    private = "private-game-id@example.test [Event secret] SELECT private_parameter"
+    error = (ValueError("one_explicit_existing_game_required") if stage == "capture" else
+             UndefinedColumn(private) if expected == "code=42703" else
+             CurrentDecisionUnavailable("retained_owner_projection_mismatch") if stage == "intake" else RuntimeError(private))
+    if stage == "commit":
+        error.reason = {"private": private}
+    monkeypatch.setattr(game_sync_current,"_require_current_sync_controls",lambda:None)
+    monkeypatch.setattr(root,"retained_canonical_game",lambda _:object())
+    monkeypatch.setattr(root,"project_capture",lambda *args,**kwargs:object())
+
+    def capture(*args):
+        if stage == "capture": raise error
+        return {}
+
+    @contextmanager
+    def writer():
+        yield object()
+        if stage == "commit": raise error
+
+    def receive(*args,**kwargs):
+        if stage == "intake": raise error
+        return object()
+
+    monkeypatch.setattr(root,"receive_admitted_encounter",receive)
+    intake = root.CurrentProviderPriorityIntake(connections=SimpleNamespace(writer=writer),
+        capture=capture,clock=SimpleNamespace(utc_now=lambda:"2026-10-29T12:00:00Z"),
+        operation_stopped=lambda:False)
+    command = SimpleNamespace(decision=SimpleNamespace(repertoire_id=private),
+        key=SimpleNamespace(game_id=private,occurrence_ply=1))
+    with caplog.at_level("WARNING",logger="tempo.games.priority_intake"):
+        with pytest.raises(type(error)) as raised:
+            intake.accept_encounter(command)
+    assert raised.value is error
+    assert f"stage={stage}" in caplog.text and expected in caplog.text
+    assert private not in caplog.text and "Traceback" not in caplog.text

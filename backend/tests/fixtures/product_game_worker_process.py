@@ -68,12 +68,13 @@ def provider_http_fixture(directory, port):
                 with lock:
                     state["lichess_requests"] += 1
                     count = state["lichess_requests"]
-                    if count == 1: state["rate_limited"] += 1
-                    if count in (2, 3): state["waiting"] = count
+                    recovery = not data.get("intake_probe", False)
+                    if count == 1 and recovery: state["rate_limited"] += 1
+                    if count in (2, 3) and recovery: state["waiting"] = count
                     save()
-                if count == 1:
+                if count == 1 and recovery:
                     self.send_response(429); self.send_header("Retry-After", "1"); self.end_headers(); return
-                if count in (2, 3):
+                if count in (2, 3) and recovery:
                     # The test terminates the real worker while its socket is
                     # open. Never keep a thread indefinitely after its client.
                     end = time.monotonic() + 30

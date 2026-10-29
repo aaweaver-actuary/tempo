@@ -5479,6 +5479,9 @@ composition case now verifies its adopted command dispatch without a writer.
 `test_configuration_receipt_json_arrays_keep_strict_immutable_http_response`
 prevents a committed settings save returning HTTP 500 when JSON command-receipt
 arrays reach the immutable tuple response model; pending envelopes stay intact.
+`test_default_intake_failure_is_locatable_without_private_payload_or_changed_retry`
+retains the exact retry exception while reporting bounded stage/error codes,
+including writer-commit failures, without private game IDs, SQL parameters or PGN.
 `tests/unit/product-game-sync-settings.test.tsx` owns explicit account/window/
 filters, revision conflict, pending save and same-operation run retry.
 `backend/tests/test_product_provider_sync_native.py` selects the existing capped
