@@ -156,12 +156,50 @@ await managedBuild(buildWithNamedBuilder, {
 ```
 
 The caller keeps its existing build command, Docker adapter, quiet check and
-owner token/directory options. No new environment or CLI override is introduced.
+owner token/directory options. No new resource environment or CLI override is
+introduced.
 Limits are validated and copied before ownership acquisition or asynchronous
 hooks, then used for aggregate admission, rootless builder creation and exact
 kernel readback. Existing development containers count toward admission and are
 preserved. The one builder lane still excludes new managed container/Compose
 starts, even when a smaller builder leaves headroom.
+
+`managedComposeBuild` also uses the small [web cache helper](development-web-cache.mjs)
+for the `web` target when its Dockerfile resolves to `Dockerfile.web` at its local
+context root. Explicit `cache-from` or `cache-to` fields (even empty arrays),
+inline/other Dockerfiles and other targets are preserved without automatic cache
+work. `managedBuild` itself is unchanged.
+
+The stable default cache directory is `~/.cache/tempo/buildx-web-v1`.
+`TEMPO_BUILD_CACHE_DIR` is resolved for each invocation: an absolute path overrides
+the default, and an empty value disables caching. `cache: false` always disables;
+`cache: {directory: "/absolute/private/path", maxBytes: 4 * 1024 ** 3}` supplies an
+explicit directory and optional positive-integer retention limit. An explicit
+directory wins over the environment. Cache directories and their parent path
+components must be actual directories, not symlinks; use a canonical absolute
+path for an override. Invalid settings warn and build without automatic caching. Disabled caching performs no cache filesystem work.
+
+The helper exports local cache with `mode=max`, preserving intermediate
+Rust/Wasm-tool and npm dependency layers across disposable builders, rather than
+only final nginx image layers. See Docker's [cache modes](https://docs.docker.com/build/cache/backends/)
+and [local OCI cache layout](https://docs.docker.com/build/cache/backends/local/).
+A private marked root owns `current.json` and marked `generation-<uuid>`
+directories. Every build exports to a new candidate; only validated successful
+output within the default **4 GiB completed-cache retention limit** atomically
+replaces the current pointer. The previous completed generation is then retired.
+Current and candidate coexist during export: this is not a hard peak disk quota.
+Invalid/oversized output preserves the prior cache, and invalid current metadata
+causes a cold build without authorizing broad cleanup. Unmarked entries and
+symlink targets are never reclaimed as cache generations.
+
+The existing host budget and exclusive builder lane serialize cache publication
+and cleanup. Callers using a separate isolated budget directory must also choose
+a private cache directory or disable caching; separate lanes must not share this
+cache concurrently. Cache setup/publication/retention warnings do not retry a
+build or hide a build/export error. Failed builds retain the prior current cache;
+candidate cleanup diagnostics preserve the original failure. Builders remain
+disposable, and failed builder cleanup still retains its journal and lane. The
+helper neither verifies application artifacts nor authorizes installation.
 
 ```mermaid
 flowchart TD
@@ -172,16 +210,33 @@ flowchart TD
     Admission --> Journal[Journal this builder identity before creation]
     Journal --> Create[Create rootless builder with snapshot memory and CPU quota]
     Create --> Verify[Exact kernel readback against snapshot]
-    Verify --> Build[Execute caller build once]
+    Verify -->|managedBuild| Build
+    Verify -->|managedComposeBuild| Cache[Web cache setup inside builder lane]
+    Cache -->|disabled / ineligible / setup failure| Build
+    Cache -->|enabled| Import[Import usable current generation; export new candidate with mode=max]
+    Import --> Build[Execute caller build once]
+    Build -->|automatic cache and success| Publish[Validate candidate and retained size; atomically publish current]
+    Publish -->|published| Retire[Retire previous generation after publication]
+    Publish -->|invalid / oversized / cache failure| RetainCache[Retain prior cache and build result; clean safe candidate]
+    Build -->|no automatic cache| Cleanup
+    Build -->|failure| Preserve[Preserve current and original build error; clean owned candidate]
     Create --> Cleanup[Existing owner-checked cleanup and independent absence probes]
     Verify --> Cleanup
-    Build --> Cleanup
+    Retire --> Cleanup
+    RetainCache --> Cleanup
+    Preserve --> Cleanup
     Cleanup --> Release[Release journal and lane only after verified absence]
     Cleanup --> Retain[Uncertain or failed cleanup retains ownership and lane]
 ```
 
-This view describes proposed source behavior. The owning
+This view describes source behavior with the proposed web-cache change;
+deployment remains unverified. The owning
 [`development-budget` regressions](../tests/runner/development-budget.test.mjs)
 use injected Docker capabilities; they do not establish a successful real
-1 CPU / 1536 MiB build or deployed resource isolation. Build errors, including
-OOM or time failures, remain failures without retrying at a higher allocation.
+1 CPU / 1536 MiB build, real cold/warm cache reuse or deployed resource isolation.
+Build errors, including OOM or time failures, remain failures without retrying at
+a higher allocation. Cache import/export and disk costs may outweigh saved build
+time. No elapsed-time improvement is claimed without a measured cold/warm pair.
+The checked-in runtime calls this wrapper; the separately owned measured release
+wrapper must be confirmed to do so before claiming it benefits. Build preparation
+precedes application shutdown, so faster builds do not directly shorten that outage.

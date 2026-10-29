@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readHostStudyActivity } from './host-study-activity.mjs';
+import { withWebBuildCache } from './development-web-cache.mjs';
 
 export const resourceBudgets = JSON.parse(readFileSync(new URL('../config/resource-budgets.json', import.meta.url), 'utf8'));
 const defaultLockDirectory = join(tmpdir(), 'tempo-development-resource-budget-v1.lock');
@@ -270,15 +271,18 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
 // cannot create privileged sibling groups outside that container's limits.
 
 export async function managedComposeBuild(prepare, executeBuild, options = {}) {
+  const {cache, ...builderOptions} = options;
   return managedBuild(async builder => {
     const specification = JSON.parse(await prepare());
     if (!specification.target || !Object.keys(specification.target).length) throw new Error('No selected Compose build targets');
-    const directory = await mkdtemp(join(tmpdir(),'tempo-budget-bake-'));
-    try {
-      const path = join(directory,'build.json'); await writeFile(path,JSON.stringify(specification),{mode:0o600});
-      return await executeBuild(['buildx','bake','--builder',builder,'--file',path,'--load']);
-    } finally { await rm(directory,{recursive:true,force:true}); }
-  }, options);
+    return withWebBuildCache(specification, async enrichedSpecification => {
+      const directory = await mkdtemp(join(tmpdir(),'tempo-budget-bake-'));
+      try {
+        const path = join(directory,'build.json'); await writeFile(path,JSON.stringify(enrichedSpecification),{mode:0o600});
+        return await executeBuild(['buildx','bake','--builder',builder,'--file',path,'--load']);
+      } finally { await rm(directory,{recursive:true,force:true}); }
+    }, cache);
+  }, builderOptions);
 }
 
 export function composeResourceLimits(services, owner, allocations = resourceBudgets.developmentServices) {

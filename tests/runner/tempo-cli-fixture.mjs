@@ -59,7 +59,7 @@ export function cliFixture(mode = "upgrade") {
   const hook = join(directory, "network.mjs");
   writeFileSync(hook, `await (${fixtureNetwork.toString()})();\n`);
   const environment = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEMPO_CLI_FIXTURE_DIRECTORY: directory,
-    TEMPO_CLI_STATE_DIR: stateRoot, TEMPO_CLI_CONFIG: registration };
+    TEMPO_CLI_STATE_DIR: stateRoot, TEMPO_CLI_CONFIG: registration, TEMPO_BUILD_CACHE_DIR: "" };
   delete environment.TEMPO_UPGRADE_EXPECTED_PROJECT;
   const command = (...args) => spawnSync(process.execPath, ["--import", hook, "scripts/tempo-cli.mjs", ...args, "--config", registration], { encoding: "utf8", env: environment, timeout: 30_000 });
   const calls = () => exists(join(directory, "calls.jsonl")) ? readFileSync(join(directory, "calls.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line)) : [];
