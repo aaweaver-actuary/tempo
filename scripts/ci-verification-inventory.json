@@ -213,6 +213,9 @@
   ],
   "development": {
     "runnerOwners": {
+      "tests/runner/product-maia-probability.test.mjs": ["tests/unit/product-maia-probability-regressions.test.ts"],
+      "tests/runner/product-stockfish.test.mjs": ["tests/unit/product-stockfish-regressions.test.ts"],
+      "tests/runner/public-surface-stockfish.test.mjs": ["tests/unit/product-stockfish-regressions.test.ts"],
       "tests/runner/ci-fast-lane.test.mjs": ["tests/unit/ci-fast-lane-regressions.test.ts"],
       "tests/runner/ci-browser-shards.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],

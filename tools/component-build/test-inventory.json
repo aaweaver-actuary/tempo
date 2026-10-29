@@ -9,6 +9,8 @@
       "tests/controlled-browser/unit/storage-probes.test.ts"
     ],
     "frontend": [
+      "tests/unit/product-maia-probability-regressions.test.ts",
+      "tests/unit/product-stockfish-regressions.test.ts",
       "tests/unit/activity-control-pending-regressions.test.ts",
       "tests/unit/analysis-paste-pending-regressions.test.ts",
       "tests/unit/annotation-concealment-regressions.test.tsx",

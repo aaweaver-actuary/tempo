@@ -211,6 +211,33 @@ test('whole-subsystem qualification still requires every changed regression file
   assert.throws(()=>draft(['tests/runner/ci-development.test.mjs'],{sourceInventory:{...inventory,development:{...inventory.development,runnerOwners:{}}}}), /regular-suite ownership/);
 });
 
+test('ordinary worker runner ownership selects the exact fake and public suite wrappers', () => {
+  const owners = {
+    'tests/runner/product-maia-probability.test.mjs': 'tests/unit/product-maia-probability-regressions.test.ts',
+    'tests/runner/product-stockfish.test.mjs': 'tests/unit/product-stockfish-regressions.test.ts',
+    'tests/runner/public-surface-stockfish.test.mjs': 'tests/unit/product-stockfish-regressions.test.ts',
+  };
+  for (const [runner, owner] of Object.entries(owners)) {
+    assert.deepEqual(captured(pr, [runner]).regressionFiles.frontend, [owner]);
+    assert.deepEqual(captured({...pr, draft: false}, [runner]).regressionFiles.frontend, [owner]);
+  }
+  assert.deepEqual(captured(pr, Object.keys(owners)).regressionFiles.frontend,
+    [...new Set(Object.values(owners))].sort());
+});
+
+test('ordinary worker runner ownership cannot qualify real smoke or missing owners', () => {
+  for (const smoke of ['tests/runner/product-maia-probability-smoke.test.mjs', 'tests/runner/product-stockfish-smoke.test.mjs']) {
+    assert.equal(inventory.development.runnerOwners[smoke], undefined);
+    assert.throws(() => captured(pr, [smoke]), /regular-suite ownership/);
+  }
+  const runner = 'tests/runner/product-stockfish.test.mjs';
+  for (const owners of [[], ['tests/unit/missing-ordinary-worker-owner.test.ts']]) {
+    const sourceInventory = {...inventory, development: {...inventory.development,
+      runnerOwners: {...inventory.development.runnerOwners, [runner]: owners}}};
+    assert.throws(() => draft([runner], {sourceInventory}), /regular-suite ownership/);
+  }
+});
+
 test('Python regression evidence distinguishes exact modules from similarly named files', () => {
   const file = 'backend/tests/test_studies.py';
   const xml = '<testsuite tests="3"><testcase classname="backend.tests.test_studies_extra" name="unrelated"/>' +
