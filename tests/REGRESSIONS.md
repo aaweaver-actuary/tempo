@@ -1,3 +1,18 @@
+## Ordinary Maia and Stockfish runner ownership
+
+`tests/unit/product-maia-probability-regressions.test.ts` runs the ordinary Maia
+fake probability suite and shared Python value checks.
+`tests/unit/product-stockfish-regressions.test.ts` runs the ordinary Stockfish
+fake evaluator and public-surface suites. Both reject zero, skipped, failed,
+duplicate and missing-file execution evidence through the existing Node reporter.
+Neither wrapper invokes an engine/model or an explicit real smoke.
+
+`tests/runner/ci-development.test.mjs` owns
+`ordinary worker runner ownership selects the exact fake and public suite wrappers`
+and `ordinary worker runner ownership cannot qualify real smoke or missing owners`.
+These preserve fail-closed real-smoke ownership; ordinary proof is not smoke or
+merge qualification.
+
 ## T22 Study recombination and immutable presentation provenance
 
 `backend/tests/test_product_recombination_application.py` owns genuine saved
