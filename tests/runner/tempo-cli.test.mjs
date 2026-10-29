@@ -509,6 +509,7 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false, respon
       result = args.includes("--hash") ? "postgres hash\nredis hash" : JSON.stringify(resolved);
     } else if (args.includes("image") && args.includes("inspect")) result = JSON.stringify([{ Id: args.at(-1), Config: { Labels: { "org.opencontainers.image.revision": record.revision } } }]);
     else if (args.includes("--version")) result = `postgres (PostgreSQL) ${actualMajor}.6 (test)`;
+    else if (args.some(argument => argument.includes("pg_dump"))) result = `TEMPO_BACKUP_FILENAME=${args[args.indexOf("manual") + 1]}`;
     return { stdout: result, stderr: "", code: 0 };
   };
   const runtime = createRuntime(fixture.target, { run, stateDirectory: fixture.stateDirectory, revision: record.revision,
