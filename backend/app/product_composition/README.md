@@ -280,3 +280,12 @@ marker and exact project/service identity, then seeds through the write-owning
 foreground worker; API readback retains reader credentials. Actual browser
 acceptance is reported in the current PR at its tested revision. No live data,
 settings, service operation, installation, deployment or merge occurs here.
+
+### #558 Study sweep preparation and recovery repair
+
+Untested extraction of #580 preparation onto the exact #593 recovery source;
+runtime integration and deployment remain unverified. The independent feedback sweep uses
+the [canonical prepared-introduction sequence](../study/introductions/README.md#prepared-independent-study-sweep--558-repair)
+and [claimed-task connection recovery](../study/README.md#feedback-sweep-connection-recovery-558-repair).
+Queue due-work requests occur after effect locks close and reuse active Learning
+queue generations. Games availability is never a serving prerequisite.
