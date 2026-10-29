@@ -7,6 +7,12 @@ be running with the authoritative schema and provisioned reader/writer profiles.
 creates a container, credential, role, grant, image, or application instance.
 Only three uniquely named synthetic receipt rows are seeded/removed by the
 existing writer. Collection performs no Docker, HTTP, database or fixture work.
+
+The separately selected settlement case consumes the existing Games fixture's
+one acknowledged command. It publishes the registered Study sweep and saves
+ordinary reviews through the real reader API/command worker, without seeding
+or directly mutating Study state. Its owning controller supplies and cleans the
+already verified disposable stack and exact synthetic manifest.
 """
 import hashlib
 import json
@@ -264,3 +270,142 @@ def test_packaged_game_review_reader_reads_current_receipt_without_write_privile
         assert proof["writer_command_rejected"] and proof["fixture_rows_unchanged"]
     finally:
         assert _exec_python(containers["foreground-worker"],payload,CLEANUP) == {"fixture_cleanup_verified":True}
+
+
+def test_packaged_provider_acknowledgment_reaches_independent_study_and_settles():
+    """One actual receipt: CLI acknowledgment -> real sweep -> HTTP save/reload.
+
+    Requires the existing controller's explicit one-game manifest and packaged
+    image. No startup, credentials, clock substitution or queue write is here.
+    """
+    import time
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    from app.contracts.product_v02.presentation import GameDetail
+
+    containers = _owned_containers()
+    manifest_path = Path(os.environ.get("TEMPO_GAME_SYNC_FIXTURE_MANIFEST", "")).resolve()
+    assert manifest_path.parent.parent == ROOT.resolve()
+    assert manifest_path.parent.name.startswith(".tempo-pg-test-secrets-491-reader-")
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["project"] == os.environ["TEMPO_TEST_COMPOSE_PROJECT"]
+    assert re.fullmatch(r"[a-f0-9]{32}", manifest["token"])
+    assert manifest["repertoire_id"] == "fixture-t10-primary-repertoire-" + manifest["token"]
+    assert manifest["expected_misses"] == 1
+    image = os.environ.get("TEMPO_GAME_SYNC_IMAGE_ID", "")
+    assert re.fullmatch(r"sha256:[a-f0-9]{64}", image)
+    for service in ("api", "foreground-worker"):
+        assert containers[service]["Image"] == image
+    assert "--queues=foreground" in containers["foreground-worker"]["Config"]["Cmd"]
+    bindings = containers["api"]["NetworkSettings"]["Ports"]["8000/tcp"]
+    assert len(bindings) == 1 and bindings[0]["HostIp"] == "127.0.0.1"
+    base = "http://127.0.0.1:" + bindings[0]["HostPort"]
+    preflight = _exec_python(containers["api"], dict(runtime_hashes={
+        target: hashlib.sha256((ROOT/path).read_bytes()).hexdigest()
+        for path, target in {**RUNTIME_FILES,
+            "backend/app/product_composition/provider_priority.py": "/app/app/product_composition/provider_priority.py",
+            "backend/app/product_composition/feedback_maintenance.py": "/app/app/product_composition/feedback_maintenance.py",
+            "backend/app/product_composition/game_sync_current.py": "/app/app/product_composition/game_sync_current.py",
+            "backend/app/tasks.py": "/app/app/tasks.py",
+        }.items()}), """
+assert not os.environ.get('TEMPO_DATABASE_WRITE_URL')
+for path, digest in payload['runtime_hashes'].items():
+    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest, path
+print(json.dumps({'reader_has_no_writer':True,'packaged_hashes_match':True}))
+""")
+    assert preflight == dict(reader_has_no_writer=True, packaged_hashes_match=True)
+
+    def helper(action):
+        output = _docker("exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable",
+            containers["foreground-worker"]["Id"], "python", "-", action,
+            "--project", manifest["project"], "--fixture-json", json.dumps(manifest),
+            source=(ROOT/"backend/tests/fixtures/product_game_sync_browser.py").read_text())
+        return json.loads(output.strip().splitlines()[-1])
+
+    def request(path, body=None, operation=None):
+        headers = {"Content-Type": "application/json"}
+        if operation:
+            headers["Idempotency-Key"] = operation
+        query = Request(base+path, data=None if body is None else json.dumps(body).encode(), headers=headers)
+        try:
+            with urlopen(query, timeout=10) as response:
+                return response.status, json.load(response)
+        except HTTPError as response:
+            return response.code, json.load(response)
+
+    def wait_for(read, predicate):
+        deadline = time.monotonic()+45
+        while True:
+            value = read()
+            if predicate(value):
+                return value
+            assert time.monotonic() < deadline, value
+            time.sleep(.5)
+
+    def current_receipt():
+        status, body = request("/api/product/game-review/games/lichess/" + manifest["game_id"])
+        assert status == 200, body
+        detail = GameDetail.model_validate_json(json.dumps(body))
+        assert len(detail.receipts) == 1
+        return detail.receipts[0]
+
+    before = helper("settlement-state")
+    assert before["sources"] == len(before["deliveries"]) == 1
+    delivery, = before["deliveries"]
+    assert delivery["state"] == "acknowledged" and delivery["attempts"] == 1 and delivery["error"] is None
+    cached = delivery["receipt"]
+    assert cached["observation_recorded"] and cached["disposition"] == "first_introduction"
+    assert cached["admission_status"] == "pending"
+    assert helper("inspect")["active"] == manifest["original_active"]
+    assert before["target_reviews"] == []
+    original = current_receipt()
+    assert original.owner_receipt_id == cached["owner_receipt_id"]
+    assert original.admission_status == "pending" and original.available_by is None
+
+    # Only broker publication occurs in the helper. The real registered task
+    # performs default capture/admission in the separate foreground worker.
+    helper("refresh")
+    available = wait_for(current_receipt, lambda value: value.admission_status == "available")
+    assert available.owner_receipt_id == original.owner_receipt_id
+    assert available.detected_at == original.detected_at
+    after_refresh = helper("settlement-state")
+    assert after_refresh["unrelated"] == before["unrelated"]
+    assert after_refresh["target_reviews"] == []  # First introduction is no fabricated review.
+    assert helper("inspect")["active"] == manifest["original_active"]
+
+    def head(expected):
+        status, body = wait_for(lambda: request("/api/queue/today"),
+            lambda value: value[0] == 200 and bool(value[1].get("cards")))
+        assert status == 200 and body["cards"][0]["id"] == expected, body
+        return body["cards"][0]
+
+    def save(card, name):
+        attempt = "settlement-" + name + "-" + manifest["token"]
+        body = dict(outcome="correct", guided=False, queue_entry_id=card["queue_entry_id"],
+                    expected_revision=card["revision"], attempt_id=attempt)
+        path = "/api/cards/" + card["id"] + "/review"
+        status, result = request(path, body, attempt)
+        if status == 202:
+            assert result["operation_id"] == attempt
+            _, receipt = wait_for(lambda: request("/api/operations/"+attempt),
+                lambda value: value[0] == 200 and value[1]["state"] in {"complete", "failed"})
+            assert receipt["state"] == "complete", receipt
+            result = receipt["response"]
+        else:
+            assert status == 200, result
+        assert result["persisted"] is True
+        repeated_status, repeated = request(path, body, attempt)
+        assert repeated_status == 200 and repeated["review_id"] == result["review_id"]
+        return result
+
+    save(head(manifest["unrelated_card"]), "protected")
+    protected_after_save = helper("settlement-state")["unrelated"]
+    saved = save(head(manifest["card_id"]), "target")
+    settled = wait_for(current_receipt, lambda value: value.admission_status == "settled")
+    assert settled.owner_receipt_id == original.owner_receipt_id and settled.detected_at == original.detected_at
+    assert current_receipt() == settled  # New reader request after normal saved review/reload.
+    final = helper("settlement-state")
+    assert final["sources"] == len(final["deliveries"]) == 1
+    assert final["unrelated"] == protected_after_save
+    assert [row[0] for row in final["target_reviews"]] == [saved["review_id"]]
+    assert all(row[1] != "game_lapse" for row in final["target_reviews"])

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh", "prepare-intake-probe", "intake-probe"))
+    parser.add_argument("action", choices=("seed", "run", "inspect", "refresh", "prepare-intake-probe", "intake-probe", "prepare-settlement-probe", "settlement-state"))
     parser.add_argument("--project", required=True)
     parser.add_argument("--fixture-json")
     options = parser.parse_args()
@@ -30,8 +30,15 @@ def main():
     connections = DedicatedGamesConnections(os.environ["TEMPO_DATABASE_WRITE_URL"])
     transaction = connections.writer
 
-    if options.action in {"seed", "prepare-intake-probe"}:
+    if options.action in {"seed", "prepare-intake-probe", "prepare-settlement-probe"}:
         manifest = seed_fixture(transaction, options.project)
+        if options.action == "prepare-settlement-probe":
+            data = provider_fixtures(manifest)
+            # The real reader/command worker will configure and enqueue this
+            # one-game run. This helper supplies synthetic source rows only.
+            print(json.dumps(dict(manifest, expected_misses=1,
+                http_fixtures=dict(lichess=data["lichess"][:1], chesscom=[], intake_probe=True))))
+            return
         if options.action == "prepare-intake-probe":
             from app.games.feedback.review import SyncConfiguration
             from app.product_composition.game_review import create_game_review, SystemClock
@@ -56,6 +63,32 @@ def main():
     manifest = json.loads(options.fixture_json or "null")
     if not isinstance(manifest, dict) or manifest.get("project") != options.project:
         raise RuntimeError("this fixture's exact manifest is required")
+    if options.action == "settlement-state":
+        from app.games.feedback.ports import Delivery
+        from app.product_composition.game_review import CurrentStudyReceiptReads, SystemClock
+        with transaction() as database:
+            rows = database.execute_native("""SELECT payload::text FROM product_feedback_deliveries
+                WHERE payload->'encounter'->'key'->>'game_id'=%s""", (manifest["game_id"],)).fetchall()
+            sources = database.execute_native("""SELECT COUNT(*) FROM product_feedback_sources
+                WHERE payload->'normalized'->>'game_id'=%s""", (manifest["game_id"],)).fetchone()[0]
+            unrelated = database.execute_native("SELECT id,state,introduced_at,due_date,fsrs_card_json FROM cards WHERE id=%s",
+                (manifest["unrelated_card"],)).fetchone()
+            history = database.execute_native("SELECT id,rating,reviewed_at FROM reviews WHERE card_id=%s ORDER BY id",
+                (manifest["unrelated_card"],)).fetchall()
+            target_reviews = database.execute_native("SELECT id,source_kind FROM reviews WHERE card_id=%s ORDER BY id",
+                (manifest["card_id"],)).fetchall()
+        deliveries = tuple(Delivery.model_validate_json(row[0]) for row in rows)
+        if any(item.command.key.game_id != manifest["game_id"] or
+               item.command.decision.repertoire_id != manifest["repertoire_id"] for item in deliveries):
+            raise RuntimeError("this fixture's exact persisted command is required")
+        receipt = (CurrentStudyReceiptReads(connections, SystemClock()).encounter_status(deliveries[0].command.key)
+                   if len(deliveries) == 1 else None)
+        print(json.dumps(dict(sources=sources, deliveries=[dict(state=item.state, attempts=item.attempts,
+            error=item.error, receipt=item.receipt.model_dump(mode="json") if item.receipt else None) for item in deliveries],
+            receipt=receipt.model_dump(mode="json") if receipt else None,
+            unrelated=dict(card=list(unrelated), reviews=[list(row) for row in history]),
+            target_reviews=[list(row) for row in target_reviews])))
+        return
     if options.action == "intake-probe":
         if dsn.username != "tempo_writer" or os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED") != "1":
             raise RuntimeError("probe requires the real opted-in disposable writer profile")
@@ -147,7 +180,7 @@ def main():
             available = database.execute_native("""SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s
                 AND status='applied' AND payload_json::jsonb->'command'->>'observation'='missed'""",
                 (manifest["card_id"],)).fetchone()[0]
-        print(json.dumps(dict(available=available == 3, available_misses=available)))
+        print(json.dumps(dict(available=available == manifest.get("expected_misses", 3), available_misses=available)))
         return
 
     if os.environ.get("TEMPO_PACKAGED_PROVIDER_FIXTURE") != "1":
