@@ -71,13 +71,23 @@ owner delivery happens after that transaction has released its connection.
   pending commands, and the safe cursor **atomically**, even when the requested
   window is incomplete. `window_complete` is explicit. A saturated page with a
   fresh continuation remains queued and incomplete.
-- Any rejection or unresolved parsing/comparison boundary preserves the raw
-  captured evidence, findings/errors and old cursor; it quarantines the job.
-  There is no cursor advance past an unconsumed record. Incomplete acquisition
-  without a fresh continuation is quarantined, never reported complete.
+- Only the provider-specific explicit exclusions below permit checkpoint progress.
+  Unknown rejection reasons and unresolved acquisition/integrity boundaries retain
+  the raw evidence and old cursor and quarantine the job. Incomplete acquisition
+  without a fresh continuation is quarantined, never reported complete. Provider
+  page values are revalidated while preserving their concrete subtype provenance.
+- Snapshot/read/comparer unavailability retains the valid normalized source and
+  successful comparisons from other repertoires. It does not quarantine that
+  source or manufacture correction holds. A safe acquisition checkpoint can
+  advance independently; comparison remains explicitly unresolved.
 - Source identity is a hash of workspace/provider/provider-game ID. Account,
   original raw PGN, supplied source revision/digest/time precision and comparison
-  revision remain captured. Full provider page and per-record JSON preserve
+  revision remain captured. The versioned `comparison-facts-v1` identity hashes
+  compatible material snapshots and unresolved repertoire IDs, excludes
+  `membership.captured_at`, and sorts unordered collections without reordering
+  authored moves. Actual source versions, routes, boundaries, target mappings and
+  introduction facts remain material; their changes preserve a new capture.
+  Full provider page and per-record JSON preserve
   provider-local metadata/filter extension fields through base-type projection. Overlapping imports preserve one logical
   workspace/provider/game/decision/ply effect. Recomparison preserves its
   original detected-at timestamp and command, rather than moving the deadline. A
@@ -122,12 +132,14 @@ Delivery completion and owner application are separate from window completeness.
 flowchart LR
   Runtime["T10 outer composition / optional runner"] --> C["Coordinator + injected clock"]
   C --> Provider["Acquisition capability: finite timeout"]
-  C --> Pure["Normalizer / comparer / supplied snapshot"]
+  C --> Pure["Verified normalization / same-color snapshots / per-repertoire comparer"]
+  Pure -->|"comparison unavailable: retain valid source + diagnostic"| Unresolved["Unresolved comparison / acquisition may advance"]
+  Unresolved --> Store
   Pure -->|"verified PGN history"| Identity["Optional SourceIdentity binding"]
   Identity -->|"canonical source before comparison"| C
-  C --> Store["GamesStore semantic operations"]
+  C --> Store["GamesStore: one atomic PageCommit / short transaction"]
   Store --> PG["Games-owned PostgreSQL facts"]
-  C -->|"after Games commit: stable lapse / hold / withdrawal"| Owner["LearningFeedbackPort"]
+  C -->|"after Games commit: stable lapse / encounter / hold / withdrawal"| Owner["Learning / Encounter feedback public contract"]
   Owner --> Receipt["owner receipt / durable fence / learning state"]
   Study["normal Study"] --> Receipt
 ```
@@ -138,6 +150,83 @@ must enforce finite I/O and bounded pages; cooperative cancellation cannot
 interrupt a provider that violates that contract. A 120-second reclaim lease
 (default; 1–300 configurable) requires one configured runner whose adapter timeout
 and page work fit that lease. Multi-process scheduling is outside this slice.
+
+## Durable factual comparison and consumer handoff — Task B
+
+The existing `compare_game` entry compares every scoped repertoire independently,
+with one `RouteFrontier` and departure state per repertoire. Coordinator selects
+all successfully loaded same-color snapshots; the comparer still rejects a direct
+color mismatch. Multiple applicable repertoires are separate evidence, not a
+reason to guess one winner. Within one repertoire, authored-response conflicts
+and target-mapping ambiguity remain distinct and do not authorize a delivery.
+
+A uniquely supported expected move differing from Andy's actual move remains a
+factual observation with missing cards or introduction/lapse proof. `membership`
+describes authored support, not physical readiness: an ambiguous card mapping can
+have `membership='present'`, while incomplete/unavailable authored evidence is
+`unknown`. Correct covered moves advance despite learning/card availability;
+reportable mapping uncertainty does not invent a move departure. The existing
+exact authored-anchor/index/card reentry checks remain, and retain earlier findings.
+
+`project_encounters` preserves #570's unknown-introduction behavior and admits
+these existing `known_unavailable` diagnostics only with a unique available exact
+current target and all alias facts agreeing:
+`introduction_evidence_unavailable`, `game_occurrence_time_not_exact`,
+`chronology_requires_timezone`, `conflicting_introduction_chronology`, and
+`introduced_content_identity_unproved`. All mappings at the exact repertoire
+position are checked before the finding's claimed card; conflicting card/revision/
+decision/response alternatives cannot be filtered away. Duplicate identical logical
+occurrences emit once; conflicting commands for the same key emit none. Findings
+remain retained. This neither fabricates chronology nor relaxes lapse eligibility;
+Study owns all current disposition, admission, priority and settlement.
+
+Existing workflow fields carry unresolved comparison evidence without a DTO or
+schema change:
+
+- `SourceState.diagnostic` and `Capture.diagnostic` use
+  `comparison_unavailable:<compact JSON array of sorted repertoire IDs>`, for
+  example `comparison_unavailable:["black","white"]`, or
+  `no_compatible_repertoire` when all loaded snapshots are opposite-color.
+- `JobState.status='complete'` and `window_complete=true` describe acquisition
+  only. `JobState.error='comparison_unavailable'` may coexist with them. A final
+  page's job error is not an aggregate comparison census; read retained source/
+  capture diagnostics, including earlier pages. No findings never means all-correct.
+- Invalid returned source/repertoire provenance retains
+  `unresolved_parsing_or_comparison_boundary`, blocks the cursor, and quarantines.
+  Changed source facts retain the existing D08 controls/history. Temporary missing
+  comparison proof alone does not hold an original immutable command.
+
+Agent C owns retrying unresolved retained comparisons and native transaction proof.
+Agent D owns acquisition/continuous scheduling; the known exclusions are:
+
+| Provider | Safe rejection reasons |
+| --- | --- |
+| Lichess | `filtered_speed`, `filtered_rated`, `unsupported_variant`, `duplicate_source_id` |
+| Chess.com | `outside_window`, `time_control_filtered`, `rated_filtered`, `unsupported_variant`, `duplicate_source_id` |
+
+Both adapters emit `duplicate_source_id` only after verifying identical source
+payloads. Rejections and their counts remain in the full persisted page and job.
+Unknown reasons (including newly introduced adapter values) require explicit owner
+reconciliation; malformed/account/identity failures and unsafe continuations cannot
+silently become complete. No adapter implementation is imported by the coordinator.
+
+Agent F derives summaries **per repertoire**, using the canonical game's side to
+move and retained findings ordered by one-based ply. Ignore a matched covered
+encounter for first departure; retain the earliest factual departure or unresolved
+boundary with its original kind/diagnostic. First own-response miss is the earliest
+learner-turn finding with `membership='present'`, exactly one expected move
+*different* from played, and neither `conflict` nor `coverage_end`. Card existence,
+introduction history and lapse eligibility are not prerequisites. Correct mapping
+ambiguity is unresolved target evidence, not a played-move departure. Later
+validated reentry may support another own miss without replacing first departure.
+A source-level unresolved diagnostic must remain visible even with no findings.
+
+Focused cases stay in the existing product game-findings, encounter-projection and
+feedback-jobs suites. The boundary guard permits only the existing pure public
+`app.study.interfaces.game_priority` value/port exports; the separate public-import
+purity case proves that surface starts no Study implementation. No ordinary Study
+runtime, native server, provider request, UI change or deployment is exercised by
+these synthetic cases. Shared regression registration is handed to Agent G.
 
 ## Narrow PostgreSQL integration contract
 
