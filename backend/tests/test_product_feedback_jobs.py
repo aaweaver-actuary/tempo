@@ -321,6 +321,13 @@ def test_no_learning_sql_or_study_runtime_dependency():
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
+                # This public value-only interface is the adopted semantic seam;
+                # its import-purity guard separately proves no Study startup.
+                if module == "app.study.interfaces.game_priority":
+                    assert {item.name for item in node.names} <= {
+                        "EncounterFeedbackPort", "EncounterReceipt", "GameEffectControl", "GameEffectKey",
+                        "GameEncounter", "GameLapse", "LearningFeedbackPort", "LearningReceipt"}
+                    continue
                 assert not module.startswith(("app.study", "app.services", "app.main", "tempo_legacy_database", "psycopg"))
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 assert node.func.attr not in {"execute", "executemany", "cursor"}
@@ -676,3 +683,267 @@ def test_canonical_history_projection_needs_no_pgn_or_acquisition():
     with pytest.raises(ValueError, match="source differs"):
         project_encounters(game, findings=(finding,), snapshots=(snapshot,),
             source=source.model_copy(update={"source_digest": "c" * 64}), detected_at=detected_at, occurred_at=None)
+
+
+@pytest.mark.parametrize("learner_color", ["white", "black"])
+def test_capture_selects_every_same_color_snapshot(learner_color):
+    h = harness(kinds=())
+    original = h.coordinator.snapshots.snapshot("white")
+    def supplied(repertoire):
+        color = "black" if repertoire == "black" else "white"
+        return original.model_copy(update={"learner_color": color,
+            "membership": original.membership.model_copy(update={"scope_repertoire_ids": (repertoire,),
+                "routes": tuple(route.model_copy(update={"repertoire_id": repertoire, "learner_color": color})
+                                for route in original.membership.routes)}),
+            "decision_presentations": tuple(mapping.model_copy(update={"repertoire_id": repertoire})
+                                             for mapping in original.decision_presentations)})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=supplied)
+    normalize = h.coordinator.normalizer.normalize
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda record, spec:
+        normalize(record, spec).model_copy(update={"learner_color": learner_color}))
+    compared = []
+    def compare(game, snapshot, **context):
+        assert game.learner_color == snapshot.learner_color
+        compared.append(snapshot.membership.scope_repertoire_ids[0])
+        return ()
+    h.coordinator.comparer = SimpleNamespace(compare=compare)
+    h.store.enqueue(spec().model_copy(update={"repertoire_ids": ("white", "black", "other-white")}))
+    h.runner.run_once()
+    assert compared == (["white", "other-white"] if learner_color == "white" else ["black"])
+    assert h.store.load_job("job").window_complete
+
+
+@pytest.mark.parametrize("stage", ["snapshot", "comparison"])
+def test_unavailable_comparison_retains_valid_source_and_advances_acquisition(stage):
+    h = harness()
+    def unavailable(*args, **kwargs):
+        raise ValueError("repertoire_publication_unavailable")
+    if stage == "snapshot":
+        h.coordinator.snapshots = SimpleNamespace(snapshot=unavailable)
+    else:
+        h.coordinator.comparer = SimpleNamespace(compare=unavailable)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    capture, = h.store.captures.values()
+    assert source.normalized is not None and not source.quarantined
+    assert source.diagnostic == capture.diagnostic == 'comparison_unavailable:["white"]'
+    job = h.store.load_job("job")
+    assert job.window_complete and job.status == "complete" and job.error == "comparison_unavailable"
+    assert not h.store.deliveries and source.findings == ()
+
+
+def test_unavailable_recomparison_does_not_hold_original_lapse():
+    h = harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original, = h.store.deliveries.values()
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError()))
+    rescan = h.store.enqueue(spec("rescan"))
+    h.coordinator.capture_page(rescan)
+    source, = h.store.sources.values()
+    assert not source.quarantined and source.effects == (original.lapse,)
+    assert list(h.store.deliveries.values()) == [original]
+
+
+@pytest.mark.parametrize("provider,reason", [
+    ("lichess", "filtered_speed"), ("lichess", "filtered_rated"),
+    ("lichess", "unsupported_variant"), ("lichess", "duplicate_source_id"),
+    ("chesscom", "outside_window"), ("chesscom", "time_control_filtered"),
+    ("chesscom", "rated_filtered"), ("chesscom", "unsupported_variant"),
+    ("chesscom", "duplicate_source_id"),
+])
+def test_known_provider_exclusions_advance_checkpoint_with_evidence(provider, reason):
+    h = harness(kinds=())
+    request = spec(provider=provider)
+    rejection = GameRejection(source_game_id="excluded", source_revision=1, reason=reason)
+    h.page[0] = page(request=request, rejections=(rejection,))
+    h.store.enqueue(request)
+    h.runner.run_once()
+    job = h.store.load_job("job")
+    assert job.window_complete and job.status == "complete" and job.rejections == (rejection,)
+    assert json.loads(next(iter(h.store.pages.values())))["rejections"][0]["reason"] == reason
+
+
+@pytest.mark.parametrize("reason", ["malformed_record", "unknown_reason", "conflicting_source_id", "invalid_pgn", "outside_window"])
+def test_unsafe_or_wrong_provider_rejection_does_not_complete_acquisition(reason):
+    h = harness(kinds=())
+    rejection = GameRejection(source_game_id="unsafe", source_revision=1, reason=reason)
+    h.page[0] = page(rejections=(rejection,))
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    job = h.store.load_job("job")
+    assert not job.window_complete and job.status == "quarantined" and job.last_checkpoint_at is None
+    assert job.rejections == (rejection,)
+
+
+def test_capture_time_only_rescan_reuses_comparison_capture_and_original_delivery():
+    h = harness()
+    captured = h.coordinator.snapshots.snapshot("white")
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original, = h.store.deliveries.values()
+    comparison = next(iter(h.store.sources.values())).comparison_revision
+    later = captured.model_copy(update={"membership": captured.membership.model_copy(update={
+        "captured_at": "2026-10-29T20:00:00Z"})})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: later)
+    h.clock.value += 100
+    rescan = h.store.enqueue(spec("rescan"))
+    h.coordinator.capture_page(rescan)
+    assert len(h.store.captures) == len(h.store.deliveries) == 1
+    assert next(iter(h.store.sources.values())).comparison_revision == comparison
+    assert list(h.store.deliveries.values()) == [original]
+
+
+def test_material_snapshot_change_preserves_comparison_history_without_duplicate_effect():
+    h = harness()
+    captured = h.coordinator.snapshots.snapshot("white")
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    later = captured.model_copy(update={"decision_presentations": tuple(mapping.model_copy(update={
+        "presentation_revision": mapping.presentation_revision + 1}) for mapping in captured.decision_presentations)})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: later)
+    rescan = h.store.enqueue(spec("rescan"))
+    h.coordinator.capture_page(rescan)
+    assert len(h.store.captures) == 2 and len(h.store.deliveries) == 1
+
+
+def test_comparer_returning_wrong_source_is_an_integrity_quarantine():
+    h = harness()
+    compare = h.coordinator.comparer.compare
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: tuple(
+        finding.model_copy(update={"source_digest": "f" * 64}) for finding in compare(*args, **kwargs)))
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.quarantined and source.normalized is not None
+    assert not h.store.load_job("job").window_complete and not h.store.deliveries
+
+
+
+def test_real_comparer_captures_both_colors_with_both_repertoires_selected():
+    from app.games.feedback.comparison import compare_game, normalize_record
+    from test_product_game_findings import record as pgn_record, route, snapshot
+    from tempo_game_review_contracts import replay_line
+    white = snapshot(route(("e2e4",), repertoire_id="white"))
+    black_route = route(("e2e4", "e7e5"), repertoire_id="black").model_copy(update={"learner_color": "black"})
+    black = snapshot(black_route)
+    black_mapping = white.decision_presentations[0].model_copy(update={
+        "repertoire_id": "black", "decision_id": "black-decision", "presentation_id": "black-card",
+        "position_key": replay_line(black_route.starting_fen, black_route.moves)[1]["comparison_key"],
+        "selected_response_uci": "e7e5"})
+    black = black.model_copy(update={"learner_color": "black", "decision_presentations": (black_mapping,)})
+    white_record = pgn_record(("d2d4",)).model_copy(update={"source_game_id": "white-game"})
+    black_record = pgn_record(("e2e4", "c7c5"))
+    black_pgn = black_record.pgn.replace('White "Learner"', 'White "Other"').replace('Black "Other"', 'Black "Learner"')
+    black_record = black_record.model_copy(update={"pgn": black_pgn,
+        "source_digest": hashlib.sha256(black_pgn.encode()).hexdigest(), "source_game_id": "black-game"})
+    h = harness()
+    request = spec().model_copy(update={"workspace_id": "workspace", "repertoire_ids": ("white", "black")})
+    h.page[0] = page(request=request, records=(white_record, black_record))
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda repertoire: {"white": white, "black": black}[repertoire])
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda value, spec: normalize_record(value,
+        provider=spec.provider, account=spec.account, workspace_id=spec.workspace_id))
+    h.coordinator.comparer = SimpleNamespace(compare=lambda game, snapshot, record, spec:
+        compare_game(game, provider=spec.provider, snapshot=snapshot, time_precision=record.time_precision))
+    h.store.enqueue(request)
+    h.runner.run_once()
+    assert h.store.load_job("job").window_complete
+    sources = sorted(h.store.sources.values(), key=lambda source: source.normalized.learner_color)
+    assert [(source.normalized.learner_color, source.findings[0].ply, source.findings[0].repertoire_id)
+            for source in sources] == [("black", 2, "black"), ("white", 1, "white")]
+    assert all(not source.quarantined and source.findings[0].kind == "confirmed_miss" for source in sources)
+
+
+def test_partial_comparison_failure_keeps_successful_repertoire_findings():
+    h = harness()
+    supplied = h.coordinator.snapshots.snapshot
+    def snapshot(repertoire):
+        if repertoire == "unavailable":
+            raise TimeoutError()
+        return supplied(repertoire)
+    h.coordinator.snapshots = SimpleNamespace(snapshot=snapshot)
+    h.store.enqueue(spec().model_copy(update={"repertoire_ids": ("white", "unavailable")}))
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    assert not source.quarantined and len(source.findings) == len(source.effects) == 1
+    assert source.diagnostic == 'comparison_unavailable:["unavailable"]'
+    assert h.store.load_job("job").window_complete
+
+
+def test_no_compatible_snapshot_is_unresolved_instead_of_all_correct():
+    h = harness(kinds=())
+    snapshot = h.coordinator.snapshots.snapshot("white").model_copy(update={"learner_color": "black"})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: snapshot)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.normalized is not None and not source.quarantined
+    assert source.diagnostic == "no_compatible_repertoire" and source.findings == ()
+    assert h.store.load_job("job").window_complete
+
+
+def test_incomplete_page_with_repeated_continuation_keeps_old_checkpoint():
+    h = harness(kinds=())
+    job = h.store.enqueue(spec())
+    job = job.model_copy(update={"continuation": "same-cursor"})
+    h.store.save_job(job)
+    h.page[0] = page(continuation="same-cursor", complete=False)
+    h.coordinator.capture_page(h.store.load_job("job"))
+    saved = h.store.load_job("job")
+    assert saved.status == "quarantined" and not saved.window_complete
+    assert saved.continuation == "same-cursor" and saved.last_checkpoint_at is None
+
+
+
+def test_mutated_conflicting_page_identity_never_commits_a_false_checkpoint():
+    h = harness(kinds=())
+    h.page[0] = page().model_copy(update={"records": (record(), record(text="conflict"))})
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    assert not h.store.sources and not h.store.captures
+    job = h.store.load_job("job")
+    assert not job.window_complete and job.last_checkpoint_at is None
+
+
+def test_snapshot_scope_corruption_is_quarantined_without_losing_acquired_game():
+    h = harness(kinds=())
+    captured = h.coordinator.snapshots.snapshot("white")
+    captured = captured.model_copy(update={"membership": captured.membership.model_copy(update={"workspace_id": "wrong"})})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: captured)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.normalized is not None and source.quarantined
+    assert source.diagnostic == "unresolved_parsing_or_comparison_boundary"
+    assert not h.store.load_job("job").window_complete
+
+
+def test_comparison_identity_ignores_unordered_snapshot_row_order():
+    from app.games.feedback.coordinator import _comparison_revision
+    from test_product_game_findings import route, snapshot
+    captured = snapshot(route(route_id="first"), route(route_id="second"))
+    reversed_snapshot = captured.model_copy(update={
+        "membership": captured.membership.model_copy(update={"routes": tuple(reversed(captured.membership.routes))}),
+        "boundaries": tuple(reversed(captured.boundaries)),
+        "decision_presentations": tuple(reversed(captured.decision_presentations))})
+    assert _comparison_revision((captured,), ()) == _comparison_revision((reversed_snapshot,), ())
+
+
+
+def test_source_correction_during_comparison_outage_still_fences_original():
+    h = harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original, = h.store.deliveries.values()
+    h.page[0] = page(records=(record(revision=2, text="corrected"),))
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError()))
+    rescan = h.store.enqueue(spec("rescan"))
+    h.coordinator.capture_page(rescan)
+    source, = h.store.sources.values()
+    assert source.quarantined and source.diagnostic == "changed_source_requires_D08_resolution"
+    assert source.original == record() and source.effects == (original.lapse,)
+    assert len(h.store.captures) == 2
+    controls = [delivery.control for delivery in h.store.deliveries.values() if delivery.control]
+    assert len(controls) == 1 and controls[0].reason == "source_corrected"
+    assert controls[0].key == original.lapse.key
