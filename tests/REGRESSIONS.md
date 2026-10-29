@@ -5638,6 +5638,27 @@ weakening production resource admission. `managed maintenance stops Games but
 application startup and readiness never require it` owns the release lifecycle
 boundary.
 
+The same operator suite owns the maintenance/schema follow-up regressions:
+
+- `collection enable blocks pending migration`
+- `collection enable blocks schema mismatch`
+- `collection maintenance assessment preserves existing recovery policy`
+- `collection maintenance evidence errors block enable without destructive recovery`
+- `collection enable requires exact positive integer schema evidence`
+- `collection enable assesses maintenance after acquiring the target lock`
+- `collection disable remains available with maintenance and schema launch blockers`
+- `collection main blocks persisted pending migration before compose up`
+- `collection main blocks observed schema mismatch before compose up`
+- `collection main permits owned disable with unreadable maintenance evidence`
+- `collection main reports launch blockers without mutating on plan or status`
+- `collection main enables once with clear maintenance and matching schema`
+- `collection main rejects missing apply before locking or inspecting`
+
+These use synthetic files and external-command facts while retaining the actual
+runtime assessor, operator wiring and target lock. They prove guard precedence,
+sanitized fail-closed evidence handling, exact database schema checks, safe owned
+disable, evidence preservation and idempotent enable without operating live services.
+
 Owning suite `backend/tests/test_cpu_resource_launchers.py`:
 
 - `test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_and_ownership`

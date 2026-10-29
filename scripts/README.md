@@ -275,6 +275,14 @@ Effective limits are checked on existing collectors. Host processes and containe
 with a competing runner prevent activation; unrelated legacy workers are reported
 and preserved. Existing accepted Study obligations keep their own lifecycle.
 
+Enable rereads persisted maintenance evidence under the existing target lock.
+The existing runtime recovery assessor remains authoritative: pending or invalid
+guards, missing required guards, and unreadable evidence block enable. The observed
+database schema (`identity.schema_version`, not the report format version) must
+be a positive safe integer exactly matching the installed release schema. Safe,
+identity-verified disable remains available despite these launch blockers. The
+operator never clears recovery evidence or runs migrations.
+
 Enable uses the frozen Compose graph with `--no-build --no-deps --pull never` and
 starts only `game-feedback-worker`. Its real `--follow` scheduler enqueues initial
 forward/reconciliation work. Disable stops only an identity-verified collector. An owned, stopped collection-only
@@ -299,8 +307,13 @@ flowchart LR
     Wrapper --> Reader[F read-only installed evidence]
     Wrapper --> Inventory[Image, resource and competing-process inspection]
     Wrapper --> Lock[Existing managed target lock]
-    Lock --> Compose[Only managed Games service start/stop]
-    Compose --> Collector[Packaged CLI: collect-only and follow]
+    Lock --> Inspect[Inspect current evidence under target lock]
+    Inspect --> EnableChecks[Enable: maintenance assessor and exact schema plus existing launch checks]
+    EnableChecks -->|all clear| ComposeStart[Start only managed Games service]
+    Inspect --> StopChecks[Disable: existing identity and ownership stopSafe checks]
+    StopChecks -->|verified despite launch blockers| ComposeStop[Stop only managed Games service]
+    ComposeStart --> Collector[Packaged CLI: collect-only and follow]
+    ComposeStop -->|stop| Collector
     Collector --> Games[(Games source, captures, checkpoint, pending outbox)]
     Study[Ordinary Study and accepted obligations]
     Collector -. no delivery or lifecycle call .-> Study

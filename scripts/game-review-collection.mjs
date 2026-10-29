@@ -6,7 +6,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { acquireTargetLock, targetKey, validateTarget, validateContainers } from './tempo-deployment.mjs';
-import { configurationFingerprint } from './tempo-runtime.mjs';
+import {
+  assessMigrationRecovery,
+  configurationFingerprint,
+} from './tempo-runtime.mjs';
 
 export const serviceName = 'game-feedback-worker';
 const owner = 'managed-game-collection';
@@ -21,7 +24,7 @@ const own = (container, target) => labels(container)['com.docker.compose.project
   labels(container)['com.docker.compose.project.working_dir'] === target.root;
 
 export function collectionBlockers({ candidate, release, service, image, report, preview,
-  containers, hostCommands, target, fingerprint }) {
+  containers, hostCommands, target, fingerprint, maintenance }) {
   const blockers = [];
   if (!/^[a-f0-9]{40}$/.test(candidate ?? '') || release.revision !== candidate) blockers.push('installed_candidate_mismatch');
   if (release.configFingerprint !== fingerprint) blockers.push('frozen_configuration_mismatch');
@@ -59,6 +62,26 @@ export function collectionBlockers({ candidate, release, service, image, report,
   if (!report || report.read_only !== true || report.schema_version !== 1 ||
       ['identity', 'providers', 'collection', 'delivery'].some(section => report[section]?.availability !== 'available'))
     blockers.push('reader_evidence_unavailable');
+  if (maintenance?.status !== 'clear') {
+    blockers.push(
+      maintenance?.code || 'collection_maintenance_unavailable',
+    );
+  }
+
+  const expectedSchema = release?.schema;
+  const observedSchema = report?.identity?.schema_version;
+
+  if (
+    report?.identity?.availability !== 'available' ||
+    !Number.isSafeInteger(expectedSchema) ||
+    expectedSchema < 1 ||
+    !Number.isSafeInteger(observedSchema) ||
+    observedSchema < 1
+  ) {
+    blockers.push('collection_schema_unverified');
+  } else if (observedSchema !== expectedSchema) {
+    blockers.push('collection_schema_mismatch');
+  }
   const providers = report?.providers?.items ?? [];
   const configured = providers.filter(p => p.configured);
   if (report?.providers?.availability === 'available' && !configured.length) blockers.push('collection_configuration_absent');
@@ -108,7 +131,62 @@ function command(program, args) {
 }
 const jsonFile = path => JSON.parse(readFileSync(path, 'utf8'));
 
-export async function main(argv = process.argv.slice(2)) {
+export function readCollectionMaintenance({
+  stateDirectory,
+  target,
+  configuration,
+  readFile = readFileSync,
+}) {
+  function optionalObject(filename) {
+    let text;
+    try {
+      text = readFile(join(stateDirectory, filename), 'utf8');
+    } catch (error) {
+      if (error?.code === 'ENOENT') return null;
+      throw error;
+    }
+
+    const value = JSON.parse(text);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Invalid maintenance evidence');
+    }
+    return value;
+  }
+
+  try {
+    const guard = optionalObject('migration-guard.json');
+
+    // Match the existing runtime: the operation is relevant when no guard exists.
+    const operation = guard === null
+      ? optionalObject('operation.json')
+      : null;
+
+    const assessment = assessMigrationRecovery({
+      guard,
+      operation,
+      target,
+      configuration,
+      retry: false,
+    });
+
+    if (assessment.status === 'clear') {
+      return { status: 'clear' };
+    }
+
+    if (assessment.status === 'blocked' && typeof assessment.code === 'string') {
+      return { status: 'blocked', code: assessment.code };
+    }
+
+    return { status: 'blocked', code: 'collection_maintenance_unavailable' };
+  } catch {
+    return { status: 'blocked', code: 'collection_maintenance_unavailable' };
+  }
+}
+
+export async function main(
+  argv = process.argv.slice(2),
+  { runCommand = command } = {},
+) {
   const operation = argv.shift();
   let configPath = join(homedir(), '.config/tempo/config.json'), candidate;
   let apply = false;
@@ -124,7 +202,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (target.version !== 1) throw new Error('Unsupported managed registration; preserve the installed authority');
   const stateDirectory = join(process.env.TEMPO_CLI_STATE_DIR ?? join(homedir(), '.local/share/tempo'), targetKey(target));
   const receiptPath = join(stateDirectory, 'deployment.json');
-  const docker = args => command('docker', ['--context', target.context, ...args]);
+  const docker = args => runCommand('docker', ['--context', target.context, ...args]);
   let compose, snapshot;
   const inspect = async () => {
     const registrationText = readFileSync(configPath, 'utf8'), receiptText = readFileSync(receiptPath, 'utf8');
@@ -136,6 +214,11 @@ export async function main(argv = process.argv.slice(2)) {
     compose = args => docker([...prefix, ...args]);
     const configuration = JSON.parse(compose(['config', '--format', 'json']));
     validateTarget(configuration, target);
+    const maintenance = readCollectionMaintenance({
+      stateDirectory,
+      target,
+      configuration,
+    });
     const service = configuration.services[serviceName];
     const ids = docker(['ps', '-aq']).trim().split(/\s+/).filter(Boolean);
     const containers = ids.length ? JSON.parse(docker(['inspect', ...ids])) : [];
@@ -150,12 +233,12 @@ export async function main(argv = process.argv.slice(2)) {
         try { preview = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_sync_current', '--preview', '--follow', '--overlap-seconds', service.command[service.command.indexOf('--overlap-seconds') + 1]])); } catch { /* Block enable. */ }
       }
     }
-    try { hostCommands = command('ps', ['-axo', 'command=']).split('\n').filter(line => !line.includes('game-review-collection.mjs')); } catch { /* Fail closed for enable. */ }
+    try { hostCommands = runCommand('ps', ['-axo', 'command=']).split('\n').filter(line => !line.includes('game-review-collection.mjs')); } catch { /* Fail closed for enable. */ }
     const owned = containers.filter(c => labels(c)['com.docker.compose.project'] === target.project && labels(c)['com.docker.compose.service'] === serviceName);
     const running = owned.some(active);
     const stopSafe = owned.every(c => own(c, target) && (!active(c) || c.Image === release.images?.[serviceName]) && textCommand(c).includes('--collect-only'));
     const blockers = collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
-      fingerprint: configurationFingerprint(configuration) });
+      fingerprint: configurationFingerprint(configuration), maintenance });
     if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');
     else {
       const apiImage = JSON.parse(docker(['image', 'inspect', api[0].Image]))[0];
@@ -163,6 +246,12 @@ export async function main(argv = process.argv.slice(2)) {
     }
     snapshot = { registrationText, receiptText };
     return { blockers, running, stopSafe, output: { candidate, installed_revision: release.revision, schema: release.schema,
+      maintenance,
+      observed_schema:
+        Number.isSafeInteger(report?.identity?.schema_version) &&
+        report.identity.schema_version > 0
+          ? report.identity.schema_version
+          : null,
       collector_image: release.images?.[serviceName] ?? null, mode: 'collect-only', running, activation_ready: !blockers.length,
       blockers, evidence: report, preview, resources: service ? { cpus: service.cpus ?? null, memory: service.mem_limit, pids: service.pids_limit } : null,
       retained_legacy_producers: containers.filter(c => active(c) && /background-worker|foreground-worker|background-scheduler/.test(labels(c)['com.docker.compose.service'] ?? '')).map(c => ({ id: c.Id, image: c.Image, service: labels(c)['com.docker.compose.service'] })) } };
