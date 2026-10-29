@@ -240,7 +240,7 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
     configuration = SyncConfiguration(workspace_id="legacy", provider="lichess", account="Learner",
         window=GameWindow(start_at="2026-10-25T00:00:00Z", end_at="2026-10-26T00:00:00Z",
                           precision="millisecond"), repertoire_ids=(repertoire,), speeds=("rapid",),
-        rated=True, interval_seconds=None, revision=1)
+        rated=True, interval_seconds=60, revision=1)
     review = PostgresReviewStore(connections)
     review.configure(configuration, 0)
     game_id = "collection-" + case.card_id
@@ -313,7 +313,43 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
         assert database.execute("SELECT count(*) FROM product_feedback_sources").fetchone()[0] == 1
         captures = [row[0] for row in database.execute("SELECT payload FROM product_feedback_captures").fetchall()]
         assert captures and all(item["record"]["pgn"] == original_pgn and item["findings"] for item in captures)
+    assert len(captures) == 1, "unchanged material rescan must retain the same capture"
     assert len(requests) == 2 and study_rows() == before
+
+    # Persist a genuinely unresolved comparison through the current PostgreSQL
+    # collector, then let the actual recurring reconciliation owner revisit it.
+    original_game_id = game_id
+    game_id = "late-" + case.card_id
+    with connections() as database:
+        database.execute("UPDATE opening_graph_publications SET state='failed' WHERE repertoire_id=%s", (repertoire,))
+    review.enqueue(configuration, configured_job(configuration, "unresolved-" + case.card_id), clock.now())
+    unresolved_runtime = build_runtime()
+    try:
+        assert unresolved_runtime.run_once() == "page"
+    finally:
+        unresolved_runtime.close()
+    with connections() as database:
+        unresolved = database.execute("SELECT payload FROM product_feedback_sources WHERE payload->'original'->>'source_game_id'=%s", (game_id,)).fetchone()[0]
+        assert unresolved["diagnostic"].startswith("comparison_unavailable:")
+        assert not unresolved["findings"]
+        database.execute("UPDATE opening_graph_publications SET state='ready' WHERE repertoire_id=%s", (repertoire,))
+    from app.games.feedback.continuous import ForwardWindow
+    reconciler, recurring = current.current_provider_worker(workspace="legacy", connections=connections,
+        clock=clock, delivery_enabled=False, forward_window=ForwardWindow(0),
+        reconciliation_interval_seconds=600, transport_factory=lambda: httpx.MockTransport(response))
+    try:
+        assert recurring.enqueue_due()
+        for _ in range(8):
+            reconciler.run_once()
+    finally:
+        reconciler.close()
+    with connections() as database:
+        resolved = database.execute("SELECT payload FROM product_feedback_sources WHERE source_key=%s", (unresolved["source_key"],)).fetchone()[0]
+        assert resolved["findings"] and resolved["diagnostic"] is None
+        jobs = [row[0] for row in database.execute("SELECT payload FROM product_feedback_jobs").fetchall()]
+        assert any(j["spec"]["job_id"].startswith("reconciling:") and j["window_complete"] for j in jobs)
+    assert store.delivery(pending.operation_id).model_dump_json() == original_command
+    assert study_rows() == before
     evidence = Path(__file__).resolve().parents[2] / "test-results/collection-only-native"
     evidence.mkdir(parents=True, exist_ok=True)
     (evidence / "readback.json").write_text(json.dumps(dict(

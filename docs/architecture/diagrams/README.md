@@ -246,3 +246,8 @@ Keep explanatory detail and source links beside each bounded view.
 This criterion preserves data, permissions, applicable gates, and independence
 of the changed path under [root working rules](../../../AGENTS.md). It does not
 assign unrelated extraction or waive safeguards.
+
+
+Task G collection operator: [canonical managed lifecycle view](../../../scripts/README.md#games-collection-operator).
+This proposed/unmerged source view distinguishes the Games-only switch from
+Study's independent lifecycle; installed resource isolation is unverified.

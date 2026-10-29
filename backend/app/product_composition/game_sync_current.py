@@ -197,14 +197,18 @@ def main():
         dsn=os.environ.get("TEMPO_DATABASE_READ_URL")
         if not dsn:raise RuntimeError("TEMPO_DATABASE_READ_URL is required for read-only preview")
         store=PostgresReviewStore(DedicatedGamesConnections(dsn,read_only=True))
+        now = SystemClock().now()
+        streams = {state.configuration.provider: state
+                   for state in store.continuous_state(options.workspace, now)}
         result=[]
         for provider in ("lichess","chesscom"):
             configuration=store.configuration(options.workspace,provider)
             if configuration is None:
                 result.append(dict(provider=provider,configured=False));continue
-            previous=store.last_job(options.workspace,provider)
-            job=(policy.next_job(configuration,previous,now=SystemClock().now(),build_job=configured_job)
-                if policy is not None else None)
+            state = streams.get(provider)
+            previous = None if state is None else state.forward_job
+            job=(policy.next_job(configuration,previous,now=now,build_job=configured_job)
+                if policy is not None and state is not None and state.forward_due else None)
             result.append(dict(provider=provider,configured=True,
                 configuration=configuration.model_dump(mode="json"),
                 previous=None if previous is None else previous.model_dump(mode="json"),

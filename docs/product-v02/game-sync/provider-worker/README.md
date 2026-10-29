@@ -162,7 +162,7 @@ assembled settlement remain unqualified.
 
 The new overlay is combined with current base Compose only by the release owner;
 it declares `game-feedback-worker`, profile `games-feedback`, `init: true`,
-0.15 CPU, 256 MiB and 96 PIDs. It reuses the existing backend Dockerfile and writer
+unrestricted CPU, 256 MiB and 96 PIDs under Task A policy. It reuses the existing backend Dockerfile and writer
 secret. No port, persistent worker volume, broker or service dependency is added
 to Study or the API. The provider service depends only on the existing PostgreSQL
 and Redis health conditions. Saved recurrence alone cannot start the process.
@@ -177,14 +177,12 @@ Each Games database section keeps `DedicatedGamesConnections`' existing finite
 transaction/lock/statement bounds. Provider HTTP finishes outside those sections.
 The receiver's source capture closes before its borrowed intake writer opens.
 
-`config/resource-budgets.json` remains unchanged. Its listed optional services
-sum to 1 CPU/2048 MiB; adding this process would sum to 1.15 CPU/2304 MiB. That
-extra allocation is **not registered or approved here**. No capacity is inferred
-from absent Maia, a prior loan or an old development ceiling. #586 removed the
-fixed development CPU cap; current allocator/memory/concurrency rules and actual
-resource accounting remain authoritative. The new service must be reconciled
-with the existing managed allocation before activation. No guard bypass, budget
-edit, service stop, cgroup inspection or new reservation occurred in this task.
+Task A registers `game-feedback-worker` in `config/resource-budgets.json` with
+256 MiB and 96 PIDs, without an ordinary CPU quota. Current allocator, memory,
+concurrency and ownership rules remain authoritative. Source registration does
+not establish installed headroom: inspect the frozen release and effective limits
+before the explicit operator switch. No capacity is inferred from absent optional
+services or another task's reservation.
 
 ## Delivery-enabled receipt, state and failure ownership
 
@@ -267,9 +265,8 @@ wanted, remains a separate explicit fixed-window request.
 
 Readable quiet foreground controls, selected-daemon CPU allocation and managed
 memory headroom are distinct observations; none grants activation or proves idle
-CPU/free physical memory. Source registration is separately unresolved: the
-optional service is absent from the central named allocation maps. No central
-resource file is edited before owner coordination. Bounded readiness reads use
+CPU/free physical memory. Task A supplies the central named resource registration; installed allocation
+and frozen configuration correspondence still require release-owner verification. Bounded readiness reads use
 only existing approved local configuration/control routes and resource-owner
 read functions. No tests, builds, provider HTTP/import, direct database access,
 settings write, credential or service change accompanies them.

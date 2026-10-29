@@ -1914,6 +1914,26 @@
         "tools/component-build/check-interface-boundaries.mjs",
         "tools/component-build/check-python.py"
       ]
+    },
+    {
+      "id": "games-collection-release",
+      "owner": "Games #491 Task G",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python -m pytest backend/tests/test_product_collection_release.py -q",
+      "inputs": [
+        "backend/app/games",
+        "backend/app/product_composition/game_sync.py",
+        "backend/app/product_composition/game_sync_current.py",
+        "backend/app/product_composition/game_collection_status.py",
+        "backend/tests/test_product_collection_release.py",
+        "backend/tests/fixtures/product_collection_packaged.py",
+        "backend/tests/test_product_game_lapse_postgres.py",
+        "database/tempo_legacy_database/adapters/games",
+        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
+        "database/tooling/provision_postgres_roles.py",
+        "backend/Dockerfile"
+      ]
     }
   ]
 }

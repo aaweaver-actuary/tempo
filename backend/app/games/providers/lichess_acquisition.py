@@ -243,7 +243,7 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
                 reason = {
                     "configured account did not play this game": "account_mismatch",
                     "only standard chess games are supported": "unsupported_variant",
-                    "game is unfinished or has an unsupported result": "unfinished_game",
+                    "game is unfinished": "unfinished_game",
                 }.get(str(error), "invalid_pgn")
             except ValueError:
                 reason = "invalid_pgn"

@@ -20,6 +20,7 @@
     "ordinaryPrefixes": ["app/", "backend/tests/", "tests/unit/", "tests/browser/", "public/", "assets/", "tempo-core/src/"],
     "ordinaryPaths": [
       "backend/ORGANIZATION.md",
+      "backend/app/product_composition/game_collection_status.py",
       "backend/app/README.md",
       "backend/app/authoring/README.md",
       "backend/app/authoring/__init__.py",

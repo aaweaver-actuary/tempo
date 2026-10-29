@@ -202,3 +202,11 @@ Configured historical coverage, acquisition completion, comparison readiness,
 Study intake and actual Study availability remain distinct claims. No provider
 activation, deployment, live user setting writes or Study settlement proof is
 part of this component handoff.
+
+
+## Collection release operator
+
+The [thin managed operator](../../../scripts/README.md#games-collection-operator)
+provides read-only plan/status and explicit enable/disable for the independently
+installed collection-only profile. Source qualification, inactive installation,
+launch-input readiness and live activation are separate outcomes.

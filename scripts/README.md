@@ -242,3 +242,67 @@ swap, PID/tmpfs limits, finite deadlines, source staging, permissions, image
 identity and cleanup. Maia's qualification-owner label remains distinct from
 the central resource-owner label. This source change does not qualify model
 inference, artifact installation, provider connectivity or installed services.
+
+
+## Games collection operator
+
+`scripts/game-review-collection.mjs` is the thin operator for the explicitly
+optional Games service in an existing frozen managed release. It reuses Tempo's
+registration, deployment receipt, target validation and maintenance lock. It does
+not install a release, change saved settings, start dependencies or migrate data.
+The managed release must already contain the labeled collection-only service and
+immutable candidate image. Ordinary `tempo start` does not start this profile.
+
+```sh
+node /absolute/qualified/source/scripts/game-review-collection.mjs plan --candidate <40-character-commit>
+node /absolute/qualified/source/scripts/game-review-collection.mjs status --candidate <40-character-commit>
+node /absolute/qualified/source/scripts/game-review-collection.mjs enable --candidate <40-character-commit> --apply
+node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
+```
+
+Plan/status read the actual installed F reader through the API's reader profile;
+a successful JSON read does not imply launch readiness. Missing fields, truncated
+or unavailable repertoire evidence, unknown process inventory, frozen/image
+mismatch and competing collectors block enable. Unused providers may remain
+unconfigured. Configured providers need explicit recurrence, a 60-second to one-day
+seed, smaller explicit overlap and explicit reconciliation cadence. The prepared
+overlay preserves 256 MiB/96 PIDs and leaves CPU unrestricted under Task A policy.
+Effective limits are checked on existing collectors. Host processes and containers
+with a competing runner prevent activation; unrelated legacy workers are reported
+and preserved. Existing accepted Study obligations keep their own lifecycle.
+
+Enable uses the frozen Compose graph with `--no-build --no-deps --pull never` and
+starts only `game-feedback-worker`. Its real `--follow` scheduler enqueues initial
+forward/reconciliation work. Disable stops only an identity-verified collector;
+checkpoint, source, capture and pending-command tables are retained. Neither
+operation drains Study delivery. Concurrent managed maintenance shares the target
+lock. Independent unmanaged launchers must respect that ownership; this wrapper
+cannot fence an arbitrary external process created after its inspection.
+
+Implemented source, proposed/unmerged integration; installed isolation remains
+unverified until the exact release is inspected and accepted.
+
+```mermaid
+flowchart LR
+    Operator[Explicit plan/status/enable/disable] --> Wrapper[game-review-collection.mjs]
+    Wrapper --> Registration[Existing target and frozen deployment receipt]
+    Wrapper --> Reader[F read-only installed evidence]
+    Wrapper --> Inventory[Image, resource and competing-process inspection]
+    Wrapper --> Lock[Existing managed target lock]
+    Lock --> Compose[Only managed Games service start/stop]
+    Compose --> Collector[Packaged CLI: collect-only and follow]
+    Collector --> Games[(Games source, captures, checkpoint, pending outbox)]
+    Study[Ordinary Study and accepted obligations]
+    Collector -. no delivery or lifecycle call .-> Study
+```
+
+Canonical behavioral/store boundaries remain in the
+[provider-worker README](../docs/product-v02/game-sync/provider-worker/README.md),
+[Games feedback README](../backend/app/games/feedback/README.md) and
+[read projection README](../database/tempo_legacy_database/adapters/games/product_review/README.md).
+The regular runner suite owns switch refusal/idempotency/locking proof. The
+`games-collection-release` shared suite runs the pinned packaged candidate against
+the existing disposable PostgreSQL fixture, controlled real HTTP, original role
+provisioning and ordinary Study owner. Supply `TEMPO_COLLECTION_TEST_IMAGE` as the
+immutable image ID with this source commit's OCI revision label. No production
+source is mounted into that image; only synthetic qualification inputs are mounted.

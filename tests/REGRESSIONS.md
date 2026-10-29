@@ -5622,3 +5622,127 @@ Owning suite: `backend/tests/test_product_game_review_commands_postgres.py`.
 - `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
 
 Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fakes. The one selected native case reuses the existing owned disposable PostgreSQL fixture for stream/CAS/rollback/alias reads; no Study settlement suite is selected.
+
+
+## Task G integrated collection release
+
+Shared Settings registration belongs to the existing frontend lane (#603).
+`tests/runner/game-review-collection.test.mjs` owns explicit apply, read-only
+inspection, structured readiness, identity/resource checks, competing-runner
+refusal, target-lock release and idempotent start/stop.
+
+Owning suite `backend/tests/test_cpu_resource_launchers.py`:
+
+- `test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_and_ownership`
+
+Owning suite `backend/tests/test_game_collection_status.py`:
+
+- `test_retained_own_miss_does_not_require_card_or_chronology`
+- `test_boundary_kinds_never_become_own_misses`
+- `test_first_departure_is_per_repertoire_and_survives_reentry`
+- `test_unavailable_authored_snapshot_is_not_an_own_miss`
+- `test_correct_physical_mapping_ambiguity_is_not_a_departure`
+- `test_native_reader_permissions_and_fixture_rows_unchanged`
+- `test_duplicate_captures_do_not_inflate_unique_games_or_misses`
+- `test_public_command_reads_both_provider_namespace_spellings`
+- `test_pending_job_without_configuration_is_visible`
+- `test_saved_configuration_and_selected_readiness_preserve_explicit_null_policy`
+- `test_empty_findings_and_unavailable_snapshot_stay_unresolved`
+- `test_missing_receipt_is_undelivered_without_collection_failure`
+- `test_control_of_original_encounter_reads_encounter_receipt`
+- `test_unavailable_reads_do_not_fabricate_zero_counts`
+- `test_public_redaction_and_output_bound`
+- `test_reader_import_and_execution_have_no_command_or_provider_capabilities`
+- `test_missing_reader_never_uses_writer_or_dispatches`
+
+Owning suite `backend/tests/test_legacy_bridge_qualification_plan.py`:
+
+- `test_ordinary_qualification_cpu_is_unrestricted_without_daemon_or_subprocess`
+- `test_explicit_qualification_caps_partition_exactly_and_preserve_helper_safeguards`
+
+Owning suite `backend/tests/test_product_collection_release.py`:
+
+- `test_packaged_collection_retains_deviations_reconciles_and_never_delivers`
+
+Owning suite `backend/tests/test_product_continuous_sync.py`:
+
+- `test_manual_backfill_never_resets_forward_progress_and_reconciliation_is_independent`
+- `test_reconciliation_restart_freezes_scope_cursor_and_waits_from_completion`
+- `test_reconciliation_requires_explicit_integer_cadence`
+- `test_reconciliation_default_remains_disabled_and_stale_enqueue_retries_next_pass`
+- `test_dense_two_month_archive_exact_ids_with_record_position_and_byte_pages`
+- `test_archive_mutation_replays_month_without_mutating_record_provenance_and_v1_resumes`
+- `test_provider_429_retains_original_cursor_and_retry_after`
+- `test_lichess_budget_split_keeps_unconsumed_timestamp_ids`
+- `test_reconciliation_finds_late_provider_visibility_after_forward_overlap_exactly_once`
+- `test_provider_unfinished_exclusion_is_distinct_from_malformed_and_resource_failure`
+- `test_conflicting_archive_ids_are_detected_before_first_slice`
+- `test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_restart`
+- `test_actual_adapter_result_checkpoint_and_later_reconciliation`
+
+Owning suite `backend/tests/test_product_encounter_projection.py`:
+
+- `test_exact_authored_difference_without_lapse_proof_still_projects`
+- `test_repeated_projection_findings_emit_one_logical_occurrence`
+- `test_projector_does_not_filter_away_conflicting_target_identity`
+- `test_projector_keeps_conflicting_same_logical_key_as_findings_without_command`
+
+Owning suite `backend/tests/test_product_feedback_jobs.py`:
+
+- `test_capture_selects_every_same_color_snapshot`
+- `test_unavailable_comparison_retains_valid_source_and_advances_acquisition`
+- `test_unavailable_recomparison_does_not_hold_original_lapse`
+- `test_known_provider_exclusions_advance_checkpoint_with_evidence`
+- `test_unsafe_or_wrong_provider_rejection_does_not_complete_acquisition`
+- `test_capture_time_only_rescan_reuses_comparison_capture_and_original_delivery`
+- `test_material_snapshot_change_preserves_comparison_history_without_duplicate_effect`
+- `test_comparer_returning_wrong_source_is_an_integrity_quarantine`
+- `test_real_comparer_captures_both_colors_with_both_repertoires_selected`
+- `test_partial_comparison_failure_keeps_successful_repertoire_findings`
+- `test_no_compatible_snapshot_is_unresolved_instead_of_all_correct`
+- `test_incomplete_page_with_repeated_continuation_keeps_old_checkpoint`
+- `test_mutated_conflicting_page_identity_never_commits_a_false_checkpoint`
+- `test_snapshot_scope_corruption_is_quarantined_without_losing_acquired_game`
+- `test_comparison_identity_ignores_unordered_snapshot_row_order`
+- `test_source_correction_during_comparison_outage_still_fences_original`
+
+Owning suite `backend/tests/test_product_feedback_jobs_postgres.py`:
+
+- `test_collect_only_current_worker_persists_evidence_without_study_effects`
+
+Owning suite `backend/tests/test_product_game_findings.py`:
+
+- `test_correct_early_learning_state_does_not_hide_later_authored_difference`
+- `test_multiple_repertoires_keep_independent_departures_and_do_not_choose_a_target`
+- `test_missing_card_retains_exact_authored_difference_without_a_ready_target`
+- `test_incomplete_authored_snapshot_does_not_claim_exact_membership`
+- `test_ambiguous_card_mapping_keeps_supported_authored_difference`
+- `test_non_lapse_finding_preserves_actual_positive_introduction_fact`
+- `test_authored_difference_does_not_choose_a_disagreeing_global_card_mapping`
+- `test_correct_authored_move_with_ambiguous_target_still_reaches_later_difference`
+
+Owning suite `backend/tests/test_product_game_review_commands.py`:
+
+- `test_ongoing_seed_width_boundaries_save_without_provider_work`
+- `test_incompatible_ongoing_seed_rejected_at_command_write_before_store`
+- `test_wide_manual_history_preserves_exact_times_at_command_write`
+- `test_old_incompatible_seed_remains_readable_and_can_be_corrected`
+- `test_existing_configuration_contract_rejects_invalid_explicit_choices_without_write`
+- `test_chesscom_casual_only_remains_unsupported_at_write`
+
+Owning suite `backend/tests/test_product_game_review_commands_postgres.py`:
+
+- `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
+
+Owning suite `backend/tests/test_product_game_sync_integration.py`:
+
+- `test_collect_only_import_idle_and_restart_preserve_original_pending_commands`
+- `test_collect_only_does_not_touch_preexisting_delivery_retry_state`
+- `test_collect_only_is_the_only_mode_allowing_an_absent_receiver`
+- `test_collect_only_current_root_omits_receiver_and_forwards_supplied_reconciliation`
+- `test_collect_only_current_roots_still_require_receiver_when_delivery_enabled`
+- `test_collect_only_cli_preserves_explicit_worker_options`
+- `test_collect_only_cli_rejects_invalid_reconciliation_before_connections`
+- `test_collect_only_preview_retains_reader_profile_and_starts_no_worker`
+- `test_collect_only_source_import_and_help_are_inert`
+- `test_preview_agrees_with_continuous_after_interleaved_manual_request`

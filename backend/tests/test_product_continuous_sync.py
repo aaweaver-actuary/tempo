@@ -520,3 +520,48 @@ def test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_
         h.runner.run_once()
     assert all(j.status == "complete" and j.window_complete for j in h.store.jobs.values())
     assert len(h.store.sources) == len(h.store.deliveries) == 410
+
+
+@pytest.mark.parametrize("provider", ["lichess", "chesscom"])
+@pytest.mark.parametrize("result", ["*", "unsupported", None])
+def test_actual_adapter_result_checkpoint_and_later_reconciliation(provider, result):
+    """Only explicit unfinished results advance; reconciliation sees completion."""
+    import json
+    import httpx
+    from test_product_feedback_jobs import harness
+    from app.product_composition.game_sync import AcquisitionPolicy, ProviderAcquisition, WorkflowAcquisition, WorkflowNormalizer, WorkflowComparer, sync_job
+    from app.games.feedback.jobs import FeedbackRunner
+    from app.contracts.product_v02.games import GameWindow
+    window = GameWindow(start_at="2026-10-01T00:00:00Z", end_at="2026-11-01T00:00:00Z", precision="second")
+    text = PGN.replace('[Result "1-0"]', '' if result is None else f'[Result "{result}"]')
+    # Do not let the movetext supply a missing header's finished result.
+    text = text.replace('Nc6 1-0', 'Nc6 *')
+    current = [text]
+    def handle(request):
+        if provider == "chesscom":
+            return archive_http({"10": [archive_row("resultcase", pgn=current[0])]})(request)
+        return httpx.Response(200, content=json.dumps(dict(id="resultcase", createdAt=(START+100)*1000,
+            rated=True, speed="rapid", pgn=current[0])) + "\n",
+            headers={"Content-Type": "application/x-ndjson"})
+    policy = AcquisitionPolicy(provider=provider, speeds=("rapid",), rated=True, source_revision=1)
+    h = harness()
+    h.coordinator.normalizer = WorkflowNormalizer()
+    h.coordinator.comparer = WorkflowComparer()
+    h.coordinator.providers[provider] = WorkflowAcquisition(ProviderAcquisition(policy,
+        transport_factory=lambda: httpx.MockTransport(handle)), now=h.clock.now)
+    job = sync_job(job_id="following:result", workspace_id="fixture", account="ExplicitAccount",
+        window=window, repertoire_ids=("white",), policy=policy)
+    h.store.enqueue(job)
+    runner = FeedbackRunner(h.coordinator, delivery_enabled=False)
+    assert runner.run_once() == "page"
+    observed = h.store.load_job(job.job_id)
+    assert observed.window_complete is (result == "*")
+    assert observed.status == ("complete" if result == "*" else "quarantined")
+    assert bool(observed.last_checkpoint_at) is (result == "*")
+    assert observed.rejections[0].reason == ("unfinished_game" if result == "*" else
+        "invalid_pgn" if provider == "lichess" else "invalid_pgn_or_player")
+    current[0] = PGN
+    h.store.enqueue(job.model_copy(update={"job_id": "reconciling:result"}))
+    assert runner.run_once() == "page"
+    assert h.store.load_job("reconciling:result").window_complete
+    assert len(h.store.sources) == 1

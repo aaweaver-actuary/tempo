@@ -240,7 +240,7 @@ def test_collect_only_preview_retains_reader_profile_and_starts_no_worker(monkey
         return object()
     monkeypatch.setattr(current, "DedicatedGamesConnections", connections)
     monkeypatch.setattr(current, "PostgresReviewStore", lambda connections: SimpleNamespace(
-        configuration=lambda workspace, provider: None))
+        configuration=lambda workspace, provider: None, continuous_state=lambda workspace, now: ()))
     monkeypatch.setattr(current, "current_provider_worker",
         lambda **kwargs: pytest.fail("preview constructed worker"))
     current.main()
@@ -731,3 +731,35 @@ def test_native_current_study_bridge_fences_committed_game_and_uses_owner_factor
         database.execute_native("UPDATE product_feedback_sources SET payload=jsonb_set(payload,'{quarantined}','true'::jsonb) WHERE source_key=%s", (key,))
     with pytest.raises(ReviewUnavailable, match="committed_game_source_changed_or_unproved"):
         bridge.accept_lapse(lapse)
+
+
+def test_preview_agrees_with_continuous_after_interleaved_manual_request(monkeypatch, capsys):
+    import sys
+    from app.product_composition import game_sync_current as current
+    from app.product_composition.game_review import configured_job
+    from test_product_continuous_sync import ScheduleStore, configuration, finish, START
+    from app.games.feedback.continuous import ContinuousSync, ForwardWindow
+    from app.games.feedback.ports import JobState
+    config = configuration()
+    store = ScheduleStore((config,))
+    now = START + 5000
+    scheduler = ContinuousSync(workspace="legacy", store=store, policy=ForwardWindow(300),
+        build_job=configured_job, now=lambda: now)
+    assert scheduler.enqueue_due()
+    finish(store, store.enqueued[0], now)
+    manual = configured_job(config, "manual:latest")
+    store.jobs[manual.job_id] = JobState(spec=manual, status="quarantined")
+    store.configuration = lambda workspace, provider: config if provider == "lichess" else None
+    store.last_job = lambda *args: pytest.fail("preview read arbitrary latest request")
+    now += 1000
+    monkeypatch.setenv("TEMPO_DATABASE_READ_URL", "reader")
+    monkeypatch.setattr(sys, "argv", ["worker", "--preview", "--follow", "--overlap-seconds", "300"])
+    monkeypatch.setattr(current, "DedicatedGamesConnections", lambda *args, **kwargs: object())
+    monkeypatch.setattr(current, "PostgresReviewStore", lambda connections: store)
+    monkeypatch.setattr(current, "SystemClock", lambda: SimpleNamespace(now=lambda: now))
+    current.main()
+    preview = json.loads(capsys.readouterr().out)["providers"][0]
+    assert scheduler.enqueue_due()
+    assert preview["next_window"] == store.enqueued[-1].window.model_dump(mode="json")
+    assert preview["previous"]["spec"]["job_id"].startswith("following:")
+    assert store.jobs[manual.job_id].status == "quarantined"

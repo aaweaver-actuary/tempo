@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// Optional Games lifecycle over the existing registered, frozen managed release.
+import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { acquireTargetLock, targetKey, validateTarget } from './tempo-deployment.mjs';
+import { configurationFingerprint } from './tempo-runtime.mjs';
+
+export const serviceName = 'game-feedback-worker';
+const owner = 'managed-game-collection';
+const textCommand = container => (container.Config?.Cmd ?? []).join(' ');
+const labels = container => container.Config?.Labels ?? {};
+const active = container => container.State?.Running || container.State?.Restarting;
+const collector = command => /(?:game_sync_current|game_worker)(?:\s|$)/.test(command);
+const own = (container, target) => labels(container)['com.docker.compose.project'] === target.project &&
+  labels(container)['com.docker.compose.service'] === serviceName &&
+  labels(container)['tempo.collection.owner'] === owner &&
+  labels(container)['tempo.collection.mode'] === 'collect-only';
+
+export function collectionBlockers({ candidate, release, service, image, report, preview,
+  containers, hostCommands, target, fingerprint }) {
+  const blockers = [];
+  if (!/^[a-f0-9]{40}$/.test(candidate ?? '') || release.revision !== candidate) blockers.push('installed_candidate_mismatch');
+  if (release.configFingerprint !== fingerprint) blockers.push('frozen_configuration_mismatch');
+  if (!service || !release.images?.[serviceName]) blockers.push('collector_not_in_frozen_release');
+  if (image?.Id !== release.images?.[serviceName] || image?.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate)
+    blockers.push('collector_image_unverified');
+  const command = service?.command ?? [];
+  if (!Array.isArray(command) || !command.includes('--collect-only') || !command.includes('--follow') ||
+      !command.includes('app.product_composition.game_sync_current') ||
+      service?.environment?.TEMPO_PRODUCT_GAME_SYNC_ENABLED !== '1') blockers.push('collection_only_command_required');
+  for (const flag of ['--overlap-seconds', '--reconcile-interval-seconds']) {
+    const value = Number(command[command.indexOf(flag) + 1]);
+    if (!command.includes(flag) || !Number.isInteger(value) || (flag === '--overlap-seconds' ? value < 0 || value > 3600 : value < 60))
+      blockers.push('explicit_' + flag.slice(2).replaceAll('-', '_') + '_required');
+  }
+  if (Number(service?.mem_limit) !== 256 * 1024 * 1024 || Number(service?.pids_limit) !== 96 ||
+      Number(service?.cpus ?? 0) !== 0 || service?.volumes?.length || service?.ports?.length ||
+      service?.labels?.['tempo.collection.owner'] !== owner || service?.labels?.['tempo.collection.mode'] !== 'collect-only')
+    blockers.push('collector_resource_or_ownership_mismatch');
+  if (hostCommands === null) blockers.push('host_process_inventory_unavailable');
+  else if (hostCommands.some(collector)) blockers.push('host_collector_conflict');
+  const peers = containers.filter(c => collector(textCommand(c)) || labels(c)['com.docker.compose.service'] === serviceName);
+  if (peers.some(c => !own(c, target) || c.Image !== release.images?.[serviceName] || !textCommand(c).includes('--collect-only') ||
+      Number(c.HostConfig?.Memory) !== 256 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
+      [c.HostConfig?.NanoCpus, c.HostConfig?.CpuQuota].some(value => Number(value ?? 0) > 0)) || peers.length > 1)
+    blockers.push('competing_or_unverified_collector');
+  if (!report || report.read_only !== true || report.schema_version !== 1 ||
+      ['identity', 'providers', 'collection', 'delivery'].some(section => report[section]?.availability !== 'available'))
+    blockers.push('reader_evidence_unavailable');
+  const providers = report?.providers?.items ?? [];
+  const configured = providers.filter(p => p.configured);
+  if (report?.providers?.availability === 'available' && !configured.length) blockers.push('collection_configuration_absent');
+  for (const p of providers) {
+    if (p.configuration_ambiguous || p.current_jobs?.length && !p.configured) blockers.push(p.provider + ':ambiguous_or_unconfigured_pending_work');
+    if (!p.configured) continue; // An unused provider need not be enabled.
+    if (Object.values(p.required_inputs ?? {}).some(value => value !== true) || !Object.keys(p.required_inputs ?? {}).length)
+      blockers.push(p.provider + ':required_inputs_absent');
+    if (!p.configuration?.interval_seconds) blockers.push(p.provider + ':explicit_recurrence_required');
+    if (!p.repertoire_readiness?.length || p.repertoires_truncated ||
+        p.repertoire_readiness.some(r => r.availability !== 'available' || !['white', 'black'].includes(r.learner_color)))
+      blockers.push(p.provider + ':repertoire_readiness_unresolved');
+    const scope = preview?.providers?.find(row => row.provider === p.provider);
+    if (!scope?.configured || !scope.configuration) blockers.push(p.provider + ':forward_preview_unavailable');
+    else {
+      const width = (Date.parse(scope.configuration.window.end_at) - Date.parse(scope.configuration.window.start_at)) / 1000;
+      const overlap = Number(command[command.indexOf('--overlap-seconds') + 1]);
+      if (!Number.isFinite(width) || width < 60 || width > 86400 || overlap >= width) blockers.push(p.provider + ':invalid_forward_seed');
+    }
+  }
+  return [...new Set(blockers)];
+}
+
+export async function operateCollection(operation, { apply = false, inspect, lock, start, stop }) {
+  if (!['plan', 'status', 'enable', 'disable'].includes(operation)) throw new Error('Expected plan, status, enable or disable');
+  if (['enable', 'disable'].includes(operation) && !apply) throw new Error(operation + ' requires explicit --apply');
+  const releaseLock = ['enable', 'disable'].includes(operation) ? lock() : () => {};
+  try {
+    const state = await inspect();
+    if (operation === 'enable') {
+      if (state.blockers.length) throw new Error('Collection blocked: ' + state.blockers.join(', '));
+      if (!state.running) await start(state);
+    } else if (operation === 'disable') {
+      if (!state.stopSafe) throw new Error('Collector identity/ownership unverified; no service stopped');
+      if (state.running) await stop(state);
+    }
+    return { ...state.output, operation, changed: operation === 'enable' ? !state.running : operation === 'disable' && state.running };
+  } finally { releaseLock(); }
+}
+
+function command(program, args) {
+  const result = spawnSync(program, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
+  if (result.error || result.status !== 0) throw new Error(program + ' inspection/action failed (' + (result.status ?? result.error?.code) + ')');
+  return result.stdout;
+}
+const jsonFile = path => JSON.parse(readFileSync(path, 'utf8'));
+
+export async function main(argv = process.argv.slice(2)) {
+  const operation = argv.shift();
+  let configPath = join(homedir(), '.config/tempo/config.json'), candidate;
+  let apply = false;
+  while (argv.length) {
+    const option = argv.shift();
+    if (option === '--apply') apply = true;
+    else if (option === '--candidate') candidate = argv.shift();
+    else if (option === '--config') configPath = argv.shift();
+    else throw new Error('Unknown option: ' + option);
+  }
+  if (!candidate || !/^[a-f0-9]{40}$/.test(candidate)) throw new Error('--candidate requires the exact qualified commit');
+  const target = jsonFile(configPath);
+  if (target.version !== 1) throw new Error('Unsupported managed registration; preserve the installed authority');
+  const stateDirectory = join(process.env.TEMPO_CLI_STATE_DIR ?? join(homedir(), '.local/share/tempo'), targetKey(target));
+  const receiptPath = join(stateDirectory, 'deployment.json');
+  const docker = args => command('docker', ['--context', target.context, ...args]);
+  let compose, snapshot;
+  const inspect = async () => {
+    const registrationText = readFileSync(configPath, 'utf8'), receiptText = readFileSync(receiptPath, 'utf8');
+    const release = JSON.parse(receiptText);
+    if (docker(['info', '--format', '{{.ID}}']).trim() !== target.daemonId) throw new Error('Registered Docker daemon identity changed');
+    if (!release.composeFiles?.length || !release.imageOverride) throw new Error('Frozen managed release receipt required');
+    const prefix = ['compose', '--project-directory', target.root, '--project-name', target.project,
+      '--env-file', target.envFile, ...release.composeFiles.flatMap(file => ['-f', file]), '-f', release.imageOverride, '--profile', 'games-feedback'];
+    compose = args => docker([...prefix, ...args]);
+    const configuration = JSON.parse(compose(['config', '--format', 'json']));
+    validateTarget(configuration, target);
+    const service = configuration.services[serviceName];
+    const ids = docker(['ps', '-aq']).trim().split(/\s+/).filter(Boolean);
+    const containers = ids.length ? JSON.parse(docker(['inspect', ...ids])) : [];
+    const api = containers.filter(c => active(c) && labels(c)['com.docker.compose.project'] === target.project &&
+      labels(c)['com.docker.compose.service'] === 'api');
+    let report = null, preview = null, image = null, hostCommands = null;
+    if (release.images?.[serviceName]) image = JSON.parse(docker(['image', 'inspect', release.images[serviceName]]))[0];
+    if (api.length === 1 && api[0].Image === release.images?.api) {
+      try { report = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status', '--workspace', 'legacy', '--limit', '20'])); } catch { /* Explicit unavailable evidence below. */ }
+      if (service?.command?.includes('--overlap-seconds')) {
+        try { preview = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_sync_current', '--preview', '--follow', '--overlap-seconds', service.command[service.command.indexOf('--overlap-seconds') + 1]])); } catch { /* Block enable. */ }
+      }
+    }
+    try { hostCommands = command('ps', ['-axo', 'command=']).split('\n').filter(line => !line.includes('game-review-collection.mjs')); } catch { /* Fail closed for enable. */ }
+    const owned = containers.filter(c => labels(c)['com.docker.compose.project'] === target.project && labels(c)['com.docker.compose.service'] === serviceName);
+    const running = owned.some(active);
+    const stopSafe = owned.every(c => own(c, target) && c.Image === release.images?.[serviceName] && textCommand(c).includes('--collect-only'));
+    const blockers = collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
+      fingerprint: configurationFingerprint(configuration) });
+    if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');
+    else {
+      const apiImage = JSON.parse(docker(['image', 'inspect', api[0].Image]))[0];
+      if (apiImage.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate) blockers.push('installed_api_revision_mismatch');
+    }
+    snapshot = { registrationText, receiptText };
+    return { blockers, running, stopSafe, output: { candidate, installed_revision: release.revision, schema: release.schema,
+      collector_image: release.images?.[serviceName] ?? null, mode: 'collect-only', running, activation_ready: !blockers.length,
+      blockers, evidence: report, preview, resources: service ? { cpus: service.cpus ?? null, memory: service.mem_limit, pids: service.pids_limit } : null,
+      retained_legacy_producers: containers.filter(c => active(c) && /background-worker|foreground-worker|background-scheduler/.test(labels(c)['com.docker.compose.service'] ?? '')).map(c => ({ id: c.Id, image: c.Image, service: labels(c)['com.docker.compose.service'] })) } };
+  };
+  const unchanged = () => {
+    if (readFileSync(configPath, 'utf8') !== snapshot.registrationText || readFileSync(receiptPath, 'utf8') !== snapshot.receiptText)
+      throw new Error('Managed registration/release changed during inspection');
+  };
+  const output = await operateCollection(operation, { apply, inspect, lock: () => acquireTargetLock(stateDirectory),
+    start: async () => { unchanged(); compose(['up', '-d', '--no-build', '--no-deps', '--pull', 'never', '--wait', '--wait-timeout', '30', serviceName]);
+      const after = await inspect(); if (!after.running || after.blockers.length) throw new Error('Collector post-start verification failed; inspect status before retry'); },
+    stop: async () => { unchanged(); compose(['stop', '--timeout', '30', serviceName]);
+      if ((await inspect()).running) throw new Error('Collector still running after stop'); } });
+  console.log(JSON.stringify(output));
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => { console.error(error.message); process.exitCode = 2; });
+}

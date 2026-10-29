@@ -287,7 +287,7 @@ async def fetch_chesscom_page(
                                            played_at=played_at.isoformat(), speed=speed,
                                            rated=raw["rated"], game_url=raw.get("url", ""))
                 except RejectedGame as error:
-                    reason = ("unfinished_game" if str(error) == "game is unfinished or has an unsupported result"
+                    reason = ("unfinished_game" if str(error) == "game is unfinished"
                               else "invalid_pgn_or_player")
                     raise RejectedGame(reason) from None
                 digest = hashlib.sha256(pgn.encode()).hexdigest()

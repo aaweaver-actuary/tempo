@@ -525,3 +525,15 @@ result; later completion is discovered by reconciliation. Malformed PGNs,
 account mismatch and conflicting identities remain unresolved. **B's baseline
 coordinator quarantines every rejection**; its compatible exclusion-classification
 checkpoint is required before claiming these exclusion pages drain in production.
+
+
+## Integrated collection checkpoint
+
+`unfinished_game` is a safe provider exclusion only for an explicit unfinished
+PGN result. Missing/unsupported results and malformed PGN keep unsafe-boundary
+checkpoint protection. The normalizer distinguishes these errors before either
+adapter emits its reason. A later reconciliation can capture the finished game.
+Preview reads the same forward stream as ContinuousSync, independently of the
+latest manual/reconciliation request. No receiver exists in collection-only mode.
+See the [operator boundary](../../../../scripts/README.md#games-collection-operator)
+for frozen installation identity and lifecycle ownership.

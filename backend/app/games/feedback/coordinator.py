@@ -22,9 +22,9 @@ def stable_id(*parts: object) -> str:
 
 # Only explicit exclusions emitted by the current provider adapters are safe.
 _SAFE_REJECTIONS = {
-    "lichess": frozenset({"filtered_speed", "filtered_rated", "unsupported_variant", "duplicate_source_id"}),
+    "lichess": frozenset({"filtered_speed", "filtered_rated", "unsupported_variant", "duplicate_source_id", "unfinished_game"}),
     "chesscom": frozenset({"outside_window", "time_control_filtered", "rated_filtered",
-                           "unsupported_variant", "duplicate_source_id"}),
+                           "unsupported_variant", "duplicate_source_id", "unfinished_game"}),
 }
 _FACTUAL_NON_LAPSE_DIAGNOSTICS = frozenset({
     "introduction_evidence_unavailable", "game_occurrence_time_not_exact",
@@ -140,7 +140,7 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
 class Coordinator:
     def __init__(self, *, providers: Mapping[str, Acquisition], normalizer: Normalizer,
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
-                 learning: LearningFeedbackPort | EncounterFeedbackPort, clock: Clock,
+                 learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
