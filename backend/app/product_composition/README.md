@@ -3,11 +3,13 @@
 ## Durable Game Review commands and Settings recovery (#590)
 
 The goal is to compare retained/provider games with the user's repertoire and
-prioritize an existing Study card when its repertoire move was missed. These
-commands durably request that work; Study owns the priority effect and ordinary
-card consumption. New-card introduction remains a distinct existing disposition,
-and its evidence does not establish existing-card miss priority. Engines,
-coaching and explanations are outside this slice.
+move the matching card forward in Study when its repertoire move was missed.
+That miss establishes importance whether the card was learned, needs introduction,
+or has unknown introduction chronology. The label and could-have-known history
+are not reinforcement prerequisites. Preserve actual timestamps and returned
+dispositions; use the existing Study-owned priority and ordinary consumption
+behavior. These commands durably request that work. Engines, coaching and
+explanations are outside this slice.
 
 The reader-profile API dispatches configure, manual sync and legacy feedback
 retry through the existing command gateway. `game_review_commands.py` registers
