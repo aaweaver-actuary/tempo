@@ -205,3 +205,8 @@ scope, original-recovery, due-admission and resolution/current-revision checks.
 `backend/tests/test_study_attempt_guard.py` preserves R11 precedence and the
 absent-schema path. Existing donor transaction/replay tests remain available;
 unchanged broad R11 and Games suites are not prerequisites for this repair.
+
+C1 integration registers this exact owner DDL in
+[migration054](../../../../database/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql)
+after R11/schema053. The source readiness bump and normal HTTP/browser composition
+belong to #501; this is not an installed-schema claim.

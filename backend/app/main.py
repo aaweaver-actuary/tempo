@@ -226,6 +226,9 @@ from .product_composition.game_history_current import current_game_history_route
 app.include_router(current_game_history_router())
 from .product_composition.game_review import current_game_review_router
 app.include_router(current_game_review_router())
+from .product_composition.repertoire_runtime import current_repertoire_router, is_repertoire_command_path
+if postgres_store.configured():
+    app.include_router(current_repertoire_router())
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -653,7 +656,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
             and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
             and request.method in {"POST", "PUT"})
-        if not read_only_post and not any((prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
+        product_repertoire_command = is_repertoire_command_path(request.method, path_parts)
+        if not read_only_post and not any((product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -718,6 +722,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
         or request.url.path.startswith("/api/product/game-history/")
         or request.url.path.startswith("/api/product/game-review/")
+        or request.url.path.startswith("/api/product/repertoires/")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",

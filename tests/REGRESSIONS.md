@@ -5469,3 +5469,31 @@ and rollback after actual graph enqueue. Its broker/Redis transport is substitut
 it does not qualify a running worker stack or a genuine private PGN. Eventual
 fixture-authorized command:
 `make python-file FILE=backend/tests/test_explicit_pgn_import_postgres.py`.
+
+## C repertoire audit composition (#501)
+
+`backend/tests/test_product_repertoire_integration.py` owns the C-only source
+boundary: actual #492 manual preview/approval/replay and unchanged unrelated
+routes; route-local eligibility/stale preview; real in-process owner HTTP and
+read projection; exact borrowed command transaction/stable retry identity; and
+release of the current snapshot read connection. Semantic fixture stores are
+explicitly fake here; this file does not establish normal Study suspension.
+
+- `test_c_real_owner_manual_preview_approval_and_replay_preserve_unrelated_route`
+- `test_c_conflict_eligibility_is_route_local_and_stale_decision_rejected`
+- `test_c_unregistered_router_uses_real_owner_http_and_exact_approval`
+- `test_c_command_transport_reuses_exact_transaction_and_stable_retry_identity`
+- `test_c_current_snapshot_read_releases_borrowed_reader_before_returning`
+
+`tests/unit/product-repertoire-integration.test.ts` owns the concrete #500 client
+mapping, exact preview/decision payload and retry correlation, safe optional
+failure, 202 remaining pending, cancellation/scope rejection, and retention of
+the existing authoring view while audit enforcement requires an explicit command.
+
+`tests/browser/product-repertoire-review.spec.ts` owns the normal-product case
+`C exact conflict is enforced and manually resolved while unrelated issued Study and history survive`.
+It uses normal imports/queue/approval/UI, a verified disposable-only legacy-source
+conflict fixture, stale-decision rejection and reload. Its fixture never records
+a Study review or applies a fake learning effect. Source collection/typechecking
+is not a browser/PostgreSQL pass; actual C acceptance remains pending until the
+real current-owner callbacks and root registration are present.

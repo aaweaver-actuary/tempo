@@ -203,3 +203,80 @@ Never drop migration051, reset data or fabricate a live review. Stopping an
 optional producer must leave normal Study usable. Live installation, fallback
 smoke and actual-data correspondence are not claimed by this source checkpoint.
 The focused browser pass qualifies the synthetic local product boundary only.
+
+## C repertoire conflict audit — #501
+
+C is an independently reviewable continuation through the retained Repertoire
+workspace. The [mount](../../../app/features/product-api/RepertoireAuditMount.tsx)
+keeps its supplied existing library available and lazily opens #500 after an
+explicit repertoire choice. It does not query an optional provider or engine.
+[The client](../../../app/features/product-api/repertoire-review-api.ts) preserves
+shared proposals/receipts; a 202 is pending, never approval success. Its session
+retains exact retry identity across tab changes.
+
+[repertoire.py](repertoire.py) adapts #492's exact conflict report and complete
+manual alternatives to #500. GETs and choice generation are inert. Actual Study
+block facts must come from the current Study owner under the exact source fence;
+without those facts the UI says unknown. The explicit audit POST requires the
+owning scoped block/suspend/restore operation and fails unavailable when absent.
+No detector success is described as a persisted block.
+
+[repertoire_commands.py](repertoire_commands.py) supplies `CurrentSnapshots`,
+`DispatchedChanges`, `create_current_repertoire_http` and explicit command
+registration. Snapshot reads release the borrowed reader before returning.
+Writes use the existing durable foreground gateway and its borrowed writer
+transaction; #492's injected current changes factory alone publishes content and
+approval receipts. Stable payload-bound command identities preserve uncertain
+acknowledgments across retry/remount. No SQL, second writer, conflict decision,
+queue policy or automatic job is owned by composition.
+
+[repertoire_runtime.py](repertoire_runtime.py) binds #492 `09548df7` retained
+changes and complete current-card definitions to #483's sole current snapshot
+reader, with the existing read connection and durable dispatch resources. The
+display rereads its source fence after the card facts; changed source refuses the
+display. Every proposed physical-card update comes from Repertoire's policy.
+
+[repertoire_study.py](repertoire_study.py) injects the actual shared reader/index
+and #492 eligibility into #487's `SnapshotConflictAuthority` and
+`current_study_conflicts`. Commands contain at most 16 exact route/ply/card/revision
+targets. Unmapped targets remain pending. Persisted block reads require the
+displayed source fence to remain current. Accepted content and current Study
+reconciliation enlist in the same borrowed transaction; failure propagates to
+the gateway rollback. Missing reconciliation refuses acceptance with 503.
+
+```mermaid
+flowchart LR
+  Library["Retained Repertoire library"] --> Mount["Optional C audit tab"]
+  Mount --> View["#500 RepertoireReviewView"]
+  View --> HTTP["#501 C read / command router"]
+  HTTP --> Read["CurrentSnapshots: one released read"]
+  Read --> Snapshot["#483 current repertoire snapshot / #492 card facts"]
+  HTTP --> Gateway["Existing foreground command gateway"]
+  Gateway --> Binding["#501 borrowed transaction bindings"]
+  Binding --> Changes["#492 current changes / approved publisher"]
+  Binding --> Blocks["#487 Study conflict command / affected attempt suspension"]
+  Blocks --> Authority["Injected current Repertoire index / eligibility"]
+  Blocks --> Local["Study-owned persisted eligibility"]
+  Study["ordinary Study"] --> Local
+  Changes --> Content["Repertoire source / preview / approval evidence"]
+```
+
+Solid edges describe implemented C1 source. The current main HTTP router, durable
+foreground command worker and retained Repertoire mount are registered here.
+Migration054 registers only the existing approval and conflict owner DDL after
+R11/schema053. #560's Study guard and due restoration/admission projections keep
+holds local to Study; the Study path calls no optional producer. Existing
+repertoire moves require no engine reevaluation. Content publication, the approval
+receipt and current Study reconciliation enlist in the same borrowed transaction.
+
+C1 is existing-content audit/resolution; pending imports (C2), introductions,
+engine-backed repairs and Maia are excluded. Full A05 requires C2 as well. The
+focused source commands remain `make python-file
+FILE=backend/tests/test_product_repertoire_integration.py` and `make unit-file
+FILE=tests/unit/product-repertoire-integration.test.ts`. The assembled selection
+is `make view VIEW="C exact conflict is enforced"`, using the normal disposable
+PostgreSQL browser runner. Its task-only legacy fixture verifies the database
+marker and exact project/service identity, then seeds through the write-owning
+foreground worker; API readback retains reader credentials. Actual browser
+acceptance is reported in the current PR at its tested revision. No live data,
+settings, service operation, installation, deployment or merge occurs here.

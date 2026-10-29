@@ -25,8 +25,9 @@ ROOT=Path(__file__).resolve().parents[2]
 
 @pytest.fixture(scope='module')
 def conflict_database(owned_postgres):
-    with owned_postgres() as database:
-        database.execute_native((ROOT/'database/tempo_legacy_database/ddl/study_conflicts.sql').read_text())
+    if not (ROOT/'database/tempo_legacy_database/ddl/migrations/054_product_repertoire_review.sql').exists():
+        with owned_postgres() as database:
+            database.execute_native((ROOT/'database/tempo_legacy_database/ddl/study_conflicts.sql').read_text())
     return owned_postgres
 
 
