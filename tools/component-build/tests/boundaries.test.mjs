@@ -170,7 +170,16 @@ for (const { name, kind, command, originalInputs } of [
   assert.deepEqual(suite.inputs.map(input => realpathSync(resolve(repository, suite.cwd, input))), originalPaths.map(path => realpathSync(path)));
   assert.doesNotThrow(() => validateManifest(manifest, repository, { componentIds: ["content"] }));
 });
-for (const { id, packageName, publicExports } of [
+for (const { id, packageName, publicExports, interfaceExports } of [
+  {
+    id: "game-evidence", packageName: "tempo_game_evidence",
+    // The manifest inventories the legacy root, not the narrower pure interface.
+    publicExports: ["normalize_pgn", "replay_positions", "ComparisonSnapshot", "compare_game", "EvidenceStore",
+      "LegacyAuthorityToken", "LegacyComparisonSnapshot", "LegacyScopedComparisonSnapshot", "PhysicalCard",
+      "preview_legacy_observation"],
+    interfaceExports: ["ComparisonSnapshot", "ComparisonSnapshotV2", "LegacyComparisonSnapshot",
+      "LegacyScopedComparisonSnapshot", "PhysicalCard", "parse_snapshot", "preview_legacy_observation"],
+  },
   {
     id: "learning-remediation", packageName: "tempo_learning_remediation",
     publicExports: ["AcceptedDecision", "AdmissionPort", "AdmissionProposal", "AdmissionResult", "AttemptAuthority",
@@ -189,16 +198,21 @@ for (const { id, packageName, publicExports } of [
   assert.equal(component.status, "implemented");
   assert.deepEqual(component.publicExports, publicExports);
   const source = resolve(repository, component.root, "src", packageName, "__init__.py");
+  const sources = [source];
+  if (interfaceExports) sources.push(resolve(repository, component.root, "src", packageName, "interfaces", "__init__.py"));
   const result = spawnSync(python, ["-I", "-c", `
 import ast, json, pathlib, sys
-tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
-exports = [ast.literal_eval(node.value) for node in tree.body
-           if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
-assert len(exports) == 1, "Expected one explicit public export declaration"
-print(json.dumps(exports[0]))
-`, source], { encoding: "utf8" });
+results = []
+for source in sys.argv[1:]:
+    tree = ast.parse(pathlib.Path(source).read_text())
+    exports = [ast.literal_eval(node.value) for node in tree.body
+               if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
+    assert len(exports) == 1, "Expected one explicit public export declaration"
+    results.append(exports[0])
+print(json.dumps(results))
+`, ...sources], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), publicExports);
+  assert.deepEqual(JSON.parse(result.stdout), interfaceExports ? [publicExports, interfaceExports] : [publicExports]);
 });
 test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
   const plannedComponent = manifest.components.find(component => component.status === "planned");
