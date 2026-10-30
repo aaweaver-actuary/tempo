@@ -62,11 +62,8 @@ def issued_origin(database, entry_id, card_id, expected_revision):
 
 
 def stamp_issued_head(database, entry_id, card_id, expected_revision):
-    return database.execute(
-        "UPDATE queue_attempt_origins SET issued_as_head=1 "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (entry_id, card_id, expected_revision),
-    ).rowcount
+    from tempo_legacy_database.adapters.study.issuance import stamp_issued_head as stamp
+    return stamp(database, entry_id, card_id, expected_revision)
 
 
 def mark_attempt_failed(database, entry_id):

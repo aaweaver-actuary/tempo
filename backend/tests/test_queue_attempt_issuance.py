@@ -127,6 +127,32 @@ def test_queue_response_issues_only_head_without_business_mutation(queued_attemp
         )] == [('active-a', 1), ('later-b', 0)]
 
 
+def test_actual_issuance_generation_is_once_and_prefetch_is_not_counted(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import issuance_frontier, attempt_issuance
+    client = TestClient(main.app)
+    assert client.get('/api/queue/window?limit=2').status_code == 200
+    with database.read_connection() as connection:
+        first = attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1)
+        assert first is not None and first.issuance_sequence == issuance_frontier(connection) == 1
+        assert attempt_issuance(connection, queued_attempts['later-b'], 'later-b', 1) is None
+    assert client.get('/api/queue/today').status_code == 200
+    database.initialize()  # Process/reload/day queue preparation is not issuance.
+    with database.read_connection() as connection:
+        assert attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1) == first
+        assert issuance_frontier(connection) == 1
+
+
+def test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import stamp_issued_head, attempt_issuance, issuance_frontier
+    with database.connection() as connection:
+        connection.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='active-a'")
+        assert stamp_issued_head(connection, queued_attempts['active-a'], 'active-a', 1) == 1
+        assert attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1) is None
+        assert issuance_frontier(connection) == 0
+    assert TestClient(main.app).post(f"/api/queue/entries/{queued_attempts['active-a']}/fail",
+        json={'card_id':'active-a','expected_revision':1}).status_code == 200
+
+
 @pytest.mark.parametrize('action', ['fail', 'bury'])
 @pytest.mark.parametrize('replacement', ['revision', 'card'])
 def test_issued_marker_cannot_transfer_to_replacement_identity(queued_attempts, action, replacement):

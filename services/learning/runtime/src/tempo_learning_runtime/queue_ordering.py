@@ -31,6 +31,9 @@ class QueueOrderingRow(TypedDict):
     eligible: NotRequired[bool]
     frozen_rank: NotRequired[int | None]
     frozen_valid: NotRequired[bool]
+    urgent_determined_at: NotRequired[str]
+    urgent_stream: NotRequired[str]
+    urgent_effect_id: NotRequired[str]
 
 
 class SavedQueueOrder(TypedDict):
@@ -78,12 +81,12 @@ def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) ->
 
 
 def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
-    """Priority overlay keeps ordinary order and every protected position."""
+    """Urgent FIFO precedes unissued ordinary work, retaining genuine attempts."""
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
-    protected = _protected_queue_ids(rows)
+    protected = _protected_queue_ids(rows, urgent=True)
     movable = [row for row in slots if row["id"] not in protected]
     priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
-                      key=lambda row: (row["card_id"], row["id"]))
+                      key=_urgent_order)
     ordered = iter(priority + [row for row in movable if row["gameplay_priority_reason"] != MISS_REASON])
     return [row if row["id"] in protected else next(ordered) for row in slots]
 
@@ -92,7 +95,8 @@ def _queue_presentation_state(rows: Sequence[QueueOrderingRow]) -> str:
     """Fence a prepared plan against changed positions, eligibility or issuance."""
     fields = ("id", "card_id", "position", "content_type", "admission_kind",
               "gameplay_priority_reason", "cycle", "attempt_state", "attempt_failed",
-              "review_completed", "revision", "issued", "presented", "taught", "eligible")
+              "review_completed", "revision", "issued", "presented", "taught", "eligible",
+              "urgent_determined_at", "urgent_stream", "urgent_effect_id")
     return _digest([[row.get(field) for field in fields] for row in sorted(rows, key=lambda row: row["id"])])
 
 
@@ -108,20 +112,34 @@ def _spread_groups(groups, seed, scope):
     return [event[3] for event in sorted(events)]
 
 
-def _protected_queue_ids(rows: Sequence[QueueOrderingRow], *, preserve_through_entry_id=None) -> set[int]:
+def _urgent_order(row):
+    # The source class and durable determination come from the owning effect.
+    # Legacy missing provenance is historical/unknown, never invented live work.
+    return (row.get("urgent_stream") != "forward", row.get("urgent_determined_at", ""),
+            row.get("urgent_effect_id", ""), row["position"], row["id"])
+
+
+def _protected_queue_ids(rows: Sequence[QueueOrderingRow], *, preserve_through_entry_id=None,
+                         urgent=False) -> set[int]:
     """Presentation must not move an active attempt or a positioned repeat."""
     return {row["id"] for row in rows if (
         row.get("eligible", True) is False or row.get("eligible") == 0
         or row["admission_kind"] == "explicit"
-        or (row.get("cycle", 0) > 0 and not (
+        or row.get("issued", False) or row.get("presented", False)
+        or row.get("review_completed", False)
+        # Historical teaching/repeat/failure flags are not issuance authority.
+        # Ordinary mixing still preserves positioned retries, but a ready game
+        # obligation can move ahead of every such unissued candidate.
+        or (not urgent and (
+        (row.get("cycle", 0) > 0 and not (
             row["gameplay_priority_reason"] == MISS_REASON and row.get("attempt_state") == "gameplay"
         ))
-        or row.get("attempt_failed", False) or row.get("review_completed", False)
-        or row.get("issued", False) or row.get("presented", False)
+        or row.get("attempt_failed", False)
         or row.get("attempt_state", "clean") not in ("clean", "unstarted", "gameplay")
         or (row["content_type"] == "opening" and row["admission_kind"] == "new"
             and (row.get("taught", False) or row.get("frozen_valid", True) is False))
         or (preserve_through_entry_id is not None and row["id"] <= preserve_through_entry_id)
+        ))
     )}
 
 
@@ -141,10 +159,12 @@ def _plan_daily_queue_order(
     """
     seed = saved["seed"] if saved else int(hashlib.sha256(day.encode()).hexdigest()[:15], 16)
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
-    protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id)
+    urgent = any(row["gameplay_priority_reason"] == MISS_REASON for row in rows)
+    protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id,
+                                     urgent=urgent)
     movable = [row for row in slots if row["id"] not in protected]
     priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
-                      key=lambda row: (row["card_id"], row["id"]))
+                      key=_urgent_order)
     groups: dict[tuple[str, str], list[QueueOrderingRow]] = {}
     for row in movable:
         if row["gameplay_priority_reason"] != MISS_REASON:

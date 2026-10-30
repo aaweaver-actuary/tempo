@@ -111,6 +111,25 @@ per-position writes. There is no new schema, transaction, scheduler, timeout or
 live setting change. History source/current mapping, chronology, full pause and
 foreground/maintenance admission remain their current owners' responsibilities.
 
+## First-departure urgent ordering (#622)
+
+The urgent overlay retains actual issued identities, active evidence, completed
+work, explicit user placement and unavailable rows. Historical teaching, cycle,
+guided/reinforcement and failure flags on an **unissued** candidate no longer pin
+it ahead of ready urgent work. Its flags and payload are preserved when moved.
+The pure sorter and `apply_priority_positions` use the same real-attempt fence;
+an issuance race still invalidates a prepared update. Ordinary mixing without
+urgent work retains its existing positioned-repeat behavior.
+
+The effect owner supplies original determination, forward/reconciliation/manual
+provenance and stable effect identity. Forward urgent work precedes historical
+drain; each class retains oldest determination first. The physical queue contains
+one compatible target while the effect owner retains separate genuine game
+occurrences. Six simultaneous targets are FIFO backlog, not an unconditional
+five-card promise. Actual first-head generation and ordinal are read from the
+existing [attempt origins](../issuance.py), at schema55; no queue position or
+priority receipt stands in for issuance.
+
 The permanent owning regression is
 [test_scaled_game_priority_postgres.py](../../../../../backend/tests/test_scaled_game_priority_postgres.py):
 805/1005queued rows,25protected attempts, nine real reviews, one priority effect

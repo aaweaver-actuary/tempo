@@ -128,12 +128,48 @@ def test_fresh_urgent_admission_after_prior_cycle_is_not_a_positioned_retry():
     assert plan(rows)[2][:2] == [rows[0], rows[-1]]
     for state in ('guided', 'reinforcement'):
         rows[-1]['attempt_state'] = state
-        assert ordering._priority_queue_order(rows)[-1] == rows[-1]
+        # #622: an unissued retry flag does not pin ordinary positions ahead
+        # of an urgent target. Actual issued/evidence identities below do.
+        assert ordering._priority_queue_order(rows)[:2] == [rows[0], rows[-1]]
     rows[-1]['attempt_state'] = 'gameplay'
-    for protection in ('issued','presented','attempt_failed','review_completed'):
+    for protection in ('issued','presented','review_completed'):
         rows[-1][protection] = True
         assert ordering._priority_queue_order(rows)[-1] == rows[-1]
         rows[-1][protection] = False
+
+
+@pytest.mark.parametrize('old_flag', [dict(cycle=2, attempt_state='guided'),
+    dict(cycle=1, attempt_state='reinforcement'), dict(taught=True), dict(attempt_failed=True)])
+def test_urgent_target_precedes_unissued_historical_flags_but_preserves_actual_attempt(old_flag):
+    rows = rows_for(('new', 'opening', 5))
+    rows[0]['issued'] = True
+    rows[1].update(old_flag)
+    rows[-1].update(gameplay_priority_reason=ordering.MISS_REASON,
+        urgent_stream='forward', urgent_determined_at='2026-10-30T00:00:00Z', urgent_effect_id='effect')
+    assert ordering._priority_queue_order(rows)[:2] == [rows[0], rows[-1]]
+    assert plan(rows, preserve_through_entry_id=rows[-2]['id'])[2][:2] == [rows[0], rows[-1]]
+    assert rows[1].items() >= old_flag.items()  # Moving is not rewriting attempt state.
+
+
+def test_live_urgent_cohort_is_durable_fifo_before_history_and_ordinary_work():
+    rows = rows_for(('review', 'opening', 10))
+    rows[0]['issued'] = True
+    # Deliberately reverse card IDs and queue positions relative to determination.
+    for ordinal, row in enumerate(reversed(rows[2:9])):
+        row.update(gameplay_priority_reason=ordering.MISS_REASON, urgent_stream='forward',
+            urgent_determined_at=f'2026-10-30T00:00:0{ordinal}Z', urgent_effect_id=f'effect-{ordinal}')
+    rows[1].update(gameplay_priority_reason=ordering.MISS_REASON, urgent_stream='reconciliation',
+        urgent_determined_at='2020-01-01T00:00:00Z', urgent_effect_id='history')
+    expected = [rows[0], *reversed(rows[2:9]), rows[1], rows[-1]]
+    assert ordering._priority_queue_order(rows) == expected
+    assert ordering._priority_queue_order(list(reversed(rows))) == expected
+    assert plan(rows)[2] == expected
+    # A later arrival cannot leapfrog the cohort and a second projection cannot
+    # restart its ordering. More than five targets remain actual FIFO backlog.
+    rows[-1].update(gameplay_priority_reason=ordering.MISS_REASON, urgent_stream='forward',
+        urgent_determined_at='2026-10-30T00:00:09Z', urgent_effect_id='later')
+    assert ordering._priority_queue_order(rows)[1:8] == list(reversed(rows[2:9]))
+    assert ordering._priority_queue_order(ordering._priority_queue_order(rows)) == ordering._priority_queue_order(rows)
 
 
 def test_prior_v3_receipt_cannot_certify_replacement_activation_or_unmixed_append():

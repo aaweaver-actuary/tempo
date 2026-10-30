@@ -48,6 +48,8 @@ erDiagram
     bigint queue_entry_id PK
     text card_id PK
     bigint revision PK
+    bigint issuance_sequence "nullable unique actual first head"
+    timestamptz issued_at "nullable actual first head"
   }
   queue_projection_diagnostics {
     text queue_date PK
@@ -239,7 +241,7 @@ Foreign key delete actions: (`game_id`) CASCADE.
 
 ### `public.queue_attempt_origins`
 
-Primary key: (`queue_entry_id`, `card_id`, `revision`). DDL: [032_queue_attempt_origins.sql](../../ddl/migrations/032_queue_attempt_origins.sql), [042_queue_attempt_issuance.sql](../../ddl/migrations/042_queue_attempt_issuance.sql).
+Primary key: (`queue_entry_id`, `card_id`, `revision`). DDL: [032_queue_attempt_origins.sql](../../ddl/migrations/032_queue_attempt_origins.sql), [042_queue_attempt_issuance.sql](../../ddl/migrations/042_queue_attempt_issuance.sql), [055_study_attempt_issuance.sql](../../ddl/migrations/055_study_attempt_issuance.sql).
 
 | Field | SQL type | Null allowed | Keys |
 | --- | --- | --- | --- |
@@ -259,6 +261,20 @@ Primary key: (`queue_entry_id`, `card_id`, `revision`). DDL: [032_queue_attempt_
 | `trained_color` | `text` | yes |  |
 | `content_type` | `text` | no |  |
 | `issued_as_head` | `bigint` | no |  |
+| `issuance_sequence` | `bigint` | yes | unique when present |
+| `issued_at` | `timestamptz` | yes | indexed with sequence |
+
+Actual issuance is stamped once by the existing Study head writer, after its
+card/day/eligibility fences. Prefetch, reload and queue reconstruction cannot
+increment it. The existing queue-entry/card/revision key identifies the attempt
+generation; no second attempt ledger is introduced. One database contains this
+single-user Study workspace, so the sequence and actual issuance count span its
+clients, days and sessions. PostgreSQL sequence gaps are permitted: measured
+determination-to-target ordinal counts committed origins after the original
+determination, never sequence subtraction. An application fence and first
+issuance share the short transaction-owned issuance lock. Legacy issued rows
+with unknown generation/time remain usable for their genuine old attempt, but
+cannot prove a post-reset remediation generation. DDL does not fabricate them.
 
 ### `public.queue_projection_diagnostics`
 

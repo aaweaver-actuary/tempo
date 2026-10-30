@@ -111,7 +111,7 @@ def ensure_card_queued_after(
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
     *, queue_date: str | None = None, protect_presented: bool = False,
-    preserve_order: bool = True, prepared_priority=None,
+    preserve_order: bool = True, prepared_priority=None, priority_order=None,
 ) -> None:
     day = queue_date or date.today().isoformat()
     previous_order = capture_daily_queue_order(database, day) if preserve_order else None
@@ -135,7 +135,7 @@ def ensure_card_queued_after(
         else:
             rows = presentation_rows(database, day)
             if priority_reason in {'product_game_lapse','product_game_encounter'}:
-                changes = priority_changes(rows,card_id,priority_reason)
+                changes = priority_changes(rows,card_id,priority_reason,priority_order=priority_order)
             else:
                 changes = tuple((row['id'],row['position'],slot['position'])
                     for slot,row in zip(sorted(rows,key=lambda row:(row['position'],row['id'])),

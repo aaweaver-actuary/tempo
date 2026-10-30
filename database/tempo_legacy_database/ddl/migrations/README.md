@@ -2,6 +2,14 @@
 
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
+#622 adds [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql), at
+source readiness 55. It extends existing attempt origins with actual first-head
+sequence/time. Existing issued attempts keep unknown generation/time; no history
+is backfilled. The [canonical dictionary](../../schema/study-queue-review-1/README.md#publicqueue_attempt_origins)
+and [Study issuance adapter](../../adapters/study/issuance.py) describe the fence
+and measured issuance ordinal. Applying source DDL remains an explicit owner
+operation; this change does not migrate the live database.
+
 C1 adds [054_product_repertoire_review.sql](054_product_repertoire_review.sql) after
 053, at source readiness 54. It registers the existing Repertoire approval
 [tables](../../../../backend/app/repertoire/changes/README.md) and Study conflict
@@ -74,3 +82,4 @@ migration has been run by the feature implementation.
 - [050_learning_remediation.sql](050_learning_remediation.sql)
 
 - [054_product_repertoire_review.sql](054_product_repertoire_review.sql)
+- [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql)
