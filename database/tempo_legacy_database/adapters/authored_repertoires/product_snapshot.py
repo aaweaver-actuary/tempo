@@ -79,6 +79,8 @@ WITH limits AS (
 )
 SELECT jsonb_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
+    'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
+    'graph_count',graph_count,'largest_row',largest_row,
     'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
         'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
         'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
@@ -106,10 +108,32 @@ def read_repertoire(database, repertoire_id: str) -> dict:
     if not document["exists"]:
         raise ValueError("repertoire_not_found")
     if not document["bounded"]:
-        raise ValueError("repertoire_snapshot_exceeds_bound")
+        from app.repertoire import RepertoireSnapshotBoundExceeded
+        counts = (("line_count", "source_rows", MAX_SOURCE_ROWS),
+                  ("card_count", "card_rows", MAX_SOURCE_ROWS),
+                  ("membership_count", "membership_rows", MAX_SOURCE_ROWS),
+                  ("graph_count", "graph_rows", MAX_GRAPH_ROWS))
+        fields = [key for key, _, _ in counts] + ["estimated_bytes", "largest_row"]
+        if (any(type(document.get(key)) is not int or document[key] < 0 for key in fields)
+                or any(document[key] > limit + 1 for key, _, limit in counts)):
+            raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+        complete = all(document[key] <= limit for key, _, limit in counts)
+        violations = [dict(dimension=dimension, observed=document[key], limit=limit, observation="lower_bound")
+                      for key, dimension, limit in counts if document[key] > limit]
+        for key, dimension, limit, observation in (
+                ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),
+                ("estimated_bytes", "estimated_snapshot_bytes", MAX_SNAPSHOT_BYTES, "conservative_estimate")):
+            if document[key] > limit:
+                violations.append(dict(dimension=dimension, observed=document[key], limit=limit, observation=observation))
+        if not violations:
+            raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+        raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
     facts = document["facts"]
-    if len(json.dumps(facts, ensure_ascii=False).encode()) > MAX_SNAPSHOT_BYTES:
-        raise ValueError("repertoire_snapshot_exceeds_bound")
+    encoded_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
+    if encoded_bytes > MAX_SNAPSHOT_BYTES:
+        from app.repertoire import RepertoireSnapshotBoundExceeded
+        raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[
+            dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_SNAPSHOT_BYTES, observation="exact")])
     return facts
 
 
