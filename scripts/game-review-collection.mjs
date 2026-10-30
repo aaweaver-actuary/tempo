@@ -167,6 +167,9 @@ export function collectionBlockers({ candidate, release, service, image, report,
   if ([identity, report?.identity].some(observation => observation?.availability === 'available' &&
       (observation.reader_role !== 'tempo_reader' || observation.transaction_read_only !== 'on')))
     blockers.push('reader_permission_unverified');
+  if (report?.identity?.availability === 'available' &&
+      (!Number.isSafeInteger(report.identity.schema_version) || report.identity.schema_version < 1))
+    blockers.push('full_reader_identity_invalid');
   if (identity?.availability === 'available' && report?.identity?.availability === 'available' &&
       Number.isSafeInteger(observedSchema) && Number.isSafeInteger(report.identity.schema_version) &&
       observedSchema !== report.identity.schema_version) blockers.push('collection_schema_observations_conflict');

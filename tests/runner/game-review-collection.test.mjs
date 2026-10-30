@@ -262,7 +262,8 @@ test('collection enable requires exact positive integer schema evidence', async 
         const input = facts();
         if (field === 'expected') input.release.schema = value;
         else input.report.identity.schema_version = value;
-        assert.deepEqual(collectionBlockers(input), ['collection_schema_unverified']);
+        assert.deepEqual(collectionBlockers(input), field === 'observed'
+          ? ['full_reader_identity_invalid', 'collection_schema_unverified'] : ['collection_schema_unverified']);
       });
     }
   }
@@ -474,7 +475,7 @@ test('collection main reports launch blockers without mutating on plan or status
   const refreshed = await fixture.invoke('status');
   assert.deepEqual(refreshed.maintenance, {status: 'clear'});
   assert.equal(refreshed.observed_schema, null);
-  assert.deepEqual(refreshed.blockers, ['collection_schema_unverified']);
+  assert.deepEqual(refreshed.blockers, ['full_reader_identity_invalid', 'collection_schema_unverified']);
   assert.deepEqual(maintenanceBytes(fixture.stateDirectory)['operation.json'], before['operation.json']);
   assert.deepEqual(JSON.parse(readFileSync(join(fixture.stateDirectory, 'migration-guard.json'), 'utf8')), verifiedGuard(fixture.target));
   assert.equal(fixture.actionCalls('up').length, 0); assert.equal(fixture.actionCalls('stop').length, 0);
@@ -672,4 +673,20 @@ test('collection main healthy allowance is unused and invalid installed API neve
   assert.equal(output.reader_probes.identity.status, 'unavailable');
   assert.equal(output.reader_probes.full.status, 'unavailable');
   assert.equal(fixture.calls.slice(before).some(call => call.args.includes('exec')), false);
+});
+
+test('collection main blocks malformed full-reader identity while retaining independent schema', async t => {
+  const fixture = collectionMainFixture(t);
+  for (const schema_version of [undefined, null, '54', 0, -1, 54.5, Number.MAX_SAFE_INTEGER + 1]) {
+    fixture.input.fullRead = () => JSON.stringify({...fixture.input.report,
+      identity: {...fixture.input.report.identity, schema_version}});
+    const output = await fixture.invoke('status');
+    assert.equal(output.observed_schema, 54);
+    assert.equal(output.reader_probes.identity.status, 'success');
+    assert.equal(output.reader_probes.full.status, 'success');
+    assert.ok(output.blockers.includes('full_reader_identity_invalid'));
+    assert.equal(output.activation_ready, false);
+    await assert.rejects(fixture.invoke('enable'), /full_reader_identity_invalid/);
+  }
+  assert.equal(fixture.actionCalls('up').length, 0);
 });
