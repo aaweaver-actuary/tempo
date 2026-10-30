@@ -9,6 +9,8 @@ import * as journal from "../../app/lib/opening-evidence-journal";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 import { waitForStudyIdle } from "../../app/lib/study-priority";
 import manifest from "../fixtures/opening-evidence-manifest.json";
+import * as workspaceData from "../../app/lib/workspace-data";
+import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 
 vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
   ...await importOriginal<typeof import("../../app/views/fetchAndInitializeQueue")>(), fetchAndInitializeQueue: vi.fn(),
@@ -77,6 +79,39 @@ it("AS-15 recovery cancels idle work during foreground transitions and after unm
   mounted.unmount();
   expect(idleCallbacks.size).toBe(0);
   expect(recover).not.toHaveBeenCalled();
+});
+
+it("optional tactics preload failure preserves the mounted Study attempt and retained review", async () => {
+  let failPreload!: (error: Error) => void;
+  const unavailable = new Promise<void>((_resolve, reject) => { failPreload = reject; });
+  const preload = vi.spyOn(workspaceData, "preloadView").mockReturnValueOnce(unavailable);
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
+    useTrainingStore.getState().hydrateLocalQueue([card], true);
+    useTrainingStore.setState({ queueReadiness: "ready" });
+    return "installed";
+  });
+  const mounted = render(<Home />);
+  await waitFor(() => expect(preload).toHaveBeenCalledWith("tactics"));
+  await enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 99,
+    attemptId: "retained-before-optional-failure", outcome: "correct", guided: false,
+    automaticRecoverySuppressed: "failed" });
+  const retained = structuredClone(pendingReviews());
+  const before = useTrainingStore.getState();
+  const active = { card: before.getCard(), attempt: before.attempt,
+    fen: before.currentFenString, step: before.step };
+  const board = mounted.container.querySelector(".persistent-board-shell");
+  expect(board).not.toBeNull();
+  const queueLoads = vi.mocked(fetchAndInitializeQueue).mock.calls.length;
+
+  await act(async () => { failPreload(new Error("Synthetic optional tactics unavailable")); });
+
+  const after = useTrainingStore.getState();
+  expect({ card: after.getCard(), attempt: after.attempt,
+    fen: after.currentFenString, step: after.step }).toEqual(active);
+  expect(mounted.container.querySelector(".persistent-board-shell")).toBe(board);
+  expect(board!.isConnected).toBe(true);
+  expect(pendingReviews()).toEqual(retained);
+  expect(fetchAndInitializeQueue).toHaveBeenCalledTimes(queueLoads);
 });
 
 it("AS-16 restarted opening attempt records displayed guidance as guided", async () => {
