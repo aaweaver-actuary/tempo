@@ -509,36 +509,63 @@ def test_repertoire_snapshot_retains_graphs_beyond_old_count_cap():
     assert len(snapshot.decision_presentations) == 2
 
 
-def test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding():
+@pytest.mark.parametrize("encoded", [False, True])
+def test_snapshot_mapping_and_text_envelopes_preserve_facts_and_typed_bounds(encoded):
     from app.repertoire import RepertoireSnapshotBoundExceeded
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
     facts = repertoire_facts()
     facts["repertoire"]["name"] = 'Escaped " \\ \n café'
-    encoded = json.dumps(facts, ensure_ascii=False)
+    envelope = snapshot_envelope(bounded=True, facts=facts)
     class WireReader(EnvelopeReader):
         def fetchone(self):
-            return {"snapshot": self.envelope, "facts_json": encoded}
-    reader = WireReader(snapshot_envelope(bounded=True, facts=None))
+            return {"snapshot": json.dumps(self.envelope, ensure_ascii=False) if encoded else self.envelope}
+    reader = WireReader(envelope)
     assert read_repertoire(reader, "rep") == facts
-    encoded = '"' + "x" * (32 * 1024 * 1024) + '"'
+    # X intentionally removed the whole-snapshot byte cap. The existing
+    # test_repertoire_snapshot_has_no_whole_snapshot_byte_cap owns that change;
+    # both released envelope shapes still enforce actual source-row bounds.
+    reader.envelope = snapshot_envelope(bounded=False, largest_row=65537)
     with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
         read_repertoire(reader, "rep")
-    assert caught.value.diagnostic()["violations"] == [dict(dimension="snapshot_bytes",
-        observed=len(encoded.encode()), limit=33554432, observation="exact")]
+    assert caught.value.diagnostic()["violations"] == [dict(dimension="row_bytes",
+        observed=65537, limit=65536, observation="exact")]
 
 
-def test_raw_snapshot_port_is_eager_bounded_and_does_not_decode_in_reader(monkeypatch):
+@pytest.mark.parametrize("encoded", [False, True])
+def test_snapshot_mapping_port_is_eager_and_projects_after_reader_exit(monkeypatch, encoded):
+    from contextlib import contextmanager
     from types import SimpleNamespace
+    from app.repertoire import project_published_repertoire
     from tempo_legacy_database.adapters.authored_repertoires import product_snapshot as storage
-    encoded = json.dumps(repertoire_facts(), ensure_ascii=False)
+    facts = repertoire_facts()
+    envelope = snapshot_envelope(bounded=True, facts=facts)
+    events, reading = [], [False]
     class WireReader(EnvelopeReader):
         def fetchone(self):
-            return {"snapshot": self.envelope, "facts_json": encoded}
-    def refuse_decode(value):
-        raise AssertionError("large facts decoded while borrowing the reader")
-    monkeypatch.setattr(storage, "json", SimpleNamespace(loads=refuse_decode, dumps=json.dumps))
-    result = storage.read_repertoire_json(WireReader(snapshot_envelope(bounded=True, facts=None)), "rep")
-    assert result == encoded and json.loads(result) == repertoire_facts()
+            events.append("read")
+            return {"snapshot": json.dumps(self.envelope) if encoded else self.envelope}
+    def decode(value):
+        assert reading[0]
+        events.append("owner_decode")
+        return json.loads(value)
+    @contextmanager
+    def reader():
+        reading[0] = True
+        try:
+            yield WireReader(envelope)
+        finally:
+            reading[0] = False
+            events.append("closed")
+    # The released owner port returns mappings and may decode its SQL envelope;
+    # expensive projection/replay remains outside the borrowed read.
+    monkeypatch.setattr(storage, "json", SimpleNamespace(loads=decode))
+    with reader() as database:
+        result = storage.read_repertoire(database, "rep")
+        assert isinstance(result, dict) and result == facts
+    assert not reading[0]
+    projected = project_published_repertoire(result)
+    assert projected.membership.complete and projected.membership.routes
+    assert events == (["read", "owner_decode", "closed"] if encoded else ["read", "closed"])
 
 
 @pytest.mark.parametrize("name,dimension,limit", [("lines", "source_rows", 10000),

@@ -700,7 +700,7 @@ def test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_
     from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
     from app.repertoire import project_published_repertoire
     from app.services.postgres_integrity import current_integrity_certificate
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
     from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
     from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
@@ -710,8 +710,8 @@ def test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_
     transaction = feedback_lineage_owner
     observed = datetime.now(timezone.utc)
     with transaction() as database:
-        encoded = read_repertoire_json(database,'r11-repertoire')
-    snapshot = project_published_repertoire(json.loads(encoded))
+        facts = read_repertoire(database,'r11-repertoire')
+    snapshot = project_published_repertoire(facts)
     original = next(item for item in snapshot.decision_presentations if item.presentation_id == 'A')
     game_id = 'lichess:prejoin-feedback-'+uuid4().hex
     with transaction() as database:
@@ -792,7 +792,7 @@ def test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles
     from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
     from app.repertoire import project_published_repertoire
     from app.services.postgres_integrity import current_integrity_certificate
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
     from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
     from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
@@ -807,8 +807,8 @@ def test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles
                 assert result.get('recombination',{}).get('status')!='applied'
     observed = datetime.now(timezone.utc)
     with transaction() as database:
-        encoded = read_repertoire_json(database,'r11-repertoire')
-    snapshot = project_published_repertoire(json.loads(encoded))
+        facts = read_repertoire(database,'r11-repertoire')
+    snapshot = project_published_repertoire(facts)
     original = next(item for item in snapshot.decision_presentations if item.presentation_id=='A')
     game_id = 'lichess:stale-preparation-'+uuid4().hex
     with transaction() as database:
