@@ -286,6 +286,17 @@ class Coordinator:
                     normalized.source_revision, normalized.source_digest)
             held = changed or bool(previous and previous.quarantined) or integrity_error
             determined_at = previous.determined_at if previous else None
+            if (previous is not None and previous.first_departure is not None
+                    and first_departure is not None and first_departure.status == "own_actionable"
+                    and previous.first_departure.status == "own_actionable" and not held):
+                def occurrence(selection):
+                    return (selection.source, selection.ply, selection.position_key,
+                        selection.expected_uci, selection.played_uci,
+                        selection.decision.decision_id if selection.decision is not None else None)
+                if occurrence(previous.first_departure) != occurrence(first_departure):
+                    # Corrected scope can reveal a different legitimate occurrence.
+                    # Retain the old command's clock, not as this new determination.
+                    determined_at = None
             effects = list(previous.effects) if previous else []
             observations = {}
             for item in encounters:
@@ -311,7 +322,8 @@ class Coordinator:
                     command = GameEffectControl(key=effect.key, source_revision=source_revision(effect),
                         action="hold", reason="source_corrected" if changed else "reanalysis")
                     deliveries.append(delivery_for(key, command))
-                    held = True
+                    # A conclusive scope reanalysis holds the obsolete effect,
+                    # not the unchanged source or a different selected occurrence.
             if not held:
                 prior_plies = {effect.key.occurrence_ply for effect in effects}
                 occupied_keys = {(effect.key.decision_id, effect.key.occurrence_ply) for effect in effects}

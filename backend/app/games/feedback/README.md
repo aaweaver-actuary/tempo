@@ -337,7 +337,11 @@ as a bypass. A settled historical `0.2.1` owner receipt may acknowledge its exac
 original source/key without inventing `0.2.2` progress or another reset.
 Conclusive complete reanalysis which disqualifies accepted work emits the existing
 hold control while preserving original commands, receipts and genuine reviews;
-missing comparison proof alone does not withdraw it.
+missing comparison proof alone does not withdraw it. Correcting selected repertoire
+scope holds only the obsolete effect, leaving the unchanged game inspectable and
+allowing a different legitimate first departure to create its own occurrence.
+That new occurrence starts a new determination clock; replay keeps it stable.
+Actual source corrections and integrity failures retain D08 quarantine.
 
 Verified managed feedback-mode intent is required. The root captures the trusted
 container boot identity outside the writer after preparation; borrowed apply
@@ -362,6 +366,8 @@ flowchart LR
   Frontier["Complete scope / pure prospective first boundary"] --> Target["Feedback only: explicit boundary candidates / closed Study-owner reads"]
   Target --> Recheck["Same pure selector / complete scope retained"]
   Recheck --> Capture
+  Recheck --> Reanalysis["Unchanged source / obsolete effect held / new occurrence retained"]
+  Reanalysis --> Capture
   Capture["Complete Games comparison / atomic original capture"] --> Witness["Separate durable qualification / original determination"]
   Retained["Original frozen commands"] --> Qualify["Current complete-scope first-boundary qualification"]
   Qualify --> Witness

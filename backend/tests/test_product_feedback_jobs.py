@@ -250,6 +250,10 @@ def test_recomparison_keeps_single_lapse():
     h.store.enqueue(spec())
     h.runner.run_once()
     original = next(iter(h.store.deliveries.values())).lapse
+    canonical = next(iter(h.store.sources.values())).normalized
+    # A provider fetch revision can advance without changing the canonical game.
+    # Model the actual SourceIdentity boundary instead of relabeling its revision.
+    h.coordinator.source_identity = SimpleNamespace(bind_source=lambda *args, **kwargs: canonical)
     h.clock.value += 1000
     h.page[0] = page(records=(record(2, "original"),))
     h.store.enqueue(spec("overlap"))

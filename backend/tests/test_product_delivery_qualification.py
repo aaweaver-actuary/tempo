@@ -235,6 +235,50 @@ def test_changed_authored_response_same_logical_id_controls_original_accepted_ef
     assert h.store.delivery(original.operation_id).command == original.command
 
 
+def test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock():
+    from app.games.feedback.comparison import compare_game
+    from test_product_feedback_jobs import encounter_harness, spec
+    h = encounter_harness()
+    normalize = h.coordinator.normalizer.normalize
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda original, request:
+        normalize(original, request).model_copy(update={"moves": ["d2d4", "d7d5", "c2c4"]}))
+    old = snapshot(repertoire="white", route_id="old-e4")
+    corrected = snapshot(("d2d4", "d7d5", "g1f3"), repertoire="london", route_id="london")
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: old)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda current, authored, **kwargs:
+        compare_game(current, provider="lichess", snapshot=authored))
+    h.store.enqueue(spec())
+    assert h.runner.run_once() == "page"
+    original_source, = h.store.sources.values()
+    original, = h.store.deliveries.values()
+    assert original.command.key.occurrence_ply == 1
+    h.clock.value += 60
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda repertoire:
+        corrected if repertoire == "london" else old)
+    request = spec("corrected-scope").model_copy(update={"repertoire_ids": ("white", "london")})
+    h.store.enqueue(request)
+    h.coordinator.capture_page(h.store.load_job(request.job_id))
+    current, = h.store.sources.values()
+    assert not current.quarantined
+    assert current.original == original_source.original and current.normalized == original_source.normalized
+    assert current.first_departure.status == "own_actionable" and current.first_departure.ply == 3
+    assert current.determined_at == h.clock.utc_now() != original_source.determined_at
+    assert h.store.delivery(original.operation_id).command == original.command
+    assert h.store.delivery(original.operation_id).state == "superseded"
+    later, = [item for item in h.store.deliveries.values()
+        if item.encounter is not None and item.command.key.occurrence_ply == 3]
+    assert later.command.decision.presentation_id == "card-london" and later.state == "pending"
+    assert len(h.store.captures) == 2
+    repeated = request.model_copy(update={"job_id": "same-corrected-scope"})
+    h.clock.value += 60
+    h.store.enqueue(repeated)
+    h.coordinator.capture_page(h.store.load_job(repeated.job_id))
+    replayed, = h.store.sources.values()
+    assert not replayed.quarantined and replayed.determined_at == current.determined_at
+    assert h.store.delivery(later.operation_id).command == later.command
+    assert len(h.store.captures) == 2
+
+
 def test_unqualified_concrete_game_review_fallback_cannot_call_legacy_scheduler():
     from app.product_composition.game_review import create_game_review
     from app.games.feedback.review import ReviewUnavailable
