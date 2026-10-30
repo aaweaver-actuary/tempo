@@ -319,9 +319,9 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }, []);
 
   const refreshDatabaseQueue = useCallback(
-    async (advance = false, replaySavedReviews = true) => {
+    async (advance = false, replaySavedReviews = true, retryPreparation = false) => {
       invalidateWorkspaceData();
-      const result = await fetchAndInitializeQueue(advance, { replaySavedReviews });
+      const result = await fetchAndInitializeQueue(advance, { replaySavedReviews, retryPreparation });
       if (result !== "superseded") await checkPendingIntegrity();
     },
     [checkPendingIntegrity],
@@ -356,7 +356,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     }
   });
   const progressConfirmedReview = useCommittedCallback(async (completedCard: PracticeCard, attemptId: string,
-    generation: number, transitionGeneration: number, conflicted: boolean = false, continuation?: PreparedContinuation) => {
+    generation: number, transitionGeneration: number, conflicted: boolean = false, continuation?: PreparedContinuation, retryPreparation: boolean = false) => {
     progressionController.current?.abort();
     const controller = new AbortController();
     progressionController.current = controller;
@@ -400,7 +400,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
           }
         updateNotification(notice, { details: { ...details, phase: "authoritative refresh requested", acquisition: acquisition + 1 },
           message: acquisition ? "Result saved. Retrying the next card…" : "Result saved. Loading the next card…", active: true });
-        const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000, expectedAttempt, signal });
+        const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000, expectedAttempt, signal, retryPreparation: retryPreparation && acquisition === 0 });
         if (!ownsProgression() || result === "superseded") { settleSuperseded(); return; }
         setReviewPersistenceState(conflicted ? "conflicted" : "idle");
         setSafeBreakCounter(count => count + 1);
@@ -1520,7 +1520,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
               <div className="ui-notice training-offline-notice" role="status">
                 <strong>Offline queue</strong>
                 <span>{queueNotice}</span>
-                <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
+                <Button onClick={() => void refreshDatabaseQueue(false, true, true).catch(() => undefined)}>
                   Retry sync
                 </Button>
               </div>
@@ -1532,7 +1532,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
                   const retainedReview = pendingReviews()[0];
                   if (retainedReview) await confirmRecoveredReviews(await flushPendingReviews(Infinity, true,
                     logicalAttemptId(retainedReview)));
-                  if (!reviewPersistenceIdentity) await refreshDatabaseQueue(false, false);
+                  if (!reviewPersistenceIdentity) await refreshDatabaseQueue(false, false, true);
                 })().catch(() => undefined)}>
                   Check saved reviews
                 </Button>
@@ -1581,7 +1581,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
               retryQueueAfterReview={() => {
                 const progression = confirmedProgression.current;
                 if (progression) void progressConfirmedReview(progression.card, progression.attemptId,
-                  progression.generation, progression.transitionGeneration, progression.conflicted);
+                  progression.generation, progression.transitionGeneration, progression.conflicted, undefined, true);
               }}
               handleAttemptFailure={handleAttemptFailure}
               resetCardAttempt={resetCardAttempt}

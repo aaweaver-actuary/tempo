@@ -63,6 +63,44 @@ it('determined_local_priority_prepares_before_new_head_without_showing_an_ordina
   } finally { unsubscribe(); }
 });
 
+it('next_card_preparation_lost_response_recovers_original_operation_across_acquisitions', async () => {
+  let ready = false;
+  const submitted: string[] = [];
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.includes('/api/operations/')) {
+      expect(url).toContain(encodeURIComponent(submitted[0])); ready = true;
+      return Response.json({ operation_id: submitted[0], state: 'complete', response: { progressed: true, pending: false, reason: null } });
+    }
+    if (url.endsWith('/api/queue/prepare-next')) {
+      submitted.push(new Headers(options?.headers).get('Idempotency-Key')!);
+      if (submitted.length === 1) throw new TypeError('Lost preparation response');
+      ready = true; return Response.json({ progressed: true, pending: false, reason: null });
+    }
+    return ready ? Response.json({ cards: [queue[2]], count: 1, local_date: localDayKey() })
+      : Response.json({ detail: { code: 'study_feedback_preparation_pending' } }, { status: 503 });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).rejects.toThrow('Lost preparation response');
+  await fetchAndInitializeQueue(true, { replaySavedReviews: false });
+  expect(submitted).toHaveLength(1);
+  expect(fetcher.mock.calls.some(([url]) => url.includes('/api/operations/'))).toBe(true);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(503);
+});
+
+it('next_card_preparation_terminal_no_progress_never_rotates_ids_automatically', async () => {
+  const submitted: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/api/queue/prepare-next')) {
+      submitted.push(new Headers(options?.headers).get('Idempotency-Key')!);
+      return Response.json({ progressed: false, pending: true, reason: 'source_unavailable' });
+    }
+    return Response.json({ detail: { code: 'study_feedback_preparation_pending' } }, { status: 503 });
+  }));
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).rejects.toThrow();
+  expect(submitted).toHaveLength(1);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+});
+
 it('priority_reconciliation_retains_issued_board_and_replaces_only_upcoming_work', async () => {
   const active = useTrainingStore.getState().attempt;
   const board = useTrainingStore.getState().getCard();

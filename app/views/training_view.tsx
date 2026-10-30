@@ -46,7 +46,7 @@ interface TrainingViewProps {
   dateLabel: string;
   serviceError: string;
   offlineQueue?: boolean;
-  refreshDatabaseQueue: (advance?: boolean) => void;
+  refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean) => void;
   cardsLeft: number;
   card: PracticeCard;
   boardTheme: BoardTheme;
@@ -353,7 +353,7 @@ function StandardTrainingView({
       {serviceError && (
         <div role="alert">
           {serviceError}{" "}
-          <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"))} />
+          <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"), true, true)} />
         </div>
       )}
       {["saveFailed", "pendingConfirmation"].includes(reviewPersistenceState) && (
@@ -578,7 +578,7 @@ function TrainingContent(props: TrainingViewProps) {
   const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
   const mutationBlocked = liveQueueBlocked || Boolean(props.burialPending);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
+    return <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
       key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
       studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
@@ -588,7 +588,7 @@ function TrainingContent(props: TrainingViewProps) {
   }
   if (props.card.kind === "defense") {
     return (
-      <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
+      <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
         key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
         card={props.card}
         boardTheme={props.boardTheme}
