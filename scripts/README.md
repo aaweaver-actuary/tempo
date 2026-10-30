@@ -243,6 +243,18 @@ identity and cleanup. Maia's qualification-owner label remains distinct from
 the central resource-owner label. This source change does not qualify model
 inference, artifact installation, provider connectivity or installed services.
 
+Root and lane Vitest configurations and the generic Node test runner use
+[`unitWorkerAllocation`](unit-worker-allocation.mjs). An omitted
+`TEMPO_QUALIFICATION_CPUS` uses the current process's available parallelism,
+including when the managed launcher supplies a budget owner token. Explicit
+positive CPU selections are validated by the canonical CPU reader and bounded
+by available parallelism; a fractional selection below one uses one worker.
+Each worker passes at most one CPU (or its smaller fractional share) to nested
+supported pools. No Docker capacity query or fixed root worker ceiling is used.
+This selects test concurrency only: existing budget ownership, Study admission,
+memory limits, serial shared-state suites and controlled-browser isolation remain
+with their existing owners.
+
 
 ## Games collection operator
 

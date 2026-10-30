@@ -6,12 +6,11 @@ export async function unitWorkerAllocation(environment = process.env, parallelis
   if (!Number.isSafeInteger(parallelism) || parallelism < 1)
     throw new Error("Unit workers require positive integer available parallelism");
   const supplied = environment.TEMPO_QUALIFICATION_CPUS;
-  if (supplied === undefined && environment.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
-    throw new Error("Managed unit workers require their actual CPU grant in TEMPO_QUALIFICATION_CPUS");
   if (supplied !== undefined && (typeof supplied !== "string" || !supplied.trim()))
     throw new Error("TEMPO_QUALIFICATION_CPUS must contain the actual positive CPU grant");
-  // Explicit validation uses the canonical owner. Daemon total is not proof of
-  // a narrower invocation grant; unmanaged host work uses available parallelism.
+  // Omission is unrestricted for managed and unmanaged callers alike. Size to
+  // this process's available parallelism; never query the Docker daemon total.
+  // Explicit grants retain validation through the canonical CPU reader.
   const cpus = await readDevelopmentCpuAllocation({ cpus: supplied === undefined ? parallelism : Number(supplied) });
   // A fractional grant below one CPU still needs one throttled worker. The
   // owning admission/quota and memory safeguards remain responsible for limits.
