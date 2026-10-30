@@ -197,8 +197,9 @@ when conflicted. No schema or stored relationship changes are introduced.
   bounds. Once the legal authored root and ordered physical slice match, mappings
   use those proved positions rather than replaying each card independently. The
   physical starting position must still be valid; clocks cannot change ordinary
-  position identity. Raw FEN normalization and validity retain at most 1,024
-  entries each. No cached boards or cross-call reuse are retained; chronology,
+  position identity. Each used physical card retains one detached root key/validity
+  pair within the existing 10,000-card bound; differing raw graph roots use the
+  existing 1,024-entry normalization cache. No cached boards or cross-call reuse are retained; chronology,
   unavailable cards, conflicts and mapping identity keep their existing semantics.
 - Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
   read-only `repertoire_snapshot=True` connection context with no transaction

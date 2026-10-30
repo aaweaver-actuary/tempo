@@ -818,3 +818,17 @@ def test_snapshot_invalid_physical_root_cannot_borrow_valid_authored_legality():
     facts['cards'][0].update(start_fen=invalid, moves_json='["e1e2"]')
     facts['graphs'][0].update(starting_fen=start, moves_json='["e1e2"]')
     assert project_published_repertoire(facts).decision_presentations == ()
+
+def test_snapshot_physical_root_normalization_and_validity_share_one_parse(monkeypatch):
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    original, starts = chess.Board, []
+    class TrackedBoard(original):
+        def __init__(self, fen=chess.STARTING_FEN, *args, **kwargs):
+            starts.append(fen)
+            super().__init__(fen, *args, **kwargs)
+    monkeypatch.setattr(chess, 'Board', TrackedBoard)
+    result = projection.project_published_repertoire(facts)
+    assert len(result.decision_presentations) == 2
+    # One legal authored replay and one physical-root validation/normalization.
+    assert starts.count(chess.STARTING_FEN) == 2

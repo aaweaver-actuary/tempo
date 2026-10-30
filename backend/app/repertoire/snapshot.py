@@ -126,7 +126,15 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     # aliases; existing source-row/total-ply bounds cap this retained input.
     replayed = {}
     position_key = lru_cache(maxsize=1024)(opening_position_key)
-    valid_card_start = lru_cache(maxsize=1024)(lambda fen: chess.Board(fen).is_valid())
+    card_positions = {}
+    def card_position(card):
+        # Physical rows are already unique and bounded. Parse each used card's
+        # root once, retaining both normalization and validity from that Board.
+        if card["id"] not in card_positions:
+            board = chess.Board(card["start_fen"])
+            card_positions[card["id"]] = (
+                canonical_fen_key(board.fen(en_passant="legal")), board.is_valid())
+        return card_positions[card["id"]]
     def replay_positions(starting_fen, moves):
         key = (starting_fen, tuple(moves))
         if key not in replayed:
@@ -151,8 +159,12 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
         try:
             executable = json.loads(graph["moves_json"])
             if (not executable or len(executable) > 1000
-                    or executable != json.loads(card["moves_json"])
-                    or position_key(graph["starting_fen"]) != position_key(card["start_fen"])):
+                    or executable != json.loads(card["moves_json"])):
+                continue
+            card_key, valid_start = card_position(card)
+            graph_key = (card_key if graph["starting_fen"] == card["start_fen"]
+                         else position_key(graph["starting_fen"]))
+            if not valid_start or graph_key != card_key:
                 continue
             route_key = (route.repertoire_id, route.route_id)
             if route_key not in route_positions:
@@ -168,9 +180,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
             cached_route, positions, route_frames = route_positions[route_key]
             if cached_route is not route or positions is None:
                 continue
-            if not valid_card_start(card["start_fen"]):
-                continue
-            roots = [ply for ply in positions.get(position_key(graph["starting_fen"]), ())
+            roots = [ply for ply in positions.get(graph_key, ())
                      if tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.

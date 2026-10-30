@@ -1,4 +1,6 @@
 import ast
+import hashlib
+import json
 from pathlib import Path
 
 import chess
@@ -62,3 +64,45 @@ def test_shared_contract_imports_no_feature_or_storage_implementation():
         for node in ast.walk(ast.parse(source.read_text())):
             names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
             assert not any(name.startswith(forbidden) for name in names)
+
+
+# Full replay dictionaries frozen from the pre-optimization shared owner.
+@pytest.mark.parametrize("fen,moves,expected", [('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+  ('e2e4', 'e7e5', 'g1f3'),
+  '673a41fa3f45d0c072a89a9d4a8748d1f34c10385db14a63a78bd4e6138b2ff5'),
+ ('4k3/8/8/3pP3/8/8/8/4K3 w - d6 17 42',
+  ('e5d6', 'e8d7'),
+  '1edfb2f580a12ad93258b45d56925c0ea5ad772a546738a990c5e176be979733'),
+ ('4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 13 11',
+  ('e5e6', 'g8f8'),
+  '3b05b405ae66d8ca72464ee623724a5e2bb4c711e51e6590370f996ec99e86c9'),
+ ('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 4 17',
+  ('e1g1', 'e8c8'),
+  '7027592076f26aff5b268f09bef33187b1e7641cd8f1f6f8a7d8284607500f6e'),
+ ('4k3/8/8/8/8/8/8/4K3 w - - 99 45',
+  ('e1e2', 'e8e7'),
+  'ce81549e5939cb922b4f12ba0cbfb332c5289637b7477704fbd7bf7f98b5d0e9'),
+ ('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+  ('c7c5', 'b1c3'),
+  'fbf8f1772067dbbb3365d090479600be82cc8131577c2a7ca15cd9875cc4079f')], ids=['ordinary', 'legal-ep', 'pinned-ep', 'castling', 'clocks', 'irrelevant-ep'])
+def test_shared_replay_renders_once_and_preserves_all_position_facts(monkeypatch, fen, moves, expected):
+    original, calls = chess.Board.fen, []
+    def render(board, *args, **kwargs):
+        calls.append(kwargs.get("en_passant"))
+        return original(board, *args, **kwargs)
+    monkeypatch.setattr(chess.Board, "fen", render)
+    values = replay_line(fen, moves)
+    encoded = json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
+    assert hashlib.sha256(encoded).hexdigest() == expected
+    assert calls == ["fen"] * (len(moves) + 1)
+
+
+@pytest.mark.parametrize("fen,moves,reason", [
+    (None, [], "invalid_starting_position"),
+    ("8/8/8/8/8/8/8/8 w - - 0 1", [], "invalid_starting_position"),
+    ("4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 13 11", ["e5d6"], "illegal_index_source"),
+    (chess.STARTING_FEN, ["e2e5"], "illegal_index_source"),
+])
+def test_shared_replay_rejects_invalid_roots_and_illegal_moves(fen, moves, reason):
+    with pytest.raises(ValueError, match=reason):
+        replay_line(fen, moves)
