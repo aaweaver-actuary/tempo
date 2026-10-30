@@ -5020,6 +5020,23 @@ PostgreSQL diagnostic-allocation consumer likewise accepts higher explicit CPUs
 and retains memory-overflow denial. These are synthetic source checks, not
 permission to omit known peers or a demonstration of real Study responsiveness.
 
+`C1 Web cache cold build exports intermediate layers without changing other targets`,
+`C2 Web cache survives disposable builder replacement`,
+`C3 Web cache preserves current generation and original failure`,
+`C4 Web cache respects explicit settings and target eligibility`,
+`C5 Web cache disable and fixture overrides are hermetic`, and
+`C6 Web cache retention cannot replace current with invalid or oversized output`
+are owned by the already registered `tests/runner/development-budget.test.mjs`.
+They use private synthetic OCI exports and injected managed Docker capabilities
+to cover `mode=max`, exact-generation Bake filesystem grants, unchanged
+Bake inputs/other targets, distinct disposable
+builders, atomic generation replacement, original build failures, retained builder
+cleanup ownership, explicit/disabled cache settings, per-invocation environment
+resolution, bounded retention, malformed metadata and symlink/unmarked-entry
+safety. They preserve A1–A20 allocation/lifecycle coverage. Real cache reuse,
+export/import costs and net build-time improvement require a separate coordinated
+cold/warm web-build pair; these fixture passes do not establish installed behavior.
+
 `scripts/check-inference-priority-images.mjs` additionally runs actual engine and
 Maia images at their optional-service kernel limits. Stockfish may require the
 hard-stop fallback at its CPU ceiling; the proof retains the 250 ms yield target,
