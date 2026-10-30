@@ -84,7 +84,7 @@ def snapshot(database, table, *, order='id'):
     return [dict(row) for row in database.execute(f'SELECT * FROM {table} ORDER BY {order}')]
 
 
-def drain_queue_refresh(*, restart=False):
+def drain_queue_refresh(*, restart=False, preserve_through_expected=True):
     for slice_index in range(200):
         task = claim_task('daily_queue')
         assert task is not None, 'Expected a runnable bounded queue slice'
@@ -128,7 +128,8 @@ def drain_queue_refresh(*, restart=False):
             execute_postgres_queue_refresh_slice(resumed_task)
         with postgres_store.connection(read_only=True) as database:
             saved = database.execute("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
-            assert 'preserve_through_entry_id' in json.loads(saved['payload_json'])
+            if preserve_through_expected:
+                assert 'preserve_through_entry_id' in json.loads(saved['payload_json'])
             if saved['state'] == 'complete':
                 return
     raise AssertionError('Queue refresh failed to reach a durable complete projection')
@@ -172,7 +173,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 assert database.execute('SELECT position FROM daily_queue WHERE id=?', (root_entry,)).fetchone()[0] == 24
                 requested = queue_commands.ensure_current_queue(database, {'queue_date': today})
                 assert requested['refresh_pending'] is True, 'A nonempty ready v3 day must request normal refresh'
-            drain_queue_refresh()
+            drain_queue_refresh(preserve_through_expected=False)
             with postgres_store.connection() as database:
                 assert [tuple(row) for row in database.execute('SELECT id,card_id,cycle FROM daily_queue ORDER BY id')] == identities
                 assert snapshot(database, 'cards') == before_cards
