@@ -179,8 +179,8 @@ def stale_queue_predicate(miss_reason: str):
         AND q.attempt_state='clean'
         AND NOT EXISTS(SELECT 1 FROM reviews reviewed WHERE reviewed.card_id=c.id)
         AND NOT EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id)
-        AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
-                       WHERE origin.card_id=c.id AND origin.issued_as_head=1)) """
+        AND c.id NOT IN(SELECT origin.card_id FROM queue_attempt_origins origin
+                        WHERE origin.issued_as_head=1 AND origin.card_id IS NOT NULL)) """
 
 
 def legacy_queue_predicate(miss_reason: str):
@@ -191,19 +191,22 @@ def legacy_queue_predicate(miss_reason: str):
         columns="1", additional_where="AND card.id=c.id LIMIT 1",
     )
     miss_reason = miss_reason.replace("'", "''")
+    # Evaluate historical presentation/origin membership once, preserving
+    # NULL-as-absent semantics, rather than rescanning it for each queued card.
     return """ AND NOT (
         c.content_type='opening'
         AND EXISTS(SELECT 1 FROM frozen_opening_activation active
                    WHERE active.id=1 AND active.run_id IS NOT NULL)
-        AND EXISTS(SELECT 1 FROM queue_attempt_origins legacy_origin
-                   WHERE legacy_origin.card_id=c.id AND legacy_origin.legacy=1)
+        AND c.id IN(SELECT legacy_origin.card_id FROM queue_attempt_origins legacy_origin
+                    WHERE legacy_origin.legacy=1 AND legacy_origin.card_id IS NOT NULL)
         AND COALESCE(q.admission_kind,'')<>'explicit'
         AND NOT (q.gameplay_priority_reason='""" + miss_reason + "' AND EXISTS(" + mandatory_miss + "))" + """
         AND NOT EXISTS(SELECT 1 FROM reviews reviewed WHERE reviewed.card_id=c.id)
-        AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.card_id=c.id)
+        AND c.id NOT IN(SELECT attempt.card_id FROM opening_evidence_attempts attempt
+                         WHERE attempt.card_id IS NOT NULL)
         AND NOT EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id)
-        AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins exposed_origin
-            WHERE exposed_origin.card_id=c.id AND
+        AND c.id NOT IN(SELECT exposed_origin.card_id FROM queue_attempt_origins exposed_origin
+            WHERE exposed_origin.card_id IS NOT NULL AND
               (exposed_origin.issued_as_head=1 OR exposed_origin.attempt_failed<>0
                OR exposed_origin.review_result_json IS NOT NULL OR exposed_origin.last_status='complete'))
         AND NOT EXISTS(SELECT 1 FROM daily_queue exposed_queue

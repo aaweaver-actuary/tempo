@@ -173,3 +173,11 @@ re-evaluates complete current history and eligibility before publication; the
 ownership digest alone does not certify a presentation. Digest fields,
 row-version/ownership/protection guards and NULL-as-absent semantics are unchanged.
 No schema, writer, transaction boundary, public signature or timeout changed.
+
+The complete availability query also retains the frozen legacy-exposure guard.
+Its historical presentation, legacy-origin, exposed-origin and issued-origin
+lookups use NULL-filtered card-ID membership sets, so an active frozen run does
+not trigger repeated history scans or nonleading index probes per queued card. Legacy
+uncertainty, explicit/issued/exposed exceptions, captured definitions, memberships
+and current eligibility still decide availability; the query grants no new
+eligibility or publication authority.
