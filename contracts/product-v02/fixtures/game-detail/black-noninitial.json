@@ -1,0 +1,80 @@
+{
+  "model": "GameDetail",
+  "payload": {
+    "provider": "lichess",
+    "game_id": "synthetic-game",
+    "source_revision": 1,
+    "played_at": "2026-10-25T12:00:00Z",
+    "time_precision": "second",
+    "player_color": "black",
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 17",
+    "moves": [
+      "d7d5",
+      "c2c4"
+    ],
+    "findings": [],
+    "receipts": [],
+    "first_departure": {
+      "policy_version": "first_departure_v1",
+      "workspace_id": "fixture",
+      "source": {
+        "provider": "lichess",
+        "game_id": "synthetic-game",
+        "source_revision": 7,
+        "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "learner_color": "black",
+      "selected_scope": [
+        {
+          "repertoire_id": "white",
+          "learner_color": "black",
+          "snapshot_id": "snapshot-white",
+          "source_revision": "source-white-1",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "complete": true,
+          "available": true
+        }
+      ],
+      "status": "own_actionable",
+      "ply": 1,
+      "actor": "learner",
+      "position_key": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+      "played_uci": "d7d5",
+      "expected_uci": [
+        "g8f6"
+      ],
+      "decision": {
+        "decision_id": "existing-decision",
+        "repertoire_id": "white",
+        "position_key": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+        "selected_response_uci": "g8f6",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "repertoire_revision": 1,
+        "introduction": "introduced",
+        "introduced_at": "2026-10-26T11:00:00Z",
+        "available": true,
+        "introduction_matches_current_content": true,
+        "route_id": "route-a",
+        "route_ply": 2,
+        "introduced_before_game": null,
+        "introduction_game": null
+      },
+      "surviving_routes": [
+        {
+          "repertoire_id": "white",
+          "route_id": "route-a",
+          "route_ply": 2,
+          "policy_id": "policy-white",
+          "source_revision": "source-white-1",
+          "at_deliberate_end": false
+        }
+      ],
+      "diagnostic": null
+    },
+    "determined_at": null,
+    "comparison_revision": null,
+    "comparison_freshness": "unknown"
+  }
+}

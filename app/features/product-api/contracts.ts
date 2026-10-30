@@ -252,7 +252,20 @@ export interface GameReviewApi {
 const RawGameSummarySchema = z.strictObject({ provider, game_id: id, source_revision: revision, played_at: utc.nullable(), time_precision: precision, player_color: z.enum(["white", "black"]) }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "preserve unknown source time");
 const RawProviderSyncStatusSchema = z.strictObject({ provider, status: z.enum(["idle", "pending", "complete", "failed"]), operation_id: id.nullable(), error: id.nullable() }).refine(value => (value.status === "failed") === (value.error !== null) && (value.status === "idle" || value.operation_id !== null), "status must preserve failure and operation identity");
 const RawRecentGamesSchema = z.strictObject({ games: z.array(RawGameSummarySchema), sync: z.array(RawProviderSyncStatusSchema) });
-const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])) });
+const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])), first_departure: RawFirstDepartureSelectionSchema.nullable().default(null), determined_at: utc.nullable().default(null), comparison_revision: id.nullable().default(null), comparison_freshness: z.enum(["current", "stale", "unknown"]).default("unknown") }).superRefine((value, ctx) => {
+  const selection = value.first_departure;
+  if (selection === null) return;
+  const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+  // Outer provider revision and nested canonical source revision are distinct.
+  if (selection.source.provider !== value.provider || selection.source.game_id !== value.game_id || selection.learner_color !== value.player_color) fail("first departure must identify this game and learner");
+  if (selection.ply !== null) {
+    if (selection.ply > value.moves.length || value.moves[selection.ply - 1] !== selection.played_uci) fail("first departure must identify an original played move");
+    const turn = value.starting_fen.trim().split(/\s+/)[1];
+    if (turn !== "w" && turn !== "b") fail("known boundary requires the original starting side to move");
+    const whiteMoves = (turn === "w") === (selection.ply % 2 === 1);
+    if (selection.actor !== (whiteMoves === (value.player_color === "white") ? "learner" : "opponent")) fail("first departure actor must match original game history");
+  }
+});
 export const GameSummarySchema = immutable(RawGameSummarySchema);
 export const ProviderSyncStatusSchema = immutable(RawProviderSyncStatusSchema);
 export const RecentGamesSchema = immutable(RawRecentGamesSchema);

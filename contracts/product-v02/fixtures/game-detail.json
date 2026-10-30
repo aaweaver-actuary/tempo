@@ -57,6 +57,10 @@
         "applied_at": null,
         "reason": "source_changed_before_original_arrived"
       }
-    ]
+    ],
+    "first_departure": null,
+    "determined_at": null,
+    "comparison_revision": null,
+    "comparison_freshness": "unknown"
   }
 }
