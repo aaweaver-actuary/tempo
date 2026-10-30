@@ -377,8 +377,14 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
             '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
-        collector = launch('game-feedback-worker',['python','-B','/qualification/entry.py','feedback-worker'])
+        entry('foreground-worker','feedback-configure')
+        launch('game-feedback-worker',['python','-B','/qualification/entry.py','feedback-worker'])
         wait_for(lambda: api('GET','/api/health')['status']==200,'packaged_feedback_api_not_ready')
+        def actual_collector_prepared():
+            observed = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
+            assert observed['State']['Running'], 'packaged_feedback_collector_exited_before_verification'
+            return '"feedback_runtime_prepared": true' in docker('logs',observed['Id']).stdout
+        wait_for(actual_collector_prepared,'packaged_feedback_collector_not_prepared')
         stage = 'genuine_protected_head'
         protected_queue = wait_for(queue,'packaged_feedback_protected_head_pending')
         protected = protected_queue['cards'][0]
@@ -421,7 +427,6 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             configuration_fingerprint=hashlib.sha256(json.dumps(observed_config,sort_keys=True).encode()).hexdigest(),
             target_fingerprint=hashlib.sha256(json.dumps(dict(owner=owner,container=pg['Id'],database=database_name),sort_keys=True).encode()).hexdigest(),
             runtimes=observed_runtimes,updated_at=stamp,verified_at=stamp)
-        entry('game-feedback-worker','feedback-configure')
         recorded = json.loads(execute('game-feedback-worker','python','-m','app.product_composition.game_feedback_mode',
             'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
         assert recorded['applied'] and recorded['mode']=='feedback'

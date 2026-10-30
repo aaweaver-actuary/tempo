@@ -49,24 +49,32 @@ class Clock:
 def admitted():
     yield  # Only synthetic quiet admission; deployed resource isolation unproved.
 
+@contextmanager
+def feedback_admitted():
+    global inputs
+    # The actual worker is constructed and running its normal loop before the
+    # host verifies it. Hold only the controlled provider admission, never lend
+    # a waiting generic Python process the worker's service identity.
+    deadline = time.monotonic() + 45
+    while not Path('/qualification/feedback-start').exists():
+        if time.monotonic() >= deadline:
+            raise RuntimeError('feedback_fixture_start_not_released')
+        time.sleep(.05)
+    inputs = json.loads(Path('/qualification/provider.json').read_text())
+    yield
+
 try:
     if sys.argv[1] in {'worker', 'feedback-worker'}:
         feedback = sys.argv[1] == 'feedback-worker'
-        if feedback:
-            # The host verifies the three actual boot identities and records the
-            # public mode intent before releasing this real collector process.
-            deadline = time.monotonic() + 45
-            while not Path('/qualification/feedback-start').exists():
-                if time.monotonic() >= deadline:
-                    raise RuntimeError('feedback_fixture_start_not_released')
-                time.sleep(.05)
-            inputs = json.loads(Path('/qualification/provider.json').read_text())
         from app.product_composition import game_sync_current as current
         original = current.current_provider_worker
         def build(**kwargs):
-            return original(**kwargs, clock=Clock(), transport_factory=LocalHTTP)
+            runtime = original(**kwargs, clock=Clock(), transport_factory=LocalHTTP)
+            if feedback:
+                print(json.dumps({'feedback_runtime_prepared': True}), flush=True)
+            return runtime
         current.current_provider_worker = build
-        current.current_sync_admission = admitted
+        current.current_sync_admission = feedback_admitted if feedback else admitted
         sys.argv = ['worker', *(['--feedback'] if feedback else ['--collect-only']), '--follow', '--overlap-seconds', '0',
             '--reconcile-interval-seconds', '600', '--once', '--max-units', '50']
         current.main()
