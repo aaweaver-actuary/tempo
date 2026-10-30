@@ -1,0 +1,228 @@
+# Task G collection-first integration
+
+Collection records configured games and honest repertoire deviations while the
+actual packaged CLI runs with `--collect-only`. Study delivery/settlement remains
+a separate checkpoint. Live collection was never enabled.
+
+## Candidate and proof
+
+The packaged runtime source is `bb7a4879fa217d56fe069d265421d8553d7e07f7`.
+Immutable image:
+`sha256:8d48934759fec438c732953066e5af739c4ab60dc3443f3cbbbff6ed4231ae80`.
+Schema: 54. Later branch changes correct the external acceptance harness,
+operator/profile release wiring and the CPU-policy CLI fixture. Every Dockerfile
+COPY input remains identical to the packaged runtime source; image identity is
+not relabeled to the later branch head.
+
+A–F were integrated from the six reviewed pins, which remained current. Existing
+comparison, Settings and resource-policy component evidence is reused where its
+source/dependencies are unchanged. This is neither a full-system pass nor an
+installed-release claim.
+
+| Exact selected check | Outcome |
+| --- | --- |
+| `pytest backend/tests/test_product_continuous_sync.py backend/tests/test_product_game_sync_integration.py backend/tests/test_product_feedback_jobs.py -k 'not native' -q` with the recorded scoped Python paths | 132 passed, 4 native cases deliberately outside this selection |
+| `test_no_learning_sql_or_study_runtime_dependency` and `test_new_product_boundaries_do_not_import_composition_or_private_siblings` | 2 passed |
+| `pytest backend/tests/test_game_collection_status.py -q` | 26 passed, including restricted-reader PostgreSQL |
+| `test_collect_only_current_worker_persists_evidence_without_study_effects` | 1 passed on actual PostgreSQL, including unavailable comparison → reconciliation |
+| `node tools/component-build/test-lane.mjs runners development-budget` | 94 passed, no skips |
+| `node tools/component-build/test-lane.mjs runners game-review-collection` | 10 passed, no skips |
+| `TEMPO_COLLECTION_TEST_IMAGE=<immutable image above> TEMPO_COLLECTION_TEST_REVISION=bb7a4879fa217d56fe069d265421d8553d7e07f7 TEMPO_COMPONENT_PYTHON=<scoped interpreter wrapper> node tools/component-build/test-lane.mjs --suite games-collection-release` | 1 packaged acceptance passed, no skips; 33.02 seconds in the final recorded registered run |
+| Whole `runners tempo-cli.test` lane | Initially 193 passed / 18 failed; after correcting the Task A fake-builder metadata, the exact 18-case recheck had 15 passed / 3 existing failures |
+| Selected Games suite manifest, inactive Compose resolution, AST/Node syntax, conflict and whitespace checks | Passed |
+
+The CLI fixture now derives memory and CPU kernel facts from the actual requested
+builder options; it no longer invents the retired two-CPU quota. Production
+resource guards remain intact. The three remaining CLI failures reproduce on the
+exact reviewed base: [#608](https://github.com/aaweaver-actuary/tempo/issues/608).
+The full manifest checker also has an independently reproduced base failure for
+an existing relocated database input: [#607](https://github.com/aaweaver-actuary/tempo/issues/607).
+Selected-manifest success does not waive that global failure or hosted gates.
+
+## Single successful packaged session
+
+The registered acceptance uses the existing disposable PostgreSQL fixture, ordered
+real migrations, the original role-provisioning owner, and the actual CLI/reader
+inside one pinned image. Only synthetic provider HTTP, clocks and quiet admission
+are supplied. No production source overlay or successful finding/receipt is seeded.
+Deployment resource isolation is not established by the synthetic admission input.
+
+- 410 games per provider cover Lichess pagination and dense September/October
+  Chess.com archives. Two delayed-visible games bring the final unique total to
+  822, with zero unresolved comparisons after reconciliation.
+- Both selected repertoire colors participate. An initially absent Black source
+  becomes available; real reconciliation revisits it. Opponent-first departures
+  and authored own misses without a physical target remain distinct.
+- The reader reports 550 unique own-response misses and 276 pending original
+  commands, with no acknowledged deliveries. One synthetic pre-existing uncertain
+  delivery has three attempts; its complete stored row remains unchanged.
+- Repeated material rescans retain identical capture keys and command rows.
+  Manual interleaving never resets forward coverage; forward and historical
+  reconciliation retain distinct frozen windows across fresh packaged processes.
+- Complete serialized rows in cards, reviews, daily queue, queue-attempt origins,
+  Study attempts, Study feedback and review receipts remain unchanged during
+  collection. The protected ordinary issued attempt saves successfully afterward.
+- Actual adapter-to-coordinator regressions separately establish explicit
+  unfinished versus missing/unsupported-result checkpoint behavior and later
+  finished-game reconciliation. The unchanged runtime inputs match the image.
+
+Initial harness failures (image-ID selection, serialized row comparison and
+case-sensitive Docker absence text) are retained outside Git. The assertions
+were corrected without weakening the state/cleanup requirements. Exact fixture
+cleanup is verified; no other task's existing Study environment was reused or stopped.
+
+## Inactive installation and remaining blockers
+
+Actual installed source remains `571d80a5e787b380b94c40f2c3e98fa6cdf64e53`, schema
+54, with retained optional images from a different revision. Its frozen receipt
+contains no collector image/service, and its configuration fingerprint does not
+match the newly inspected resolved configuration. No installation was attempted
+through bypasses; the candidate is unmerged and required qualification is not green.
+
+Fresh private reader evidence confirms both new collection configurations absent,
+zero collection games and 2,178 separate retained legacy games. This was G’s historical readiness snapshot. J’s later private packet records
+approved launch choices; they remain unsaved and must be applied only by the
+authorized installation/activation owner. Legacy saved accounts are
+preserved separately; selected-repertoire compatibility is not inferred.
+
+Installed host/container inventory found no running provider collector. Existing
+legacy workers/history capabilities and Study feedback maintenance remain in
+place. Inspection of the installed source identifies the latter as resuming
+already persisted Study effects, rather than draining the product outbox. Global
+Study-delivery disablement remains unknown; the operator rechecks recognizable
+competing runners before enable. Arbitrary unmanaged launchers are outside its
+shared-lock guarantee.
+
+The live fractional CPU limits remain unchanged (including background worker
+0.35, scheduler/backup 0.05, defense 0.25 and Maia 0.30 CPU). New managed releases
+freeze/build the optional profile, stop an enabled collector before protected
+maintenance, and never automatically start it. Missing launch arguments resolve
+empty for inactive packaging; the operator rejects them before startup. A future
+protected release must verify exact images/configuration and effective CPU,
+memory and PID settings after controlled recreation. PostgreSQL must not be
+recreated merely to remove a quota.
+
+Remaining: resolve actual required-check blockers and obtain authorized main
+integration, install the qualified source through the managed release transition
+with collection OFF, apply J’s approved launch inputs at the authorized checkpoint, then repeat the read-only
+installed identity/configuration/producer checks. Andy's separate switch-on
+instruction remains required. No #594/#595 settlement, ranking, engine, coaching
+or UI expansion is included.
+
+See the [operator commands and canonical lifecycle drawing](../../scripts/README.md#games-collection-operator).
+Private launch values/provenance remain outside Git; public evidence contains
+only synthetic game data and operational identities, never accounts or credentials.
+
+## Follow-up: operator maintenance/schema repair (source and synthetic evidence)
+
+Repair commit: `d6d8c836ee4d28374d7c6ca2d6ff4d79176eb762`, based on parent
+`30a618934af72ebc58a164557b18dd470962ead5` (#611). This evidence-only follow-up
+does not change the tested operator source.
+
+- Before production edits, `node tools/component-build/test-lane.mjs runners game-review-collection`
+  passed all 10 original tests, with no skips/TODOs.
+- `node --test --test-name-pattern='^collection enable blocks (pending migration|schema mismatch)$' tests/runner/game-review-collection.test.mjs`
+  then failed both selected cases on their intended missing-blocker assertions
+  (0 passed, 2 failed); no import/setup error was counted as reproduction.
+- Final `node --check scripts/game-review-collection.mjs` and
+  `node --check tests/runner/game-review-collection.test.mjs` passed.
+- Final registered `node tools/component-build/test-lane.mjs runners game-review-collection`
+  reported 74 passed, 0 failed, 0 skipped and 0 TODO (including parameterized groups).
+  All ten original test bodies remain verbatim. Real assessor/locking/main tests
+  demonstrate guard precedence, fail-closed sanitized evidence, exact positive
+  integer schema matching, refused starts, safe owned disable, unchanged maintenance
+  evidence, read-only plan/status, lock release and idempotent enable.
+- `git diff --check`, `git diff --stat` and `git diff --name-only` were inspected;
+  the repair is confined to the five assigned files and allowed documentation sections.
+  The existing canonical operator lifecycle diagram was updated; GitHub rendering
+  was not verified. Separate baseline/expected-red/final logs are retained outside Git.
+
+No live service, database, provider, account/configuration, installation or activation
+operation occurred. Tests use synthetic files and external-command responses.
+The original 822-game/image evidence above is reused, not relabeled or rerun:
+no packaged production input changed in this host-operator repair. #607/#608
+remain separate qualification issues, and parent #611 merge qualification remains
+subject to its applicable required checks. Not installed or activated.
+
+
+## Task K — inactive source qualification checkpoint
+
+Base main: `c63c894733dd7b358e4a734ba91244fd49727489`. The existing #611 head
+`2364dcf3eb4b217cd46248a95b3333cca5a6fe64` includes #612 by ancestry;
+its maintenance/schema guards were preserved. K integrated only H’s reviewed
+patches `fe709c66d8b55b662ce54696ee252985e096d290`,
+`872cad7cd88f47b6abfae6e52820a792ad5c6479`,
+`64143c3882c747ab646fa618f8441b29e8559c1f` and I’s patch
+`2650632468e1eec25bbad8a0f35593b22b2f0ea3`. Integrated commits are
+`e5b75af0`, `17faf9ae`, `c4ed4f67` (H) and `56788e1d` (I).
+
+H rebases the two relocated Content suite registrations without dropping any
+input and records existing public package-root exports. Game Evidence’s narrower
+pure interface remains unchanged. I repairs only the synthetic relaunch hook in
+`tests/runner/tempo-cli.test.mjs`; the shared fixture is unchanged.
+
+The first checker failure after locked Workbench prerequisites exposed an audit
+mismatch: centralized database sdist-only tests/tooling were treated as wheel
+runtime, and the declared remediation distribution’s bundled database namespace
+was not recognized. K’s separate `a570a0d0` repair follows the existing wheel hooks,
+retains all build-input/path/symlink validation and runtime import/loader auditing,
+and admits that namespace only with its exact declared distribution. Two intended
+regressions failed before the repair. Subsequent stale export registrations were
+returned to H rather than changing application APIs. Missing local Maia and
+workspace prerequisites were environment setup failures, retained separately.
+
+Verified bounded results:
+
+- Full manifest validation, including shared suites: passed.
+- `TEMPO_COMPONENT_PYTHON=/Users/andy/.local/bin/python3.12 node --test --test-concurrency=1 tools/component-build/tests/boundaries.test.mjs tools/component-build/tests/python-package-inputs.test.mjs`: 74 passed, zero failures/skips/TODOs (70 H boundary cases plus four packaging cases).
+- Registered CLI selection: three named automatic-start relaunch cases passed;
+  six negative-evidence cases passed; whole `runners tempo-cli.test` lane:
+  211 passed, zero failures/skips/TODOs. Exact patterns/logs are retained in
+  `/private/tmp/tempo-task-k-evidence`.
+
+The 822-game proof is reused: Dockerfile, context policy and every COPY input are
+unchanged from `bb7a4879fa217d56fe069d265421d8553d7e07f7`. The operator’s 74-case
+proof is reused because its source, tests, shared fixture and dependencies are
+unchanged from `2364dcf3`. These receipts do not waive any configured selection.
+The old image remains behavioral evidence, never a relabeled final release.
+
+Hosted qualification is unresolved. Repository Actions permissions report
+`enabled:false`; the workflow itself is active. No repository setting, workflow
+selector or gate was changed. The declared selector requires FULL, so missing
+runs/jobs are not passing qualification. Local Node 26.12.0/Python 3.12.12 evidence
+is not the hosted toolchain or exact-main installer proof.
+
+#608 is repaired in this candidate, pending hosted qualification. #607’s relocated
+registrations and existing-export rows are repaired, but full checker closure is
+still unresolved: after scoped prerequisites it fails
+`Consumer bypasses public package: app/features/game-review/GameReviewView.tsx`
+on the main-identical relative Board UI stylesheet import. The package already
+exports `./styles.css`, while root adoption is incomplete. H confirmed the same bypass in `app/features/repertoire-review/PositionViewer.tsx` and that the
+assembly maps only the renderer, not the exported stylesheet. The bounded repair
+belongs to the root frontend assembly owner: support the existing public CSS
+export in the assembly, replace both relative imports, and retain named consumer
+regressions. No package adoption framework or weaker guard is justified. H made
+no further source edit; no broad qualification retry was attempted. Neither issue is prematurely closed. No production API, schema,
+package membership or application lifecycle changed in K. Architecture impact:
+none for these registration/checker/fixture repairs; #612’s lifecycle drawing is
+retained. No new ER relationship is introduced.
+
+J’s private packet remains `/private/tmp/tempo-task-g-private/J_private_launch_packet.md`
+with file mode 0600 and directory mode 0700. Approved private choices are not
+published or requested again. Unsaved settings, installed-reader identity,
+effective CPU/memory/PID settings, competing producers and admission readiness
+remain later L/M checks. K performed no live or Docker operation.
+
+Pending: complete the bounded frontend public-stylesheet assembly repair, restore
+authorized hosted verification, require the pinned ready #611
+head/base and FULL quality/merge-gate success, then obtain Andy’s authorized merge.
+After merge read actual main SHA M, verify intended ancestry/diff, and assess its
+normal main-push run. If absent, dispatch `gh workflow run pages.yml --ref main`
+with default non-diagnostic inputs and verify that run selects M. The existing
+installer must report `verified` for M with all nine jobs: plan, frontend, backend,
+build, PostgreSQL, lifecycle, browser, visual and quality. PR-head or synthetic
+integration evidence cannot replace M.
+
+L must use an exact-M checkout and the existing registration; supported later
+invocation is `node <exact-M-checkout>/scripts/tempo-cli.mjs start --config /Users/andy/.config/tempo/config.json --no-open`.
+K does not execute it. No install-ready main revision exists at this checkpoint.

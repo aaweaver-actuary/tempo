@@ -1,5 +1,21 @@
 # Continuous provider synchronization (#491)
 
+## Independent command and Settings slice (#590)
+
+The current-main command slice exposes configure, manual sync and legacy lapse
+retry through the existing durable gateway while keeping the API reader-only.
+Games Settings retains original save bytes/manual-run identity across lost
+acknowledgment and tab unmount/reload. Pending, failed and completed operations
+remain distinct; a queued job does not imply provider completion or Study
+availability. See the [owning transaction/recovery view](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590).
+
+The slice adds no worker profile, provider activation, schema, permission or
+Study maintenance change. Packaging and #580/#581 settlement repairs remain
+separate. Source was extracted from #558 at `403c19e5` onto main `346d1741`;
+the reconciled candidate has not been tested under the user's no-new-tests
+instruction. Existing component evidence is historical evidence for its stated
+revision, not a new assembled acceptance result.
+
 ## Bounded Game Review receipt-read checkpoint
 
 The backend Game Review GET now preserves the current public owner's complete
@@ -162,3 +178,39 @@ The legacy feedback retry action is hidden when the actual receipt is an
 `EncounterReceipt`: that endpoint supports stored lapse replay only. Pending
 encounters remain accurately labeled and use their existing delivery/owner path;
 this checkpoint adds no encounter retry endpoint.
+
+## Task D → Task B / C integration handoff
+
+Task D supplies independent forward/reconciliation streams over the existing
+Games jobs and source commits. [The canonical flow and coverage contract](../../../backend/app/games/feedback/README.md#continuous-acquisition-and-historical-reconciliation--task-d)
+own the scheduling behavior; [provider pages](../../../backend/app/games/providers/README.md)
+retain injected client/cancellation and rate-limit ownership.
+
+Task C must thread `reconciliation_interval_seconds: int | None = None` through
+`create_current_game_sync`, `create_current_provider_worker`, and
+`current_provider_worker` to `ContinuousSync`. Expose
+`--reconcile-interval-seconds`; final continuous collection launch must explicitly
+supply an integer >=60. Preview reads `PostgresReviewStore.continuous_state` and
+uses `forward_job`, not `last_job`. The returned facts also expose saved coverage
+start and reconciliation's frozen window. No live value or cadence is inferred
+by this source change. Task D edits neither root file nor launch configuration.
+
+Task B's compatible benign-exclusion classification remains required for pages
+with the exact documented rejection reasons; D never changes `coordinator.py`.
+Existing source correction/identity guards still fence changed evidence.
+Configured historical coverage, acquisition completion, comparison readiness,
+Study intake and actual Study availability remain distinct claims. No provider
+activation, deployment, live user setting writes or Study settlement proof is
+part of this component handoff.
+
+
+## Collection release operator
+
+The [thin managed operator](../../../scripts/README.md#games-collection-operator)
+provides read-only plan/status and explicit enable/disable for the independently
+installed collection-only profile. Source qualification, inactive installation,
+launch-input readiness and live activation are separate outcomes.
+
+The [Task G qualification receipt](../../validation/task-g-collection.md) separates
+packaged collection proof, known baseline gate failures, inactive installation
+and still-missing private launch inputs.

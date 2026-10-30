@@ -42,6 +42,233 @@ def policy(provider, **changes):
                              source_revision=1, **changes)
 
 
+def collection_runtime(store, *, learning=None, delivery_enabled=False):
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(fixture("snapshot")))
+    miss = PGN.replace("1. e4 e5 2. Nf3 Nc6", "1. d4")
+    rows = [{"id": "collection-game", "createdAt": 1792929600000,
+             "speed": "rapid", "rated": True, "pgn": miss}]
+    return create_game_sync(policies=(policy("lichess"),), store=store,
+        snapshots=SimpleNamespace(snapshot=lambda repertoire: snapshot), learning=learning,
+        delivery_enabled=delivery_enabled, encounter_feedback=True, clock=FakeClock(),
+        transport_factory=lambda: httpx.MockTransport(lambda request: httpx.Response(200,
+            content="\n".join(json.dumps(row) for row in rows),
+            headers={"Content-Type": "application/x-ndjson"})))
+
+
+def collection_job(identity):
+    return sync_job(job_id=identity, workspace_id="fixture", account="Learner", window=WINDOW,
+                    repertoire_ids=("white",), policy=policy("lichess"))
+
+
+def test_collect_only_import_idle_and_restart_preserve_original_pending_commands():
+    store = GamesMemoryStore()
+    runtime = collection_runtime(store)
+    def forbidden(*args, **kwargs):
+        pytest.fail("collection queried or attempted delivery")
+    store.pending_delivery = forbidden
+    runtime.runner.coordinator.deliver = forbidden
+    store.enqueue(collection_job("first"))
+    assert runtime.run_once() == "page"
+    original, = store.deliveries.values()
+    assert original.encounter is not None and original.lapse is None
+    assert original.state == "pending" and original.receipt is None and original.attempts == 0
+    assert store.sources[original.source_key].findings
+    assert store.captures
+    pending_bytes = original.model_dump_json()
+    # This exercises the post-page preferred-delivery branch and then idle calls.
+    for _ in range(3):
+        assert runtime.run_once() == "idle"
+        assert store.delivery(original.operation_id).model_dump_json() == pending_bytes
+    runtime.close()
+    assert runtime.run_once() == "stopped"
+    restarted = collection_runtime(store)
+    restarted.runner.coordinator.deliver = forbidden
+    # A fresh runner starts with no delivery preference: exercise its fallback.
+    assert restarted.run_once() == "idle"
+    store.enqueue(collection_job("overlap"))
+    assert restarted.run_once() == "page"
+    assert len(store.deliveries) == 1
+    assert store.delivery(original.operation_id).model_dump_json() == pending_bytes
+    assert restarted.run_once() == "idle"
+    restarted.close()
+
+
+def test_collect_only_does_not_touch_preexisting_delivery_retry_state():
+    store = GamesMemoryStore()
+    seed = collection_runtime(store)
+    store.enqueue(collection_job("seed"))
+    assert seed.run_once() == "page"
+    original, = store.deliveries.values()
+    original = original.model_copy(update={"attempts": 7, "next_attempt_at": 123,
+                                           "error": "owner_acknowledgment_uncertain"})
+    store.save_delivery(original)
+    seed.close()
+    runtime = collection_runtime(store)
+    def forbidden(*args, **kwargs):
+        pytest.fail("collection touched delivery retry state")
+    store.pending_delivery = store.save_delivery = forbidden
+    runtime.runner.coordinator.deliver = forbidden
+    store.enqueue(collection_job("next"))
+    assert runtime.run_once() == "page"
+    assert runtime.run_once() == runtime.run_once() == "idle"
+    assert store.delivery(original.operation_id) == original
+    runtime.close()
+
+
+def test_collect_only_is_the_only_mode_allowing_an_absent_receiver():
+    with pytest.raises(ValueError, match="receiver"):
+        collection_runtime(GamesMemoryStore(), delivery_enabled=True)
+    from test_product_priority_intake_boundary import AcceptedPriorityIntake
+    store, receiver = GamesMemoryStore(), AcceptedPriorityIntake()
+    runtime = collection_runtime(store, learning=receiver, delivery_enabled=True)
+    store.enqueue(collection_job("enabled"))
+    assert runtime.run_once() == "page"
+    assert runtime.run_once() == "delivery"
+    saved, = store.deliveries.values()
+    assert saved.state == "acknowledged" and saved.receipt.outcome == "accepted"
+    runtime.close()
+
+
+@pytest.mark.parametrize("interval", [None, 120])
+def test_collect_only_current_root_omits_receiver_and_forwards_supplied_reconciliation(monkeypatch, interval):
+    from contextlib import nullcontext
+    import sys
+    from app.games.feedback.review import SyncConfiguration
+    from app.games.feedback.continuous import ForwardWindow
+    from app.product_composition import game_sync_current as current
+    configuration = SyncConfiguration(workspace_id="fixture", provider="lichess", account="Learner",
+        window=GameWindow(start_at="2026-10-25T12:00:00Z", end_at="2026-10-25T13:00:00Z",
+                          precision="second"), repertoire_ids=("white",), speeds=("rapid",),
+        rated=True, interval_seconds=60, revision=1)
+    stores, supplied, saved_configuration = GamesMemoryStore(), [], [configuration]
+    def forbidden(*args, **kwargs):
+        pytest.fail("collection constructed the receiving owner")
+    monkeypatch.setitem(sys.modules, "app.product_composition.provider_priority",
+        SimpleNamespace(CurrentProviderPriorityIntake=forbidden))
+    monkeypatch.setattr(current, "PostgresReviewStore", lambda connections: SimpleNamespace(
+        configuration=lambda workspace, provider: saved_configuration[0] if provider == "lichess" else None))
+    monkeypatch.setattr(current, "PostgresCanonicalGamesStore", lambda connections: stores)
+    monkeypatch.setattr(current, "ContinuousSync", lambda **kwargs: supplied.append(kwargs) or object())
+    monkeypatch.setattr(current, "current_sync_admission", nullcontext)
+    runtime, _ = current.current_provider_worker(workspace="fixture", connections=object(),
+        clock=FakeClock(), forward_window=ForwardWindow(0), delivery_enabled=False,
+        reconciliation_interval_seconds=interval)
+    assert runtime.runner.coordinator.learning is None
+    assert runtime.runner.coordinator.encounter_feedback is True
+    assert runtime.runner.delivery_enabled is False
+    if interval is None:
+        assert "reconciliation_interval_seconds" not in supplied[0]
+    else:
+        assert supplied[0]["reconciliation_interval_seconds"] == interval
+    from app.games.feedback.review import ReviewUnavailable
+    saved_configuration[0] = configuration.model_copy(update={"revision": 2})
+    stores.claim_job = lambda *args: pytest.fail("edited configuration reached an old client")
+    try:
+        with pytest.raises(ReviewUnavailable, match="sync_configuration_changed_restart_worker"):
+            runtime.run_once()
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("factory,reason", [
+    ("create_current_game_sync", "qualified_provider_encounter_receiver_required"),
+    ("create_current_provider_worker", "decoupled_priority_intake_required"),
+])
+def test_collect_only_current_roots_still_require_receiver_when_delivery_enabled(factory, reason):
+    from app.product_composition import game_sync_current as current
+    from app.games.feedback.review import ReviewUnavailable
+    def forbidden():
+        pytest.fail("missing receiver reached source access")
+    with pytest.raises(ReviewUnavailable, match=reason):
+        getattr(current, factory)(workspace="legacy", connections=forbidden)
+
+
+@pytest.mark.parametrize("interval", [None, 120])
+def test_collect_only_cli_preserves_explicit_worker_options(monkeypatch, interval, capsys):
+    import sys
+    from app.product_composition import game_sync_current as current
+    supplied = {}
+    runtime, schedule = object(), SimpleNamespace(enqueue_due=lambda: False)
+    monkeypatch.setenv("TEMPO_PRODUCT_GAME_SYNC_ENABLED", "1")
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "synthetic-not-connected")
+    monkeypatch.setattr(current, "DedicatedGamesConnections", lambda dsn: dsn)
+    def create(**kwargs):
+        supplied.update(kwargs)
+        return runtime, schedule
+    monkeypatch.setattr(current, "current_provider_worker", create)
+    def run(actual, **kwargs):
+        assert actual is runtime and kwargs["stop_when_idle"] and kwargs["max_units"] == 2
+        assert kwargs["enqueue_due"]() is False
+        assert kwargs["enqueue_due"]() is False
+        return 2
+    monkeypatch.setattr(current, "run_optional_worker", run)
+    arguments = ["worker", "--collect-only", "--follow", "--overlap-seconds", "0",
+                 "--once", "--max-units", "2"]
+    if interval is not None:
+        arguments += ["--reconcile-interval-seconds", str(interval)]
+    monkeypatch.setattr(sys, "argv", arguments)
+    current.main()
+    assert supplied["delivery_enabled"] is False
+    assert supplied.get("reconciliation_interval_seconds") == interval
+    assert ("reconciliation_interval_seconds" in supplied) == (interval is not None)
+    assert json.loads(capsys.readouterr().out)["durable_checkpoints_retained"] is True
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--reconcile-interval-seconds", "120"],
+    ["--follow", "--overlap-seconds", "0", "--reconcile-interval-seconds", "59"],
+])
+def test_collect_only_cli_rejects_invalid_reconciliation_before_connections(monkeypatch, arguments):
+    import sys
+    from app.product_composition import game_sync_current as current
+    monkeypatch.setattr(sys, "argv", ["worker", "--collect-only", *arguments])
+    monkeypatch.setattr(current, "DedicatedGamesConnections",
+        lambda *args, **kwargs: pytest.fail("invalid CLI opened connections"))
+    with pytest.raises(SystemExit) as stopped:
+        current.main()
+    assert stopped.value.code == 2
+
+
+def test_collect_only_preview_retains_reader_profile_and_starts_no_worker(monkeypatch, capsys):
+    import sys
+    from app.product_composition import game_sync_current as current
+    monkeypatch.setenv("TEMPO_DATABASE_READ_URL", "synthetic-reader")
+    monkeypatch.delenv("TEMPO_PRODUCT_GAME_SYNC_ENABLED", raising=False)
+    monkeypatch.setattr(sys, "argv", ["worker", "--collect-only", "--preview"])
+    def connections(dsn, *, read_only):
+        assert dsn == "synthetic-reader" and read_only is True
+        return object()
+    monkeypatch.setattr(current, "DedicatedGamesConnections", connections)
+    monkeypatch.setattr(current, "PostgresReviewStore", lambda connections: SimpleNamespace(
+        configuration=lambda workspace, provider: None, continuous_state=lambda workspace, now: ()))
+    monkeypatch.setattr(current, "current_provider_worker",
+        lambda **kwargs: pytest.fail("preview constructed worker"))
+    current.main()
+    assert json.loads(capsys.readouterr().out)["read_only"] is True
+
+
+def test_collect_only_source_import_and_help_are_inert():
+    import os
+    import subprocess
+    import sys
+    script = '''
+import socket, subprocess, sys, threading
+import httpx, psycopg
+def forbidden(*args, **kwargs):
+    raise AssertionError("source import/help started I/O or a lifecycle")
+socket.socket.connect = psycopg.connect = forbidden
+httpx.Client.__init__ = httpx.AsyncClient.__init__ = forbidden
+subprocess.Popen = threading.Thread.start = forbidden
+from app.product_composition import game_sync_current
+sys.argv = ["worker", "--help"]
+game_sync_current.main()
+'''
+    result = subprocess.run([sys.executable, "-B", "-c", script], cwd=ROOT,
+        env=dict(os.environ), capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "--collect-only" in result.stdout and "--reconcile-interval-seconds" in result.stdout
+
+
 def test_concrete_both_provider_adapters_preserve_exact_ids_and_checkpoints():
     timestamp = int(datetime.fromisoformat("2026-09-01T00:00:00+00:00").timestamp() * 1000)
     rows = [{"id": f"synthetic{i:04d}", "createdAt": timestamp + i,
@@ -504,3 +731,35 @@ def test_native_current_study_bridge_fences_committed_game_and_uses_owner_factor
         database.execute_native("UPDATE product_feedback_sources SET payload=jsonb_set(payload,'{quarantined}','true'::jsonb) WHERE source_key=%s", (key,))
     with pytest.raises(ReviewUnavailable, match="committed_game_source_changed_or_unproved"):
         bridge.accept_lapse(lapse)
+
+
+def test_preview_agrees_with_continuous_after_interleaved_manual_request(monkeypatch, capsys):
+    import sys
+    from app.product_composition import game_sync_current as current
+    from app.product_composition.game_review import configured_job
+    from test_product_continuous_sync import ScheduleStore, configuration, finish, START
+    from app.games.feedback.continuous import ContinuousSync, ForwardWindow
+    from app.games.feedback.ports import JobState
+    config = configuration()
+    store = ScheduleStore((config,))
+    now = START + 5000
+    scheduler = ContinuousSync(workspace="legacy", store=store, policy=ForwardWindow(300),
+        build_job=configured_job, now=lambda: now)
+    assert scheduler.enqueue_due()
+    finish(store, store.enqueued[0], now)
+    manual = configured_job(config, "manual:latest")
+    store.jobs[manual.job_id] = JobState(spec=manual, status="quarantined")
+    store.configuration = lambda workspace, provider: config if provider == "lichess" else None
+    store.last_job = lambda *args: pytest.fail("preview read arbitrary latest request")
+    now += 1000
+    monkeypatch.setenv("TEMPO_DATABASE_READ_URL", "reader")
+    monkeypatch.setattr(sys, "argv", ["worker", "--preview", "--follow", "--overlap-seconds", "300"])
+    monkeypatch.setattr(current, "DedicatedGamesConnections", lambda *args, **kwargs: object())
+    monkeypatch.setattr(current, "PostgresReviewStore", lambda connections: store)
+    monkeypatch.setattr(current, "SystemClock", lambda: SimpleNamespace(now=lambda: now))
+    current.main()
+    preview = json.loads(capsys.readouterr().out)["providers"][0]
+    assert scheduler.enqueue_due()
+    assert preview["next_window"] == store.enqueued[-1].window.model_dump(mode="json")
+    assert preview["previous"]["spec"]["job_id"].startswith("following:")
+    assert store.jobs[manual.job_id].status == "quarantined"

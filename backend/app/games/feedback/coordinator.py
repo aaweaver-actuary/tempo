@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from tempo_game_classification import resolve_equivalent_mapping
 
@@ -18,6 +18,36 @@ from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, D
 
 def stable_id(*parts: object) -> str:
     return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+# Only explicit exclusions emitted by the current provider adapters are safe.
+_SAFE_REJECTIONS = {
+    "lichess": frozenset({"filtered_speed", "filtered_rated", "unsupported_variant", "duplicate_source_id", "unfinished_game"}),
+    "chesscom": frozenset({"outside_window", "time_control_filtered", "rated_filtered",
+                           "unsupported_variant", "duplicate_source_id", "unfinished_game"}),
+}
+_FACTUAL_NON_LAPSE_DIAGNOSTICS = frozenset({
+    "introduction_evidence_unavailable", "game_occurrence_time_not_exact",
+    "chronology_requires_timezone", "conflicting_introduction_chronology",
+    "introduced_content_identity_unproved",
+})
+
+
+def _comparison_revision(snapshots: tuple[RepertoireSnapshot, ...], unavailable: Iterable[str]) -> str:
+    """Capture clocks are provenance, not new material comparison facts."""
+    documents = []
+    for snapshot in snapshots:
+        document = snapshot.model_dump(mode="json")
+        membership = document["membership"]
+        membership.pop("captured_at")
+        membership["scope_repertoire_ids"].sort()
+        for route in membership["routes"]:
+            route["reentries"].sort(key=lambda value: json.dumps(value, sort_keys=True))
+        for owner, field in ((membership, "routes"), (document, "boundaries"),
+                             (document, "decision_presentations")):
+            owner[field].sort(key=lambda value: json.dumps(value, sort_keys=True))
+        documents.append(json.dumps(document, sort_keys=True, separators=(",", ":")))
+    return stable_id("comparison-facts-v1", sorted(set(documents)), sorted(unavailable))
 
 
 def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
@@ -63,23 +93,32 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
         if not any(finding.repertoire_id in snapshot.membership.scope_repertoire_ids
                    and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
             raise ValueError("encounter finding is outside supplied snapshot scope")
-        # Missing introduction chronology blocks a lapse, not an exact encounter fact.
-        unknown_chronology = (finding.kind == "known_unavailable"
-                              and finding.diagnostic == "introduction_evidence_unavailable")
-        if ((finding.kind not in {"known_unintroduced", "confirmed_miss"} and not unknown_chronology)
+        # Historical lapse proof is separate from a current exact authored fact.
+        factual_non_lapse = (finding.kind == "known_unavailable"
+            and finding.diagnostic in _FACTUAL_NON_LAPSE_DIAGNOSTICS)
+        if ((finding.kind not in {"known_unintroduced", "confirmed_miss"} and not factual_non_lapse)
                 or finding.membership != "present" or len(finding.expected_uci) != 1):
             continue
-        mappings = {mapping.model_dump_json(): mapping for snapshot in snapshots
+        applicable = tuple(snapshot for snapshot in snapshots
+            if finding.repertoire_id in snapshot.membership.scope_repertoire_ids
+            and finding.repertoire_revision == snapshot.membership.revision)
+        if any(not snapshot.membership.complete or not snapshot.membership.available
+               or snapshot.learner_color != game.learner_color or snapshot.variant != "standard"
+               for snapshot in applicable):
+            continue
+        # Resolve all exact-position alternatives before checking the finding's
+        # claimed target. Filtering by its card first would hide a conflicting alias.
+        mappings = {mapping.model_dump_json(): mapping for snapshot in applicable
             for mapping in snapshot.decision_presentations
-            if (mapping.repertoire_id, mapping.repertoire_revision,
-                mapping.decision_id, mapping.position_key, mapping.selected_response_uci,
-                mapping.presentation_id, mapping.presentation_revision) == (
-                finding.repertoire_id, finding.repertoire_revision, finding.decision_id,
-                finding.position_key, finding.expected_uci[0], finding.presentation_id,
-                finding.presentation_revision)}
+            if (mapping.repertoire_id, mapping.repertoire_revision, mapping.position_key) == (
+                finding.repertoire_id, finding.repertoire_revision, finding.position_key)}
         decision = resolve_equivalent_mapping(mappings.values())
         if decision is None or not decision.available:
-            continue  # Retain conflicting facts; equivalent route provenance is one target.
+            continue
+        if (decision.decision_id, decision.presentation_id, decision.presentation_revision,
+                decision.selected_response_uci) != (finding.decision_id, finding.presentation_id,
+                finding.presentation_revision, finding.expected_uci[0]):
+            continue
         if finding.ply > len(game.moves) or finding.played_uci != game.moves[finding.ply - 1]:
             raise ValueError("encounter played move differs from captured game")
         candidates.append(GameEncounter(key=GameEffectKey(workspace_id=game.workspace_id,
@@ -89,13 +128,19 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
             observation="matched" if finding.played_uci == finding.expected_uci[0] else "missed",
             detected_at=detected_at, occurred_at=occurred_at,
             payload_digest=source.source_digest if payload_digest is None else payload_digest))
-    return tuple(candidates)
+    # Repeated equivalent facts share one logical occurrence. Conflicting facts
+    # retain their findings but cannot choose a command through row ordering.
+    grouped = {}
+    for command in candidates:
+        grouped.setdefault(command.key.logical_id(), []).append(command)
+    return tuple(commands[0] for _, commands in sorted(grouped.items())
+                 if len({command.model_dump_json() for command in commands}) == 1)
 
 
 class Coordinator:
     def __init__(self, *, providers: Mapping[str, Acquisition], normalizer: Normalizer,
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
-                 learning: LearningFeedbackPort | EncounterFeedbackPort, clock: Clock,
+                 learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
@@ -117,6 +162,8 @@ class Coordinator:
             return
         page = self.providers[spec.provider].fetch_page(account=spec.account, window=spec.window,
                                                        continuation=job.continuation)
+        # Revalidate mutable nested data without losing provider subtype provenance.
+        page = type(page).model_validate(page.model_dump(mode="python"))
         if (page.provider, page.account, page.window) != (spec.provider, spec.account, spec.window):
             raise AcquisitionFailure("provider_page_scope_mismatch", retryable=False)
         if len(page.records) > self.max_page_records or sum(len(r.pgn.encode()) for r in page.records) > self.max_page_bytes:
@@ -126,13 +173,31 @@ class Coordinator:
             raise AcquisitionFailure("provider_page_provenance_exceeds_budget", retryable=False)
         if spec.filters and tuple(getattr(page, "filters", ())) != spec.filters:
             raise AcquisitionFailure("provider_page_filter_mismatch", retryable=False)
-        snapshots = tuple(self.snapshots.snapshot(item) for item in spec.repertoire_ids)
-        for repertoire_id, snapshot in zip(spec.repertoire_ids, snapshots):
-            if snapshot.membership.workspace_id != spec.workspace_id or repertoire_id not in snapshot.membership.scope_repertoire_ids:
-                raise AcquisitionFailure("snapshot_scope_mismatch", retryable=False)
-        comparison_revision = stable_id(*(s.model_dump(mode="json") for s in snapshots))
+        snapshots, unavailable_snapshots = [], set()
+        snapshot_integrity_error = False
+        for repertoire_id in spec.repertoire_ids:
+            try:
+                supplied = self.snapshots.snapshot(repertoire_id)
+            except Exception as error:
+                # Optional reads can fail independently of valid acquisition.
+                unavailable_snapshots.add(repertoire_id)
+                if str(error) in {"snapshot_scope_mismatch", "repertoire_snapshot_scope_mismatch"}:
+                    snapshot_integrity_error = True
+                continue
+            try:
+                snapshot = RepertoireSnapshot.model_validate(supplied.model_dump(mode="python"))
+                if (snapshot.membership.workspace_id != spec.workspace_id
+                        or repertoire_id not in snapshot.membership.scope_repertoire_ids):
+                    raise ValueError("snapshot_scope_mismatch")
+            except ValueError:
+                snapshot_integrity_error = True
+                unavailable_snapshots.add(repertoire_id)
+                continue
+            snapshots.append(snapshot)
         sources, captures, deliveries = [], [], []
-        boundary = bool(page.rejections)
+        boundary = any(rejection.reason not in _SAFE_REJECTIONS[spec.provider]
+                       for rejection in page.rejections)
+        comparison_unavailable = False
         quarantined = False
         positions = 0
         for record in page.records:
@@ -142,6 +207,9 @@ class Coordinator:
             key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
             previous = self.store.source(key)
             normalized, findings, encounters, diagnostic = None, (), (), None
+            compatible = ()
+            unresolved = set(unavailable_snapshots)
+            integrity_error = snapshot_integrity_error
             try:
                 normalized = self.normalizer.normalize(record, spec)
                 if (normalized.workspace_id, normalized.source_revision, normalized.source_digest) != (
@@ -161,42 +229,75 @@ class Coordinator:
                 positions += len(normalized.moves)
                 if positions > self.max_page_positions:
                     raise AcquisitionFailure("page_position_budget_exceeded", retryable=False)
-                findings = tuple(f for snapshot in snapshots for f in self.comparer.compare(normalized, snapshot, record=record, spec=spec))
-                if len(findings) > 1000 * len(snapshots):
-                    raise AcquisitionFailure("comparison_finding_budget_exceeded", retryable=False)
-                for finding in findings:
-                    if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
-                            spec.provider, normalized.game_id, normalized.source_revision, normalized.source_digest):
-                        raise ValueError("comparison provenance differs from captured source")
-                    if finding.repertoire_id not in spec.repertoire_ids or not any(
-                            finding.repertoire_id in snapshot.membership.scope_repertoire_ids
-                            and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
-                        raise ValueError("comparison repertoire scope differs from captured snapshot")
-                if self.encounter_feedback:
-                    encounters = project_encounters(normalized, findings=findings, snapshots=snapshots,
-                        source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
-                            source_revision=normalized.source_revision, source_digest=normalized.source_digest),
-                        detected_at=self.clock.utc_now(), occurred_at=(normalized.played_at
-                            if record.time_precision in {"second", "millisecond"} else None),
-                        payload_digest=normalized.source_digest)
             except ValueError:
+                integrity_error = True
+            if normalized is not None and not integrity_error:
+                compatible = tuple(snapshot for snapshot in snapshots
+                                   if snapshot.learner_color == normalized.learner_color)
+                compared_findings = []
+                for snapshot in compatible:
+                    repertoire_ids = set(snapshot.membership.scope_repertoire_ids)
+                    try:
+                        result = tuple(self.comparer.compare(normalized, snapshot, record=record, spec=spec))
+                    except Exception:
+                        unresolved.update(repertoire_ids)
+                        continue
+                    if len(result) > 1000:
+                        raise AcquisitionFailure("comparison_finding_budget_exceeded", retryable=False)
+                    try:
+                        for supplied_finding in result:
+                            finding = Finding.model_validate(supplied_finding.model_dump(mode="python"))
+                            if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
+                                    spec.provider, normalized.game_id, normalized.source_revision, normalized.source_digest):
+                                raise ValueError("comparison provenance differs from captured source")
+                            if (finding.repertoire_id not in spec.repertoire_ids
+                                    or finding.repertoire_id not in repertoire_ids
+                                    or finding.repertoire_revision != snapshot.membership.revision):
+                                raise ValueError("comparison repertoire scope differs from captured snapshot")
+                            compared_findings.append(finding)
+                            if finding.diagnostic == "snapshot_incomplete_or_unavailable":
+                                unresolved.add(finding.repertoire_id)
+                    except ValueError:
+                        integrity_error = True
+                findings = tuple(sorted(set(compared_findings),
+                    key=lambda finding: (finding.ply, finding.repertoire_id, finding.model_dump_json())))
+                if self.encounter_feedback and not integrity_error:
+                    try:
+                        encounters = project_encounters(normalized, findings=findings, snapshots=compatible,
+                            source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
+                                source_revision=normalized.source_revision, source_digest=normalized.source_digest),
+                            detected_at=self.clock.utc_now(), occurred_at=(normalized.played_at
+                                if record.time_precision in {"second", "millisecond"} else None),
+                            payload_digest=normalized.source_digest)
+                    except ValueError:
+                        integrity_error = True
+            if integrity_error:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
                 boundary = True
+            elif unresolved:
+                diagnostic = "comparison_unavailable:" + json.dumps(sorted(unresolved), separators=(",", ":"))
+            elif not compatible:
+                diagnostic = "no_compatible_repertoire"
+            comparison_unavailable = comparison_unavailable or bool(unresolved) or not compatible
+            comparison_revision = _comparison_revision(compatible, unresolved)
             fingerprint = stable_id(record.model_dump(mode="json", exclude={"source_revision"}))
             changed = previous is not None and fingerprint != previous.record_fingerprint
             if self.source_identity is not None and previous and previous.normalized is not None and normalized is not None:
                 changed = changed or (previous.normalized.game_id, previous.normalized.source_revision,
                     previous.normalized.source_digest) != (normalized.game_id,
                     normalized.source_revision, normalized.source_digest)
-            held = changed or bool(previous and previous.quarantined) or diagnostic is not None
+            held = changed or bool(previous and previous.quarantined) or integrity_error
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
             observations = {}
             for item in encounters:
                 observations.setdefault(item.key.logical_id(), set()).add(encounter_observation(item))
+            compared_repertoires = {repertoire for snapshot in compatible
+                for repertoire in snapshot.membership.scope_repertoire_ids} - unresolved
             for effect in effects:
                 if isinstance(effect, GameLapse):
-                    still_supported = (effect.key.decision_id, effect.key.occurrence_ply) in confirmed
+                    still_supported = (effect.finding.repertoire_id not in compared_repertoires
+                        or (effect.key.decision_id, effect.key.occurrence_ply) in confirmed)
                 else:
                     current = observations.get(effect.key.logical_id())
                     # Later admission/learning or missing proof cannot erase history.
@@ -228,7 +329,8 @@ class Coordinator:
                     effects.append(encounter)
                     occupied_keys.add(occurrence)
                     deliveries.append(delivery_for(key, encounter))
-            diagnostic = diagnostic or ("changed_source_requires_D08_resolution" if held else None)
+            if held and not integrity_error:
+                diagnostic = "changed_source_requires_D08_resolution"
             sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
                 record_fingerprint=previous.record_fingerprint if previous else fingerprint,
@@ -245,7 +347,8 @@ class Coordinator:
             status = "quarantined"
         error = "unresolved_page_boundary" if boundary else (
             "incomplete_window_without_safe_continuation" if not complete and not resumable else (
-                "changed_source_requires_D08_resolution" if quarantined else None))
+                "changed_source_requires_D08_resolution" if quarantined else
+                "comparison_unavailable" if comparison_unavailable else None))
         committed_job = job.model_copy(update={"status": status, "continuation": page.continuation if safe else job.continuation,
             "window_complete": complete, "last_checkpoint_at": self.clock.utc_now() if safe else job.last_checkpoint_at,
             "pages_committed": job.pages_committed + 1, "next_attempt_at": 0, "lease_until": 0,

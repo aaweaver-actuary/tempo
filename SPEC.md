@@ -34,6 +34,20 @@ The first useful feature must not depend on completing an independent Learning r
 
 ## 3. Game feedback
 
+### Collection-first release checkpoint (Task G, October 29)
+
+The selected release collects explicitly configured games continuously and retains
+honest per-repertoire deviation evidence. Automatic Study delivery stays disabled;
+original pending commands remain durable and unattempted. Missing comparisons are
+unresolved until a later reconciliation obtains the repertoire source. A bounded
+collection-only proof and inactive installation do not establish Study priority or
+settlement acceptance. #594/#595, engines, coaching, ranking and new UI are later
+work. Live collection requires Andy's separate explicit switch-on instruction.
+
+The [collection operator](scripts/README.md#games-collection-operator) reports
+installed identity and missing inputs before enabling only its own worker.
+
+
 ### G01 — Import and classify before changing learning state
 
 Separate provider adapters fetch games into one typed PGN representation. Preserve provider/game identity, player color, game time and its precision, move history, and import provenance. Import incrementally with retry-safe checkpoints. A bounded provider response must not silently truncate a requested date range.

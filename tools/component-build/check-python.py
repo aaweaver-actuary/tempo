@@ -101,6 +101,10 @@ def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
     root = Path(root).resolve()
     sources = root / "src"
     allowed_external = set(dependencies)
+    # This declared distribution also ships its centralized storage namespace.
+    # Do not infer aliases from names or admit an undeclared producer.
+    allowed_imports = allowed_external | ({"tempo_remediation_database"}
+        if "tempo_learning_remediation" in allowed_external else set())
     standard_library = set(sys.stdlib_module_names)
     package_directories = [path for path in sources.iterdir() if path.is_dir()]
     if len(package_directories) != 1:
@@ -123,6 +127,12 @@ def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
         owner = next(owner for owner in owned_packages.values() if source.is_relative_to(owner))
         if source.is_symlink() or not source.resolve().is_relative_to(owner):
             problems.append(f"{source}: source escape")
+            continue
+        # Centralized DB build inputs also retain sdist-only verification files.
+        # Both Learning wheel hooks exclude these top-level directories. Keep
+        # path/symlink validation above for all files; nested runtime directories
+        # and every shipped adapter/DDL Python module still receive the AST audit.
+        if owner != package and source.relative_to(owner).parts[0] in {"tests", "tooling"}:
             continue
         tree = ast.parse(source.read_text())
         module_parts = (owner.name, *source.relative_to(owner).with_suffix("").parts)
@@ -152,7 +162,7 @@ def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
                     module_path = owned_packages[import_root].joinpath(*imported_module.split(".")[1:])
                     if not module_path.with_suffix(".py").is_file() and not (module_path / "__init__.py").is_file():
                         problems.append(f"{source}:{node.lineno}: unavailable local module {imported_module}")
-                elif import_root not in standard_library and import_root not in allowed_external:
+                elif import_root not in standard_library and import_root not in allowed_imports:
                     problems.append(f"{source}:{node.lineno}: undeclared dependency {imported_module}")
     public_tree = ast.parse((package / "__init__.py").read_text())
     declared_exports = next((ast.literal_eval(node.value) for node in public_tree.body

@@ -67,7 +67,7 @@ def main():
             secret.write_text("POSTGRES_PASSWORD="+password+"\n")
             secret.chmod(0o600)
             docker("run","--detach","--name",owner,"--label","tempo.owner="+owner,
-                   "--label","tempo.disposable=true","--memory","384m","--cpus","1","--pids-limit","256",
+                   "--label","tempo.disposable=true","--memory","384m","--pids-limit","256",
                    "--mount",f"type=volume,source={volume},target=/var/lib/postgresql",
                    "--publish",f"127.0.0.1:{published_port}:5432","--env-file",str(secret),image,
                    "postgres","-c","shared_buffers=32MB","-c","max_connections=24")

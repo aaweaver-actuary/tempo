@@ -13,7 +13,7 @@ from Tempo main for this companion.
 
 ```mermaid
 flowchart LR
-  Browser["Andy's browser"] -->|"127.0.0.1:5050; authenticated login"| Admin["Optional pgAdmin<br/>tempo-pgadmin project<br/>0.25 CPU / 384 MiB / 128 PIDs"]
+  Browser["Andy's browser"] -->|"127.0.0.1:5050; authenticated login"| Admin["Optional pgAdmin<br/>tempo-pgadmin project<br/>Unrestricted CPU / 384 MiB / 128 PIDs"]
   Admin -->|"tempo_default; tempo_reader<br/>bounded read-only connections"| DB[("Existing Tempo PostgreSQL")]
   Admin --> Settings[("tempo-pgadmin-settings<br/>pgAdmin account, settings and passfile copy")]
   Startup["Docker Desktop startup<br/>unless-stopped"] --> Admin
@@ -125,3 +125,5 @@ writable public relations. Do not test by attempting a real database write.
 
 Prepared-source configuration validation does not certify image startup,
 authentication, effective isolation or live UI/database acceptance.
+
+Current source omits the pgAdmin CPU quota and retains its 384 MiB memory and 128 PID limits. Existing installed-container receipts above describe their captured settings; applying this source change requires separately authorized recreation and readback. Unrestricted CPU guarantees neither host capacity nor Study responsiveness.

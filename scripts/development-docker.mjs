@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {readdir,readFile} from 'node:fs/promises';
-import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource} from './development-budget.mjs';
+import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner,acquireDevelopmentAdmission,recordBudgetResource,validateDevelopmentCpuLimit} from './development-budget.mjs';
 
 export function managedDockerEnvironment(environment,directory) {
   const docker = environment.TEMPO_REAL_DOCKER ?? environment.PATH.split(delimiter)
@@ -27,17 +27,18 @@ function option(args,name) {
   const index=args.indexOf(name);
   return index>=0 ? args[index+1] : args.find(value=>value.startsWith(name+'='))?.slice(name.length+1);
 }
-export function managedContainerArguments(args,token) {
+export function managedContainerArguments(args,token,defaultCpus) {
   if(args[0]!=='run') return args;
-  const cpus=Number(option(args,'--cpus') ?? '1');
+  const requestedCpu=option(args,'--cpus');
+  const cpus=validateDevelopmentCpuLimit(requestedCpu === undefined ? defaultCpus : Number(requestedCpu));
   const memory=option(args,'--memory') ?? '512m';
   const match=/^(\d+(?:\.\d+)?)([bkmgt]?)b?$/i.exec(memory);
-  if(!match || !(cpus>0)) throw new Error('Managed tests require finite CPU and memory limits');
+  if(!match) throw new Error('Managed tests require a positive finite memory limit');
   const powers={b:1/1024**2,k:1/1024,m:1,g:1024,t:1024**2,'':1/1024**2};
   const memoryMiB=Number(match[1])*powers[match[2].toLowerCase()];
-  if(!(memoryMiB>0)) throw new Error('Managed tests require a positive memory limit');
+  if(!Number.isFinite(memoryMiB) || !(memoryMiB>0)) throw new Error('Managed tests require a positive finite memory limit');
   return {args:['run','--label','tempo.resource-class=development','--label',`tempo.resource-owner=${token}`,
-    ...(!option(args,'--cpus')?['--cpus',String(cpus)]:[]),...(!option(args,'--memory')?['--memory',memory]:[]),...args.slice(1)],limits:{cpus,memoryMiB}};
+    ...(requestedCpu === undefined && cpus !== undefined ? ['--cpus',String(cpus)] : []),...(!option(args,'--memory')?['--memory',memory]:[]),...args.slice(1)],limits:{cpus,memoryMiB}};
 }
 export async function runManagedDocker(args) {
   const executable=process.env.TEMPO_REAL_DOCKER;

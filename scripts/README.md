@@ -139,30 +139,59 @@ this source does not execute or authorize a one-time cutover.
 
 ## Managed builder allocation
 
-[`managedBuild`](development-budget.mjs) and `managedComposeBuild` accept an
-explicit `limits: {cpus, memoryMiB}` option. Omission retains 2 CPU / 2048 MiB.
-An explicit request supplies both numeric fields: positive finite CPUs whose
-100000-microsecond quota is an exact integer, and positive integer MiB. Each
-request must fit the unchanged aggregate 2 CPU / 2048 MiB ceiling. No limit is
-rounded, silently increased or replaced on failure.
+`config/resource-budgets.json` lists service allocations. An omitted `cpus`
+means CPU-unrestricted execution; it is not zero available CPU. Memory remains
+mandatory. Games is listed in the optional and development inventories with its
+existing 256 MiB memory and 96 PID limits. Existing service memory allocations
+are unchanged. An inventory is not a promise that every listed service can run
+together: the expanded optional and development inventories each total 2304 MiB,
+and requested development combinations must still fit the **2048 MiB** ceiling.
 
-For the proposed lower-memory build, the supported API is:
+[`managedBuild`](development-budget.mjs) and `managedComposeBuild` accept
+`limits: {memoryMiB, cpus?}`. Omission of the complete option uses unrestricted
+CPU and 2048 MiB memory. A smaller memory allocation can likewise omit CPU:
 
 ```js
-await managedBuild(buildWithNamedBuilder, {
-  limits: {cpus: 1, memoryMiB: 1536},
-});
-// Or: managedComposeBuild(prepareBakeJSON, executeBake, {limits: {cpus: 1, memoryMiB: 1536}})
+await managedBuild(buildWithNamedBuilder, {limits: {memoryMiB: 1536}});
+// A deliberate constrained test can still supply an exact CPU cap:
+await managedBuild(buildWithNamedBuilder, {limits: {cpus: 0.5, memoryMiB: 1536}});
 ```
 
-The caller keeps its existing build command, Docker adapter, quiet check and
-owner token/directory options. No new resource environment or CLI override is
-introduced.
-Limits are validated and copied before ownership acquisition or asynchronous
-hooks, then used for aggregate admission, rootless builder creation and exact
-kernel readback. Existing development containers count toward admission and are
-preserved. The one builder lane still excludes new managed container/Compose
-starts, even when a smaller builder leaves headroom.
+Explicit CPU caps must be positive finite numbers whose 100000-microsecond
+quota is an exact integer. Explicit memory is positive integer MiB. The request
+is copied before ownership acquisition or asynchronous hooks. Builders omit
+CPU driver options by default and verify unrestricted Docker readback; explicit
+requests retain exact quota/period readback. Memory readback, rootless execution,
+exclusive builder lane, Study quiet checks, startup admission, resource journals,
+foreign-owner preservation and verified cleanup remain authoritative. No failed
+request is retried with larger resources.
+
+The [managed Docker adapter](development-docker.mjs) likewise adds no `--cpus`
+unless supplied explicitly. It retains bounded memory defaults and owner labels.
+Generated Compose overrides omit ordinary CPU quotas and retain memory, optional
+PID limits and ownership. Active product/compatibility/test Compose definitions,
+pgAdmin and independent database launchers use the same unrestricted policy.
+Deliberately constrained Study-priority, saturation, inference-preemption and
+backup-shutdown fixtures keep their explicit CPU caps separately from ordinary
+service defaults.
+
+Internal worker fanout is separate from resource admission. The development
+wrapper preserves caller `CARGO_BUILD_JOBS`, `CMAKE_BUILD_PARALLEL_LEVEL`,
+`RAYON_NUM_THREADS` and `UV_CONCURRENT_BUILDS` settings and otherwise leaves them
+unset. BuildKit and the web image retain standard compiler defaults. This does
+not change Celery, provider, writer or production inference concurrency.
+
+Finite-only consumers can retain
+`readDevelopmentCpuAllocation({cpus, docker})`: it validates an explicit number,
+or reads the selected daemon's CPU capacity when omitted. Ordinary launchers do
+not call it to manufacture a quota. Neither this read nor unrestricted CPU is a
+reservation or a guarantee of available host capacity or Study responsiveness.
+
+Memory discovery uses `tempo.resource-class=development`. Known retained peers
+without that label must still be accounted for before a runtime action; empty
+discovery is not free capacity. Two retained 512 MiB peers plus a 1536 MiB builder
+still exceed the unchanged memory policy. Removing CPU quotas grants no memory
+exception, live-service shutdown or Docker Desktop configuration authority.
 
 `managedComposeBuild` also uses the small [web cache helper](development-web-cache.mjs)
 for the `web` target when its Dockerfile resolves to `Dockerfile.web` at its local
@@ -203,13 +232,13 @@ helper neither verifies application artifacts nor authorizes installation.
 
 ```mermaid
 flowchart TD
-    Request[managedBuild / managedComposeBuild limits] --> Snapshot[Validate and copy limits; defaults 2 CPU / 2048 MiB]
+    Request[managedBuild / managedComposeBuild limits] --> Snapshot[Copy memory and optional explicit CPU cap]
     Snapshot --> Owner[Existing host budget owner and exclusive builder lane]
     Owner --> Quiet[Existing Study quiet check]
-    Quiet --> Admission[Snapshot plus existing managed containers within global ceiling]
-    Admission --> Journal[Journal this builder identity before creation]
-    Journal --> Create[Create rootless builder with snapshot memory and CPU quota]
-    Create --> Verify[Exact kernel readback against snapshot]
+    Quiet --> Admission[Builder plus accounted development memory within 2048 MiB]
+    Admission --> Journal[Journal builder identity before creation]
+    Journal --> Create[Create rootless memory-bounded builder; CPU unrestricted unless explicit]
+    Create --> Verify[Verify memory and unrestricted or exact requested CPU readback]
     Verify -->|managedBuild| Build
     Verify -->|managedComposeBuild| Cache[Web cache setup inside builder lane]
     Cache -->|disabled / ineligible / setup failure| Build
@@ -220,23 +249,139 @@ flowchart TD
     Publish -->|invalid / oversized / cache failure| RetainCache[Retain prior cache and build result; clean safe candidate]
     Build -->|no automatic cache| Cleanup
     Build -->|failure| Preserve[Preserve current and original build error; clean owned candidate]
-    Create --> Cleanup[Existing owner-checked cleanup and independent absence probes]
+    Create --> Cleanup[Owner-checked cleanup and independent absence probes]
     Verify --> Cleanup
     Retire --> Cleanup
     RetainCache --> Cleanup
     Preserve --> Cleanup
     Cleanup --> Release[Release journal and lane only after verified absence]
-    Cleanup --> Retain[Uncertain or failed cleanup retains ownership and lane]
+    Cleanup --> Retain[Uncertain cleanup retains ownership and lane]
 ```
 
-This view describes source behavior with the proposed web-cache change;
-deployment remains unverified. The owning
+This view describes source behavior. The owning
 [`development-budget` regressions](../tests/runner/development-budget.test.mjs)
-use injected Docker capabilities; they do not establish a successful real
-1 CPU / 1536 MiB build, real cold/warm cache reuse or deployed resource isolation.
-Build errors, including OOM or time failures, remain failures without retrying at
-a higher allocation. Cache import/export and disk costs may outweigh saved build
-time. No elapsed-time improvement is claimed without a measured cold/warm pair.
-The checked-in runtime calls this wrapper; the separately owned measured release
-wrapper must be confirmed to do so before claiming it benefits. Build preparation
+use injected Docker capabilities; they do not establish a successful real build,
+real cold/warm cache reuse or installed Study responsiveness. Existing installed
+containers retain their old settings until an authorized owner recreates and
+inspects them. Build errors, including OOM or time failures, remain failures
+without retrying at a higher allocation. Cache import/export and disk costs may
+outweigh saved build time. No elapsed-time improvement is claimed without a
+measured cold/warm pair. The checked-in runtime calls this wrapper; a separately
+owned release wrapper must call it before claiming it benefits. Build preparation
 precedes application shutdown, so faster builds do not directly shorten that outage.
+
+## General qualification CPU allocation
+
+The [qualification window](qualification-window.mjs) composes the existing
+Study-aware budget and admitted managed Docker `run` lifecycle for Maia and
+frozen-order qualification:
+
+```sh
+node scripts/qualification-window.mjs maia /path/to/existing/python --source /task/checkout --evidence /task/evidence
+node scripts/qualification-window.mjs frozen /path/to/existing/python
+```
+
+Omitted CPU selection is unrestricted and performs no daemon CPU-capacity query.
+The caller may deliberately set `TEMPO_QUALIFICATION_CPUS`, or pass the existing
+qualification `--cpus` option. Legacy bridge/backend windows partition only an
+explicit total among their existing roles; they do not divide a daemon-derived
+default into fractional service quotas. `--describe` remains resource-free.
+Receipts represent unrestricted CPU as `null`, preserve requested explicit caps,
+and record observed kernel limits without claiming CPU reservation.
+
+The small [Python allocation adapter](qualification_cpu.py) owns CPU argument,
+environment and cgroup translation. Existing qualification owners retain memory,
+swap, PID/tmpfs limits, finite deadlines, source staging, permissions, image
+identity and cleanup. Maia's qualification-owner label remains distinct from
+the central resource-owner label. This source change does not qualify model
+inference, artifact installation, provider connectivity or installed services.
+
+
+## Games collection operator
+
+`scripts/game-review-collection.mjs` is the thin operator for the explicitly
+optional Games service in an existing frozen managed release. It reuses Tempo's
+registration, deployment receipt, target validation and maintenance lock. It does
+not install a release, change saved settings, start dependencies or migrate data.
+New managed releases automatically freeze the available Games overlay and build
+its image, while leaving the profile inactive. Old frozen receipts remain exact.
+The managed release must already contain the labeled collection-only service and
+immutable candidate image before enabling. Missing overlap/cadence are packaged
+as empty arguments and block enable; no setting is guessed. Ordinary `tempo start` does not start this profile. Managed maintenance stops an
+enabled collector before its protected transition and leaves it inactive afterward.
+
+```sh
+node /absolute/qualified/source/scripts/game-review-collection.mjs plan --candidate <40-character-commit>
+node /absolute/qualified/source/scripts/game-review-collection.mjs status --candidate <40-character-commit>
+node /absolute/qualified/source/scripts/game-review-collection.mjs enable --candidate <40-character-commit> --apply
+node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
+```
+
+Plan/status read the actual installed F reader through the API's reader profile;
+a successful JSON read does not imply launch readiness. Missing fields, truncated
+or unavailable repertoire evidence, unknown process inventory, frozen/image
+mismatch and competing collectors block enable. Unused providers may remain
+unconfigured. Configured providers need explicit recurrence, a 60-second to one-day
+seed, smaller explicit overlap and explicit reconciliation cadence. The prepared
+overlay preserves 256 MiB/96 PIDs and leaves CPU unrestricted under Task A policy.
+Effective limits are checked on existing collectors. Host processes and containers
+with a competing runner prevent activation; unrelated legacy workers are reported
+and preserved. Existing accepted Study obligations keep their own lifecycle.
+
+Enable rereads persisted maintenance evidence under the existing target lock.
+The existing runtime recovery assessor remains authoritative: pending or invalid
+guards, missing required guards, and unreadable evidence block enable. The observed
+database schema (`identity.schema_version`, not the report format version) must
+be a positive safe integer exactly matching the installed release schema. Safe,
+identity-verified disable remains available despite these launch blockers. The
+operator never clears recovery evidence or runs migrations.
+
+Enable uses the frozen Compose graph with `--no-build --no-deps --pull never` and
+starts only `game-feedback-worker`. Its real `--follow` scheduler enqueues initial
+forward/reconciliation work. Disable stops only an identity-verified collector. An owned, stopped collection-only
+container from the previous release may be recreated for the verified new image;
+a stopped delivery-capable peer still blocks enable. Source bind mounts, foreign
+working directories and durable worker volumes are refused. Disable preserves
+checkpoint, source, capture and pending-command tables. Neither
+operation drains Study delivery. Concurrent managed maintenance shares the target
+lock. Independent unmanaged launchers must respect that ownership; this wrapper
+cannot fence an arbitrary external process created after its inspection.
+
+Implemented source, proposed/unmerged integration; installed isolation remains
+unverified until the exact release is inspected and accepted.
+
+```mermaid
+flowchart LR
+    Operator[Explicit plan/status/enable/disable] --> Wrapper[game-review-collection.mjs]
+    Wrapper --> Registration[Existing target and frozen deployment receipt]
+    ManagedRelease[Normal managed release] --> FrozenProfile[Freeze and build optional inactive profile]
+    ManagedRelease --> Maintenance[Stop Games before protected maintenance]
+    FrozenProfile --> Registration
+    Wrapper --> Reader[F read-only installed evidence]
+    Wrapper --> Inventory[Image, resource and competing-process inspection]
+    Wrapper --> Lock[Existing managed target lock]
+    Lock --> Inspect[Inspect current evidence under target lock]
+    Inspect --> EnableChecks[Enable: maintenance assessor and exact schema plus existing launch checks]
+    EnableChecks -->|all clear| ComposeStart[Start only managed Games service]
+    Inspect --> StopChecks[Disable: existing identity and ownership stopSafe checks]
+    StopChecks -->|verified despite launch blockers| ComposeStop[Stop only managed Games service]
+    ComposeStart --> Collector[Packaged CLI: collect-only and follow]
+    ComposeStop -->|stop| Collector
+    Collector --> Games[(Games source, captures, checkpoint, pending outbox)]
+    Study[Ordinary Study and accepted obligations]
+    Collector -. no delivery or lifecycle call .-> Study
+```
+
+Canonical behavioral/store boundaries remain in the
+[provider-worker README](../docs/product-v02/game-sync/provider-worker/README.md),
+[Games feedback README](../backend/app/games/feedback/README.md) and
+[read projection README](../database/tempo_legacy_database/adapters/games/product_review/README.md).
+The regular runner suite owns switch refusal/idempotency/locking proof. The
+`games-collection-release` shared suite runs the pinned packaged candidate against
+the existing disposable PostgreSQL fixture, controlled real HTTP, original role
+provisioning and ordinary Study owner. Supply `TEMPO_COLLECTION_TEST_IMAGE` as the
+immutable image ID with this source commit's OCI revision label. To reuse the
+recorded runtime image across operator/documentation-only changes, also set
+`TEMPO_COLLECTION_TEST_REVISION` to its original exact source commit; the suite
+verifies every Dockerfile COPY input and rejects untracked runtime additions. No production
+source is mounted into that image; only synthetic qualification inputs are mounted.

@@ -858,6 +858,7 @@ Quiet notifications (October 2, 2026):
 | The PostgreSQL maintenance image cannot start the schema migration or SQLite import because it omits the shared schema-version module | `PostgreSQL maintenance image starts migration and import commands` in `database/tests/test-postgres-docker.mjs` |
 | Cutover verification hashes PostgreSQL-only publication columns and falsely reports a mismatch with the SQLite source | `test_postgres_cutover_digest_ignores_new_target_columns` |
 | Backup restore verification fails after source-column projection is introduced or omits PostgreSQL-only receipt columns | `test_postgres_backup_comparison_projects_postgres_only_columns` |
+| PostgreSQL fingerprint iteration implicitly fetches only 100 rows per round trip; explicit 1,000-row batches must preserve complete ordered digests, row counts and restore mismatch rejection | `test_postgres_fingerprint_preserves_complete_ordered_digest_across_batches` in `backend/tests/test_postgres_import_verification.py`; native `database/tests/check_postgres_backup_batching.py`, explicitly run with `node scripts/development-budget.mjs backend/.venv/bin/python database/tests/check_postgres_backup_batching.py` |
 | Compose splits the recurring PostgreSQL backup shell loop into two arguments and leaves backups restarting | `recurring PostgreSQL backup loop has valid shell syntax` in `database/tests/test-postgres-docker.mjs` |
 | PostgreSQL game exclusion is rejected by the route guard or writes without a foreground receipt and durable refresh intents | `test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup` |
 | Game exclusion reports a pending Celery receipt as a completed save or replays it with a new command ID | `game exclusion keeps its operation ID and never treats a pending receipt as saved`; `a different game exclusion decision waits for the prior receipt` |
@@ -1437,6 +1438,7 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - A SQLite volume archive copies only the main database file while committed WAL pages are missing, and its queue fingerprint disagrees with the manifest: `backend/tests/test_sqlite_cutover_snapshot.py::test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_manifest`.
 - A verified SQLite snapshot becomes unusable when Docker remounts it at a different path: `backend/tests/test_sqlite_cutover_snapshot.py::test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_manifest` checks a relocated copy against the same digest and logical manifest.
 - A PostgreSQL backup restores without operation receipts, publication state, or another public table: `backend/tests/test_postgres_backup_verification.py::test_postgres_backup_comparison_rejects_missing_table_and_changed_rows`; the disposable Docker gate restores and compares every public table before browser tests.
+- The recurring PostgreSQL backup daemon fails to forward stop signals or reap its active child before exiting: `database/tests/backup-daemon/backup-daemon.test.mjs` cases `backup daemon sleeping exits gracefully through configured stop signal` and `backup daemon interrupted dump reaps child and retains only partial archive` prove configured TERM and supported INT delivery, child settlement before parent completion, preserved archive publication and seeded bytes, and explicit one-shot maintenance entrypoint/command compatibility.
 - PostgreSQL game account settings bypass Celery or leave stale provider credentials after an account is cleared: `backend/tests/test_postgres_cutover.py::test_postgres_game_accounts_update_dispatches_foreground_command` and `backend/tests/test_postgres_cutover.py::test_postgres_game_accounts_update_reconciles_provider_rows`.
 - Removed legacy probe still invokes a provider/database adapter: `backend/tests/test_postgres_cutover.py::test_removed_endgame_probe_rejects_without_provider_or_database`.
 - PostgreSQL mode blocks pure card validation merely because it uses HTTP POST: `backend/tests/test_postgres_cutover.py::test_postgres_card_validation_remains_available_without_a_write_worker`.
@@ -4987,18 +4989,36 @@ service budgets, rootless build confinement and bounded/labelled component Docke
 invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
 checks and listing do not acquire a heavy-work lease.
 
-`A14 managed build defaults and explicit lower limits bind creation and exact readback`,
+`A14 daemon CPU defaults and explicit build limits bind creation and exact readback`,
 `A15 invalid or over-budget build limits fail before ownership, hooks or Docker`,
 `A16 lower build snapshot admits existing peers at the ceiling and preserves them through cleanup`,
-`A17 aggregate build admission rejects CPU or memory overflow without touching peers`,
+`A17 aggregate build admission rejects memory overflow without touching peers`,
 `A18 builder cgroup mismatch fails without fallback and verifies cleanup before release`,
 `A19 lower build retains journal and lane on failed cleanup and excludes inherited builders`,
 and `A20 Compose build forwards explicit limits and preserves build failures after verified cleanup`
-in that same registered runner own per-build allocation. They retain the default
-2 CPU / 2048 MiB policy and prove explicit 1 CPU / 1536 MiB limits with injected
-Docker readback, caller mutation, CPU/memory overcommit, peer preservation,
+in that same registered runner own per-build allocation. The corrected policy
+uses daemon CPU allocation by default, preserves requested individual CPU caps
+and retains the aggregate 2048 MiB memory ceiling. They prove explicit
+1 CPU / 1536 MiB limits with injected Docker readback, caller mutation,
+memory overcommit, peer preservation,
 failed cleanup and lane exclusion. Real lower-memory build success remains
 separate, unproved operational evidence.
+
+`A21 explicit builder CPUs above two and peer CPU totals do not override memory or isolation`,
+`A22 higher CPU requests retain finite container limits and the separate aggregate memory ceiling`,
+`A23 higher CPU builders still defer on active or unavailable Study and release only their own lane`,
+`A24 retained unlabelled Learning and PostgreSQL still block a 1536 MiB builder on memory`,
+`A25 development command preserves caller compiler fanout and otherwise uses standard runtime defaults`,
+`A26 missing or invalid daemon CPU allocation fails without a fallback builder`,
+and `A27 production web image leaves compiler fanout to standard runtime defaults`
+own removal of the obsolete fixed two-CPU/internal-fanout policy. A14 covers
+default daemon allocation and explicit 4/8 CPU cgroups; the existing sanitized
+adapter proof checks daemon-derived default CPUs. A13's competing child fixture
+now requests 1536 MiB each so its retained admission race is governed by actual
+memory overflow rather than the deliberately removed CPU sum. The selected
+PostgreSQL diagnostic-allocation consumer likewise accepts higher explicit CPUs
+and retains memory-overflow denial. These are synthetic source checks, not
+permission to omit known peers or a demonstration of real Study responsiveness.
 
 `C1 Web cache cold build exports intermediate layers without changing other targets`,
 `C2 Web cache survives disposable builder replacement`,
@@ -5561,3 +5581,231 @@ acceptance. C2 retained-import resolution is separate; this is C1, not full A05.
 
 - **four retained failed discovery requests stay collapsed until opened** — `tests/unit/pending-discovery-saves-regressions.test.tsx`: compact disclosure, full retained IDs/errors and retry actions on demand, presentation-only close/reopen, collapsed remount, empty and error-only states; preserves recovery, retry blocking, confirmation callbacks, error retention, storage events and listener/timer cleanup.
 - **retained failed discovery saves protect Study, scroll on demand, and survive reload at 320px / 390px** — `tests/browser/pending-discovery-saves-mobile.spec.ts`: full legacy local composition; native keyboard disclosure, wrapped 64-character IDs, viewport containment, independent scrolling, board/control/notice hit targets and bottom navigation, retained storage after genuine reload, unchanged board instance/queue identity and no unsolicited acceptance or review POSTs.
+## Durable Game Review commands and Settings recovery (#590)
+
+`backend/tests/test_product_game_review_commands.py` retains #558's named
+reader-only configure/run identity and strict immutable configuration-response
+regressions. `backend/tests/test_product_game_review_commands_postgres.py`
+retains its actual command receipt/replay/conflicting-ID/rollback case through
+the existing disposable PostgreSQL fixture. The mounted composition and exact
+route inventory/guard cases retain their owning suites.
+`tests/unit/product-game-sync-settings.test.tsx` retains the eight explicit
+scope, conflict, pending, lost-ack and unmount/remount cases; the original save
+bytes/manual-run ID survive until terminal confirmation. No provider packaging
+or Study maintenance cases are moved into these files. These are preserved
+regressions, not a claim that the current-main extraction was executed.
+
+### #589 Study feedback claimed-slice recovery (extracted from #580)
+
+Owning suite: `backend/tests/test_feedback_maintenance_recovery.py`; wake ownership:
+`test_issue558_study_feedback_periodic_and_retry_wakes_are_coalesced` in
+`backend/tests/test_background_wakes.py`. Named regressions cover typed deadline
+and connection loss after claim, fresh-writer recovery before wake, unchanged
+checkpoint/failure budget, successor generation and lost commit acknowledgment,
+and failed cleanup leaving normal lease recovery rather than a retry loop.
+## Workflow publishing removal — October 29, 2026
+
+- `workflow verification has no Pages publishing` in `tests/runner/ci-reliability.test.mjs` replaces the intentionally retired publication policy: every workflow is free of Pages publishing actions, jobs and permissions while all verification triggers, mandatory layers, quality and merge gates remain. The regular CI reliability wrapper discovers this case.
+- `CI isolates cancellation, caches dependencies and requires split complete verification` retains verification cancellation, dependency caches and complete-plan/quality wiring after the obsolete publishing job is removed. Its existing PostgreSQL test-speedups wrapper remains the regular owner.
+
+## #590 Games Settings ownership and receipt origins
+
+- `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
+- `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
+- `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
+
+- Ordinary execution must not inherit fractional CPU quotas: `tests/runner/development-budget.test.mjs` A14 and A26–A30 cover unrestricted defaults, explicit exact caps, Games memory/PID allocation, preserved memory rejection, and verified cleanup. The legacy qualification-plan suites cover unrestricted CPU defaults without daemon reads, explicit cap partitioning, and retained helper memory/swap/PID constraints. Existing ownership, Study deferral, admission and cleanup regressions remain owning proof.
+- Independent Content, Game Evidence, Intelligence, legacy Learning and shared ownership fixtures must not restore an ordinary CPU quota: `backend/tests/test_cpu_resource_launchers.py::test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_and_ownership` executes real launch construction through fake Docker and verifies the original memory/PID/ownership arguments without starting a database.
+## #491 Task D — recurring collection and delayed visibility
+
+Owning suite: `backend/tests/test_product_continuous_sync.py`.
+
+- `test_manual_backfill_never_resets_forward_progress_and_reconciliation_is_independent`
+- `test_reconciliation_restart_freezes_scope_cursor_and_waits_from_completion`
+- `test_reconciliation_requires_explicit_integer_cadence`
+- `test_reconciliation_default_remains_disabled_and_stale_enqueue_retries_next_pass`
+- `test_dense_two_month_archive_exact_ids_with_record_position_and_byte_pages`
+- `test_archive_mutation_replays_month_without_mutating_record_provenance_and_v1_resumes`
+- `test_provider_429_retains_original_cursor_and_retry_after`
+- `test_lichess_budget_split_keeps_unconsumed_timestamp_ids`
+- `test_reconciliation_finds_late_provider_visibility_after_forward_overlap_exactly_once`
+- `test_provider_unfinished_exclusion_is_distinct_from_malformed_and_resource_failure`
+- `test_conflicting_archive_ids_are_detected_before_first_slice`
+- `test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_restart`
+
+Owning suite: `backend/tests/test_product_game_review_commands_postgres.py`.
+
+- `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
+
+Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fakes. The one selected native case reuses the existing owned disposable PostgreSQL fixture for stream/CAS/rollback/alias reads; no Study settlement suite is selected.
+
+
+## Task G integrated collection release
+
+Shared Settings registration belongs to the existing frontend lane (#603).
+`tests/runner/game-review-collection.test.mjs` owns explicit apply, read-only
+inspection, structured readiness, identity/resource checks, competing-runner
+refusal, target-lock release and idempotent start/stop. It also proves new releases
+include the optional inactive profile without augmenting old frozen receipts, and
+empty launch arguments or mismatched writer roles cannot enable collection.
+`CLI builder fixture reports the requested unrestricted CPU and original memory policy`
+retains the actual requested kernel facts in the shared CLI fixture, without
+weakening production resource admission. `managed maintenance stops Games but
+application startup and readiness never require it` owns the release lifecycle
+boundary.
+
+The same operator suite owns the maintenance/schema follow-up regressions:
+
+- `collection enable blocks pending migration`
+- `collection enable blocks schema mismatch`
+- `collection maintenance assessment preserves existing recovery policy`
+- `collection maintenance evidence errors block enable without destructive recovery`
+- `collection enable requires exact positive integer schema evidence`
+- `collection enable assesses maintenance after acquiring the target lock`
+- `collection disable remains available with maintenance and schema launch blockers`
+- `collection main blocks persisted pending migration before compose up`
+- `collection main blocks observed schema mismatch before compose up`
+- `collection main permits owned disable with unreadable maintenance evidence`
+- `collection main reports launch blockers without mutating on plan or status`
+- `collection main enables once with clear maintenance and matching schema`
+- `collection main rejects missing apply before locking or inspecting`
+
+These use synthetic files and external-command facts while retaining the actual
+runtime assessor, operator wiring and target lock. They prove guard precedence,
+sanitized fail-closed evidence handling, exact database schema checks, safe owned
+disable, evidence preservation and idempotent enable without operating live services.
+
+Owning suite `backend/tests/test_cpu_resource_launchers.py`:
+
+- `test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_and_ownership`
+
+Owning suite `backend/tests/test_game_collection_status.py`:
+
+- `test_retained_own_miss_does_not_require_card_or_chronology`
+- `test_boundary_kinds_never_become_own_misses`
+- `test_first_departure_is_per_repertoire_and_survives_reentry`
+- `test_unavailable_authored_snapshot_is_not_an_own_miss`
+- `test_correct_physical_mapping_ambiguity_is_not_a_departure`
+- `test_native_reader_permissions_and_fixture_rows_unchanged`
+- `test_duplicate_captures_do_not_inflate_unique_games_or_misses`
+- `test_public_command_reads_both_provider_namespace_spellings`
+- `test_pending_job_without_configuration_is_visible`
+- `test_saved_configuration_and_selected_readiness_preserve_explicit_null_policy`
+- `test_empty_findings_and_unavailable_snapshot_stay_unresolved`
+- `test_missing_receipt_is_undelivered_without_collection_failure`
+- `test_control_of_original_encounter_reads_encounter_receipt`
+- `test_unavailable_reads_do_not_fabricate_zero_counts`
+- `test_public_redaction_and_output_bound`
+- `test_reader_import_and_execution_have_no_command_or_provider_capabilities`
+- `test_missing_reader_never_uses_writer_or_dispatches`
+
+Owning suite `backend/tests/test_legacy_bridge_qualification_plan.py`:
+
+- `test_ordinary_qualification_cpu_is_unrestricted_without_daemon_or_subprocess`
+- `test_explicit_qualification_caps_partition_exactly_and_preserve_helper_safeguards`
+
+Owning suite `database/tests/games_collection/test_packaged_collection.py`:
+
+- `test_packaged_collection_retains_deviations_reconciles_and_never_delivers`
+
+Owning suite `backend/tests/test_product_continuous_sync.py`:
+
+- `test_manual_backfill_never_resets_forward_progress_and_reconciliation_is_independent`
+- `test_reconciliation_restart_freezes_scope_cursor_and_waits_from_completion`
+- `test_reconciliation_requires_explicit_integer_cadence`
+- `test_reconciliation_default_remains_disabled_and_stale_enqueue_retries_next_pass`
+- `test_dense_two_month_archive_exact_ids_with_record_position_and_byte_pages`
+- `test_archive_mutation_replays_month_without_mutating_record_provenance_and_v1_resumes`
+- `test_provider_429_retains_original_cursor_and_retry_after`
+- `test_lichess_budget_split_keeps_unconsumed_timestamp_ids`
+- `test_reconciliation_finds_late_provider_visibility_after_forward_overlap_exactly_once`
+- `test_provider_unfinished_exclusion_is_distinct_from_malformed_and_resource_failure`
+- `test_conflicting_archive_ids_are_detected_before_first_slice`
+- `test_both_provider_forward_and_reconciliation_progress_with_midpage_429_and_restart`
+- `test_actual_adapter_result_checkpoint_and_later_reconciliation`
+
+Owning suite `backend/tests/test_product_encounter_projection.py`:
+
+- `test_exact_authored_difference_without_lapse_proof_still_projects`
+- `test_repeated_projection_findings_emit_one_logical_occurrence`
+- `test_projector_does_not_filter_away_conflicting_target_identity`
+- `test_projector_keeps_conflicting_same_logical_key_as_findings_without_command`
+
+Owning suite `backend/tests/test_product_feedback_jobs.py`:
+
+- `test_capture_selects_every_same_color_snapshot`
+- `test_unavailable_comparison_retains_valid_source_and_advances_acquisition`
+- `test_unavailable_recomparison_does_not_hold_original_lapse`
+- `test_known_provider_exclusions_advance_checkpoint_with_evidence`
+- `test_unsafe_or_wrong_provider_rejection_does_not_complete_acquisition`
+- `test_capture_time_only_rescan_reuses_comparison_capture_and_original_delivery`
+- `test_material_snapshot_change_preserves_comparison_history_without_duplicate_effect`
+- `test_comparer_returning_wrong_source_is_an_integrity_quarantine`
+- `test_real_comparer_captures_both_colors_with_both_repertoires_selected`
+- `test_partial_comparison_failure_keeps_successful_repertoire_findings`
+- `test_no_compatible_snapshot_is_unresolved_instead_of_all_correct`
+- `test_incomplete_page_with_repeated_continuation_keeps_old_checkpoint`
+- `test_mutated_conflicting_page_identity_never_commits_a_false_checkpoint`
+- `test_snapshot_scope_corruption_is_quarantined_without_losing_acquired_game`
+- `test_comparison_identity_ignores_unordered_snapshot_row_order`
+- `test_source_correction_during_comparison_outage_still_fences_original`
+
+Owning suite `backend/tests/test_product_feedback_jobs_postgres.py`:
+
+- `test_collect_only_current_worker_persists_evidence_without_study_effects`
+
+Owning suite `backend/tests/test_product_game_findings.py`:
+
+- `test_correct_early_learning_state_does_not_hide_later_authored_difference`
+- `test_multiple_repertoires_keep_independent_departures_and_do_not_choose_a_target`
+- `test_missing_card_retains_exact_authored_difference_without_a_ready_target`
+- `test_incomplete_authored_snapshot_does_not_claim_exact_membership`
+- `test_ambiguous_card_mapping_keeps_supported_authored_difference`
+- `test_non_lapse_finding_preserves_actual_positive_introduction_fact`
+- `test_authored_difference_does_not_choose_a_disagreeing_global_card_mapping`
+- `test_correct_authored_move_with_ambiguous_target_still_reaches_later_difference`
+
+Owning suite `backend/tests/test_product_game_review_commands.py`:
+
+- `test_ongoing_seed_width_boundaries_save_without_provider_work`
+- `test_incompatible_ongoing_seed_rejected_at_command_write_before_store`
+- `test_wide_manual_history_preserves_exact_times_at_command_write`
+- `test_old_incompatible_seed_remains_readable_and_can_be_corrected`
+- `test_existing_configuration_contract_rejects_invalid_explicit_choices_without_write`
+- `test_chesscom_casual_only_remains_unsupported_at_write`
+
+Owning suite `backend/tests/test_product_game_review_commands_postgres.py`:
+
+- `test_native_continuous_stream_selection_conditional_enqueue_and_alias_readback`
+
+Owning suite `backend/tests/test_product_game_sync_integration.py`:
+
+- `test_collect_only_import_idle_and_restart_preserve_original_pending_commands`
+- `test_collect_only_does_not_touch_preexisting_delivery_retry_state`
+- `test_collect_only_is_the_only_mode_allowing_an_absent_receiver`
+- `test_collect_only_current_root_omits_receiver_and_forwards_supplied_reconciliation`
+- `test_collect_only_current_roots_still_require_receiver_when_delivery_enabled`
+- `test_collect_only_cli_preserves_explicit_worker_options`
+- `test_collect_only_cli_rejects_invalid_reconciliation_before_connections`
+- `test_collect_only_preview_retains_reader_profile_and_starts_no_worker`
+- `test_collect_only_source_import_and_help_are_inert`
+- `test_preview_agrees_with_continuous_after_interleaved_manual_request`
+
+
+## Task K — integrated qualification gaps
+
+`tools/component-build/tests/python-package-inputs.test.mjs` owns the bounded
+checker correction: registered centralized database inputs preserve sdist-only
+qualification paths while wheel runtime code remains audited; nested runtime
+loaders and source symlink escapes are rejected; the bundled remediation import
+requires its exact declared distribution; actual centralized wheel/sdist hooks
+retain their existing membership. It runs through the ordinary component-build
+Node test discovery. No runtime source, packaging input or gate is removed.
+
+
+H’s `boundaries.test.mjs` regressions retain both relocated Content suites’ exact
+input identities and compare the three existing package-root export registrations
+with their owners; Game Evidence’s pure interface remains explicitly narrower.
+I’s regular `runners tempo-cli.test` lane owns the original-fence, original-deadline
+and advancing-main automatic-start relaunch regressions and six negative release
+verification cases. The shared CLI fixture and operator suite are unchanged.

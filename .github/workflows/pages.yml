@@ -1,4 +1,4 @@
-name: Deploy Tempo to GitHub Pages
+name: Verify Tempo
 
 on:
   push:
@@ -13,10 +13,6 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
-      verification_only:
-        description: 'Complete verification without publishing the practice demo'
-        type: boolean
-        default: true
       diagnostic_retry:
         description: 'One diagnostic repeat after failure; original failure still blocks quality'
         type: boolean
@@ -26,12 +22,10 @@ permissions:
   contents: read
   actions: read
   pull-requests: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Supersede only the same PR; never abort a running main deployment.
+  # Supersede only earlier verification for the same PR.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -348,50 +342,3 @@ jobs:
           path: test-results/
           if-no-files-found: error
           overwrite: true
-  pages-build:
-    if: >-
-      needs.quality.result == 'success' && needs.plan.outputs.scope == 'complete' &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verification_only == false))
-    needs: [quality, plan]
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.plan.outputs.commit || github.sha }}
-      - uses: actions/configure-pages@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.3'
-          cache: npm
-      - uses: dtolnay/rust-toolchain@1.99.0
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.15.0
-      - run: npm ci
-      - run: npm run build:static
-      - run: npm run verify:static
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: pages-dist
-  deploy:
-    concurrency:
-      group: tempo-pages-deployment
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: pages-build
-    if: >-
-      needs.pages-build.result == 'success' && github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verification_only == false))
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4

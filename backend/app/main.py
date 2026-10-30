@@ -613,6 +613,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 and path_parts[5] == "queue"))
         product_feedback_command = (request.method == "POST" and
             path_parts == ["api", "game-evidence", "product", "feedback"])
+        product_review_command = (request.method == "POST" and request.url.path in {
+            "/api/product/game-review/configuration", "/api/product/game-review/sync",
+            "/api/product/game-review/feedback/retry"})
         product_history_command = (request.method == "POST" and len(path_parts) == 4
             and path_parts[:3] == ["api", "product", "game-history"]
             and path_parts[3] in {"preview", "start", "run-ready", "resume"})
@@ -686,7 +689,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command, product_feedback_command, product_history_command,
+                    legacy_evidence_command, product_feedback_command, product_history_command, product_review_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,

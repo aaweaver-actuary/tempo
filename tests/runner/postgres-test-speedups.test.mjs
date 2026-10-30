@@ -894,11 +894,11 @@ test("CI isolates cancellation, caches dependencies and requires split complete 
   assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
   const layers = readFileSync(join(root, ".github/workflows/verify-layer.yml"), "utf8");
   assert(layers.includes("cache: pip"));
-  assert.equal((workflow + layers).split("uses: Swatinem/rust-cache@v2").length - 1, 2);
+  assert(layers.includes("uses: Swatinem/rust-cache@v2"));
   assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));
   assert(workflow.includes("node scripts/ci-quality.mjs"));
-  assert(workflow.includes("needs.plan.outputs.scope == 'complete'"));
-  assert(workflow.includes("group: tempo-pages-deployment\n      cancel-in-progress: false"));
+  assert(workflow.includes("node scripts/ci-verification-plan.mjs --base \"$TEMPO_BASE\" --complete"));
+  assert(!workflow.includes("tempo-pages-deployment"));
 });
 
 
@@ -1123,15 +1123,17 @@ test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_
   assert.equal(diagnostic.schema.memoryMiB,1024);
   const retained=['postgres','redis','api','foreground-worker','web'];
   const rows=retained.map(service=>({Id:service,Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':service}},
-    HostConfig:{NanoCpus:resourceBudgets.developmentServices[service].cpus*1e9,
+    HostConfig:{NanoCpus:(resourceBudgets.developmentServices[service].cpus??0)*1e9,
       Memory:resourceBudgets.developmentServices[service].memoryMiB*1024*1024}}));
   const docker=args=>args[0]==='ps'?rows.map(row=>row.Id).join('\n'):JSON.stringify(rows);
   assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic);
+  assert.doesNotThrow(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
+    {schema:{...diagnostic.schema,cpus:4}}));
   assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
-    {schema:{...diagnostic.schema,cpus:diagnostic.schema.cpus+0.001}}),/exceed the aggregate/);
+    {schema:{...diagnostic.schema,memoryMiB:2048}}),/exceed the aggregate/);
   const maia=resourceBudgets.developmentServices['maia-worker'];
   rows.push({Id:'maia',Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':'maia-worker'}},
-    HostConfig:{NanoCpus:maia.cpus*1e9,Memory:maia.memoryMiB*1024*1024}});
+    HostConfig:{NanoCpus:(maia.cpus??0)*1e9,Memory:maia.memoryMiB*1024*1024}});
   assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic),/exceed the aggregate/);
   const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
   assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_opening_segmentation\.py"/);
@@ -1224,7 +1226,7 @@ for (const [runnerName, functionEnd] of [
           assert.equal(command, 'docker');assert(args.includes('up'));
           events.push('docker-start');
           assert.equal(competingAllocation, false,
-            `${runnerName} launched Docker while a sibling owns the full 2 CPU/2048 MiB allocation; ${events.join(' -> ')}`);
+            `${runnerName} launched Docker while a sibling owns the full 2048 MiB allocation; ${events.join(' -> ')}`);
           return { status: 0 };
         },
       };
@@ -1347,9 +1349,9 @@ test('native_actual_standalone_help_partial_start_has_owned_identity_and_verifie
   assert.equal(args[args.indexOf('--name')+1],name);
   const context={project,maintenanceHelpContainer:name,environment:{},assert,process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},
     postgresCommandTiming:()=>({label:'start',category:'test'}),measureScenario:{syncDetail:(_label,_category,call)=>call(),processResult(){}},
-    withDevelopmentStartup:(services,p,start,opts)=>{assert.equal(opts.oneOff,true);assert.equal(opts.allocations['maintenance-help'].memoryMiB,256);return budget.withDevelopmentStartup(services,p,start,{...options,...opts});},
+    withDevelopmentStartup:(services,p,start,opts)=>{assert.equal(opts.oneOff,true);assert.equal(opts.allocations['maintenance-help'].memoryMiB,256);assert.equal(opts.allocations['maintenance-help'].cpus,undefined);return budget.withDevelopmentStartup(services,p,start,{...options,...opts});},
     spawnSync:(_command,actualArgs)=>{assert.equal(actualArgs[0],'run');const labels=Object.fromEntries(actualArgs.flatMap((value,index)=>value==='--label'?[actualArgs[index+1].split(/=(.*)/s).slice(0,2)]:[]));
-      const raw=container('maintenance-help',.2,256);raw.Name='/'+name;raw.Config.Labels=labels;state.containers=[raw];return{error:new Error('response lost after Docker creation'),status:null};}};
+      const raw=container('maintenance-help',0,256);raw.Name='/'+name;raw.Config.Labels=labels;state.containers=[raw];return{error:new Error('response lost after Docker creation'),status:null};}};
   const start=source.indexOf('function run(command,'),finish=source.indexOf('\nconst workloadConsumers',start),run=runInNewContext(`(${source.slice(start,finish)})`,context);
   assert.throws(()=>run('docker',args),/failed/);assert(existsSync(paths.lane));assert(existsSync(paths.journal));
   assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/resources remain/);

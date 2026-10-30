@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 from urllib.parse import urlparse
 
 import chess.pgn
@@ -100,7 +101,11 @@ def normalize_provider_pgn(
         raise RejectedGame("configured account did not play this game")
     result = game.headers.get("Result", "")
     if result not in {"1-0", "0-1", "1/2-1/2"}:
-        raise RejectedGame("game is unfinished or has an unsupported result")
+        # python-chess supplies a default "*" even when Result is absent.
+        # Only an explicit unfinished header is a benign acquisition exclusion.
+        if result == "*" and re.search(r'^\s*\[Result\s+"\*"\]\s*$', pgn_text, re.MULTILINE):
+            raise RejectedGame("game is unfinished")
+        raise RejectedGame("game has a missing or unsupported result")
 
     board = game.board()
     start_fen = board.fen()

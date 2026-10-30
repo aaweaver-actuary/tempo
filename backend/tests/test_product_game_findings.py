@@ -123,6 +123,12 @@ def test_equivalent_route_resolution_holds_differing_facts(changed, kind, played
     captured = equivalent_routes(source, changed=changed)
     assert resolve_equivalent_mapping(captured.decision_presentations) is None
     findings = compare(source, captured)
+    if "repertoire_id" in changed:
+        # Task B compares each repertoire independently; cross-repertoire
+        # differences are not an ambiguous target within either repertoire.
+        assert len(findings) == 2 and all(item.kind == "known_unintroduced" for item in findings)
+        assert {item.repertoire_id for item in findings} == {"rep", "different-repertoire"}
+        return
     assert findings and all(item.kind == kind for item in findings)
     assert all(item.presentation_id is None and item.decision_id is None and not item.lapse_eligible for item in findings)
 
@@ -560,7 +566,9 @@ def test_ambiguous_repertoire_or_card_not_guessed():
     cross = snapshot(route(), route(route_id="different-repertoire", repertoire_id="other"))
     findings = compare(captured=cross)
     assert len(findings) == 2 and {item.repertoire_id for item in findings} == {"rep", "other"}
-    assert all(item.kind == "ambiguous" and item.decision_id is None for item in findings)
+    # Both independently authored repertoires remain represented, with no
+    # globally selected winner. Physical ambiguity above still blocks a target.
+    assert all(item.kind == "confirmed_miss" and item.decision_id is not None for item in findings)
 
 
 def test_no_matching_start_does_not_guess_one_of_several_repertoires():
@@ -668,3 +676,88 @@ from tempo_game_classification import classify_response
 assert classify_response(played_uci="d2d4", expected_uci=["e2e4"], learner_turn=True)[0] == "known_unavailable"
 '''
     subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("learning", ["unintroduced", "unknown", "revised", "missing"])
+def test_correct_early_learning_state_does_not_hide_later_authored_difference(learning):
+    authored = route(("e2e4", "e7e5", "g1f3"))
+    captured = snapshot(authored)
+    mappings = list(captured.decision_presentations)
+    if learning == "missing":
+        mappings = mappings[1:]
+    else:
+        change = ({"introduction_matches_current_content": False} if learning == "revised" else
+                  {"introduction": learning, "introduced_at": None})
+        mappings[0] = mappings[0].model_copy(update=change)
+    captured = captured.model_copy(update={"decision_presentations": tuple(mappings)})
+    findings = compare(record(("e2e4", "e7e5", "f1c4")), captured)
+    miss = next(item for item in findings if item.ply == 3)
+    assert miss.expected_uci == ("g1f3",) and miss.played_uci == "f1c4"
+    assert miss.membership == "present" and miss.kind == "confirmed_miss"
+    assert all(item.played_uci in item.expected_uci for item in findings if item.ply < 3)
+
+
+def test_multiple_repertoires_keep_independent_departures_and_do_not_choose_a_target():
+    first = route(("e2e4", "e7e5", "g1f3"), repertoire_id="first", route_id="first-route")
+    second = route(("d2d4", "d7d5"), repertoire_id="second", route_id="second-route")
+    captured = snapshot(first, second)
+    findings = compare(record(("e2e4", "c7c5", "g1f3")), captured)
+    assert [(item.ply, item.repertoire_id, item.kind) for item in findings] == [
+        (1, "second", "confirmed_miss"), (2, "first", "opponent_gap")]
+    reversed_capture = captured.model_copy(update={"membership": captured.membership.model_copy(
+        update={"routes": tuple(reversed(captured.membership.routes))})})
+    assert compare(record(("e2e4", "c7c5", "g1f3")), reversed_capture) == findings
+
+
+def test_missing_card_retains_exact_authored_difference_without_a_ready_target():
+    finding, = compare(captured=snapshot(mappings=[]))
+    assert finding.membership == "present" and finding.expected_uci == ("e2e4",)
+    assert finding.played_uci == "d2d4" and finding.decision_id is None
+    assert finding.diagnostic == "current_presentation_unavailable" and not finding.lapse_eligible
+
+
+def test_incomplete_authored_snapshot_does_not_claim_exact_membership():
+    finding, = compare(captured=snapshot(complete=False))
+    assert finding.membership == "unknown" and finding.diagnostic == "snapshot_incomplete_or_unavailable"
+
+
+def test_ambiguous_card_mapping_keeps_supported_authored_difference():
+    captured = snapshot()
+    other = captured.decision_presentations[0].model_copy(update={"presentation_id": "other-card"})
+    captured = captured.model_copy(update={"decision_presentations": (*captured.decision_presentations, other)})
+    finding, = compare(captured=captured)
+    assert finding.kind == "ambiguous" and finding.membership == "present"
+    assert finding.expected_uci == ("e2e4",) and finding.played_uci == "d2d4"
+    assert finding.presentation_id is None and not finding.lapse_eligible
+
+
+def test_non_lapse_finding_preserves_actual_positive_introduction_fact():
+    source = record()
+    scope = IntroductionGameScope(provider="lichess", game_id=source.source_game_id,
+        source_revision=source.source_revision, source_digest=source.source_digest)
+    captured = snapshot(mapping_changes={"introduction_matches_current_content": False,
+        "introduced_before_game": True, "introduction_game": scope})
+    finding, = compare(source, captured)
+    assert finding.kind == "known_unavailable" and not finding.lapse_eligible
+    assert finding.introduced_before_game is True
+
+
+
+def test_authored_difference_does_not_choose_a_disagreeing_global_card_mapping():
+    captured = snapshot()
+    wrong = captured.decision_presentations[0].model_copy(update={"selected_response_uci": "d2d4"})
+    captured = captured.model_copy(update={"decision_presentations": (*captured.decision_presentations, wrong)})
+    finding, = compare(captured=captured)
+    assert finding.kind == "ambiguous" and finding.membership == "present"
+    assert finding.expected_uci == ("e2e4",) and finding.presentation_id is None
+
+
+def test_correct_authored_move_with_ambiguous_target_still_reaches_later_difference():
+    captured = snapshot()
+    mappings = list(captured.decision_presentations)
+    mappings.append(mappings[0].model_copy(update={"presentation_id": "other-card",
+        "route_id": "route", "route_ply": 0}))
+    captured = captured.model_copy(update={"decision_presentations": tuple(mappings)})
+    findings = compare(record(("e2e4", "e7e5", "f1c4")), captured)
+    assert findings[-1].ply == 3 and findings[-1].expected_uci == ("g1f3",)
+    assert findings[-1].played_uci == "f1c4"

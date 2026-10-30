@@ -99,16 +99,13 @@ def test_unknown_chronology_encounter_requires_all_exact_alias_facts_to_agree(ch
 @pytest.mark.parametrize("boundary,diagnostic", [
     ("incomplete","snapshot_incomplete_or_unavailable"),
     ("unavailable","current_presentation_unavailable"),
-    ("unproved_content","introduced_content_identity_unproved"),
 ])
 def test_other_unavailable_findings_do_not_become_unknown_chronology_encounters(boundary,diagnostic):
     game,snapshot,_,scope=inputs(count=2,introduction="unknown")
     if boundary=="incomplete":
         snapshot=snapshot.model_copy(update={"membership":snapshot.membership.model_copy(update={"complete":False})})
     else:
-        change=({"available":False} if boundary=="unavailable" else {
-            "introduction":"introduced","introduced_at":"2026-10-01T00:00:00Z",
-            "introduction_matches_current_content":False})
+        change={"available":False}
         snapshot=snapshot.model_copy(update={"decision_presentations":tuple(
             mapping.model_copy(update=change) for mapping in snapshot.decision_presentations)})
     findings=compare_game(game,provider="lichess",time_precision="second",snapshot=snapshot)
@@ -128,3 +125,49 @@ def test_unknown_chronology_encounter_retains_source_scope_and_played_move_guard
     changed=findings[0].model_copy(update=change)
     with pytest.raises(ValueError,match=message):
         project(game,snapshot,(changed,),scope)
+
+
+@pytest.mark.parametrize("boundary", ["revised", "imprecise"])
+def test_exact_authored_difference_without_lapse_proof_still_projects(boundary):
+    game, snapshot, _, scope = inputs(count=2, introduction="introduced")
+    snapshot = snapshot.model_copy(update={"decision_presentations": tuple(mapping.model_copy(update={
+        "introduced_at": "2026-10-01T00:00:00Z", "introduction_matches_current_content": boundary != "revised"})
+        for mapping in snapshot.decision_presentations)})
+    findings = compare_game(game, provider="lichess", snapshot=snapshot,
+        time_precision="day" if boundary == "imprecise" else "second")
+    finding, = findings
+    assert finding.kind == "known_unavailable" and not finding.lapse_eligible
+    encounter, = project(game, snapshot, findings, scope)
+    assert encounter.observation == "missed" and encounter.decision in snapshot.decision_presentations
+    assert encounter.decision.introduced_at == "2026-10-01T00:00:00Z"
+
+
+def test_repeated_projection_findings_emit_one_logical_occurrence():
+    game, snapshot, findings, scope = inputs(count=2)
+    command, = project(game, snapshot, findings + findings, scope)
+    assert command.key.occurrence_ply == 1
+
+
+@pytest.mark.parametrize("change", [
+    {"presentation_id": "different-card"}, {"presentation_revision": 2},
+    {"decision_id": "different-decision"}, {"selected_response_uci": "d2d4"},
+])
+def test_projector_does_not_filter_away_conflicting_target_identity(change):
+    game, snapshot, findings, scope = inputs(count=2, introduction="unknown")
+    mappings = list(snapshot.decision_presentations)
+    mappings[-1] = mappings[-1].model_copy(update=change)
+    snapshot = snapshot.model_copy(update={"decision_presentations": tuple(mappings)})
+    assert project(game, snapshot, findings, scope) == ()
+    assert project(game, snapshot, findings, scope) == project(game,
+        snapshot.model_copy(update={"decision_presentations": tuple(reversed(mappings))}), findings, scope)
+
+
+def test_projector_keeps_conflicting_same_logical_key_as_findings_without_command():
+    game, snapshot, findings, scope = inputs(count=2, introduction="unknown")
+    other = snapshot.model_copy(update={
+        "membership": snapshot.membership.model_copy(update={"scope_repertoire_ids": ("other",)}),
+        "decision_presentations": tuple(mapping.model_copy(update={"repertoire_id": "other"})
+            for mapping in snapshot.decision_presentations)})
+    other_finding = findings[0].model_copy(update={"repertoire_id": "other"})
+    assert project_encounters(game, findings=findings + (other_finding,), snapshots=(snapshot, other),
+        source=scope, detected_at="2026-10-29T12:00:00Z", occurred_at=game.played_at) == ()

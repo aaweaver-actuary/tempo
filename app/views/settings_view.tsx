@@ -24,6 +24,7 @@ import { PendingOperationError } from "../lib/operation-status";
 import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
+import { CurrentGameSyncSettings } from "../product-composition/GameSyncSettings";
 
 type SettingsValues = {
   initial_depth: number;
@@ -185,9 +186,6 @@ export default function SettingsView({
         explorer_ratings:
           localStorage.getItem("tempo-explorer-ratings") ??
           "1600,1800,2000,2200,2500",
-        lichess_username: localStorage.getItem("tempo-lichess-username") ?? "",
-        chesscom_username:
-          localStorage.getItem("tempo-chesscom-username") ?? "",
       }));
       void loadSettings();
     }, 0);
@@ -225,14 +223,6 @@ export default function SettingsView({
     );
     localStorage.setItem("tempo-arrow-metric", values.arrow_metric);
     localStorage.setItem("tempo-sound-volume", String(values.sound_volume));
-    localStorage.setItem(
-      "tempo-lichess-username",
-      values.lichess_username.trim(),
-    );
-    localStorage.setItem(
-      "tempo-chesscom-username",
-      values.chesscom_username.trim(),
-    );
     if (usesLocalApi()) {
       const backend = {
         initial_depth: values.initial_depth,
@@ -706,41 +696,11 @@ export default function SettingsView({
         </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
-          <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
-          <label>
-            <span>Lichess username</span>
-            <TextInput disabled={!settingsLoaded}
-              value={values.lichess_username}
-              onChange={(event) =>
-                update("lichess_username", event.target.value)
-              }
-              placeholder="Optional"
-            />
-          </label>
-          <label>
-            <span>Chess.com username</span>
-            <TextInput disabled={!settingsLoaded}
-              value={values.chesscom_username}
-              onChange={(event) =>
-                update("chesscom_username", event.target.value)
-              }
-              placeholder="Optional"
-            />
-          </label>
-          <label>
-            <span>
-              Automatic sync<small>Minutes while Tempo is open</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="2"
-              max="60"
-              value={values.auto_sync_minutes}
-              onChange={(event) =>
-                update("auto_sync_minutes", Number(event.target.value))
-              }
-            />
-          </label>
+          {activeSection === "games" && <CurrentGameSyncSettings />}
+          <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
+          <p>Save provider settings with the “Save game sync settings” button above.</p>
+          <h3>Existing imported-game analysis</h3>
+          <p>Controls existing imported-game analysis and finding classification, not provider synchronization or Game Review admission. Save this threshold with the page’s “Save settings” button.</p>
           <label>
             <span>
               Major mistake threshold<small>Centipawn loss</small>

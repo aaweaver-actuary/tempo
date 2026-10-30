@@ -157,13 +157,12 @@ def main(arguments=None):
             secret_file.chmod(0o600)
             report['resource']['creation_attempted'] = True
             docker('run','--detach','--name',identity,'--label','tempo.owner='+identity,
-                   '--label','tempo.disposable=true','--memory','384m','--cpus','1',
-                   '--pids-limit','256','--tmpfs','/var/lib/postgresql:rw,size=512m',
+                   '--label','tempo.disposable=true','--memory','384m','--pids-limit','256','--tmpfs','/var/lib/postgresql:rw,size=512m',
                    '--publish','127.0.0.1::5432','--env-file',str(secret_file),report['image'],
                    'postgres','-c','shared_buffers=32MB','-c','max_connections=32')
         report['resource']['observed_caps'] = json.loads(docker('container','inspect',identity,'--format',
             '{"cpu_nanos":{{.HostConfig.NanoCpus}},"memory_bytes":{{.HostConfig.Memory}}}').stdout)
-        assert report['resource']['observed_caps'] == {'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+        assert report['resource']['observed_caps'] == {'cpu_nanos':0,'memory_bytes':384*1024*1024}
         publish_reports(directory, report)
         environment = provision_owned_cluster(identity, password)
         run_required_tests(environment, run_directory, external_junit, report)
