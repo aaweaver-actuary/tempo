@@ -15,7 +15,7 @@ from app.contracts.product_v02.learning import FirstDepartureWitness
 from app.games.feedback.ports import Delivery, DeliveryDeferred
 from app.games.feedback.qualification import (acknowledge_control_delivery, acknowledge_qualified_delivery,
     held_delivery, qualify_delivery)
-from app.repertoire import project_capture, project_published_repertoire
+from app.repertoire import project_capture, PreparedPublishedRepertoire
 from app.services.feedback_diagnostics import diagnose_feedback, feedback_span, feedback_work
 from .encounters import receive_admitted_encounter
 from .game_review import CurrentStudyFeedback, CurrentStudyReceiptReads
@@ -206,11 +206,12 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
                         facts = read_repertoire(database, repertoire_id)
                 # The adapter owns decoding; all chess projection follows exit.
                 with feedback_span('publication_projection'):
-                    snapshot = project_published_repertoire(facts)
+                    publication = PreparedPublishedRepertoire(facts)
+                    snapshot = publication.snapshot
             except ValueError:
                 unavailable.append(repertoire_id)
             else:
-                publications.append(facts)
+                publications.append(publication)
                 snapshots.append(snapshot)
     with feedback_span('current_target_prepare'):
         snapshots, prepared_targets = _current_feedback_targets(command, snapshots,

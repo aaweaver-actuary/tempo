@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import copy
+from collections.abc import Mapping
 from datetime import date
 
 import chess
@@ -97,12 +98,20 @@ class CurrentOwnerDecisions:
                  'first_departure_preparation_requires_closed_owner_reads')
         _require(callable(qualification_fence) and callable(select_first_boundary),
                  'first_departure_current_owner_capability_required')
-        from app.repertoire import project_published_repertoire
-        publications = tuple(json.loads(json.dumps(facts)) for facts in qualified_publications)
+        from app.repertoire import PreparedPublishedRepertoire, project_published_repertoire
+        prepared = tuple(qualified_publications)
+        _require(all(type(item) is PreparedPublishedRepertoire or isinstance(item, Mapping)
+                     for item in prepared), 'first_departure_current_publication_preparation_required')
+        publications = tuple(item.publication_facts() if type(item) is PreparedPublishedRepertoire
+            else json.loads(json.dumps(item)) for item in prepared)
         _require(bool(publications)
                  and len({item['repertoire']['id'] for item in publications}) == len(publications),
                  'first_departure_selected_scope_unproved')
-        snapshots = tuple(project_published_repertoire(facts) for facts in publications)
+        # Repertoire constructed these immutable snapshots from its owned full
+        # read. Reuse that projection only; Study independently reselects below
+        # and still fences every source/publication and target in its writer.
+        snapshots = tuple(item.snapshot if type(item) is PreparedPublishedRepertoire
+            else project_published_repertoire(facts) for item, facts in zip(prepared, publications))
         from .recombination import PreparedFeedbackTarget
         targets = tuple(prepared_targets)
         _require(len(targets) <= 64 and all(isinstance(item,PreparedFeedbackTarget) for item in targets),

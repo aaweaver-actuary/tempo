@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from functools import lru_cache
+from dataclasses import dataclass
 from types import MappingProxyType
 from datetime import datetime, timezone
 import json
@@ -384,6 +385,29 @@ def project_published_repertoire(facts: Mapping, *, captured_at: str | None = No
     not mutation authority; Study still captures/fences its current owner state.
     """
     return _project_repertoire(facts, captured_at=captured_at, published=True)
+
+
+@dataclass(frozen=True, init=False)
+class PreparedPublishedRepertoire:
+    """One Repertoire-owned projection of detached complete publication facts.
+
+    Construction accepts source facts only. Consumers cannot supply a snapshot
+    or a readiness assertion in place of the owning projection. This ephemeral
+    value grants no current database authority; receiving owners still select
+    their policy and fence every prepared publication in their writer.
+    """
+    _source_json: str
+    snapshot: RepertoireSnapshot
+
+    def __init__(self, facts: Mapping, *, captured_at: str | None = None):
+        encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        snapshot = project_published_repertoire(json.loads(encoded), captured_at=captured_at)
+        object.__setattr__(self, '_source_json', encoded)
+        object.__setattr__(self, 'snapshot', snapshot)
+
+    def publication_facts(self) -> dict:
+        """Return a detached complete read, never the capability's owned bytes."""
+        return json.loads(self._source_json)
 
 
 class CurrentSnapshotAdapter:

@@ -756,3 +756,28 @@ def test_snapshot_replay_reuse_preserves_legal_en_passant_and_castling_identity(
     mapping, = result.decision_presentations
     assert mapping.position_key == opening_position_key(fen)
     assert mapping.selected_response_uci == move
+
+
+def test_prepared_publication_owns_complete_facts_and_cannot_accept_caller_snapshot():
+    from dataclasses import FrozenInstanceError
+    from pydantic import ValidationError
+    from app.repertoire import PreparedPublishedRepertoire, project_published_repertoire
+    facts = repertoire_facts()
+    stamp = '2026-10-30T00:00:00Z'
+    expected = project_published_repertoire(facts, captured_at=stamp)
+    prepared = PreparedPublishedRepertoire(facts, captured_at=stamp)
+    assert prepared.snapshot == expected and prepared.publication_facts() == facts
+    with pytest.raises(TypeError):
+        PreparedPublishedRepertoire(facts, snapshot=expected)
+    with pytest.raises(FrozenInstanceError):
+        prepared.snapshot = expected.model_copy(update={'learner_color': 'black'})
+    with pytest.raises(ValidationError):
+        prepared.snapshot.membership.routes[0].moves += ('d2d4',)
+    with pytest.raises(ValidationError):
+        prepared.snapshot.membership.scope_repertoire_ids += ('missing',)
+    facts['cards'][0]['archived'] = 1
+    copy = prepared.publication_facts()
+    copy['lines'][0]['moves_json'] = '[]'
+    assert prepared.snapshot == expected
+    assert prepared.publication_facts()['cards'][0]['archived'] == 0
+    assert prepared.publication_facts()['lines'][0]['moves_json'] != '[]'

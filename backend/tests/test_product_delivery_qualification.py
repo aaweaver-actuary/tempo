@@ -487,10 +487,10 @@ def test_qualification_projects_complete_publication_after_reader_exit(monkeypat
     def project(facts):
         assert not reading[0] and facts == {"complete": "publication"}
         events.append("project")
-        return case.snapshot
+        return SimpleNamespace(snapshot=case.snapshot)
     monkeypatch.setattr(product_review, "PostgresReviewStore", Reads)
     monkeypatch.setattr(product_snapshot, "read_repertoire", owner_read)
-    monkeypatch.setattr(composition, "project_published_repertoire", project)
+    monkeypatch.setattr(composition, "PreparedPublishedRepertoire", project)
     result = composition._qualified_facts(case.command, connections=connections,
         clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command),
         target_prepare=lambda *args,**kwargs:None)

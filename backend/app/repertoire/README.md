@@ -192,8 +192,10 @@ when conflicted. No schema or stored relationship changes are introduced.
   metadata and non-size errors remain distinct ordinary errors.
 - `_mappings` lazily indexes canonical position keys once per needed authored
   route within one invocation. It retains every occurrence and still requires
-  exactly one matching executable slice. No cached boards or cross-call reuse
-  are retained; chronology, unavailable cards, conflicts and mapping identity
+  exactly one matching executable slice. Exact starting-FEN/move executables
+  reuse detached turn/position frames through a 128-entry invocation-local
+  cache; raw FEN normalization retains at most 1,024 entries. No cached boards
+  or cross-call reuse are retained; chronology, unavailable cards, conflicts and mapping identity
   keep their existing semantics.
 - Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
   read-only `repertoire_snapshot=True` connection context with no transaction
@@ -229,10 +231,28 @@ flowchart LR
   Published --> Consumers
   Injected["Injected owner read for pure tests"] --> Project
   Project --> Consumers["Existing immutable index / comparer / conflict owner"]
+  Closed --> Prepared["PreparedPublishedRepertoire\nowned complete source bytes + immutable projection"]
+  Prepared --> Qualify["Games qualification over the prepared snapshot"]
+  Prepared --> Study["Study independently reselects complete first-boundary scope"]
+  Study --> Fence["Existing writer source/publication/target fences"]
 ```
 
 This source diagram does not claim live adoption or deployment isolation.
 The original game-specific capture API remains separate and usable by #488.
+
+`PreparedPublishedRepertoire(facts, captured_at=None)` is the public, ephemeral
+Repertoire-owned preparation capability. Its constructor copies the complete
+source bytes and performs the published projection itself; it accepts no caller
+snapshot or readiness flag. `snapshot` is the existing deeply immutable value,
+and `publication_facts()` returns a fresh complete copy. There is no database
+record, cross-command cache, expiry policy or new authority writer.
+
+Foreground qualification passes that same capability to Study's current owner,
+which accepts its exact type, independently selects the first boundary across
+every configured publication, proves current-target replacements and preserves
+all writer source/configuration/publication/target fences. Raw owner mappings
+retain their existing projection path. Reusing the owning projection removes
+duplicate chess replay; it does not treat a producer snapshot as authority.
 
 Follow-on checks are the six `repertoire_only` / `repertoire_read_port` cases in
 `test_product_snapshot.py`, the owning file after the shared mapping-helper
