@@ -86,6 +86,44 @@ def test_mode_record_cli_requires_explicit_apply_before_constructing_writer():
     assert failed.value.code == 2
 
 
+@pytest.mark.parametrize("flags,enabled", [([], False), (["--collect-only"], False), (["--feedback"], True)])
+def test_current_worker_cli_requires_explicit_feedback_instead_of_removed_collect_flag(monkeypatch, flags, enabled):
+    from app.product_composition import game_sync_current as current
+    seen = []
+    monkeypatch.setenv("TEMPO_PRODUCT_GAME_SYNC_ENABLED", "1")
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "synthetic-connection-never-opened")
+    monkeypatch.setattr(sys, "argv", ["game_sync_current", *flags])
+    monkeypatch.setattr(current, "DedicatedGamesConnections", lambda dsn: object())
+    def worker(**options):
+        seen.append(options)
+        return object(), object()
+    monkeypatch.setattr(current, "current_provider_worker", worker)
+    monkeypatch.setattr(current, "run_optional_worker", lambda *args, **kwargs: 0)
+    current.main()
+    assert seen[0]["delivery_enabled"] is enabled
+
+
+def test_current_worker_cli_rejects_conflicting_mode_before_opening_connections(monkeypatch):
+    from app.product_composition import game_sync_current as current
+    monkeypatch.setattr(sys, "argv", ["game_sync_current", "--collect-only", "--feedback"])
+    with pytest.raises(SystemExit) as failed:
+        current.main()
+    assert failed.value.code == 2
+
+
+def test_feedback_capability_read_is_explicit_typed_and_never_inferred_from_http_or_receipt():
+    from app.product_composition.game_collection_status import feedback_release_capabilities, _encode
+    complete = dict(policy_version="first_departure_v1", receipt_interface_version="0.2.2",
+        selector=True, current_authority=True, again=True, canonical_introduction=True,
+        retained_qualification=True, foreground_handoff=True, issuance_fence=True)
+    assert feedback_release_capabilities(lambda: complete)["availability"] == "available"
+    assert feedback_release_capabilities(lambda: complete | {"again": False})["again"] is False
+    assert feedback_release_capabilities(lambda: {"status": "available"})["availability"] == "unavailable"
+    encoded = _encode({"identity": {}, "managed_mode": {"runtimes": [dict(
+        service="foreground-worker", container_id="b" * 64, hostname="b" * 12, boot_nonce="2" * 32)]}})
+    assert "b" * 64 not in encoded and "2" * 32 not in encoded
+
+
 @pytest.fixture
 def mode_case(owned_postgres):
     workspace = "mode-" + uuid.uuid4().hex

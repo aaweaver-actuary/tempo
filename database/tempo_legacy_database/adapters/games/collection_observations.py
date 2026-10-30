@@ -84,6 +84,13 @@ class CollectionObservations:
             current_setting('transaction_read_only') AS transaction_read_only,
             (SELECT MAX(version) FROM tempo_schema_migrations) AS schema_version""")[0])
 
+    def managed_mode(self, workspace: str) -> dict:
+        def read():
+            from .managed_mode import read_feedback_mode
+            intent = read_feedback_mode(self.connections, workspace)
+            return {"intent": intent.model_dump(mode="json") if intent else None}
+        return self._section(read)
+
     def providers(self, workspace: str, limit: int, provider: str | None) -> dict:
         def read():
             values = []

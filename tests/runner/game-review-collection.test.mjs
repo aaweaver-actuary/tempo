@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { assessSelectedReadiness, readProbe, collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
+import { assessSelectedReadiness, collectorMode, serviceInMode, readProbe, collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
 import { targetKey } from '../../scripts/tempo-deployment.mjs';
 import { configurationFingerprint } from '../../scripts/tempo-runtime.mjs';
 import { cliFixture } from './tempo-cli-fixture.mjs';
@@ -327,7 +327,7 @@ test('collection disable remains available with maintenance and schema launch bl
   });
 });
 
-function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
+function collectionMainFixture(t, {running = false, modern = false, observedSchema = modern ? 56 : 54} = {}) {
   const fixture = cliFixture();
   t.after(() => rmSync(fixture.directory, {recursive: true, force: true}));
   const configuration = JSON.parse(readFileSync(join(fixture.directory, 'fixture.json'), 'utf8')).config;
@@ -335,6 +335,13 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
   configuration.services[serviceName] = input.service;
   const apiImage = 'sha256:' + 'c'.repeat(64);
   configuration.services.api.image = apiImage;
+  if (modern) {
+    configuration.services['foreground-worker'] = {...configuration.services['foreground-worker'], image: apiImage};
+    input.report.feedback_capabilities = {availability: 'available', policy_version: 'first_departure_v1', receipt_interface_version: '0.2.2',
+      selector: true, current_authority: true, again: true, canonical_introduction: true, retained_qualification: true,
+      foreground_handoff: true, issuance_fence: true};
+    input.report.managed_mode = {availability: 'available', intent: null};
+  }
   configuration.services[serviceName].image = imageId;
   fixture.target.envFile = join(fixture.directory, 'fixture.env');
   writeFileSync(fixture.target.envFile, '');
@@ -342,8 +349,9 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
   writeFileSync(fixture.target.composeFiles[0], JSON.stringify(configuration));
   const imageOverride = join(fixture.directory, 'recorded-images.json');
   writeFileSync(imageOverride, JSON.stringify({services: {api: {image: apiImage}, [serviceName]: {image: imageId}}}));
-  writeFileSync(join(fixture.stateDirectory, 'deployment.json'), JSON.stringify({version: 1, revision, schema: 54,
-    images: {api: apiImage, [serviceName]: imageId}, composeFiles: fixture.target.composeFiles, imageOverride,
+  writeFileSync(join(fixture.stateDirectory, 'deployment.json'), JSON.stringify({version: 1, revision, schema: modern ? 56 : 54,
+    images: {api: apiImage, [serviceName]: imageId, ...(modern ? {'foreground-worker': apiImage} : {})}, composeFiles: fixture.target.composeFiles, imageOverride,
+    ...(modern ? {evidence: {commit: revision, run_id: 7, url: 'https://github.com/aaweaver-actuary/tempo/actions/runs/7'}} : {}),
     configFingerprint: configurationFingerprint(configuration)}));
   input.report.identity.schema_version = observedSchema;
   const api = {Id: 'fixture-api', Image: apiImage, State: {Running: true, Restarting: false},
@@ -354,6 +362,16 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
     Config: {Cmd: [...input.service.command], Labels: {...input.service.labels,
       'com.docker.compose.project': fixture.target.project, 'com.docker.compose.service': serviceName,
       'com.docker.compose.project.working_dir': fixture.target.root}}, Mounts: []};
+  const foreground = {Id: 'b'.repeat(64), Image: apiImage, State: {Running: true},
+    Config: {Hostname: 'b'.repeat(12), Cmd: ['fixture-foreground'], Labels: {'com.docker.compose.project': fixture.target.project,
+      'com.docker.compose.service': 'foreground-worker', 'com.docker.compose.project.working_dir': fixture.target.root}}, Mounts: []};
+  if (modern) {
+    api.Id = 'a'.repeat(64); api.Config.Hostname = api.Id.slice(0, 12);
+    collector.Id = 'c'.repeat(64); collector.Config.Hostname = collector.Id.slice(0, 12);
+  }
+  const runtimeBoots = {api: '1'.repeat(32), 'foreground-worker': '2'.repeat(32), [serviceName]: '3'.repeat(32)};
+  let modeIntent = null, collectorBoots = 3;
+  const inventory = modern ? [api, foreground, collector] : [api, collector];
   const calls = [], outputs = [], lockObservations = [], unexpected = [];
   const previousStateRoot = process.env.TEMPO_CLI_STATE_DIR;
   process.env.TEMPO_CLI_STATE_DIR = fixture.environment.TEMPO_CLI_STATE_DIR;
@@ -375,14 +393,43 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
         lockObservations.push(existsSync(join(fixture.stateDirectory, 'maintenance.lock')));
         return fixture.target.daemonId;
       }
-      if (same(action, ['ps', '-aq'])) return 'fixture-api\nfixture-collector\n';
-      if (same(action, ['inspect', 'fixture-api', 'fixture-collector'])) return JSON.stringify([api, collector]);
+      if (same(action, ['ps', '-aq'])) return inventory.map(container => container.Id).join('\n');
+      if (same(action, ['inspect', ...inventory.map(container => container.Id)])) return JSON.stringify(inventory);
       if (same(action, ['image', 'inspect', imageId]) || same(action, ['image', 'inspect', apiImage])) {
         return JSON.stringify([{Id: action[2], Config: {Labels: {'org.opencontainers.image.revision': action[2] === apiImage ? input.apiRevision ?? revision : revision}}}]);
       }
       if (same(action.slice(0, composePrefix.length), composePrefix)) {
-        const composeAction = action.slice(composePrefix.length);
-        if (same(composeAction, ['config', '--format', 'json'])) return JSON.stringify(configuration);
+        let composeAction = action.slice(composePrefix.length);
+        const effective = structuredClone(configuration);
+        if (composeAction[0] === '-f') {
+          const override = JSON.parse(readFileSync(composeAction[1], 'utf8'));
+          const patch = override.services[serviceName];
+          effective.services[serviceName] = {...effective.services[serviceName], command: patch.command,
+            labels: {...effective.services[serviceName].labels, ...patch.labels}};
+          composeAction = composeAction.slice(2);
+        }
+        if (same(composeAction, ['config', '--format', 'json'])) return JSON.stringify(effective);
+        if (modern && same(composeAction, ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_feedback_mode', 'status', '--workspace', 'legacy'])) {
+          return JSON.stringify({schema_version: 1, read_only: true, intent: modeIntent});
+        }
+        if (modern && composeAction[0] === 'run' && composeAction.includes('app.product_composition.game_feedback_mode')) {
+          assert.equal(existsSync(join(fixture.stateDirectory, 'maintenance.lock')), true);
+          if (input.failModeRecord) throw new Error('Synthetic mode record failed');
+          const payload = JSON.parse(composeAction[composeAction.indexOf('--intent-json') + 1]);
+          const generation = Number(composeAction[composeAction.indexOf('--expected-generation') + 1]);
+          assert.equal(generation, modeIntent?.generation ?? 0);
+          modeIntent = payload; input.report.managed_mode.intent = payload;
+          if (input.loseModeAcknowledgment) throw new Error('Synthetic acknowledgment lost after commit');
+          return JSON.stringify({schema_version: 1, applied: true, generation: payload.generation, mode: payload.mode,
+            phase: payload.phase, operation_id: payload.operation_id});
+        }
+        if (modern && composeAction[0] === 'exec' && composeAction.includes('app.product_composition.managed_runtime')) {
+          const name = composeAction[2];
+          if (input.failRuntime === name) throw new Error('Synthetic runtime identity unavailable');
+          const container = inventory.find(container => container.Config.Labels['com.docker.compose.service'] === name);
+          return JSON.stringify({schema_version: 1, read_only: true, runtime: {schema_version: 1,
+            hostname: container.Config.Hostname, boot_nonce: runtimeBoots[name]}});
+        }
         if (same(composeAction, ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status', '--identity-only'])) {
           if (input.identityRead) return input.identityRead();
           return JSON.stringify(input.identityProbe.evidence);
@@ -397,6 +444,11 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
         if (same(composeAction, ['up', '-d', '--no-build', '--no-deps', '--pull', 'never', '--wait', '--wait-timeout', '30', serviceName])) {
           assert.equal(existsSync(join(fixture.stateDirectory, 'maintenance.lock')), true);
           collector.State.Running = true;
+          if (modern) {
+            collector.Config.Cmd = [...effective.services[serviceName].command];
+            collector.Config.Labels['tempo.collection.mode'] = effective.services[serviceName].labels['tempo.collection.mode'];
+            runtimeBoots[serviceName] = (++collectorBoots).toString(16).padStart(32, '0');
+          }
           return '';
         }
         if (same(composeAction, ['stop', '--timeout', '30', serviceName])) {
@@ -410,10 +462,11 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
     throw new Error('Unexpected fixture command: ' + JSON.stringify({program, args}));
   };
   const actionCalls = action => calls.filter(call => call.program === 'docker' && call.args[2] === 'compose' && call.args.includes(action));
-  const invoke = async (operation, {apply = true, allowances = []} = {}) => {
+  const invoke = async (operation, {apply = true, allowances = [], mode} = {}) => {
     try {
       await main([operation, '--config', fixture.registration, '--candidate', revision,
         ...(['enable', 'disable'].includes(operation) && apply ? ['--apply'] : []),
+        ...(mode ? ['--mode', mode] : []),
         ...allowances.flatMap(token => ['--allow-bound-repertoire', token])], {runCommand});
       return outputs.at(-1);
     } finally {
@@ -421,8 +474,169 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
       assert.equal(existsSync(join(fixture.stateDirectory, 'maintenance.lock')), false);
     }
   };
-  return {...fixture, invoke, actionCalls, calls, lockObservations, configuration, input};
+  return {...fixture, invoke, actionCalls, calls, lockObservations, configuration, input, inventory, runtimeBoots};
 }
+
+test('managed collector accepts only its two explicit finite command modes', () => {
+  const original = facts().service;
+  assert.equal(collectorMode(original.command), 'collect-only');
+  assert.equal(collectorMode(serviceInMode(original, 'feedback').command), 'feedback');
+  assert.equal(collectorMode(original.command.filter(value => value !== '--collect-only')), null);
+  assert.equal(collectorMode([...original.command, '--feedback']), null);
+  assert.equal(collectorMode([...original.command, '--once']), null);
+  assert.equal(collectorMode([...original.command, '--follow']), null);
+});
+
+test('feedback readiness requires complete declared capabilities and exact qualified release evidence', () => {
+  const input = facts();
+  input.mode = 'feedback'; input.service = serviceInMode(input.service, 'feedback');
+  input.release.schema = 56; input.report.identity.schema_version = 56;
+  input.report.managed_mode = {availability: 'available', intent: null};
+  input.report.feedback_capabilities = {availability: 'available', policy_version: 'first_departure_v1', receipt_interface_version: '0.2.2',
+    selector: true, current_authority: true, again: true, canonical_introduction: true, retained_qualification: true,
+    foreground_handoff: true, issuance_fence: true};
+  input.release.evidence = {commit: revision, run_id: 7, url: 'https://github.com/aaweaver-actuary/tempo/actions/runs/7'};
+  assert.deepEqual(collectionBlockers(input), []);
+  input.report.feedback_capabilities.again = false;
+  assert.ok(collectionBlockers(input).includes('feedback_capabilities_unverified'));
+  input.report.feedback_capabilities.again = true;
+  input.release.evidence.commit = 'c'.repeat(40);
+  assert.ok(collectionBlockers(input).includes('feedback_qualified_release_evidence_required'));
+  input.release.evidence.commit = revision;
+  input.report.managed_mode.availability = 'unavailable';
+  assert.ok(collectionBlockers(input).includes('managed_feedback_mode_bridge_unavailable'));
+  input.report.managed_mode.availability = 'available';
+  partialScope(input);
+  input.allowances = ['redacted:222222222222'];
+  assert.ok(collectionBlockers(input).includes('bound_allowance_collection_only'));
+  assert.ok(collectionBlockers(input).includes('lichess:repertoire_readiness_unresolved'));
+});
+
+test('feedback plan and status never change mode intent configuration or running services', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  const before = readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8');
+  const plan = await fixture.invoke('plan', {mode: 'feedback'});
+  assert.equal(plan.mode, 'feedback'); assert.equal(plan.running, false); assert.equal(plan.activation_ready, true);
+  await fixture.invoke('status', {mode: 'feedback'});
+  assert.equal(fixture.actionCalls('run').length, 0); assert.equal(fixture.actionCalls('up').length, 0);
+  assert.equal(fixture.actionCalls('stop').length, 0);
+  assert.equal(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'), before);
+});
+
+test('managed feedback enables idempotently and changes mode only after the previous worker stops', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  const enabled = await fixture.invoke('enable', {mode: 'feedback'});
+  assert.equal(enabled.observed_mode, 'feedback'); assert.equal(enabled.managed_mode.verified_for_current_runtime, true);
+  assert.equal(enabled.managed_mode.generation, 2);
+  const starts = fixture.actionCalls('up').length, records = fixture.actionCalls('run').length;
+  const duplicate = await fixture.invoke('enable', {mode: 'feedback'});
+  assert.equal(duplicate.changed, false);
+  assert.equal(fixture.actionCalls('up').length, starts); assert.equal(fixture.actionCalls('run').length, records);
+  const collecting = await fixture.invoke('enable', {mode: 'collect-only'});
+  assert.equal(collecting.observed_mode, 'collect-only'); assert.equal(collecting.managed_mode.verified_for_current_runtime, true);
+  const actions = fixture.calls.filter(call => ['stop', 'up'].some(action => call.args.includes(action)));
+  assert.deepEqual(actions.map(call => call.args.includes('stop') ? 'stop' : 'up'), ['up', 'stop', 'up']);
+  const disabled = await fixture.invoke('disable', {mode: 'collect-only'});
+  assert.equal(disabled.running, false); assert.equal(disabled.managed_mode.phase, 'inactive');
+  assert.ok(fixture.calls.filter(call => call.args.includes('stop')).every(call => call.args.at(-1) === serviceName));
+});
+
+test('managed feedback lost mode acknowledgment recovers the same committed generation', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  fixture.input.loseModeAcknowledgment = true;
+  const enabled = await fixture.invoke('enable', {mode: 'feedback'});
+  assert.equal(enabled.managed_mode.generation, 2);
+  assert.equal(enabled.managed_mode.verified_for_current_runtime, true);
+  assert.equal(fixture.actionCalls('run').length, 2);
+});
+
+test('failed feedback admission clear stops only the optional worker and reports incomplete disable', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  fixture.input.failModeRecord = true;
+  await assert.rejects(fixture.invoke('disable', {mode: 'feedback'}), /Owned collector stopped.*not confirmed inactive/);
+  assert.equal(fixture.inventory.find(container => container.Config.Labels['com.docker.compose.service'] === serviceName).State.Running, false);
+  assert.ok(fixture.inventory.filter(container => container.Config.Labels['com.docker.compose.service'] !== serviceName).every(container => container.State.Running));
+  const status = await fixture.invoke('status', {mode: 'feedback'});
+  assert.equal(status.running, false); assert.equal(status.managed_mode.verified_for_current_runtime, false);
+});
+
+test('unverified foreground boot and edited mode override cannot activate feedback', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  fixture.input.failRuntime = 'foreground-worker';
+  await assert.rejects(fixture.invoke('enable', {mode: 'feedback'}), /foreground_feedback_runtime_unverified/);
+  assert.equal(fixture.actionCalls('run').length, 0); assert.equal(fixture.actionCalls('up').length, 0);
+  delete fixture.input.failRuntime;
+  await fixture.invoke('enable', {mode: 'feedback'});
+  const release = JSON.parse(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'));
+  const changed = JSON.parse(readFileSync(release.gamesMode.override, 'utf8'));
+  changed.services[serviceName].command.push('--once');
+  writeFileSync(release.gamesMode.override, JSON.stringify(changed));
+  await assert.rejects(fixture.invoke('status', {mode: 'feedback'}), /finite supported command/);
+});
+
+test('ordinary managed lifecycle clears optional intent without starting the collector', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  const {createRuntime} = await import('../../scripts/tempo-runtime.mjs');
+  const previous = JSON.parse(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'));
+  const intent = fixture.input.report.managed_mode.intent;
+  const calls = [], records = [];
+  const runtime = createRuntime(fixture.target, {revision, previous, fallback: true, stateDirectory: fixture.stateDirectory, log: () => {},
+    run: async (_program, args) => {
+      calls.push(args);
+      if (args.includes('config')) {
+        const effective = structuredClone(fixture.configuration);
+        for (let index = 0; index < args.length; index++) if (args[index] === '-f') {
+          const overlay = JSON.parse(readFileSync(args[index + 1], 'utf8'));
+          for (const [name, patch] of Object.entries(overlay.services)) effective.services[name] = {...effective.services[name], ...patch,
+            labels: {...effective.services[name]?.labels, ...patch.labels}};
+        }
+        return {stdout: JSON.stringify(effective)};
+      }
+      if (args.includes('app.product_composition.game_feedback_mode')) {
+        if (args.includes('status')) return {stdout: JSON.stringify({schema_version: 1, read_only: true, intent})};
+        const next = JSON.parse(args[args.indexOf('--intent-json') + 1]); records.push(next);
+        return {stdout: JSON.stringify({applied: true, generation: next.generation, phase: next.phase})};
+      }
+      return {stdout: args.includes('ps') ? JSON.stringify([{State: 'running', Service: serviceName}]) : ''};
+    }});
+  await runtime.config(); await runtime.stopApplications(); await runtime.startServices();
+  assert.equal(records.length, 1); assert.equal(records[0].phase, 'inactive'); assert.deepEqual(records[0].runtimes, []);
+  assert.ok(calls.filter(args => args.includes('up')).every(args => !args.includes(serviceName)));
+});
+
+test('failed optional mode clear cannot block ordinary Study stop and start', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  const {createRuntime} = await import('../../scripts/tempo-runtime.mjs');
+  const calls = [];
+  const runtime = createRuntime(fixture.target, {revision, previous: {schema: 56}, stateDirectory: fixture.stateDirectory, log: () => {},
+    run: async (_program, args) => {
+      calls.push(args);
+      if (args.includes('config')) return {stdout: JSON.stringify(fixture.configuration)};
+      if (args.includes('app.product_composition.game_feedback_mode')) throw new Error('Synthetic optional mode unavailable');
+      return {stdout: args.includes('ps') ? JSON.stringify([{State: 'running', Service: 'foreground-worker'}]) : ''};
+    }});
+  await runtime.config(); await runtime.stopApplications(); await runtime.startServices();
+  assert.ok(calls.some(args => args.includes('stop') && args.includes('foreground-worker')));
+  assert.ok(calls.some(args => args.includes('up') && args.includes('foreground-worker')));
+  assert.ok(calls.filter(args => args.includes('up')).every(args => !args.includes(serviceName)));
+  assert.equal(JSON.parse(readFileSync(join(fixture.stateDirectory, 'operation.json'), 'utf8')).games_mode.phase, 'inactive_unconfirmed');
+});
+
+test('invalid optional mode overlay is excluded from ordinary Study configuration', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  const previous = JSON.parse(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'));
+  writeFileSync(previous.gamesMode.override, JSON.stringify({services: {api: {command: ['unexpected']}}}));
+  const {createRuntime} = await import('../../scripts/tempo-runtime.mjs');
+  const calls = [];
+  const runtime = createRuntime(fixture.target, {revision, previous, fallback: true, stateDirectory: fixture.stateDirectory, log: () => {},
+    run: async (_program, args) => {calls.push(args); return {stdout: JSON.stringify(fixture.configuration)};}});
+  await runtime.config(); await runtime.startServices();
+  assert.ok(calls.every(args => !args.includes(previous.gamesMode.override)));
+  assert.ok(calls.filter(args => args.includes('up')).every(args => !args.includes(serviceName)));
+});
 
 test('collection main blocks persisted pending migration before compose up', async t => {
   const fixture = collectionMainFixture(t);

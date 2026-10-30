@@ -194,8 +194,11 @@ def main():
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--preview",action="store_true",help="Read saved scopes and next forward windows; no imports/writes")
     parser.add_argument("--follow",action="store_true",help="Explicitly advance consecutive configured windows")
-    parser.add_argument("--collect-only", action="store_true",
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--collect-only", action="store_true",
         help="Persist Games observations and pending commands without delivering to Study")
+    modes.add_argument("--feedback", action="store_true",
+        help="Explicit feedback mode; qualified delivery also requires verified managed mode intent")
     parser.add_argument("--reconcile-interval-seconds", type=int,
         help="Explicit reconciliation interval for --follow (at least 60 seconds)")
     parser.add_argument("--overlap-seconds",type=int,help="Explicit overlap for --follow (0..3600)")
@@ -240,9 +243,7 @@ def main():
     dsn = os.environ.get("TEMPO_DATABASE_WRITE_URL")
     if not dsn:
         raise RuntimeError("TEMPO_DATABASE_WRITE_URL is required")
-    worker_options = {}
-    if options.collect_only:
-        worker_options["delivery_enabled"] = False
+    worker_options = {"delivery_enabled": options.feedback}
     if options.reconcile_interval_seconds is not None:
         worker_options["reconciliation_interval_seconds"] = options.reconcile_interval_seconds
     runtime, review = current_provider_worker(workspace=options.workspace,
