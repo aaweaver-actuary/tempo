@@ -891,7 +891,15 @@ def test_native_semantic_qualification_spends_fair_turn_without_transport_attemp
     case = native_deliveries
     live = [case.seed("forward",ordinal) for ordinal in (1,3)]
     history = [case.seed("reconciliation",ordinal) for ordinal in (2,4,5)]
+    def service_sequences():
+        with case.connections() as database:
+            return {row[0]:int(row[1]) for row in database.execute("""SELECT operation_id,
+                payload->>'service_sequence' FROM product_feedback_deliveries
+                WHERE COALESCE((payload->>'service_sequence')::bigint,0)>0""").fetchall()}
+    previous = service_sequences()
     case.store.save_delivery(live[0].model_copy(update={"attempts":1,"next_attempt_at":200}),serviced=True)
+    first_service = case.store.delivery(live[0].operation_id)
+    assert first_service.service_sequence == max(previous.values(),default=0)+1
     selected = case.store.pending_delivery(100,workspace=case.workspace)
     assert selected == history[0]
     qualifier = SimpleNamespace(prepare=lambda delivery:delivery.model_copy(update={
@@ -903,7 +911,12 @@ def test_native_semantic_qualification_spends_fair_turn_without_transport_attemp
         clock=FakeClock(),qualifier=qualifier)
     coordinator.deliver(selected)
     disposed = case.store.delivery(selected.operation_id)
-    assert disposed.attempts == 0 and disposed.service_sequence == 2 and disposed.qualification_status == disposition
+    assert disposed.attempts == selected.attempts == 0
+    assert disposed.service_sequence == first_service.service_sequence+1
+    assert disposed.qualification_status == disposition and disposed.command == selected.command
+    assert case.store.delivery(live[0].operation_id) == first_service
+    after = service_sequences()
+    assert {operation:after[operation] for operation in previous} == previous
     assert case.store.pending_delivery(100,workspace=case.workspace).operation_id == live[1].operation_id
 
 
