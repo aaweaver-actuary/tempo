@@ -301,8 +301,8 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     played = now-timedelta(minutes=90)
     inputs = dict(now=now.timestamp(),lichess=[dict(id=source_id,createdAt=int(played.timestamp()*1000),
         rated=True,speed='rapid',pgn=pgn)],chesscom={},configuration=dict(workspace_id='legacy',provider='lichess',
-        account='Learner',window=dict(start_at=(now-timedelta(hours=3)).isoformat(),
-            end_at=(now-timedelta(hours=1)).isoformat(),precision='second'),repertoire_ids=[repertoire],
+        account='Learner',window=dict(start_at=(now-timedelta(hours=3)).replace(microsecond=0).isoformat(),
+            end_at=(now-timedelta(hours=1)).replace(microsecond=0).isoformat(),precision='second'),repertoire_ids=[repertoire],
         speeds=['rapid'],rated=True,interval_seconds=60,revision=1))
     (directory/'provider.json').write_text(json.dumps(inputs))
     nginx = (ROOT/'nginx.conf').read_text()
@@ -532,10 +532,69 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         (directory/'feedback-start').write_text('actual_mode_verified\n')
         stage = 'provider_first_departure'
         def actual_delivery():
+            def bounded(value):
+                if isinstance(value,str):
+                    for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+                        value = value.replace(private,'<redacted>')
+                    return value[:200]
+                if isinstance(value,dict): return {key:bounded(item) for key,item in value.items()}
+                if isinstance(value,list): return [bounded(item) for item in value[:2]]
+                return value
             with case.transaction() as database:
+                source_rows = database.execute_native("""SELECT source_key,version,
+                    payload->'quarantined' AS quarantined,payload->>'diagnostic' AS diagnostic,
+                    jsonb_build_object('game_id',payload->'normalized'->'game_id',
+                        'workspace_id',payload->'normalized'->'workspace_id',
+                        'source_revision',payload->'normalized'->'source_revision',
+                        'source_digest',payload->'normalized'->'source_digest',
+                        'played_at',payload->'normalized'->'played_at') AS normalized_identity,
+                    jsonb_build_object('status',payload->'first_departure'->'status',
+                        'diagnostic',payload->'first_departure'->'diagnostic',
+                        'decision_id',payload->'first_departure'->'decision'->'decision_id',
+                        'card_id',payload->'first_departure'->'decision'->'presentation_id',
+                        'ply',payload->'first_departure'->'ply') AS selection,
+                    payload->>'determined_at' AS determined_at
+                    FROM product_feedback_sources
+                    WHERE payload->'original'->>'source_game_id'=%s ORDER BY source_key LIMIT 2""",(source_id,)).fetchall()
                 rows = database.execute_native("""SELECT delivery.operation_id,delivery.payload
                     FROM product_feedback_deliveries delivery JOIN product_feedback_sources source USING(source_key)
-                    WHERE source.payload->'original'->>'source_game_id'=%s""",(source_id,)).fetchall()
+                    WHERE source.payload->'original'->>'source_game_id'=%s
+                    ORDER BY delivery.operation_id LIMIT 2""",(source_id,)).fetchall()
+                originating = [row[1]['origin_job_id'] for row in rows if row[1].get('origin_job_id')][:2]
+                jobs = database.execute_native("""SELECT job_id,payload->>'status' AS status,
+                    payload->>'error' AS error,payload->>'continuation' AS continuation,
+                    payload->'window_complete' AS window_complete,payload->'pages_committed' AS pages_committed,
+                    payload->>'last_checkpoint_at' AS last_checkpoint_at,payload->'attempts' AS attempts,
+                    payload->'next_attempt_at' AS next_attempt_at,payload->'spec'->>'stream' AS stream,
+                    jsonb_path_query_array(payload,'$.rejections[0 to 1]') AS rejections
+                    FROM product_feedback_jobs WHERE job_id=ANY(%s)
+                        OR (%s AND payload->'spec'->>'workspace_id'='legacy'
+                            AND payload->'spec'->>'provider'='lichess'
+                            AND payload->'spec'->>'account'=%s
+                            AND payload->'spec'->>'configuration_revision'='1')
+                    ORDER BY job_id LIMIT 2""",(originating,not originating,inputs['configuration']['account'])).fetchall()
+            deliveries = []
+            for row in rows:
+                payload = row[1]
+                kind = 'control' if payload.get('control') else 'encounter' if payload.get('encounter') else 'lapse'
+                receipt = payload.get('receipt') or {}
+                progress = receipt.get('progress') or {}
+                deliveries.append(dict(operation_id=row[0],kind=kind,
+                    **{key:payload.get(key) for key in ('state','qualification_status','qualification_reason',
+                        'qualification_retryable','determined_at','stream','error','attempts','next_attempt_at','origin_job_id')},
+                    receipt={key:receipt.get(key) for key in ('status','reason','admission_status','deferred_reason')},
+                    progress={key:progress.get(key) for key in ('determined_at','target','first_issued','first_issued_ordinal')}))
+            facts = bounded(dict(source_present=bool(source_rows),source_sample_count=len(source_rows),
+                source_sample_at_limit=len(source_rows)==2,delivery_sample_count=len(rows),
+                delivery_sample_at_limit=len(rows)==2,job_sample_count=len(jobs),
+                job_sample_at_limit=len(jobs)==2,sources=[dict(row) for row in source_rows],
+                deliveries=deliveries,jobs=[dict(row) for row in jobs]))
+            if facts!=report.get('last_delivery_observation'):
+                previous = report.get('delivery_observation_changes',0)
+                report.setdefault('first_delivery_observation',facts)
+                report['last_delivery_observation']=facts
+                report['delivery_observation_changes']=min(previous+1,20)
+                report['delivery_observation_count_capped']=previous>=20
             assert len(rows)<=1, 'packaged_feedback_duplicate_original_effect'
             if not rows:
                 return None
