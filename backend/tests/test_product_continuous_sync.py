@@ -188,13 +188,25 @@ def test_current_worker_requires_qualified_receiver_before_any_source_read():
 def test_publication_reader_uses_published_owner_not_authored_counter(monkeypatch):
     from app.product_composition import game_sync_current as composition
     marker = object()
+    active = False
     @contextmanager
     def connections():
-        yield "borrowed-reader"
-    def published(database, repertoire):
+        nonlocal active
+        active = True
+        try:
+            yield "borrowed-reader"
+        finally:
+            active = False
+    def read(database, repertoire):
+        assert active
         assert (database, repertoire) == ("borrowed-reader", "approved")
+        return "published-facts"
+    def project(facts):
+        assert not active
+        assert facts == "published-facts"
         return marker
-    monkeypatch.setattr(composition, "current_published_snapshot", published)
+    monkeypatch.setattr(composition, "read_repertoire", read)
+    monkeypatch.setattr(composition, "project_published_repertoire", project)
     assert composition.CurrentRepertoireSnapshots(connections).snapshot("approved") is marker
 
 
@@ -292,6 +304,27 @@ def archive_http(months, responses=None):
                 "https://api.chess.com/pub/player/explicitaccount/games/2026/"+m for m in months]})
         return httpx.Response(200, json={"games": months[request.url.path[-2:]]})
     return handle
+
+
+def test_lichess_export_identifies_tempo_to_provider():
+    """Lichess export rejects unidentified clients even when profiles resolve."""
+    import httpx
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.headers["User-Agent"] == (
+            "tempo-game-collection/0.1.0 (+https://github.com/aaweaver-actuary/tempo)")
+        assert request.headers["Accept"] == "application/x-ndjson"
+        assert request.headers["Accept-Encoding"] == "identity"
+        assert request.url.path == "/api/games/user/explicitaccount"
+        assert request.url.params["perfType"] == "rapid"
+        assert request.url.params["rated"] == "true"
+        return httpx.Response(200, headers={"Content-Type": "application/x-ndjson"}, content=b"")
+
+    page = provider_fetch("lichess", handle, configuration().window)
+    assert len(requests) == 1
+    assert page.complete and not page.records
 
 
 @pytest.mark.parametrize("bounds", [{}, {"max_page_positions": 12}, {"max_page_bytes": len(PGN.encode())*3}])
