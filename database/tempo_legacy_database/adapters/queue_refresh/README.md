@@ -131,8 +131,8 @@ arrays, so queue size does not generate a new SQL parser tree. The fixed
 `prepare_presentation_queries(miss_reason)` compiles immutable availability SQL
 before a short unit opens; no row data or eligibility result is cached. The
 native reader re-evaluates all original current availability predicates in the
-writer. Explicit legacy read callbacks and SQLite keep their original query
-shape. See [protected priority promotion](../study/review/README.md#actual-scale-protected-promotion).
+writer. Explicit legacy read callbacks and SQLite retain their supplied read
+boundary and equivalent protection facts. See [protected priority promotion](../study/review/README.md#actual-scale-protected-promotion).
 
 `priority_ownership_state` and `presentation_facts` evaluate issued-origin,
 evidence-attempt and teaching membership as uncorrelated sets, avoiding a

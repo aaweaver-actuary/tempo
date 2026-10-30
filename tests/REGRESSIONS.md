@@ -5509,6 +5509,12 @@ historical evidence rows, nullable legacy evidence IDs, wrong-card/revision and
 unissued controls. The set-membership query retains full presentation revalidation
 and the unchanged transaction budget; fixture equivalence alone is not native
 publication performance evidence.
+`test_postgres_queue_publication_with_historical_and_null_evidence` in the existing
+`database/tests/check_postgres_opening_progression.py` driver owns actual full
+publication under the unchanged 250 ms background transaction cap with the same
+575-row/5,312-history shape. It also requires stale issuance/eligibility rejection,
+protected positions, history/origin identity and stable replay, in its own
+freshly migrated disposable database with verified cleanup.
 
 
 Background queue presentation after game-priority application must use its supplied bounded reader when no borrowed database connection exists; real obligations retain priority, stale obligations lose priority, and active Study attempts/history remain intact.
