@@ -5774,3 +5774,14 @@ Owning suite `backend/tests/test_product_game_sync_integration.py`:
 - `test_collect_only_preview_retains_reader_profile_and_starts_no_worker`
 - `test_collect_only_source_import_and_help_are_inert`
 - `test_preview_agrees_with_continuous_after_interleaved_manual_request`
+
+
+## Task K — integrated qualification gaps
+
+`tools/component-build/tests/python-package-inputs.test.mjs` owns the bounded
+checker correction: registered centralized database inputs preserve sdist-only
+qualification paths while wheel runtime code remains audited; nested runtime
+loaders and source symlink escapes are rejected; the bundled remediation import
+requires its exact declared distribution; actual centralized wheel/sdist hooks
+retain their existing membership. It runs through the ordinary component-build
+Node test discovery. No runtime source, packaging input or gate is removed.

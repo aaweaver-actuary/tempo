@@ -230,3 +230,23 @@ Actions and required-check settings are untouched. Local component passes do not
 constitute hosted qualification or deploy an artifact. #199 consumes frontend setup,
 #200 consumes installed scheduling setup, and #43/#110 can reuse manifest, runtime,
 restricted-context and local-discovery conventions without consuming these algorithms.
+
+
+## Centralized Python package inputs
+
+The Python component checker keeps centralized database directories as registered
+build inputs. Their top-level `tests` and `tooling` directories are sdist and
+qualification inputs, rather than wheel runtime modules, matching the existing
+Content, Game Evidence and Learning wheel hooks. Input path/symlink checks still
+apply; shipped adapters, DDL Python modules and nested runtime directories retain
+the full import and dynamic-loader audit. Qualification code retains its regular
+owning suites instead of being accepted as a runtime dependency.
+
+`tempo-learning-remediation` already ships both `tempo_learning_remediation` and
+`tempo_remediation_database`. The latter import root is recognized only when that
+exact distribution is declared in both manifest and package metadata. Unknown or
+undeclared namespaces remain errors. The regular
+`tests/python-package-inputs.test.mjs` owns the packaging/alias regressions and
+negative controls; `tests/boundaries.test.mjs` retains the original guards.
+This checker correction changes no application API, packaging hook, schema,
+provider or runtime lifecycle.
