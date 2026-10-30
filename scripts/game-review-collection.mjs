@@ -4,6 +4,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { acquireTargetLock, targetKey, validateTarget, validateContainers } from './tempo-deployment.mjs';
 import {
@@ -23,8 +24,98 @@ const own = (container, target) => labels(container)['com.docker.compose.project
   labels(container)['tempo.collection.mode'] === 'collect-only' &&
   labels(container)['com.docker.compose.project.working_dir'] === target.root;
 
+const boundCode = 'repertoire_snapshot_exceeds_bound';
+const repertoireToken = /^redacted:[0-9a-f]{12}$/;
+const boundDimensions = new Set(['source_rows', 'card_rows', 'membership_rows', 'graph_rows',
+  'row_bytes', 'estimated_snapshot_bytes', 'snapshot_bytes', 'authored_moves']);
+function validBound(bound) {
+  return bound && Object.keys(bound).every(key => ['code', 'stage', 'sample_complete', 'violations'].includes(key)) &&
+    bound.code === boundCode && ['read', 'projection'].includes(bound.stage) &&
+    typeof bound.sample_complete === 'boolean' && Array.isArray(bound.violations) && bound.violations.length > 0 &&
+    bound.violations.every(v => v && Object.keys(v).every(key => ['dimension', 'observed', 'limit', 'observation'].includes(key)) &&
+      boundDimensions.has(v.dimension) &&
+      ['exact', 'lower_bound', 'conservative_estimate'].includes(v.observation) &&
+      Number.isSafeInteger(v.observed) && Number.isSafeInteger(v.limit) && v.limit >= 0 && v.observed > v.limit);
+}
+
+export function assessSelectedReadiness(report, allowances = [], {fullReaderSuccessful, collectionOnly} = {}) {
+  const blockers = [], selected = new Map(), deferred = new Map(), unused = [];
+  const providers = report?.providers?.items;
+  if (Array.isArray(providers) && !providers.some(p => p?.configured)) blockers.push('collection_configuration_absent');
+  if (!Array.isArray(providers) || providers.length !== 2 ||
+      new Set(providers.map(p => p?.provider)).size !== 2 ||
+      providers.some(p => !['lichess', 'chesscom'].includes(p?.provider) || typeof p.configured !== 'boolean')) {
+    blockers.push('selected_repertoire_scope_incomplete');
+  }
+  for (const p of Array.isArray(providers) ? providers : []) {
+    if (!p?.configured) continue;
+    const rows = p.repertoire_readiness;
+    if (!Array.isArray(rows) || !rows.length || p.repertoires_truncated !== false ||
+        !Number.isSafeInteger(p.selected_repertoire_count) || p.selected_repertoire_count !== rows.length ||
+        p.selection_diagnostic != null || new Set(rows.map(r => r?.repertoire_id)).size !== rows.length) {
+      blockers.push(p.provider + ':selected_repertoire_scope_incomplete');
+    }
+    let healthy = 0;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const token = row?.repertoire_id;
+      if (!repertoireToken.test(token ?? '')) {
+        blockers.push(p.provider + ':selected_repertoire_token_invalid');
+        continue;
+      }
+      if (selected.has(token) && !isDeepStrictEqual(selected.get(token), row))
+        blockers.push('selected_repertoire_observations_conflict:' + token);
+      selected.set(token, row);
+      const publicationValid = (!Object.hasOwn(row, 'publication_state') || row.publication_state === 'ready') &&
+        (!Object.hasOwn(row, 'publication_revision') || Number.isSafeInteger(row.publication_revision) && row.publication_revision > 0);
+      if (publicationValid && row.availability === 'available' && ['white', 'black'].includes(row.learner_color) &&
+          row.diagnostic == null && row.bound == null) {
+        healthy++;
+      } else if (publicationValid && allowances.includes(token) && fullReaderSuccessful && collectionOnly &&
+          row.availability === 'unavailable' && row.diagnostic === boundCode && validBound(row.bound)) {
+        const entry = deferred.get(token) ?? {token, providers: [], diagnostic: boundCode,
+          bound: row.bound, allowance_status: 'explicitly_allowed'};
+        entry.providers.push(p.provider);
+        deferred.set(token, entry);
+      } else blockers.push(p.provider + ':repertoire_readiness_unresolved');
+    }
+    if (!healthy) blockers.push(p.provider + ':healthy_selected_repertoire_required');
+  }
+  for (const token of allowances) {
+    if (!selected.has(token)) blockers.push('allow_bound_repertoire_not_selected:' + token);
+    else if (!deferred.has(token) && selected.get(token).availability === 'available') unused.push(token);
+  }
+  return {blockers, comparison_coverage: blockers.length || !fullReaderSuccessful ? 'unresolved' :
+    deferred.size ? 'partial' : 'complete', comparison_coverage_scope: 'selected_repertoire_readiness',
+    deferred_comparisons: [...deferred.values()], unused_bound_allowances: unused};
+}
+
+// Only the two reader probes preserve command failures as inspectable evidence.
+export function readProbe(read) {
+  let stdout, status = 'success', exit_status = 0;
+  try { stdout = read(); }
+  catch (error) {
+    status = ['timeout', 'process_error', 'nonzero_exit'].includes(error?.failure) ? error.failure : 'process_error';
+    exit_status = Number.isInteger(error?.exitStatus) ? error.exitStatus : null;
+    stdout = error?.stdout;
+  }
+  let evidence = null, json_status = 'unavailable';
+  if (typeof stdout === 'string' && Buffer.byteLength(stdout) > 4 * 1024 * 1024) json_status = 'output_bound';
+  else if (typeof stdout === 'string') {
+    try {
+      const value = JSON.parse(stdout);
+      if (!value || Array.isArray(value) || value.schema_version !== 1 || value.read_only !== true)
+        json_status = 'invalid_envelope';
+      else if (value.truncated === true) json_status = 'truncated';
+      else { evidence = value; json_status = 'valid'; }
+    } catch { json_status = 'malformed'; }
+  }
+  return {status, exit_status, json_status, evidence};
+}
+const probeSuccessful = probe => probe?.status === 'success' && probe.json_status === 'valid';
+const probeOutcome = probe => ({status: probe.status, exit_status: probe.exit_status, json_status: probe.json_status});
+
 export function collectionBlockers({ candidate, release, service, image, report, preview,
-  containers, hostCommands, target, fingerprint, maintenance }) {
+  containers, hostCommands, target, fingerprint, maintenance, identityProbe, fullReaderProbe, allowances = [] }) {
   const blockers = [];
   if (!/^[a-f0-9]{40}$/.test(candidate ?? '') || release.revision !== candidate) blockers.push('installed_candidate_mismatch');
   if (release.configFingerprint !== fingerprint) blockers.push('frozen_configuration_mismatch');
@@ -59,7 +150,8 @@ export function collectionBlockers({ candidate, release, service, image, report,
         Number(c.HostConfig?.Memory) !== 256 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
         [c.HostConfig?.NanoCpus, c.HostConfig?.CpuQuota].some(value => Number(value ?? 0) > 0)))) || peers.length > 1)
     blockers.push('competing_or_unverified_collector');
-  if (!report || report.read_only !== true || report.schema_version !== 1 ||
+  if (!probeSuccessful(fullReaderProbe)) blockers.push('full_reader_' + (fullReaderProbe?.status === 'success' ? fullReaderProbe.json_status : fullReaderProbe?.status ?? 'unavailable'));
+  if (!report || report.truncated === true || report.read_only !== true || report.schema_version !== 1 ||
       ['identity', 'providers', 'collection', 'delivery'].some(section => report[section]?.availability !== 'available'))
     blockers.push('reader_evidence_unavailable');
   if (maintenance?.status !== 'clear') {
@@ -69,10 +161,21 @@ export function collectionBlockers({ candidate, release, service, image, report,
   }
 
   const expectedSchema = release?.schema;
-  const observedSchema = report?.identity?.schema_version;
+  const identity = identityProbe?.evidence?.identity;
+  const observedSchema = identity?.schema_version;
+  if (!probeSuccessful(identityProbe)) blockers.push('identity_reader_unavailable');
+  if ([identity, report?.identity].some(observation => observation?.availability === 'available' &&
+      (observation.reader_role !== 'tempo_reader' || observation.transaction_read_only !== 'on')))
+    blockers.push('reader_permission_unverified');
+  if (report?.identity?.availability === 'available' &&
+      (!Number.isSafeInteger(report.identity.schema_version) || report.identity.schema_version < 1))
+    blockers.push('full_reader_identity_invalid');
+  if (identity?.availability === 'available' && report?.identity?.availability === 'available' &&
+      Number.isSafeInteger(observedSchema) && Number.isSafeInteger(report.identity.schema_version) &&
+      observedSchema !== report.identity.schema_version) blockers.push('collection_schema_observations_conflict');
 
   if (
-    report?.identity?.availability !== 'available' ||
+    !probeSuccessful(identityProbe) || identity?.availability !== 'available' ||
     !Number.isSafeInteger(expectedSchema) ||
     expectedSchema < 1 ||
     !Number.isSafeInteger(observedSchema) ||
@@ -82,18 +185,19 @@ export function collectionBlockers({ candidate, release, service, image, report,
   } else if (observedSchema !== expectedSchema) {
     blockers.push('collection_schema_mismatch');
   }
-  const providers = report?.providers?.items ?? [];
-  const configured = providers.filter(p => p.configured);
+  const readiness = assessSelectedReadiness(report, allowances, {fullReaderSuccessful: probeSuccessful(fullReaderProbe),
+    collectionOnly: !blockers.includes('collection_only_command_required') && !blockers.includes('competing_or_unverified_collector')});
+  blockers.push(...readiness.blockers);
+  const providers = Array.isArray(report?.providers?.items) ? report.providers.items : [];
+  const configured = providers.filter(p => p?.configured);
   if (report?.providers?.availability === 'available' && !configured.length) blockers.push('collection_configuration_absent');
   for (const p of providers) {
+    if (!p || typeof p !== 'object') continue;
     if (p.configuration_ambiguous || p.current_jobs?.length && !p.configured) blockers.push(p.provider + ':ambiguous_or_unconfigured_pending_work');
     if (!p.configured) continue; // An unused provider need not be enabled.
     if (Object.values(p.required_inputs ?? {}).some(value => value !== true) || !Object.keys(p.required_inputs ?? {}).length)
       blockers.push(p.provider + ':required_inputs_absent');
     if (!p.configuration?.interval_seconds) blockers.push(p.provider + ':explicit_recurrence_required');
-    if (!p.repertoire_readiness?.length || p.repertoires_truncated ||
-        p.repertoire_readiness.some(r => r.availability !== 'available' || !['white', 'black'].includes(r.learner_color)))
-      blockers.push(p.provider + ':repertoire_readiness_unresolved');
     const scope = preview?.providers?.find(row => row.provider === p.provider);
     if (!scope?.configured || !scope.configuration) blockers.push(p.provider + ':forward_preview_unavailable');
     else {
@@ -126,7 +230,13 @@ export async function operateCollection(operation, { apply = false, inspect, loc
 
 function command(program, args) {
   const result = spawnSync(program, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
-  if (result.error || result.status !== 0) throw new Error(program + ' inspection/action failed (' + (result.status ?? result.error?.code) + ')');
+  if (result.error || result.status !== 0) {
+    const error = new Error(program + ' inspection/action failed');
+    error.failure = result.error?.code === 'ETIMEDOUT' ? 'timeout' : result.error || !Number.isInteger(result.status) ? 'process_error' : 'nonzero_exit';
+    error.exitStatus = Number.isInteger(result.status) ? result.status : null;
+    error.stdout = result.stdout;
+    throw error;
+  }
   return result.stdout;
 }
 const jsonFile = path => JSON.parse(readFileSync(path, 'utf8'));
@@ -190,10 +300,16 @@ export async function main(
   const operation = argv.shift();
   let configPath = join(homedir(), '.config/tempo/config.json'), candidate;
   let apply = false;
+  const allowances = [];
   while (argv.length) {
     const option = argv.shift();
     if (option === '--apply') apply = true;
     else if (option === '--candidate') candidate = argv.shift();
+    else if (option === '--allow-bound-repertoire') {
+      const token = argv.shift();
+      if (!repertoireToken.test(token ?? '')) throw new Error('--allow-bound-repertoire requires an exact public redacted repertoire token');
+      if (!allowances.includes(token)) allowances.push(token);
+    }
     else if (option === '--config') configPath = argv.shift();
     else throw new Error('Unknown option: ' + option);
   }
@@ -225,10 +341,20 @@ export async function main(
     validateContainers(containers, target);
     const api = containers.filter(c => active(c) && labels(c)['com.docker.compose.project'] === target.project &&
       labels(c)['com.docker.compose.service'] === 'api');
+    let identityProbe = {status: 'unavailable', exit_status: null, json_status: 'unavailable', evidence: null};
+    let fullReaderProbe = {...identityProbe};
     let report = null, preview = null, image = null, hostCommands = null;
     if (release.images?.[serviceName]) image = JSON.parse(docker(['image', 'inspect', release.images[serviceName]]))[0];
+    let apiRevisionVerified = false;
     if (api.length === 1 && api[0].Image === release.images?.api) {
-      try { report = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status', '--workspace', 'legacy', '--limit', '20'])); } catch { /* Explicit unavailable evidence below. */ }
+      const apiImage = JSON.parse(docker(['image', 'inspect', api[0].Image]))[0];
+      apiRevisionVerified = apiImage.Config?.Labels?.['org.opencontainers.image.revision'] === candidate;
+    }
+    if (apiRevisionVerified) {
+      const readerCommand = ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status'];
+      identityProbe = readProbe(() => compose([...readerCommand, '--identity-only']));
+      fullReaderProbe = readProbe(() => compose([...readerCommand, '--workspace', 'legacy', '--limit', '20']));
+      report = fullReaderProbe.evidence;
       if (service?.command?.includes('--overlap-seconds')) {
         try { preview = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_sync_current', '--preview', '--follow', '--overlap-seconds', service.command[service.command.indexOf('--overlap-seconds') + 1]])); } catch { /* Block enable. */ }
       }
@@ -238,19 +364,23 @@ export async function main(
     const running = owned.some(active);
     const stopSafe = owned.every(c => own(c, target) && (!active(c) || c.Image === release.images?.[serviceName]) && textCommand(c).includes('--collect-only'));
     const blockers = collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
-      fingerprint: configurationFingerprint(configuration), maintenance });
+      fingerprint: configurationFingerprint(configuration), maintenance, identityProbe, fullReaderProbe, allowances });
     if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');
-    else {
-      const apiImage = JSON.parse(docker(['image', 'inspect', api[0].Image]))[0];
-      if (apiImage.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate) blockers.push('installed_api_revision_mismatch');
-    }
+    else if (!apiRevisionVerified) blockers.push('installed_api_revision_mismatch');
+    const readiness = assessSelectedReadiness(report, allowances, {fullReaderSuccessful: probeSuccessful(fullReaderProbe),
+      collectionOnly: apiRevisionVerified && !blockers.includes('collection_only_command_required') &&
+        !blockers.includes('competing_or_unverified_collector')});
     snapshot = { registrationText, receiptText };
     return { blockers, running, stopSafe, output: { candidate, installed_revision: release.revision, schema: release.schema,
       maintenance,
+      ...Object.fromEntries(Object.entries(readiness).filter(([key]) => key !== 'blockers')),
+      reader_probes: {identity: probeOutcome(identityProbe), full: probeOutcome(fullReaderProbe)},
+      identity_evidence: identityProbe.evidence?.identity ?? null,
       observed_schema:
-        Number.isSafeInteger(report?.identity?.schema_version) &&
-        report.identity.schema_version > 0
-          ? report.identity.schema_version
+        identityProbe.evidence?.identity?.availability === 'available' &&
+        Number.isSafeInteger(identityProbe.evidence.identity.schema_version) &&
+        identityProbe.evidence.identity.schema_version > 0
+          ? identityProbe.evidence.identity.schema_version
           : null,
       collector_image: release.images?.[serviceName] ?? null, mode: 'collect-only', running, activation_ready: !blockers.length,
       blockers, evidence: report, preview, resources: service ? { cpus: service.cpus ?? null, memory: service.mem_limit, pids: service.pids_limit } : null,
