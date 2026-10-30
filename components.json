@@ -1281,6 +1281,7 @@
       "publicExports": [
         "apply_review",
         "review_context",
+        "review_day_at",
         "submit_review",
         "register_review_commands",
         "ReviewConflict",
