@@ -393,10 +393,254 @@ def test_repertoire_read_port_is_one_parameter_bound_read_and_fails_on_truncatio
             self.calls.append((statement, parameters))
             return self
         def fetchone(self):
-            return {"snapshot": dict(exists=True, bounded=self.bounded, facts=repertoire_facts())}
+            return {"snapshot": snapshot_envelope(bounded=self.bounded,
+                line_count=1 if self.bounded else 10001,
+                facts=repertoire_facts() if self.bounded else None)}
     reader = Reader(); requested = "rep' OR true --"
     assert read_repertoire(reader, requested)["repertoire"]["id"] == "rep"
     assert len(reader.calls) == 1 and reader.calls[0][1][0] == requested
     assert requested not in reader.calls[0][0]
     reader.bounded = False
     with pytest.raises(ValueError, match="exceeds_bound"): read_repertoire(reader, "rep")
+
+
+# The SQL envelope is outside the source facts and their comparison digest.
+def snapshot_envelope(**changes):
+    return dict(exists=True, bounded=False, facts=None, line_count=1, card_count=1,
+                membership_count=1, graph_count=1, estimated_bytes=4096, largest_row=256) | changes
+
+
+class EnvelopeReader:
+    def __init__(self, envelope):
+        self.envelope = envelope
+
+    def execute_native(self, statement, parameters):
+        return self
+
+    def fetchone(self):
+        return {"snapshot": self.envelope}
+
+
+@pytest.mark.parametrize("field,dimension,limit,observation,complete", [
+    ("line_count", "source_rows", 10000, "lower_bound", False),
+    ("card_count", "card_rows", 10000, "lower_bound", False),
+    ("membership_count", "membership_rows", 10000, "lower_bound", False),
+    ("graph_count", "graph_rows", 20000, "lower_bound", False),
+    ("largest_row", "row_bytes", 65536, "exact", True),
+    ("estimated_bytes", "estimated_snapshot_bytes", 32 * 1024 * 1024, "conservative_estimate", True),
+])
+def test_snapshot_read_bound_diagnostic_is_private_and_defensively_copied(field, dimension, limit, observation, complete):
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    envelope = snapshot_envelope(**{field: limit + 1}, secret="private PGN credential card-id")
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        read_repertoire(EnvelopeReader(envelope), "private-repertoire")
+    error = caught.value
+    expected = dict(code="repertoire_snapshot_exceeds_bound", stage="read", sample_complete=complete,
+        violations=[dict(dimension=dimension, observed=limit + 1, limit=limit, observation=observation)])
+    assert isinstance(error, ValueError) and str(error) == "repertoire_snapshot_exceeds_bound"
+    assert error.diagnostic() == expected
+    assert "private" not in json.dumps(error.diagnostic())
+    leaked = error.diagnostic(); leaked["violations"][0]["observed"] = 0
+    leaked["violations"].append({"private": True}); leaked["stage"] = "private"
+    assert error.diagnostic() == expected
+
+
+def test_snapshot_read_reports_simultaneous_bounds_without_claiming_complete_size():
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    envelope = snapshot_envelope(line_count=10001, card_count=10001, membership_count=10001,
+        graph_count=20001, largest_row=65537, estimated_bytes=33554433)
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        read_repertoire(EnvelopeReader(envelope), "rep")
+    diagnostic = caught.value.diagnostic()
+    assert not diagnostic["sample_complete"]
+    assert [(v["dimension"], v["observation"]) for v in diagnostic["violations"]] == [
+        ("source_rows", "lower_bound"), ("card_rows", "lower_bound"),
+        ("membership_rows", "lower_bound"), ("graph_rows", "lower_bound"),
+        ("row_bytes", "lower_bound"), ("estimated_snapshot_bytes", "conservative_estimate")]
+
+
+@pytest.mark.parametrize("changes", [{"line_count": None}, {"card_count": True},
+    {"graph_count": 20002}, {"estimated_bytes": "33554433"}, {"largest_row": -1}, {}])
+def test_snapshot_missing_or_malformed_bound_metadata_remains_non_size(changes):
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    envelope = snapshot_envelope(**changes)
+    if changes == {}:
+        del envelope["line_count"]
+    with pytest.raises(ValueError) as caught:
+        read_repertoire(EnvelopeReader(envelope), "rep")
+    assert not isinstance(caught.value, RepertoireSnapshotBoundExceeded)
+    assert str(caught.value) == "invalid_repertoire_snapshot_bound_metadata"
+
+
+def test_snapshot_false_bound_without_proof_is_not_a_size_error():
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    with pytest.raises(ValueError) as caught:
+        read_repertoire(EnvelopeReader(snapshot_envelope()), "rep")
+    assert not isinstance(caught.value, RepertoireSnapshotBoundExceeded)
+
+
+@pytest.mark.parametrize("owner", ["read", "projection"])
+def test_snapshot_actual_serialized_byte_refusal_is_exact(owner):
+    from app.repertoire import RepertoireSnapshotBoundExceeded, project_repertoire
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    facts = repertoire_facts(); facts["repertoire"]["name"] = "x" * (32 * 1024 * 1024)
+    options = dict(ensure_ascii=False)
+    if owner == "projection": options.update(sort_keys=True, separators=(",", ":"))
+    measured = len(json.dumps(facts, **options).encode())
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        if owner == "projection": project_repertoire(facts)
+        else: read_repertoire(EnvelopeReader(snapshot_envelope(bounded=True, facts=facts)), "rep")
+    assert caught.value.diagnostic() == dict(code="repertoire_snapshot_exceeds_bound", stage=owner,
+        sample_complete=True, violations=[dict(dimension="snapshot_bytes", observed=measured,
+                                             limit=33554432, observation="exact")])
+
+
+@pytest.mark.parametrize("name,dimension,limit", [("lines", "source_rows", 10000),
+    ("cards", "card_rows", 10000), ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000)])
+def test_snapshot_projection_row_refusals_are_exact(name, dimension, limit):
+    from app.repertoire import RepertoireSnapshotBoundExceeded, project_repertoire
+    facts = repertoire_facts(); facts[name] *= limit + 1
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        project_repertoire(facts)
+    assert caught.value.diagnostic() == dict(code="repertoire_snapshot_exceeds_bound", stage="projection",
+        sample_complete=True, violations=[dict(dimension=dimension, observed=limit + 1,
+                                             limit=limit, observation="exact")])
+
+
+def test_snapshot_projection_aggregate_authored_moves_refusal_is_exact():
+    from app.repertoire import RepertoireSnapshotBoundExceeded, project_repertoire
+    facts = repertoire_facts()
+    route = facts["lines"][0]
+    facts["lines"] = [route | dict(id=str(i), moves_json=json.dumps(["g1f3", "g8f6", "f3g1", "f6g8"] * 25))
+                      for i in range(1001)]
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        project_repertoire(facts)
+    assert caught.value.diagnostic()["violations"] == [dict(dimension="authored_moves", observed=100100,
+                                                           limit=100000, observation="exact")]
+
+
+@pytest.mark.parametrize("failure", ["scope", "publication", "color", "parse", "not-found", "connection"])
+def test_snapshot_non_size_failures_keep_their_identity(failure):
+    from app.repertoire import RepertoireSnapshotBoundExceeded, project_published_repertoire
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    facts = repertoire_facts()
+    if failure == "scope": facts["lines"][0]["repertoire_id"] = "other"
+    if failure == "publication": facts["repertoire"]["graph_state"] = "failed"
+    if failure == "color": facts["lines"] = []
+    if failure == "parse": facts["lines"][0]["moves_json"] = "private invalid JSON"
+    class BrokenReader(EnvelopeReader):
+        def execute_native(self, statement, parameters):
+            raise ConnectionError("private connection text")
+    with pytest.raises((ValueError, ConnectionError)) as caught:
+        if failure == "not-found": read_repertoire(EnvelopeReader(snapshot_envelope(exists=False)), "rep")
+        elif failure == "connection": read_repertoire(BrokenReader(None), "rep")
+        else: project_published_repertoire(facts)
+    assert not isinstance(caught.value, RepertoireSnapshotBoundExceeded)
+
+
+def route_reuse_facts(variant):
+    facts = repertoire_facts()
+    if variant == "repeated": facts["graphs"] *= 5
+    if variant == "unintroduced": facts["cards"][0]["introduced_at"] = None
+    if variant == "unknown": del facts["cards"][0]["introduced_at"]
+    if variant == "unavailable": facts["cards"][0]["archived"] = 1
+    if variant == "conflict":
+        facts["cards"].append(facts["cards"][0] | dict(id="other"))
+        facts["memberships"].append(dict(repertoire_id="rep", card_id="other"))
+        facts["graphs"].append(facts["graphs"][0] | dict(card_id="other"))
+    if variant == "ambiguous":
+        facts["lines"][0]["moves_json"] = json.dumps(["g1f3", "g8f6", "f3g1", "f6g8", "g1f3"])
+        for row in (facts["cards"][0], facts["graphs"][0]): row["moves_json"] = '["g1f3"]'
+    if variant == "illegal-route": facts["lines"][0]["moves_json"] = '["e2e5"]'
+    if variant == "illegal-card":
+        for row in (facts["cards"][0], facts["graphs"][0]): row["moves_json"] = '["e2e5"]'
+    if variant == "unused-illegal-route":
+        facts["lines"].append(facts["lines"][0] | dict(id="unused", moves_json='["e2e5"]'))
+    return facts
+
+
+@pytest.mark.parametrize("illegal", [False, True])
+def test_snapshot_route_replay_is_local_lazy_and_once_per_needed_route(monkeypatch, illegal):
+    import app.repertoire.snapshot as projection
+    facts = route_reuse_facts("unused-illegal-route"); facts["graphs"] *= 5
+    if illegal: facts["lines"][0]["moves_json"] = '["e2e5"]'
+    route_moves = json.loads(facts["lines"][0]["moves_json"])
+    original, calls, route_moves_ids = projection._frames, [], set()
+    original_mappings = projection._mappings
+    def mappings(capture, routes, *args, **kwargs):
+        route_moves_ids.clear()
+        route_moves_ids.update(id(route.moves) for route in routes.values())
+        return original_mappings(capture, routes, *args, **kwargs)
+    def tracked(start, moves):
+        if id(moves) in route_moves_ids: calls.append(tuple(moves))
+        return original(start, moves)
+    monkeypatch.setattr(projection, "_mappings", mappings)
+    monkeypatch.setattr(projection, "_frames", tracked)
+    first = projection.project_repertoire(facts, captured_at="2026-10-26T12:00:00Z")
+    assert calls == [tuple(route_moves)] and len(first.decision_presentations) == (0 if illegal else 2)
+    second = projection.project_repertoire(facts, captured_at="2026-10-26T12:00:00Z")
+    assert calls == [tuple(route_moves)] * 2 and first == second
+    facts["lines"][0]["moves_json"] = '["d2d4"]'
+    assert projection.project_repertoire(facts).decision_presentations == ()
+    assert calls[-1] == ("d2d4",)
+
+
+def test_snapshot_repeated_position_roots_remain_ambiguous():
+    from app.repertoire import project_repertoire
+    assert project_repertoire(route_reuse_facts("ambiguous")).decision_presentations == ()
+
+
+# Complete model fingerprints captured from e656039d with the frozen timestamp.
+@pytest.mark.parametrize("variant,expected", [
+    ("base", "1256b67f8d05da50e6fd6f6fcf719d53d5aa939dc9f824a44bd6ee56bdfc2083"),
+    ("repeated", "b2f1e03deab267ce2b31b868267030e6c09a032de3d3cfec923b2c42d7947b13"),
+    ("unintroduced", "49a5155d35f5b6f0d5b4dad83674caf37f361d0eb216831e828dd00c358139db"),
+    ("unknown", "56302beaf79a5b8e8410b67c910de03d18a6d58f0696af91099ad6a0b675404d"),
+    ("unavailable", "66e9a54ebd0039cfd4eb0f099918c399d7cf6a121d5700d68401f436f9fb4d6e"),
+    ("conflict", "216d731e0eb520a427011b0ccae041e33a458f2770b52020a6a0f82b61f28fec"),
+    ("ambiguous", "4f919b1d9fae7af72d691b3df1a49a42624bdfcc073c5cce28893d334d910f6a"),
+    ("illegal-route", "18d67b508d14931c662e5778d5bbf02b74776d63e27b09385e2712ef20914367"),
+    ("illegal-card", "aabb9f50ac9de01860be866d92e726c339e139f3f0d713d3c222b1fafc6ba8e5"),
+    ("unused-illegal-route", "1f2f919064d6017f5a2fd5b7e7dcd87d04dc82d0ad355411a1471b963f6e0756"),
+])
+def test_snapshot_route_cache_preserves_baseline_full_projection(variant, expected):
+    from app.repertoire import project_published_repertoire
+    facts = route_reuse_facts(variant); before = deepcopy(facts)
+    result = project_published_repertoire(facts, captured_at="2026-10-26T12:00:00Z")
+    assert fingerprint(result.model_dump(mode="json")) == expected
+    assert facts == before
+
+
+def test_snapshot_bound_exception_copies_input_and_rejects_private_fields():
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    violation = dict(dimension="source_rows", observed=10001, limit=10000, observation="lower_bound")
+    error = RepertoireSnapshotBoundExceeded(stage="read", sample_complete=False, violations=[violation])
+    violation["observed"] = 99999
+    assert error.diagnostic()["violations"][0]["observed"] == 10001
+    for changes in ({"private": "secret"}, {"dimension": "private"}, {"observed": True},
+                    {"observation": "private"}, {"limit": -1}):
+        with pytest.raises(ValueError, match="invalid_repertoire_snapshot_bound_diagnostic"):
+            RepertoireSnapshotBoundExceeded(stage="read", sample_complete=False, violations=[violation | changes])
+
+
+
+def test_snapshot_route_cache_identity_includes_repertoire(monkeypatch):
+    import app.repertoire.snapshot as projection
+    from tempo_game_review_contracts import AuthoredRoute
+    source = capture()
+    tables = source["tables"]
+    other_card = tables["cards"][0] | dict(id="second-card", moves_json='["d2d4"]')
+    tables["cards"].append(other_card)
+    tables["repertoire_cards"].append(dict(repertoire_id="other-repertoire", card_id="second-card"))
+    source["graphs"].append(source["graphs"][0] | dict(repertoire_id="other-repertoire",
+        card_id="second-card", moves_json='["d2d4"]'))
+    routes = {(rep, "route"): AuthoredRoute(repertoire_id=rep, route_id="route", policy_id=rep,
+        learner_color="white", starting_fen=chess.STARTING_FEN, moves=moves)
+        for rep, moves in (("rep", ["e2e4", "e7e5", "g1f3"]), ("other-repertoire", ["d2d4"]))}
+    result = projection._mappings(source, routes, 3)
+    assert [(m.repertoire_id, m.presentation_id) for m in result] == [
+        ("rep", "physical"), ("rep", "physical"), ("other-repertoire", "second-card")]

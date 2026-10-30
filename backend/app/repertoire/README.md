@@ -178,8 +178,27 @@ when conflicted. No schema or stored relationship changes are introduced.
 - Each source category is bounded to 10,000 rows; current graph bindings to
   20,000. One extra sentinel row detects overflow. Raw row text is bounded to
   64 KiB before JSON aggregation. A conservative JSON-escape estimate and final
-  encoded-size check enforce 32 MiB. Overflow raises
-  `repertoire_snapshot_exceeds_bound`; it never certifies a bounded prefix.
+  encoded-size check enforce 32 MiB. Pure repertoire projection also caps
+  aggregate authored moves at 100,000. A proved budget refusal raises public
+  `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged
+  string `repertoire_snapshot_exceeds_bound`; it never certifies a bounded prefix.
+  `diagnostic()` returns a fresh JSON-safe object with `code`, `stage` (`read` or
+  `projection`), `sample_complete`, and `violations` containing only fixed
+  `dimension`/`observation` labels and numeric `observed`/`limit` measurements.
+  Sentinel counts are lower bounds; estimated bytes are conservative, including
+  when the sample is truncated. Serialized byte measurements are exact. The
+  envelope measurements stay outside source facts/digests; malformed refusal
+  metadata and non-size errors remain distinct ordinary errors.
+- `_mappings` lazily indexes canonical position keys once per needed authored
+  route within one invocation. It retains every occurrence and still requires
+  exactly one matching executable slice. No cached boards or cross-call reuse
+  are retained; chronology, unavailable cards, conflicts and mapping identity
+  keep their existing semantics.
+- Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
+  bounded connection context, exits that context, then calls public
+  `project_published_repertoire`. Chess replay/mapping construction runs after
+  the transaction closes. Other borrowed-transaction snapshot callers retain
+  their existing transaction ownership.
 - `membership.revision = scope_source_revision + 1` represents the retained
   zero-based owner counter as a positive public revision. `source_revision` and
   `digest` hash canonical selected owner facts. Capture time is excluded, so
@@ -199,6 +218,11 @@ flowchart LR
   Reader --> Select["One bounded parameter-bound SELECT\nselected repertoire MVCC view"]
   Select --> Existing[("Existing repertoire lines\ncards / memberships / current graph")]
   Reader --> Project["Repertoire project_repertoire\nexisting T01 snapshot"]
+  Games["Games CurrentRepertoireSnapshots"] --> ReadFacts["read_repertoire inside bounded DB context"]
+  ReadFacts --> Select
+  ReadFacts --> Closed["Exit DB context; eager facts retained"]
+  Closed --> Published["Pure project_published_repertoire; local route index"]
+  Published --> Consumers
   Injected["Injected owner read for pure tests"] --> Project
   Project --> Consumers["Existing immutable index / comparer / conflict owner"]
 ```
