@@ -9,6 +9,113 @@ from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
 
 
+@pytest.mark.parametrize('state',['introduced','unintroduced'])
+def test_qualified_global_publication_reaches_exact_study_consequence_and_real_settlement(
+    owned_postgres,monkeypatch,state,
+):
+    """One complete source/owner/queue proof, separate from actual provider HTTP."""
+    from contextlib import contextmanager
+    from datetime import timedelta
+    import hashlib
+    import chess
+    import chess.pgn
+    from app import queue_commands
+    from app.contracts.product_v02.games import GameRecord, GameWindow
+    from app.games.feedback.ports import SourceState
+    from app.games.feedback.review import SyncConfiguration
+    from app.product_composition.provider_priority import prepare_feedback_qualification
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    from tempo_legacy_database.adapters.study import issuance
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store,'configured',lambda:True)
+    # Parametrized cases share a workspace ledger; keep their fixed clocks in
+    # actual causal order so an earlier fixture is not a future issuance.
+    determined = NOW+timedelta(minutes=3 if state=='unintroduced' else 0)
+    timeline = [determined-timedelta(minutes=1)]
+    actual_stamp = issuance.stamp_issued_head
+    monkeypatch.setattr(issuance,'stamp_issued_head',
+        lambda database,entry,card,revision:actual_stamp(database,entry,card,revision,now=timeline[0]))
+    if hasattr(queue_commands,'current_study_day'):
+        monkeypatch.setattr(queue_commands,'current_study_day',lambda *args,**kwargs:NOW.date())
+    with retained_history_case(owned_postgres,state=state,ordinary_limit=0,study_only=True) as case:
+        @contextmanager
+        def raw_reads():
+            with case.transaction() as database:
+                yield database.raw
+        with case.transaction() as database:
+            protected = _issue(database,case.protected_id)
+        timeline[0] = determined
+        captured = case.capture(case.game_ids[0]); original = case.command(captured)
+        canonical = retained_canonical_game(captured)
+        raw = captured['game']
+        pgn = chess.pgn.Game(); pgn.setup(chess.Board(canonical.starting_fen))
+        pgn.headers.update(White='synthetic',Black='opponent',Result='*')
+        pgn.add_variation(chess.Move.from_uci(original.played_uci))
+        text = str(pgn)
+        record = GameRecord(source_game_id=raw['provider_game_id'],source_revision=1,
+            source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,
+            played_at=canonical.played_at,time_precision='second')
+        source = SourceState(source_key=case.card_id+'-source',version=1,original=record,
+            record_fingerprint=record.source_digest,normalized=canonical,findings=(),
+            comparison_revision='original-synthetic-capture',effects=(original,),encounters=(original,))
+        config = SyncConfiguration(workspace_id=canonical.workspace_id,provider='lichess',account='synthetic',
+            window=GameWindow(start_at=(NOW-timedelta(days=2)).isoformat(),end_at=NOW.isoformat(),precision='second'),
+            repertoire_ids=(case.repertoire_id,),speeds=('rapid',),rated=None,interval_seconds=None)
+        PostgresReviewStore(raw_reads).configure(config,0)
+        try:
+            with case.transaction() as database:
+                database.execute_native('INSERT INTO product_feedback_sources(source_key,version,payload) '
+                    'VALUES(%s,1,%s::jsonb)',(source.source_key,source.model_dump_json()))
+            capture = lambda repertoire,game,plies:case.capture(game)
+            prepared = prepare_feedback_qualification(original,read=case.transaction,capture=capture,
+                clock=lambda:determined,determination=determined.isoformat(),stream='forward')
+            assert prepared.qualification.selection.ply == 1
+            assert prepared.qualification.selection.decision.presentation_id == case.card_id
+            assert prepared.qualification.selection.selected_scope[0].snapshot_id.startswith('publication:')
+            assert prepared.target_snapshot.membership.snapshot_id.startswith('product:')
+            with case.transaction() as database:
+                owner = current_owner_encounter_intake(database,retained_owner_capture=prepared.target_capture,
+                    snapshot=prepared.target_snapshot,clock=lambda:determined,qualification=prepared.qualification,
+                    prepared_decisions=prepared.prepared_decisions)
+                accepted = owner.accept_qualified(original,qualification=prepared.qualification)
+                observed = PostgresGameFeedbackStore(database).get(original.key)
+                assert accepted.admission_status == 'pending'
+            unit = prepare_feedback_effect(observed,read=case.transaction,capture=capture,clock=lambda:determined,
+                qualification_prepare=lambda command:prepared)
+            with case.transaction() as database:
+                database.execute_native("SET LOCAL transaction_timeout='250ms'")
+                applied = apply_prepared_feedback_effect(database,unit,clock=lambda:determined,operation_admitted=True)
+                assert applied.admission_status == 'available'
+                assert applied.disposition == ('introduced_again' if state=='introduced' else 'first_introduction')
+                assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                    (case.card_id,)).fetchone()[0] == int(state=='introduced')
+                assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0]
+            with case.transaction() as database:
+                _ordinary_review(database,case.protected_id,protected,'qualified-protected:'+case.card_id)
+            timeline[0] = determined+timedelta(minutes=1)
+            with case.transaction() as database:
+                target = _issue(database,case.card_id)
+                first = _ordinary_review(database,case.card_id,target,'qualified-target:'+case.card_id)
+                replay = _ordinary_review(database,case.card_id,target,'qualified-target:'+case.card_id)
+                assert replay['review_id'] == first['review_id']
+            with case.transaction() as database:
+                effect = PostgresGameFeedbackStore(database).get(original.key)
+                assert effect.status == 'settled' and effect.settlement_review_id == first['review_id']
+                assert effect.encounter == original and effect.progress.first_issued_ordinal == 1
+                assert effect.progress.settlement.attempt.queue_entry_id == target
+                assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
+                    (case.card_id,)).fetchone()[0] == 1
+        finally:
+            with case.transaction() as database:
+                database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
+                database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
+                    (config.workspace_id,config.provider))
+
+
 def _study_refresh(case, capture, snapshot, command):
     """Separate Study transaction after committed intake; never called by intake."""
     from app.services.queue_priority_promotion import prepare_priority_promotion
