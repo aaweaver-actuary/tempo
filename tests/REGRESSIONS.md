@@ -5503,6 +5503,14 @@ card-version rollback coverage. No live game or data is copied into the fixture.
 
 ## Bounded game-priority presentation reads (#488; dependent on #546)
 
+`backend/tests/test_queue_refresh_read_database_split.py::test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence`
+requires identical issued/presented/taught facts for 575 queue rows with 5,312
+historical evidence rows, nullable legacy evidence IDs, wrong-card/revision and
+unissued controls. The set-membership query retains full presentation revalidation
+and the unchanged transaction budget; fixture equivalence alone is not native
+publication performance evidence.
+
+
 Background queue presentation after game-priority application must use its supplied bounded reader when no borrowed database connection exists; real obligations retain priority, stale obligations lose priority, and active Study attempts/history remain intact.
 
 `backend/tests/test_queue_refresh_read_database_split.py` owns
