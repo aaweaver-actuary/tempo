@@ -1,12 +1,15 @@
 """Game Review uses public owner receipt reads; GET never starts producer work."""
 import asyncio
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI
 import httpx
 import pytest
 
-from app.contracts.product_v02.learning import EncounterReceipt, GameEffectControl, GameLapse, LearningReceipt
+from app.contracts.product_v02.games import CanonicalGame
+from app.contracts.product_v02.learning import EncounterReceipt, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
 from app.games.feedback.coordinator import delivery_for
 from app.games.feedback.http import create_game_review_router
@@ -104,13 +107,158 @@ def scenario(*, admission="pending", legacy=False, control=False, findings=True)
         receipt=current, delivery=delivery, command=command)
 
 
-def get_game(case):
+def get_game(case, repertoire_id=None):
     app = FastAPI()
     app.include_router(create_game_review_router(case.review))
     async def request():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://fixture") as client:
-            return await client.get("/api/product/game-review/games/lichess/" + case.source.normalized.game_id)
+            return await client.get("/api/product/game-review/games/lichess/" + case.source.normalized.game_id,
+                                    params={"repertoire_id": repertoire_id} if repertoire_id else {})
     return asyncio.run(request())
+
+
+def selected_scenario():
+    """Use B1's shared contradictory-diagnostic/global-boundary read fixture."""
+    fixture = Path(__file__).resolve().parents[2] / "contracts/product-v02/fixtures/game-detail/own_actionable.json"
+    detail = GameDetail.model_validate_json(json.dumps(json.loads(fixture.read_text())["payload"]))
+    selection = detail.first_departure
+    canonical = CanonicalGame(workspace_id=selection.workspace_id, game_id=detail.game_id,
+        game_revision=1, source_id=detail.provider, source_revision=selection.source.source_revision,
+        source_digest=selection.source.source_digest, starting_fen=detail.starting_fen,
+        moves=list(detail.moves), learner_color=detail.player_color, played_at=detail.played_at)
+    original = record(detail.moves).model_copy(update={"source_revision": detail.source_revision})
+    source = SourceState(source_key="stored-selected-source", original=original,
+        record_fingerprint=original.source_digest, normalized=canonical, findings=detail.findings,
+        comparison_revision=detail.comparison_revision, first_departure=selection, determined_at=detail.determined_at)
+    store = ReadOnlySource(source, ())
+    owner = SimpleNamespace(encounter_status=forbidden, effect_status=forbidden,
+                            accept_encounter=forbidden, accept_lapse=forbidden, control_effect=forbidden)
+    review = GameReview(workspace=canonical.workspace_id, store=store, learning=owner,
+        build_job=forbidden, deliver=forbidden, now=forbidden)
+    return SimpleNamespace(source=source, store=store, owner=owner, review=review, detail=detail)
+
+
+def test_game_review_http_returns_retained_global_boundary_independent_of_diagnostic_filter():
+    case = selected_scenario()
+    before = case.source.model_dump_json()
+    for repertoire in (None, "white", "unrelated-repertoire"):
+        response = get_game(case, repertoire)
+        assert response.status_code == 200, response.text
+        detail = GameDetail.model_validate_json(response.text)
+        assert detail.first_departure == case.source.first_departure
+        assert detail.first_departure.ply == 3 and case.source.findings[0].ply == 1
+        assert detail.determined_at == case.source.determined_at
+        assert detail.comparison_revision == case.source.comparison_revision
+        assert detail.comparison_freshness == "unknown"  # Shared fixture's current label is not persisted evidence.
+        assert detail.source_revision == 23 and detail.first_departure.source.source_revision == 7
+        assert detail.findings == (() if repertoire == "unrelated-repertoire" else case.source.findings)
+    assert case.source.model_dump_json() == before
+    assert case.store.calls == ["source", "deliveries"] * 3
+
+
+def test_game_review_legacy_empty_findings_remain_unknown_without_a_recorded_selection():
+    case = selected_scenario()
+    case.source = case.source.model_copy(update={"first_departure": None, "determined_at": None, "findings": ()})
+    case.store.source = case.source
+    response = get_game(case)
+    assert response.status_code == 200, response.text
+    detail = GameDetail.model_validate_json(response.text)
+    assert detail.first_departure is None and detail.determined_at is None
+    assert detail.comparison_freshness == "unknown" and detail.receipts == ()
+
+
+@pytest.mark.parametrize("change", [
+    {"workspace_id": "different-workspace"},
+    {"source": {"source_revision": 8}},
+    {"source": {"source_digest": "e" * 64}},
+])
+def test_game_review_rejects_selection_bound_to_a_different_canonical_source(change):
+    case = selected_scenario()
+    if "source" in change:
+        change = {"source": case.source.first_departure.source.model_copy(update=change["source"])}
+    case.source = case.source.model_copy(update={"first_departure": case.source.first_departure.model_copy(update=change)})
+    case.store.source = case.source
+    response = get_game(case)
+    assert response.status_code == 409
+    assert response.json() == {"detail": "comparison_source_identity_mismatch"}
+    assert case.store.calls == ["source"]
+
+
+def mixed_receipt_scenario(stage="again"):
+    case = selected_scenario()
+    legacy, encounter = case.detail.receipts
+    selected = case.source.first_departure
+    progress = encounter.progress.model_dump(mode="json")
+    changes = {}
+    if stage == "pending":
+        progress.update(scheduling_review_id=None, schedule_applied_at=None, remediation_fence=None)
+        changes.update(status="pending", admission_status="pending", reason="study_priority_pending", applied_at=None)
+    if stage == "introduction":
+        progress.update(scheduling_review_id=None, schedule_applied_at=None,
+                        introduction_applied_at=encounter.progress.schedule_applied_at)
+        changes["disposition"] = "first_introduction"
+    if stage in {"issued", "settled"}:
+        attempt = dict(queue_entry_id=9, card_id=progress["target"]["card_id"], card_revision=1,
+                       issuance_sequence=101, issued_at="2026-10-26T12:02:00Z")
+        progress.update(first_issued=attempt, first_issued_ordinal=1)
+        if stage == "settled":
+            progress["settlement"] = dict(review_id=42, attempt=attempt)
+            changes.update(status="settled", admission_status="settled")
+    if stage == "remapped":
+        progress["prior_remediation_fences"] = [progress["remediation_fence"]]
+        progress["target"] = dict(card_id="current-joined-presentation", card_revision=2)
+        progress["remediation_fence"] = dict(target=progress["target"], after_issuance_sequence=102,
+                                             established_at="2026-10-26T12:03:00Z")
+    payload = encounter.model_dump(mode="json") | changes | {"progress": progress}
+    encounter = EncounterReceipt.model_validate_json(json.dumps(payload))
+    legacy_command = GameLapse(key=legacy.key,
+        finding=case.source.findings[0].model_copy(update={"source_revision": legacy.source_revision}),
+        detected_at=case.source.determined_at, occurred_at=case.source.original.played_at,
+        payload_digest=case.source.original.source_digest)
+    encounter_command = GameEncounter(key=encounter.key, source=selected.source, decision=selected.decision,
+        expected_uci=selected.expected_uci[0], played_uci=selected.played_uci, observation="missed",
+        detected_at=case.source.determined_at, occurred_at=case.source.original.played_at,
+        payload_digest=case.source.original.source_digest)
+    case.source = case.source.model_copy(update={"effects": (legacy_command, encounter_command),
+                                                 "encounters": (encounter_command,)})
+    case.store.source = case.source
+    case.store.saved_deliveries = tuple(delivery_for(case.source.source_key, command)
+        for command in (legacy_command, encounter_command))
+    case.owner.current = {legacy.key.logical_id(): legacy, encounter.key.logical_id(): encounter}
+    def status(key):
+        return case.owner.current.get(key.logical_id())
+    case.owner.effect_status = case.owner.encounter_status = status
+    case.expected_receipts = (legacy, encounter)
+    return case
+
+
+@pytest.mark.parametrize("stage", ["pending", "again", "introduction", "issued", "settled", "remapped"])
+def test_game_review_preserves_mixed_receipt_stages_and_original_effect_across_target_remap(stage):
+    case = mixed_receipt_scenario(stage)
+    before = case.source.model_dump_json()
+    response = get_game(case, "unrelated-repertoire")
+    assert response.status_code == 200, response.text
+    detail = GameDetail.model_validate_json(response.text)
+    assert detail.receipts == case.expected_receipts
+    assert type(detail.receipts[0]) is LearningReceipt and isinstance(detail.receipts[1], EncounterReceipt)
+    assert detail.first_departure == case.source.first_departure and detail.findings == ()
+    if stage == "remapped":
+        assert detail.receipts[1].progress.target.card_id != detail.first_departure.decision.presentation_id
+        assert detail.receipts[1].key == case.source.encounters[0].key
+        assert detail.receipts[1].progress.scheduling_review_id == 41
+    assert case.source.model_dump_json() == before
+
+
+@pytest.mark.parametrize("mismatch", ["key", "revision", "digest"])
+def test_game_review_does_not_associate_same_card_receipt_from_an_unproved_original_source(mismatch):
+    case = mixed_receipt_scenario()
+    current = case.expected_receipts[1]
+    changes = {"key": current.key.model_copy(update={"decision_id": "unrelated-decision"})} if mismatch == "key" else (
+        {"source_revision": 8} if mismatch == "revision" else {"source_digest": "e" * 64})
+    case.owner.current[current.key.logical_id()] = current.model_copy(update=changes)
+    response = get_game(case)
+    assert response.status_code == 200, response.text
+    assert GameDetail.model_validate_json(response.text).receipts == (case.expected_receipts[0],)
 
 
 @pytest.mark.parametrize("findings", [True, False])

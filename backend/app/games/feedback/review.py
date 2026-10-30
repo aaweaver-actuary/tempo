@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 
 from app.contracts.product_v02 import Identifier, Value
 from app.contracts.product_v02.games import Finding, GameSummary, GameWindow, ProviderSyncStatus, RecentGames
-from app.study.interfaces.game_priority import EncounterFeedbackPort, GameEncounter, LearningReceipt
+from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, GameEncounter, LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
 from .ports import Delivery, JobSpec, JobState, SourceState
 
@@ -106,25 +106,46 @@ class GameReview:
             # Preserve original captures; do not draw changed findings on old moves.
             raise ReviewUnavailable(source.diagnostic or "source_quarantined")
         game = source.normalized
+        canonical_provider = "chesscom" if game.source_id == "chess.com" else game.source_id
+        if (game.workspace_id, canonical_provider, game.game_id) != (self.workspace, provider, game_id):
+            raise ReviewUnavailable("game_source_identity_mismatch")
+        selection = source.first_departure
+        if selection is not None and (
+                selection.workspace_id, selection.source.provider, selection.source.game_id,
+                selection.source.source_revision, selection.source.source_digest) != (
+                game.workspace_id, canonical_provider, game.game_id, game.source_revision, game.source_digest):
+            raise ReviewUnavailable("comparison_source_identity_mismatch")
         findings = tuple(f for f in source.findings if repertoire_id is None or f.repertoire_id == repertoire_id)
         encounter_keys = {effect.key.logical_id() for effect in source.effects
                           if isinstance(effect, GameEncounter)}
         receipts = []
         for delivery in self.store.deliveries(source.source_key):
             key = delivery.command.key
+            if delivery.source_key != source.source_key or (key.workspace_id, key.provider, key.game_id) != (
+                    self.workspace, provider, game_id):
+                continue
             # Controls retain the original effect kind. The legacy read operation
             # cannot represent encounter disposition/admission/deferral fields.
             receipt = (self.learning.encounter_status(key)
                 if delivery.encounter is not None or delivery.qualification is not None or key.logical_id() in encounter_keys
                 else self.learning.effect_status(key))
-            if receipt is not None and receipt not in receipts:
+            receipt = receipt if receipt is not None else delivery.receipt
+            command = delivery.command
+            original = (command.source if delivery.encounter is not None else
+                        command.finding if delivery.lapse is not None else command)
+            # Correlate immutable occurrence/source facts. A remapped current
+            # physical target is owner evidence, never a new matching key.
+            if (receipt is not None and receipt.key == key and receipt.source_revision == original.source_revision
+                    and (not isinstance(receipt, EncounterReceipt) or delivery.control is not None
+                         or receipt.source_digest == original.source_digest)
+                    and receipt not in receipts):
                 receipts.append(receipt)
-            elif receipt is None and delivery.receipt is not None and delivery.receipt not in receipts:
-                receipts.append(delivery.receipt)
         return GameDetail(provider=provider, game_id=game.game_id,
             source_revision=source.original.source_revision, played_at=source.original.played_at,
             time_precision=source.original.time_precision, player_color=game.learner_color,
-            starting_fen=game.starting_fen, moves=tuple(game.moves), findings=findings, receipts=tuple(receipts))
+            starting_fen=game.starting_fen, moves=tuple(game.moves), findings=findings, receipts=tuple(receipts),
+            first_departure=selection, determined_at=source.determined_at,
+            comparison_revision=source.comparison_revision, comparison_freshness="unknown")
 
     def sync(self, *, provider: Provider, operation_id: str) -> ProviderSyncStatus:
         configuration = self.configuration(provider)

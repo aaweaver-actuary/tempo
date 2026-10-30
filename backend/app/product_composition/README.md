@@ -91,6 +91,42 @@ evidence is retained there. Current focused qualification and exact tested
 revisions are recorded in PR #591; they do not establish installation or the
 complete Games-to-Study journey.
 
+### Retained Game Review selection and progress (#624)
+
+`GameReview.game_detail` returns the persisted global `first_departure`, original
+`determined_at` and opaque `comparison_revision` from Games' `SourceState`.
+The optional `repertoire_id` filters diagnostic findings only. It never narrows
+the retained selected scope or chooses a primary result from those findings.
+The selection's workspace, canonical source revision/digest and game must match
+the retained normalized source; mismatches refuse the read. The outer
+`source_revision` remains raw provider provenance and may differ legitimately.
+
+`comparison_freshness` is `unknown`: retained publication generations alone do
+not prove that the complete source digest, which includes card/learning facts,
+is current. No bounded complete-current witness is persisted for this read.
+GET performs no snapshot projection, provider request, recomparison or write.
+Absent selection remains null, including for empty findings.
+
+`CurrentStudyReceiptReads` uses the existing bounded reader transaction and owner
+status methods. Current or cached original receipts correlate by original effect
+key and command source revision, plus the source digest for encounter receipts.
+A changed physical presentation is retained in the owner's progress; it is not
+used to guess effect identity. Unproved associations are omitted. Existing
+pending, legacy, Again, canonical-introduction, issuance and settlement evidence
+keeps its wire subtype and meaning; cached priority is never upgraded to Again.
+Reader-role and unavailable-owner behavior use the existing read path.
+
+```mermaid
+flowchart LR
+  Browser["Game Review GET / optional diagnostic filter"] --> Read["GameReview.game_detail"]
+  Read --> Games["Games reader: retained canonical history + global selection + provenance"]
+  Read --> Receipts["CurrentStudyReceiptReads: bounded owner status SELECT"]
+  Games --> Bind["Validate canonical source; retain complete selected scope"]
+  Receipts --> Bind
+  Bind --> Detail["GameDetail: first departure + original-effect progress; freshness unknown"]
+  Detail --> Browser
+```
+
 ## Continuous-provider public priority intake (#489 / #491)
 
 The optional Games process receives an `EncounterFeedbackPort` from the
