@@ -132,7 +132,7 @@ class CollectionObservations:
                         "account", "window", "repertoire_ids", "filters") if key in job["spec"]}
                 selected = config.get("repertoire_ids", []) if config else []
                 readiness = []
-                for repertoire_id in selected[:8]:
+                for repertoire_id in selected:
                     if repertoire_id not in readiness_cache:
                         try:
                             observation = (self.repertoire_readiness(repertoire_id) if self.repertoire_readiness else
@@ -155,7 +155,7 @@ class CollectionObservations:
                 values.append({"provider": name, "configured": config is not None,
                     "configuration": config, "configuration_ambiguous": len(configurations) > 1,
                     "selected_repertoire_count": len(selected),
-                    "repertoire_readiness": readiness, "repertoires_truncated": len(selected) > 8,
+                    "repertoire_readiness": readiness, "repertoires_truncated": False,
                     "selection_diagnostic": None if selected else "selected_repertoire_ids_absent",
                     "required_inputs": presence, "current_jobs": jobs[:limit],
                     "jobs_truncated": len(jobs) > limit, "latest_job": latest[0] if latest else None,

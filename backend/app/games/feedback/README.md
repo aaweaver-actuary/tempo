@@ -132,7 +132,7 @@ Delivery completion and owner application are separate from window completeness.
 flowchart LR
   Runtime["T10 outer composition / optional runner"] --> C["Coordinator + injected clock"]
   C --> Provider["Acquisition capability: finite timeout"]
-  C --> Pure["Verified normalization / same-color snapshots / per-repertoire comparer"]
+  C --> Pure["Verified normalization / all configured snapshots / same-color per-repertoire comparison"]
   Pure -->|"comparison unavailable: retain valid source + diagnostic"| Unresolved["Unresolved comparison / acquisition may advance"]
   Unresolved --> Store
   Pure -->|"verified PGN history"| Identity["Optional SourceIdentity binding"]
@@ -236,8 +236,9 @@ PostgreSQL connections. It opens no pool, reads no environment/settings and has
 no production schema initializer. Each method commits/rolls back and releases its
 connection before returning. Lock and statement timeouts are 100 ms / 250 ms.
 Failures remain retryable without losing a checkpoint. Page sizes default to
-100 records / 8 MiB total raw PGN / 10,000 replay positions; snapshots are limited to eight requested
-repertoires. Integration must supply a bounded snapshot implementation and
+100 records / 8 MiB total raw PGN / 10,000 replay positions. The configured scope
+may include all user repertoires; no repertoire-count cap filters that scope or
+its readiness report. Integration must supply a bounded snapshot implementation and
 connection acquisition timeout, and preserve Study's resource allocation. Explicit
 record/position limits may increase up to 1,000 / 100,000 when the optional worker's
 budget supports that page. An oversized provider month/page fails visibly without

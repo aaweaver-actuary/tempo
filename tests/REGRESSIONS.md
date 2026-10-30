@@ -5857,6 +5857,7 @@ and retains the original conflict, persistence and enqueue-once assertions.
 O's owning `backend/tests/test_game_collection_status.py` retains:
 
 - `test_readiness_is_cached_once_per_report_and_copied_then_recomputed`
+- `test_status_enumerates_all_selected_repertoires_and_preserves_last_read_failure`
 - `test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic`
 - `test_public_bound_redaction_preserves_only_valid_numeric_owner_contract`
 - `test_identity_only_calls_only_identity_and_emits_complete_envelope`
@@ -5865,8 +5866,21 @@ O's owning `backend/tests/test_game_collection_status.py` retains:
 - `test_identity_only_native_reader_does_not_touch_other_ports`
 - `test_identity_only_unavailable_identity_exits_two`
 
+The all-repertoire selection repair removes the obsolete eight-repertoire cap;
+10- and 17-repertoire cases prove complete scope without a replacement count cap:
+`test_configuration_and_acquisition_job_preserve_all_selected_repertoires` in
+`backend/tests/test_product_game_review_commands.py`,
+`test_capture_attempts_every_selected_repertoire_and_retains_last_read_failure`
+in `backend/tests/test_product_feedback_jobs.py`, and
+`test_history_preview_compares_every_selected_repertoire_without_a_count_cap`
+in `backend/tests/test_product_game_history.py`. Status retains every selected
+row and the last failed read, with one readiness read per repertoire across both
+providers. Existing snapshot, page, position, output and transaction safeguards
+remain in force; none of these synthetic cases claims live snapshot availability.
+
 The regular `runners game-review-collection` lane retains all F/G/#612 cases and:
 
+- `collection readiness accepts all selected repertoires beyond eight and checks the last one`
 - `collection bound allowance is explicit selected scope and shared across providers`
 - `collection allowance cannot suppress malformed bounds incomplete scope or other failures`
 - `collection healthy allowed repertoire restores complete selected readiness`

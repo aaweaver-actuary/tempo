@@ -523,6 +523,24 @@ function partialScope(input, both = false) {
 }
 const coverage = input => assessSelectedReadiness(input.report, input.allowances, {fullReaderSuccessful: true, collectionOnly: true});
 
+test('collection readiness accepts all selected repertoires beyond eight and checks the last one', () => {
+  for (const count of [10, 17]) {
+    const input = facts();
+    const provider = input.report.providers.items[0];
+    provider.repertoire_readiness = Array.from({length: count}, (_, index) => ({
+      repertoire_id: 'redacted:' + (index + 1).toString(16).padStart(12, '0'),
+      availability: 'available', learner_color: 'white',
+    }));
+    provider.selected_repertoire_count = count;
+    assert.deepEqual(collectionBlockers(input), []);
+    assert.equal(coverage(input).comparison_coverage, 'complete');
+    provider.repertoire_readiness.at(-1).availability = 'unavailable';
+    provider.repertoire_readiness.at(-1).diagnostic = 'repertoire_read_unavailable';
+    assert.ok(collectionBlockers(input).includes('lichess:repertoire_readiness_unresolved'));
+    assert.equal(coverage(input).comparison_coverage, 'unresolved');
+  }
+});
+
 test('collection bound allowance is explicit selected scope and shared across providers', () => {
   const input = partialScope(facts(), true);
   assert.deepEqual(collectionBlockers(input), []);

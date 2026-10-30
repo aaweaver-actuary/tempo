@@ -281,6 +281,37 @@ def _bound_payload(stage="read"):
         violations=[dict(dimension="source_rows", observed=10001, limit=10000, observation="lower_bound")])
 
 
+@pytest.mark.parametrize("count", [10, 17])
+def test_status_enumerates_all_selected_repertoires_and_preserves_last_read_failure(monkeypatch, count):
+    selected = [f"repertoire-{index}" for index in range(count)]
+    reader = CollectionObservations(SimpleNamespace(read_only=True))
+    reads = []
+
+    def rows(statement, parameters=()):
+        if "FROM product_feedback_configuration" in statement:
+            return [dict(provider=parameters[1][0], revision=1, next_run_at=0,
+                         payload=dict(repertoire_ids=selected))]
+        if "COUNT(*) AS jobs" in statement:
+            return [dict(jobs=0, acquisition_windows_complete=0, terminal_complete_jobs=0)]
+        return []
+
+    def readiness(repertoire_id):
+        reads.append(repertoire_id)
+        if repertoire_id == selected[-1]:
+            raise ValueError("private read failure")
+        return dict(availability="available", learner_color="white")
+
+    monkeypatch.setattr(reader, "_rows", rows)
+    reader.repertoire_readiness = readiness
+    report = reader.providers("legacy", 20, None)
+    assert report["availability"] == "available" and reads == selected
+    for provider in report["items"]:
+        assert provider["selected_repertoire_count"] == count
+        assert provider["repertoires_truncated"] is False
+        assert [item["repertoire_id"] for item in provider["repertoire_readiness"]] == selected
+        assert provider["repertoire_readiness"][-1]["diagnostic"] == "repertoire_read_unavailable"
+
+
 def test_readiness_is_cached_once_per_report_and_copied_then_recomputed(stored):
     from psycopg.types.json import Jsonb
     selected = ["synthetic-healthy", "synthetic-bound", "synthetic-unknown"]
