@@ -692,8 +692,31 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['natural_refresh_before_request']=refresh_observation()
         eligible_target(report['natural_refresh_before_request'])
         baseline_tasks = report['natural_refresh_before_request']['tasks']
-        assert len(baseline_tasks)<=1, 'packaged_feedback_duplicate_refresh_task'
-        baseline_generation = baseline_tasks[0]['generation'] if baseline_tasks else 0
+        assert len(baseline_tasks)==1, 'packaged_feedback_natural_refresh_task_missing'
+        baseline_generation = baseline_tasks[0]['generation']
+        baseline_identity = (baseline_tasks[0]['id'],baseline_generation)
+        stage = 'natural_refresh_before_explicit_request'
+        def natural_refresh():
+            observed = refresh_observation(baseline_generation)
+            if observed!=report.get('last_natural_refresh_observation'):
+                report.setdefault('first_natural_refresh_observation',observed)
+                report['last_natural_refresh_observation']=observed
+                previous = report.get('natural_refresh_observation_changes',0)
+                report['natural_refresh_observation_changes']=min(previous+1,20)
+                report['natural_refresh_observation_count_capped']=previous>=20
+            assert len(observed['tasks'])==1, 'packaged_feedback_natural_refresh_task_missing'
+            task = observed['tasks'][0]
+            assert (task['id'],task['generation'])==baseline_identity, 'packaged_feedback_natural_refresh_generation_changed'
+            eligible_target(observed)
+            assert task['state']!='failed', 'packaged_feedback_natural_refresh_task_failed'
+            if task['state']!='complete' or task['phase']!='published':
+                return None
+            assert len(observed['projections'])==1, 'packaged_feedback_natural_refresh_projection_missing'
+            projection = observed['projections'][0]
+            if projection['state']!='ready' or projection['refresh_pending']!=0:
+                return None
+            return dict(**task,projection=projection,target=observed['targets'][0])
+        report['natural_refresh_completed'] = wait_for(natural_refresh,'packaged_feedback_natural_refresh_pending')
         report['refresh_control_before_request']=bounded(api('GET','/api/system/foreground-active'))
         provider_ready(dict(stage='request-refresh',baseline_generation=baseline_generation))
         stage = 'browser_requests_fresh_refresh'
@@ -788,9 +811,11 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['stages'].append('same_key_settlement')
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
-        if stage in ('browser_requests_fresh_refresh','actual_unseen_refresh_before_browser_completion'):
+        if stage in ('natural_refresh_before_explicit_request','browser_requests_fresh_refresh',
+                'actual_unseen_refresh_before_browser_completion'):
             try:
                 report['refresh_observation_at_failure']=refresh_observation(
+                    baseline_generation if stage=='natural_refresh_before_explicit_request' else
                     refresh_identity[1] if stage=='actual_unseen_refresh_before_browser_completion' and refresh_identity else None)
                 report['refresh_control_at_failure']=bounded(api('GET','/api/system/foreground-active'))
             except Exception as diagnostic_error:
