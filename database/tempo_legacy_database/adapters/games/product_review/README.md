@@ -167,6 +167,8 @@ truncation result rather than partial JSON or completion claims.
 flowchart LR
   CLI["Explicit status CLI / composition"] --> Reader["CollectionObservations / SELECT only"]
   Reader --> Games["Existing Games jobs, configuration, sources, deliveries"]
+  Games --> Boundary["Retained global first boundary / no election during reads"]
+  Boundary --> JSON
   Reader --> Legacy["Retained Games library / separate count"]
   CLI --> Repertoire["Existing bounded Repertoire read + public projection"]
   Reader --> Port["Injected public receipt status capability"]
@@ -177,6 +179,15 @@ flowchart LR
 This view describes source wiring, not installed deployment or resource
 isolation. There is no Study-to-status dependency and no admission/queue effect.
 Owning proof: `make python-file FILE=backend/tests/test_game_collection_status.py`.
+
+Selected-game output reports `first_departure` and its original `determined_at`
+separately from the older per-repertoire first-departure/own-miss summaries.
+Old retained JSON without a global selection reports
+`selected_first_boundary_not_recorded`; it does not elect a winner by sorting
+findings. The typed global `covered` status can establish positive coverage even
+when no diagnostic finding was necessary. An unavailable or incomplete global
+scope remains unresolved. Scope/route identifiers and position/move details are
+redacted by the public command while finite policy diagnostics remain visible.
 Its synthetic native cases reuse the existing task-owned PostgreSQL fixture,
 create a SELECT-only login, prove read-only enforcement/unchanged rows, duplicate
 capture/alias counts and receipt-independent collection status. G owns shared

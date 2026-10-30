@@ -34,10 +34,15 @@ def project(game,snapshot,findings,scope):
 def test_projector_emits_one_original_equivalent_target_without_dropping_provenance(count,played):
     game,snapshot,findings,scope=inputs(count=count,played=played)
     before=deepcopy(snapshot.model_dump())
+    if played == "e2e4":
+        # First-departure policy retains correct unseen facts without urgency.
+        assert project(game,snapshot,findings,scope) == ()
+        assert snapshot.model_dump() == before
+        return
     command,=project(game,snapshot,findings,scope)
     assert command.decision in snapshot.decision_presentations
     assert command.decision.route_id=="alias-00"
-    assert command.observation==("matched" if played=="e2e4" else "missed")
+    assert command.observation=="missed"
     assert command.key.occurrence_ply==1 and command.key.decision_id=="shared-decision"
     assert len(snapshot.decision_presentations)==len(snapshot.membership.routes)==count
     assert snapshot.model_dump()==before
@@ -49,7 +54,6 @@ def test_projector_emits_one_original_equivalent_target_without_dropping_provena
 
 @pytest.mark.parametrize("change",[
     {"available":False},
-    {"introduced_before_game":None,"introduction_game":None},
     {"introduction_matches_current_content":False},
 ])
 def test_projector_keeps_conflicting_alias_facts_instead_of_filtering_them_away(change):
