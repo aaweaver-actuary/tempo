@@ -250,5 +250,143 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
             admin.execute(sql.SQL('DROP DATABASE IF EXISTS {}').format(sql.Identifier(fixture_database)))
 
 
+def test_postgres_queue_publication_with_historical_and_null_evidence(database_url):
+    """Full publication stays within 250 ms without weakening its state fences.
+
+    The current-day queue estimate is deliberately stale. Historical evidence
+    includes a legacy NULL queue-entry identity, which protects no current row.
+    This runs in its own fresh database so progression's history stays pristine.
+    """
+    import hashlib
+    import time
+    from app.services import queue_ordering
+    from app.services import postgres_queue_refresh as refresh
+    from tempo_legacy_database.adapters.queue_refresh import presentation as storage
+    from database.tooling.apply_postgres_migrations import apply_migrations
+    from database.tests.check_postgres_graph_retention import owned_admission_scope
+
+    assert os.environ.get('TEMPO_TEST_INSTANCE') == 'disposable'
+    assert 0 < int(os.environ.get('TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS', '250')) <= 250
+    admin_dsn = database_url
+    info = psycopg.conninfo.conninfo_to_dict(admin_dsn)
+    name = 'presentation_protection_' + uuid.uuid4().hex
+    marker = 'tempo:new-first-publication:' + name
+    fixture_dsn = psycopg.conninfo.make_conninfo(**{**info, 'dbname': name})
+    report = dict(database=name,queue_rows=575,historical_evidence_rows=5312,
+                  transaction_limit_ms=250,cleanup_verified=False,
+                  production_source_sha256=hashlib.sha256(Path(storage.__file__).read_bytes()).hexdigest())
+    created = False
+    scope = ExitStack()
+    original_env = {key:os.environ.get(key) for key in ('TEMPO_DATABASE_WRITE_URL','TEMPO_DATABASE_READ_URL')}
+    try:
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(name)))
+            created = True
+            admin.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name),sql.Literal(marker)))
+        apply_migrations(fixture_dsn)
+        postgres_store.close_pools()
+        os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_dsn
+        os.environ['TEMPO_DATABASE_READ_URL'] = fixture_dsn
+        scope.enter_context(owned_admission_scope(name))
+        day = date.today().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        with postgres_store.connection() as db:
+            db.execute('INSERT INTO settings(id) VALUES(1)')
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('proof','Proof','synthetic',?)",(now,))
+            # Deliberately preserve the empty-queue estimate; this is fixture-local.
+            db.execute_native('ANALYZE daily_queue')
+            db.execute_native('ANALYZE cards')
+            db.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                      content_type,introduced_at,trained_color)
+                SELECT 'card-'||lpad(n::text,4,'0'),'proof','prefix',%s,'["e2e4"]','learning',%s,
+                       CASE WHEN n>=504 THEN 'opening' ELSE 'tactic' END,%s,'white'
+                FROM generate_series(0,574) n""",(chess.STARTING_FEN,day,day))
+            db.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval)
+                SELECT id,'correct',%s,0,1 FROM cards WHERE content_type='tactic'""",(now,))
+            db.execute_native("""INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id)
+                SELECT %s,id,substring(id from 6)::integer,
+                    CASE WHEN content_type='opening' THEN 'new' ELSE 'review' END,'proof'
+                FROM cards ORDER BY id""",(day,))
+            db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='card-0000'")
+            db.execute_native("INSERT INTO teaching_states(card_id,revision,ply,taught_at) VALUES('card-0504',1,0,%s)",(now,))
+            db.execute_native("""INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,
+                  repertoire_id,card_id,card_revision,trained_color,context_json,manifest_json,started_at,
+                  study_timezone,queue_entry_id,state)
+                SELECT 'historical-'||n,'synthetic-history',p.id,'proof',p.card_id,p.revision,'white',
+                  json_build_object('synthetic',(SELECT string_agg(md5(n::text||':'||b::text),'') FROM generate_series(1,16) b))::text,
+                  json_build_object('synthetic',(SELECT string_agg(md5(n::text||':'||b::text),'') FROM generate_series(17,46) b))::text,
+                  %s,'UTC',CASE WHEN n=1 THEN NULL ELSE -n END,'complete'
+                FROM generate_series(1,5312) n CROSS JOIN LATERAL
+                  (SELECT id,card_id,revision FROM opening_evidence_presentations ORDER BY id LIMIT 1) p""",(now,))
+            db.execute_native("""INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,
+                  repertoire_id,card_id,card_revision,trained_color,context_json,manifest_json,started_at,
+                  study_timezone,queue_entry_id,state)
+                SELECT 'current-protected','synthetic-current',p.id,'proof',p.card_id,p.revision,'white','{}','{}',
+                  %s,'UTC',q.id,'complete'
+                FROM opening_evidence_presentations p CROSS JOIN daily_queue q
+                WHERE p.card_id='card-0505' AND q.card_id=p.card_id""",(now,))
+        with postgres_store.connection(read_only=True) as db:
+            rows = refresh.queue_application.presentation_rows(db,day)
+            protected = queue_ordering._protected_queue_ids(rows)
+            assert len(rows)==575 and len(protected)==3, (len(rows),len(protected))
+            positions = {r['id']:r['position'] for r in rows if r['id'] in protected}
+            history = [tuple(r) for r in db.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()]
+            origins = [tuple(r) for r in db.execute_native('SELECT * FROM queue_attempt_origins ORDER BY queue_entry_id,card_id,revision').fetchall()]
+        plan = refresh._prepare_queue_randomization(day)
+        assert plan['entries'] is not None
+        # Actual issuance must invalidate the plan, with no receipt publication.
+        with postgres_store.connection() as db:
+            db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='card-0008'")
+        with postgres_store.connection(background=True) as db:
+            assert refresh._publish_queue_randomization(db,day,plan) is False
+        with postgres_store.connection() as db:
+            assert db.execute('SELECT count(*) FROM daily_queue_days').fetchone()[0]==0
+            db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=0 WHERE card_id='card-0008'")
+        # Changed eligibility must also invalidate the plan; retained full derived-state fence.
+        with postgres_store.connection() as db:
+            db.execute_native("UPDATE cards SET archived=1 WHERE id='card-0009'")
+        with postgres_store.connection(background=True) as db:
+            assert refresh._publish_queue_randomization(db,day,plan) is False
+        with postgres_store.connection() as db:
+            assert db.execute('SELECT count(*) FROM daily_queue_days').fetchone()[0]==0
+            db.execute_native("UPDATE cards SET archived=0 WHERE id='card-0009'")
+        # The complete production publication transaction must commit under its existing cap.
+        started=time.perf_counter()
+        with postgres_store.connection(background=True) as db:
+            assert refresh._publish_queue_randomization(db,day,plan) is True
+        report['publication_commit_ms']=round((time.perf_counter()-started)*1000,2)
+        with postgres_store.connection(read_only=True) as db:
+            after=refresh.queue_application.presentation_rows(db,day)
+            assert len(after)==575 and {r['id'] for r in after}=={r['id'] for r in rows}
+            assert {r['id']:r['position'] for r in after if r['id'] in protected}==positions
+            assert [tuple(r) for r in db.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()]==history
+            assert [tuple(r) for r in db.execute_native('SELECT * FROM queue_attempt_origins ORDER BY queue_entry_id,card_id,revision').fetchall()]==origins
+            assert db.execute('SELECT membership_hash FROM daily_queue_days').fetchone()[0].startswith(queue_ordering.PRESENTATION_VERSION+':')
+            movable=[r for r in sorted(after,key=lambda r:(r['position'],r['id'])) if r['id'] not in protected]
+            assert all(r['admission_kind']=='new' and r['content_type']=='opening' for r in movable[:69])
+            assert all(not(r['admission_kind']=='new' and r['content_type']=='opening') for r in movable[69:])
+        replay=refresh._prepare_queue_randomization(day)
+        assert replay['entries'] is None
+        with postgres_store.connection(background=True) as db:
+            assert refresh._publish_queue_randomization(db,day,replay) is True
+        report.update(complete=True,protected_positions_preserved=True,history_origins_preserved=True,
+                      issuance_and_eligibility_stale_plans_rejected=True,replay_stable=True)
+    finally:
+        scope.close()
+        postgres_store.close_pools()
+        for key,value in original_env.items():
+            if value is None:os.environ.pop(key,None)
+            else:os.environ[key]=value
+        if created:
+            with psycopg.connect(admin_dsn,autocommit=True) as admin:
+                assert admin.execute('SELECT shobj_description(oid,\'pg_database\') FROM pg_database WHERE datname=%s',(name,)).fetchone()[0]==marker
+                admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+                assert admin.execute('SELECT 1 FROM pg_database WHERE datname=%s',(name,)).fetchone() is None
+        report['cleanup_verified']=True
+        print('PUBLICATION_PROTECTION',json.dumps(report,sort_keys=True),flush=True)
+    print('PASS test_postgres_queue_publication_with_historical_and_null_evidence', flush=True)
+
+
 if __name__ == '__main__':
+    test_postgres_queue_publication_with_historical_and_null_evidence('postgresql://postgres@postgres:5432/tempo')
     test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound('postgresql://postgres@postgres:5432/tempo')
