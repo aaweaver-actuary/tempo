@@ -876,7 +876,8 @@ def test_partial_comparison_failure_keeps_successful_repertoire_findings():
     h.store.enqueue(spec().model_copy(update={"repertoire_ids": ("white", "unavailable")}))
     h.runner.run_once()
     source, = h.store.sources.values()
-    assert not source.quarantined and len(source.findings) == len(source.effects) == 1
+    assert not source.quarantined and len(source.findings) == 1 and source.effects == ()
+    assert source.first_departure.status == "unresolved"
     assert source.diagnostic == 'comparison_unavailable:["unavailable"]'
     assert h.store.load_job("job").window_complete
 
@@ -1006,3 +1007,28 @@ def test_old_source_and_capture_json_keep_absent_selection_explicit():
         historical = value.model_dump_json(exclude={"first_departure", "determined_at"})
         restored = model.model_validate_json(historical)
         assert restored.first_departure is restored.determined_at is None
+
+
+@pytest.mark.parametrize("encounter_mode", [False, True])
+def test_new_commands_in_either_envelope_respect_opponent_first_boundary(encounter_mode):
+    from test_product_game_findings import FakeReentryIndex, record as real_record, route, snapshot
+    from app.games.feedback.comparison import compare_record, normalize_record
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored)
+    original = real_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    current = normalize_record(original, provider="lichess", account="Learner", workspace_id="workspace")
+    findings = compare_record(original, provider="lichess", account="Learner", workspace_id="workspace",
+        snapshot=captured, reentry_lookup=FakeReentryIndex(captured, 4))
+    assert [(item.kind, item.ply) for item in findings] == [("opponent_gap", 2), ("confirmed_miss", 5)]
+    h = harness()
+    h.coordinator.encounter_feedback = encounter_mode
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda *args: current)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: findings)
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: captured)
+    request = spec().model_copy(update={"workspace_id": "workspace", "repertoire_ids": ("rep",)})
+    h.page[0] = page(request, records=(original,))
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    source, = h.store.sources.values()
+    assert source.first_departure.status == "opponent_gap" and source.first_departure.ply == 2
+    assert source.findings == findings and source.effects == () and not h.store.deliveries

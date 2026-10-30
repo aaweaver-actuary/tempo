@@ -201,6 +201,9 @@ Old JSON without these optional fields remains readable with null defaults.
 The `comparison-facts-v2-first-departure` revision distinguishes the changed
 comparison policy without changing the logical game effect key. Original frozen
 commands and historical findings are retained; #621 owns their qualification.
+The explicit legacy lapse capture mode also requires that same actionable global
+boundary and exact matching finding before minting a new command. Envelope
+compatibility does not permit later or incomplete-scope automatic effects.
 
 Existing workflow fields carry unresolved comparison evidence without a DTO or
 schema change:

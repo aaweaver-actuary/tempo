@@ -62,6 +62,9 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
     if (source.game_id, source.source_revision, source.source_digest) != (
             game.game_id, game.source_revision, game.source_digest):
         raise ValueError("first_boundary_source_mismatch")
+    canonical_provider = {"lichess": "lichess", "chesscom": "chesscom", "chess.com": "chesscom"}.get(game.source_id)
+    if canonical_provider is not None and canonical_provider != source.provider:
+        raise ValueError("first_boundary_provider_mismatch")
     positions = replay_line(game.starting_fen, game.moves)
     supplied = {}
     for item in snapshots:
