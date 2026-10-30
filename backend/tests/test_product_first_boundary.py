@@ -160,7 +160,7 @@ def test_ended_competing_route_is_not_discarded_to_manufacture_target():
     short = snapshot(("e2e4",), repertoire="short", route_id="short")
     long = snapshot(repertoire="long")
     result = select(game(("e2e4", "e7e5", "d2d4")), short, long)
-    assert (result.status, result.ply) == ("coverage_end", 3)
+    assert (result.status, result.ply, result.diagnostic) == ("unresolved", 3, "ended_competing_route")
     assert any(item.at_deliberate_end for item in result.surviving_routes)
     assert result.decision is None
 
