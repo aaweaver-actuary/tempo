@@ -23,6 +23,16 @@ from fsrs import Card
 from fixtures.study_recovery_content import OBSERVED, publication
 
 
+def memory_observation(docker, container):
+    """Bounded read-only cgroup/process observations; never change teardown."""
+    command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
+    try:
+        result = docker('exec', container, 'sh', '-c', command, check=False)
+        return dict(returncode=result.returncode, output=result.stdout[:32768], error=result.stderr[:2000])
+    except Exception as error:
+        return dict(observation_error=type(error).__name__)
+
+
 def _rows(transaction, table, columns, values, *, conflict=''):
     """Bounded committed fixture writes keep all normal production triggers."""
     for offset in range(0, len(values), 100):
@@ -216,6 +226,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     assert expected['container_id'] == collector['Id'] and expected['image'] == collector['Image']
     assert identity['hostname'] == expected['hostname'] and identity['boot_nonce'] == expected['boot_nonce']
     report['recovery_producer_identity'] = expected
+    report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
+        for role, resource in containers.items()}
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']
     configuration_windows = []

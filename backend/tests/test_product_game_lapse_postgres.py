@@ -18,6 +18,7 @@ import importlib.util
 from itertools import count
 import json
 import hashlib
+import os
 from pathlib import Path
 import secrets
 import subprocess
@@ -51,7 +52,23 @@ def postgres_fixture_profile(profile):
         return dict(memory_mib=384, storage='tmpfs')
     if profile == 'study-recovery':
         return dict(memory_mib=1024, storage='owned-volume')
+    if profile == 'study-recovery-assembly':
+        return dict(memory_mib=384, storage='owned-volume')
     raise ValueError('unknown_owned_postgres_fixture_profile')
+
+
+def study_recovery_assembly_allocations(configuration):
+    """One explicit disposable assembly, within the unchanged host budget."""
+    roles = ('postgres', 'redis', 'api', 'foreground-worker', 'background-worker', 'game-feedback-worker', 'web')
+    allocation = {role: dict(configuration['developmentServices'][role]) for role in roles}
+    allocation['postgres']['memoryMiB'] = postgres_fixture_profile('study-recovery-assembly')['memory_mib']
+    allocation['foreground-worker']['memoryMiB'] = 384
+    for role in ('background-worker', 'game-feedback-worker'):
+        allocation[role] = dict(configuration['optionalServices'][role])
+    assert all(type(value['memoryMiB']) is int and value['memoryMiB'] > 0 for value in allocation.values())
+    assert sum(value['memoryMiB'] for value in allocation.values()) <= configuration['development']['memoryMiB'], \
+        'study_recovery_assembly_exceeds_development_budget'
+    return allocation
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +78,8 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
     assert additional_ports in ((),(80,))
     published = [value for port in additional_ports for value in ('--publish',f'127.0.0.1::{port}')]
     allocation = postgres_fixture_profile(profile)
+    if profile == 'study-recovery-assembly':
+        assert os.environ.get('TEMPO_DEVELOPMENT_BUDGET_TOKEN'), 'recovery_assembly_requires_managed_component_budget'
     identity = "tempo-game-feedback-" + uuid.uuid4().hex
     container = identity + "-postgres"
     volume = identity + '-data' if allocation['storage'] == 'owned-volume' else None
@@ -97,6 +116,11 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
             "-c", "max_connections=16").stdout.strip()
         inventory = json.loads(docker("inspect", container).stdout)[0]
+        if profile == 'study-recovery-assembly':
+            labels = inventory['Config']['Labels']
+            assert labels['tempo.resource-class'] == 'development'
+            assert labels['tempo.resource-owner'] == os.environ['TEMPO_DEVELOPMENT_BUDGET_TOKEN']
+            report['managed_resource_labels'] = {key: labels[key] for key in ('tempo.resource-class', 'tempo.resource-owner')}
         report["mounts"] = inventory["Mounts"]
         report["tmpfs"] = inventory["HostConfig"].get("Tmpfs", {})
         report["memory_bytes"] = inventory["HostConfig"]["Memory"]

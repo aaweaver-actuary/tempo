@@ -15,6 +15,55 @@ import time
 
 import httpx
 
+# Fault injection runs the real Celery application/queues after installing one
+# bounded observation/barrier around the actual local qualification stage. No
+# owner result, receipt, source fact or runtime identity is manufactured.
+if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-background'}:
+    from celery.signals import task_prerun
+    patched = False
+
+    @task_prerun.connect(weak=False)
+    def install_preparation_observer(sender=None, args=(), **unused):
+        global patched
+        selected = (getattr(sender, 'name', '') == 'app.tasks.maintain_game_feedback'
+            or getattr(sender, 'name', '') == 'app.tasks.execute_foreground_command'
+            and len(args) > 1 and args[1] == 'queue.prepare_next')
+        if patched or not selected:
+            return
+        # Install in the executing child, inside the first relevant task's
+        # elapsed time. Preloading this owner before prefork would change the
+        # actual concurrency memory/cold-import conditions under acceptance.
+        from functools import wraps
+        import hashlib
+        from app.product_composition import provider_priority
+        original_qualified_facts = provider_priority._qualified_facts
+
+        @wraps(original_qualified_facts)
+        def observed_qualified_facts(*values, **kwargs):
+            delivery = kwargs.get('delivery')
+            if delivery is not None:
+                token = hashlib.sha256(delivery.operation_id.encode()).hexdigest()[:16]
+                print(json.dumps(dict(recovery_actual_preparer_start=token)), flush=True)
+                path = Path('/qualification/recovery-preparer-fault.json')
+                fault = json.loads(path.read_text()) if path.exists() else None
+                if fault and fault.get('delivery_operation_id') == delivery.operation_id:
+                    assert fault['kind'] == 'wait' and fault['release'] == 'recovery-preparer-release'
+                    deadline = time.monotonic() + 180
+                    while not Path('/qualification/recovery-preparer-release').exists():
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('recovery_actual_preparer_barrier_not_released')
+                        time.sleep(.02)
+            return original_qualified_facts(*values, **kwargs)
+
+        provider_priority._qualified_facts = observed_qualified_facts
+        patched = True
+
+    from app.celery_app import celery_app
+    foreground = sys.argv[1] == 'recovery-foreground'
+    celery_app.worker_main(['worker', '--queues=' + ('foreground' if foreground else 'background'),
+        '--concurrency=' + ('2' if foreground else '1'), '--prefetch-multiplier=1', '--loglevel=INFO'])
+    raise SystemExit(0)
+
 inputs = json.loads(Path('/qualification/provider.json').read_text())
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -22,6 +71,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         from urllib.parse import urlsplit, parse_qs
         url = urlsplit(self.path)
+        if inputs.get('fail_lichess') and url.path.startswith('/api/games/user/'):
+            self.send_response(503); self.end_headers(); self.wfile.write(b'controlled provider unavailable')
+            return
         if url.path.startswith('/api/games/user/'):
             query = parse_qs(url.query)
             rows = [row for row in inputs['lichess'] if int(query['since'][0]) <= row['createdAt'] < int(query['until'][0])]

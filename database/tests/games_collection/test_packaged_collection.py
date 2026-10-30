@@ -456,10 +456,20 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     nginx = (ROOT/'nginx.conf').read_text()
     assert nginx.count('proxy_pass http://api:8000;')==1
     (directory/'nginx.conf').write_text(nginx)
-    budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
+    resource_configuration = json.loads((ROOT/'config/resource-budgets.json').read_text())
+    if recovery_mode is None:
+        budgets = resource_configuration['developmentServices']
+    else:
+        from test_product_game_lapse_postgres import study_recovery_assembly_allocations
+        budgets = study_recovery_assembly_allocations(resource_configuration)
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
         image=image,web_image=web_image,schema=56,disposition='introduced_again' if introduced else 'first_introduction',
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
+    if recovery_mode is not None:
+        report['resource_profile'] = 'study-recovery-assembly'
+        report['resource_allocations'] = budgets
+        report['aggregate_memory_mib'] = sum(value['memoryMiB'] for value in budgets.values())
+        assert pg['HostConfig']['Memory'] == budgets['postgres']['memoryMiB'] * 1024 * 1024
     stage = 'role_startup'
     browser, browser_log = None, None
     network, postgres_attached = None, False
@@ -511,6 +521,12 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         inspected = json.loads(docker('inspect',identifier).stdout)[0]
         assert inspected['Image'] == selected_image and inspected['State']['Running']
         assert inspected['Config']['Labels']['tempo.owner'] == owner
+        if recovery_mode is not None:
+            labels = inspected['Config']['Labels']
+            assert labels['tempo.resource-class'] == 'development'
+            assert labels['tempo.resource-owner'] == os.environ['TEMPO_DEVELOPMENT_BUDGET_TOKEN']
+            report.setdefault('managed_resource_labels', {})[role] = {key: labels[key]
+                for key in ('tempo.resource-class', 'tempo.resource-owner')}
         assert inspected['HostConfig']['NanoCpus'] == 0 and inspected['HostConfig']['CpuQuota'] in (0,-1)
         assert inspected['HostConfig']['Memory'] == budget['memoryMiB']*1024*1024
         return inspected
@@ -600,10 +616,14 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         docker('network','connect','--alias','postgres',network_id,pg['Id'])
         postgres_attached=True
         launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
-        launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
-            '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
-        launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
-            '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
+        if recovery_mode is None:
+            launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
+                '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
+            launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
+                '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
+        else:
+            launch('foreground-worker',['python','-B','-c',fixture_entry,'recovery-foreground'])
+            launch('background-worker',['python','-B','-c',fixture_entry,'recovery-background'])
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
@@ -1106,6 +1126,12 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 inspected = json.loads(found.stdout)[0]
                 assert inspected['Config']['Labels']['tempo.owner']==owner
                 assert inspected['Config']['Labels']['tempo.disposable']=='true' and inspected['Image']==resource['image']
+                if recovery_mode is not None:
+                    from study_recovery_acceptance import memory_observation
+                    report.setdefault('runtime_memory_before_cleanup', {})[role] = dict(
+                        state={key: inspected['State'].get(key) for key in ('Running', 'ExitCode', 'OOMKilled', 'Error')},
+                        configured_memory_bytes=inspected['HostConfig']['Memory'],
+                        observed=memory_observation(docker, resource['id']))
                 logs = docker('logs',resource['id'],check=False)
                 text = (logs.stdout+'\n'+logs.stderr).replace(reader_password,'<reader-secret>').replace(writer_password,'<writer-secret>')
                 report.setdefault('runtime_logs',{})[role]=text[-12000:]

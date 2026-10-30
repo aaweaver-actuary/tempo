@@ -2,13 +2,14 @@
 import pytest
 import chess
 
-from test_product_game_lapse_postgres import postgres_fixture_profile
+from test_product_game_lapse_postgres import postgres_fixture_profile, study_recovery_assembly_allocations
 from fixtures.study_recovery_content import Shape, publication
 
 
 def test_recovery_profile_keeps_default_native_allocation_and_is_explicit():
     assert postgres_fixture_profile('default') == dict(memory_mib=384, storage='tmpfs')
     assert postgres_fixture_profile('study-recovery') == dict(memory_mib=1024, storage='owned-volume')
+    assert postgres_fixture_profile('study-recovery-assembly') == dict(memory_mib=384, storage='owned-volume')
     for unsupported in (None, '', 'live', '1024', 'unlimited'):
         with pytest.raises(ValueError, match='unknown_owned_postgres_fixture_profile'):
             postgres_fixture_profile(unsupported)
@@ -140,3 +141,21 @@ def test_recovery_observed_shapes_keep_exact_route_graph_counts_and_explicit_pay
         graphs += own - sum(prefixes) + len(lengths) + custom
         graph_plies += payload
     assert (authored, graphs, graph_plies) == (242235, 94929, 242138)
+
+
+def test_recovery_assembly_allocation_fits_existing_budget_without_changing_global_roles():
+    from copy import deepcopy
+    import json
+    from test_product_game_lapse_postgres import ROOT
+    configuration = json.loads((ROOT / 'config/resource-budgets.json').read_text())
+    before = deepcopy(configuration)
+    selected = study_recovery_assembly_allocations(configuration)
+    assert {role: value['memoryMiB'] for role, value in selected.items()} == {
+        'postgres': 384, 'redis': 64, 'api': 192, 'foreground-worker': 384,
+        'background-worker': 448, 'game-feedback-worker': 512, 'web': 64}
+    assert sum(value['memoryMiB'] for value in selected.values()) == 2048
+    assert configuration == before
+    smaller = deepcopy(configuration)
+    smaller['development']['memoryMiB'] = 2047
+    with pytest.raises(AssertionError, match='study_recovery_assembly_exceeds_development_budget'):
+        study_recovery_assembly_allocations(smaller)

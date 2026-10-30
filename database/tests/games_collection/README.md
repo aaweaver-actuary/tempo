@@ -31,13 +31,21 @@ Run `node tools/component-build/test-lane.mjs --suite study-recovery`; a plain
 pytest command does not establish managed resource admission.
 
 The recovery wrapper selects the existing PostgreSQL fixture's explicit
-`study-recovery` profile: 1 GiB memory and one nonexternal, task-owned labelled
-data volume. The default native profile remains 384 MiB with 512 MiB tmpfs.
+`study-recovery-assembly` profile: 384 MiB memory and one nonexternal,
+task-owned labelled data volume. The separate `study-recovery` diagnostic
+profile remains 1 GiB on an owned volume. The default native profile remains
+384 MiB with 512 MiB tmpfs.
 The disk-backed profile keeps database/WAL storage out of the memory cap;
 it does not raise any application transaction deadline. Allocation, exact
 mount/label checks, memory evidence and container-before-volume cleanup are
 retained in the fixture receipt. Build and run it under the existing resource
-admission workflow after the coordinator verifies aggregate assembly capacity.
+admission workflow. The recovery-only allocation is PostgreSQL 384 MiB,
+API 192 MiB, foreground 384 MiB, background 448 MiB, Games producer 512 MiB,
+Redis 64 MiB and web 64 MiB: exactly the existing 2,048 MiB development budget.
+No global service budget changes. Foreground/background concurrency remains 2/1.
+Cgroup current/peak/events, process RSS and container OOM/exit state are retained.
+These finite candidate caps differ from installed unbounded API/foreground
+roles; a passing allocation check is not memory or performance proof.
 
 The synthetic workload preserves ten selected repertoires, 8,268 legal authored
 routes, 242,235 authored plies and 94,929 executable graph uses. Physical cards

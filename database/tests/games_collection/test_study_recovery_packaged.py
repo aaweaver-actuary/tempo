@@ -1,5 +1,6 @@
 """Explicit Study recovery acceptance; does not enlarge collection-only gates."""
 import inspect
+import json
 
 import pytest
 
@@ -8,10 +9,14 @@ from test_packaged_collection import (
     test_packaged_feedback_source_reaches_real_study_and_same_key_settlement as run_existing_feedback,
 )
 
+from test_product_game_lapse_postgres import ROOT, study_recovery_assembly_allocations
+
 
 @pytest.fixture
 def recovery_postgres(tmp_path_factory):
-    yield from inspect.unwrap(owned_postgres)(tmp_path_factory, additional_ports=(80,), profile='study-recovery')
+    # Reject an over-budget profile before any database allocation.
+    study_recovery_assembly_allocations(json.loads((ROOT / 'config/resource-budgets.json').read_text()))
+    yield from inspect.unwrap(owned_postgres)(tmp_path_factory, additional_ports=(80,), profile='study-recovery-assembly')
 
 
 @pytest.fixture
