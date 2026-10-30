@@ -9,6 +9,7 @@ from datetime import timedelta
 import hashlib
 import json
 import uuid
+from types import SimpleNamespace
 
 import chess
 from fsrs import Card
@@ -16,6 +17,75 @@ from fsrs import Card
 from app.legacy_game_observation import capture_game
 from app.services.postgres_integrity import current_integrity_certificate
 from test_product_game_lapse import NOW
+
+
+@contextmanager
+def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW, stream='forward'):
+    """Real disposable Games source/config plus closed-read Study preparation.
+
+    Reused by the owning native suites; it does not bypass global selection,
+    source/config fencing, exact target authority or canonical introduction.
+    """
+    from app.contracts.product_v02.games import GameRecord,GameWindow
+    from app.games.feedback.ports import SourceState
+    from app.games.feedback.review import SyncConfiguration
+    from app.product_composition.provider_priority import prepare_feedback_qualification
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.services.encounter_preparation import prepare_encounter_introduction
+    from app.services.queue_priority_promotion import prepare_priority_promotion
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    import chess.pgn
+    game = retained_canonical_game(capture)
+    @contextmanager
+    def raw_reads():
+        with transaction() as database:
+            yield database.raw
+    with transaction() as database:
+        account = database.execute_native('SELECT username FROM imported_games WHERE id=%s',(game.game_id,)).fetchone()[0]
+        old_config = database.execute_native('SELECT revision,next_run_at,payload::text FROM product_feedback_configuration '
+            'WHERE workspace_id=%s AND provider=%s',(game.workspace_id,command.key.provider)).fetchone()
+    pgn = chess.pgn.Game(); pgn.setup(chess.Board(game.starting_fen))
+    pgn.headers['White' if game.learner_color=='white' else 'Black'] = account
+    node = pgn
+    for uci in game.moves:
+        node = node.add_variation(chess.Move.from_uci(uci))
+    text = str(pgn)
+    record = GameRecord(source_game_id=capture['game']['provider_game_id'],source_revision=1,
+        source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,played_at=game.played_at,time_precision='second')
+    source = SourceState(source_key='qualification-fixture:'+uuid.uuid4().hex,version=1,
+        original=record,record_fingerprint=record.source_digest,normalized=game,findings=(),
+        comparison_revision='retained-synthetic-fixture',effects=(command,),
+        encounters=(command,) if hasattr(command,'decision') else ())
+    repertoire_id = command.decision.repertoire_id if hasattr(command,'decision') else command.finding.repertoire_id
+    revision = int(old_config[0])+1 if old_config else 1
+    config = SyncConfiguration(workspace_id=game.workspace_id,provider=command.key.provider,account=account,
+        repertoire_ids=(repertoire_id,),window=GameWindow(start_at=(clock()-timedelta(days=3)).isoformat(),
+            end_at=clock().isoformat(),precision='second'),speeds=('rapid',),rated=None,interval_seconds=None,revision=revision)
+    PostgresReviewStore(raw_reads).configure(config,revision-1)
+    try:
+        with transaction() as database:
+            database.execute_native('INSERT INTO product_feedback_sources(source_key,version,payload) '
+                'VALUES(%s,1,%s::jsonb)',(source.source_key,source.model_dump_json()))
+        def prepare(original):
+            return prepare_feedback_qualification(original,read=transaction,
+                capture=lambda repertoire,game_id,plies:capture,clock=clock,
+                determination=command.detected_at,stream=stream)
+        prepared = prepare(command)
+        target = prepared.qualification.selection.decision.model_copy(update={
+            'repertoire_revision':prepared.prepared_decisions.authority.scope_source_revision+1})
+        introduction = prepare_encounter_introduction(target,read=transaction)
+        priority = prepare_priority_promotion(clock().date().isoformat(),target.presentation_id,read=transaction)
+        yield SimpleNamespace(prepared=prepared,prepare=prepare,prepared_introduction=introduction,
+                              prepared_priority=priority,source=source)
+    finally:
+        with transaction() as database:
+            database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
+            database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
+                (config.workspace_id,config.provider))
+            if old_config:
+                database.execute_native('INSERT INTO product_feedback_configuration '
+                    '(workspace_id,provider,revision,next_run_at,payload) VALUES(%s,%s,%s,%s,%s::jsonb)',
+                    (config.workspace_id,config.provider,old_config[0],old_config[1],old_config[2]))
 
 
 @dataclass(frozen=True)

@@ -441,16 +441,22 @@ def feedback_preparation_admitted(database, *, lock=False, task_id=None):
     return bool(row and row[0])
 
 
-def next_feedback_preparation(database, day, *, now=None):
-    """One qualified local obligation that needs preparation or queue recovery."""
+def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
+    """One bounded local preparation, including acknowledged old missed work.
+
+    Selecting a raw historical command grants no urgency or mutation authority;
+    it must pass the same complete qualification as an outbox delivery first.
+    """
     if not installed(database) or not feedback_preparation_admitted(database):
         return None
     row = database.execute_native("""SELECT effect.* FROM study_game_feedback effect
         JOIN cards card ON card.id=COALESCE(
             effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id',effect.card_id)
         WHERE effect.status IN ('pending','applied') AND effect.hold_json IS NULL
-          AND effect.payload_json::jsonb->'owner'->'qualification' IS NOT NULL
-          AND effect.payload_json::jsonb->'owner'->'qualification'<>'null'::jsonb
+          AND (COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
+            OR effect.payload_json::jsonb->'command'->>'observation'='missed'
+            OR effect.payload_json::jsonb->'command'->'finding'->>'kind'='confirmed_miss'
+            OR effect.payload_json::jsonb->'finding'->>'kind'='confirmed_miss')
           AND effect.reason IS DISTINCT FROM 'source_hold'
           AND COALESCE(effect.payload_json::jsonb->'owner'->>'deferred_reason','') NOT IN ('paused','disabled')
           AND (effect.payload_json::jsonb->'owner'->>'preparation_retry_at' IS NULL
@@ -463,20 +469,24 @@ def next_feedback_preparation(database, day, *, now=None):
               WHERE queue.card_id=card.id AND queue.status='queued' AND origin.issued_as_head=1)
           AND NOT EXISTS(SELECT 1 FROM daily_queue buried WHERE buried.card_id=card.id
               AND buried.queue_date=%s AND buried.status='buried')
-          AND (effect.status='pending' OR NOT EXISTS(SELECT 1 FROM daily_queue queued
+          AND (effect.status='pending'
+            OR COALESCE(effect.payload_json::jsonb->'owner'->'progress','null'::jsonb)='null'::jsonb
+            OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
-        ORDER BY CASE COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'stream',
+        """ + ("""AND COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
+        """ if qualified_only else '') + """ORDER BY CASE COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'stream',
                               effect.payload_json::jsonb->'owner'->'qualification'->>'stream')
                        WHEN 'forward' THEN 0 ELSE 1 END,
           COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',
-                   effect.payload_json::jsonb->'owner'->'qualification'->>'determined_at')::timestamptz,
+                   effect.payload_json::jsonb->'owner'->'qualification'->>'determined_at',
+                   effect.detected_at::text,effect.received_at::text)::timestamptz,
           effect.effect_key LIMIT 1""",
         (now or datetime.now(timezone.utc),day,day)).fetchone()
     return PostgresGameFeedbackStore._effect(row) if row else None
 
 
 def pending_feedback_preparation(database, day, *, before_priority=None):
-    observed = next_feedback_preparation(database, day)
+    observed = next_feedback_preparation(database,day,qualified_only=before_priority is not None)
     if observed is None:
         return False
     if before_priority is None:
@@ -536,11 +546,19 @@ def invalidate_saved_review(database, card_id, review_id):
                                   (review_id, card_id)).fetchone()
     if not row or row[0] is None:
         raise ValueError("the review owner must invalidate the actual settling review first")
-    database.execute_native("""UPDATE study_game_feedback SET
-        status=CASE WHEN applied_at IS NULL THEN 'pending' ELSE 'applied' END,
-        settled_at=NULL,settlement_review_id=NULL,reason='settling_review_invalidated',updated_at=%s
-        WHERE settlement_review_id=%s AND status='settled'""",
-        (datetime.now(timezone.utc), review_id))
+    rows = database.execute_native("""SELECT identity_json FROM study_game_feedback
+        WHERE settlement_review_id=%s AND status='settled' ORDER BY effect_key""", (review_id,)).fetchall()
+    store = PostgresGameFeedbackStore(database)
+    for row in rows:
+        key = GameEffectKey.model_validate_json(row['identity_json'])
+        store.lock_effect(key)
+        effect = store.get(key)
+        if effect.status != 'settled' or effect.settlement_review_id != review_id:
+            continue
+        progress = effect.progress.model_copy(update={'settlement':None}) if effect.progress else None
+        store.save(replace(effect,status='applied' if effect.applied_at is not None else 'pending',
+            progress=progress,settled_at=None,settlement_review_id=None,reason='settling_review_invalidated'),
+            datetime.now(timezone.utc))
 
 
 def resume_available_feedback(database, day, *, limit=16):
