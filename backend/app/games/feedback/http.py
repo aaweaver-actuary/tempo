@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header
 from pydantic import Field, field_validator
 
 from app.contracts.product_v02 import Identifier, Value
-from app.contracts.product_v02.games import Finding, ProviderSyncStatus, RecentGames
+from app.contracts.product_v02.games import Finding, GameRefreshStatus, ProviderSyncStatus, RecentGames
 from app.contracts.product_v02.learning import LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
 from .review import ReviewUnavailable, SyncConfiguration
@@ -57,6 +57,8 @@ class GameReviewOperations(Protocol):
     def game_detail(self, *, provider: Provider, game_id: str,
                     repertoire_id: str | None) -> GameDetail: ...
     def sync(self, *, provider: Provider, operation_id: str) -> ProviderSyncStatus: ...
+    def refresh(self, *, provider: Provider, operation_id: str) -> GameRefreshStatus: ...
+    def refresh_status(self, operation_id: str) -> GameRefreshStatus: ...
     def retry_feedback(self, *, finding: Finding, operation_id: str) -> LearningReceipt: ...
     def configuration(self, provider: Provider) -> SyncConfiguration | None: ...
     def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration: ...
@@ -86,6 +88,14 @@ def create_game_review_router(operations: GameReviewOperations) -> APIRouter:
     @router.post("/sync", response_model=ProviderSyncStatus)
     def sync(request: SyncRequest):
         return invoke(operations.sync, provider=request.provider, operation_id=request.operation_id)
+
+    @router.post("/refresh", response_model=GameRefreshStatus)
+    def refresh(request: SyncRequest):
+        return invoke(operations.refresh, provider=request.provider, operation_id=request.operation_id)
+
+    @router.get("/refresh/{operation_id}", response_model=GameRefreshStatus)
+    def refresh_status(operation_id: Identifier):
+        return invoke(operations.refresh_status, operation_id)
 
     @router.post("/feedback/retry", response_model=LearningReceipt)
     def retry_feedback(request: RetryFeedbackRequest):

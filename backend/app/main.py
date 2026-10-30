@@ -615,6 +615,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             path_parts == ["api", "game-evidence", "product", "feedback"])
         product_review_command = (request.method == "POST" and request.url.path in {
             "/api/product/game-review/configuration", "/api/product/game-review/sync",
+            "/api/product/game-review/refresh",
             "/api/product/game-review/feedback/retry"})
         product_history_command = (request.method == "POST" and len(path_parts) == 4
             and path_parts[:3] == ["api", "product", "game-history"]

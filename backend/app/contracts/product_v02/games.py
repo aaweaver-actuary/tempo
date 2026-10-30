@@ -105,6 +105,17 @@ class RecentGames(Value):
     sync: tuple[ProviderSyncStatus, ...]
 
 
+class GameRefreshStatus(Value):
+    provider: Literal["lichess", "chesscom"]
+    operation_id: Identifier
+    job_id: Identifier
+    window: GameWindow
+    status: Literal["queued", "running", "retryable", "failed", "quarantined", "complete"]
+    pages_committed: int = Field(ge=0)
+    next_attempt_at: float = Field(ge=0, allow_inf_nan=False)
+    error: str | None
+
+
 FindingKind = Literal["confirmed_miss", "opponent_gap", "missing_own_continuation", "known_unintroduced", "known_unavailable", "conflict", "ambiguous", "coverage_end"]
 
 
@@ -144,4 +155,4 @@ class Finding(Value):
         return self
 
 
-__all__ = ["CanonicalGame", "GameWindow", "GameRecord", "GameRejection", "GamePage", "GameAcquisitionPort", "Finding", "FindingKind", "GameSummary", "ProviderSyncStatus", "RecentGames"]
+__all__ = ["CanonicalGame", "GameWindow", "GameRecord", "GameRejection", "GamePage", "GameAcquisitionPort", "Finding", "FindingKind", "GameSummary", "ProviderSyncStatus", "RecentGames", "GameRefreshStatus"]

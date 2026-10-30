@@ -49,6 +49,21 @@ def sync(database, payload):
         provider=request.provider, operation_id=request.operation_id))
 
 
+def refresh(database, payload):
+    from app.games.feedback.refresh import TASK_KIND
+    from app.services.durable_tasks import ensure_task_in_transaction
+    request = SyncRequest.model_validate_json(json.dumps(payload))
+    try:
+        status, _created = command_review(database).refresh(
+            provider=request.provider, operation_id=request.operation_id)
+        if status.status in {"queued", "running", "retryable"}:
+            ensure_task_in_transaction(database, TASK_KIND, status.job_id,
+                {"workspace_id": "legacy", "job_id": status.job_id}, priority=80)
+        return status.model_dump(mode="json")
+    except ReviewUnavailable as error:
+        raise HTTPException(error.status, error.reason) from error
+
+
 def prepare_retry(payload):
     """Legacy lapse retry only; encounter redelivery belongs to the worker."""
     from .feedback_commands import prepare_imported_feedback
@@ -85,4 +100,5 @@ def register_commands():
     from app.command_gateway import register_command
     register_command("product_games.configure", configure)
     register_command("product_games.sync", sync)
+    register_command("product_games.refresh", refresh)
     register_command("product_games.retry_feedback", retry, prepare=prepare_retry)

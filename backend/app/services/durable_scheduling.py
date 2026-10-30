@@ -16,7 +16,7 @@ CLASS_KINDS = {
              'game_analysis_followup'),
     'priority': ('discovery_recommendation',),
     'coverage': ('coverage_seed', 'coverage_explorer', 'opening_segmentation'),
-    'sync': ('game_sync_record', 'game_sync_window', *DEFENSIVE_TASK_KINDS),
+    'sync': ('game_sync_record', 'game_sync_window', 'product_game_refresh', *DEFENSIVE_TASK_KINDS),
 }
 # User-dependent publications and controls get prompt, but finite, preference.
 CONTROL_KINDS = ('daily_queue', 'prefix_transition_application',

@@ -31,6 +31,8 @@ const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
     return repertoire_id ? `${path}?repertoire_id=${encodeURIComponent(repertoire_id)}` : path;
   },
   sync: `${API_URL}/api/product/game-review/sync`,
+  refresh: `${API_URL}/api/product/game-review/refresh`,
+  refreshStatus: operationId => `${API_URL}/api/product/game-review/refresh/${encodeURIComponent(operationId)}`,
   retryFeedback: `${API_URL}/api/product/game-review/feedback/retry`,
 } });
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));

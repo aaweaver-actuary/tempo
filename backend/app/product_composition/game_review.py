@@ -174,6 +174,19 @@ class CurrentGameReviewOperations:
         return dispatch_command("product_games.sync", request,
             idempotency_key=request["operation_id"])
 
+    def refresh(self, **request):
+        from app.command_dispatch import dispatch_command
+        return dispatch_command("product_games.refresh", request,
+            idempotency_key=request["operation_id"])
+
+    def refresh_status(self, operation_id):
+        from app.games.feedback.refresh import TASK_KIND
+        from app.services.durable_tasks import task_state
+        status = self._read("refresh_status", operation_id)
+        if status.status not in {"complete", "failed", "quarantined"} and task_state(TASK_KIND, status.job_id) == "failed":
+            return status.model_copy(update={"status": "failed", "error": "Background refresh failed. Check service status before retrying."})
+        return status
+
     def retry_feedback(self, **request):
         from app.command_dispatch import dispatch_command
         return dispatch_command("product_games.retry_feedback", {

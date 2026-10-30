@@ -96,7 +96,7 @@ export async function runControlledBrowser(selection, options = {}) {
     await stage("setup", async () => { evidence.asset_hashes = await prepareControlledAssets(root, publicDirectory); });
     evidence.stages.setup = (performance.now() - invocationStarted) / 1000;
     await runNode("package_build", ["node_modules/typescript/bin/tsc", "-p", "packages/chess-line/tsconfig.json"]);
-    for (const name of ["browser-intents", "study-session"]) await runNode(`package_build_${name}`, ["node_modules/typescript/bin/tsc", "-p", `packages/${name}/tsconfig.json`]);
+    for (const [name, path] of [["browser-intents", "database/browser-intents"], ["study-session", "packages/study-session"]]) await runNode(`package_build_${name}`, ["node_modules/typescript/bin/tsc", "-p", `${path}/tsconfig.json`]);
     await waitForStudyQuiet();
     await runNode("production_build", ["node_modules/vite/bin/vite.js", "build", "--config", "vite.controlled.config.ts"], { TEMPO_CONTROLLED_BUILD_DIR: buildDirectory, TEMPO_CONTROLLED_PUBLIC_DIR: publicDirectory });
     await writeFile(manifestPath, JSON.stringify(["/", ...await assetPaths(buildDirectory)]));

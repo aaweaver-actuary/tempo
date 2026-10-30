@@ -101,6 +101,20 @@ def enqueue_task(
     return submit(operation, label=f"enqueue:{kind}:{deduplication_key}")
 
 
+def ensure_task_in_transaction(database, kind: str, deduplication_key: str, payload: dict, *, priority: int) -> None:
+    """Keep a live requested task's generation/lease intact on alias requests."""
+    existing = storage.task_by_kind(database, (kind, deduplication_key))
+    if existing is None or existing["state"] in {"failed", "complete"}:
+        enqueue_task_in_transaction(database, kind, deduplication_key, payload, priority=priority)
+
+
+def task_state(kind: str, deduplication_key: str) -> str | None:
+    reader = background_read_connection if activity_gate.in_background else read_connection
+    with reader() as database:
+        row = storage.task_by_kind(database, (kind, deduplication_key))
+    return row["state"] if row else None
+
+
 def enqueue_task_in_transaction(
     database: sqlite3.Connection,
     kind: str,
@@ -278,14 +292,14 @@ def lock_current_slice(database, task: dict) -> bool:
 
 
 def advance_task_slice_in_transaction(
-    database, task: dict, *, next_phase: str, next_payload: dict,
+    database, task: dict, *, next_phase: str, next_payload: dict, eligible_at: str | None = None,
 ) -> bool:
     """Commit slice effects and restart state together in the caller's transaction."""
 
     now = _iso()
     changed = storage.advance_slice(
         database,
-        (next_phase, json.dumps(next_payload, separators=(",", ":")), now, now,
+        (next_phase, json.dumps(next_payload, separators=(",", ":")), eligible_at or now, now,
          task["id"], task["generation"], task["lease_token"]),
     )
     if changed:
