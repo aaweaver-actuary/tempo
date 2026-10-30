@@ -208,7 +208,8 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
             jobs = [row[0] for row in db.execute('SELECT payload FROM product_feedback_jobs ORDER BY job_id')]
             counts = {table: db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in
                 ('product_feedback_sources','product_feedback_captures','product_feedback_deliveries')}
-        (evidence/'packaged.json').write_text(json.dumps(dict(candidate=revision,image=image,schema=54,
+            schema = db.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0]
+        (evidence/'packaged.json').write_text(json.dumps(dict(candidate=revision,image=image,schema=schema,
             fixture_container=pg['Id'],jobs=jobs,counts=counts,receipts=receipts),indent=2))
 
 
