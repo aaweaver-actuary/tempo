@@ -6269,3 +6269,13 @@ The collection operator's full snapshot report has no fixed subprocess deadline.
 `collection full snapshot read has no fixed subprocess deadline while other commands remain bounded`
 checks that only the full reader receives the no-deadline execution setting;
 identity, lifecycle, inspection and output safeguards retain their existing policy.
+
+
+## All-repertoire collector memory allocation
+
+`all-repertoire collection requires its calibrated 512 MiB worker allowance`
+in `tests/runner/game-review-collection.test.mjs` owns the memory allocation
+correction after live Docker OOM/exit-137 events at the former 256 MiB setting.
+The overlay, optional/development inventory, runtime ownership check and packaged
+fixture agree on 512 MiB. CPU policy, PID limit and all Study allocations remain
+unchanged; the guard still rejects a mismatched allocation.

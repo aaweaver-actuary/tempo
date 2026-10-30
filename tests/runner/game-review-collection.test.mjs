@@ -19,7 +19,7 @@ function facts() {
     service: { command: ['python', '-m', 'app.product_composition.game_sync_current', '--collect-only', '--follow', '--overlap-seconds', '300', '--reconcile-interval-seconds', '600'],
       environment: {TEMPO_PRODUCT_GAME_SYNC_ENABLED: '1', TEMPO_DATABASE_WRITE_URL: 'postgresql://tempo_writer@postgres:5432/tempo',
         TEMPO_DATABASE_READ_URL: 'postgresql://tempo_writer@postgres:5432/tempo', PGPASSFILE: '/run/secrets/worker_pgpass'},
-      secrets: [{source: 'writer_pgpass', target: 'worker_pgpass'}], mem_limit: 268435456, pids_limit: 96,
+      secrets: [{source: 'writer_pgpass', target: 'worker_pgpass'}], mem_limit: 536870912, pids_limit: 96,
       labels: {'tempo.collection.owner': 'managed-game-collection', 'tempo.collection.mode': 'collect-only'} },
     image: {Id: imageId, Config: {Labels: {'org.opencontainers.image.revision': revision}}},
     report: {schema_version: 1, read_only: true, identity, collection: {availability: 'available'}, delivery: {availability: 'available'},
@@ -35,6 +35,13 @@ test('collection switch requires structured configuration and installed identity
   assert.ok(collectionBlockers(input).includes('collection_configuration_absent'));
   input.release.revision = 'c'.repeat(40);
   assert.ok(collectionBlockers(input).includes('installed_candidate_mismatch'));
+});
+test('all-repertoire collection requires its calibrated 512 MiB worker allowance', () => {
+  const input = facts();
+  assert.equal(input.service.mem_limit, 512 * 1024 * 1024);
+  assert.deepEqual(collectionBlockers(input), []);
+  input.service.mem_limit = 256 * 1024 * 1024;
+  assert.ok(collectionBlockers(input).includes('collector_resource_or_ownership_mismatch'));
 });
 test('collection switch refuses unknown inventory, delivery peers and changed frozen resources', () => {
   const input = facts(); input.hostCommands = null;
@@ -142,7 +149,7 @@ test('CLI builder fixture reports the requested unrestricted CPU and original me
 
 test('only the exact owned collect-only command may coexist, including stopped delivery-capable peers', () => {
   const input = facts();
-  const container = {Image: imageId, State: {Running: true}, HostConfig: {Memory: 268435456, PidsLimit: 96, NanoCpus: 0, CpuQuota: 0},
+  const container = {Image: imageId, State: {Running: true}, HostConfig: {Memory: 536870912, PidsLimit: 96, NanoCpus: 0, CpuQuota: 0},
     Config: {Cmd: [...input.service.command], Labels: {'com.docker.compose.project': 'fixture', 'com.docker.compose.service': serviceName, 'com.docker.compose.project.working_dir': '/fixture',
       'tempo.collection.owner': 'managed-game-collection', 'tempo.collection.mode': 'collect-only'}}};
   input.containers = [container]; assert.deepEqual(collectionBlockers(input), []);
@@ -358,7 +365,7 @@ function collectionMainFixture(t, {running = false, modern = false, observedSche
     Config: {Cmd: ['fixture-api'], Labels: {'com.docker.compose.project': fixture.target.project,
       'com.docker.compose.service': 'api', 'com.docker.compose.project.working_dir': fixture.target.root}}, Mounts: []};
   const collector = {Id: 'fixture-collector', Image: imageId, State: {Running: running, Restarting: false},
-    HostConfig: {Memory: 268435456, PidsLimit: 96, NanoCpus: 0, CpuQuota: 0},
+    HostConfig: {Memory: 536870912, PidsLimit: 96, NanoCpus: 0, CpuQuota: 0},
     Config: {Cmd: [...input.service.command], Labels: {...input.service.labels,
       'com.docker.compose.project': fixture.target.project, 'com.docker.compose.service': serviceName,
       'com.docker.compose.project.working_dir': fixture.target.root}}, Mounts: []};

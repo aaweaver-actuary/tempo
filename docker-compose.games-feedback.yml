@@ -8,7 +8,7 @@ services:
     labels:
       tempo.collection.owner: managed-game-collection
       tempo.collection.mode: collect-only
-    mem_limit: 256m
+    mem_limit: 512m
     pids_limit: 96
     build:
       context: .
