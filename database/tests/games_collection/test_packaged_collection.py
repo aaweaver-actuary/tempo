@@ -354,7 +354,8 @@ def feedback_case(feedback_postgres):
     yield from inspect.unwrap(case)(feedback_postgres)
 
 
-def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path):
+@pytest.mark.parametrize("introduced", [False, True], ids=["unseen", "introduced"])
+def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
     from app.games.feedback.ports import Delivery
@@ -383,7 +384,7 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     # Authored fixture facts only. Queue rows, introductions, attempt origins,
     # human reviews and effect receipts below come from installed owners.
     retained_owner_case(case, False)
-    target_id, source_id = 'packaged-unseen-'+uuid.uuid4().hex, 'p'+uuid.uuid4().hex[:7]
+    target_id, source_id = 'packaged-'+('introduced-' if introduced else 'unseen-')+uuid.uuid4().hex, 'p'+uuid.uuid4().hex[:7]
     with case.transaction() as database:
         database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
             SELECT %s,repertoire_id,kind,start_fen,moves_json,'locked',CURRENT_DATE,'opening'
@@ -398,8 +399,17 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
             'finding':case.lapse.finding.model_copy(update={'presentation_id':target_id})}))
     repertoire, capture, _, _ = retained_owner_case(target_case, True)
     with case.transaction() as database:
-        database.execute_native("""UPDATE cards SET introduced_at=NULL,first_correct_at=NULL,fsrs_card_json=NULL,
-            state='locked',interval_days=0,stability=0 WHERE id=%s""", (target_id,))
+        if introduced:
+            # Preexisting authored scheduling state only; the actual provider
+            # command must create its own Again receipt and fresh issuance.
+            database.execute_native("""UPDATE cards target SET state='mature',due_date=CURRENT_DATE+30,
+                interval_days=original.interval_days,stability=original.stability,
+                fsrs_card_json=original.fsrs_card_json,first_correct_at=original.first_correct_at,
+                introduced_at=split_part(target.introduced_at,'T',1)
+                FROM cards original WHERE target.id=%s AND original.id=%s""", (target_id,case.card_id))
+        else:
+            database.execute_native("""UPDATE cards SET introduced_at=NULL,first_correct_at=NULL,fsrs_card_json=NULL,
+                state='locked',interval_days=0,stability=0 WHERE id=%s""", (target_id,))
         assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0] == 0
         assert database.execute_native('SELECT COUNT(*) FROM daily_queue').fetchone()[0] == 0
     roles_spec = importlib.util.spec_from_file_location('feedback_fixture_roles',ROOT/'database/tooling/provision_postgres_roles.py')
@@ -425,7 +435,7 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     (directory/'nginx.conf').write_text(nginx)
     budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
-        image=image,web_image=web_image,schema=56,
+        image=image,web_image=web_image,schema=56,disposition='introduced_again' if introduced else 'first_introduction',
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
     stage = 'role_startup'
     browser, browser_log = None, None
@@ -629,7 +639,8 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         stage = 'actual_browser_start'
         scenario = directory/'browser-scenario.json'
         scenario.write_text(json.dumps(dict(version=1,protected_card_id=case.card_id,
-            protected_queue_entry_id=protected['queue_entry_id'],target_card_id=target_id)))
+            protected_queue_entry_id=protected['queue_entry_id'],target_card_id=target_id,
+            introduced=introduced)))
         node = shutil.which('node')
         cli = ROOT/'node_modules/@playwright/test/cli.js'
         assert node and cli.is_file(), 'packaged_feedback_installed_playwright_required'
@@ -725,32 +736,66 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             refresh_requested_after = database.execute_native('SELECT clock_timestamp()').fetchone()[0]
         provider_ready(dict(stage='source',operation_id=operation_id,key=original['key']))
         stage = 'browser_save_prepare_and_reread'
+        inspection_marker = wait_for(lambda:browser_ready('inspect'),'packaged_feedback_browser_inspection_missing')
+        def study_inspection_state():
+            with case.transaction() as database:
+                return {table:[dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+                    for table,statement,parameters in (
+                        ('cards','SELECT id,revision,introduced_at,fsrs_card_json,state,due_date FROM cards WHERE id=ANY(%s) ORDER BY id',([case.card_id,target_id],)),
+                        ('reviews','SELECT id,card_id,source_kind,source_ref,reviewed_at FROM reviews WHERE card_id=ANY(%s) ORDER BY id',([case.card_id,target_id],)),
+                        ('origins','SELECT * FROM queue_attempt_origins WHERE card_id=ANY(%s) ORDER BY issuance_sequence NULLS FIRST,queue_entry_id',([case.card_id,target_id],)))}
+        before_inspection = study_inspection_state()
+        provider_ready(dict(stage='inspect',game_id=original['key']['game_id'],key=original['key'],
+            disposition='introduced_again' if introduced else 'first_introduction'))
         target_marker = wait_for(lambda:browser_ready('target'),'packaged_feedback_browser_target_missing')
+        assert target_marker['target_entry_id']==inspection_marker['target_entry_id']
+        assert study_inspection_state()==before_inspection, 'packaged_game_review_changed_study_state'
+        report['game_review_inspection']=target_marker['game_review']
+        review_detail = target_marker['game_review']['detail']
+        assert review_detail['first_departure']['status']=='own_actionable'
+        assert review_detail['first_departure']['decision']['presentation_id']==target_id
+        assert review_detail['first_departure']['ply']==original['key']['occurrence_ply']==1
+        assert review_detail['first_departure']['played_uci']=='d2d4'
+        assert review_detail['first_departure']['expected_uci']==['e2e4']
+        assert target_marker['game_review']['board_fen']==capture['game']['start_fen']
+        actual_receipts = [item for item in review_detail['receipts'] if item['key']==original['key']]
+        assert len(actual_receipts)==1 and actual_receipts[0]['progress']['first_issued']['queue_entry_id']==target_marker['target_entry_id']
         protected_review = target_marker['protected_review']
         assert protected_review['card_id']==case.card_id and protected_review['body']['guided'] is False
         assert protected_review['body']['queue_entry_id']==protected['queue_entry_id']
         assert protected_review['response']['persisted'] and protected_review['replay']==protected_review['response']
         before_review = entry('api','feedback-state',operation_id)
         receipt = before_review['receipt']
-        assert receipt['key']==original['key'] and receipt['disposition']=='first_introduction'
+        assert receipt['key']==original['key'] and receipt['disposition']==('introduced_again' if introduced else 'first_introduction')
         assert before_review['qualification']['selection']['status']=='own_actionable'
         assert before_review['qualification']['selection']['ply']==original['key']['occurrence_ply']==1
         assert before_review['qualification']['selection']['decision']['presentation_id']==target_id
         assert receipt['progress']['target']['card_id']==target_id
         assert receipt['progress']['first_issued']['queue_entry_id']==target_marker['target_entry_id']
-        assert 1<=receipt['progress']['first_issued_ordinal']<=5
+        assert (receipt['progress']['first_issued_ordinal']==1 if introduced else
+            1<=receipt['progress']['first_issued_ordinal']<=5)
         report['feedback_before_refresh']=bounded(dict(operation_id=operation_id,
             delivery_state=before_review['delivery_state'],key=receipt['key'],
             **{name:receipt.get(name) for name in ('status','outcome','owner_receipt_id','applied_at',
                 'disposition','admission_status','deferred_reason')},
             progress={name:receipt['progress'].get(name) for name in ('determined_at','target',
-                'introduction_applied_at','remediation_fence','first_issued','first_issued_ordinal')}))
-        assert receipt['status']=='applied' and receipt['progress']['introduction_applied_at']
+                'introduction_applied_at','schedule_applied_at','scheduling_review_id','remediation_fence','first_issued','first_issued_ordinal')}))
+        assert receipt['status']=='applied'
+        if introduced:
+            assert receipt['progress']['schedule_applied_at'] and receipt['progress']['scheduling_review_id']
+            assert receipt['progress']['introduction_applied_at'] is None
+        else:
+            assert receipt['progress']['introduction_applied_at']
+            assert receipt['progress']['scheduling_review_id'] is None
         with case.transaction() as database:
             assert tuple(database.execute_native("""SELECT queue_entry_id,card_id,revision,issuance_sequence,issued_at
                 FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=%s""",protected_origin[:3]).fetchone())==protected_origin
             assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==(0,1)
-            assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='study'",(target_id,)).fetchone()[0]==0
+            scheduling = database.execute_native("SELECT id,internal_rating FROM reviews WHERE card_id=%s AND source_kind='game_lapse' ORDER BY id",(target_id,)).fetchall()
+            assert len(scheduling)==int(introduced)
+            if introduced:
+                assert scheduling[0]['id']==receipt['progress']['scheduling_review_id'] and scheduling[0]['internal_rating']=='again'
             assert database.execute_native('SELECT card_id FROM reviews WHERE id=%s',
                 (protected_review['response']['review_id'],)).fetchone()[0]==case.card_id
         def refresh_observation(event_generation=None):
@@ -799,7 +844,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert (target['id']==target_id and target['revision']==receipt['progress']['target']['card_revision']
                 and target['queue_entry_id']==target_marker['target_entry_id'] and target['status']=='queued'
                 and target['content_type']=='opening' and target['repertoire_id']!='__retained_cards__'
-                and target['introduced_at']==target['queue_date'] and target['review_count']==0
+                and (introduced or target['introduced_at']==target['queue_date']) and target['review_count']==int(introduced)
                 and (target['admission_kind'] or '')!='explicit' and target['genuinely_issued']), \
                 'packaged_feedback_unseen_refresh_target_not_eligible'
             return target
@@ -915,14 +960,32 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert actual_clean_origin is not None
             assert settled['receipt']['progress']['settlement']['attempt']==actual_clean_origin.model_dump(mode='json')
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'study\'',(target_id,)).fetchone()[0]==len(target_reviews)
-            assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'game_lapse\'',(target_id,)).fetchone()[0]==0
+            assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'game_lapse\'',(target_id,)).fetchone()[0]==int(introduced)
             assert database.execute_native("SELECT payload->'encounter' FROM product_feedback_deliveries WHERE operation_id=%s",(operation_id,)).fetchone()[0]==original
             report['actual_issuances_after_determination'] = database.execute_native("""SELECT COUNT(*) FROM queue_attempt_origins
                 WHERE issued_as_head=1 AND issued_at>%s AND issuance_sequence IS NOT NULL""",
                 (receipt['progress']['determined_at'],)).fetchone()[0]
             report['unseen_refresh_task'] = database.execute_native("""SELECT payload_json FROM background_tasks
                 WHERE kind='daily_queue' AND deduplication_key='current'""").fetchone()[0]
-        report.update(operation_id=operation_id,key=original['key'],qualification=settled['qualification'],receipt=settled['receipt'])
+        # Revisit retained provider history through the existing collection-only
+        # worker. It cannot dispatch, and repeated capture must preserve the same
+        # original command, receipt, application and genuine settlement.
+        stage = 'same_source_reconciliation_replay'
+        with case.transaction() as database:
+            captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
+        inputs['now'] += 601
+        (directory/'provider.json').write_text(json.dumps(inputs))
+        entry('foreground-worker','worker')
+        with case.transaction() as database:
+            captures_after_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
+            assert captures_after_replay>=captures_before_replay
+            assert database.execute_native('SELECT COUNT(*) FROM product_feedback_sources').fetchone()[0]==1
+        report['source_replay_capture_counts'] = dict(before=captures_before_replay,after=captures_after_replay)
+        replayed = entry('api','feedback-state',operation_id)
+        assert replayed['command']==original and replayed['receipt']==settled['receipt']
+        with case.transaction() as database:
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(target_id,)).fetchone()[0]==int(introduced)
+        report.update(operation_id=operation_id,key=original['key'],qualification=settled['qualification'],receipt=settled['receipt'],source_replay_receipt=replayed['receipt'])
         report['stages'].append('same_key_settlement')
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)

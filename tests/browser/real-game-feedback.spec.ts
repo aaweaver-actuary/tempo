@@ -4,6 +4,7 @@ import { move } from "./native-board";
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Response } from "@playwright/test";
+import { GameDetailSchema } from "../../app/features/product-api/contracts";
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const priorityReason = "Priority review · missed in a recent game";
@@ -60,13 +61,14 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
   test.skip(!scenarioPath, "Requires the owned packaged feedback fixture");
   if (!scenarioPath) throw new Error("Owned packaged feedback scenario is required");
   const scenario = JSON.parse(await readFile(scenarioPath, "utf8")) as {
-    version: number; protected_card_id: string; protected_queue_entry_id: number; target_card_id: string;
+    version: number; protected_card_id: string; protected_queue_entry_id: number; target_card_id: string; introduced: boolean;
   };
   expect(scenario.version).toBe(1);
   const directory = dirname(scenarioPath);
   const reviews: Array<{ card_id: string; identity: string; body: Record<string, unknown>;
     response: Record<string, unknown>; replay: Record<string, unknown> }> = [];
   const refreshRequests: Array<Record<string, unknown>> = [];
+  const gameReviews: Array<Record<string, unknown>> = [];
   const network: Array<{ sequence: number; kind: string; status: number; url: string; body: unknown }> = [];
   const consoleErrors: string[] = [], pageErrors: string[] = [];
   const pending = new Set<Promise<void>>();
@@ -93,9 +95,11 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
     await rename(temporary, path);
   }
   async function providerReady(stage: string) {
+    let ready: Record<string, unknown> | undefined;
     await expect.poll(async () => {
       try {
-        const value = JSON.parse(await readFile(join(directory, "provider-ready.json"), "utf8"));
+        const value = JSON.parse(await readFile(join(directory, "provider-ready.json"), "utf8")) as Record<string, unknown>;
+        ready = value;
         if (value.stage === "abort") throw new Error("Owned provider fixture aborted");
         return value.stage;
       } catch (error) {
@@ -103,6 +107,36 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
         throw error;
       }
     }, { timeout: 45_000 }).toBe(stage);
+    return ready!;
+  }
+  async function inspectGameReview(gameId: string, progress: "issued" | "settled", reload = false) {
+    const detailResponse = page.waitForResponse(response => response.request().method() === "GET"
+      && new URL(response.url()).pathname === `/api/product/game-review/games/lichess/${encodeURIComponent(gameId)}`);
+    if (reload) await page.reload();
+    await page.getByRole("button", { name: "Games", exact: true }).first().click();
+    await page.getByRole("button", { name: new RegExp(`Lichess · ${gameId}`) }).click();
+    const response = await detailResponse;
+    expect(response.status()).toBe(200);
+    const detail = GameDetailSchema.parse(await response.json());
+    expect(detail.game_id).toBe(gameId);
+    expect(detail.first_departure?.status).toBe("own_actionable");
+    expect(detail.first_departure?.ply).toBe(1);
+    expect(detail.first_departure?.decision?.presentation_id).toBe(scenario.target_card_id);
+    const primary = page.getByTestId("first-departure-summary");
+    await expect(primary).toHaveAttribute("data-status", "own_actionable");
+    await expect(primary).toHaveAttribute("data-progress-stage", progress);
+    await expect(primary.getByRole("heading", { name: "Your first repertoire departure" })).toBeVisible();
+    await expect(primary).toContainText("d4");
+    await expect(primary).toContainText("e4");
+    await expect(primary).toContainText(scenario.target_card_id);
+    await expect(primary).toContainText(scenario.introduced ? "Again applied" : "Canonical first introduction applied");
+    const gameBoard = page.getByRole("group", { name: "Original game board, ply 0", exact: true });
+    await expect(gameBoard).toHaveAttribute("data-fen", detail.starting_fen);
+    const observation = { detail, board_fen: await gameBoard.getAttribute("data-fen"),
+      progress_stage: await primary.getAttribute("data-progress-stage") };
+    gameReviews.push(observation);
+    await page.getByRole("button", { name: "Train", exact: true }).first().click();
+    return observation;
   }
   async function confirmed(status: number, value: Record<string, unknown>) {
     expect([200, 202]).toContain(status);
@@ -162,18 +196,28 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
     const observed = [...network].sort((left, right) => left.sequence - right.sequence);
     const declined = observed.find(item => item.kind === "queue" && item.status === 503
       && (item.body as { detail?: { code?: string } }).detail?.code === "study_feedback_preparation_pending");
-    expect(declined, "Actual queue declined new authority while local feedback was pending").toBeDefined();
-    const prepared = observed.find(item => item.kind === "prepare" && item.sequence > declined!.sequence
+    if (!scenario.introduced)
+      expect(declined, "Unseen local feedback requires explicit normal preparation").toBeDefined();
+    const prepared = declined && observed.find(item => item.kind === "prepare" && item.sequence > declined.sequence
       && [200, 202].includes(item.status));
-    expect(prepared, "Actual browser submitted the explicit preparation command").toBeDefined();
-    const issued = observed.find(item => item.kind === "queue" && item.status === 200 && item.sequence > prepared!.sequence
+    if (declined)
+      expect(prepared, "Actual browser submitted the explicit preparation command").toBeDefined();
+    const issued = observed.find(item => item.kind === "queue" && item.status === 200
+      && (!prepared || item.sequence > prepared.sequence)
       && (item.body as { cards?: Array<{ id: string }> }).cards?.[0]?.id === scenario.target_card_id);
     expect(issued, "Browser reread and displayed the urgent target from the real queue").toBeDefined();
     const targetEntry = Number(await page.locator("#train").getAttribute("data-queue-entry-id"));
     expect(targetEntry).toBe((issued!.body as { cards: Array<{ queue_entry_id: number }> }).cards[0].queue_entry_id);
     const targetFen = await board.getAttribute("data-fen");
     expect(targetFen).toBeTruthy();
-    await browserReady({ stage: "target", target_entry_id: targetEntry, target_fen: targetFen, protected_review: protectedReview });
+    await browserReady({ stage: "inspect", target_entry_id: targetEntry });
+    const inspection = await providerReady("inspect");
+    const gameId = String(inspection.game_id);
+    const inspected = await inspectGameReview(gameId, "issued");
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(targetEntry));
+    await expect(board).toHaveAttribute("data-fen", targetFen!);
+    await browserReady({ stage: "target", target_entry_id: targetEntry, target_fen: targetFen,
+      protected_review: protectedReview, game_review: inspected });
     await providerReady("request-refresh");
     const requestedRefresh = await page.evaluate(async () => {
       const current = await fetch("/api/settings");
@@ -206,12 +250,16 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
       await expect(board).toHaveAttribute("data-input-enabled", "true");
     }
     expect(reviews.some(review => review.card_id === scenario.target_card_id && review.body.guided === false)).toBe(true);
+    // Reload through the actual screen/API after the genuine saved attempt.
+    // It must retain the same source/effect and show settled owner evidence.
+    const completedDetail = await inspectGameReview(gameId, "settled", true);
+    expect(completedDetail.detail.first_departure).toEqual(inspected.detail.first_departure);
     expect(pageErrors).toEqual([]);
-    await browserReady({ stage: "complete", reviews, target_first_entry_id: targetEntry });
+    await browserReady({ stage: "complete", reviews, target_first_entry_id: targetEntry, game_review: completedDetail });
   } finally {
     await Promise.all([...pending]);
     await testInfo.attach("actual-browser-correspondence", { contentType: "application/json",
-      body: JSON.stringify({ scenario, reviews, refresh_requests: refreshRequests, network,
+      body: JSON.stringify({ scenario, reviews, refresh_requests: refreshRequests, game_reviews: gameReviews, network,
         console_errors: consoleErrors, page_errors: pageErrors }) });
   }
 });
