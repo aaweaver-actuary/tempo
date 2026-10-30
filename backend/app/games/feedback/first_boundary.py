@@ -7,6 +7,7 @@ introduction chronology to decide authored membership or a physical target.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from collections.abc import Iterable
 
 from tempo_game_classification import resolve_equivalent_mapping
@@ -221,14 +222,21 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
         if any(len(values) > 1 for values in own_responses.values()):
             return result("own_unmapped", position=position, expected=expected, routes=facts,
                           diagnostic="conflicting_authored_own_response")
-        mappings = {}
+        mappings, mapping_indexes = {}, {}
         missing_occurrence = False
         for index, ply in candidates:
             snapshot, route, _, _ = routes[index]
-            applicable = [item for item in snapshot.decision_presentations
-                if (item.repertoire_id, item.repertoire_revision, item.position_key) == (
-                    route.repertoire_id, snapshot.membership.revision, position["comparison_key"])
-                and (item.route_id is None or (item.route_id, item.route_ply) == (route.route_id, ply))]
+            if id(snapshot) not in mapping_indexes:
+                by_position = defaultdict(list)
+                for item in snapshot.decision_presentations:
+                    by_position[item.repertoire_id, item.repertoire_revision, item.position_key].append(item)
+                mapping_indexes[id(snapshot)] = by_position
+            same_position = mapping_indexes[id(snapshot)].get((
+                route.repertoire_id, snapshot.membership.revision, position['comparison_key']), ())
+            # Retain every competing global and exact occurrence. This indexes
+            # the same complete facts; it never narrows the selected source.
+            applicable = [item for item in same_position
+                if item.route_id is None or (item.route_id, item.route_ply) == (route.route_id, ply)]
             missing_occurrence = missing_occurrence or not applicable
             for item in applicable:
                 mappings[item.model_dump_json()] = item

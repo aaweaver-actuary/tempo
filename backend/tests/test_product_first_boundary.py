@@ -215,6 +215,27 @@ def test_selection_is_stable_under_scope_order_aliases_and_reimport():
     assert (current.model_dump(), captured.model_dump()) == before
 
 
+@pytest.mark.parametrize('competing', [False, True])
+@pytest.mark.parametrize('reversed_order', [False, True])
+def test_first_boundary_keeps_global_and_exact_occurrence_targets_in_same_position(competing, reversed_order):
+    captured = snapshot()
+    exact = captured.decision_presentations[0]
+    global_target = exact.model_copy(update={'route_id': None, 'route_ply': None,
+        **({'presentation_id': 'competing-physical-card'} if competing else {})})
+    mappings = (exact, global_target, *captured.decision_presentations[1:])
+    if reversed_order:
+        mappings = tuple(reversed(mappings))
+    mixed = captured.model_copy(update={'decision_presentations': mappings})
+    before = mixed.model_dump(mode='json')
+    actual = select(game(), mixed)
+    if competing:
+        assert actual.status == 'own_unmapped' and actual.decision is None
+        assert actual.diagnostic == 'missing_or_ambiguous_physical_target'
+    else:
+        assert actual == select(game(), captured)
+    assert mixed.model_dump(mode='json') == before
+
+
 @pytest.mark.parametrize("historical", ["boolean", "timestamp"])
 def test_alias_chronology_does_not_block_current_physical_target(historical):
     from test_product_game_findings import equivalent_routes, record, normalize_record
