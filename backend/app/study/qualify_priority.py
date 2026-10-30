@@ -30,6 +30,8 @@ REQUIRED = (
     "backend/tests/test_product_delivery_qualification.py::test_native_semantic_qualification_spends_fair_turn_without_transport_attempt",
     "backend/tests/test_product_delivery_qualification.py::test_native_controls_win_after_qualification_and_delayed_ack",
     "backend/tests/test_product_feedback_release.py",
+    "backend/tests/test_queue_randomization_feedback_parity.py",
+    "backend/tests/test_queue_refresh_read_database_split.py::test_feedback_priority_paths_survive_bounded_sql_translation",
     "backend/tests/test_study_attempt_issuance_postgres.py",
     "backend/tests/test_prepared_review_continuation.py::test_prepared_control_precedes_pending_study_work_without_applying_during_preparation",
     "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[False-fresh]",

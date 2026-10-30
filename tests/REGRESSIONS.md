@@ -6076,3 +6076,14 @@ condition. A new source command keeps its authored A spelling; the independently
 qualified witness and actual Study consequence use the owner-resolved current B.
 Both variants keep the original logical key/bytes/determination and settle once.
 The superseded-card variants remain separate required cases.
+
+`test_native_qualified_unseen_queue_randomization_bounded_and_writer_facts_match`
+compares the actual prepared and borrowed-writer presentation facts after a
+qualified canonical introduction and genuine issuance. It requires one successful
+publication with every existing guard intact. The adjacent
+`test_native_actual_join_target_keeps_bounded_and_native_owed_urgency` uses an
+earned owner join whose current physical target differs from the immutable
+command, and compares both owed-target and ready-urgency readers.
+`test_feedback_priority_paths_survive_bounded_sql_translation` keeps every nested
+JSON key and the scalar SQL-NULL fallback through the actual compatibility
+translator; truncating the ready-priority path must fail the regression.
