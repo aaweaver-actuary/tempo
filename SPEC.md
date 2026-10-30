@@ -34,15 +34,25 @@ The first useful feature must not depend on completing an independent Learning r
 
 ## 3. Game feedback
 
-### Collection-first release checkpoint (Task G, October 29)
+### Historical collection-first checkpoint and current feedback delivery
 
-The selected release collects explicitly configured games continuously and retains
+The October 29 collection-only release collects explicitly configured games continuously and retains
 honest per-repertoire deviation evidence. Automatic Study delivery stays disabled;
 original pending commands remain durable and unattempted. Missing comparisons are
 unresolved until a later reconciliation obtains the repertoire source. A bounded
 collection-only proof and inactive installation do not establish Study priority or
 settlement acceptance. #594/#595, engines, coaching, ranking and new UI are later
-work. Live collection requires Andy's separate explicit switch-on instruction.
+work at that checkpoint. Live collection requires Andy's explicit switch-on instruction.
+
+The October 30 assignment advances #624 through implementation, packaged proof,
+installation and authorized feedback activation under G01–G04 below. Preserve all
+saved provider/repertoire scope and Study history. The existing Game Review screen
+shows the retained global first departure, its pre-move position, expected/played
+responses and actual Study progress. Per-repertoire findings remain diagnostics.
+Missing currentness evidence is explicitly unknown. Corrected scope may hold an
+obsolete original effect while recording a different legitimate occurrence;
+unchanged games remain inspectable and original effect clocks/history survive.
+Collection-only remains a supported fallback which stops new Study delivery.
 
 The [collection operator](scripts/README.md#games-collection-operator) reports
 installed identity and missing inputs before enabling only its own worker.

@@ -6048,6 +6048,42 @@ the two declared preparation value/port exports.
 
 #624's assembled owner regressions now include:
 
+- `test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock`
+  in `backend/tests/test_product_delivery_qualification.py` keeps unchanged games
+  inspectable through direct, covered and unresolved scope changes, holds the old
+  false effect, emits the legitimate later occurrence and preserves each clock.
+- `test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope`
+  keeps the supporting tenth repertoire in Study preparation and rejects empty
+  or duplicate publication scope.
+- `test_game_detail_authoritative_selection_shared_round_trip`,
+  `test_game_detail_legacy_omissions_remain_unknown_not_covered` and
+  `test_game_detail_rejects_selection_from_contradictory_original_history` in the
+  Python contract suite and corresponding TypeScript `product-contracts` cases
+  share seven-status fixtures while preserving provider/canonical revision domains.
+- `test_game_review_http_returns_retained_global_boundary_independent_of_diagnostic_filter`,
+  `test_game_review_legacy_empty_findings_remain_unknown_without_a_recorded_selection`,
+  `test_game_review_rejects_selection_bound_to_a_different_canonical_source`,
+  `test_game_review_preserves_mixed_receipt_stages_and_original_effect_across_target_remap`
+  and `test_game_review_does_not_associate_same_card_receipt_from_an_unproved_original_source`
+  in `backend/tests/test_product_game_review_receipts.py` cover read-only global
+  projection and original-effect receipt correspondence.
+- `focuses the retained global departure over an earlier irrelevant diagnostic and uses its exact original receipt`,
+  `keeps absent selection and empty diagnostics unknown and opens the normal initial board`,
+  `uses the original Black non-initial FEN for move number, actor and pre-move board`
+  and `shows actual application, issuance and genuine settlement separately and follows an original effect onto a remapped target`
+  in `tests/unit/product-game-review.test.tsx` cover the primary answer and board.
+  Its remap cases require current target/revision/fence evidence instead of
+  treating historical first service as issuance of the current target.
+- `feedback accepts the exact installer no-ci receipt while preserving activation guards`
+  in `tests/runner/game-review-collection.test.mjs` accepts the explicitly approved
+  managed installer receipt without inventing successful GitHub Actions evidence.
+- `test_packaged_feedback_source_reaches_real_study_and_same_key_settlement[unseen]`
+  and `[introduced]` in `database/tests/games_collection/test_packaged_collection.py`
+  use the same role-separated provider/browser runtime for actual introduction
+  versus Again, fresh issuance, natural and settings refresh, real save/replay,
+  Game Review inspection, settlement and completed retained reconciliation.
+  Syntax/collection alone do not establish their execution.
+
 - `test_native_root_observes_source_and_applies_one_unit_only_after_receipt_fence`
   traverses the registered pure source preparation and same borrowed writer. It
   forbids filesystem/new-connection work in the writer and contains a missing
