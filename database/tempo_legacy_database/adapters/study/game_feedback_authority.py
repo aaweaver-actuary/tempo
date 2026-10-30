@@ -55,6 +55,9 @@ class CurrentOwnerDecisions:
         self.proof = LegacyScopedCatalogueProof.model_validate(source['catalogue_scope'])
         self.snapshot = RepertoireSnapshot.model_validate_json(snapshot.model_dump_json())
         self._prepared_encounter = None
+        self._qualified = None
+        self._qualified_captures = ()
+        self._qualification_fence = None
         _require(source['authority'] == source['observed_after']
                  and snapshot.membership.digest == source['export_digest']
                  and snapshot.membership.source_revision == fingerprint(source['authority'])
@@ -80,6 +83,134 @@ class CurrentOwnerDecisions:
         self._validate_executable(command, cards[0], priority_only=True)
         self._prepared_encounter = command.model_dump_json()
         return self
+
+    def prepare_qualified(self, command, qualification, *, qualified_publications,
+                          qualification_fence, game, select_first_boundary):
+        """Recompute first-boundary authority on trusted closed-read owner facts.
+
+        The selector is injected by composition through its public pure port.
+        This owner never imports an optional Games runtime, trusts a producer
+        boolean, or replays chess while holding the short writer transaction.
+        """
+        _require(self.database is None and qualification.matches(command),
+                 'first_departure_preparation_requires_closed_owner_reads')
+        _require(callable(qualification_fence) and callable(select_first_boundary),
+                 'first_departure_current_owner_capability_required')
+        from app.repertoire import project_published_repertoire
+        publications = tuple(json.loads(json.dumps(facts)) for facts in qualified_publications)
+        _require(0 < len(publications) <= 8
+                 and len({item['repertoire']['id'] for item in publications}) == len(publications),
+                 'first_departure_selected_scope_unproved')
+        snapshots = tuple(project_published_repertoire(facts) for facts in publications)
+        raw = self.source['game']
+        _require(game.workspace_id == self.authority.workspace_id
+                 and game.game_id == raw['id'] and game.source_digest == fingerprint(raw)
+                 and game.starting_fen == raw['start_fen']
+                 and tuple(game.moves) == tuple(json.loads(raw['moves_json']))
+                 and game.learner_color == raw['color'] and game.played_at == raw['played_at'],
+                 'first_departure_canonical_source_unproved')
+        selection = select_first_boundary(game, snapshots=snapshots,
+            source=qualification.selection.source,
+            selected_repertoire_ids=tuple(item['repertoire']['id'] for item in publications))
+        _require(selection == qualification.selection, 'first_departure_selection_changed')
+        relevant = {item.repertoire_id for item in selection.selected_scope}
+        _require(relevant == {facts['repertoire']['id'] for facts, snapshot in zip(publications, snapshots)
+                              if snapshot.learner_color == game.learner_color},
+                 'first_departure_incomplete_relevant_scope')
+        # Keep every configured publication, including proven opposite-color
+        # exclusions. Its source/color cannot change unnoticed before intake.
+        self._qualified_captures = tuple(item['repertoire'] for item in publications)
+        self._qualification_fence = qualification_fence
+        self._qualified = (command.model_dump_json(), qualification.model_dump_json())
+        if hasattr(command, 'decision'):
+            self.prepare_encounter(command)
+        else:
+            cards = [row for row in self.source['tables']['cards'] if row['id'] == command.finding.presentation_id]
+            _require(len(cards) == 1, 'current_owner_card_changed')
+            self._validate_executable(command, cards[0], priority_only=False)
+        return self
+
+    def current_qualified(self, command, qualification):
+        _require(self._qualified == (command.model_dump_json(), qualification.model_dump_json()),
+                 'first_departure_prepared_authority_required')
+        self._qualification_fence(self.database, command, qualification)
+        for header in sorted(self._qualified_captures, key=lambda item:item['id']):
+            self._fence_selected_publication(header)
+        # The legacy lapse becomes only an in-memory factual view. Its stored
+        # bytes, payload digest, occurrence and logical identity stay original.
+        if not hasattr(command, 'decision'):
+            from app.contracts.product_v02.learning import GameEncounter
+            command = GameEncounter(key=command.key, source=qualification.selection.source,
+                decision=qualification.selection.decision, expected_uci=command.finding.expected_uci[0],
+                played_uci=command.finding.played_uci, observation='missed',
+                detected_at=command.detected_at, occurred_at=command.occurred_at,
+                payload_digest=command.payload_digest)
+        return self._current(command, priority_only=True)
+
+    def _fence_selected_publication(self, expected):
+        """Fence the complete prepared read with source/publication ownership.
+
+        Source generation covers inserted/deleted/authored route changes; the
+        shared graph lock excludes a concurrent publication replacement. Exact
+        physical authority is additionally checked by the existing target fence.
+        """
+        database = self.database
+        _require(database.execute_native(
+            "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+            ('tempo:opening-graph:' + expected['id'],)).fetchone()[0], 'current_owner_graph_busy')
+        current = database.execute_native("""SELECT repertoire.id,repertoire.scope_source_revision,
+            repertoire.canonical_prefix_revision,repertoire.canonical_prefix_moves_json,
+            publication.generation graph_generation,publication.state graph_state,identity.workspace_id
+            FROM repertoires repertoire
+            JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
+            CROSS JOIN legacy_learning_identity identity
+            WHERE repertoire.id=%s AND identity.id=1
+            FOR SHARE OF repertoire,publication,identity SKIP LOCKED""", (expected['id'],)).fetchone()
+        fields = ('id','scope_source_revision','canonical_prefix_revision','canonical_prefix_moves_json',
+                  'graph_generation','graph_state','workspace_id')
+        _require(current is not None and all(current[field] == expected[field] for field in fields),
+                 'first_departure_selected_publication_changed')
+
+    def _fence_publication(self):
+        database, token, proof = self.database, self.authority, self.proof
+        _require(not database.read_only and database.raw.info.transaction_status.name == 'INTRANS',
+                 'borrowed_owner_writer_transaction_required')
+        held = database.execute_native(
+            "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+            ('tempo:opening-graph:' + token.repertoire_id,)).fetchone()[0]
+        _require(held, 'current_owner_graph_busy')
+        header = database.execute_native("""SELECT repertoire.scope_source_revision,
+            repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
+            publication.generation graph_generation,publication.state graph_state,
+            identity.target_id,identity.workspace_id,
+            integrity.status integrity_status,integrity.scan_status,integrity.scan_generation,
+            integrity.checked_at,integrity.scan_completed_sources,integrity.scan_total_sources,integrity.scan_error,
+            graph.generation graph_task_generation,graph.state graph_task_state,
+            scan.id scan_task_id,scan.generation scan_task_generation,scan.state scan_task_state,scan.payload_json
+            FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
+            CROSS JOIN legacy_learning_identity identity
+            JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
+            JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
+            JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=repertoire.id
+            JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=repertoire.id
+            WHERE repertoire.id=%s AND scope.id=1 AND identity.id=1
+            FOR SHARE OF repertoire,scope,identity,publication,integrity,graph,scan SKIP LOCKED""",
+            (token.repertoire_id,)).fetchone()
+        _require(header is not None, 'current_owner_authority_busy_or_missing')
+        fields = ('scope_source_revision','canonical_prefix_revision','catalogue_generation',
+                  'graph_generation','graph_state','target_id','workspace_id')
+        _require(all(header[k] == getattr(token,k) for k in fields), 'current_owner_revision_changed')
+        try:
+            certificate = LegacyIntegrityCertificate.model_validate(
+                {k:header[k] for k in LegacyIntegrityCertificate.model_fields})
+        except ValueError as error:
+            raise CurrentDecisionUnavailable('current_owner_integrity_unavailable') from error
+        payload = json.loads(header['payload_json'])
+        _require(certificate == proof.integrity_certificate
+                 and certificate.graph_task_generation == token.graph_generation
+                 and payload.get('repertoire_id') == token.repertoire_id
+                 and payload.get('graph_generation') == token.graph_generation,
+                 'current_owner_integrity_changed')
 
     def _validate_executable(self, command, actual, *, priority_only):
         key, proof, source = command.key, self.proof, self.source
@@ -129,44 +260,9 @@ class CurrentOwnerDecisions:
                  and proof.scope.moves == json.loads(source['game']['moves_json'])
                  and proof.scope.moves[ply] == played_uci,
                  'retained_owner_occurrence_unproved')
-        # Exact card locks belong to intake; refresh additionally owns the day. Never wait backwards
-        # for graph/source locks; busy/missing authority grants no mutation.
-        held = database.execute_native(
-            "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
-            ('tempo:opening-graph:' + token.repertoire_id,)).fetchone()[0]
-        _require(held, 'current_owner_graph_busy')
-        header = database.execute_native("""SELECT repertoire.scope_source_revision,
-            repertoire.canonical_prefix_revision,scope.generation catalogue_generation,
-            publication.generation graph_generation,publication.state graph_state,
-            identity.target_id,identity.workspace_id,
-            integrity.status integrity_status,integrity.scan_status,integrity.scan_generation,
-            integrity.checked_at,integrity.scan_completed_sources,integrity.scan_total_sources,integrity.scan_error,
-            graph.generation graph_task_generation,graph.state graph_task_state,
-            scan.id scan_task_id,scan.generation scan_task_generation,scan.state scan_task_state,scan.payload_json
-            FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
-            CROSS JOIN legacy_learning_identity identity
-            JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
-            JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
-            JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=repertoire.id
-            JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=repertoire.id
-            WHERE repertoire.id=%s AND scope.id=1 AND identity.id=1
-            FOR SHARE OF repertoire,scope,identity,publication,integrity,graph,scan SKIP LOCKED""",
-            (token.repertoire_id,)).fetchone()
-        _require(header is not None, 'current_owner_authority_busy_or_missing')
-        fields = ('scope_source_revision','canonical_prefix_revision','catalogue_generation',
-                  'graph_generation','graph_state','target_id','workspace_id')
-        _require(all(header[k] == getattr(token,k) for k in fields), 'current_owner_revision_changed')
-        certificate = {k:header[k] for k in LegacyIntegrityCertificate.model_fields}
-        try:
-            current_certificate = LegacyIntegrityCertificate.model_validate(certificate)
-        except ValueError as error:
-            raise CurrentDecisionUnavailable('current_owner_integrity_unavailable') from error
-        payload = json.loads(header['payload_json'])
-        _require(current_certificate == proof.integrity_certificate
-                 and current_certificate.graph_task_generation == token.graph_generation
-                 and payload.get('repertoire_id') == token.repertoire_id
-                 and payload.get('graph_generation') == token.graph_generation,
-                 'current_owner_integrity_changed')
+        # Nonblocking public source fences; complete selected scope was prepared
+        # outside the writer and qualified intake fences every relevant member.
+        self._fence_publication()
         # Source scope generation fences inserted/deleted candidate routes; exact
         # retained route/card/graph/membership rows are additionally rechecked.
         lines = source['tables']['repertoire_lines']
@@ -265,11 +361,15 @@ def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, c
         clock=clock, light_first_interval_days=light_first_interval_days)
 
 
-def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot, clock):
+def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot, clock,
+                                   prepared_decisions=None, qualification=None):
     """Internal intake factory. No queue policy or mutation capability."""
     from app.study.encounter_feedback import EncounterFeedback
-    return EncounterFeedback(PostgresGameFeedbackStore(database),
-        CurrentOwnerDecisions(database,retained_owner_capture=retained_owner_capture,snapshot=snapshot),
+    decisions = (prepared_decisions.bind(database) if prepared_decisions is not None else
+                 CurrentOwnerDecisions(database,retained_owner_capture=retained_owner_capture,snapshot=snapshot))
+    if qualification is not None:
+        _require(prepared_decisions is not None, 'first_departure_prepared_authority_required')
+    return EncounterFeedback(PostgresGameFeedbackStore(database), decisions,
         clock=clock,introductions=None,introduction_policy=None)
 
 
