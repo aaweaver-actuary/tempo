@@ -14,6 +14,29 @@ def held_delivery(delivery, reason, *, retry_at, retryable=True):
         "error": reason, "next_attempt_at": retry_at})
 
 
+def selection_supports_original(selected,command):
+    """Check frozen occurrence facts for reanalysis without minting a witness.
+
+    Physical presentation/revision can be resolved by Study; changed authored
+    response, position, source or play is a different factual boundary.
+    """
+    if isinstance(command,GameEncounter):
+        if command.observation != "missed":
+            return False
+        source,decision,expected,played = command.source,command.decision,(command.expected_uci,),command.played_uci
+    else:
+        decision = command.finding
+        source = IntroductionGameScope(provider=decision.provider,game_id=decision.game_id,
+            source_revision=decision.source_revision,source_digest=decision.source_digest)
+        expected,played = decision.expected_uci,decision.played_uci
+    key = command.key
+    return bool(selected.status == "own_actionable" and selected.decision is not None
+        and selected.source == source and selected.workspace_id == key.workspace_id
+        and selected.ply == key.occurrence_ply and selected.decision.decision_id == key.decision_id == decision.decision_id
+        and selected.position_key == decision.position_key and selected.expected_uci == expected
+        and selected.played_uci == played)
+
+
 def acknowledge_qualified_delivery(delivery, receipt):
     """Validate the real owner receipt without changing the frozen command."""
     command, qualification = delivery.command, delivery.qualification

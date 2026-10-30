@@ -192,6 +192,27 @@ def test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preser
     assert source.effects == (original.command,) and h.store.delivery(original.operation_id).receipt == original.receipt
 
 
+def test_changed_authored_response_same_logical_id_controls_original_accepted_effect():
+    from test_product_feedback_jobs import encounter_harness,spec
+    h = encounter_harness()
+    h.store.enqueue(spec()); assert h.runner.run_once() == "page"
+    assert h.runner.run_once() == "delivery"
+    original, = h.store.deliveries.values()
+    authored = snapshot(("c2c4",),repertoire="white",route_id="changed-response")
+    changed = authored.decision_presentations[0].model_copy(update={
+        "decision_id":original.command.key.decision_id,"presentation_id":original.command.decision.presentation_id,
+        "presentation_revision":2})
+    authored = authored.model_copy(update={"decision_presentations":(changed,)})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _:authored)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args,**kwargs:())
+    h.store.enqueue(spec("changed-authored")); assert FeedbackRunner(h.coordinator).run_once() == "page"
+    control, = [item for item in h.store.deliveries.values() if item.control is not None]
+    source, = h.store.sources.values()
+    assert source.first_departure.status == "own_actionable" and source.first_departure.expected_uci == ("c2c4",)
+    assert control.command.key == original.command.key and control.control.action == "hold"
+    assert h.store.delivery(original.operation_id).command == original.command
+
+
 def test_unqualified_concrete_game_review_fallback_cannot_call_legacy_scheduler():
     from app.product_composition.game_review import create_game_review
     from app.games.feedback.review import ReviewUnavailable

@@ -13,7 +13,7 @@ from app.contracts.product_v02.repertoire import IntroductionGameScope, Repertoi
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier,
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
 from .first_boundary import select_first_boundary
-from .qualification import acknowledge_qualified_delivery
+from .qualification import acknowledge_qualified_delivery, selection_supports_original
 
 
 def stable_id(*parts: object) -> str:
@@ -285,9 +285,7 @@ class Coordinator:
                 if conclusive:
                     # Global positive proof may disqualify an old accepted
                     # effect even when it emits no replacement encounter.
-                    still_supported = (first_departure.status == "own_actionable"
-                        and first_departure.ply == effect.key.occurrence_ply
-                        and first_departure.decision.decision_id == effect.key.decision_id)
+                    still_supported = selection_supports_original(first_departure,effect)
                 elif isinstance(effect, GameLapse):
                     # Missing/ambiguous comparison is a hold, not positive
                     # disqualification of an already accepted original lapse.

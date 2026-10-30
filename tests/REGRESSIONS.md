@@ -5978,6 +5978,9 @@ the retained-qualification fixture; their old bytes are never rewritten.
   accepted Study preparation.
 - `test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preserves_history`
   distinguishes positive disqualification from missing evidence.
+- `test_changed_authored_response_same_logical_id_controls_original_accepted_effect`
+  proves a stable decision identity cannot hide a changed expected response;
+  source, position and played-response correspondence remain required.
 - `test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receipt`
   and its pure nonselected-original rejection guard the existing public retry
   endpoint. The fallback receiver rejects an unavailable qualified capability.
