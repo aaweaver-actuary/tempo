@@ -1,7 +1,8 @@
 import { holdActiveStudyRequest } from "../lib/study-priority";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
-import { confirmOperationResponse, PendingOperationError } from "../lib/operation-status";
+import { PendingOperationError } from "../lib/operation-status";
+import { NextCardPreparationDeferredError, prepareNextCard } from "../lib/next-card-preparation";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { isIPhoneHomeScreen, usesLocalApi } from "../utils/local";
 import { learningDayKey as localDayKey } from "../lib/study-connection";
@@ -203,9 +204,9 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
   });
 }
 
-async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayload> {
+async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string, retryPreparation: boolean): Promise<QueuePayload> {
   let failedRequests = 0;
-  let nextCardOperation: string | undefined;
+  let retryDeferred = retryPreparation;
   let localPriorityPending = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending);
@@ -245,16 +246,12 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
       // The server has declined new attempt authority. Existing work and saved
       // results are intact. Advance one bounded local owner unit explicitly;
       // neither a queue GET nor client-side prefetch may perform this write.
-      nextCardOperation ??= crypto.randomUUID();
+      const allowDeferredRetry = retryDeferred;
+      retryDeferred = false;
       try {
-        const prepared = await awaitQueueStage(confirmOperationResponse(await fetch(
-          `${API_URL}/api/queue/prepare-next`, { method: 'POST', signal,
-            headers: { 'Idempotency-Key': nextCardOperation } }), { signal }), signal);
-        if (!prepared.ok) throw new QueueProcessingError(`Local next-card preparation returned HTTP ${prepared.status}. Retry loading the queue.`);
-        // A complete bounded unit can leave another real obligation pending.
-        // A new unit gets a new operation identity; uncertain delivery reuses it.
-        nextCardOperation = undefined;
+        await awaitQueueStage(prepareNextCard({ progression, signal, retryDeferred: allowDeferredRetry }), signal);
       } catch (error) {
+        if (error instanceof NextCardPreparationDeferredError) throw new QueueProcessingError(error.message);
         if (!(error instanceof PendingOperationError)) throw error;
       }
       if (attempt === 19) throw new QueueProcessingError('Local Study priority work is still preparing. Retry loading the queue.');
@@ -276,7 +273,7 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
 export async function fetchAndInitializeQueue(
   advance = false,
   options: { preparePhoneQueue?: boolean; replaySavedReviews?: boolean; preservePreparedAttempt?: boolean;
-    timeoutMs?: number; signal?: AbortSignal; expectedAttempt?: { attemptId?: string; generation: number } } = {},
+    timeoutMs?: number; signal?: AbortSignal; retryPreparation?: boolean; expectedAttempt?: { attemptId?: string; generation: number } } = {},
 ): Promise<QueueInitializationResult> {
   if (!usesLocalApi()) return "superseded";
   const generation = ++requestGeneration;
@@ -393,7 +390,8 @@ export async function fetchAndInitializeQueue(
       });
     let raw: QueuePayload;
     try {
-      raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal), controller.signal);
+      raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal, options.expectedAttempt?.attemptId ??
+        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true), controller.signal);
     } catch (error) {
       queueRequestFailed = !(error instanceof QueueProcessingError);
       failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";

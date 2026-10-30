@@ -65,3 +65,36 @@ remain inspectable. The exact repertoire-existence query used by retained
 segmentation now belongs to [its segmentation projection](opening_advisory/segmentation.py);
 it still borrows the caller's connection and has no new writer or commit authority.
 Ordinary Study's saved-opportunity eligibility SQL and stored schema remain intact.
+
+## Game-bound publication reads
+
+[product_snapshot.py](product_snapshot.py) retains the original `read_repertoire`
+single-statement full publication read. The game-bound contract adds
+`read_authored_scope(database, repertoire_id)` for every authored line and the
+original full-source row/count/byte refusals, followed by
+`read_candidate_bindings(database, repertoire_id=..., expected_header=...,
+route_ids=...)` for complete graph/card/membership facts of the Repertoire owner's
+derived surviving routes. Each call uses one MVCC statement on the borrowed
+connection; it owns no connection, commit, policy selector or learning effect.
+Stored FEN discovery hints do not filter candidate bindings. Graphs with missing
+physical cards remain observable. The prior removal of a graph-count ceiling
+and whole-snapshot byte cap remains effective; no graph prefix is certified.
+
+```mermaid
+flowchart LR
+  compose[Composition] --> authored[Complete authored source and source bounds]
+  authored --> owner[Repertoire legal game-bound proof]
+  owner --> candidates[Complete physical facts for derived route IDs]
+  candidates --> prepared[Repertoire-owned prepared capability]
+  prepared --> learning[Study independently selects and fences]
+  learning --> freshness[Same candidate relation in short writer]
+  freshness --> target[Existing selected-target locks and atomic effect]
+```
+
+`fence_candidate_bindings` runs after the existing selected-publication header
+checks and shared graph locks, then compares the complete current candidate
+relation with the prepared facts. This MVCC read is its freshness linearization
+point. Later independent integrity or competing-card commits may order after
+acceptance; no absent global phantom lock is claimed. Existing selected-target
+currentness/lineage locks and atomic Study effects remain mandatory. No new
+all-card lock set, read deadline, table, field, index or migration is introduced.

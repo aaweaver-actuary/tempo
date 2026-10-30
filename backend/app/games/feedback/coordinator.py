@@ -1,7 +1,6 @@
 """One bounded import page or owner-command delivery. No infrastructure imports."""
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 from typing import Iterable, Mapping
@@ -11,13 +10,10 @@ from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterR
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier, FirstBoundaryPreparation,
-                    GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
+                    GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState,
+                    delivery_for, source_revision, stable_id)
 from .first_boundary import select_first_boundary
 from .qualification import acknowledge_qualified_delivery, selection_supports_original
-
-
-def stable_id(*parts: object) -> str:
-    return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
 # Only explicit exclusions emitted by the current provider adapters are safe.
@@ -41,20 +37,6 @@ def _comparison_revision(snapshots: tuple[RepertoireSnapshot, ...], unavailable:
             owner[field].sort(key=lambda value: json.dumps(value, sort_keys=True))
         documents.append(json.dumps(document, sort_keys=True, separators=(",", ":")))
     return stable_id("comparison-facts-v2-first-departure", sorted(set(documents)), sorted(unavailable))
-
-
-def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
-    if isinstance(command, GameLapse):
-        return command.finding.source_revision
-    return command.source.source_revision if isinstance(command, GameEncounter) else command.source_revision
-
-
-def delivery_for(source_key: str, command: GameLapse | GameEncounter | GameEffectControl) -> Delivery:
-    kind = "lapse" if isinstance(command, GameLapse) else ("encounter" if isinstance(command, GameEncounter) else command.action)
-    return Delivery(operation_id=stable_id(kind, command.key.logical_id(), source_revision(command)), source_key=source_key,
-                    lapse=command if isinstance(command, GameLapse) else None,
-                    encounter=command if isinstance(command, GameEncounter) else None,
-                    control=command if isinstance(command, GameEffectControl) else None)
 
 
 def encounter_observation(encounter: GameEncounter) -> tuple:

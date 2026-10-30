@@ -15,6 +15,55 @@ import time
 
 import httpx
 
+# Fault injection runs the real Celery application/queues after installing one
+# bounded observation/barrier around the actual local qualification stage. No
+# owner result, receipt, source fact or runtime identity is manufactured.
+if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-background'}:
+    from celery.signals import task_prerun
+    patched = False
+
+    @task_prerun.connect(weak=False)
+    def install_preparation_observer(sender=None, args=(), **unused):
+        global patched
+        selected = (getattr(sender, 'name', '') == 'app.tasks.maintain_game_feedback'
+            or getattr(sender, 'name', '') == 'app.tasks.execute_foreground_command'
+            and len(args) > 1 and args[1] == 'queue.prepare_next')
+        if patched or not selected:
+            return
+        # Install in the executing child, inside the first relevant task's
+        # elapsed time. Preloading this owner before prefork would change the
+        # actual concurrency memory/cold-import conditions under acceptance.
+        from functools import wraps
+        import hashlib
+        from app.product_composition import provider_priority
+        original_qualified_facts = provider_priority._qualified_facts
+
+        @wraps(original_qualified_facts)
+        def observed_qualified_facts(*values, **kwargs):
+            delivery = kwargs.get('delivery')
+            if delivery is not None:
+                token = hashlib.sha256(delivery.operation_id.encode()).hexdigest()[:16]
+                print(json.dumps(dict(recovery_actual_preparer_start=token)), flush=True)
+                path = Path('/qualification/recovery-preparer-fault.json')
+                fault = json.loads(path.read_text()) if path.exists() else None
+                if fault and fault.get('delivery_operation_id') == delivery.operation_id:
+                    assert fault['kind'] == 'wait' and fault['release'] == 'recovery-preparer-release'
+                    deadline = time.monotonic() + 180
+                    while not Path('/qualification/recovery-preparer-release').exists():
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('recovery_actual_preparer_barrier_not_released')
+                        time.sleep(.02)
+            return original_qualified_facts(*values, **kwargs)
+
+        provider_priority._qualified_facts = observed_qualified_facts
+        patched = True
+
+    from app.celery_app import celery_app
+    foreground = sys.argv[1] == 'recovery-foreground'
+    celery_app.worker_main(['worker', '--queues=' + ('foreground' if foreground else 'background'),
+        '--concurrency=' + ('2' if foreground else '1'), '--prefetch-multiplier=1', '--loglevel=INFO'])
+    raise SystemExit(0)
+
 inputs = json.loads(Path('/qualification/provider.json').read_text())
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -22,6 +71,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         from urllib.parse import urlsplit, parse_qs
         url = urlsplit(self.path)
+        if inputs.get('fail_lichess') and url.path.startswith('/api/games/user/'):
+            self.send_response(503); self.end_headers(); self.wfile.write(b'controlled provider unavailable')
+            return
         if url.path.startswith('/api/games/user/'):
             query = parse_qs(url.query)
             rows = [row for row in inputs['lichess'] if int(query['since'][0]) <= row['createdAt'] < int(query['until'][0])]
@@ -68,23 +120,56 @@ try:
         feedback = sys.argv[1] == 'feedback-worker'
         from app.product_composition import game_sync_current as current
         original = current.current_provider_worker
+        actual_admission = current.current_sync_admission
+        recovery_runtime = False
         def build(**kwargs):
             runtime = original(**kwargs, clock=Clock(), transport_factory=LocalHTTP)
             if feedback:
-                print(json.dumps({'feedback_runtime_prepared': True}), flush=True)
+                print(json.dumps({'feedback_runtime_prepared': True,
+                                  'recovery_runtime_prepared': recovery_runtime}), flush=True)
             return runtime
         current.current_provider_worker = build
         current.current_sync_admission = feedback_admitted if feedback else admitted
         sys.argv = ['worker', *(['--feedback'] if feedback else ['--collect-only']), '--follow', '--overlap-seconds', '0',
             '--reconcile-interval-seconds', '600', '--once', '--max-units', '50']
         current.main()
-    elif sys.argv[1] == 'feedback-configure':
+        if feedback and Path('/qualification/recovery-lifetime').exists():
+            deadline = time.monotonic() + 600
+            while not Path('/qualification/recovery-configuration-ready').exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('recovery_fixture_configuration_not_released')
+                time.sleep(.05)
+            inputs = json.loads(Path('/qualification/provider.json').read_text())
+            recovery_runtime = True
+            @contextmanager
+            def recovery_admitted():
+                global inputs
+                deadline = time.monotonic() + 180
+                while not Path('/qualification/recovery-producer-start').exists():
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('recovery_fixture_actual_admission_not_released')
+                    time.sleep(.05)
+                inputs = json.loads(Path('/qualification/provider.json').read_text())
+                # Preserve the original production controls and resource lease.
+                # Only HTTP inputs/clock and the start barrier are synthetic.
+                with actual_admission():
+                    print(json.dumps({'recovery_actual_admission_granted': True}), flush=True)
+                    yield
+            current.current_sync_admission = recovery_admitted
+            sys.argv = ['worker', '--feedback', '--follow', '--overlap-seconds', '0',
+                '--reconcile-interval-seconds', '600', '--once', '--max-units', '8']
+            current.main()
+            print(json.dumps({'recovery_actual_worker_finished': True}), flush=True)
+    elif sys.argv[1] in {'feedback-configure', 'recovery-configure'}:
         from app.games.feedback.review import SyncConfiguration
         from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore
         connections = DedicatedGamesConnections(os.environ['TEMPO_DATABASE_WRITE_URL'])
         configuration = SyncConfiguration.model_validate_json(json.dumps(inputs['configuration']))
-        PostgresReviewStore(connections).configure(configuration, 0)
-        print(json.dumps({'configured': True, 'revision': configuration.revision}))
+        store = PostgresReviewStore(connections)
+        previous = store.configuration(configuration.workspace_id, configuration.provider) if sys.argv[1] == 'recovery-configure' else None
+        store.configure(configuration, previous.revision if previous else 0)
+        print(json.dumps({'configured': True, 'revision': configuration.revision,
+                          'selected_repertoire_count': len(configuration.repertoire_ids)}))
     elif sys.argv[1] == 'feedback-capabilities':
         from app.product_composition.game_collection_status import feedback_release_capabilities
         print(json.dumps(feedback_release_capabilities()))

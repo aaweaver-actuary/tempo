@@ -25,6 +25,29 @@ rechecks current stored rows/generations and existing completed scan facts in
 the mutation transaction, and returns no authority on missing/busy/stale facts.
 No new certificate, source migration, catalogue capture or Games call is added.
 
+Complete-publication preparation accepts the exact public Repertoire-owned
+`PreparedPublishedRepertoire` capability, or the existing raw owner mappings.
+That capability constructs its own immutable projection from detached complete
+source bytes, so Study can reuse the projection without accepting a caller's
+snapshot or readiness assertion. Study still independently reselects the full
+first-boundary scope, verifies prepared target replacements and runs every
+current source/configuration/publication/target fence in its borrowed writer.
+The capability is ephemeral and retains no connection, claim or durable state.
+
+The game-bound path additionally accepts exact Repertoire-owned
+`PreparedFirstBoundaryRepertoire` values constructed from complete authored
+source and complete candidate binding reads. It requires the exact canonical
+game, independently reselects from the original cap plus validated
+`PreparedFeedbackTarget` substitutions, and rejects a producer's altered
+mapping/qualification. After every selected publication's header/shared graph
+fence, `current_qualified` invokes the authored owner adapter's exact candidate
+relation fence, then retains the existing selected-target currentness/lineage
+fence. The candidate read is the freshness linearization point; later independent
+integrity changes may order after acceptance. No global phantom lock or all-card
+lock set is claimed. Original full-snapshot consumers remain supported.
+The affected [Repertoire view](../../../../backend/app/repertoire/README.md#repertoire-only-current-read-491--501--492-follow-on)
+records the preparation/reselection boundary.
+
 Equivalent route aliases can bind one exact approved decision/physical target.
 Only route ID/ply may differ: every other shared mapping fact, including physical
 and repertoire revision, availability and introduction/source chronology, must

@@ -361,7 +361,7 @@ def test_no_learning_sql_or_study_runtime_dependency():
                 # its import-purity guard separately proves no Study startup.
                 if module == "app.study.interfaces.game_priority":
                     assert {item.name for item in node.names} <= {
-                        "EncounterFeedbackPort", "EncounterReceipt", "GameEffectControl", "GameEffectKey",
+                        "EncounterFeedbackPort", "EncounterReceipt", "FirstDepartureWitness", "GameEffectControl", "GameEffectKey",
                         "GameEncounter", "GameLapse", "LearningFeedbackPort", "LearningReceipt"}
                     continue
                 assert not module.startswith(("app.study", "app.services", "app.main", "tempo_legacy_database", "psycopg"))

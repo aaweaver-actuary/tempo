@@ -192,9 +192,15 @@ when conflicted. No schema or stored relationship changes are introduced.
   metadata and non-size errors remain distinct ordinary errors.
 - `_mappings` lazily indexes canonical position keys once per needed authored
   route within one invocation. It retains every occurrence and still requires
-  exactly one matching executable slice. No cached boards or cross-call reuse
-  are retained; chronology, unavailable cards, conflicts and mapping identity
-  keep their existing semantics.
+  exactly one matching executable slice. Exact authored starting-FEN/move aliases
+  share detached turn/position frames within the existing source-row and total-ply
+  bounds. Once the legal authored root and ordered physical slice match, mappings
+  use those proved positions rather than replaying each card independently. The
+  physical starting position must still be valid; clocks cannot change ordinary
+  position identity. Each used physical card retains one detached root key/validity
+  pair within the existing 10,000-card bound; differing raw graph roots use the
+  existing 1,024-entry normalization cache. No cached boards or cross-call reuse are retained; chronology,
+  unavailable cards, conflicts and mapping identity keep their existing semantics.
 - Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
   read-only `repertoire_snapshot=True` connection context with no transaction
   or statement deadline, exits that context, then calls public
@@ -229,10 +235,28 @@ flowchart LR
   Published --> Consumers
   Injected["Injected owner read for pure tests"] --> Project
   Project --> Consumers["Existing immutable index / comparer / conflict owner"]
+  Closed --> Prepared["PreparedPublishedRepertoire\nowned complete source bytes + immutable projection"]
+  Prepared --> Qualify["Games qualification over the prepared snapshot"]
+  Prepared --> Study["Study independently reselects complete first-boundary scope"]
+  Study --> Fence["Existing writer source/publication/target fences"]
 ```
 
 This source diagram does not claim live adoption or deployment isolation.
 The original game-specific capture API remains separate and usable by #488.
+
+`PreparedPublishedRepertoire(facts, captured_at=None)` is the public, ephemeral
+Repertoire-owned preparation capability. Its constructor copies the complete
+source bytes and performs the published projection itself; it accepts no caller
+snapshot or readiness flag. `snapshot` is the existing deeply immutable value,
+and `publication_facts()` returns a fresh complete copy. There is no database
+record, cross-command cache, expiry policy or new authority writer.
+
+Foreground qualification passes that same capability to Study's current owner,
+which accepts its exact type, independently selects the first boundary across
+every configured publication, proves current-target replacements and preserves
+all writer source/configuration/publication/target fences. Raw owner mappings
+retain their existing projection path. Reusing the owning projection removes
+duplicate chess replay; it does not treat a producer snapshot as authority.
 
 Follow-on checks are the six `repertoire_only` / `repertoire_read_port` cases in
 `test_product_snapshot.py`, the owning file after the shared mapping-helper
@@ -245,3 +269,83 @@ read-only execution, single-statement source consistency, borrowed rollback,
 conflict visibility, SQL parameter binding and overflow refusal. It has no live
 or engine/provider dependency. #491/#501 own runtime wiring and central test
 registration; #492 owns its approval/publication transaction and callback.
+
+## Game-bound first-boundary preparation
+
+The recovery path uses public `PreparedFirstBoundaryRepertoire(facts, game=...)`
+from [feedback_scope.py](feedback_scope.py), retaining the full snapshot API
+above for its other consumers. Construction accepts the complete authored owner
+read, including full-source card/membership counts, and the exact canonical game.
+It never accepts caller-supplied execution frames or a readiness assertion.
+
+Games consumes only the declared
+[`app.repertoire.interfaces.first_boundary`](interfaces/first_boundary.py)
+surface, whose literal export list contains exactly
+`PreparedFirstBoundaryRepertoire`. This facade re-exports the same owner
+constructor; package-root and private sibling implementation imports are not
+Games consumer surfaces. Importing it starts no provider, storage, engine or
+application runtime.
+
+All applicable authored routes and their full tails are legally executed.
+Invocation-local exact prefixes and aliases share execution; no mutable Board
+survives construction. Public standard chess bitboards, color, turn, cleaned
+castling rights and legally relevant EP form a private exact in-memory identity
+equivalent to the ordinary canonical legal-EP FEN. Persisted FEN/card IDs are
+unchanged. Within each cap, game positions are rendered once; unrelated positions stay numerically
+retained and cannot manufacture a match. Every route identity, endpoint,
+same-repertoire own-response conflict and illegal tail remains available to the
+selector. Immutable projected frames are shared for exact aliases, while every
+route occurrence stays present.
+
+`with_bindings(owner_facts)` returns another immutable cap using the complete
+graph/card/membership owner read for the elected surviving route IDs. Every
+candidate graph is retained, including missing physical references; the existing
+exact graph/card/root/executable mapping law still applies. Omitting an actual
+candidate route leaves physical authority unknown. The membership digest is
+explicitly `game_bound_first_boundary_repertoire`, containing full authored
+scope, exact game and the named candidate binding read. It does not claim a full
+physical catalogue. Reusing execution requires matching exact game bytes and
+immutable membership, routes and boundaries. Supplied mapping facts remain fully
+validated; Study independently compares its own prepared selection before any
+effect.
+
+```mermaid
+flowchart LR
+  Compose["Product composition"] --> Authored["Database owner: complete authored scope"]
+  Authored --> Cap["Repertoire-owned exact-game legal execution"]
+  Selector["Games pure first-boundary selector"] --> Interface["Repertoire interfaces.first_boundary: exact immutable constructor"]
+  Interface --> Cap
+  Compose --> Selector
+  Selector --> Routes["Every surviving candidate route ID"]
+  Routes --> Read["Database owner: complete candidate binding read"]
+  Read --> Bind["Repertoire with_bindings; detached immutable facts"]
+  Bind --> Qualify["Pure qualification selection"]
+  Bind --> Study["Study independently selects original facts plus validated current target"]
+  Study --> Fence["Short writer: source/configuration/header fences then exact candidate relation"]
+  Fence --> Target["Existing target currentness and atomic learning effect"]
+```
+
+The cap opens no connection, transaction, provider or worker. Its detached
+candidate facts are re-read by the owning database adapter in Study's writer;
+an earlier graph/card/member/block/delete/absence change rejects preparation.
+Freshness linearizes at that exact relation read. No global phantom lock is
+claimed for later independent integrity changes; the existing selected-target
+locks remain mandatory.
+
+The existing 10,000-route/card/membership and 100,000-authored-ply bounds remain.
+Work is counted inside 128-node input/replay batches; elapsed stage diagnostics
+are observations, not a hard deadline or resumable durable proof. The existing
+feedback diagnostic aggregates only fixed numeric work counts/limits/intervals;
+it never logs routes, positions, source IDs, moves or owner facts. No new
+graph-count or aggregate-byte limit is added. Actual preparation service,
+background progress, full-writer duration and browser responsiveness require the
+assembled acceptance. There is no persistent proof cache or schema change.
+
+[The focused owner cases](../../tests/test_game_bound_repertoire_preparation.py)
+compare policy with the full selector, including illegal tails, conflicts,
+coverage/end, unavailable mappings, complete versus omitted candidates, exact
+EP/castling/clocks, source ownership, wrong games, read-only alias frames and
+Study's rejection of producer mapping substitution. The public facade case
+also proves literal constructor identity and a fresh import without optional
+runtime or infrastructure; the product boundary guard rejects package-root,
+private sibling, undeclared export/member and dynamic sibling access.

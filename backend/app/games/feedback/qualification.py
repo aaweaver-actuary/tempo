@@ -6,6 +6,11 @@ complete current owner snapshots; a missing scope remains a hold.
 from app.contracts.product_v02.learning import (EncounterReceipt, FirstDepartureWitness,
     GameEncounter, LearningReceipt)
 from app.contracts.product_v02.repertoire import IntroductionGameScope
+from .ports import delivery_for
+from .first_boundary import select_first_boundary
+
+__all__ = ("acknowledge_control_delivery", "acknowledge_qualified_delivery", "delivery_for",
+    "held_delivery", "qualify_delivery", "select_first_boundary", "selection_supports_original")
 
 
 def held_delivery(delivery, reason, *, retry_at, retryable=True):

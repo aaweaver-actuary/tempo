@@ -6,6 +6,8 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 from __future__ import annotations
 
 from collections import Counter
+from functools import lru_cache
+from dataclasses import dataclass
 from types import MappingProxyType
 from datetime import datetime, timezone
 import json
@@ -13,6 +15,7 @@ from typing import Callable, Mapping
 
 import chess
 from tempo_evidence_math import opening_position_key
+from tempo_chess_core import canonical_fen_key
 from tempo_game_evidence_contracts.legacy import authority_source_digest, authority_graph_digest, decision_identity, fingerprint
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, RepertoireSnapshot as MembershipSnapshot
 
@@ -118,6 +121,26 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
     route_positions = {}
+    # Every needed authored executable is replayed once in this invocation.
+    # The retained values contain detached positions only and share exact route
+    # aliases; existing source-row/total-ply bounds cap this retained input.
+    replayed = {}
+    position_key = lru_cache(maxsize=1024)(opening_position_key)
+    card_positions = {}
+    def card_position(card):
+        # Physical rows are already unique and bounded. Parse each used card's
+        # root once, retaining both normalization and validity from that Board.
+        if card["id"] not in card_positions:
+            board = chess.Board(card["start_fen"])
+            card_positions[card["id"]] = (
+                canonical_fen_key(board.fen(en_passant="legal")), board.is_valid())
+        return card_positions[card["id"]]
+    def replay_positions(starting_fen, moves):
+        key = (starting_fen, tuple(moves))
+        if key not in replayed:
+            replayed[key] = tuple((frame.turn, canonical_fen_key(frame.fen(en_passant='legal')))
+                for frame in _frames(starting_fen, moves))
+        return replayed[key]
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
         route = routes.get((graph["repertoire_id"], graph["line_id"]))
@@ -136,29 +159,37 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
         try:
             executable = json.loads(graph["moves_json"])
             if (not executable or len(executable) > 1000
-                    or executable != json.loads(card["moves_json"])
-                    or opening_position_key(graph["starting_fen"]) != opening_position_key(card["start_fen"])):
+                    or executable != json.loads(card["moves_json"])):
+                continue
+            card_key, valid_start = card_position(card)
+            graph_key = (card_key if graph["starting_fen"] == card["start_fen"]
+                         else position_key(graph["starting_fen"]))
+            if not valid_start or graph_key != card_key:
                 continue
             route_key = (route.repertoire_id, route.route_id)
             if route_key not in route_positions:
                 try:
                     occurrences = {}
-                    for ply, frame in enumerate(_frames(route.starting_fen, route.moves)):
-                        occurrences.setdefault(opening_position_key(frame.fen()), []).append(ply)
+                    for ply, (_turn, key) in enumerate(replay_positions(route.starting_fen, route.moves)):
+                        occurrences.setdefault(key, []).append(ply)
                     index = MappingProxyType({key: tuple(plies) for key, plies in occurrences.items()})
-                    route_positions[route_key] = (route, index)
+                    route_positions[route_key] = (route, index,
+                        replay_positions(route.starting_fen, route.moves))
                 except (ValueError, TypeError, KeyError):
-                    route_positions[route_key] = (route, None)
-            cached_route, positions = route_positions[route_key]
+                    route_positions[route_key] = (route, None, None)
+            cached_route, positions, route_frames = route_positions[route_key]
             if cached_route is not route or positions is None:
                 continue
-            card_frames = _frames(card["start_fen"], executable)
-            roots = [ply for ply in positions.get(opening_position_key(graph["starting_fen"]), ())
+            roots = [ply for ply in positions.get(graph_key, ())
                      if tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.
             if len(roots) != 1:
                 continue
+            # Exact normalized root plus the same ordered executable proves
+            # these legal positions. Replaying the physical slice independently
+            # cannot add authority; retain its own starting-position validity.
+            card_frames = route_frames[roots[0]:roots[0] + len(executable) + 1]
         except (ValueError, TypeError, KeyError):
             continue
         introduction, introduced_at = _introduction(card)
@@ -167,8 +198,8 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
         if known_before is True:
             introduction = "introduced"
         for offset, uci in enumerate(executable):
-            frame = card_frames[offset]
-            if frame.turn != (route.learner_color == "white"):
+            turn, key = card_frames[offset]
+            if turn != (route.learner_color == "white"):
                 continue
             # The bounded capture may omit an ended/diverged competing route,
             # but its public proof retains the exclusive-policy anchor. Never
@@ -180,7 +211,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
             mapping = DecisionPresentation(
                 decision_id=decision_identity(card["id"], offset, executable[:offset]),
                 repertoire_id=route.repertoire_id,
-                position_key=opening_position_key(frame.fen()), selected_response_uci=uci,
+                position_key=key, selected_response_uci=uci,
                 presentation_id=card["id"], presentation_revision=card["revision"],
                 repertoire_revision=revision, introduction=introduction, introduced_at=introduced_at,
                 route_id=route.route_id, route_ply=roots[0] + offset,
@@ -367,6 +398,29 @@ def project_published_repertoire(facts: Mapping, *, captured_at: str | None = No
     not mutation authority; Study still captures/fences its current owner state.
     """
     return _project_repertoire(facts, captured_at=captured_at, published=True)
+
+
+@dataclass(frozen=True, init=False)
+class PreparedPublishedRepertoire:
+    """One Repertoire-owned projection of detached complete publication facts.
+
+    Construction accepts source facts only. Consumers cannot supply a snapshot
+    or a readiness assertion in place of the owning projection. This ephemeral
+    value grants no current database authority; receiving owners still select
+    their policy and fence every prepared publication in their writer.
+    """
+    _source_json: str
+    snapshot: RepertoireSnapshot
+
+    def __init__(self, facts: Mapping, *, captured_at: str | None = None):
+        encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        snapshot = project_published_repertoire(json.loads(encoded), captured_at=captured_at)
+        object.__setattr__(self, '_source_json', encoded)
+        object.__setattr__(self, 'snapshot', snapshot)
+
+    def publication_facts(self) -> dict:
+        """Return a detached complete read, never the capability's owned bytes."""
+        return json.loads(self._source_json)
 
 
 class CurrentSnapshotAdapter:

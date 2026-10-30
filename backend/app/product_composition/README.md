@@ -431,7 +431,12 @@ separate operator gates.
 flowchart LR
   Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
   Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
-  Pending --> Prepare["Explicit prepare-next: unreserved read-only publication; close read before replay / current owner target"]
+  Pending --> Select["Read accepted Study responsibility and original priority"]
+  Select --> Choice["Compare cheap local delivery metadata; controls first"]
+  Choice --> Routes["Complete authored-scope reads; close each ordinary bounded reader"]
+  Routes --> Proof["Repertoire-owned exact-game legal execution over every applicable route"]
+  Proof --> Bindings["Elect first boundary; read complete bindings for every surviving route"]
+  Bindings --> Prepare["Repertoire-owned snapshot; current Study target preparation outside writer"]
   Prepare --> Fence["Gateway request hash / attempt token / receipt"]
   Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
   Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
@@ -444,23 +449,48 @@ optional schema failure. Controls precede both accepted Study and new source
 FIFO; candidate-aware source observation cannot drain an entire historical
 outbox before an already-ready live target. Full preparation finishes before the
 command writer, and a fresh trusted boot identity is captured at its end. The
-prepared wrapper applies only after the gateway fence. Accepted Study preparation
-uses bounded foreground reads and continues independently of Games mode/process.
+prepared wrapper applies only after the gateway fence. The recovery candidate
+selects accepted Study work before invoking optional handoff, passing its original
+priority as a cutoff to the local metadata selector. Controls retain precedence;
+a later optional delivery is not projected or captured before earlier accepted
+work. Retained unqualified work keeps its historical priority fallback. Recoverable
+preparation holds report `pending:true` and their owner reason rather than a
+false no-work result. Accepted Study preparation uses bounded foreground reads
+and continues independently of Games mode/process.
 
-Qualification consumes Repertoire's released `read_repertoire` mapping port;
-the removed raw-JSON reader is not a compatibility dependency. Projection and
-chess replay run only after the source context exits. Dedicated Games reads use
-their existing `repertoire_snapshot=True` profile. Explicit foreground
-prepare-next and retry forward that profile through the existing unreserved
-`read_connection` and reader pool: READ ONLY, no whole-snapshot transaction or
-statement deadline, and the existing 100ms lock limit. Writers and reserved
-background connections reject that profile; normal readers retain their defaults.
+Qualification uses the owning adapter's two finite reads: complete authored
+scope first, then complete physical graph/card/membership facts for every
+surviving route at the first boundary. Both retain the ordinary statement
+deadline, including the independent background sweep's 250ms sections. Every
+read closes before legal replay, mapping projection or policy. Stored FEN
+discovery hints do not filter physical authority.
 
-The independent background sweep retains its 250ms database sections and
-foreground-preemptible shared lease. Dense source requalification may therefore
-defer there. Ordinary explicit prepare-next can prepare an already accepted
-obligation without the optional producer, outside the saved-review writer;
-this is not proof that dense background requalification always completes.
+Repertoire's public `PreparedFirstBoundaryRepertoire` owns detached source bytes,
+complete authored routes and exact-game immutable legal execution. The selector
+consumes only [Repertoire's declared first-boundary interface](../repertoire/interfaces/first_boundary.py)
+for that capability while independently repeating all
+frontier, end, own-response conflict and mapping policy. Applicable route tails
+remain validated; proven opposite-color scope remains excluded and fenced.
+Current-target substitutions still come from Study's owning prepared target
+boundary. Study reconstructs selection from the original cap plus those validated
+substitutions and compares the witness; a producer's altered snapshot is not
+physical mutation authority.
+
+The short writer retains source/configuration/publication/target fences and
+rechecks the exact complete candidate relation after all selected-publication
+header/shared-graph fences. Its MVCC read is the candidate freshness point;
+subsequent independent changes may order after acceptance. No all-card lock set,
+schema change, provider call, cross-command proof cache or alternate writer is
+introduced. See the [Repertoire preparation view](../repertoire/README.md#game-bound-first-boundary-preparation)
+and [database read contract](../../../database/tempo_legacy_database/adapters/authored_repertoires/README.md#game-bound-publication-reads).
+
+Other full-snapshot consumers retain `read_repertoire`,
+`PreparedPublishedRepertoire` and their existing snapshot read profile.
+Game-bound preparation adds no graph-count or aggregate-byte ceiling. Existing
+source rows/cards/memberships/per-row bytes and authored-move bounds remain.
+Long legal traversal accounts work inside 128-node batches and records elapsed
+cost; this source change alone does not prove a hard end-to-end time budget or
+the assembled 30-transition-per-mode acceptance.
 
 ## Explicit on-demand Games refresh
 

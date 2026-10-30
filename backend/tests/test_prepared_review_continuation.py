@@ -108,7 +108,7 @@ def test_prepared_control_precedes_pending_study_work_without_applying_during_pr
     monkeypatch.setattr(composition,'PostgresGameFeedbackStore',lambda _db:SimpleNamespace(study_day=lambda _now:date(2026,1,1)))
     monkeypatch.setattr(game_feedback,'effect_id',lambda _key:'accepted-study')
     monkeypatch.setattr(composition,'prepare_feedback_effect',lambda *_args,**_kwargs:study_preparations.append(True) or object())
-    composition.register_current_next_card_priority(read=read,local_handoff_prepare=lambda:control)
+    composition.register_current_next_card_priority(read=read,local_handoff_prepare=lambda **_kwargs:control)
     assert prepared['prepare']() is control
     assert study_preparations == []
     assert NoNextCardWork().is_control is False

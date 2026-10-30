@@ -17,7 +17,7 @@ from app.legacy_game_observation import capture_game
 from app.services.durable_tasks import (advance_task_slice_in_transaction, claim_task,
     complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice)
 from app.study.game_feedback import effect_id, instant
-from app.services.feedback_diagnostics import feedback_stage
+from app.services.feedback_diagnostics import feedback_stage, feedback_failure
 
 KIND = "study_game_feedback"
 
@@ -79,9 +79,10 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
             priority_order=dict(urgent_determined_at=determined_at,urgent_stream=stream,
                                 urgent_effect_id=effect_id(observed.key)))
         return PreparedFeedbackEffect(observed,captured,snapshot,qualification,decisions,introduction,priority)
-    except (CurrentDecisionUnavailable, RemediationError, ValueError, ImportError):
+    except (CurrentDecisionUnavailable, RemediationError, ValueError, ImportError) as error:
         # No raw exception/SQL/PGN is retained in public status. A later sweep
         # can obtain changed source facts without erasing the original debt.
+        feedback_failure(error)
         return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable',
             retry_at=instant(clock())+timedelta(seconds=30))
     except Exception as error:

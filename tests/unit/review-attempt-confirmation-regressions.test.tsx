@@ -128,6 +128,73 @@ it("issue186_queue_retry_recovers_without_resubmitting_saved_review", async () =
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false, severity: "success" });
 });
 
+it("preparation_deadline_automatic_and_manual_acquisitions_recover_original_operation", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  const preparationIds: string[] = [];
+  let finished = false;
+  let ready = false;
+  fetcher.mockImplementation(async (input, options) => {
+    const url = String(input);
+    if (url.endsWith("/api/queue/prepare-next")) {
+      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
+      return new Promise<Response>((_resolve, reject) => options!.signal!.addEventListener("abort", () => reject(options!.signal!.reason), { once: true }));
+    }
+    if (url.includes("/api/operations/") && !url.includes("review-attempt")) {
+      expect(url).toContain(preparationIds[0]);
+      ready = finished;
+      return Response.json({ operation_id: preparationIds[0], state: finished ? "complete" : "executing",
+        response: { progressed: true, pending: false, reason: null } });
+    }
+    if (url.includes("/api/queue/window")) return ready
+      ? Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") })
+      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
+    return originalFetcher(input, options);
+  });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  expect(preparationIds).toHaveLength(1);
+  await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
+  expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+  expect(preparationIds).toHaveLength(1);
+  expect(fetcher.mock.calls.some(([url]) => String(url).includes(`/api/operations/${preparationIds[0]}`))).toBe(true);
+  finished = true;
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); await settleStudyStorageTasks(); await advanceStudyTimers(51); });
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(preparationIds).toHaveLength(1);
+  expect(reviewPosts()).toHaveLength(1);
+});
+
+it("preparation_manual_queue_retry_starts_later_unit_without_resubmitting_saved_review", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  const preparationIds: string[] = [];
+  let ready = false;
+  fetcher.mockImplementation(async (input, options) => {
+    const url = String(input);
+    if (url.endsWith("/api/queue/prepare-next")) {
+      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
+      ready = preparationIds.length > 1;
+      return Response.json({ progressed: ready, pending: !ready, reason: ready ? null : "source_unavailable" });
+    }
+    if (url.includes("/api/queue/window")) return ready
+      ? Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") })
+      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
+    return originalFetcher(input, options);
+  });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+  expect(preparationIds).toHaveLength(1);
+  await act(async () => { await advanceStudyTimers(1_001); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); await settleStudyStorageTasks(); });
+  await act(async () => { await advanceStudyTimers(51); });
+  expect(preparationIds).toHaveLength(2);
+  expect(preparationIds[0]).not.toBe(preparationIds[1]);
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(reviewPosts()).toHaveLength(1);
+});
+
 it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
   await readyHome();
   queue = [];

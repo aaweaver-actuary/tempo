@@ -375,7 +375,8 @@ def feedback_case(feedback_postgres):
 
 
 @pytest.mark.parametrize("introduced", [False, True], ids=["unseen", "introduced"])
-def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced):
+def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced,
+                                                                          recovery_mode=None):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
     from app.games.feedback.ports import Delivery
@@ -450,13 +451,25 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
             end_at=(now-timedelta(hours=1)).replace(microsecond=0).isoformat(),precision='second'),repertoire_ids=[repertoire],
         speeds=['rapid'],rated=True,interval_seconds=60,revision=1))
     (directory/'provider.json').write_text(json.dumps(inputs))
+    if recovery_mode is not None:
+        (directory/'recovery-lifetime').write_text('continue with original production admission\n')
     nginx = (ROOT/'nginx.conf').read_text()
     assert nginx.count('proxy_pass http://api:8000;')==1
     (directory/'nginx.conf').write_text(nginx)
-    budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
+    resource_configuration = json.loads((ROOT/'config/resource-budgets.json').read_text())
+    if recovery_mode is None:
+        budgets = resource_configuration['developmentServices']
+    else:
+        from test_product_game_lapse_postgres import study_recovery_assembly_allocations
+        budgets = study_recovery_assembly_allocations(resource_configuration)
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
         image=image,web_image=web_image,schema=56,disposition='introduced_again' if introduced else 'first_introduction',
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
+    if recovery_mode is not None:
+        report['resource_profile'] = 'study-recovery-assembly'
+        report['resource_allocations'] = budgets
+        report['aggregate_memory_mib'] = sum(value['memoryMiB'] for value in budgets.values())
+        assert pg['HostConfig']['Memory'] == budgets['postgres']['memoryMiB'] * 1024 * 1024
     stage = 'role_startup'
     browser, browser_log = None, None
     network, postgres_attached = None, False
@@ -508,6 +521,12 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         inspected = json.loads(docker('inspect',identifier).stdout)[0]
         assert inspected['Image'] == selected_image and inspected['State']['Running']
         assert inspected['Config']['Labels']['tempo.owner'] == owner
+        if recovery_mode is not None:
+            labels = inspected['Config']['Labels']
+            assert labels['tempo.resource-class'] == 'development'
+            assert labels['tempo.resource-owner'] == os.environ['TEMPO_DEVELOPMENT_BUDGET_TOKEN']
+            report.setdefault('managed_resource_labels', {})[role] = {key: labels[key]
+                for key in ('tempo.resource-class', 'tempo.resource-owner')}
         assert inspected['HostConfig']['NanoCpus'] == 0 and inspected['HostConfig']['CpuQuota'] in (0,-1)
         assert inspected['HostConfig']['Memory'] == budget['memoryMiB']*1024*1024
         return inspected
@@ -597,10 +616,14 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         docker('network','connect','--alias','postgres',network_id,pg['Id'])
         postgres_attached=True
         launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
-        launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
-            '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
-        launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
-            '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
+        if recovery_mode is None:
+            launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
+                '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
+            launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
+                '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
+        else:
+            launch('foreground-worker',['python','-B','-c',fixture_entry,'recovery-foreground'])
+            launch('background-worker',['python','-B','-c',fixture_entry,'recovery-background'])
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
@@ -1041,6 +1064,15 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(target_id,)).fetchone()[0]==int(introduced)
         report.update(operation_id=operation_id,key=original['key'],qualification=settled['qualification'],receipt=settled['receipt'],source_replay_receipt=replayed['receipt'])
         report['stages'].append('same_key_settlement')
+        if recovery_mode is not None:
+            stage = 'study_recovery_thirty_transitions'
+            from study_recovery_acceptance import run_recovery
+            run_recovery(case, root=ROOT, directory=directory, report=report, inputs=inputs,
+                entry=entry, api=api, execute=execute, docker=docker, containers=containers,
+                original_repertoire=repertoire, web_url=web_url, study_only=recovery_mode,
+                mode_intent=mode,
+                custom_target=dict(card_id=target_id, repertoire_id=repertoire, occurrence_ply=1,
+                    prefix=[], expected='e2e4', wrong='d2d4', starting_fen=capture['game']['start_fen']))
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
         if stage in ('natural_refresh_before_explicit_request','browser_requests_fresh_refresh',
@@ -1094,9 +1126,19 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 inspected = json.loads(found.stdout)[0]
                 assert inspected['Config']['Labels']['tempo.owner']==owner
                 assert inspected['Config']['Labels']['tempo.disposable']=='true' and inspected['Image']==resource['image']
+                if recovery_mode is not None:
+                    from study_recovery_acceptance import memory_observation
+                    report.setdefault('runtime_memory_before_cleanup', {})[role] = dict(
+                        state={key: inspected['State'].get(key) for key in ('Running', 'ExitCode', 'OOMKilled', 'Error')},
+                        configured_memory_bytes=inspected['HostConfig']['Memory'],
+                        observed=memory_observation(docker, resource['id']))
                 logs = docker('logs',resource['id'],check=False)
                 text = (logs.stdout+'\n'+logs.stderr).replace(reader_password,'<reader-secret>').replace(writer_password,'<writer-secret>')
                 report.setdefault('runtime_logs',{})[role]=text[-12000:]
+                if recovery_mode is not None:
+                    for private in (admin_dsn, reader_dsn, writer_dsn):
+                        text = text.replace(private, '<redacted-connection>')
+                    (evidence/('recovery-'+owner+'-'+role+'.log')).write_text(text)
                 docker('rm','-f',resource['id'])
             absent = docker('inspect',resource['id'],check=False)
             assert absent.returncode!=0 and 'no such' in absent.stderr.lower()

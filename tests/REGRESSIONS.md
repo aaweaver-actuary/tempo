@@ -6314,3 +6314,78 @@ The changed full-repertoire source profile is covered by
 in `backend/tests/test_product_game_review_commands_postgres.py`: actual PostgreSQL
 read-only enforcement and source-read settings remain separate from the unchanged
 short reserved background budget. The owning qualifier selects this named case.
+
+
+## Study preparation and retry recovery (2026-10-30)
+
+The current v1 recovery candidate preserves saved reviews, original operation
+identity, complete source authority, protected attempts and short writers.
+Component proofs below are not the assembled 30-transition-per-mode acceptance
+or installed genuine-use evidence. New backend cases are discoverable in the
+existing `study-game-priority` selection; frontend cases retain the regular unit suite.
+
+- `backend/tests/test_next_card_preparation_selection.py`: `test_accepted_work_is_selected_before_local_handoff_preparation`, `test_later_optional_delivery_is_not_prepared_before_earlier_accepted_work`, `test_preparation_receipt_reports_retained_hold_honestly`, `test_unqualified_retained_work_keeps_its_original_historical_priority`.
+- `backend/tests/test_product_first_boundary.py`: `test_first_boundary_keeps_global_and_exact_occurrence_targets_in_same_position`; `test_selection_is_stable_under_scope_order_aliases_and_reimport` also proves one legal replay per exact authored executable while retaining every alias occurrence and deterministic target.
+- `backend/tests/test_product_game_lapse.py`: `test_qualified_owner_rejects_producer_shaped_prepared_publication`.
+- `backend/tests/test_game_bound_repertoire_preparation.py` owns complete-scope policy parity, partial-candidate refusal, exact-game/source immutability, exact numeric position identity, inside-128-node work accounting, immutable alias frame reuse, changed candidate headers/routes and Study's rejection of producer mapping substitution. Its new scope digest deliberately records game-bound candidate provenance; only that provenance is normalized in full-selector parity comparisons. `test_repertoire_first_boundary_interface_is_exact_and_cold_imports_only_pure_owners` verifies the one-export facade's literal constructor identity and cold pure import. The product-contract boundary guard permits only that exact Repertoire module/export and rejects root/private/undeclared/dynamic sibling access.
+- `backend/tests/test_product_snapshot.py`: `test_prepared_publication_owns_complete_facts_and_cannot_accept_caller_snapshot`, `test_snapshot_replay_reuse_preserves_legal_en_passant_and_castling_identity`, `test_snapshot_shared_executable_replay_scales_with_content_not_graph_uses`, `test_snapshot_physical_slice_uses_its_proved_legal_authored_frames`, `test_snapshot_invalid_physical_root_cannot_borrow_valid_authored_legality`, `test_snapshot_physical_root_normalization_and_validity_share_one_parse`.
+- `backend/tests/test_queue_projection_postgres.py`: `test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transaction`.
+- `backend/tests/test_study_feedback_preparation_trace.py`: `test_feedback_trace_redacts_unrecognized_reason_status_and_sqlstate`, `test_feedback_trace_retains_safe_inner_reason_without_payload_or_result`, `test_native_preparation_trace_localizes_capture_failure_and_retains_both_owners`, `test_nested_preparation_trace_keeps_one_sweep_and_restores_existing_timing`, `test_preparation_sql_remains_in_outer_command_total_and_reports_local_delta`, `test_feedback_trace_aggregates_only_fixed_numeric_preparation_work`.
+- `tests/unit/next-card-preparation-regressions.test.ts`: `preparation_authority_change_retains_old_command_without_delivering_to_new_authority`, `preparation_claims_coordinate_two_contexts_and_aborted_delivery_releases_original_claim`, `preparation_identity_reservation_survives_failed_record_retention_without_untracked_post`, `preparation_invalid_terminal_response_stays_unresolved_and_recovers_its_original_receipt`, `preparation_missing_receipt_resends_only_original_identity_and_rejects_mismatched_receipt`, `preparation_reload_recovers_same_immutable_request_and_retains_unrelated_intents`, `preparation_simultaneous_contexts_reserve_one_operation_before_first_post`, `preparation_terminal_pending_requires_paced_explicit_retry_and_progress_permits_next_unit`.
+- `tests/unit/prepared-review-continuation-regressions.test.ts`: `next_card_preparation_lost_response_recovers_original_operation_across_acquisitions`, `next_card_preparation_terminal_no_progress_never_rotates_ids_automatically`.
+- `tests/unit/review-attempt-confirmation-regressions.test.tsx`: `preparation_deadline_automatic_and_manual_acquisitions_recover_original_operation`, `preparation_manual_queue_retry_starts_later_unit_without_resubmitting_saved_review`.
+
+Complete-publication owner tests also exercise both raw facts and Repertoire-owned
+prepared capabilities across ten selected repertoires; they independently reject
+changed source and producer-shaped fake preparation. The queue-read native cases
+preserve all result and protection semantics and prove transaction-local JIT
+configuration restores at the next transaction. No acquisition deadline, source
+filter, priority rule or resource limit is relaxed.
+
+The explicit diagnostic `study-recovery` PostgreSQL fixture uses disk-backed
+1 GiB; the separate `study-recovery-assembly` profile uses disk-backed 384 MiB
+and keeps the complete assembly within the existing 2 GiB managed budget.
+`backend/tests/test_study_recovery_acceptance.py` owns the allocation guards.
+The default native 384 MiB/tmpfs fixture remains unchanged. Actual memory,
+container/volume absence and measured assembly results remain separate receipts.
+
+The accepted-qualification import repair is covered by
+`backend/tests/test_study_qualification_leaf.py::test_retained_qualification_leaf_preserves_frozen_delivery_identities`
+and `test_retained_qualification_leaf_imports_without_games_producer_or_infrastructure`.
+Fresh-process exclusion covers that leaf, not every legacy composition import.
+The three native intake/deferred-priority cases retain original human history,
+protected attempts and rollback while qualifying the real current Again effect.
+Parameterized runner discovery validates exact collected IDs; fairness assertions
+retain prior global service cursors and assert precise subsequent turns.
+
+The executable recovery workload is owned by
+`backend/tests/test_study_recovery_acceptance.py` in `study-game-priority`: exact
+route/graph counts with explicit payload deltas, real opening-frontier geometry,
+complete-scope standard-root target selection, legal short cards, and explicit
+fixture profile allocation. The separate `study-recovery` shared suite selects
+`test_packaged_study_recovery_thirty_consecutive_transitions[study-only-on]` and
+`[study-only-off]` in
+`database/tests/games_collection/test_study_recovery_packaged.py`. Its browser
+recorder is `tests/browser/study-recovery.spec.ts`. Listing/collection and fixture
+validation do not establish either measured run or the remaining fault matrix.
+
+The game-bound database read/freshness contract is owned by
+`backend/tests/test_product_game_bound_snapshot_postgres.py`:
+
+- `test_issue_recovery_complete_authored_scope_and_all_route_bindings_ignore_fen_hints`
+  compares complete authored facts and every requested route binding against the
+  original full read, retains missing physical rows and ignores discovery hints.
+- `test_issue_recovery_candidate_fence_rejects_every_changed_complete_relation`
+  covers thirteen actual PostgreSQL graph/card/introduction/revision/availability,
+  membership, block and permanent-deletion mutations before the freshness read.
+- `test_game_bound_reads_keep_full_source_bounds_and_reject_unproved_route` and
+  `test_game_bound_reader_does_not_hide_oversized_non_candidate_source` retain
+  full-source sentinels and raw row-byte refusals even for omitted physical facts.
+- `test_game_bound_candidate_reader_keeps_prior_removal_of_graph_count_ceiling`
+  preserves the existing explicit graph-ceiling removal in the new read port;
+  the established redundant-use projection regression remains unchanged.
+
+These checks establish the candidate relation's MVCC freshness point, not global
+phantom locking. Existing selected-target and atomic Study effect fences remain
+mandatory. Adapter timing and this named proof do not establish the assembled
+thirty-transition recovery acceptance or genuine installed observations.

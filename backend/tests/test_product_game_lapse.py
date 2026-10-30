@@ -270,8 +270,9 @@ def test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns():
         assert source['export_digest'] == fingerprint(source['game'])
 
 
-@pytest.mark.parametrize("scope", ["complete_ten", "empty", "duplicate"])
-def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope(scope):
+@pytest.mark.parametrize("scope", ["complete_ten", "empty", "duplicate", "changed"])
+@pytest.mark.parametrize("prepared_publications", [False, True])
+def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope(scope, prepared_publications):
     from copy import deepcopy
     from types import SimpleNamespace
     from tempo_game_evidence_contracts.legacy import fingerprint
@@ -279,7 +280,7 @@ def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_re
     from app.contracts.product_v02.learning import GameEffectKey, GameEncounter
     from app.contracts.product_v02.repertoire import IntroductionGameScope
     from app.games.feedback.first_boundary import select_first_boundary
-    from app.repertoire import project_published_repertoire
+    from app.repertoire import PreparedPublishedRepertoire, project_published_repertoire
     from tempo_game_review_contracts import CanonicalGame
     from test_product_snapshot import repertoire_facts
 
@@ -323,11 +324,22 @@ def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_re
     authority._validate_executable = lambda command, card, **kwargs: prepared.append(command)
     if scope == 'empty': publications = []
     if scope == 'duplicate': publications[-1] = publications[0]
+    if scope == 'changed':
+        for name in ('lines', 'cards', 'graphs'):
+            publications[-1][name][0]['moves_json'] = '["d2d4"]'
+    if prepared_publications:
+        publications = [PreparedPublishedRepertoire(facts) for facts in publications]
     before = deepcopy(publications)
+    selections = []
+    def owner_selection(game, **kwargs):
+        selections.append(kwargs['snapshots'])
+        return select_first_boundary(game, **kwargs)
     options = dict(qualified_publications=publications, qualification_fence=lambda *_: None,
-                   game=current, select_first_boundary=select_first_boundary)
+                   game=current, select_first_boundary=owner_selection)
     if scope != 'complete_ten':
-        with pytest.raises(CurrentDecisionUnavailable, match='first_departure_selected_scope_unproved'):
+        reason = ('first_departure_selection_changed' if scope == 'changed'
+                  else 'first_departure_selected_scope_unproved')
+        with pytest.raises(CurrentDecisionUnavailable, match=reason):
             authority.prepare_qualified(command, witness, **options)
         assert prepared == []
     else:
@@ -336,7 +348,20 @@ def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_re
         assert [header['id'] for header in authority._qualified_captures] == ["selected-" + str(index) for index in range(10)]
         assert prepared == [command]
         assert authority.database is None
+        assert len(selections) == 1 and len(selections[0]) == 10
     assert publications == before
+
+
+def test_qualified_owner_rejects_producer_shaped_prepared_publication():
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions, CurrentDecisionUnavailable
+    authority = object.__new__(CurrentOwnerDecisions)
+    authority.database = None
+    fake = SimpleNamespace(snapshot=object(), publication_facts=lambda: {'ready': True})
+    qualification = SimpleNamespace(matches=lambda _command: True)
+    with pytest.raises(CurrentDecisionUnavailable, match='first_departure_current_publication_preparation_required'):
+        authority.prepare_qualified(object(), qualification, qualified_publications=(fake,),
+            qualification_fence=lambda *_: None, game=object(), select_first_boundary=lambda *_: None)
 
 
 @pytest.fixture

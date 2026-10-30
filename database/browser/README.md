@@ -127,3 +127,26 @@ scripts or the independent [Maia worker package](../../workers/maia/README.md).
 Study worker validation remains in its existing regression suite.
 
 Return to the [database index](../README.md).
+
+
+## Current v1 preparation recovery candidate
+
+The application-owned [`next-card-preparation`](../../app/lib/next-card-preparation.ts)
+adapter uses the existing authority-scoped [intent package](../browser-intents/README.md);
+no object store, index or database version changes. Metadata key
+`next-card-preparation:current` retains the immutable selected envelope before its
+intent is inserted. The envelope contains its original request ID, originating
+progression, endpoint, authority, base URL and idempotency header. Atomic checkpoint
+comparison selects one envelope across tabs; existing expiring claims fence delivery.
+
+Intent kind `next-card-preparation` stores `data.started` and, after a validated
+terminal response, `data.completedAt` and the `progressed/pending/reason` receipt.
+Uncertain delivery retains the original identity and first recovers its receipt.
+A completed no-progress result requires an explicit retry after at least one
+second before a new unit; time alone does not trigger another delivery. Original
+records and unrelated intents remain retained. The receipt is operation evidence,
+not authority to display an unissued card. The current v1 origin scope exposes no
+database replacement epoch, so an unchanged origin alone cannot detect that change.
+
+Source implementation and focused synthetic browser-state checks do not establish
+installed browser recovery. See the [canonical browser view](../../app/README.md#main-study-path-and-source-gap).

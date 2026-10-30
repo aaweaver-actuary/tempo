@@ -198,7 +198,7 @@ def test_unknown_introduction_chronology_does_not_block_exact_miss(introduction)
     assert result.decision.introduced_at is result.decision.introduced_before_game is None
 
 
-def test_selection_is_stable_under_scope_order_aliases_and_reimport():
+def test_selection_is_stable_under_scope_order_aliases_and_reimport(monkeypatch):
     from test_product_game_findings import equivalent_routes, record, normalize_record
     original = record()
     captured = equivalent_routes(original, 62)
@@ -206,13 +206,44 @@ def test_selection_is_stable_under_scope_order_aliases_and_reimport():
     source = IntroductionGameScope(provider="lichess", game_id=current.game_id,
         source_revision=current.source_revision, source_digest=current.source_digest)
     before = deepcopy((current.model_dump(), captured.model_dump()))
+    import app.games.feedback.first_boundary as selector_module
+    original_replay, calls = selector_module.replay_line, []
+    def replay(start, moves):
+        calls.append((start, tuple(moves)))
+        return original_replay(start, moves)
+    monkeypatch.setattr(selector_module, 'replay_line', replay)
     first = select_first_boundary(current, snapshots=(captured,), source=source)
+    authored = captured.membership.routes[0]
+    assert calls.count((authored.starting_fen, tuple(authored.moves))) == 1
     reordered = captured.model_copy(update={"membership": captured.membership.model_copy(update={
         "routes": tuple(reversed(captured.membership.routes))}),
         "decision_presentations": tuple(reversed(captured.decision_presentations))})
     repeated = select_first_boundary(current, snapshots=(reordered,), source=source)
     assert first == repeated and first.decision.route_id == "alias-00"
+    assert calls.count((authored.starting_fen, tuple(authored.moves))) == 2
+    assert len(first.surviving_routes) == len(captured.membership.routes)
     assert (current.model_dump(), captured.model_dump()) == before
+
+
+@pytest.mark.parametrize('competing', [False, True])
+@pytest.mark.parametrize('reversed_order', [False, True])
+def test_first_boundary_keeps_global_and_exact_occurrence_targets_in_same_position(competing, reversed_order):
+    captured = snapshot()
+    exact = captured.decision_presentations[0]
+    global_target = exact.model_copy(update={'route_id': None, 'route_ply': None,
+        **({'presentation_id': 'competing-physical-card'} if competing else {})})
+    mappings = (exact, global_target, *captured.decision_presentations[1:])
+    if reversed_order:
+        mappings = tuple(reversed(mappings))
+    mixed = captured.model_copy(update={'decision_presentations': mappings})
+    before = mixed.model_dump(mode='json')
+    actual = select(game(), mixed)
+    if competing:
+        assert actual.status == 'own_unmapped' and actual.decision is None
+        assert actual.diagnostic == 'missing_or_ambiguous_physical_target'
+    else:
+        assert actual == select(game(), captured)
+    assert mixed.model_dump(mode='json') == before
 
 
 @pytest.mark.parametrize("historical", ["boolean", "timestamp"])

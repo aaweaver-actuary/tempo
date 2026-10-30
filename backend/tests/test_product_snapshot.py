@@ -713,3 +713,122 @@ def test_snapshot_route_cache_identity_includes_repertoire(monkeypatch):
     result = projection._mappings(source, routes, 3)
     assert [(m.repertoire_id, m.presentation_id) for m in result] == [
         ("rep", "physical"), ("rep", "physical"), ("other-repertoire", "second-card")]
+
+
+def test_snapshot_shared_executable_replay_scales_with_content_not_graph_uses(monkeypatch):
+    """Every physical occurrence survives without replaying shared chess content."""
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    line, graph = facts['lines'][0], facts['graphs'][0]
+    facts['lines'] = [line | dict(id='alias-' + str(index)) for index in range(64)]
+    facts['graphs'] = [graph | dict(line_id=item['id']) for item in facts['lines']]
+    original, calls = projection._frames, []
+    def replay(start, moves):
+        calls.append((start, tuple(moves)))
+        return original(start, moves)
+    monkeypatch.setattr(projection, '_frames', replay)
+    result = projection.project_published_repertoire(facts)
+    assert len(result.decision_presentations) == 128
+    assert {mapping.route_id for mapping in result.decision_presentations} == {line['id'] for line in facts['lines']}
+    assert len(calls) == 1
+    # Reuse ends with this invocation; a changed executable cannot borrow it.
+    for item in (*facts['lines'], *facts['cards'], *facts['graphs']):
+        item['moves_json'] = '["d2d4"]'
+    changed = projection.project_published_repertoire(facts)
+    assert len(changed.decision_presentations) == 64 and len(calls) == 2
+    assert {mapping.selected_response_uci for mapping in changed.decision_presentations} == {'d2d4'}
+    assert changed.membership.digest != result.membership.digest
+
+
+@pytest.mark.parametrize('fen,move', [
+    ('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5d6'),
+    ('4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5e6'),
+    ('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1'),
+])
+def test_snapshot_replay_reuse_preserves_legal_en_passant_and_castling_identity(fen, move):
+    from app.repertoire import project_published_repertoire
+    from tempo_evidence_math import opening_position_key
+    facts = repertoire_facts()
+    for item in (*facts['lines'], *facts['cards']):
+        item['start_fen'], item['moves_json'] = fen, json.dumps([move])
+    facts['graphs'][0].update(starting_fen=fen, moves_json=json.dumps([move]))
+    result = project_published_repertoire(facts)
+    mapping, = result.decision_presentations
+    assert mapping.position_key == opening_position_key(fen)
+    assert mapping.selected_response_uci == move
+
+
+def test_prepared_publication_owns_complete_facts_and_cannot_accept_caller_snapshot():
+    from dataclasses import FrozenInstanceError
+    from pydantic import ValidationError
+    from app.repertoire import PreparedPublishedRepertoire, project_published_repertoire
+    facts = repertoire_facts()
+    stamp = '2026-10-30T00:00:00Z'
+    expected = project_published_repertoire(facts, captured_at=stamp)
+    prepared = PreparedPublishedRepertoire(facts, captured_at=stamp)
+    assert prepared.snapshot == expected and prepared.publication_facts() == facts
+    with pytest.raises(TypeError):
+        PreparedPublishedRepertoire(facts, snapshot=expected)
+    with pytest.raises(FrozenInstanceError):
+        prepared.snapshot = expected.model_copy(update={'learner_color': 'black'})
+    with pytest.raises(ValidationError):
+        prepared.snapshot.membership.routes[0].moves += ('d2d4',)
+    with pytest.raises(ValidationError):
+        prepared.snapshot.membership.scope_repertoire_ids += ('missing',)
+    facts['cards'][0]['archived'] = 1
+    copy = prepared.publication_facts()
+    copy['lines'][0]['moves_json'] = '[]'
+    assert prepared.snapshot == expected
+    assert prepared.publication_facts()['cards'][0]['archived'] == 0
+    assert prepared.publication_facts()['lines'][0]['moves_json'] != '[]'
+
+
+def test_snapshot_physical_slice_uses_its_proved_legal_authored_frames(monkeypatch):
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    route_moves = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6']
+    board = chess.Board()
+    for move in route_moves[:2]: board.push_uci(move)
+    # Clocks do not change the same legal repertoire position.
+    card_start = board.fen().split(); card_start[-2:] = ['27', '19']
+    facts['lines'][0]['moves_json'] = json.dumps(route_moves)
+    facts['cards'][0].update(start_fen=' '.join(card_start), moves_json=json.dumps(route_moves[2:5]))
+    facts['graphs'][0].update(starting_fen=board.fen(), moves_json=json.dumps(route_moves[2:5]))
+    original, calls = projection._frames, []
+    def replay(start, moves):
+        calls.append((start, tuple(moves)))
+        return original(start, moves)
+    monkeypatch.setattr(projection, '_frames', replay)
+    result = projection.project_published_repertoire(facts)
+    assert [(item.route_ply, item.selected_response_uci) for item in result.decision_presentations] == [
+        (2, 'g1f3'), (4, 'f1b5')]
+    assert result.decision_presentations[0].position_key == ' '.join(board.fen().split()[:4])
+    assert calls == [(facts['lines'][0]['start_fen'], tuple(route_moves))]
+
+
+def test_snapshot_invalid_physical_root_cannot_borrow_valid_authored_legality():
+    from app.repertoire import project_published_repertoire
+    from tempo_evidence_math import opening_position_key
+    facts = repertoire_facts()
+    start = '4k3/8/8/8/8/8/8/4K3 w - - 0 1'
+    invalid = start.replace('- -', '- e6')
+    assert chess.Board(start).is_valid() and not chess.Board(invalid).is_valid()
+    assert opening_position_key(start) == opening_position_key(invalid)
+    facts['lines'][0].update(start_fen=start, moves_json='["e1e2"]')
+    facts['cards'][0].update(start_fen=invalid, moves_json='["e1e2"]')
+    facts['graphs'][0].update(starting_fen=start, moves_json='["e1e2"]')
+    assert project_published_repertoire(facts).decision_presentations == ()
+
+def test_snapshot_physical_root_normalization_and_validity_share_one_parse(monkeypatch):
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    original, starts = chess.Board, []
+    class TrackedBoard(original):
+        def __init__(self, fen=chess.STARTING_FEN, *args, **kwargs):
+            starts.append(fen)
+            super().__init__(fen, *args, **kwargs)
+    monkeypatch.setattr(chess, 'Board', TrackedBoard)
+    result = projection.project_published_repertoire(facts)
+    assert len(result.decision_presentations) == 2
+    # One legal authored replay and one physical-root validation/normalization.
+    assert starts.count(chess.STARTING_FEN) == 2

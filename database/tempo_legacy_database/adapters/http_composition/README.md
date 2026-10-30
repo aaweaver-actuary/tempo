@@ -124,3 +124,20 @@ The linked schema README views remain canonical for actual stored fields/types, 
 The legacy composition root still wires Study, Games and other optional-feature helpers and their shared lifecycle; this move preserves that pre-existing coupling and table access. It does not establish optional-feature/Study failure isolation or grant cross-owner table permission. The existing [Study loaded-graph guard](../../../../scripts/study-composition.ts) is unchanged.
 
 Focused existing status tests and one-time old/new fake traces check the moved read/iterator/settings/maintenance paths, including omitted flags, callbacks, errors, repertoire/annotation/teaching/export/snapshot/import/branch behavior, Games sync/lease/repair/finalization/publication, defense/findings/adaptation controls and Games/statistics projections, and server-style identity facts. No lifespan/bootstrap, real PostgreSQL, live data/schema, provider, deployment or full-system validation is claimed.
+
+
+## Recovery candidate: interactive queue read profile
+
+`queue_projection.queue_rows` and `available_count` keep their complete SQL,
+parameters, ordering, eligibility/protection checks and authoritative count. On
+the existing `PostgresConnection`, they first disable JIT compilation with
+transaction-local `set_config` in the borrowed read transaction. Expanded
+freshness predicates can otherwise admit compilation even for a short returned
+window. No connection, transaction, timeout, global setting, source predicate or
+issuance authority changes; the setting restores when the caller ends the
+transaction. SQLite and other supplied adapters retain their existing behavior.
+
+The native owning regression verifies results, protected entries, count, borrowed
+transaction identity and restoration. Paired disposable timing establishes the
+compiler mechanism; installed latency and the complete saved-review-to-playable
+journey require separate acceptance.

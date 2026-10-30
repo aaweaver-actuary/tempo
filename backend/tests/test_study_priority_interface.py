@@ -92,11 +92,26 @@ def test_required_priority_command_registers_real_failure_replay_and_independent
         "test_real_shape_history_intake_commits_pending_then_study_refresh_without_games",
         "test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games",
     }
-    assert critical <= {selector.split("::")[-1] for selector in required}
+    assert critical <= {selector.split("::")[-1].split("[", 1)[0] for selector in required}
     # Missing/renamed required cases fail both this cheap check and pytest
     # collection; a new uncollected file cannot stand in for owner evidence.
+    parameterized = []
     for selector in required:
         path, *case = selector.split("::")
         tree = ast.parse((ROOT / path).read_text())
         if case:
-            assert case[0] in {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}, selector
+            function, bracket, _ = case[0].partition("[")
+            assert function in {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}, selector
+            if bracket:
+                parameterized.append(selector)
+    # AST names do not include pytest's parameter IDs. Validate the exact
+    # selected variants through collection, rather than silently dropping them.
+    if parameterized:
+        collected = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q",
+            "--rootdir=.", "-o", "addopts=", *parameterized], cwd=ROOT,
+            env=os.environ | {"PYTEST_ADDOPTS": ""},
+            capture_output=True, text=True, timeout=30)
+        assert collected.returncode == 0, collected.stdout + collected.stderr
+        nodeids = {line.strip() for line in collected.stdout.splitlines()
+                   if line.startswith("backend/tests/")}
+        assert nodeids == set(parameterized), collected.stdout
