@@ -68,6 +68,7 @@ class PreparedProviderFeedback:
     require_active_mode: bool = False
     mode_runtime_id: str | None = None
     qualification_fence: object = None
+    prepared_targets: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -124,7 +125,50 @@ def _owner_capture(connections, supplied=None):
     return capture
 
 
-def _qualified_facts(command, *, connections, clock, delivery=None, selector=None):
+def _current_feedback_targets(command, snapshots, *, connections, target_prepare=None):
+    """Use only Study's explicit binding for the original logical decision.
+
+    Complete publication/routes stay unchanged. Other decisions are never
+    searched or guessed from a FEN, and a superseded mapping needs the same
+    owner capability as any other current-presentation replacement.
+    """
+    if target_prepare is None:
+        from tempo_legacy_database.adapters.study.recombination import prepare_game_feedback_target
+        target_prepare = prepare_game_feedback_target
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    @contextmanager
+    def read_connection():
+        with connections() as raw:
+            yield PostgresConnection(raw)
+    prepared, resolved, seen = [], [], {}
+    mutable = {"presentation_id", "presentation_revision", "available", "introduction", "introduced_at",
+        "introduction_matches_current_content", "introduced_before_game", "introduction_game"}
+    for snapshot in snapshots:
+        mappings = []
+        for original in snapshot.decision_presentations:
+            current = original
+            if original.decision_id == command.key.decision_id:
+                key = original.model_dump_json()
+                if key not in seen:
+                    try:
+                        seen[key] = target_prepare(original, read_connection=read_connection)
+                    except ValueError as error:
+                        raise DeliveryDeferred("first_departure_target_lineage_unavailable",
+                            retry_after=30) from error
+                binding = seen[key]
+                if binding is not None:
+                    if (binding.original != original or any(getattr(binding.current,field) != getattr(original,field)
+                            for field in type(original).model_fields if field not in mutable)):
+                        raise DeliveryDeferred("first_departure_target_lineage_unproved",retryable=False)
+                    current = binding.current
+                    if binding not in prepared:
+                        prepared.append(binding)
+            mappings.append(current)
+        resolved.append(snapshot.model_copy(update={"decision_presentations":tuple(mappings)}))
+    return tuple(resolved), tuple(prepared)
+
+
+def _qualified_facts(command, *, connections, clock, delivery=None, selector=None, target_prepare=None):
     """Read bounded source/config/publications; close connections before replay."""
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
@@ -154,6 +198,8 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
             else:
                 publications.append(facts)
                 snapshots.append(snapshot)
+    snapshots, prepared_targets = _current_feedback_targets(command, snapshots,
+        connections=connections, target_prepare=target_prepare)
     original_determination = delivery.determined_at or getattr(source, "determined_at", None) or clock.utc_now()
     qualified = qualify_delivery(delivery, source=source, configuration=configuration,
         snapshots=tuple(snapshots), unavailable=tuple(unavailable),
@@ -161,11 +207,11 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
         select_first_boundary=selector)
     from app.study.game_feedback import effect_id
     qualified = qualified.model_copy(update={"owner_effect_id": effect_id(command.key)})
-    return qualified, source, configuration, tuple(publications), selector
+    return qualified, source, configuration, tuple(publications), selector, prepared_targets
 
 
 def _prepare_qualified_owner(command, qualification, *, source, configuration,
-                             publications, selector, capture, require_active_mode=False):
+                             publications, selector, capture, require_active_mode=False, prepared_targets=()):
     """Prepare global publication proof and exact target proof separately."""
     from tempo_legacy_database.adapters.games.product_feedback import fence_qualified_feedback
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
@@ -186,10 +232,11 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
     decisions = CurrentOwnerDecisions(None, retained_owner_capture=target_capture,
         snapshot=target_snapshot).prepare_qualified(command, qualification,
             qualified_publications=publications,
+            prepared_targets=prepared_targets,
             qualification_fence=source_fence,
             game=game, select_first_boundary=selector)
     return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions,
-        require_active_mode, runtime_id, source_fence)
+        require_active_mode, runtime_id, source_fence, prepared_targets)
 
 
 def prepare_feedback_qualification(command, *, connections=None, read=None, clock,
@@ -241,7 +288,7 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
         if delivery.stream is not None and delivery.stream != stream:
             raise DeliveryDeferred("first_departure_stream_conflict")
         delivery = delivery.model_copy(update={"stream": stream})
-    qualified, source, configuration, publications, selector = _qualified_facts(command,
+    qualified, source, configuration, publications, selector, prepared_targets = _qualified_facts(command,
         connections=connections, clock=clock, delivery=delivery, selector=selector)
     if qualified.qualification_status != "ready":
         reason = qualified.qualification_reason or "first_departure_unavailable"
@@ -252,7 +299,7 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
                 and qualified.qualification_retryable and not changed_authority))
     return _prepare_qualified_owner(command, qualified.qualification, source=source,
         configuration=configuration, publications=publications, selector=selector, capture=capture,
-        require_active_mode=require_active_mode)
+        require_active_mode=require_active_mode, prepared_targets=prepared_targets)
 
 
 def _admitted(admitted):
@@ -307,13 +354,14 @@ def prepare_determined_feedback(*, workspace, connections, clock, admitted, capt
         return None
     qualified, provider = original, None
     try:
-        qualified, source, configuration, publications, selected = _qualified_facts(
+        qualified, source, configuration, publications, selected, targets = _qualified_facts(
             original.command, connections=connections, clock=clock, delivery=original,
             selector=selector)
         if qualified.qualification_status == "ready":
             provider = _prepare_qualified_owner(original.command, qualified.qualification,
                 source=source, configuration=configuration, publications=publications,
-                selector=selected, capture=_owner_capture(connections, capture), require_active_mode=True)
+                selector=selected, capture=_owner_capture(connections, capture), require_active_mode=True,
+                prepared_targets=targets)
     except DeliveryDeferred as error:
         qualified = held_delivery(qualified, error.reason,
             retry_at=clock.now() + error.retry_after, retryable=error.retryable)
@@ -469,10 +517,10 @@ class CurrentProviderPriorityIntake:
             return prepare_feedback_qualification(command, connections=self.connections,
                 clock=self.clock, qualification=qualification, capture=self.capture,
                 selector=self.selector, require_active_mode=True)
-        _, source, configuration, publications, selector = facts
+        _, source, configuration, publications, selector, targets = facts
         return _prepare_qualified_owner(command, qualification, source=source,
             configuration=configuration, publications=publications, selector=selector, capture=self.capture,
-            require_active_mode=True)
+            require_active_mode=True, prepared_targets=targets)
 
     def _require_local_admission(self):
         if self.admitted is not None:

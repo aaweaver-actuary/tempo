@@ -292,9 +292,51 @@ def test_qualification_decodes_complete_publication_after_reader_exit(monkeypatc
     monkeypatch.setattr(composition, "json", SimpleNamespace(loads=decode))
     monkeypatch.setattr(composition, "project_published_repertoire", project)
     result = composition._qualified_facts(case.command, connections=connections,
-        clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command))
+        clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command),
+        target_prepare=lambda *args,**kwargs:None)
     assert result[0].qualification_status == "ready"
     assert events == ["raw", "closed", "decode", "project"]
+
+
+@pytest.mark.parametrize("binding",["none","valid","identity_change","hold"])
+def test_current_target_enrichment_requires_explicit_owner_and_keeps_complete_publication(binding):
+    from app.product_composition.provider_priority import _current_feedback_targets
+    case = setup_case()
+    original = case.command.decision.model_copy(update={"available":False})
+    authored = case.snapshot.model_copy(update={"decision_presentations":tuple(
+        original if item.decision_id == original.decision_id else item
+        for item in case.snapshot.decision_presentations)})
+    frozen, calls = case.command.model_dump_json(), []
+    def prepare(mapping, *, read_connection):
+        calls.append(mapping)
+        assert mapping == original and callable(read_connection)
+        if binding == "hold":
+            raise ValueError("feedback_target_current_unavailable")
+        if binding == "none":
+            return None
+        current = mapping.model_copy(update={"presentation_id":"explicit-current-presentation",
+            "presentation_revision":2,"available":True})
+        if binding == "identity_change":
+            current = current.model_copy(update={"decision_id":"different-logical-decision"})
+        return SimpleNamespace(original=mapping,current=current)
+    def resolve():
+        return _current_feedback_targets(case.command,(authored,),
+            connections=lambda:pytest.fail("projection opened a connection"),target_prepare=prepare)
+    if binding in {"hold","identity_change"}:
+        with pytest.raises(DeliveryDeferred) as held:
+            resolve()
+        assert held.value.reason == ("first_departure_target_lineage_unavailable"
+            if binding == "hold" else "first_departure_target_lineage_unproved")
+    else:
+        (resolved,),targets = resolve()
+        assert resolved.membership == authored.membership and resolved.boundaries == authored.boundaries
+        assert resolved.decision_presentations[:-1] == authored.decision_presentations[:-1]
+        selected = select_first_boundary(case.game,snapshots=(resolved,),source=case.command.source)
+        assert selected.status == ("own_actionable" if binding == "valid" else "own_unmapped")
+        assert bool(targets) is (binding == "valid")
+        if targets:
+            assert selected.decision.presentation_id == targets[0].current.presentation_id
+    assert calls == [original] and case.command.model_dump_json() == frozen
 
 
 @pytest.fixture

@@ -5936,3 +5936,7 @@ guard candidate precedence and retained recovery time without a quiet-window wai
 `test_game_review_qualified_legacy_lapse_keeps_current_progress_receipt` verifies
 the actual HTTP read/parser retains the current qualified receipt for an original
 legacy envelope, while the adjacent compatibility case preserves old JSON.
+`test_current_target_enrichment_requires_explicit_owner_and_keeps_complete_publication`
+keeps the original decision/source and full authored scope across explicit
+current-presentation binding; missing, stale or identity-changing lineage cannot
+authorize a replacement by itself.

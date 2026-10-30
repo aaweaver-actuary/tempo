@@ -290,6 +290,13 @@ outside its writer and rechecks current authority under the writer. Games suppli
 only its borrowed source/configuration/control fence; it never writes Study SQL.
 The complete publication read uses `read_repertoire_json` inside the bounded read
 context; both JSON decoding and projection occur after that context exits.
+When the original logical decision has an explicit Study recombination mapping,
+composition asks the owning `prepare_game_feedback_target` capability to replace
+only its physical presentation facts before the complete-scope selector runs.
+The raw publication, routes, membership and source identities remain intact.
+Study independently checks those exact original mappings and fences its current
+binding in the borrowed writer; unavailable or contradictory lineage remains a
+hold, and a superseded card alone grants no replacement authority.
 
 The explicit next-card composition calls `pending_determined_feedback` (SELECT
 only) and PURE `prepare_determined_feedback`. Preparation returns one original
