@@ -32,7 +32,8 @@ from app.contracts.product_v02.learning import GameEffectControl
 from app.study.game_feedback import GameFeedback, effect_id
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, resume_available_feedback, settle_saved_review, invalidate_saved_review
-from test_product_game_lapse import CARD, NOW, Decisions, MemoryStore, fixture, accept_and_refresh
+from test_product_game_lapse import (CARD, NOW, Decisions, MemoryStore, fixture,
+    accept_and_refresh, qualification_for)
 from app.contracts.product_v02.learning import GameLapse
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -253,7 +254,7 @@ def test_native_pre_delivery_hold_survives_restart_and_delayed_original(case):
         assert counts(database, case) == (1, 0, 1)
 
 
-def test_native_saved_genuine_study_review_settles_exact_obligation_once(case):
+def test_native_timestamp_only_review_cannot_settle_without_real_issuance(case):
     with case.transaction() as database:
         service = case.service(database)
         service.accept_lapse(case.lapse)
@@ -264,7 +265,9 @@ def test_native_saved_genuine_study_review_settles_exact_obligation_once(case):
         settle_saved_review(database, case.card_id, review_id, 1)
         settle_saved_review(database, case.card_id, review_id, 1)
         effect = PostgresGameFeedbackStore(database).get(case.lapse.key)
-        assert effect.status == 'settled' and effect.settlement_review_id == review_id
+        # A fabricated standalone review row is not an authentic new attempt.
+        # The ordinary issue/save/replay path below supplies the real receipt.
+        assert effect.status == 'applied' and effect.settlement_review_id is None
         assert counts(database, case) == (1, 1, 2)
         database.execute_native("UPDATE reviews SET invalidated_at=%s WHERE id=%s",
                                 ((NOW+timedelta(hours=2)).isoformat(), review_id))
@@ -273,6 +276,77 @@ def test_native_saved_genuine_study_review_settles_exact_obligation_once(case):
         assert effect.status == 'applied' and effect.settlement_review_id is None
         service.maintain()
         assert counts(database, case) == (1, 1, 2)  # Reopening never repeats Again.
+
+
+def _qualified_policy_owner(case, database, qualification, *, now=NOW, store=None):
+    """Real storage/scheduler proof; global source authority has separate cases."""
+    from app.study.encounter_feedback import EncounterFeedback
+    class Current:
+        def current_qualified(self, command, witness):
+            assert witness.matches(command)
+            return (witness.selection.decision,)
+    return EncounterFeedback(store or PostgresGameFeedbackStore(database),Current(),
+        clock=lambda:now,introductions=None,introduction_policy=None)
+
+
+def test_native_introduced_first_departure_has_one_actual_again_receipt(case):
+    from app.services.scheduling_review_application import apply_scheduling_review
+    qualification = qualification_for(case.lapse)
+    ordinary = MemoryStore()
+    with case.transaction() as database:
+        ordinary.card = PostgresGameFeedbackStore(database).scheduling.load_card_state(
+            case.card_id,require_active=True)
+    apply_scheduling_review(ordinary,case.card_id,'again',guided=False,source_kind='study',source_ref='normal',
+        light_first_interval_days=7,reviewed_at=NOW,review_day=NOW.date())
+    with case.transaction() as database:
+        accepted = _qualified_policy_owner(case,database,qualification).accept_qualified(
+            case.lapse,qualification=qualification)
+        assert accepted.admission_status == 'pending'
+    with case.transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        first = _qualified_policy_owner(case,database,qualification).refresh_encounter(case.lapse.key)
+        assert first.disposition == 'introduced_again' and first.admission_status == 'available'
+        effect = PostgresGameFeedbackStore(database).get(case.lapse.key)
+        assert effect.lapse == case.lapse and effect.encounter is None
+        assert effect.review_id == first.progress.scheduling_review_id
+        row = database.execute_native('SELECT due_date,interval_days,fsrs_card_json,first_correct_at,'
+            'reinforcement_pending,stability,guided_review,state,scheduling_mode,hard_correct_streak,recent_attempts_json '
+            'FROM cards WHERE id=%s',(case.card_id,)).fetchone()
+        expected = ordinary.saved
+        assert row['due_date'] == expected.due_date and row['interval_days'] == expected.interval_days
+        assert json.loads(row['fsrs_card_json']) == json.loads(expected.fsrs_card_json)
+        assert row['scheduling_mode'] == expected.scheduling_mode
+        assert row['hard_correct_streak'] == expected.hard_correct_streak
+        assert json.loads(row['recent_attempts_json']) == list(expected.recent_attempts)
+        assert counts(database,case) == (1,1,1)
+    with case.transaction() as database:
+        replay = _qualified_policy_owner(case,database,qualification,now=NOW+timedelta(days=4))
+        replay.refresh_encounter(case.lapse.key)
+        assert replay.accept_qualified(case.lapse,qualification=qualification).owner_receipt_id == accepted.owner_receipt_id
+        assert counts(database,case) == (1,1,1)
+        database.execute_native('DELETE FROM daily_queue WHERE card_id=%s',(case.card_id,))
+
+
+def test_native_qualified_schedule_receipt_failure_rolls_back(case):
+    qualification = qualification_for(case.lapse)
+    with case.transaction() as database:
+        _qualified_policy_owner(case,database,qualification).accept_qualified(case.lapse,qualification=qualification)
+    with pytest.raises(RuntimeError,match='after_actual_schedule'):
+        with case.transaction() as database:
+            store = PostgresGameFeedbackStore(database)
+            def fail(effect, now):
+                assert counts(database,case) == (1,1,1)
+                raise RuntimeError('after_actual_schedule')
+            store.save = fail
+            _qualified_policy_owner(case,database,qualification,store=store).refresh_encounter(case.lapse.key)
+    with case.transaction() as database:
+        assert counts(database,case) == (1,0,1)
+        assert tuple(database.execute_native('SELECT interval_days,fsrs_card_json,state,due_date '
+            'FROM cards WHERE id=%s',(case.card_id,)).fetchone()) == case.initial
+        assert PostgresGameFeedbackStore(database).get(case.lapse.key).status == 'pending'
+        _qualified_policy_owner(case,database,qualification).refresh_encounter(case.lapse.key)
+        assert counts(database,case) == (1,1,1)
+        database.execute_native('DELETE FROM daily_queue WHERE card_id=%s',(case.card_id,))
 
 
 def test_native_priority_preserves_unrelated_issued_attempt(case):

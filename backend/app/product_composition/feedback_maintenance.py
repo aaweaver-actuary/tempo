@@ -1,6 +1,6 @@
 """Study-owned durable sweeps, independent of optional producer execution."""
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 
 from tempo_learning_remediation import RemediationError
@@ -32,6 +32,8 @@ class PreparedFeedbackEffect:
     prepared_introduction: object = None
     prepared_priority: object = None
     reason: str | None = None
+    retry_at: datetime | None = None
+    terminal: bool = False
 
 
 def prepare_feedback_effect(observed, *, read, capture, clock, qualification_prepare=None):
@@ -54,7 +56,8 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
         else:
             prepared = qualification_prepare(command)
         if prepared is None:
-            return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable')
+            return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable',
+                retry_at=instant(clock())+timedelta(seconds=30))
         captured, snapshot = prepared.target_capture, prepared.target_snapshot
         qualification, decisions = prepared.qualification, prepared.prepared_decisions
         feedback_stage('prepare')
@@ -79,7 +82,19 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
     except (CurrentDecisionUnavailable, RemediationError, ValueError, ImportError):
         # No raw exception/SQL/PGN is retained in public status. A later sweep
         # can obtain changed source facts without erasing the original debt.
-        return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable')
+        return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable',
+            retry_at=instant(clock())+timedelta(seconds=30))
+    except Exception as error:
+        reason, retry_after = getattr(error,'reason',None),getattr(error,'retry_after',None)
+        if (not isinstance(reason,str) or not reason.replace('_','').isalnum()
+                or not isinstance(retry_after,(int,float)) or retry_after < 0):
+            raise
+        terminal = getattr(error,'retryable',True) is False or reason in {'not_selected_first_departure','first_departure_covered',
+            'first_departure_opponent_gap','first_departure_coverage_end',
+            'first_departure_missing_own_continuation','first_departure_source_changed',
+            'qualification_original_command_mismatch'}
+        return PreparedFeedbackEffect(observed,reason=reason,terminal=terminal,
+            retry_at=None if terminal else instant(clock())+timedelta(seconds=retry_after))
 
 
 def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admitted, task_id=None):
@@ -95,7 +110,8 @@ def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admit
         current = store.get(observed.key)
         if current and current.status in {'pending','applied'} and not current.control:
             store.save(replace(current,reason=prepared.reason,admission_status='pending',
-                deferred_reason='authority_unavailable'),instant(clock()))
+                status='held' if prepared.terminal else current.status,
+                preparation_retry_at=prepared.retry_at,deferred_reason='authority_unavailable'),instant(clock()))
         return None
     from app.services.queue_admission_adapter import current_owner_encounter_introductions
     from app.study.encounter_feedback import EncounterIntroductionPolicy
@@ -124,7 +140,7 @@ def advance_local_feedback(*, read, write, capture, clock, operation_admitted,
     """Explicit next-card command: prepare/apply at most one local obligation."""
     with read() as database:
         day = PostgresGameFeedbackStore(database).study_day(instant(clock())).isoformat()
-        observed = next_feedback_preparation(database,day)
+        observed = next_feedback_preparation(database,day,now=instant(clock()))
     if observed is None:
         return False
     prepared = prepare_feedback_effect(observed,read=read,capture=capture,clock=clock,

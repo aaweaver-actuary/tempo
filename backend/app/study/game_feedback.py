@@ -86,6 +86,7 @@ class Effect:
     progress: EncounterProgress | None = None
     # Legacy lapse payloads also retain their real reset fence in owner JSON.
     remediation_fence: RemediationFence | None = None
+    preparation_retry_at: datetime | None = None
 
 
 @dataclass(frozen=True)

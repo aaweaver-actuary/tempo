@@ -98,6 +98,8 @@ class PostgresGameFeedbackStore:
                 if owner.get("progress") else None,
             remediation_fence=RemediationFence.model_validate_json(json.dumps(owner["remediation_fence"]))
                 if owner.get("remediation_fence") else None,
+            preparation_retry_at=instant(owner['preparation_retry_at'])
+                if owner.get('preparation_retry_at') else None,
         )
 
     def get(self, key):
@@ -118,7 +120,9 @@ class PostgresGameFeedbackStore:
                     qualification=effect.qualification.model_dump(mode="json") if effect.qualification else None,
                     progress=effect.progress.model_dump(mode="json") if effect.progress else None,
                     remediation_fence=effect.remediation_fence.model_dump(mode="json")
-                        if effect.remediation_fence else None)))
+                        if effect.remediation_fence else None,
+                    preparation_retry_at=effect.preparation_retry_at.isoformat()
+                        if effect.preparation_retry_at else None)))
         self.database.execute_native("""INSERT INTO study_game_feedback(
             effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,card_revision,
             decision_id,occurred_at,detected_at,received_at,available_by,status,reason,applied_at,
@@ -437,7 +441,7 @@ def feedback_preparation_admitted(database, *, lock=False, task_id=None):
     return bool(row and row[0])
 
 
-def next_feedback_preparation(database, day):
+def next_feedback_preparation(database, day, *, now=None):
     """One qualified local obligation that needs preparation or queue recovery."""
     if not installed(database) or not feedback_preparation_admitted(database):
         return None
@@ -448,8 +452,9 @@ def next_feedback_preparation(database, day):
           AND effect.payload_json::jsonb->'owner'->'qualification' IS NOT NULL
           AND effect.payload_json::jsonb->'owner'->'qualification'<>'null'::jsonb
           AND effect.reason IS DISTINCT FROM 'source_hold'
-          AND COALESCE(effect.payload_json::jsonb->'owner'->>'deferred_reason','') NOT IN
-              ('paused','disabled','authority_unavailable')
+          AND COALESCE(effect.payload_json::jsonb->'owner'->>'deferred_reason','') NOT IN ('paused','disabled')
+          AND (effect.payload_json::jsonb->'owner'->>'preparation_retry_at' IS NULL
+            OR (effect.payload_json::jsonb->'owner'->>'preparation_retry_at')::timestamptz<=%s)
           AND card.archived=0 AND card.pending_validation=0 AND card.superseded_by IS NULL
           AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id)
           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block WHERE block.card_id=card.id)
@@ -461,7 +466,8 @@ def next_feedback_preparation(database, day):
           AND (effect.status='pending' OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
         ORDER BY CASE effect.payload_json::jsonb->'owner'->'progress'->>'stream' WHEN 'forward' THEN 0 ELSE 1 END,
-          effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',effect.effect_key LIMIT 1""", (day, day)).fetchone()
+          effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',effect.effect_key LIMIT 1""",
+        (now or datetime.now(timezone.utc),day,day)).fetchone()
     return PostgresGameFeedbackStore._effect(row) if row else None
 
 

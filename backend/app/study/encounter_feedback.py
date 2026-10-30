@@ -245,7 +245,7 @@ class EncounterFeedback(GameFeedback):
             schedule_applied_at=None, introduction_applied_at=None, remediation_fence=None,
             first_issued=None, first_issued_ordinal=None, settlement=None)
         return replace(effect,observation_recorded=True,disposition=disposition, progress=progress,
-            status="pending", admission_status='pending',reason='study_priority_pending')
+            status="pending", admission_status='pending',reason='study_priority_pending',preparation_retry_at=None)
 
     def _advance(self, effect, now):
         """Study-owned refresh only; acceptance never calls this queue capability."""
@@ -323,4 +323,4 @@ class EncounterFeedback(GameFeedback):
         else:
             self.store.promote_encounter(target.card_id, day)
         return replace(effect, status="applied", applied_at=effect.applied_at or now, progress=progress,
-                       admission_status="available", reason=None, deferred_reason=None)
+                       admission_status="available", reason=None, deferred_reason=None,preparation_retry_at=None)
