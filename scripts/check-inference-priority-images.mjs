@@ -15,8 +15,9 @@ try{
  await managedBuild(async builder=>{for(const [kind,file]of[['stockfish','Dockerfile.engine'],['maia','Dockerfile.maia']]){
   const tag=`${owner}-${kind}:proof`;images.push(tag);const built=await run('docker',['buildx','build','--builder',builder,'--load','--label','tempo.owner='+owner,'-f',file,'-t',tag,'.'],{cwd:root,maxBuffer:8*1024*1024});console.log(built.stderr.slice(-1600));
  }});
+ // Deliberately constrained preemption fixtures, independent of ordinary service defaults.
  for(const [index,kind,service]of[[0,'stockfish','defense-engine'],[1,'maia','maia-worker']]){
-  const name=owner+'-'+kind;const budget=resourceBudgets.optionalServices[service];containers.push(name);await recordBudgetResource('inference:'+name,true);
+  const name=owner+'-'+kind;const budget={...resourceBudgets.optionalServices[service],cpus:kind==='stockfish'?0.25:0.3};containers.push(name);await recordBudgetResource('inference:'+name,true);
   await docker(['create','--name',name,'--label','tempo.owner='+owner,'--label','tempo.resource-class=development','--cpus',String(budget.cpus),'--memory',budget.memoryMiB+'m','--mount','type=bind,source='+resolve(root,'tests/fixtures/study-priority/inference-image.mjs')+',target=/app/probe.mjs,readonly','--entrypoint','node',images[index],'/app/probe.mjs',kind]);
   const [details]=JSON.parse(await docker(['inspect',name]));if(details.HostConfig.Memory!==budget.memoryMiB*1024**2||details.HostConfig.NanoCpus!==budget.cpus*1e9)throw new Error('Kernel cap mismatch');
   const result=await run('docker',['start','--attach',name],{maxBuffer:8*1024*1024});console.log(result.stdout);console.error(result.stderr);

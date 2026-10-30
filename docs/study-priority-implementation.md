@@ -79,10 +79,14 @@ Opening membership remains essential when interaction pauses an optional index.
 Routine recovery status reuses its record; genuine queue timeouts remain visible.
 Exports distinguish unresolved failures and resolved history.
 
-`config/resource-budgets.json` owns new managed work: development 2 CPUs/2 GiB;
-optional application services together 1 CPU/2 GiB, including scheduled backup.
+`config/resource-budgets.json` owns new managed work: ordinary CPU is unrestricted,
+with explicit caps retained for deliberate constrained proofs. The development
+memory admission ceiling remains 2 GiB. Optional/development allocations are
+inventories, each now 2304 MiB including Games; only requested development
+combinations that fit may start. Existing per-service memory/PID limits remain.
+Unrestricted CPU does not guarantee host capacity or Study responsiveness.
 One heavy invocation owns the shared host lease. A rootless builder, with one
-execution lane, confines actual build processes to the same capped group. Merely
+execution lane, confines actual build processes to its memory-bounded group and any explicitly requested CPU cap. Merely
 capping a privileged builder container was tested and rejected as insufficient.
 Runners defer new heavy stages during study activity, preserve lightweight checks,
 and retain ownership when cleanup is uncertain. Component-local tests get a Docker

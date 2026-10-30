@@ -1,5 +1,105 @@
 # Optional provider-worker packaging — #491
 
+## Immediate collection-only release mode — Task C
+
+The prepared `games-feedback` profile explicitly selects `--collect-only`.
+The same optional worker acquires, normalizes and compares games, then commits
+canonical imported source, original capture, findings, encounter evidence,
+pending owner commands and checkpoints through the existing Games transaction.
+It constructs no `CurrentProviderPriorityIntake` and supplies no receiving port.
+`FeedbackRunner(delivery_enabled=False)` queries neither pending-delivery branch
+and never invokes delivery. An outbox alone returns `idle`; repeated calls and
+stop/restart preserve original pending commands, attempt counts and receipts.
+Deliberately disabled delivery is neither success nor failure. Encounter mode
+remains enabled; switching to the legacy lapse-producing path is not collection.
+
+CLI contract (source interfaces, not activation instructions):
+
+```text
+python -m app.product_composition.game_sync_current --collect-only [--workspace legacy]
+    [--once --max-units N]
+    [--follow --overlap-seconds O [--reconcile-interval-seconds R]]
+```
+
+`--once` drains ready acquisition within the existing 1..10000 unit bound and
+exits on idle, even with pending deliveries. Existing write-DSN and explicit
+`TEMPO_PRODUCT_GAME_SYNC_ENABLED=1` requirements remain. `--help` is inert;
+`--preview` uses only the read-only profile and starts no provider or worker.
+Omission of `--collect-only` retains delivery-enabled compatibility and requires
+the real receiver. The composition option is `delivery_enabled: bool = True`.
+
+`--reconcile-interval-seconds R` requires `--follow` and an integer at least 60.
+It forwards `reconciliation_interval_seconds` only when supplied. Task D owns
+that optional `ContinuousSync` keyword and its scheduling policy; omitted values
+preserve current construction. The prepared profile requires explicit
+`TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS` and
+`TEMPO_PRODUCT_GAME_SYNC_RECONCILE_INTERVAL_SECONDS`. G must assemble D's scheduler
+before executing that profile. C's native collection proof uses fixed-window
+fixture acquisition, not combined forward/reconciliation execution. D's
+`continuous_state(workspace, now)` and `forward_job` preview wiring also require
+G's assembled validation; the retained preview currently uses `last_job`.
+
+### Consumers and activation exclusions
+
+At inspection baseline `c63c8947`, the two `FeedbackRunner.run_once` branches are
+the only automatic consumers of `GamesStore.pending_delivery`. The Study
+maintenance sweep reads `PostgresGameFeedbackStore.owed_page`, meaning obligations
+already accepted by Study; it does not drain the Games outbox. Collection creates
+no accepted Study obligation. Existing Study obligations can still progress
+independently and must not be disabled to obtain a collection-only claim.
+
+Activation must exclude another delivery-enabled provider worker sharing this
+outbox. The existing background worker/scheduler were observed running during
+read-only preparation. Legacy `game_derivation_misses`/priority work and explicit
+`game_evidence.product_accept` or `product_games.retry_feedback` commands can
+produce separate learning effects. Their queued/running work and installed
+source correspondence remain release-owner checks; no process was stopped and
+no host-wide absence is claimed. Publishing canonical source here does not
+enqueue that legacy derivation pipeline.
+
+### Bounded evidence and remaining wiring
+
+Named `test_collect_only_*` regressions in
+[`test_product_game_sync_integration.py`](../../../../backend/tests/test_product_game_sync_integration.py)
+cover receiver-free import, both forbidden pending-delivery paths, original
+retry state, restart/replay, enabled-mode compatibility, missing receivers,
+optional reconciliation forwarding, CLI validation, cold imports/help and preview.
+The single
+[`test_collect_only_current_worker_persists_evidence_without_study_effects`](../../../../backend/tests/test_product_feedback_jobs_postgres.py)
+uses the current composition, real published repertoire and canonical Games
+stores on the existing labelled disposable PostgreSQL fixture. Provider HTTP
+and foreground admission controls are fixture inputs; no receiving capability
+is supplied. Fresh connections read retained evidence and original pending
+command identity after restart/replay. Complete cards (including schedules),
+queue, attempts, reviews, review receipts and Study feedback rows are compared
+against nonempty sentinels, including a genuine saved review and issued attempt.
+The fixture retains resource identity and verifies exact cleanup.
+
+The frozen-main component selection passed 89 cases and retained one baseline
+failure: `test_no_learning_sql_or_study_runtime_dependency` rejects the existing
+public Study interface import in `coordinator.py`. The native collection case
+passed independently. Its readback retained one pending command with zero
+delivery attempts, one canonical source and two authentic comparison captures;
+the baseline comparison hash includes snapshot capture time. B owns the stable
+material-hash correction. Replay did not create another logical command/effect.
+Compose rendering used synthetic values only and retained the default-off
+profile; it did not start a service.
+
+G owns packaged assembly, D's reconciliation/preview contract, resource wiring
+with A, and root regression-inventory registration for these named cases. B/G
+must reconcile the coordinator's receiver annotation with explicitly disabled
+delivery; C does not edit B's coordinator. The existing feedback policy guard
+rejects the already-present public `app.study.interfaces.game_priority` import
+at the baseline; C leaves that separate failure visible. #594/#595, successful
+Study preparation and settlement are not collection prerequisites. Source/native
+proof does not establish deployment/resource isolation, live-provider acceptance,
+installation or activation.
+
+The completion labels for this bounded mode are: **collection implemented;
+delivery disabled; observations durable; Study reprioritization not activated**.
+
+## Delivery-enabled packaging context
+
 The goal is game-versus-repertoire comparison: a missed own decision identifies
 an important move and requests front-of-queue Study reinforcement. That goal does
 not depend on whether the receipt calls it missed or first introduction, or proof
@@ -62,7 +162,7 @@ assembled settlement remain unqualified.
 
 The new overlay is combined with current base Compose only by the release owner;
 it declares `game-feedback-worker`, profile `games-feedback`, `init: true`,
-0.15 CPU, 256 MiB and 96 PIDs. It reuses the existing backend Dockerfile and writer
+unrestricted CPU, 256 MiB and 96 PIDs under Task A policy. It reuses the existing backend Dockerfile and writer
 secret. No port, persistent worker volume, broker or service dependency is added
 to Study or the API. The provider service depends only on the existing PostgreSQL
 and Redis health conditions. Saved recurrence alone cannot start the process.
@@ -77,16 +177,14 @@ Each Games database section keeps `DedicatedGamesConnections`' existing finite
 transaction/lock/statement bounds. Provider HTTP finishes outside those sections.
 The receiver's source capture closes before its borrowed intake writer opens.
 
-`config/resource-budgets.json` remains unchanged. Its listed optional services
-sum to 1 CPU/2048 MiB; adding this process would sum to 1.15 CPU/2304 MiB. That
-extra allocation is **not registered or approved here**. No capacity is inferred
-from absent Maia, a prior loan or an old development ceiling. #586 removed the
-fixed development CPU cap; current allocator/memory/concurrency rules and actual
-resource accounting remain authoritative. The new service must be reconciled
-with the existing managed allocation before activation. No guard bypass, budget
-edit, service stop, cgroup inspection or new reservation occurred in this task.
+Task A registers `game-feedback-worker` in `config/resource-budgets.json` with
+256 MiB and 96 PIDs, without an ordinary CPU quota. Current allocator, memory,
+concurrency and ownership rules remain authoritative. Source registration does
+not establish installed headroom: inspect the frozen release and effective limits
+before the explicit operator switch. No capacity is inferred from absent optional
+services or another task's reservation.
 
-## Receipt, state and failure ownership
+## Delivery-enabled receipt, state and failure ownership
 
 The unchanged Games coordinator commits canonical source, original outbox and
 checkpoint through its owning store. It delivers the original immutable command
@@ -104,10 +202,16 @@ sequenceDiagram
     participant I as Existing Study priority intake
     participant S as Independent Study refresh
     W->>G: Persist source, original command and checkpoint
-    G->>I: Deliver original GameEncounter
-    I->>I: Validate target/source; commit durable obligation
-    I-->>G: Accepted/pending owner receipt after commit
-    G->>G: Acknowledge original outbox delivery
+    alt Prepared collection-only profile
+        Note over W,G: No receiver constructed; no pending-delivery query
+        G-->>W: Original command remains pending without receipt/attempt
+        Note over I,S: No new accepted Study obligation
+    else Explicit delivery-enabled compatibility
+        G->>I: Deliver original GameEncounter
+        I->>I: Validate target/source; commit durable obligation
+        I-->>G: Accepted/pending owner receipt after commit
+        G->>G: Acknowledge original outbox delivery
+    end
     Note over W,S: Worker never calls or waits for refresh
     S->>I: Independently consume accepted obligation
     Note over S: Availability/settlement remains #581 qualification
@@ -161,9 +265,8 @@ wanted, remains a separate explicit fixed-window request.
 
 Readable quiet foreground controls, selected-daemon CPU allocation and managed
 memory headroom are distinct observations; none grants activation or proves idle
-CPU/free physical memory. Source registration is separately unresolved: the
-optional service is absent from the central named allocation maps. No central
-resource file is edited before owner coordination. Bounded readiness reads use
+CPU/free physical memory. Task A supplies the central named resource registration; installed allocation
+and frozen configuration correspondence still require release-owner verification. Bounded readiness reads use
 only existing approved local configuration/control routes and resource-owner
 read functions. No tests, builds, provider HTTP/import, direct database access,
 settings write, credential or service change accompanies them.

@@ -15,6 +15,7 @@ const configurationSchema = z.object({
 type Configuration = z.infer<typeof configurationSchema>;
 type Provider = Configuration["provider"];
 const speeds = ["bullet", "blitz", "rapid", "classical"] as const;
+const ongoingSeedError = "Ongoing collection needs a UTC seed of 60–86400 seconds (1 minute–24 hours). Adjust the dates or choose Historical/manual import.";
 const gameReviewBase = `${API_URL}/api/product/game-review`;
 const client = createGameReviewApi({ fetch: (...argumentsList) => globalThis.fetch(...argumentsList), endpoints: {
   recentGames: `${gameReviewBase}/games`,
@@ -57,6 +58,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
   const [selectedSpeeds, setSpeeds] = useState<string[]>([]);
   const [selectedRepertoires, setRepertoires] = useState<string[]>([]);
   const [rated, setRated] = useState("");
+  const [purpose, setPurpose] = useState("");
   const [interval, setInterval] = useState("");
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState("");
@@ -79,7 +81,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
     const controller = new AbortController();
     setBusy(true); setError(recovery.error); setMessage("");
     setLoaded(null); setAccount(""); setStart(""); setEnd("");
-    setSpeeds([]); setRepertoires([]); setRated(""); setInterval("");
+    setSpeeds([]); setRepertoires([]); setRated(""); setPurpose(""); setInterval("");
     void (async () => {
       try {
         const response = await fetch(`${gameReviewBase}/configuration/${provider}`, {
@@ -90,11 +92,12 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
         const value = body === null ? null : configurationSchema.parse(body);
         if (controller.signal.aborted) return;
         setLoaded(value); setAccount(value?.account ?? "");
-        setStart(value?.window.start_at ? new Date(value.window.start_at).toISOString().slice(0, 16) : "");
-        setEnd(value?.window.end_at ? new Date(value.window.end_at).toISOString().slice(0, 16) : "");
+        setStart(value?.window.start_at ? new Date(value.window.start_at).toISOString().slice(0, -1) : "");
+        setEnd(value?.window.end_at ? new Date(value.window.end_at).toISOString().slice(0, -1) : "");
         setSpeeds(value?.speeds ?? []); setRepertoires(value?.repertoire_ids ?? []);
         setRated(value ? value.rated === null ? "both" : value.rated ? "rated" : "casual" : "");
         setInterval(value?.interval_seconds === null || !value ? "" : String(value.interval_seconds));
+        setPurpose(value ? value.interval_seconds === null ? "historical" : "ongoing" : "");
       } catch (failure) {
         if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Could not load settings.");
       } finally {
@@ -106,11 +109,30 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
 
   async function save() {
     setMessage(""); setError("");
-    const startTime = Date.parse(start + "Z"), endTime = Date.parse(end + "Z");
-    if (!pendingSave.current && (!account.trim() || !Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime || !rated ||
-        !selectedSpeeds.length || !selectedRepertoires.length || selectedRepertoires.length > 8 || interval !== "" && (!Number.isInteger(Number(interval)) || Number(interval) < 60 || Number(interval) > 86400))) {
-      setError("Choose an account, UTC date range, repertoires, speeds and rated policy. Recurrence must be 60–86400 seconds or left off.");
-      return;
+    // datetime-local may omit zero seconds; the strict UTC parser requires them.
+    const startUtc = start.length === 16 ? start + ":00Z" : start + "Z";
+    const endUtc = end.length === 16 ? end + ":00Z" : end + "Z";
+    const startTime = Date.parse(startUtc), endTime = Date.parse(endUtc);
+    if (!pendingSave.current) {
+      if (!account.trim() || account.trim().length > 200 || !purpose || !rated ||
+          !selectedSpeeds.length || selectedSpeeds.some(speed => !speeds.includes(speed as typeof speeds[number])) ||
+          !selectedRepertoires.length || selectedRepertoires.length > 8 || provider === "chesscom" && rated === "casual") {
+        setError("Choose an account, collection purpose, repertoires, speeds and a supported rated policy.");
+        return;
+      }
+      if (!z.iso.datetime().safeParse(startUtc).success || !z.iso.datetime().safeParse(endUtc).success ||
+          !Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) {
+        setError("Choose valid UTC dates with Games until later than Games from.");
+        return;
+      }
+      if (purpose === "ongoing" && (endTime - startTime < 60000 || endTime - startTime > 86400000)) {
+        setError(ongoingSeedError);
+        return;
+      }
+      if (purpose === "ongoing" && (!interval || !Number.isInteger(Number(interval)) || Number(interval) < 60 || Number(interval) > 86400)) {
+        setError("Choose an ongoing collection interval of 60–86400 whole seconds.");
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -120,7 +142,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
           workspace_id: workspaceId, provider, account: account.trim(),
           window: { start_at: new Date(start + "Z").toISOString(), end_at: new Date(end + "Z").toISOString(), precision: "millisecond" },
           repertoire_ids: selectedRepertoires, speeds: selectedSpeeds,
-          rated: rated === "both" ? null : rated === "rated", interval_seconds: interval === "" ? null : Number(interval),
+          rated: rated === "both" ? null : rated === "rated", interval_seconds: purpose === "historical" ? null : Number(interval),
           revision: (loaded?.revision ?? 0) + 1,
         } }),
       };
@@ -141,7 +163,10 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
         if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
           clearMutation(pending.operationId); pendingSave.current = null; setUnconfirmed(false);
         }
-        throw new Error(response.status === 409 ? "Settings changed or a sync is still active. Refresh after it finishes before saving." : "Could not save game sync settings. Retry the original save to confirm its result.");
+        const detail: unknown = response.status === 422 ? await response.json().catch(() => null) : null;
+        throw new Error(response.status === 409 ? "Settings changed or a sync is still active. Refresh after it finishes before saving."
+          : detail && typeof detail === "object" && "detail" in detail && typeof detail.detail === "string" ? detail.detail
+          : "Could not save game sync settings. Retry the original save to confirm its result.");
       }
       setLoaded(configurationSchema.parse(await response.json()));
       clearMutation(pending.operationId); pendingSave.current = null; setUnconfirmed(false);
@@ -152,6 +177,7 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
         catch { setError("The save result is known, but its original browser request could not be cleared. Reopen Settings to recover it."); return; }
       }
       setError(failure instanceof PendingOperationError ? "Game sync settings are still pending. Retry the original save to check its result."
+        : failure instanceof FailedOperationError && typeof failure.detail === "string" ? failure.detail
         : failure instanceof Error ? failure.message : "Could not save settings. Retry the original save to confirm its result.");
     }
     finally { setBusy(false); }
@@ -166,13 +192,18 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       setRunPending(true);
       const result = await client.sync(pendingRun.current);
       clearMutation(pending.operation_id); pendingRun.current = null; setRunPending(false);
-      setMessage(`${provider === "lichess" ? "Lichess" : "Chess.com"} sync: ${result.status}.`);
+      const providerName = pending.provider === "lichess" ? "Lichess" : "Chess.com";
+      if (result.status === "failed") setError(`${providerName} acquisition failed: ${result.error}.`);
+      else setMessage(result.status === "pending" ? `${providerName} run request accepted; acquisition is pending.`
+        : result.status === "complete" ? `${providerName} acquisition complete. Study delivery is separate.`
+        : `${providerName}: no acquisition reported.`);
     } catch (failure) {
       if (failure instanceof FailedOperationError) {
         try { clearMutation(failure.operationId); pendingRun.current = null; setRunPending(false); }
         catch { setError("The run result is known, but its original browser request could not be cleared. Reopen Settings to recover it."); return; }
       }
-      setError(failure instanceof Error ? failure.message : "Could not request sync. Retry the original request to check its result.");
+      setError(failure instanceof PendingOperationError ? "Run command is still pending confirmation. Retry the original request; acquisition is not yet confirmed."
+        : failure instanceof Error ? failure.message : "Could not request sync. Retry the original request to check its result.");
     }
     finally { setBusy(false); }
   }
@@ -181,13 +212,18 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
   const controlsDisabled = busy || unconfirmed || runPending || Boolean(recovery.error);
   return <section aria-label="Game sync settings">
     <h2>Game sync</h2>
-    <p>Choose the games to import. Recurring sync uses this exact UTC window; change it when you want a different range.</p>
+    <p>Historical/manual imports use a fixed UTC range. Ongoing collection uses this range as a seed and advances acquisition windows when the separately activated worker runs.</p>
+    <p>Saving settings does not start a worker or confirm that one is active. Launch preflight checks operator-supplied overlap and reconciliation cadence.</p>
+    <p>Run saved game sync requests the saved range or seed once. This collection-only release does not promise Study reprioritization.</p>
+    <label>Collection purpose<select value={purpose} disabled={controlsDisabled} onChange={event => setPurpose(event.target.value)}>
+      <option value="">Choose…</option><option value="historical">Historical/manual import</option><option value="ongoing">Ongoing collection</option>
+    </select></label>
     <label>Game provider<select value={provider} disabled={controlsDisabled} onChange={event => setProvider(event.target.value as Provider)}>
       <option value="lichess">Lichess</option><option value="chesscom">Chess.com</option>
     </select></label>
     <label>Game account<input value={account} disabled={controlsDisabled} onChange={event => setAccount(event.target.value)} /></label>
-    <label>Games from (UTC)<input type="datetime-local" value={start} disabled={controlsDisabled} onChange={event => setStart(event.target.value)} /></label>
-    <label>Games until (UTC)<input type="datetime-local" value={end} disabled={controlsDisabled} onChange={event => setEnd(event.target.value)} /></label>
+    <label>Games from (UTC)<input type="datetime-local" step="0.001" value={start} disabled={controlsDisabled} onChange={event => setStart(event.target.value)} /></label>
+    <label>Games until (UTC)<input type="datetime-local" step="0.001" value={end} disabled={controlsDisabled} onChange={event => setEnd(event.target.value)} /></label>
     <fieldset disabled={controlsDisabled}><legend>Game speeds</legend>{speeds.map(speed => <label key={speed}>
       <input type="checkbox" checked={selectedSpeeds.includes(speed)} onChange={() => setSpeeds(toggle(selectedSpeeds, speed))} />{speed}
     </label>)}</fieldset>
@@ -198,7 +234,10 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
     <fieldset disabled={controlsDisabled}><legend>Compare with repertoires</legend>{repertoires.map(repertoire => <label key={repertoire.id}>
       <input type="checkbox" checked={selectedRepertoires.includes(repertoire.id)} onChange={() => setRepertoires(toggle(selectedRepertoires, repertoire.id))} />{repertoire.name}
     </label>)}</fieldset>
-    <label>Recurring sync interval (seconds; blank is off)<input type="number" min={60} max={86400} value={interval} disabled={controlsDisabled} onChange={event => setInterval(event.target.value)} /></label>
+    {purpose === "ongoing" && <>
+      <p>The ongoing seed must span 60–86400 seconds (1 minute–24 hours). Dates are never shortened automatically.</p>
+      <label>Ongoing collection interval (seconds)<input type="number" min={60} max={86400} step={1} value={interval} disabled={controlsDisabled} onChange={event => setInterval(event.target.value)} /></label>
+    </>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <Button pending={busy} disabled={runPending || Boolean(recovery.error)} onClick={() => void save()}>{unconfirmed ? "Retry settings save" : "Save game sync settings"}</Button>
     <Button disabled={busy || !loaded || unconfirmed || Boolean(recovery.error)} onClick={() => void run()}>{runPending ? "Retry saved game sync" : "Run saved game sync"}</Button>

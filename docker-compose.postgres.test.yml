@@ -172,7 +172,6 @@ services:
     depends_on:
       api: {condition: service_healthy}
     mem_limit: 512m
-    cpus: 1
 
   maia-worker:
     init: true
@@ -184,7 +183,6 @@ services:
     depends_on:
       api: {condition: service_healthy}
     mem_limit: 768m
-    cpus: 1
 
 volumes:
   postgres-test-backups:

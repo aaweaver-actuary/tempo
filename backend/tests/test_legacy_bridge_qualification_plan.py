@@ -22,7 +22,7 @@ def test_finite_plan_pins_six_artifacts_exact_test_counts_caps_and_five_minute_c
     assert plan["artifact_test_total"] == 284 and plan["native_test_total"] == 5
     assert plan["cleanup_reserve_seconds"] == 300
     assert plan["work_seconds"] == {"artifacts": 900, "native": 600}
-    assert plan["native_total"] == dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1)
+    assert plan["native_total"] == dict(containers=2, cpus=None, memory_mib=1024, pids=384, owned_internal_networks=1)
     assert len(plan["own_packages"]) == 6
     assert len(set(plan["native_tests"])) == 5
 
@@ -36,7 +36,8 @@ def test_helper_caps_cover_all_descendants_and_mount_only_source_and_owned_evide
     args = qualification.helper_arguments("sha256:" + "a" * 64, "owned-helper", Path("/tmp/owned-evidence"), "native",
         source=Path("/private/tmp/owned/source"), source_sha256="b" * 64,
         network="owned-internal-network", env_file=Path("/private/tmp/owned/output/private-native.env"))
-    assert args[args.index("--cpus") + 1] == "1"
+    assert "--cpus" not in args
+    assert not any(value.startswith(("UV_CONCURRENT_BUILDS=", "CARGO_BUILD_JOBS=", "RAYON_NUM_THREADS=", "OMP_NUM_THREADS=")) for value in args)
     assert args[args.index("--memory") + 1] == args[args.index("--memory-swap") + 1] == "768m"
     assert args[args.index("--pids-limit") + 1] == "128"
     assert args[args.index("--network") + 1] == "owned-internal-network"
@@ -101,7 +102,8 @@ def test_native_controller_requires_explicit_window_and_managed_budget_before_an
 
 
 def test_helper_refuses_missing_or_wrong_cgroup_caps(monkeypatch):
-    values = {"cpu.max": "100000 100000", "memory.max": str(768 * 1024 * 1024), "memory.swap.max": "0", "pids.max": "128"}
+    monkeypatch.delenv("TEMPO_QUALIFICATION_HELPER_CPUS", raising=False)
+    values = {"cpu.max": "max 100000", "memory.max": str(768 * 1024 * 1024), "memory.swap.max": "0", "pids.max": "128"}
     monkeypatch.setattr(qualification, "Path", lambda value: SimpleNamespace(read_text=lambda: values[value.rsplit("/", 1)[-1]]))
     qualification.verify_helper_caps()
     values["pids.max"] = "max"
@@ -305,6 +307,7 @@ def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tm
         pytest.fail('unexpected command')
     monkeypatch.setattr(qualification.subprocess, 'check_output', git)
     monkeypatch.setenv('TEMPO_DEVELOPMENT_BUDGET_TOKEN', 'synthetic-test-owner')
+    monkeypatch.setenv('TEMPO_REAL_DOCKER', '/synthetic/docker')
     real_staging = module.OwnedStaging
     monkeypatch.setattr(module, 'OwnedStaging', lambda identity, head: real_staging(identity, head, base=tmp_path))
     mounts = {}
@@ -327,7 +330,7 @@ def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tm
     monkeypatch.setattr(qualification, 'Deadline', Timer)
     evidence = tmp_path / 'durable'
     args = SimpleNamespace(approved_window=True, helper_image_id='sha256:' + 'a' * 64,
-                           mode='artifacts', evidence=evidence)
+                           mode='artifacts', evidence=evidence, cpus=None)
     assert qualification.controller(args) == 0
     receipts = list(evidence.glob('*/host.json')); assert len(receipts) == 1
     host = json.loads(receipts[0].read_text())
@@ -437,3 +440,28 @@ def test_pinned_x86_uv_url_matches_published_093_wheel_identity():
         '488417c6c0127c00bcdfac3556ae2ea0597df8245fe5f9bcfda35ebdbe85/'
         'uv-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl')
     assert checksum == '73ae4bbc7d555ba1738da08c64b55f21ab0ea0ff85636708cebaf460d98a440d'
+
+
+def test_ordinary_qualification_cpu_is_unrestricted_without_daemon_or_subprocess(monkeypatch):
+    monkeypatch.delenv("TEMPO_QUALIFICATION_CPUS", raising=False)
+    monkeypatch.setattr(qualification.cpu.subprocess, "run", lambda *args, **kwargs: pytest.fail("CPU default queried daemon"))
+    assert qualification.cpu.selected_cpus() is None
+    assert qualification.cpu.cpu_arguments(None) == []
+    assert qualification.cpu.cpu_environment(None, None) == []
+    assert qualification.cpu.partition_cpus(None, {"helper": 1, "postgres": 1}) == {"helper": None, "postgres": None}
+    assert qualification.cpu.verify_cpu_max("max 100000", None)
+    assert not qualification.cpu.verify_cpu_max("50000 100000", None)
+
+
+def test_explicit_qualification_caps_partition_exactly_and_preserve_helper_safeguards():
+    cpu = qualification.cpu
+    assert cpu.partition_cpus(4, {"helper": 1, "postgres": 1}) == {"helper": 2, "postgres": 2}
+    args = qualification.helper_arguments("sha256:" + "a" * 64, "owned", Path("/tmp/owned"), "native",
+        source=Path("/tmp/source"), source_sha256="b" * 64, cpus=.5, total_cpus=1)
+    assert args[args.index("--cpus")+1] == "0.5"
+    assert args[args.index("--memory")+1] == args[args.index("--memory-swap")+1] == "768m"
+    assert args[args.index("--pids-limit")+1] == "128"
+    assert cpu.verify_cpu_max("50000 100000", .5)
+    assert not cpu.verify_cpu_max("max 100000", .5)
+    for value in (0,-1,float("inf"),float("nan"),True,.000001):
+        with pytest.raises(ValueError): cpu.positive_cpu(value)

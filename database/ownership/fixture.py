@@ -55,8 +55,6 @@ class OwnershipFixture:
                 "tempo.disposable=true",
                 "--memory",
                 "256m",
-                "--cpus",
-                "1",
                 "--pids-limit",
                 "256",
                 "--tmpfs",

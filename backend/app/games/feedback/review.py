@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
@@ -77,6 +78,15 @@ class GameReview:
     def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration:
         if configuration.workspace_id != self.workspace:
             raise ReviewUnavailable("configuration_workspace_mismatch")
+        # Validate new writes here, not in the stored value's deserializer.
+        # Historical/manual windows remain arbitrary-width and old seeds readable.
+        if configuration.interval_seconds is not None:
+            start = datetime.fromisoformat(configuration.window.start_at.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(configuration.window.end_at.replace("Z", "+00:00"))
+            if not 60 <= (end - start).total_seconds() <= 86400:
+                raise ReviewUnavailable(
+                    "Ongoing collection needs a UTC seed of 60–86400 seconds (1 minute–24 hours). "
+                    "Adjust the dates or choose Historical/manual import.", 422)
         return self.store.configure(configuration, expected_revision)
 
     def recent_games(self) -> RecentGames:

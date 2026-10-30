@@ -15,7 +15,7 @@ from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
 from app.contracts.product_v02.games import Finding, GameRecord, TimePrecision
 from app.contracts.product_v02.learning import GameEffectKey
-from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot
+from app.contracts.product_v02.repertoire import DecisionPresentation, ImmutableAuthoredRoute, RepertoireSnapshot
 
 __all__ = ["ReentryLookup", "normalize_record", "compare_record", "compare_game", "effect_key"]
 
@@ -124,6 +124,21 @@ def compare_game(game: CanonicalGame, *, provider: str,
         raise ValueError("route_outside_snapshot_scope")
     if len({(route.repertoire_id, route.route_id) for route in routes}) != len(routes):
         raise ValueError("duplicate_route_identity")
+    findings = []
+    for repertoire_id in sorted(scope):
+        findings.extend(_compare_repertoire(game, provider=provider, snapshot=snapshot,
+            routes=[route for route in routes if route.repertoire_id == repertoire_id],
+            repertoire_id=repertoire_id, time_precision=time_precision, reentry_lookup=reentry_lookup))
+    return tuple(sorted(findings, key=lambda finding: (finding.ply, finding.repertoire_id)))
+
+
+def _compare_repertoire(game: CanonicalGame, *, provider: str, snapshot: RepertoireSnapshot,
+                        routes: list[ImmutableAuthoredRoute], repertoire_id: str,
+                        time_precision: TimePrecision,
+                        reentry_lookup: ReentryLookup | None) -> tuple[Finding, ...]:
+    """One repertoire owns its frontier; other repertoires cannot end its coverage."""
+    membership = snapshot.membership
+    scope = (repertoire_id,)
     route_positions = [replay_line(route.starting_fen, route.moves) for route in routes]
     own_responses_by_position = {}
     for route, frames in zip(routes, route_positions):
@@ -183,15 +198,6 @@ def compare_game(game: CanonicalGame, *, provider: str,
                                              "known_unavailable", "no_applicable_authored_route", None, None))
             departed = True
             continue
-        repertoires = {routes[index].repertoire_id for index, _ in candidates}
-        if len(repertoires) > 1:
-            for repertoire_id in sorted(repertoires):
-                findings.append(_finding(game, provider, membership, position, repertoire_id, (),
-                                         "ambiguous", "multiple_applicable_repertoires", None, None))
-            frontier.advance((), position["move"])
-            departed = True
-            continue
-        repertoire_id = sorted(repertoires)[0]
         learner_turn = position["turn"] == game.learner_color
         # P02 applies across every occurrence in this repertoire, including a
         # different authored route with the same exact transposed position.
@@ -203,10 +209,13 @@ def compare_game(game: CanonicalGame, *, provider: str,
                        for index, ply in candidates)
         mappings = tuple({item for item in snapshot.decision_presentations
                           if item.repertoire_id == repertoire_id and item.position_key == key
-                          and item.selected_response_uci in expected
                           and any(_mapping_applies(item, routes[index].route_id, ply)
                                   for index, ply in candidates)})
         mapping = resolve_equivalent_mapping(mappings)
+        incompatible_mapping = learner_turn and len(expected) == 1 and any(
+            item.selected_response_uci not in expected for item in mappings)
+        if incompatible_mapping:
+            mapping = None
         active_occurrences = {(routes[index].route_id, ply) for index, ply in candidates}
         route_mapping_ambiguous = (learner_turn and len(expected) == 1 and len(active_occurrences) > 1
             and any(item.route_id is not None for item in mappings)
@@ -215,7 +224,7 @@ def compare_game(game: CanonicalGame, *, provider: str,
         result = classify_response(
             played_uci=position["move"], expected_uci=expected, learner_turn=learner_turn,
             complete=membership.complete and membership.available, terminal=terminal,
-            ambiguous=route_mapping_ambiguous, mapping_count=1 if mapping is not None else len(mappings),
+            ambiguous=route_mapping_ambiguous or incompatible_mapping, mapping_count=1 if mapping is not None else len(mappings),
             available=mapping is not None and getattr(mapping, "available", False),
             introduced=None if mapping is None or mapping.introduction == "unknown" else mapping.introduction == "introduced",
             introduced_at=_timestamp(None if mapping is None else mapping.introduced_at),
@@ -230,9 +239,10 @@ def compare_game(game: CanonicalGame, *, provider: str,
                 mapping = None
             findings.append(_finding(game, provider, membership, position, repertoire_id,
                                      expected, kind, diagnostic, mapping, authority))
-            if kind == "known_unintroduced" and position["move"] in expected:
-                # A covered correct encounter is a frequency fact, not a
-                # departure. Retain the fact and keep following the same route.
+            if (membership.complete and membership.available and position["move"] in expected
+                    and kind not in {"conflict", "coverage_end"}):
+                # Authored traversal is independent of learning/card availability.
+                # Preserve mapping diagnostics without inventing a departure.
                 frontier.advance(candidates, position["move"])
                 continue
             # Every meaningful uncertainty/departure ends this traversal, even
@@ -266,10 +276,14 @@ def _finding(game, provider, membership, position, repertoire_id, expected, kind
              diagnostic, mapping, authority):
     if kind == "conflict":
         membership_fact = "conflict"
-    elif kind == "ambiguous" or (kind == "known_unavailable" and not expected):
+    elif (not membership.complete or not membership.available
+          or (kind in {"ambiguous", "known_unavailable"} and not expected)):
         membership_fact = "unknown"
     else:
         membership_fact = "present" if expected else "absent"
+    introduction_fact = _scoped_introduction(mapping, game, provider)
+    if introduction_fact is None:
+        introduction_fact = True if kind == "confirmed_miss" else False if kind == "known_unintroduced" else None
     return Finding(
         kind=kind, provider=provider, game_id=game.game_id,
         source_revision=game.source_revision, source_digest=game.source_digest,
@@ -279,7 +293,7 @@ def _finding(game, provider, membership, position, repertoire_id, expected, kind
         decision_id=None if mapping is None else mapping.decision_id,
         presentation_id=None if mapping is None else mapping.presentation_id,
         presentation_revision=None if mapping is None else mapping.presentation_revision,
-        introduced_before_game=True if kind == "confirmed_miss" else False if kind == "known_unintroduced" else None,
+        introduced_before_game=introduction_fact,
         membership=membership_fact,
         lapse_eligible=kind == "confirmed_miss", diagnostic=diagnostic,
         reentry_authority_id=authority,

@@ -18,10 +18,11 @@ def test_prepared_native_plan_has_six_exact_cases_under_existing_budget():
     value = plan.describe()
     assert len(set(value['cases'])) == 6
     assert value['work_seconds'] == 900 and value['cleanup_seconds'] == 300
-    assert value['total'] == dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
+    assert value['total'] == dict(containers=3, cpus=None, memory_mib=1216, pids=288,
         extra_swap_mib=0, owned_internal_networks=1, published_ports=0)
     budget = json.loads((ROOT / 'config/resource-budgets.json').read_text())['development']
-    assert value['total']['cpus'] <= budget['cpus'] and value['total']['memory_mib'] <= budget['memoryMiB']
+    assert value['total']['cpus'] is None and 'cpus' not in budget
+    assert value['total']['memory_mib'] <= budget['memoryMiB']
     assert value['candidate_images']['redis'] == 'sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499'
 
 
@@ -40,6 +41,7 @@ def test_native_caps_have_no_extra_swap_host_ports_or_live_mounts():
     for kind in plan.CAPS:
         arguments = plan.docker_arguments(kind, 'owned-' + kind, 'sha256:' + 'a' * 64, 'owned-internal')
         assert arguments[arguments.index('--memory') + 1] == arguments[arguments.index('--memory-swap') + 1]
+        assert '--cpus' not in arguments
         assert '--publish' not in arguments and '--env-file' not in arguments and '--mount' not in arguments
         assert arguments[arguments.index('--network') + 1] == 'owned-internal'
 

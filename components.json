@@ -261,16 +261,16 @@
         {
           "owner": "content",
           "kind": "python",
-          "cwd": "services/content",
-          "command": "python run_suite.py pure",
-          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"]
+          "cwd": ".",
+          "command": "python services/content/run_suite.py pure",
+          "inputs": ["services/content/tests", "services/content/fixtures", "services/content/src", "services/content/run_suite.py", "services/content/pyproject.toml", "services/content/uv.lock", "database/tempo_content_database/tests/unit"]
         },
         {
           "owner": "content",
           "kind": "postgres",
-          "cwd": "services/content",
-          "command": "python ../../database/tempo_content_database/tooling/run_postgres.py",
-          "inputs": ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"]
+          "cwd": ".",
+          "command": "python database/tempo_content_database/tooling/run_postgres.py",
+          "inputs": ["database/tempo_content_database/tooling/run_postgres.py", "database/tempo_content_database/tests/test_postgres.py", "database/tempo_content_database/tooling/benchmark.py", "services/content/run_suite.py", "services/content/src", "services/content/fixtures", "services/content/pyproject.toml", "services/content/uv.lock"]
         }
       ],
       "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"], "postgresql": "18"},
@@ -294,7 +294,12 @@
         "replay_positions",
         "ComparisonSnapshot",
         "compare_game",
-        "EvidenceStore"
+        "EvidenceStore",
+        "LegacyAuthorityToken",
+        "LegacyComparisonSnapshot",
+        "LegacyScopedComparisonSnapshot",
+        "PhysicalCard",
+        "preview_legacy_observation"
       ],
       "dependencies": [
         "tempo_repertoire_comparison",
@@ -1398,6 +1403,7 @@
         "Candidate",
         "CandidateFactsPort",
         "ContentAuthority",
+        "CurrentMissProjection",
         "Eligibility",
         "ReceiveContext",
         "RemediationError",
@@ -1414,7 +1420,10 @@
         "validate_delivery",
         "prepare_admissions",
         "apply_admission",
-        "current_miss_sql"
+        "current_miss_sql",
+        "LegacyAcceptedDecision",
+        "LegacyAuthority",
+        "accepted_storage_identity"
       ],
       "dependencies": [
         "tempo_game_evidence_contracts"
@@ -1646,7 +1655,10 @@
       "status": "implemented",
       "root": "packages/game-classification",
       "publicExports": [
-        "UnimplementedClassification"
+        "UnimplementedClassification",
+        "FindingKind",
+        "classify_response",
+        "resolve_equivalent_mapping"
       ],
       "dependencies": [
         "tempo_game_review_contracts"
@@ -1913,6 +1925,31 @@
         "backend/tests/product_encounter_fixtures.py",
         "tools/component-build/check-interface-boundaries.mjs",
         "tools/component-build/check-python.py"
+      ]
+    },
+    {
+      "id": "games-collection-release",
+      "owner": "Games #491 Task G",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python -m pytest database/tests/games_collection/test_packaged_collection.py -q",
+      "inputs": [
+        "backend/app/games",
+        "backend/app/product_composition/game_sync.py",
+        "backend/app/product_composition/game_sync_current.py",
+        "backend/app/product_composition/game_collection_status.py",
+        "database/tests/games_collection/test_packaged_collection.py",
+        "backend/tests/fixtures/product_collection_packaged.py",
+        "backend/tests/test_product_game_lapse_postgres.py",
+        "backend/tests/test_product_game_lapse.py",
+        "contracts/product-v02/fixtures",
+        "backend/app/product_composition/game_review.py",
+        "backend/app/product_composition/game_worker.py",
+        "backend/app/repertoire",
+        "database/tempo_legacy_database/adapters/games",
+        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
+        "database/tooling/provision_postgres_roles.py",
+        "backend/Dockerfile"
       ]
     }
   ]

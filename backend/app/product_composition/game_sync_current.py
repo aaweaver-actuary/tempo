@@ -63,14 +63,16 @@ class CurrentRepertoireSnapshots:
 
 
 def create_current_game_sync(*, workspace, connections, clock=None,
-                             learning=None, forward_window=None, transport_factory=None):
+                             learning=None, forward_window=None, transport_factory=None,
+                             delivery_enabled: bool = True,
+                             reconciliation_interval_seconds: int | None = None):
     """Build one opted-in worker using both explicitly saved provider policies.
 
     Comparison uses published source facts. Canonical Games publication and its
-    original outbox commit before calling the injected public intake. Evidence
-    acceptance does not construct or wait for the receiver's queue refresh.
+    original outbox commit before any enabled delivery. Collection needs no
+    receiver and leaves commands pending. Delivery never waits for queue refresh.
     """
-    if learning is None:
+    if delivery_enabled and learning is None:
         # Canonical identity is joined by SourceIdentity. The concrete receiving
         # seam still needs native qualification before default CLI activation.
         # Never fall back to the older lapse-only bridge or relabel a finding.
@@ -102,33 +104,52 @@ def create_current_game_sync(*, workspace, connections, clock=None,
     runtime = create_game_sync(policies=tuple(configuration_policy(value) for value in configurations),
         store=store, snapshots=CurrentRepertoireSnapshots(connections), learning=learning,
         clock=clock, source_identity=store,
-        transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission)
+        transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission,
+        delivery_enabled=delivery_enabled)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)
+    reconciliation_options = ({} if reconciliation_interval_seconds is None else
+        {"reconciliation_interval_seconds": reconciliation_interval_seconds})
     schedule=(ContinuousSync(workspace=workspace,store=configuration_store,policy=forward_window,
-        build_job=configured_job,now=clock.now) if forward_window is not None else review)
+        build_job=configured_job,now=clock.now, **reconciliation_options)
+        if forward_window is not None else review)
     return runtime, CurrentSyncSchedule(schedule)
 
 
 def create_current_provider_worker(*, workspace, connections,
                                    priority_intake: EncounterFeedbackPort | None = None,
-                                   clock=None, forward_window=None, transport_factory=None):
-    """Wire only the injected public idempotent priority intake.
+                                   clock=None, forward_window=None, transport_factory=None,
+                                   delivery_enabled: bool = True,
+                                   reconciliation_interval_seconds: int | None = None):
+    """Wire the public intake only when delivery is enabled.
 
     Accepted/pending is evidence acceptance, not queue availability. The root
-    supplies the receiver implementation; Games never constructs a Study owner,
-    borrows its writer, or refreshes/promotes its queue during delivery.
+    supplies the receiver implementation; collection permits its absence. Games
+    never constructs a Study owner, borrows its writer, or refreshes/promotes its
+    queue during delivery.
     """
-    if priority_intake is None:
+    if delivery_enabled and priority_intake is None:
         raise ReviewUnavailable("decoupled_priority_intake_required",503)
+    options = {}
+    if not delivery_enabled:
+        options["delivery_enabled"] = False
+    if reconciliation_interval_seconds is not None:
+        options["reconciliation_interval_seconds"] = reconciliation_interval_seconds
     return create_current_game_sync(workspace=workspace, connections=connections,
         learning=priority_intake, clock=clock, forward_window=forward_window,
-        transport_factory=transport_factory)
+        transport_factory=transport_factory, **options)
 
 
 def current_provider_worker(*, workspace, connections, clock=None, forward_window=None,
-                            transport_factory=None):
+                            transport_factory=None, delivery_enabled: bool = True,
+                            reconciliation_interval_seconds: int | None = None):
     """Concrete opt-in root: the worker alone owns this intake's lifecycle."""
+    options = ({} if reconciliation_interval_seconds is None else
+        {"reconciliation_interval_seconds": reconciliation_interval_seconds})
+    if not delivery_enabled:
+        return create_current_provider_worker(workspace=workspace, connections=connections,
+            clock=clock, forward_window=forward_window, transport_factory=transport_factory,
+            delivery_enabled=False, **options)
     from threading import Event
     from .provider_priority import CurrentProviderPriorityIntake
     clock = clock or SystemClock()
@@ -137,7 +158,7 @@ def current_provider_worker(*, workspace, connections, clock=None, forward_windo
         operation_stopped=stopped.is_set)
     runtime, schedule = create_current_provider_worker(workspace=workspace, connections=connections,
         priority_intake=intake, clock=clock, forward_window=forward_window,
-        transport_factory=transport_factory)
+        transport_factory=transport_factory, **options)
     stop = runtime.request_stop
     def request_stop():
         stopped.set()
@@ -153,6 +174,10 @@ def main():
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--preview",action="store_true",help="Read saved scopes and next forward windows; no imports/writes")
     parser.add_argument("--follow",action="store_true",help="Explicitly advance consecutive configured windows")
+    parser.add_argument("--collect-only", action="store_true",
+        help="Persist Games observations and pending commands without delivering to Study")
+    parser.add_argument("--reconcile-interval-seconds", type=int,
+        help="Explicit reconciliation interval for --follow (at least 60 seconds)")
     parser.add_argument("--overlap-seconds",type=int,help="Explicit overlap for --follow (0..3600)")
     parser.add_argument("--once", action="store_true", help="Drain ready work, then exit; retains durable retry/checkpoint state")
     parser.add_argument("--max-units", type=int, default=50, help="Maximum bounded units in one --once invocation (1..10000)")
@@ -161,20 +186,29 @@ def main():
         parser.error("--max-units must be 1..10000")
     if options.follow and options.overlap_seconds is None:
         parser.error("--follow requires explicit --overlap-seconds")
+    if options.reconcile_interval_seconds is not None:
+        if not options.follow:
+            parser.error("--reconcile-interval-seconds requires --follow")
+        if options.reconcile_interval_seconds < 60:
+            parser.error("--reconcile-interval-seconds must be at least 60")
     policy=ForwardWindow(options.overlap_seconds) if options.follow else None
     if options.preview:
         import json
         dsn=os.environ.get("TEMPO_DATABASE_READ_URL")
         if not dsn:raise RuntimeError("TEMPO_DATABASE_READ_URL is required for read-only preview")
         store=PostgresReviewStore(DedicatedGamesConnections(dsn,read_only=True))
+        now = SystemClock().now()
+        streams = {state.configuration.provider: state
+                   for state in store.continuous_state(options.workspace, now)}
         result=[]
         for provider in ("lichess","chesscom"):
             configuration=store.configuration(options.workspace,provider)
             if configuration is None:
                 result.append(dict(provider=provider,configured=False));continue
-            previous=store.last_job(options.workspace,provider)
-            job=(policy.next_job(configuration,previous,now=SystemClock().now(),build_job=configured_job)
-                if policy is not None else None)
+            state = streams.get(provider)
+            previous = None if state is None else state.forward_job
+            job=(policy.next_job(configuration,previous,now=now,build_job=configured_job)
+                if policy is not None and state is not None and state.forward_due else None)
             result.append(dict(provider=provider,configured=True,
                 configuration=configuration.model_dump(mode="json"),
                 previous=None if previous is None else previous.model_dump(mode="json"),
@@ -186,8 +220,13 @@ def main():
     dsn = os.environ.get("TEMPO_DATABASE_WRITE_URL")
     if not dsn:
         raise RuntimeError("TEMPO_DATABASE_WRITE_URL is required")
+    worker_options = {}
+    if options.collect_only:
+        worker_options["delivery_enabled"] = False
+    if options.reconcile_interval_seconds is not None:
+        worker_options["reconciliation_interval_seconds"] = options.reconcile_interval_seconds
     runtime, review = current_provider_worker(workspace=options.workspace,
-        connections=DedicatedGamesConnections(dsn),forward_window=policy)
+        connections=DedicatedGamesConnections(dsn),forward_window=policy, **worker_options)
     first_schedule=True
     def enqueue_selected():
         nonlocal first_schedule

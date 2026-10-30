@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { repository, checkTypeScript, checkConsumer, validateManifest } from "../check-components.mjs";
+import { repository, checkTypeScript, checkConsumer, validateManifest, validateSuite } from "../check-components.mjs";
 const manifest = JSON.parse(readFileSync(resolve(repository, "components.json"), "utf8"));
 const chess = manifest.components.find(component => component.id === "chess-line");
 const scheduling = manifest.components.find(component => component.id === "scheduling");
@@ -144,6 +144,75 @@ test("M02 Python public API policy rejects private and unavailable consumer expo
     assert.notEqual(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stderr, /Private/);
   }
+});
+for (const { name, kind, command, originalInputs } of [
+  {
+    name: "pure", kind: "python", command: "python services/content/run_suite.py pure",
+    originalInputs: ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"],
+  },
+  {
+    name: "PostgreSQL", kind: "postgres", command: "python database/tempo_content_database/tooling/run_postgres.py",
+    originalInputs: ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"],
+  },
+]) test(`M02 Content ${name} suite preserves relocated database inputs at repository root`, () => {
+  const content = manifest.components.find(component => component.id === "content");
+  assert.equal(content.status, "implemented");
+  assert.equal(content.root, "services/content");
+  assert.equal(content.tests.length, 2);
+  const suite = content.tests.find(candidate => candidate.kind === kind);
+  assert.ok(suite, `Content retains its ${kind} suite`);
+  assert.doesNotThrow(() => validateSuite(suite, repository, content.root));
+  assert.equal(suite.owner, "content");
+  assert.equal(suite.cwd, ".");
+  assert.equal(suite.command, command);
+  const originalPaths = originalInputs.map(input => resolve(repository, content.root, input));
+  assert.deepEqual(suite.inputs, originalPaths.map(path => relative(repository, path)));
+  assert.deepEqual(suite.inputs.map(input => realpathSync(resolve(repository, suite.cwd, input))), originalPaths.map(path => realpathSync(path)));
+  assert.doesNotThrow(() => validateManifest(manifest, repository, { componentIds: ["content"] }));
+});
+for (const { id, packageName, publicExports, interfaceExports } of [
+  {
+    id: "game-evidence", packageName: "tempo_game_evidence",
+    // The manifest inventories the legacy root, not the narrower pure interface.
+    publicExports: ["normalize_pgn", "replay_positions", "ComparisonSnapshot", "compare_game", "EvidenceStore",
+      "LegacyAuthorityToken", "LegacyComparisonSnapshot", "LegacyScopedComparisonSnapshot", "PhysicalCard",
+      "preview_legacy_observation"],
+    interfaceExports: ["ComparisonSnapshot", "ComparisonSnapshotV2", "LegacyComparisonSnapshot",
+      "LegacyScopedComparisonSnapshot", "PhysicalCard", "parse_snapshot", "preview_legacy_observation"],
+  },
+  {
+    id: "learning-remediation", packageName: "tempo_learning_remediation",
+    publicExports: ["AcceptedDecision", "AdmissionPort", "AdmissionProposal", "AdmissionResult", "AttemptAuthority",
+      "Candidate", "CandidateFactsPort", "ContentAuthority", "CurrentMissProjection", "Eligibility", "ReceiveContext",
+      "RemediationError", "ReviewOutcome", "WorkItem", "WorkPage", "Preparation", "PostgresRepository",
+      "PAGE_SIZE", "MAX_PREPARATION_PAGES", "evaluate_eligibility", "order_candidates", "propose_admission",
+      "validate_delivery", "prepare_admissions", "apply_admission", "current_miss_sql",
+      "LegacyAcceptedDecision", "LegacyAuthority", "accepted_storage_identity"],
+  },
+  {
+    id: "game-classification", packageName: "tempo_game_classification",
+    publicExports: ["UnimplementedClassification", "FindingKind", "classify_response", "resolve_equivalent_mapping"],
+  },
+]) test(`M02 ${id} registration matches its existing public package exports`, () => {
+  const component = manifest.components.find(candidate => candidate.id === id);
+  assert.equal(component.status, "implemented");
+  assert.deepEqual(component.publicExports, publicExports);
+  const source = resolve(repository, component.root, "src", packageName, "__init__.py");
+  const sources = [source];
+  if (interfaceExports) sources.push(resolve(repository, component.root, "src", packageName, "interfaces", "__init__.py"));
+  const result = spawnSync(python, ["-I", "-c", `
+import ast, json, pathlib, sys
+results = []
+for source in sys.argv[1:]:
+    tree = ast.parse(pathlib.Path(source).read_text())
+    exports = [ast.literal_eval(node.value) for node in tree.body
+               if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
+    assert len(exports) == 1, "Expected one explicit public export declaration"
+    results.append(exports[0])
+print(json.dumps(results))
+`, ...sources], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), interfaceExports ? [publicExports, interfaceExports] : [publicExports]);
 });
 test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
   const plannedComponent = manifest.components.find(component => component.status === "planned");

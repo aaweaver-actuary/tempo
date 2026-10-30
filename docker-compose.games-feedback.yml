@@ -1,20 +1,24 @@
 # Optional Games provider process, composed with current docker-compose.yml.
-# Source-only candidate; aggregate allocation and assembled qualification pending.
-# No default profile, dependency from Study, API writer URL or central budget edit.
+# Prepared inactive profile; explicit operator readiness and apply are required.
+# No default profile, Study dependency, API writer URL or Study delivery.
 services:
   game-feedback-worker:
     profiles: [games-feedback]
     init: true
-    cpus: 0.15
+    labels:
+      tempo.collection.owner: managed-game-collection
+      tempo.collection.mode: collect-only
     mem_limit: 256m
     pids_limit: 96
     build:
       context: .
       dockerfile: backend/Dockerfile
-    # This profile is for ongoing repertoire-miss intake, not fixed-window backfill.
-    # No overlap value or saved window is inferred from historical jobs.
+    # This prepared profile collects durable Games evidence without Study delivery.
+    # Empty operator inputs permit inactive packaging, never successful startup.
+    # The switch requires explicit numeric values; no overlap/window is inferred.
     command: ["python", "-m", "app.product_composition.game_sync_current", "--workspace", "legacy",
-      "--follow", "--overlap-seconds", "${TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS:?Set an explicit follow overlap (0..3600 seconds, smaller than each recurring seed window)}"]
+      "--collect-only", "--follow", "--overlap-seconds", "${TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS:-}",
+      "--reconcile-interval-seconds", "${TEMPO_PRODUCT_GAME_SYNC_RECONCILE_INTERVAL_SECONDS:-}"]
     environment:
       TEMPO_PRODUCT_GAME_SYNC_ENABLED: "1"
       TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
