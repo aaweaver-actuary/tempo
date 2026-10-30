@@ -388,7 +388,7 @@ def pending_determined_feedback_in_transaction(database, *, workspace, runtime_i
 
 
 def prepare_determined_feedback(*, workspace, connections, clock, admitted, capture=None,
-                               selector=None):
+                               selector=None, before_priority=None):
     """PURE preparation of one determined outbox unit, with every read closed.
 
     Selecting, qualification, target capture and chess projection cannot mutate
@@ -406,6 +406,12 @@ def prepare_determined_feedback(*, workspace, connections, clock, admitted, capt
         ready_only=True, workspace=workspace, priority_order=True)
     if original is None:
         return None
+    if before_priority is not None and original.control is None:
+        from app.services.queue_ordering import urgent_priority_key
+        priority = dict(urgent_determined_at=original.determined_at,
+            urgent_stream=original.stream, urgent_effect_id=effect_id(original.command.key))
+        if urgent_priority_key(priority) >= urgent_priority_key(before_priority):
+            return None
     return prepare_delivery_feedback(original,connections=connections,clock=clock,admitted=admitted,
         capture=capture,selector=selector)
 

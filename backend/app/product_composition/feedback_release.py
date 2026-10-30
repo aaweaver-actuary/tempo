@@ -66,10 +66,10 @@ def register_feedback_next_card_priority(*, workspace="legacy",read=None,clock=N
         return feedback_handoff_admitted(workspace,connections,
             runtime_id=current_managed_runtime_identity())
 
-    def prepare():
+    def prepare(*, before_priority=None):
         try:
             work = prepare_determined_feedback(workspace=workspace,connections=connections,
-                clock=clock,admitted=admitted)
+                clock=clock,admitted=admitted,before_priority=before_priority)
         except Exception:
             # Optional delivery failure cannot hide accepted Study preparation.
             return None
