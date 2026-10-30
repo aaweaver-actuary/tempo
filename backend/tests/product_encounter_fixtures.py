@@ -70,15 +70,21 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
             return prepare_feedback_qualification(original,read=transaction,
                 capture=lambda repertoire,game_id,plies:capture,clock=clock,
                 determination=command.detected_at,stream=stream)
-        prepared = prepare(command)
-        target = prepared.qualification.selection.decision.model_copy(update={
-            'repertoire_revision':prepared.prepared_decisions.authority.scope_source_revision+1})
-        introduction = prepare_encounter_introduction(target,read=transaction)
-        priority = prepare_priority_promotion(clock().date().isoformat(),target.presentation_id,read=transaction)
-        yield SimpleNamespace(prepared=prepared,prepare=prepare,prepared_introduction=introduction,
-                              prepared_priority=priority,source=source)
+        result = SimpleNamespace(prepare=prepare,source=source)
+        def reprepare():
+            prepared = prepare(command)
+            target = prepared.qualification.selection.decision.model_copy(update={
+                'repertoire_revision':prepared.prepared_decisions.authority.scope_source_revision+1})
+            result.prepared = prepared
+            result.prepared_introduction = prepare_encounter_introduction(target,read=transaction,
+                prepared_target=prepared.prepared_decisions.prepared_target(target))
+            result.prepared_priority = prepare_priority_promotion(clock().date().isoformat(),target.presentation_id,read=transaction)
+        result.reprepare = reprepare
+        reprepare()
+        yield result
     finally:
         with transaction() as database:
+            database.execute_native('DELETE FROM product_feedback_deliveries WHERE source_key=%s',(source.source_key,))
             database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
             database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
                 (config.workspace_id,config.provider))

@@ -70,7 +70,7 @@ def encounter_digest(command: GameEncounter) -> str:
 def qualified_encounter_view(command, qualification):
     """Internal factual adapter; original old command bytes remain durable."""
     if isinstance(command,GameEncounter):
-        return command
+        return command.model_copy(update={'decision':qualification.selection.decision})
     selected = qualification.selection
     return GameEncounter(key=command.key,source=selected.source,decision=selected.decision,
         expected_uci=command.finding.expected_uci[0],played_uci=command.finding.played_uci,
@@ -131,6 +131,10 @@ class EncounterFeedback(GameFeedback):
         effect = self.store.get(key)
         # A key-only control tombstone has no encounter facts to report yet.
         return self._encounter_receipt(effect, effect.encounter, "duplicate") if effect and (effect.encounter or effect.lapse) else None
+
+    def feedback_observation(self,key):
+        """Current receiving-owner queue/issuance facts without mutation."""
+        return self.store.feedback_observation(key,instant(self.clock()))
 
     def accept_encounter(self, command: GameEncounter) -> EncounterReceipt:
         return self._accept(command, qualification=None)
@@ -278,6 +282,18 @@ class EncounterFeedback(GameFeedback):
                            deferred_reason="active_attempt" if facts.active_attempt else None)
         target = EncounterTarget(card_id=mapping.presentation_id, card_revision=mapping.presentation_revision)
         progress = effect.progress
+        if target != progress.target:
+            # Only the current owner may supply a different physical binding.
+            # Preserve the real application receipt and any actual first service
+            # on the prior target; establish fresh issuance authority for this
+            # current target without repeating the accepted consequence.
+            progress = self.store.observed_progress(effect)
+            changes = dict(target=target)
+            if progress.remediation_fence is not None:
+                changes.update(prior_remediation_fences=progress.prior_remediation_fences+
+                    (progress.remediation_fence,),remediation_fence=self._fence(target,now))
+            progress = progress.model_copy(update=changes)
+            effect = replace(effect,progress=progress)
         if progress.remediation_fence is None:
             fence = self._fence(target, now)
             if disposition == "introduced_again":

@@ -9,6 +9,44 @@ from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
 
 
+def _run_actual_unseen_slice(case,monkeypatch):
+    """Claim the saved review's real queue request through its bounded phases."""
+    from app.services import durable_tasks,postgres_queue_refresh,study_mode
+    from tempo_legacy_database.adapters.queue_refresh import reads
+    def write(operation,**kwargs):
+        with case.transaction() as database:
+            return operation(database)
+    with monkeypatch.context() as owner:
+        owner.setattr(durable_tasks,'submit_background_write',write)
+        owner.setattr(postgres_queue_refresh,'connection',lambda **kwargs:case.transaction())
+        owner.setattr(postgres_queue_refresh,'background_read_connection',case.transaction)
+        owner.setattr(reads,'background_read_connection',case.transaction)
+        owner.setattr(study_mode,'read_connection',case.transaction)
+        owner.setattr(study_mode,'background_read_connection',case.transaction)
+        owner.setattr(postgres_queue_refresh.activity_gate,'wait_for_foreground',lambda:None)
+        with case.transaction() as database:
+            entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",
+                (case.card_id,)).fetchone()[0]
+            assert database.execute_native("SELECT 1 FROM background_tasks WHERE kind='daily_queue' "
+                "AND deduplication_key='current' AND state='queued'").fetchone()
+        for _ in range(24):
+            task = durable_tasks.claim_task('daily_queue')
+            assert task is not None
+            assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+            with case.transaction() as database:
+                row = database.execute_native('SELECT payload_json FROM background_tasks WHERE id=%s',(task['id'],)).fetchone()
+                import json
+                payload = json.loads(row[0])
+            if entry in payload.get('processed_ids',[]):
+                assert payload['_queue_phase']=='reconcile_unseen'
+                break
+        else:
+            raise AssertionError('actual bounded refresh did not reach the unseen target')
+        with case.transaction() as database:
+            assert database.execute_native("SELECT 1 FROM daily_queue WHERE id=%s AND status='queued'",(entry,)).fetchone()
+            assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0]
+
+
 @pytest.mark.parametrize('state,command_kind',[
     ('introduced','encounter'),('unintroduced','encounter'),('introduced','lapse'),
 ])
@@ -111,8 +149,16 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
                 assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
                     (case.card_id,)).fetchone()[0] == int(state=='introduced')
                 assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0]
+                observed_status = PostgresGameFeedbackStore(database).feedback_observation(original.key,determined)
+                assert observed_status['progress'].remediation_fence == applied.progress.remediation_fence
+                assert observed_status['target_compatible']
+                assert observed_status['queued_attempt']['card_id'] == case.card_id
+                assert observed_status['queued_attempt']['issuance'] is None
+                assert observed_status['issued_since_determination'] == 0
             with case.transaction() as database:
                 _ordinary_review(database,case.protected_id,protected,'qualified-protected:'+case.card_id)
+            if state=='unintroduced':
+                _run_actual_unseen_slice(case,monkeypatch)
             timeline[0] = determined+timedelta(minutes=1)
             with case.transaction() as database:
                 target = _issue(database,case.card_id)
@@ -126,6 +172,10 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
                 assert effect.progress.settlement.attempt.queue_entry_id == target
                 assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
                     (case.card_id,)).fetchone()[0] == 1
+                observed_status = PostgresGameFeedbackStore(database).feedback_observation(original.key,timeline[0])
+                assert observed_status['progress'].settlement.review_id == first['review_id']
+                assert observed_status['queued_attempt'] is None
+                assert observed_status['issued_since_determination'] == 1
         finally:
             with case.transaction() as database:
                 database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
@@ -223,6 +273,8 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             assert effect.progress.first_issued_ordinal == 1
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
                 (case.card_id,)).fetchone()[0] == 1
+
+
             assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
                 (case.card_id,)).fetchone()[0] == 2
             # The real review owner invalidates its saved row before invoking
@@ -249,6 +301,65 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             assert settled.progress.first_issued == effect.progress.first_issued
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
                 (case.card_id,)).fetchone()[0] == 1
+
+
+def test_native_acknowledged_priority_only_is_qualified_from_foreground_with_existing_queue(
+    owned_postgres,monkeypatch,
+):
+    from datetime import timedelta
+    from app.study.game_feedback import Effect,instant
+    from app.study.encounter_feedback import EncounterFeedback,encounter_digest
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.games.feedback.coordinator import delivery_for
+    from app.services.review_service import ensure_card_queued_after
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.study.game_feedback import (PostgresGameFeedbackStore,
+        next_feedback_preparation,pending_feedback_preparation)
+    from product_encounter_fixtures import qualified_feedback_source
+    from test_product_game_lapse import NOW
+    monkeypatch.setattr(postgres_store,'configured',lambda:True)
+    with retained_history_case(owned_postgres,state='introduced') as case:
+        captured = case.capture(case.game_ids[0]); command = case.command(captured)
+        with qualified_feedback_source(case.transaction,capture=captured,command=command) as source:
+            with case.transaction() as database:
+                store = PostgresGameFeedbackStore(database)
+                legacy = Effect(key=command.key,source_revision=command.source.source_revision,received_at=NOW,
+                    status='applied',encounter=command,payload_hash=encounter_digest(command),
+                    card_id=case.card_id,card_revision=1,applied_at=NOW-timedelta(minutes=1),
+                    observation_recorded=True,disposition='review_priority',admission_status='available')
+                store.save(legacy,NOW)
+                receipt = EncounterFeedback(store,None,clock=lambda:NOW,introductions=None,
+                    introduction_policy=None).encounter_status(command.key)
+                delivery = delivery_for(source.source.source_key,command).model_copy(update={
+                    'state':'acknowledged','receipt':receipt})
+                database.execute_native("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,"
+                    "command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','acknowledged',0,%s::jsonb)",
+                    (delivery.operation_id,delivery.source_key,command.key.logical_id(),delivery.model_dump_json()))
+                ensure_card_queued_after(database,case.card_id,0,queue_date=NOW.date().isoformat(),preserve_order=False)
+                assert pending_feedback_preparation(database,NOW.date().isoformat())
+                observed = next_feedback_preparation(database,NOW.date().isoformat(),now=NOW)
+                assert observed.key == command.key and observed.qualification is None
+                # Discretionary raw history cannot block ready live work.
+                assert not pending_feedback_preparation(database,NOW.date().isoformat(),before_priority=dict(
+                    urgent_stream='forward',urgent_determined_at=NOW.isoformat(),urgent_effect_id='game-effect:'+'f'*64))
+            unit = prepare_feedback_effect(observed,read=case.transaction,capture=lambda *args:captured,
+                clock=lambda:NOW,qualification_prepare=source.prepare)
+            with case.transaction() as database:
+                available = apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
+                assert available.disposition=='introduced_again' and available.admission_status=='available'
+                first = available.progress.scheduling_review_id
+                current = PostgresGameFeedbackStore(database).get(command.key)
+            unit = prepare_feedback_effect(current,read=case.transaction,capture=lambda *args:captured,
+                clock=lambda:NOW,qualification_prepare=source.prepare)
+            with case.transaction() as database:
+                replay = apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
+                assert replay.progress.scheduling_review_id == first
+                assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                    (case.card_id,)).fetchone()[0]==1
+                assert not database.execute_native("SELECT 1 FROM product_feedback_deliveries WHERE effect_key=%s AND state='pending'",
+                    (command.key.logical_id(),)).fetchone()
+            with case.transaction() as database:
+                database.execute_native('DELETE FROM product_feedback_deliveries WHERE operation_id=%s',(delivery.operation_id,))
 
 
 def _study_refresh(case, capture, snapshot, command):

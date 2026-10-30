@@ -417,6 +417,7 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture, snapsh
             return introductions.admit_encounter(day,repertoire_id=repertoire_id,
                                                 decision_id=decision_id,target=current)
 
-    return EncounterFeedback(PostgresGameFeedbackStore(database, prepared_priority=prepared_priority), decisions,
+    return EncounterFeedback(PostgresGameFeedbackStore(database, prepared_priority=prepared_priority,
+        prepared_targets=decisions._prepared_targets), decisions,
         clock=clock,introductions=RetainedIntroductionTarget() if introductions is not None else None,
         introduction_policy=introduction_policy)

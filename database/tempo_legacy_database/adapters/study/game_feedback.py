@@ -11,7 +11,7 @@ import json
 
 import psycopg
 
-from app.contracts.product_v02.learning import (EncounterProgress, FirstDepartureWitness,
+from app.contracts.product_v02.learning import (EncounterProgress, EncounterTarget, FirstDepartureWitness,
     GameEffectControl, GameEffectKey, GameLapse, RemediationFence)
 from app.study.game_feedback import CardFacts, Completion, Effect, GameFeedback, effect_id, instant
 from app.services.review_service import ensure_card_queued_after
@@ -23,11 +23,12 @@ ENCOUNTER_PRIORITY_REASON = "product_game_encounter"
 
 
 class PostgresGameFeedbackStore:
-    def __init__(self, database, *, promote=None, prepared_priority=None):
+    def __init__(self, database, *, promote=None, prepared_priority=None, prepared_targets=()):
         self.database = database
         self.scheduling = OwnedConnectionSchedulingReviewStore(database)
         self._promote = promote
         self.prepared_priority = prepared_priority
+        self.prepared_targets = tuple(prepared_targets)
         self.targeting = self
 
     def _writer(self):
@@ -178,6 +179,35 @@ class PostgresGameFeedbackStore:
             after_issuance_sequence=progress.remediation_fence.after_issuance_sequence)
         return progress.model_copy(update=dict(first_issued=issued[0], first_issued_ordinal=issued[1])) if issued else progress
 
+    def feedback_observation(self,key,now):
+        """Read-only owner facts; queue presence never stands in for issuance."""
+        effect = self.get(key)
+        if effect is None or (effect.encounter is None and effect.lapse is None):
+            return None
+        from .issuance import committed_issuance_count,attempt_issuance
+        from .recombination import effect_target
+        progress = self.observed_progress(effect)
+        target = progress.target if progress else EncounterTarget(card_id=effect.card_id,
+            card_revision=effect.card_revision)
+        compatible = effect_target(self.database,effect) == target.card_id
+        queued = self.database.execute_native("""SELECT queue.id queue_entry_id,queue.queue_date,
+            queue.status,queue.attempt_state,card.id card_id,card.revision card_revision
+            FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
+            WHERE queue.card_id=%s AND card.revision=%s AND queue.status='queued'
+              AND card.archived=0 AND card.pending_validation=0 AND card.superseded_by IS NULL
+              AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id)
+              AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block WHERE block.card_id=card.id)
+            ORDER BY queue.queue_date DESC,queue.id DESC LIMIT 1""",
+            (target.card_id,target.card_revision)).fetchone() if compatible else None
+        facts = progress or effect.qualification
+        count = committed_issuance_count(self.database,facts.determined_at) if facts else None
+        queue_facts = dict(queued) if queued else None
+        if queue_facts is not None:
+            queue_facts['issuance'] = attempt_issuance(self.database,queued['queue_entry_id'],
+                target.card_id,target.card_revision)
+        return dict(progress=progress,target_compatible=compatible,queued_attempt=queue_facts,
+            issued_since_determination=count)
+
     def card_facts(self, card_id, day):
         return self._card_facts(card_id, day, states=['learning','mature'])
 
@@ -265,7 +295,9 @@ class PostgresGameFeedbackStore:
         from .recombination import effect_target, current_presentation_available
         target = effect_target(self.database,effect)
         if target!=effect.card_id:
-            if not self.try_lock_target(target,day) or not current_presentation_available(self.database,target):
+            proved = any(item.current.presentation_id == target and
+                item.current.decision_id == effect.key.decision_id for item in self.prepared_targets)
+            if not self.try_lock_target(target,day) or (not proved and not current_presentation_available(self.database,target)):
                 return False
             facts = self.card_facts(target,day)
             if not facts or not facts.available or facts.active_attempt or facts.buried:
@@ -450,7 +482,15 @@ def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
     if not installed(database) or not feedback_preparation_admitted(database):
         return None
     row = database.execute_native("""SELECT effect.* FROM study_game_feedback effect
-        JOIN cards card ON card.id=COALESCE(
+        JOIN cards card ON card.id=COALESCE((
+            SELECT MIN(current.presentation_id) FROM study_recombination_current current
+            JOIN study_recombination_presentations presentation ON presentation.presentation_id=current.presentation_id
+            WHERE current.decision_id=effect.decision_id
+              AND presentation.result_json->'presentation'->>'repertoire_id'=COALESCE(
+                  effect.payload_json::jsonb->'command'->'decision'->>'repertoire_id',
+                  effect.payload_json::jsonb->'command'->'finding'->>'repertoire_id',
+                  effect.payload_json::jsonb->'finding'->>'repertoire_id')
+            HAVING COUNT(DISTINCT current.presentation_id)=1),
             effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id',effect.card_id)
         WHERE effect.status IN ('pending','applied') AND effect.hold_json IS NULL
           AND (COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
@@ -471,6 +511,7 @@ def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
               AND buried.queue_date=%s AND buried.status='buried')
           AND (effect.status='pending'
             OR COALESCE(effect.payload_json::jsonb->'owner'->'progress','null'::jsonb)='null'::jsonb
+            OR effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id' IS DISTINCT FROM card.id
             OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
         """ + ("""AND COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
@@ -580,14 +621,21 @@ def resume_available_feedback(database, day, *, limit=16):
         ORDER BY available_by,effect_key LIMIT %s""", (day, limit)).fetchall()
     for row in rows:
         observed = store._effect(row)
-        if not store.try_lock_target(observed.card_id, day):
+        target = observed.progress.target if observed.progress else EncounterTarget(
+            card_id=observed.card_id,card_revision=observed.card_revision)
+        from .recombination import effect_target
+        # A changed physical binding needs the closed-read owner preparation;
+        # queue recovery cannot relabel a reset or waive its new issue fence.
+        if effect_target(database,observed) != target.card_id:
+            continue
+        if not store.try_lock_target(target.card_id, day):
             continue
         store.lock_effect(observed.key)
         effect = store.get(observed.key)
-        facts = store.card_facts(observed.card_id, day)
+        facts = store.card_facts(target.card_id, day)
         if effect.status != "applied" or not facts:
             continue
-        if not facts.available or facts.revision != effect.card_revision:
+        if not facts.available or facts.revision != target.card_revision:
             store.save(replace(effect, status="held", reason="current_card_unavailable"),
                        datetime.now(timezone.utc))
         elif not facts.active_attempt and not facts.buried:
