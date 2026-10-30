@@ -2,6 +2,7 @@ import { realpathSync, readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { unitWorkerAllocation } from "../../scripts/unit-worker-allocation.mjs";
 
 export function testFiles(directory) {
   return readdirSync(directory).sort().flatMap(name => {
@@ -61,9 +62,10 @@ export function accountNodeEvents(output) {
   return { ...report, success: report.passed > 0 && report.failed === 0 && finalSummary.success && finalSummary.counts.failed === 0 && finalSummary.counts.cancelled === 0 };
 }
 
-export function runNodeFiles(files, filter, { cwd, lane = "node" } = {}) {
+export async function runNodeFiles(files, filter, { cwd, lane = "node" } = {}) {
   if (!files.length) throw new Error("Zero selected tests");
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=" + fileURLToPath(new URL("./node-test-reporter.mjs", import.meta.url)), ...(filter ? ["--test-name-pattern=" + filter] : []), ...files.map(file => resolve(cwd ?? process.cwd(), file))], { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  const allocation = await unitWorkerAllocation();
+  const result = spawnSync(process.execPath, ["--test", "--test-concurrency=" + allocation.maxWorkers, "--test-reporter=" + fileURLToPath(new URL("./node-test-reporter.mjs", import.meta.url)), ...(filter ? ["--test-name-pattern=" + filter] : []), ...files.map(file => resolve(cwd ?? process.cwd(), file))], { cwd, env: { ...process.env, ...allocation.env }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
   process.stderr.write(result.stderr ?? "");
   if (result.error) throw result.error;
   const report = accountNodeEvents(result.stdout ?? "");
@@ -76,6 +78,6 @@ export function runTests(directory, filter) {
   return runNodeFiles(testFiles(directory), filter);
 }
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { runTests(resolve(process.argv[2] ?? "tests"), process.argv[3]); }
+  try { await runTests(resolve(process.argv[2] ?? "tests"), process.argv[3]); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

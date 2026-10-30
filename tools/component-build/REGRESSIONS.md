@@ -36,6 +36,14 @@ after #283 merged into its former dependency branch instead of main.
 `tests/boundaries.test.mjs` retains the #270 AST/dependency, public API, inventory,
 package prerequisite and structured Node reporter protections unchanged.
 
+`tests/unit-worker-allocation.test.mjs` owns unrestricted managed and unmanaged
+unit-worker selection, explicit and fractional CPU validation, nested pool shares,
+and actual managed-launcher/Node-runner propagation. It is discovered by the
+regular `test:components` runner. Its named managed-token regression replaces
+the obsolete missing-grant rejection after #611 made CPU omission unrestricted.
+The same suite loads both asynchronous Vitest configurations through the actual
+Vite loader, checking unrestricted/explicit selections, child shares and timers.
+
 `M02 manifest rejects duplicate missing escaping and false implemented components`
 selects a genuine planned component by identity for its false-implemented fixture;
 the manifest's first entry may already be implemented. All five rejection cases

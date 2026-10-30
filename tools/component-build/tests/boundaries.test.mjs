@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { repository, checkTypeScript, checkConsumer, validateManifest, validateSuite } from "../check-components.mjs";
 const manifest = JSON.parse(readFileSync(resolve(repository, "components.json"), "utf8"));
@@ -303,11 +303,19 @@ for (const runnerKind of ["generic", "package-local"]) {
   }
 }
 
+function copyNodeRunner(directory) {
+  for (const file of ["tools/component-build/test-node.mjs", "scripts/unit-worker-allocation.mjs",
+    "scripts/development-budget.mjs", "scripts/host-study-activity.mjs", "config/resource-budgets.json"]) {
+    mkdirSync(dirname(join(directory, file)), { recursive: true });
+    cpSync(resolve(repository, file), join(directory, file));
+  }
+}
 function laneFixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "tempo-m02-lane-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const child of ["tools/component-build", "tests/unit", "tests/runner", "node_modules/vitest"]) mkdirSync(join(directory, child), { recursive: true });
-  for (const file of ["test-lane.mjs", "test-node.mjs", "node-test-reporter.mjs"]) cpSync(resolve(repository, "tools/component-build", file), join(directory, "tools/component-build", file));
+  copyNodeRunner(directory);
+  for (const file of ["test-lane.mjs", "node-test-reporter.mjs"]) cpSync(resolve(repository, "tools/component-build", file), join(directory, "tools/component-build", file));
   writeFileSync(join(directory, "tests/unit/consumer.test.ts"), "");
   writeFileSync(join(directory, "tests/runner/example.test.mjs"), 'import {test} from "node:test"; test("runner case",()=>{});');
   writeFileSync(join(directory, "tools/component-build/test-inventory.json"), JSON.stringify({ lanes: {
@@ -466,11 +474,12 @@ for (const runnerKind of ["generic", "package-local"]) {
       t.after(() => rmSync(directory, { recursive: true, force: true }));
       mkdirSync(join(directory, "tests"));
       writeFileSync(join(directory, "tests/chess-line.test.mjs"), 'import {test} from "node:test";test("one",()=>{});');
-      const destination = runnerKind === "generic" ? directory : join(directory, "tests");
-      if (runnerKind === "generic") cpSync(resolve(repository, "tools/component-build/test-node.mjs"), join(directory, "test.mjs"));
+      const destination = runnerKind === "generic" ? join(directory, "tools/component-build") : join(directory, "tests");
+      const runner = runnerKind === "generic" ? join(destination, "test-node.mjs") : join(directory, "test.mjs");
+      if (runnerKind === "generic") copyNodeRunner(directory);
       else cpSync(resolve(repository, "packages/chess-line/test.mjs"), join(directory, "test.mjs"));
       writeFileSync(join(destination, "node-test-reporter.mjs"), `export default async function* (events) { for await (const event of events) { void event; } yield ${JSON.stringify(output)}; }`);
-      const result = spawnIsolatedNode([join(directory, "test.mjs"), ...(runnerKind === "generic" ? [join(directory, "tests")] : [])], { cwd: directory, encoding: "utf8", timeout: 10_000 });
+      const result = spawnIsolatedNode([runner, ...(runnerKind === "generic" ? [join(directory, "tests")] : [])], { cwd: directory, encoding: "utf8", timeout: 10_000 });
       assert.notEqual(result.status, 0, result.stdout);
       assert.match(result.stderr, /Malformed|Missing final/);
     });

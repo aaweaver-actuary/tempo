@@ -40,8 +40,7 @@ export function runLane(lane, filter, nameFilter) {
       .then(({ runControlledUnitSuite }) => runControlledUnitSuite({ files, nameFilter }));
   }
   if (lane === "runners") {
-    runNodeFiles(files, nameFilter, { cwd: root, lane });
-    return;
+    return runNodeFiles(files, nameFilter, { cwd: root, lane });
   }
   const build = spawnSync("npm", ["run", "build:packages"], { cwd: root, stdio: "inherit" });
   if (build.error || build.status !== 0) throw new Error("Component package build failed");
