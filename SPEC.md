@@ -2,7 +2,7 @@
 
 Version 0.2 · October 26, 2026 · Single-user, local-first product
 
-Next-release encounter amendment · October 27, 2026 · Approved targets, not installation claims.
+First-departure encounter amendment · October 30, 2026 · Approved targets, not installation claims.
 
 ## 1. Purpose and authority
 
@@ -21,7 +21,7 @@ The first useful feature must not depend on completing an independent Learning r
 | ID | Outcome |
 | --- | --- |
 | R01 | Preserve responsive Study, existing learning history, and reliable review saving. |
-| R02 | Import Lichess and Chess.com games; bring genuine misses on existing introduced cards back to Study within 1–2 days, with at least the learning impact of a Study miss. Actual encounters with approved repertoire decisions still unintroduced receive priority first introduction. |
+| R02 | Import Lichess and Chess.com games; select the first departure from the applicable authored repertoire. For an own departure with an exact eligible target, apply ordinary Study Again once if introduced at first authoritative acceptance, or canonically introduce an unseen target. Issue the introduced target at the next safe unissued head and the isolated eligible unseen live target within five new issuances. |
 | R03 | Report uncovered opponent responses separately from recall failures. |
 | R04 | Find likely missing repertoire moves using rating-appropriate Explorer and Maia evidence. |
 | R05 | Prefer exact repertoire continuations and familiar responses from similar positions when repairing gaps. |
@@ -48,40 +48,41 @@ The [collection operator](scripts/README.md#games-collection-operator) reports
 installed identity and missing inputs before enabling only its own worker.
 
 
-### G01 — Import and classify before changing learning state
+### G01 — Select one first repertoire departure
 
 Separate provider adapters fetch games into one typed PGN representation. Preserve provider/game identity, player color, game time and its precision, move history, and import provenance. Import incrementally with retry-safe checkpoints. A bounded provider response must not silently truncate a requested date range.
 
-A pure comparer reads an immutable repertoire snapshot and normalized game. It distinguishes:
+A pure selector legally replays the normalized game across all configured, applicable same-color authored routes. Any surviving authored alternative covers the played move; a different repertoire's expected response cannot manufacture a miss. Select the earliest provable unsupported move once, retaining source, pre-move position, one-based game ply, actor, expected alternatives and relevant scope. A miss means outside that authored repertoire, not low engine quality or proof of historical forgetting. Engines, Maia, Explorer and introduction-before-game chronology are unnecessary.
 
-- A confirmed own-move miss on a card introduced before the game.
-- An uncovered opponent reply or a missing own continuation.
-- A covered decision whose card is unintroduced or unavailable.
-- Ambiguous identity, an exact-response conflict, or the intentional end of repertoire coverage.
+An own first departure can create a Study consequence only with complete relevant scope and one exact approved current decision/physical presentation mapping, including an interior decision of an existing multi-move card. Equivalent route aliases collapse deterministically; different responses or physical targets remain ambiguous. A producer label, FEN equality or partial single-repertoire prefix proof cannot grant this authority. Study revalidates current source, configuration, publication, route and target facts through the owning typed boundary.
 
-Only a confirmed recall miss produces a lapse effect. Missing content, ambiguity, and unintroduced material must not be mislabeled as forgetting. Keep the original game position, expected response, played response, and exact mapped decision/card visible.
+An opponent first departure is retained as a repertoire gap and produces no Study consequence from this or any later move in that game. Deliberate coverage end, missing own continuation, ambiguous mapping, incomplete/unavailable scope, illegal/unsupported source and unavailable current authority retain their specific non-actionable or unresolved outcomes; they never invent an expected move/card or a failure. An ended or unavailable competing route cannot be discarded to manufacture uniqueness. Fully covered play and correct encounters may retain adherence/frequency evidence but create no urgent introduction or failure under this policy. Later diagnostic reentry remains useful evidence without authorizing another effect.
 
-Do not generate a cascade of downstream misses after leaving coverage. Comparison may resume at an exact re-entered/transposed position only when repertoire and card mapping are unambiguous. A later reentry does not erase or relabel an earlier gap.
+The #615 explicit size-only acknowledgment supports collection-only partial comparison. A deferred repertoire remains unknown, not empty; complete selected-scope feedback requires #616's supported source read.
 
 ### G02 — One learning owner; a real learning effect
 
 Study/Learning owns schedules, review effects, priority, queue admission, and settlement. Game feedback submits a typed command through that owner; it never writes learning tables or becomes a second scheduler.
 
-A qualifying game miss must have **at least as strong an impact as a Study Again**, not just a cosmetic priority label. The implementation default is the same lapse scheduling transition plus a durable high-priority obligation. Record game provenance honestly: this is game evidence, not a fabricated completed Study attempt.
+Current Study state at first authoritative acceptance fixes one immutable disposition for the occurrence. An introduced own-miss target receives the existing ordinary scheduler's **Again** transition once at actual processing time and the authoritative current Study day, plus a durable urgent obligation. Use the existing `game_lapse` scheduling source and actual scheduling review receipt. Keep the game occurrence time separately. Do not backdate, clear introduction/history, fabricate a human completed attempt, or waive a newly accepted reset because a clean review occurred after the game but before acceptance. Human completion counts remain distinct from game scheduling events; normal failure/recombination consequences still apply.
 
-Apply each logical game/decision effect once. A subsequent genuine Study review updates learning state and settles the corresponding obligation through the same owner. Preserve occurrence time separately from processing time; late imports must not rewind newer learning state. The precise late-evidence policy is a bounded implementation choice, not a prerequisite for the first recent-game case.
+An unseen own-miss target receives canonical first introduction with fresh scheduling and no fake Again/completed review. That accepted intent survives a racing ordinary introduction and later retries. The exact approved target uses the encounter exception to ordinary allowance, including zero/exhaustion, and Study-only without changing those global settings. Correct play supplies frequency evidence and does not create urgent first introduction through this feature.
 
-An actual covered encounter can justify first introduction whether the expected move was played or missed. Study rechecks current admission and the exact approved mapping; first introduction uses fresh scheduling, with no fake Again, completed review, or backdated introduction. Reuse the same logical game/decision/occurrence identity so later introduction cannot turn the old event into a lapse.
+The logical key is `(workspace, provider, game_id, decision_id, occurrence_ply)`. Source/policy/comparison revisions, retries and queue days do not create another event. Preserve original command bytes/digest, occurrence/detection facts, accepted disposition and separate qualification metadata. Changed payload under one key is a conflict/control case. Distinct genuine games remain distinct obligations even when they share one physical queued target.
 
-Persist deduplicated historical importance separately from lapse eligibility for both introduced and unintroduced decisions, including misses before introduction or followed by later learning. Correct encounters supply frequency evidence. Do not rewind later learning or reopen settled debt as a new lapse.
+Preserve a genuine already-issued attempt and its save/replay. If it prevents the reset, keep the reset owed, save that attempt normally, then apply Again and require a subsequent compatible issued generation. Introduced-Again settlement requires its durable scheduler receipt plus an authentic clean post-reset issued attempt and saved review receipt; a pre-reset attempt completing after acceptance cannot settle it. First introduction instead requires canonical admission/current-presentation evidence and an authentic clean post-admission issued attempt, with no scheduler-review prerequisite. Frequency-only evidence has no remediation debt.
 
-### G03 — Availability is not completion
+Qualify frozen collection commands against the new first-departure policy without rewriting their original keys or bytes. Suppress later/matched/per-repertoire false candidates; explicitly hold unavailable authority and deliberately handle legacy lapse commands. Outstanding old priority-only effects, including acknowledged Games deliveries, need one versioned Study-owned qualification/application transition: `applied_at` alone proves no Again. Preserve settled/withdrawn history and existing control fences; source corrections never erase genuine later learning or replay a settled effect under a new key.
 
-The card must become available for Study within **1–2 days of detecting/admitting the qualifying miss**, even when Andy does not study. Do not interpret the requirement as a promise that he completes a review in that period.
+### G03 — Measure actual issuance from actionable determination
 
-The obligation survives days without Study, queue rebuilds, restarts, and retries. Daily introduction limits must not silently erase it. Recover overdue obligations when the application resumes. An unrelated active attempt is never replaced underneath the learner.
+Start service measurement at durable actionable determination: source and complete relevant comparison are known and an exact candidate target has been resolved. Preserve that original timestamp through preparation, delivery, acceptance and maintenance. Count distinct newly authorized Study attempts after it across tabs, sessions, refreshes and day rollover. Prefetch, reload, queue presence and the already-issued current attempt do not count. Actual target issuance is the endpoint; acceptance, priority, admission or an `available` badge alone is insufficient.
 
-Encounter first introductions use the same availability goal with honest safety holds. The approved targeted exception bypasses ordinary new-card caps, including zero allowance, and Study-only without changing global settings or ordinary introductions. Full manual pause and foreground, maintenance, security, source, legality, and conflict guards remain effective; report deferral honestly rather than promising availability while held. Use bounded, idempotent batches, not an invented reserve cap.
+With no earlier live urgent backlog, an eligible introduced target is the next safe newly issued head after Again; an isolated eligible unseen live target is actually issued within the next five new issuances, preferably immediately once ready. Preserve genuine issued work while moving ordinary unissued cached successors behind ready urgency. Continuous foreground Study must progress through bounded local preparation/intake at safe command boundaries, without waiting indefinitely for a quiet window or moving provider I/O/full repertoire replay into the short Study writer.
+
+More than five distinct simultaneous eligible targets cannot all fit in five positions. Prefer live urgent work over discretionary historical draining, retain oldest actionable determination order within each class with stable ties, bound historical intake, and expose actual backlog/missed service bounds. Preserve eventual historical presentation when capacity exists or live backlog is finite; fair intake alone does not prove presentation. Use forward/reconciliation/manual provenance, with no arbitrary age cutoff forgiving qualifying games. A measured preparation delay remains within the original interval.
+
+Explicit full manual pause, maintenance, source uncertainty, burial or current ineligibility is an honest visible hold. Ordinary allowance zero and Study-only are not holds for targeted encounter introduction. Outstanding debt survives off-days, queue rebuilds, retries, worker shutdown, expired leases and missed service targets; a deadline is not a TTL. Use the same authoritative Study day for scheduler, queue and issuance. Accepted obligations remain Study-owned even when optional Games stops.
 
 ### G04 — Optional producers fail independently
 
@@ -195,12 +196,12 @@ Keep **Study**, **Tactics**, **Game review**, **Repertoire**, and small **Settin
 
 Deliver through the current product, one useful slice at a time. R11 is a separate Study slice and does not block game feedback. Exact-conflict work can proceed independently. Maia refines a useful Explorer-based path; engines are unnecessary for the first game miss.
 
-The immediately next practical bundle reuses the first matching, evidence, delivery, and Study path for bounded already-imported history, first introduction, and historical importance. Full synchronization, new UI, and engines are not prerequisites; existing approved repertoire content needs no new engine evaluation. Target acceptance reports scanned/matched/unresolved/remaining facts and correct versus missed encounters, demonstrates actual first admission with ordinary allowance zero and Study-only on, full-pause deferral, preserved later learning, and no duplicate effect on resume. These are required proofs, not claims of installation.
+The first-departure delivery bundle reuses collection and the owning Study path for introduced Again, unseen introduction and retained history. #618 freezes shared semantics; #619–#623 deliver components, #581 supplies compatible canonical unseen admission, and #624 owns the assembled ordinary Study and installed feedback checkpoint. The earlier collection-only checkpoint remains valid and inactive until its authorized operator enables it; it proves no feedback activation. New UI and engines are unnecessary. Acceptance distinguishes determination, acceptance, scheduling/admission, actual issuance and genuine settlement, with preserved history and no duplicate effect on resume.
 
 | Slice | Observable acceptance |
 | --- | --- |
-| A — One game to Study | **A01:** One already-imported real miss maps to the actual existing introduced card, becomes available within D01, and receives D02's learning effect. **A02:** Duplicate replay has one effect; an unrelated active attempt survives; the obligation remains available across an off-day/restart. |
-| B — Continuous game feedback | **A03:** Both providers import incrementally without silent truncation. Gaps, unintroduced cards, conflicts, ambiguous identities, and route reentry are classified correctly. **A04:** Provider failure leaves Study/Tactics usable and work retryable. |
+| A — One game to Study | **A01:** An exact own first departure receives ordinary Again and next-safe-head issuance if introduced, or canonical introduction and actual issuance within D01 if unseen, with ordinary allowance zero and Study-only on. **A02:** Replay has one effect; an already-issued target saves normally without settling an unapplied reset, and a genuine subsequent compatible completion settles the debt. Off-day/restart preserves outstanding obligations. |
+| B — Continuous game feedback | **A03:** Both providers import incrementally without silent truncation; surviving authored alternatives cover valid moves, opponent-first gaps block later effects, and retained mixed work is qualified under one stable key. **A04:** Continuous Study advances determined work without a quiet window; optional provider/worker failure leaves Study/Tactics issuing/saving and accepted obligations recoverable. |
 | C — Exact repertoire audit | **A05:** A same-position own-response conflict blocks affected Study, is resolved manually, and leaves opponent branches and other memberships intact. Detectors do not mutate inputs. |
 | D — Introductions | **A06:** With other eligibility equal, a 20%-reach decision precedes a 2%-reach decision; a transposed duplicate gets no extra slot. Personal evidence can change ordering; budget/weights and unavailable-provider fallback are respected. |
 | E — Repairs and common blunders | **A07:** Show a familiar legal candidate checked against the 30 CP policy, plus supporting positions and provenance. No content changes before approval. Demonstrate both a missing reply and a common-blunder response that was already covered. Maia may follow independently. |
@@ -214,8 +215,8 @@ Existing actual required checks are not silently waived. If an obsolete gate no 
 
 | ID | State | Policy |
 | --- | --- | --- |
-| D01 | Decided | Availability within 1–2 days, including days without Study; not forced completion. |
-| D02 | Decided outcome | A game lapse has at least the impact of Study Again. Default: owning scheduler's lapse transition plus a durable priority obligation. |
+| D01 | Decided | From durable actionable determination: introduced target at the next safe unissued head after Again; isolated eligible unseen live target by the fifth new issuance. G03 states holds, capacity, history and durable overdue recovery. This measures actual issuance, not forced completion or a 48-hour wait. |
+| D02 | Decided outcome | Exact own first departure: current-state ordinary Again once when introduced at first authoritative acceptance, canonical fresh introduction when unseen, and a durable urgent obligation. No introduction-before-game gate, fake human review or priority-only substitute for Again. G02 owns identity/disposition/settlement semantics. |
 | D03 | Decided | Strict one-own-response rule within a repertoire; affected material is blocked until manual resolution. |
 | D04 | Open for likelihood ranking | Select rating band and time controls. Does not block game feedback or exact audits. |
 | D05 | Corrected and decided | Default candidate tolerance is **30 CP, not 300 CP**. Record any explicit contextual policy. |

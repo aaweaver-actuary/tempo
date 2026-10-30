@@ -7,10 +7,14 @@ construction, database or queue capability is exported here.
 from app.contracts.product_v02.learning import (
     EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey,
     GameEncounter, GameLapse, LearningFeedbackPort, LearningReceipt,
+    FirstDepartureWitness, EncounterTarget, IssuedAttemptEvidence,
+    RemediationFence, EncounterSettlement, EncounterProgress, QualifiedGameFeedbackPort,
 )
 
 __all__ = [
     "EncounterFeedbackPort", "EncounterReceipt", "GameEffectControl",
     "GameEffectKey", "GameEncounter", "GameLapse", "LearningFeedbackPort",
     "LearningReceipt",
+    "FirstDepartureWitness", "EncounterTarget", "IssuedAttemptEvidence",
+    "RemediationFence", "EncounterSettlement", "EncounterProgress", "QualifiedGameFeedbackPort",
 ]

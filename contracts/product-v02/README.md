@@ -1,4 +1,11 @@
-# Product v0.2 contracts — game-feedback slice 0.2.0
+# Product v0.2 contracts — first-departure checkpoint 0.2.2
+
+[#618](https://github.com/aaweaver-actuary/tempo/issues/618) releases the typed
+first-departure qualification and application/issuance vocabulary below. It is a
+source contract, not proof that #619–#624 consumers, installed feedback or actual
+Study issuance have completed. [SPEC G01–G03](../../SPEC.md#3-game-feedback) is the
+canonical policy and time/disposition/hold/capacity definition. Stored 0.2.0 and
+0.2.1 values retain their original wire shape and historical meanings.
 
 Issue [#482](https://github.com/aaweaver-actuary/tempo/issues/482), under
 [#481](https://github.com/aaweaver-actuary/tempo/issues/481), pins SPEC v0.2 at
@@ -21,6 +28,7 @@ request-local AbortSignal/operation/repertoire context; no transport starts here
 | Repertoire → supplied comparison | `RepertoireSnapshotPort.snapshot` → `RepertoireSnapshot` | Repertoire owns approved moves, route boundaries and mapping evidence. |
 | Comparer → Games | `Finding` | Membership facts do not grant a learning effect. Games owns findings. |
 | Games → Study | `LearningFeedbackPort.accept_lapse(GameLapse)` | Study alone validates/maps, applies the scheduler transition and admits obligations. |
+| Games → Study | `QualifiedGameFeedbackPort.accept_qualified(original, qualification=FirstDepartureWitness)` | Same Study owner/ledger; revalidates complete current first-boundary authority, fixes disposition and owns actual Again or canonical introduction. |
 | Games → Study | `control_effect(GameEffectControl)` | Study durably holds/withdraws even evidence not yet received. |
 | Consumer → Study | `effect_status(GameEffectKey)` → `LearningReceipt` or null | Study owns receipt, pending/held/applied/settled status and chronology. |
 | UI → owning API | `GameReviewApi` reads findings and feedback status | UI renders supplied facts; it does not mutate schedules or queues. |
@@ -81,21 +89,24 @@ with only route A mapped and an explicit game-scoped chronology assertion.
   the shared page/record; it does not justify a competing canonical game DTO.
 - Finding `ply` is **one-based**. Existing membership route offsets and v3
   encounters remain **zero-based**, so adapters must convert explicitly.
-  Only `confirmed_miss` with one selected own response, proven introduction and
-  decision/current presentation mapping is lapse eligible. Other kinds retain a
-  diagnostic and cannot authorize a lapse. Reentry requires supplied authority;
-  the fixture does not authorize treating board coincidence as reentry.
+  The stored 0.2.0 `confirmed_miss` parser retains its original proven-introduction
+  rule for compatibility. It is not the new first-departure eligibility policy.
+  New action selection uses `FirstDepartureSelection` and qualified current Study
+  authority without an introduction-before-game gate. Reentry findings remain
+  diagnostic and never authorize an extra first-departure effect.
 - Logical effect identity is the JSON array of workspace, provider, provider game
   ID, decision ID and one-based occurrence ply (`GameEffectKey.logical_id()` /
   `logicalEffectId`). Delivery UUIDs, comparison revisions and source revisions
   are deliberately absent. Payload digest binds the semantic evidence, excluding
   transport retries/detection clocks. The producer computes it; Study validates
   its evidence before applying an effect. Do not trust the supplied hash as authority.
-- Study owns idempotency, source revision validation and chronology. Exact replay
-  has one effect and keeps its original deadline. Changed payload under one key
-  conflicts/quarantines, never creates another lapse. Study sets an availability
-  deadline no later than 48 hours after detection/admission and preserves it across
-  retries, off-days and rebuilds. Producers supply facts, not a schedule.
+- Study owns idempotency and current source/target validation. Exact replay has
+  one effect and preserves its original determination/accepted disposition.
+  Changed payload under one key conflicts/quarantines, never creates another
+  failure. [SPEC G02/G03](../../SPEC.md#g02--one-learning-owner-a-real-learning-effect)
+  defines current-state application, actual next-head/five-issuance service,
+  authoritative Study day and durable overdue recovery. Legacy `available_by`
+  is neither reset proof nor an expiration/TTL. Producers supply facts, not a schedule.
 - Changed/withdrawn evidence must reach `control_effect` even when reclassification
   is no longer a confirmed miss. A hold/withdrawal must durably fence the logical
   key and revision before a delayed original can arrive. Exact replay or a stale
@@ -122,7 +133,12 @@ with only route A mapped and an explicit game-scoped chronology assertion.
 These requirements describe the receiver contract. Tests here prove wire shapes,
 identity and adapter behavior; #487 owns actual persistence/race/scheduler proof.
 
-## Immediately next release: encounter priority, additive interface 0.2.1
+## Stored encounter-priority compatibility: interface 0.2.1
+
+This section records the retained 0.2.1 command/receipt contract. Its old
+priority-only and correct-encounter introduction policy is superseded for new
+automatic first-departure work by the 0.2.2 qualification section below. Retaining
+these parsers does not authorize replay of old work without qualification.
 
 This backend-only seam follows [#481's next-release scope](https://github.com/aaweaver-actuary/tempo/issues/481#issuecomment-6429212066)
 and [#487's receiving-owner boundary](https://github.com/aaweaver-actuary/tempo/issues/487#issuecomment-6429214039).
@@ -143,7 +159,8 @@ introduced material can receive review priority without rewinding that progress.
 Correct play is frequency evidence, never a fabricated failure. A currently
 unintroduced approved decision may receive first-introduction priority for either
 played response; Study alone performs genuine fresh introduction/scheduling.
-Only a proven introduced-before-game miss can use the existing lapse/Again path.
+That legacy lapse path required proven introduction before the game; qualified
+first-departure intake supersedes this policy without rewriting stored commands.
 
 `EncounterReceipt` extends the existing receipt fields with original detection,
 source digest, original observation, whether that observation is durably recorded,
@@ -184,6 +201,111 @@ owner review priority without a lapse, and an admitted encounter introduction
 under the targeted exception. Nested fixtures leave existing v0.2.0
 Python/TypeScript fixture dispatch and all UI/analysis exports unchanged. Receiver,
 native persistence and normal-Study acceptance remain with their owning tasks.
+
+## First-departure qualification and truthful progress: interface 0.2.2
+
+`games.FirstDepartureSelection` records one global result over selected relevant
+same-color scope. Its statuses are `covered`, `own_actionable`, `own_unmapped`,
+`opponent_gap`, `coverage_end`, `missing_own_continuation` and `unresolved`.
+`null` occurrence therefore never means both covered and failed. Known boundaries
+retain actor, one-based ply, pre-move position, played move and distinct expected
+alternatives. Only `own_actionable` carries an exact available
+`DecisionPresentation` with an explicit route occurrence. Interior decisions
+retain the existing physical card/revision; equivalent route aliases are not
+additional effects. A legacy global owner mapping can be specialized to an
+actually proven unique route occurrence; missing authority is not guessed.
+Historical `introduced_before_game` / `introduction_game` facts or introduction
+timestamp precision do not distinguish otherwise equivalent current physical
+route aliases. Current introduction state/availability and source/content mapping
+remain owner facts and are rechecked at first authoritative Study acceptance.
+
+`FirstDepartureScope` retains each selected relevant repertoire, actual snapshot
+ID/source revision/revision/digest, color, completeness and availability. Missing
+source facts remain null and unavailable, including #615 deferred scope.
+`FirstDepartureRoute` retains policy, source revision, zero-based occurrence and
+deliberate-end fact. Incomplete scope or an ended surviving competitor cannot
+manufacture a unique action. Positive authored coverage does not require a
+physical Study mapping. The selector owns proving these facts; type validation
+alone cannot prove the game replay or completeness of a caller-supplied list.
+
+`learning.FirstDepartureWitness` contains the actionable selection, actual Games
+provider `configuration_revision`, original durable `determined_at` and existing
+`forward` / `reconciliation` / `manual` provenance. It is separate qualification
+metadata: **do not append it to or rewrite an original stored `GameEncounter`
+0.2.1 or `GameLapse`**. `matches(original)` checks source/key/position/response
+correspondence without choosing disposition or making the witness authority.
+#621 prepares trusted complete captures outside the writer; #620's
+`CurrentOwnerDecisions` rechecks the actual provider configuration, source,
+publication and exact current mapping through owning bounded capabilities.
+Missing actual configuration/source authority is a hold, never a fabricated
+revision/timestamp or a producer `is_first_departure` permission flag.
+
+`QualifiedGameFeedbackPort.accept_qualified` is an additive declaration on the
+same existing owner/ledger, accepting the original `GameEncounter | GameLapse`
+plus witness. Existing `accept_lapse`, `accept_encounter`, control and status
+methods remain readable/compatible. Runtime implementations and legacy upgrade
+dispatch belong to #620/#581/#621. Newly accepted introduced misses use
+`introduced_again`; unseen misses preserve `first_introduction`. Full identity,
+first-acceptance, manual-pause, history and burst rules are defined once in
+[SPEC G02/G03](../../SPEC.md#g02--one-learning-owner-a-real-learning-effect).
+
+`EncounterReceipt` accepts stored `interface_version: 0.2.1` without adding any
+serialization fields. New `0.2.2` receipts require `progress: EncounterProgress`:
+
+| Progress fact | Meaning and owning evidence |
+| --- | --- |
+| `policy_version`, `determined_at`, `stream` | Qualified first-departure policy, original determination and source class; retry cannot restart service measurement. |
+| `target` | Actual current physical `card_id` / `card_revision`, distinct from original logical decision identity. |
+| `scheduling_review_id`, `schedule_applied_at` | Paired actual ordinary Again receipt/time; priority `applied_at` alone supplies neither. |
+| `introduction_applied_at` | Canonical first introduction/current admission completed; mutually exclusive with an Again receipt for this accepted occurrence. |
+| `remediation_fence` | Current target, queue-owner `after_issuance_sequence` and truthful establishment time at/after application/admission. An old real reset may acquire a conservative current fence without replaying Again or backdating it. |
+| Optional `prior_remediation_fences` | Ordered previous target fences retained only after an authoritative Study-owned current-presentation remap. Empty history is omitted, preserving stored fixture shapes. The first retained target is the actual application target; current `target`/fence identify where remediation is now owed. |
+| `first_issued`, `first_issued_ordinal` | Paired actual target issuance and measured distinct new-issuance ordinal from determination; no five-card claim from a queue row. |
+| `settlement` | Durable genuine clean Study `review_id` plus compatible actual post-fence issued attempt. Withdrawn/historical-preserved terminal control is distinct from settled remediation. |
+
+`IssuedAttemptEvidence` reuses the queue owner's actual
+`(queue_entry_id, card_id, card_revision)` generation, adding its once-stamped
+`issuance_sequence` and `issued_at`. #622 owns additive migration055 and actual
+stamping/counting; no historical issuance is fabricated. Sequence gaps after
+rollback do not count as cards: count actual distinct committed issuance rows
+after the original determination. Reloads, prefetch and already-issued work do
+not increment service. The Study owner validates genuine clean completion;
+serializable facts alone cannot grant settlement.
+
+New `available` introduced-Again receipts need the actual scheduling receipt and
+fence; new `available` first introductions need canonical introduction evidence
+and fence, with no fake scheduler review. New settled remediation requires the
+same compatible physical target and a genuine later issued generation plus
+saved review receipt. Protected pre-reset attempts remain pending and save
+truthfully. Outstanding legacy priority-only receipts stay visibly legacy until
+qualified/applied once, including effects already acknowledged by Games;
+settled/withdrawn history is not reopened automatically.
+
+An actual post-application split/recombination may map original physical target A
+to current B without another Again. Study retains the original scheduler review,
+application time, logical key and determination, appends A's fence to
+`prior_remediation_fences`, and captures a fresh B fence through its authoritative
+lineage/current-presentation owner. Repeated remaps retain the ordered real fence
+history without dropping the original application. This receipt field is owner
+evidence, never permission for a producer to invent lineage. Pre-application
+remapping simply selects the actual target before its one application.
+
+Actual first issuance of A remains visible with its original ordinal; if B is
+the first served compatible target, B's actual issuance is used. An issuance
+at an old target must fall after that target's fence and no later than the next
+remap's captured frontier/time, so old-target service cannot be invented after
+retirement. Settlement always requires a fresh compatible attempt after the
+current target fence, even when genuine earlier A service is retained. This
+never relabels A's scheduling review as a new B reset or restarts the service clock.
+
+[`fixtures/first-departure`](fixtures/first-departure) supplies shared synthetic
+covered-alternative, introduced/unseen own boundary, opponent-before-later-miss,
+coverage-end, ambiguous/incomplete, protected-active and legacy-priority values.
+Both regular parser suites execute the same valid documents and
+`rejections.json` contradictions, plus actual stored 0.2.1 command/receipt
+fixtures. They prove contract compatibility and identity, **not** scheduler,
+queue, PostgreSQL, browser or installed behavior. No schema/storage implementation
+or second feedback ledger is introduced by this contract change.
 
 ## Later analysis and presentation checkpoint
 
@@ -274,8 +396,8 @@ flowchart LR
   Repertoire["Repertoire snapshot owner"] -->|RepertoireSnapshot| Compare["Pure comparer"]
   Games -->|existing CanonicalGame| Compare
   Compare -->|Finding| Games
-  Games -->|accept_lapse / additive accept_encounter / control_effect| Study["Study / Learning effect owner"]
-  Study -->|LearningReceipt| Games
+  Games -->|original command + FirstDepartureWitness / controls| Study["Study / Learning effect owner"]
+  Study -->|compatible receipt / actual application and issuance facts| Games
   UI["Game Review UI"] -->|read supplied facts| Games
   Study --> Queue["Ordinary Study queue"]
   Analysis["Supplied probability / engine evidence"] -->|Proposal preview / decision| Repertoire

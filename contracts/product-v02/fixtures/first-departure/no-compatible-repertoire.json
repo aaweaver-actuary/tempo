@@ -1,0 +1,24 @@
+{
+  "model": "FirstDepartureSelection",
+  "payload": {
+    "policy_version": "first_departure_v1",
+    "workspace_id": "fixture",
+    "source": {
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "source_revision": 1,
+      "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "learner_color": "white",
+    "selected_scope": [],
+    "status": "unresolved",
+    "ply": null,
+    "actor": null,
+    "position_key": null,
+    "played_uci": null,
+    "expected_uci": [],
+    "decision": null,
+    "surviving_routes": [],
+    "diagnostic": "no_compatible_repertoire"
+  }
+}

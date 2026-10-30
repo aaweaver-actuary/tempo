@@ -1,0 +1,47 @@
+{
+  "model": "FirstDepartureSelection",
+  "payload": {
+    "policy_version": "first_departure_v1",
+    "workspace_id": "fixture",
+    "source": {
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "source_revision": 1,
+      "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "learner_color": "white",
+    "selected_scope": [
+      {
+        "repertoire_id": "white",
+        "learner_color": "white",
+        "snapshot_id": "snapshot-white",
+        "source_revision": "source-white-1",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "complete": true,
+        "available": true
+      }
+    ],
+    "status": "opponent_gap",
+    "ply": 2,
+    "actor": "opponent",
+    "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+    "played_uci": "c7c5",
+    "expected_uci": [
+      "e7e5"
+    ],
+    "decision": null,
+    "surviving_routes": [
+      {
+        "repertoire_id": "white",
+        "route_id": "route-a",
+        "route_ply": 1,
+        "policy_id": "policy-white",
+        "source_revision": "source-white-1",
+        "at_deliberate_end": false
+      }
+    ],
+    "diagnostic": null
+  },
+  "note": "Later diagnostic learner reentry/miss cannot turn this opponent-first boundary into a Study command."
+}
