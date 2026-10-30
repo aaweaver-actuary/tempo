@@ -145,7 +145,7 @@ export function collectionBlockers({ candidate, release, service, image, report,
       environment.PGPASSFILE !== '/run/secrets/worker_pgpass' ||
       !service?.secrets?.some(secret => secret.source === 'writer_pgpass' && secret.target === 'worker_pgpass'))
     blockers.push('collector_database_role_or_secret_mismatch');
-  if (Number(service?.mem_limit) !== 1536 * 1024 * 1024 || Number(service?.pids_limit) !== 96 ||
+  if (Number(service?.mem_limit) !== 2048 * 1024 * 1024 || Number(service?.pids_limit) !== 96 ||
       Number(service?.cpus ?? 0) !== 0 || service?.volumes?.length || service?.ports?.length ||
       service?.labels?.['tempo.collection.owner'] !== owner || service?.labels?.['tempo.collection.mode'] !== mode)
     blockers.push('collector_resource_or_ownership_mismatch');
@@ -156,7 +156,7 @@ export function collectionBlockers({ candidate, release, service, image, report,
       c.Mounts?.some(mount => mount.Type === 'volume' || mount.Type === 'bind' && mount.Destination !== '/run/secrets/worker_pgpass') ||
       (active(c) && (c.Image !== release.images?.[serviceName] || JSON.stringify(c.Config?.Cmd) !== JSON.stringify(
         allowModeTransition && collectorMode(c.Config?.Cmd) === collectorMode(currentService?.command) ? currentService?.command : service?.command) ||
-        Number(c.HostConfig?.Memory) !== 1536 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
+        Number(c.HostConfig?.Memory) !== 2048 * 1024 * 1024 || Number(c.HostConfig?.PidsLimit) !== 96 ||
         [c.HostConfig?.NanoCpus, c.HostConfig?.CpuQuota].some(value => Number(value ?? 0) > 0)))) || peers.length > 1)
     blockers.push('competing_or_unverified_collector');
   if (!probeSuccessful(fullReaderProbe)) blockers.push('full_reader_' + (fullReaderProbe?.status === 'success' ? fullReaderProbe.json_status : fullReaderProbe?.status ?? 'unavailable'));

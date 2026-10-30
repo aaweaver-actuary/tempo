@@ -182,7 +182,7 @@ const service={command:['python','-m','app.product_composition.game_sync_current
  environment:{TEMPO_PRODUCT_GAME_SYNC_ENABLED:'1',
   TEMPO_DATABASE_WRITE_URL:'postgresql://tempo_writer@postgres:5432/tempo',
   TEMPO_DATABASE_READ_URL:'postgresql://tempo_writer@postgres:5432/tempo',PGPASSFILE:'/run/secrets/worker_pgpass'},
- secrets:[{source:'writer_pgpass',target:'worker_pgpass'}],mem_limit:1610612736,pids_limit:96,
+ secrets:[{source:'writer_pgpass',target:'worker_pgpass'}],mem_limit:2147483648,pids_limit:96,
  labels:{'tempo.collection.owner':'managed-game-collection','tempo.collection.mode':'collect-only'}};
 const identityProbe=readProbe(()=>JSON.stringify(input.identity));
 const fullReaderProbe=readProbe(()=>JSON.stringify(input.report));
