@@ -13,7 +13,7 @@ MAX_OUTPUT_BYTES = 256 * 1024
 PRIVATE_FIELDS = frozenset({"account", "workspace_id", "provider_game_id", "canonical_game_id",
     "game_id", "job_id", "source_key", "repertoire_id", "repertoire_ids", "presentation_id",
     "decision_id", "operation_id", "owner_receipt_id", "position_key", "expected_uci", "played_uci",
-    "source_digest", "comparison_revision", "name"})
+    "source_digest", "comparison_revision", "name", "route_id", "policy_id", "snapshot_id", "digest"})
 
 
 def _redacted(value, key=""):
@@ -29,9 +29,17 @@ def _redacted(value, key=""):
             "collection_read_unavailable", "retained_collection_comparison_absent", "ambiguous_stored_game",
             "empty_findings_are_not_comparison_completion_proof", "receipt_not_observed", "not_delivered",
             "owner_receipt_read_unavailable", "repertoire_reader_not_supplied", "repertoire_read_unavailable",
-            "selected_repertoire_ids_absent", "process_and_delivery_disablement_require_runtime_evidence"}
+            "selected_repertoire_ids_absent", "process_and_delivery_disablement_require_runtime_evidence",
+            "selected_first_boundary_not_recorded", "unsupported_selected_variant", "invalid_authored_scope",
+            "route_outside_selected_snapshot_scope", "selected_scope_conflicting",
+            "selected_scope_incomplete_or_unavailable", "deliberate_authored_endpoint",
+            "no_applicable_authored_route", "opponent_first_departure", "missing_authored_own_continuation",
+            "ambiguous_expected_response", "conflicting_authored_own_response",
+            "missing_or_ambiguous_physical_target", "current_presentation_unavailable",
+            "physical_target_occurrence_unbound", "positive_coverage_with_incomplete_scope",
+            "authored_continuation_unavailable", "ambiguous_authored_policy"}
         return value if value in safe else "redacted_diagnostic"
-    if value is not None and key in PRIVATE_FIELDS:
+    if value is not None and (key in PRIVATE_FIELDS or key == "source_revision" and isinstance(value, str)):
         # Stable opaque identities preserve correspondence without publishing raw values.
         return "redacted:" + hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:12]
     if isinstance(value, dict):

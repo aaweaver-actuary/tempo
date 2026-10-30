@@ -87,6 +87,15 @@ retains the original GameRecord, normalized game, findings, logical effects and
 quarantine state. Delivery payload retains one lapse or control and the receiving
 owner's actual receipt, independently of acquisition completeness.
 
+#619 adds optional `first_departure` and `determined_at` values inside the existing
+source/capture JSON. They retain the typed global boundary, source/scope/route
+provenance and first durable actionable determination. The same existing page
+transaction persists them with the checkpoint and pending command; no new table,
+column, relationship or migration is introduced. Old JSON reads these values as
+null. A logical effect key remains independent of the comparison policy revision.
+The read-only selected-game projection exposes the retained global election
+separately from per-repertoire diagnostic summaries; it never reclassifies work.
+
 Configuration payload contains explicit account/window/repertoires/speeds/rated
 policy, optional fixed-window recurrence and revision. Null recurrence is off.
 Sync requests bind operation IDs to the existing job and request time. Retry

@@ -1,7 +1,7 @@
 # Games feedback workflow interface
 
-Owner: #491, `game-ingestion` in allocation revision 2. Producer implementation
-is the published #489 `65881c5c` checkpoint; this surface does not change it.
+Owner: #491, `game-ingestion` in allocation revision 2. The original producer
+checkpoint is #489 `65881c5c`; #619 adds the pure global first-boundary policy.
 
 `Coordinator` captures bounded pages and delivers immutable original commands
 through injected ports. `FeedbackRunner` owns finite units, stop and borrowed
@@ -9,6 +9,16 @@ resource lifetime. `ContinuousSync`/`ForwardWindow` compute bounded explicit
 recurrence; `GameReview` exposes saved facts/configuration. Named state values,
 ports, failures and identity/projection operations retain class/function identity.
 There is no connection, provider, process, root assembly or timer on import.
+
+`select_first_boundary(game, snapshots=..., source=...,
+selected_repertoire_ids=..., unavailable_repertoire_ids=...)` consumes only
+supplied canonical history and authored snapshots, returning the shared
+`FirstDepartureSelection`. Supply the complete configured selection and every
+failed read. Known opposite-color snapshots are excluded from relevant scope;
+a missing selection cannot be assumed opposite-color. Positive authored coverage
+is separate from exact action authority. `project_encounters` uses that election
+to emit at most one missed command, never a matched or later encounter. The
+Study owner must validate the prepared witness against current owner facts.
 
 Composition supplies acquisition, canonical source identity, published repertoire
 facts, Games storage and the receiving owner's public priority intake. Games
