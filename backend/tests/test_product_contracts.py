@@ -221,6 +221,8 @@ def boundary_errors(sources):
     public_tree = ast.parse((ROOT / "backend/app/study/interfaces/game_priority.py").read_text())
     public_exports = next(ast.literal_eval(node.value) for node in public_tree.body
         if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets))
+    repertoire_public = "app.repertoire.interfaces.first_boundary"
+    repertoire_exports = {"PreparedFirstBoundaryRepertoire"}
     for item in sources:
         owner, source = item[:2]
         module = item[2] if len(item) > 2 else f"app.{owner}.module"
@@ -232,6 +234,12 @@ def boundary_errors(sources):
             if owner == "games" and (name == public_module or name.startswith(public_module + ".")):
                 if name != public_module and name.removeprefix(public_module + ".") not in public_exports:
                     errors.append(f"{owner}: unavailable Study interface export {name}")
+                continue
+            # This exact Repertoire-owned facade exports only the immutable
+            # constructor; package-root and sibling implementation stay private.
+            if owner == "games" and (name == repertoire_public or name.startswith(repertoire_public + ".")):
+                if name != repertoire_public and name.removeprefix(repertoire_public + ".") not in repertoire_exports:
+                    errors.append(f"{owner}: unavailable Repertoire interface export {name}")
                 continue
             if owner == "games" and name.startswith("app.") and not name.startswith(("app.games.", "app.contracts.", "app.chess.")):
                 errors.append(f"{owner}: unsupported application dependency {name}")
@@ -248,6 +256,36 @@ def boundary_errors(sources):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute) and aliases.get(ast.unparse(node.value), ast.unparse(node.value)) == public_module and node.attr not in public_exports:
                     errors.append(f"{owner}: unavailable Study interface member {node.attr}")
+            repertoire_aliases = {alias.asname or alias.name: repertoire_public for node in ast.walk(tree)
+                if isinstance(node, ast.Import) for alias in node.names if alias.name == repertoire_public}
+            dynamic_imports = {alias.asname or alias.name for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module == "importlib"
+                for alias in node.names if alias.name == "import_module"}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute):
+                    base = repertoire_aliases.get(ast.unparse(node.value), ast.unparse(node.value))
+                    if base == repertoire_public and node.attr not in repertoire_exports:
+                        errors.append(f"{owner}: unavailable Repertoire interface member {node.attr}")
+                    # An imported public facade cannot lend its parent package
+                    # to a private sibling accessed through attributes.
+                    target = ast.unparse(node)
+                    if (target.startswith("app.repertoire.")
+                            and not repertoire_public.startswith(target + ".")
+                            and target != repertoire_public
+                            and target not in {repertoire_public + "." + name for name in repertoire_exports}):
+                        errors.append(f"{owner}: private Repertoire attribute {target}")
+                if not isinstance(node, ast.Call) or not node.args:
+                    continue
+                function = ast.unparse(node.func)
+                if function == "getattr":
+                    base = repertoire_aliases.get(ast.unparse(node.args[0]), ast.unparse(node.args[0]))
+                    if base == repertoire_public or base == "app.repertoire" or base.startswith("app.repertoire."):
+                        errors.append(f"{owner}: dynamic Repertoire interface member")
+                if function == "__import__" or function.endswith(".import_module") or function in dynamic_imports:
+                    target = node.args[0]
+                    if (isinstance(target, ast.Constant) and isinstance(target.value, str)
+                            and (target.value == "app.repertoire" or target.value.startswith("app.repertoire."))):
+                        errors.append(f"{owner}: dynamic Repertoire sibling import")
     return errors
 
 
@@ -288,6 +326,21 @@ def test_new_product_boundaries_do_not_import_composition_or_private_siblings():
     assert boundary_errors([("games", "from app.contracts.product_v02.learning import EncounterFeedbackPort")])
     assert boundary_errors([("games", "from app.study.interfaces.game_priority import PrivateStore")])
     assert boundary_errors([("games", "import app.study.interfaces.game_priority as api\ndef hidden():\n    return api.PrivateStore()")])
+    assert not boundary_errors([("games", "from app.repertoire.interfaces.first_boundary import PreparedFirstBoundaryRepertoire")])
+    assert not boundary_errors([("games", "import app.repertoire.interfaces.first_boundary as api\nvalue = api.PreparedFirstBoundaryRepertoire")])
+    for prohibited in (
+        "from app.repertoire import PreparedFirstBoundaryRepertoire",
+        "from app.repertoire.feedback_scope import PreparedFirstBoundaryRepertoire",
+        "from app.repertoire.interfaces.first_boundary import PrivateProjection",
+        "from app.repertoire.interfaces.first_boundary import *",
+        "import app.repertoire.interfaces.first_boundary as api\nvalue = api.PrivateProjection",
+        "import app.repertoire.interfaces.first_boundary\nvalue = app.repertoire.snapshot._mappings",
+        "import app.repertoire.interfaces.first_boundary as api\nvalue = getattr(api, 'PrivateProjection')",
+        "__import__('app.repertoire.feedback_scope')",
+        "import importlib\nimportlib.import_module('app.repertoire.feedback_scope')",
+        "from importlib import import_module as load\nload('app.repertoire.feedback_scope')",
+    ):
+        assert boundary_errors([("games", prohibited)]), prohibited
     assert has_import_cycle({"app.contracts.one": "from .two import value", "app.contracts.two": "from .one import value"})
 
 

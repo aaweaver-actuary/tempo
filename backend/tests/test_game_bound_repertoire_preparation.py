@@ -216,3 +216,38 @@ def test_study_owner_rejects_producer_mapping_substitution_despite_matching_rout
     with pytest.raises(CurrentDecisionUnavailable, match='first_departure_selection_changed'):
         owner.prepare_qualified(original, witness, qualified_publications=(prepared,),
             qualification_fence=lambda *args: None, game=current, select_first_boundary=independent)
+
+
+
+def test_repertoire_first_boundary_interface_is_exact_and_cold_imports_only_pure_owners():
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+    from app.repertoire.interfaces import first_boundary
+    from app.repertoire import feedback_scope
+    assert first_boundary.__all__ == ['PreparedFirstBoundaryRepertoire']
+    assert first_boundary.PreparedFirstBoundaryRepertoire is feedback_scope.PreparedFirstBoundaryRepertoire
+    assert first_boundary.PreparedFirstBoundaryRepertoire is PreparedFirstBoundaryRepertoire
+    assert first_boundary.PreparedFirstBoundaryRepertoire.__dataclass_params__.frozen
+    script = """
+import importlib.abc, sys
+import chess, pydantic
+blocked = ('app.games', 'app.study', 'app.services', 'app.product_composition',
+    'app.main', 'app.tasks', 'tempo_legacy_database', 'psycopg', 'sqlite3',
+    'requests', 'httpx', 'fastapi', 'chess.engine')
+class PureOnly(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname.startswith(blocked):
+            raise AssertionError('public facade imported runtime: ' + fullname)
+sys.meta_path.insert(0, PureOnly())
+from app.repertoire.interfaces import first_boundary as api
+from app.repertoire.feedback_scope import PreparedFirstBoundaryRepertoire
+assert api.__all__ == ['PreparedFirstBoundaryRepertoire']
+assert api.PreparedFirstBoundaryRepertoire is PreparedFirstBoundaryRepertoire
+assert not any(name.startswith(blocked) for name in sys.modules)
+"""
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run([sys.executable, '-B', '-c', script], cwd=root,
+        env=os.environ.copy(), capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr

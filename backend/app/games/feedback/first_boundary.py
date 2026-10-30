@@ -18,7 +18,7 @@ from app.contracts.product_v02.games import (
     FirstDepartureRoute, FirstDepartureScope, FirstDepartureSelection,
 )
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot
-from app.repertoire import PreparedFirstBoundaryRepertoire
+from app.repertoire.interfaces.first_boundary import PreparedFirstBoundaryRepertoire
 
 __all__ = ["select_first_boundary"]
 

@@ -467,7 +467,8 @@ discovery hints do not filter physical authority.
 
 Repertoire's public `PreparedFirstBoundaryRepertoire` owns detached source bytes,
 complete authored routes and exact-game immutable legal execution. The selector
-consumes that public capability for execution while independently repeating all
+consumes only [Repertoire's declared first-boundary interface](../repertoire/interfaces/first_boundary.py)
+for that capability while independently repeating all
 frontier, end, own-response conflict and mapping policy. Applicable route tails
 remain validated; proven opposite-color scope remains excluded and fenced.
 Current-target substitutions still come from Study's owning prepared target

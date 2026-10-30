@@ -278,6 +278,14 @@ above for its other consumers. Construction accepts the complete authored owner
 read, including full-source card/membership counts, and the exact canonical game.
 It never accepts caller-supplied execution frames or a readiness assertion.
 
+Games consumes only the declared
+[`app.repertoire.interfaces.first_boundary`](interfaces/first_boundary.py)
+surface, whose literal export list contains exactly
+`PreparedFirstBoundaryRepertoire`. This facade re-exports the same owner
+constructor; package-root and private sibling implementation imports are not
+Games consumer surfaces. Importing it starts no provider, storage, engine or
+application runtime.
+
 All applicable authored routes and their full tails are legally executed.
 Invocation-local exact prefixes and aliases share execution; no mutable Board
 survives construction. Public standard chess bitboards, color, turn, cleaned
@@ -305,7 +313,8 @@ effect.
 flowchart LR
   Compose["Product composition"] --> Authored["Database owner: complete authored scope"]
   Authored --> Cap["Repertoire-owned exact-game legal execution"]
-  Selector["Games pure first-boundary selector"] --> Cap
+  Selector["Games pure first-boundary selector"] --> Interface["Repertoire interfaces.first_boundary: exact immutable constructor"]
+  Interface --> Cap
   Compose --> Selector
   Selector --> Routes["Every surviving candidate route ID"]
   Routes --> Read["Database owner: complete candidate binding read"]
@@ -336,4 +345,7 @@ assembled acceptance. There is no persistent proof cache or schema change.
 compare policy with the full selector, including illegal tails, conflicts,
 coverage/end, unavailable mappings, complete versus omitted candidates, exact
 EP/castling/clocks, source ownership, wrong games, read-only alias frames and
-Study's rejection of producer mapping substitution.
+Study's rejection of producer mapping substitution. The public facade case
+also proves literal constructor identity and a fresh import without optional
+runtime or infrastructure; the product boundary guard rejects package-root,
+private sibling, undeclared export/member and dynamic sibling access.
