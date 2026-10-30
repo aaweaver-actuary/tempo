@@ -320,8 +320,15 @@ node /absolute/qualified/source/scripts/game-review-collection.mjs enable --cand
 node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
 ```
 
-Plan/status read the actual installed F reader through the API's reader profile;
-a successful JSON read does not imply launch readiness. Missing fields, truncated
+Plan/status first run `game_collection_status --identity-only`, then the full
+reader, through the verified installed API's reader profile. The two commands
+retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`, and
+`json_status`). The existing 30,000 ms timeout and 4 MiB subprocess bound apply
+independently to each command. A full-reader timeout does not erase independently
+observed schema, but still blocks enable. Complete JSON from a nonzero exit remains
+diagnostic evidence, never a successful probe. Malformed/truncated output is not
+accepted. Conflicting schema observations block explicitly.
+A successful JSON read does not imply launch readiness. Missing fields, truncated
 or unavailable repertoire evidence, unknown process inventory, frozen/image
 mismatch and competing collectors block enable. Unused providers may remain
 unconfigured. Configured providers need explicit recurrence, a 60-second to one-day
@@ -330,6 +337,40 @@ overlay preserves 256 MiB/96 PIDs and leaves CPU unrestricted under Task A polic
 Effective limits are checked on existing collectors. Host processes and containers
 with a competing runner prevent activation; unrelated legacy workers are reported
 and preserved. Existing accepted Study obligations keep their own lifecycle.
+
+Strict mode requires every selected repertoire to be healthy. The repeatable
+`--allow-bound-repertoire redacted:<12-lowercase-hex-digits>` option permits only
+an explicitly selected, currently observed `repertoire_snapshot_exceeds_bound`
+refusal from the Repertoire owner's typed diagnostic. Each configured provider
+still needs complete enumeration (`selected_repertoire_count` matches listed
+readiness, no truncation/duplicate tokens) and at least one healthy selection.
+Permission, publication, scope, identity, parsing, maintenance, image, resource,
+and competing-collector failures still block. One token covers the same selected
+repertoire across both providers. Unknown tokens block; a now-healthy selection
+uses normal comparison and appears in `unused_bound_allowances`.
+
+Token discovery is a local private operation: obtain the full public JSON through
+the verified installed reader (the operator's `evidence.providers.items` contains
+its exact tokens). In the already-approved private configuration/readiness packet,
+locate the intended repertoire's private ID and its position in each provider's
+ordered selected repertoire list. Match provider, configuration revision,
+`selected_repertoire_count`, and ordered readiness rows between the packet and
+current public output. Use the corresponding public row's `repertoire_id` token
+verbatim. If the packet is stale, ambiguous, or selections/revisions differ,
+refresh it through the same installed read-only command with `--private` locally;
+do not publish that private output. Never derive tokens from names, pass raw IDs,
+or recreate the Python hash in JavaScript.
+
+Repeat the allowance on every invocation needing it, for example on `plan` and
+then on an independently authorized `enable --apply`. It is never saved and does
+not alter provider scope, jobs, cards, or worker behavior. `comparison_coverage`
+is `partial` when bound comparisons are explicitly deferred, `complete` when all
+selected readiness is healthy, and `unresolved` when readiness cannot be accepted.
+Its scope is always `selected_repertoire_readiness`, never a claim that all stored
+games have been compared. `deferred_comparisons` lists token, affected providers,
+`diagnostic`, sanitized `bound` details, and `allowance_status=explicitly_allowed`.
+Collection-level unresolved counts remain independent. An allowance is unnecessary
+for an ownership-verified disable.
 
 Enable rereads persisted maintenance evidence under the existing target lock.
 The existing runtime recovery assessor remains authoritative: pending or invalid
@@ -360,11 +401,14 @@ flowchart LR
     ManagedRelease[Normal managed release] --> FrozenProfile[Freeze and build optional inactive profile]
     ManagedRelease --> Maintenance[Stop Games before protected maintenance]
     FrozenProfile --> Registration
-    Wrapper --> Reader[F read-only installed evidence]
+    Wrapper --> Identity[Installed identity-only reader / independent schema evidence]
+    Wrapper --> Reader[Installed full reader / complete selected readiness]
+    Identity --> EnableChecks
+    Reader --> EnableChecks
     Wrapper --> Inventory[Image, resource and competing-process inspection]
     Wrapper --> Lock[Existing managed target lock]
     Lock --> Inspect[Inspect current evidence under target lock]
-    Inspect --> EnableChecks[Enable: maintenance assessor and exact schema plus existing launch checks]
+    Inspect --> EnableChecks[Enable: maintenance, exact schema, complete readiness and explicit bound allowances]
     EnableChecks -->|all clear| ComposeStart[Start only managed Games service]
     Inspect --> StopChecks[Disable: existing identity and ownership stopSafe checks]
     StopChecks -->|verified despite launch blockers| ComposeStop[Stop only managed Games service]

@@ -116,7 +116,15 @@ through Games storage; a missing/ambiguous capture remains unresolved. No game i
 imported or compared by reading status. No HTTP route is added. Importing the
 command starts nothing and opens no connection.
 
-JSON `schema_version=1` always has `read_only`, `identity`, `providers`,
+`--identity-only` emits only `{schema_version: 1, read_only: true, identity: ...}`
+and a newline. It calls `CollectionObservations.identity()` through the dedicated
+reader connection, without repertoire projection, receipt lookup, provider calls,
+or other report sections. It rejects `--provider`/`--game-id`, exits 0 only for
+available identity, and otherwise exits 2 with structured unavailable evidence.
+The actual database schema remains `identity.schema_version`; the envelope's
+version describes JSON format. Missing reader credentials never use writer ones.
+
+The full report (`schema_version=1`) has `read_only`, `identity`, `providers`,
 `collection`, `selected_game`, `delivery`, and `unresolved`. `selected_game` is null
 without a selection. Read sections carry `availability=available|unavailable`;
 unavailable sections omit unknowable counts. Exit 2 means a required read section
@@ -132,7 +140,22 @@ operational state, not a command failure. Argument errors also exit 2.
   acquisition-window counts. Explicit null rated/recurrence values stay null.
   Selected repertoire readiness reuses the existing bounded Repertoire reader
   and published projection; it reports source sizes/limits, actual route colors,
-  publication/mapping availability or the owner's prefix/mixed-color diagnostic.
+  publication/mapping availability or sanitized unavailable evidence. Each unique
+  repertoire is read/projected once per report, including failures, with nested
+  copies attached to provider rows. No result survives into a later report.
+  `selected_repertoire_count` reports the full configured count independently of
+  the bounded readiness list and `repertoires_truncated` flag.
+  The exact public `app.repertoire.RepertoireSnapshotBoundExceeded` from either
+  read or projection yields `availability=unavailable`,
+  `diagnostic=repertoire_snapshot_exceeds_bound`, and sanitized `bound` metadata:
+  `code`, `stage` (`read`/`projection`), boolean `sample_complete`, and nonempty
+  `violations` of `{dimension, observed, limit, observation}`. Dimensions are
+  `source_rows`, `card_rows`, `membership_rows`, `graph_rows`, `row_bytes`,
+  `estimated_snapshot_bytes`, `snapshot_bytes`, or `authored_moves`; observation
+  labels are `exact`, `lower_bound`, or `conservative_estimate`. Measurements are
+  integers proving `observed > limit >= 0`; public values must be safe JavaScript
+  integers. Unknown fields are omitted. Ordinary errors, including an identically
+  worded `ValueError`, remain generic unavailable evidence and cannot be deferred.
   No selection is inferred from `is_main`, legacy accounts or saved recurrence.
 - `collection`: distinct normalized provider/source-game identities (canonical
   Chess.com spelling), distinct own-response occurrences, unresolved evidence and
@@ -166,11 +189,13 @@ truncation result rather than partial JSON or completion claims.
 ```mermaid
 flowchart LR
   CLI["Explicit status CLI / composition"] --> Reader["CollectionObservations / SELECT only"]
+  CLI --> Identity["Identity-only / one reader transaction"]
+  Identity --> Schema["Actual role / read-only setting / schema"]
   Reader --> Games["Existing Games jobs, configuration, sources, deliveries"]
   Games --> Boundary["Retained global first boundary / no election during reads"]
   Boundary --> JSON
   Reader --> Legacy["Retained Games library / separate count"]
-  CLI --> Repertoire["Existing bounded Repertoire read + public projection"]
+  CLI -->|full report only| Repertoire["Existing bounded Repertoire read + public projection"]
   Reader --> Port["Injected public receipt status capability"]
   Port --> Receipt["CurrentStudyReceiptReads / receiving-owner read"]
   Reader --> JSON["Bounded observations / explicit uncertainty"]
