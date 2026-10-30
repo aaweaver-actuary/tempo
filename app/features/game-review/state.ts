@@ -1,7 +1,7 @@
 import { Chess } from "chess.js";
 import type { BoardProps, Square } from "@tempo/board-ui";
 import { positionsFromMoves } from "../../hooks/use-board-history";
-import type { Finding, GameDetail } from "../product-api/contracts";
+import type { Finding, GameDetail, FirstDepartureSelection, EncounterReceipt } from "../product-api/contracts";
 
 export const findingLabels: Record<Finding["kind"], string> = {
   confirmed_miss: "Confirmed recall miss",
@@ -48,6 +48,67 @@ export function receiptLabel(receipt: GameDetail["receipts"][number] | null | un
   const disposition = receipt.disposition?.replaceAll("_", " ") ?? "unresolved";
   const admission = receipt.admission_status === "available" ? "available for Study" : receipt.admission_status.replaceAll("_", " ");
   return `${status} · Encounter ${receipt.observation_recorded ? "recorded" : "not recorded"} · Disposition: ${disposition} · Admission: ${admission}${receipt.deferred_reason ? ` · Deferred: ${receipt.deferred_reason.replaceAll("_", " ")}` : ""}`;
+}
+
+export const departureLabels: Record<FirstDepartureSelection["status"], string> = {
+  own_actionable: "Your first repertoire departure",
+  own_unmapped: "Your first departure — Study target unresolved",
+  opponent_gap: "Opponent departed first",
+  coverage_end: "Authored repertoire coverage ended",
+  missing_own_continuation: "No authored response at this position",
+  unresolved: "Comparison unresolved",
+  covered: "No departure in the recorded covered history",
+};
+
+/** The complete original effect identity survives physical target remapping. */
+export function departureReceipt(detail: GameDetail): GameDetail["receipts"][number] | undefined {
+  const selected = detail.first_departure;
+  if (selected?.status !== "own_actionable" || !selected.decision) return undefined;
+  const matching = detail.receipts.filter(receipt => receipt.key.workspace_id === selected.workspace_id
+    && receipt.key.provider === selected.source.provider && receipt.key.game_id === selected.source.game_id
+    && receipt.key.occurrence_ply === selected.ply && receipt.key.decision_id === selected.decision?.decision_id
+    && receipt.source_revision === selected.source.source_revision
+    && (!("source_digest" in receipt) || receipt.source_digest === selected.source.source_digest));
+  const distinct = new Map(matching.map(receipt => [JSON.stringify(receipt), receipt]));
+  return distinct.size === 1 ? [...distinct.values()][0] : undefined;
+}
+
+export function isEncounterReceipt(receipt: GameDetail["receipts"][number] | undefined): receipt is EncounterReceipt {
+  return receipt !== undefined && "admission_status" in receipt;
+}
+
+export function departureProgressStage(receipt: GameDetail["receipts"][number] | undefined): string {
+  if (!receipt) return "unknown";
+  if (!isEncounterReceipt(receipt) || !receipt.progress) return "legacy";
+  if (receipt.status === "held" || ["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome)) return "held";
+  if (receipt.progress.settlement) return "settled";
+  if (receipt.progress.first_issued) return "issued";
+  if (receipt.progress.schedule_applied_at) return "again_applied";
+  if (receipt.progress.introduction_applied_at) return "introduced";
+  return "accepted";
+}
+
+export function departureProgress(receipt: GameDetail["receipts"][number] | undefined): string {
+  if (!receipt) return "No Study receipt is available; application is not confirmed.";
+  if (!isEncounterReceipt(receipt) || !receipt.progress) return `Original effect receipt · ${receiptLabel(receipt)}`;
+  const progress = receipt.progress;
+  const held = receipt.status === "held" || ["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome);
+  if (held) return `Study feedback held: ${receipt.reason ?? receipt.outcome.replaceAll("_", " ")}`;
+  const application = progress.scheduling_review_id !== null && progress.schedule_applied_at !== null
+    ? "Again applied" : progress.introduction_applied_at !== null ? "Canonical first introduction applied" : null;
+  if (progress.settlement) return `${application} · Settled after a genuine Study review`;
+  if (progress.first_issued) return `${application} · Issued for Study (new issuance ${progress.first_issued_ordinal})`;
+  if (application) return `${application} · Awaiting a new Study issuance`;
+  return `Accepted · ${receipt.disposition === "introduced_again" ? "Again" : "First introduction"} pending${receipt.reason ? `: ${receipt.reason.replaceAll("_", " ")}` : ""}`;
+}
+
+/** Use the original pre-move FEN for actor, fullmove number and legal notation. */
+export function departureMove(positions: readonly string[], ply: number, move: string): string {
+  const board = new Chess(positions[ply - 1]);
+  const side = board.turn(), fullmove = board.fen().split(" ")[5];
+  let notation = move;
+  try { notation = board.move(move)?.san ?? move; } catch { /* Accurate UCI remains inspectable. */ }
+  return `${fullmove}${side === "b" ? "..." : "."} ${notation}`;
 }
 
 /** Feature-owned cancellation. Ignoring AbortSignal cannot publish an obsolete result. */

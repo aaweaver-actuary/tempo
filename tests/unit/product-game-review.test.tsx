@@ -6,11 +6,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { BoardProps } from "@tempo/board-ui";
 import { GameReviewView } from "../../app/features/game-review/GameReviewView";
 import { createGameReviewApi, type GameReviewClient } from "../../app/features/game-review/api";
-import { boardPosition, findingLabels, gamePositions, receiptLabel } from "../../app/features/game-review/state";
+import { boardPosition, departureMove, departureProgress, departureReceipt, findingLabels, gamePositions, receiptLabel } from "../../app/features/game-review/state";
 import { FindingSchema, GameDetailSchema, LearningReceiptSchema, EncounterReceiptSchema, type Finding, type GameDetail, type LearningReceipt, type EncounterReceipt } from "../../app/features/product-api/contracts";
 import confirmedFixture from "../../contracts/product-v02/fixtures/confirmed-introduced-miss.json";
 import heldFixture from "../../contracts/product-v02/fixtures/held-receipt.json";
 import pausedEncounterFixture from "../../contracts/product-v02/fixtures/encounters/paused-introduction.json";
+import actionableFixture from "../../contracts/product-v02/fixtures/game-detail/own_actionable.json";
 import { useTrainingStore } from "../../app/state/training-store";
 
 const { boards } = vi.hoisted(() => ({ boards: [] as BoardProps[] }));
@@ -42,13 +43,24 @@ function encounterReceipt(overrides: Partial<EncounterReceipt> = {}, target = fi
     source_revision: target.source_revision, source_digest: target.source_digest, ...overrides });
 }
 function detail(overrides: Partial<GameDetail> = {}): GameDetail {
-  return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings: [finding("confirmed_miss")], receipts: [], ...overrides });
+  const findings = overrides.findings ?? [finding("confirmed_miss")];
+  const candidate = findings.find(item => item.kind === "confirmed_miss");
+  const first_departure = candidate ? {
+    ...actionableFixture.payload.first_departure,
+    source: { ...actionableFixture.payload.first_departure.source, provider: candidate.provider, game_id: candidate.game_id, source_revision: candidate.source_revision, source_digest: candidate.source_digest },
+    ply: candidate.ply, position_key: candidate.position_key, played_uci: candidate.played_uci, expected_uci: candidate.expected_uci,
+    decision: { ...actionableFixture.payload.first_departure.decision, decision_id: candidate.decision_id, position_key: candidate.position_key,
+      selected_response_uci: candidate.expected_uci[0], presentation_id: candidate.presentation_id, presentation_revision: candidate.presentation_revision },
+  } : null;
+  return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings, receipts: [], first_departure, ...overrides });
 }
 function refreshStatus(provider: "lichess" | "chesscom", operation_id: string) {
   return { provider, operation_id, job_id: `job:${operation_id}`, window: { start_at: "2026-10-25T00:00:00Z", end_at: "2026-10-30T12:00:00Z", precision: "millisecond" as const }, status: "queued" as const, pages_committed: 0, next_attempt_at: 0, error: null };
 }
+let fakeScope = 0;
 function fakeApi(overrides: Partial<GameReviewClient> = {}): GameReviewClient {
   return {
+    refreshScope: `synthetic-game-review-unit-${fakeScope++}`,
     recentGames: vi.fn(async () => ({ games: [firstSummary, secondSummary], sync: idleSync })),
     gameDetail: vi.fn(async () => detail()),
     sync: vi.fn<GameReviewClient["sync"]>(async ({ provider, operation_id }) => ({ provider, operation_id, status: "pending", error: null })),
@@ -87,6 +99,8 @@ it("renders every finding distinctly and labels uncertain source time without ca
 it("supplies exact original FEN/history and marks the finding ply while stepping with the real board", async () => {
   render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [finding("opponent_gap", 4)] })) })} />);
   await selectFirst(); await readyBoard();
+  expect(boards.at(-1)?.positionRevision).toBe(0); // Diagnostic-only data is not an authoritative focus.
+  fireEvent.click(screen.getByRole("button", { name: "Show position before ply 4" }));
   const expected = new Chess();
   for (const move of moves.slice(0, 3)) expected.move(move);
   expect(boards.at(-1)?.fen).toBe(expected.fen());
@@ -368,7 +382,104 @@ it("does not offer legacy lapse retry for a pending confirmed-miss encounter rec
     reason: "existing_lapse_obligation" }, missed);
   const api = fakeApi({ gameDetail: vi.fn(async () => detail({ findings: [missed], receipts: [pending] })) });
   render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
-  expect(screen.getByText(/Disposition: existing lapse · Admission: pending/)).toBeTruthy();
+  expect(screen.getAllByText(/Disposition: existing lapse · Admission: pending/)).toHaveLength(2);
   expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
   expect(api.retryFeedback).not.toHaveBeenCalled();
+});
+
+
+function sharedDetail(name: string): GameDetail {
+  return GameDetailSchema.parse(JSON.parse(readFileSync(resolve("contracts/product-v02/fixtures/game-detail", `${name}.json`), "utf8")).payload);
+}
+function apiForShared(value: GameDetail): GameReviewClient {
+  return fakeApi({ recentGames: vi.fn(async () => ({ games: [value], sync: idleSync })), gameDetail: vi.fn(async () => value) });
+}
+
+it("focuses the retained global departure over an earlier irrelevant diagnostic and uses its exact original receipt", async () => {
+  const value = sharedDetail("own_actionable");
+  const api = apiForShared(value);
+  render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
+  const primary = screen.getByRole("region", { name: "First repertoire departure" });
+  expect(within(primary).getByRole("heading", { name: "Your first repertoire departure" })).toBeTruthy();
+  expect(boards.at(-1)?.fen).toBe(gamePositions(value.starting_fen, value.moves)[2]);
+  expect(boards.at(-1)?.positionRevision).toBe(2);
+  expect(primary.textContent).toContain("Your move: 2. c4");
+  expect(primary.textContent).toContain("2. Nf3");
+  expect(primary.textContent).toContain("Again applied · Awaiting a new Study issuance");
+  expect(primary.textContent).not.toContain("source_changed_before_original_arrived");
+  expect(screen.queryByRole("button", { name: "Retry feedback at ply 1" })).toBeNull();
+  expect(api.retryFeedback).not.toHaveBeenCalled(); expect(api.refresh).not.toHaveBeenCalled(); expect(api.sync).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh games and status" }));
+  await waitFor(() => expect(api.recentGames).toHaveBeenCalledTimes(2));
+  expect(api.retryFeedback).not.toHaveBeenCalled(); expect(api.refresh).not.toHaveBeenCalled(); expect(api.sync).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["covered", "No departure in the recorded covered history"],
+  ["own_unmapped", "Your first departure — Study target unresolved"],
+  ["opponent_gap", "Opponent departed first"],
+  ["coverage_end", "Authored repertoire coverage ended"],
+  ["missing_own_continuation", "No authored response at this position"],
+  ["unresolved", "Comparison unresolved"],
+] as const)("shows the retained %s result without authorizing a later diagnostic penalty", async (name, heading) => {
+  const value = sharedDetail(name);
+  render(<GameReviewView api={apiForShared(value)} />); await selectFirst(); await readyBoard();
+  const primary = screen.getByRole("region", { name: "First repertoire departure" });
+  expect(within(primary).getByRole("heading", { name: heading })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Retry feedback at ply/ })).toBeNull();
+  expect(primary.textContent).not.toContain("Again applied");
+  expect(boards.at(-1)?.positionRevision).toBe(value.first_departure?.ply ? value.first_departure.ply - 1 : 0);
+});
+
+it.each(["stale", "unknown"] as const)("retains an inspectable %s comparison without claiming current scope", async name => {
+  const value = sharedDetail(name);
+  render(<GameReviewView api={apiForShared(value)} />); await selectFirst(); await readyBoard();
+  const primary = screen.getByRole("region", { name: "First repertoire departure" });
+  expect(primary.textContent).toMatch(name === "stale" ? /comparison is stale/ : /freshness is unknown/);
+});
+
+it("keeps absent selection and empty diagnostics unknown and opens the normal initial board", async () => {
+  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ first_departure: null, findings: [] })) })} />);
+  await selectFirst(); await readyBoard();
+  const primary = screen.getByRole("region", { name: "First repertoire departure" });
+  expect(within(primary).getByRole("heading", { name: "Comparison result not yet available" })).toBeTruthy();
+  expect(primary.textContent).not.toMatch(/No departure|no misses/);
+  expect(boards.at(-1)?.positionRevision).toBe(0);
+});
+
+it("uses the original Black non-initial FEN for move number, actor and pre-move board", async () => {
+  const value = sharedDetail("black-noninitial");
+  render(<GameReviewView api={apiForShared(value)} />); await selectFirst(); await readyBoard();
+  expect(boards.at(-1)?.fen).toBe(value.starting_fen);
+  expect(boards.at(-1)?.orientation).toBe("black");
+  const primary = screen.getByRole("region", { name: "First repertoire departure" });
+  expect(primary.textContent).toContain("Your move: 17...");
+  expect(departureMove([value.starting_fen], 1, value.moves[0])).toMatch(/^17\.\.\. /);
+});
+
+it("shows actual application, issuance and genuine settlement separately and follows an original effect onto a remapped target", () => {
+  const value = sharedDetail("own_actionable");
+  const actual = departureReceipt(value)!;
+  expect(departureProgress(actual)).toBe("Again applied · Awaiting a new Study issuance");
+  expect(departureProgress(value.receipts[0])).not.toContain("Again");
+  if (!("admission_status" in actual) || !actual.progress) throw new Error("shared progress fixture required");
+  const accepted = EncounterReceiptSchema.parse({ ...actual, status: "pending", admission_status: "pending", applied_at: null,
+    reason: "study_priority_pending", progress: { ...actual.progress, scheduling_review_id: null, schedule_applied_at: null, remediation_fence: null } });
+  expect(departureProgress(accepted)).toBe("Accepted · Again pending: study priority pending");
+  const introduced = EncounterReceiptSchema.parse({ ...actual, disposition: "first_introduction", progress: { ...actual.progress,
+    scheduling_review_id: null, schedule_applied_at: null, introduction_applied_at: "2026-10-26T12:01:00Z" } });
+  expect(departureProgress(introduced)).toBe("Canonical first introduction applied · Awaiting a new Study issuance");
+  const attempt = { queue_entry_id: 101, card_id: "remapped-card", card_revision: 2, issuance_sequence: 102, issued_at: "2026-10-26T12:02:00Z" };
+  const remapped = EncounterReceiptSchema.parse({ ...actual, progress: { ...actual.progress,
+    target: { card_id: "remapped-card", card_revision: 2 },
+    remediation_fence: { target: { card_id: "remapped-card", card_revision: 2 }, after_issuance_sequence: 101, established_at: "2026-10-26T12:01:30Z" },
+    first_issued: attempt, first_issued_ordinal: 1 } });
+  expect(departureReceipt({ ...value, receipts: [remapped] })).toBe(remapped);
+  expect(departureProgress(remapped)).toBe("Again applied · Issued for Study (new issuance 1)");
+  const settled = EncounterReceiptSchema.parse({ ...remapped, status: "settled", admission_status: "settled", progress: { ...remapped.progress, settlement: { review_id: 42, attempt } } });
+  expect(departureProgress(settled)).toBe("Again applied · Settled after a genuine Study review");
+  const unrelated = { ...remapped, source_digest: "e".repeat(64) };
+  expect(departureReceipt({ ...value, receipts: [unrelated] })).toBeUndefined();
+  const ambiguous = { ...remapped, owner_receipt_id: "different-original-effect" };
+  expect(departureReceipt({ ...value, receipts: [remapped, ambiguous] })).toBeUndefined();
 });

@@ -26,3 +26,7 @@
   .game-review-finding dl { grid-template-columns: minmax(0, 1fr); gap: 3px; }
   .game-review-finding dd { margin-bottom: 8px; }
 }
+
+.game-review-summary { border: 1px solid var(--accent, #93bbff); border-radius: 10px; padding: 14px; margin-bottom: 18px; overflow-wrap: anywhere; }
+.game-review-summary dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; }
+.game-review-summary dd { margin: 0; }

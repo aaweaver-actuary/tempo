@@ -44,6 +44,41 @@ proof.
 it grants no content mutation. The injected API has no Study reset/start/save,
 card-creation, SQL, browser-storage or engine capability.
 
+## Authoritative first departure (#624)
+
+The existing `GameDetail` adds the retained global `first_departure`, original
+`determined_at`, opaque `comparison_revision` and honest `comparison_freshness`.
+Missing older fields parse as null/unknown. The headline and initial board use
+this selection, never the first per-repertoire diagnostic. A known boundary opens
+immediately before its move; covered or absent boundary opens the original initial
+position. Move labels use legal replay from that FEN, including Black and non-initial
+fullmove numbers. Diagnostic repertoire filtering does not narrow the global answer.
+
+All seven selector results remain distinct. Opponent-first, authored endpoint,
+missing continuation and unresolved results authorize no later diagnostic penalty.
+A missing selection is unknown rather than covered. Stale and unknown comparisons
+remain inspectable with explicit freshness labels; the browser does not recalculate
+repertoire membership or current authority.
+
+Primary Study progress correlates workspace/provider/game/decision/occurrence and
+canonical revision, plus source digest for encounter receipts. Provider-source and
+canonical-source revision numbers are separate domains. Physical card coincidence
+never links a receipt; ambiguous original-effect receipts remain unknown. An owner
+remap displays its current target while retaining the original presentation link.
+Only actual progress fields establish Again, canonical introduction, issuance and
+genuine review settlement. Legacy applied receipts retain their original labels.
+
+The legacy retry action requires an exact matching own-actionable original finding
+and a compatible legacy pending receipt (or no receipt). The registered writer
+command independently qualifies and fences that original delivery. No retry action
+is offered for later/opponent-first diagnostics, absent selection or encounter-only
+admission. Mount, selection and status refresh remain read-only.
+
+The summary exposes `data-testid=first-departure-summary`, `data-status`, and
+`data-progress-stage` for the owning packaged browser journey. Component checks
+use the same shared GameDetail fixtures as both wire parsers. Real API, persistence,
+packaging and installed feedback remain the integration owner's evidence.
+
 ## Dependency and lifecycle view
 
 ```mermaid
@@ -52,7 +87,9 @@ flowchart LR
   Composition --> HTTP["api.ts: injected fetch adapter"]
   View --> Port["GameReviewClient: read / explicit refresh / saved-range sync / retry"]
   HTTP -. implements .-> Port
-  HTTP --> DTO["#482 factual values + LearningReceipt / EncounterReceipt union"]
+  HTTP --> DTO["GameDetail: retained global selection + freshness + original receipts"]
+  View --> Selection["Global boundary summary + original-effect progress"]
+  Selection --> DTO
   View --> Board["@tempo/board-ui: supplied read-only FEN"]
   View --> Replay["state.ts: original move replay"]
   View --> Intent["Repertoire navigation intent"]
@@ -112,8 +149,9 @@ Typed fake-provider failure preserves the actual existing Study store object.
 
 The encounter-display follow-on adds only seven focused owner receipt-label
 cases and one mixed legacy/encounter HTTP detail-read case (31 cases total).
-Legacy retry commands and their response validator remain unchanged; the detail
-read preserves the actual encounter subtype through the shared union.
+Legacy retry response validation retains the shared union; the detail
+read preserves actual encounter subtypes. The #624 additions above narrow UI retry
+authority to its exact selected original effect.
 
 The focused test is discovered by the existing unit glob. #491 coordinates the
 central regression inventory entry with #488's current `tests/REGRESSIONS.md`

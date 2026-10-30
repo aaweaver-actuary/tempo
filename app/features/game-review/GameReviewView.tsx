@@ -7,7 +7,7 @@ import "../../../packages/board-ui/styles/board.css";
 import { Button } from "../../components/buttons/BaseButton";
 import type { Finding, GameDetail, GameSummary, RecentGames } from "../product-api/contracts";
 import type { GameReviewClient } from "./api";
-import { boardPosition, findingLabels, gamePositions, OperationKeys, OwnedRequests, receiptLabel } from "./state";
+import { boardPosition, departureLabels, departureMove, departureProgress, departureProgressStage, departureReceipt, findingLabels, gamePositions, isEncounterReceipt, OperationKeys, OwnedRequests, receiptLabel } from "./state";
 import "./game-review.css";
 import { useGameRefresh } from "./use-game-refresh";
 
@@ -95,10 +95,10 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
         gamePositions(data.starting_fen, data.moves);
         if (gameKey(data) !== gameKey(selected)) throw new Error("Game identity or source revision changed. Refresh recent games before reviewing.");
         if (data.findings.some(finding => finding.provider !== data.provider || finding.game_id !== data.game_id
-          || finding.source_revision !== data.source_revision || finding.ply > data.moves.length || data.moves[finding.ply - 1] !== finding.played_uci
+          || finding.ply > data.moves.length || data.moves[finding.ply - 1] !== finding.played_uci
           || repertoireId !== undefined && finding.repertoire_id !== repertoireId)) throw new Error("Findings do not match this game history or repertoire. Refresh before reviewing.");
         setDetail({ data, loading: false, error: null, identity: selectionIdentity });
-        setPly(data.findings[0] ? Math.max(0, data.findings[0].ply - 1) : 0);
+        setPly(data.first_departure?.ply ? data.first_departure.ply - 1 : 0);
       } catch (error) {
         setDetail({ data: null, loading: false, error: errorMessage(error), identity: selectionIdentity });
       }
@@ -111,9 +111,23 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
   const currentDetail = detail.identity === selectionIdentity ? detail.data : null;
   const positions = useMemo(() => currentDetail ? gamePositions(currentDetail.starting_fen, currentDetail.moves) : [], [currentDetail]);
   const cursor = Math.max(0, Math.min(ply, positions.length - 1));
+  const selection = currentDetail?.first_departure;
+  const primaryReceipt = currentDetail ? departureReceipt(currentDetail) : undefined;
+  const primaryProgress = isEncounterReceipt(primaryReceipt) ? primaryReceipt.progress : undefined;
+
+  function matchesSelectedDeparture(finding: Finding): boolean {
+    const selected = currentDetail?.first_departure;
+    return selected?.status === "own_actionable" && selected.decision !== null
+      && finding.provider === selected.source.provider && finding.game_id === selected.source.game_id
+      && finding.source_revision === selected.source.source_revision && finding.source_digest === selected.source.source_digest
+      && finding.ply === selected.ply && finding.decision_id === selected.decision.decision_id
+      && finding.position_key === selected.position_key && finding.played_uci === selected.played_uci
+      && finding.expected_uci.length === selected.expected_uci.length
+      && finding.expected_uci.every((move, index) => move === selected.expected_uci[index]);
+  }
 
   async function retryFeedback(finding: Finding) {
-    if (feedbackBusy.current || finding.kind !== "confirmed_miss") return;
+    if (feedbackBusy.current || finding.kind !== "confirmed_miss" || !matchesSelectedDeparture(finding)) return;
     feedbackBusy.current = true;
     setFeedback({ busy: true, error: null });
     const owned = requests.current.start("feedback");
@@ -172,19 +186,32 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
       {selected && (detail.loading || detail.identity !== selectionIdentity) && <p role="status">Loading game…</p>}
       {detail.identity === selectionIdentity && detail.error && <div role="alert" className="game-review-error">{detail.error} <Button onClick={() => setDetailReload(value => value + 1)}>Retry game</Button></div>}
       {currentDetail && <><h2>{providerLabel(currentDetail.provider)} · {currentDetail.game_id}</h2><p className="game-review-muted">{gameTime(currentDetail)}</p>
+        <section className="game-review-summary" aria-label="First repertoire departure" data-testid="first-departure-summary" data-status={selection?.status ?? "unknown"} data-progress-stage={departureProgressStage(primaryReceipt)}>
+          <h3>{selection ? departureLabels[selection.status] : "Comparison result not yet available"}</h3>
+          {selection?.ply && <p>{selection.actor === "learner" ? "Your move" : "Opponent move"}: {departureMove(positions, selection.ply, selection.played_uci!)} · Ply {selection.ply}</p>}
+          {selection?.ply && <dl><dt>Played</dt><dd>{departureMove(positions, selection.ply, selection.played_uci!)}</dd>
+            <dt>Expected</dt><dd>{selection.expected_uci.map(move => departureMove(positions, selection.ply!, move)).join(", ") || "No authored response"}</dd></dl>}
+          {selection?.status === "own_actionable" && <><p>Study target: {primaryProgress ? primaryProgress.target.card_id : selection.decision!.presentation_id}</p>
+            {primaryProgress && primaryProgress.target.card_id !== selection.decision!.presentation_id && <p className="game-review-muted">Original presentation: {selection.decision!.presentation_id}. The Study owner retained the original effect on the current presentation.</p>}
+            <p role="status">{departureProgress(primaryReceipt)}</p></>}
+          {selection?.status === "own_unmapped" && <p>No exact Study target is available. Automatic feedback is held.</p>}
+          {selection && ["opponent_gap", "coverage_end", "missing_own_continuation", "unresolved"].includes(selection.status) && <p>No automatic Study consequence is authorized by this result.</p>}
+          {selection?.diagnostic && <p>Comparison detail: {selection.diagnostic.replaceAll("_", " ")}</p>}
+          {currentDetail.comparison_freshness !== "current" && <p className="game-review-muted">{currentDetail.comparison_freshness === "stale" ? "Recorded comparison is stale; source or repertoire facts have changed." : "Comparison freshness is unknown; current repertoire scope has not been verified."}</p>}
+        </section>
         <div role="region" aria-label="Original game history" tabIndex={0} onKeyDown={historyKeys}>
           <div className="game-review-board"><Board {...boardPosition(selectionIdentity, positions, currentDetail.moves, cursor, currentDetail.player_color)} /></div>
           <div className="game-review-controls"><Button disabled={cursor === 0} onClick={() => setPly(0)}>First</Button><Button disabled={cursor === 0} onClick={() => setPly(cursor - 1)}>Previous</Button>
             <span role="status">Ply {cursor} of {currentDetail.moves.length}</span><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(cursor + 1)}>Next</Button><Button disabled={cursor === currentDetail.moves.length} onClick={() => setPly(currentDetail.moves.length)}>Last</Button></div>
         </div>
-        <h3>Repertoire findings</h3>{!currentDetail.findings.length && <p>No repertoire findings for this game.</p>}
+        <h3>Per-repertoire diagnostic details</h3>{!currentDetail.findings.length && <p>No repertoire findings for this game.</p>}
         {feedback.error && <p role="alert" className="game-review-error">{feedback.error}</p>}
         <ul className="game-review-findings">{currentDetail.findings.map(finding => {
           const receipt = receiptFor(currentDetail.receipts, finding);
           const gap = finding.kind === "opponent_gap" || finding.kind === "missing_own_continuation";
           // The existing retry endpoint replays stored lapse deliveries only.
-          const retryable = !receipt || !("admission_status" in receipt)
-            && receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome);
+          const retryable = matchesSelectedDeparture(finding) && (!receipt || !("admission_status" in receipt)
+            && receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome));
           return <li key={findingKey(finding)} className="game-review-finding" data-current={cursor === finding.ply - 1 || cursor === finding.ply}>
             <strong>{findingLabels[finding.kind]}</strong><p>Ply {finding.ply}{finding.diagnostic ? ` · ${finding.diagnostic}` : ""}</p>
             <dl><dt>Played</dt><dd>{finding.played_uci}</dd><dt>Expected</dt><dd>{finding.expected_uci.join(", ") || "Not known"}</dd><dt>Repertoire</dt><dd>{finding.repertoire_id}</dd><dt>Decision</dt><dd>{finding.decision_id ?? "Not mapped"}</dd><dt>Card / presentation</dt><dd>{finding.presentation_id ?? "Not mapped"}</dd></dl>
