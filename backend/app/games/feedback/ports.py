@@ -5,8 +5,8 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
-from app.contracts.product_v02 import Value
-from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameRejection, GameWindow
+from app.contracts.product_v02 import UtcTimestamp, Value
+from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection, GamePage, GameRecord, GameRejection, GameWindow
 from app.contracts.product_v02.learning import EncounterReceipt, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
@@ -48,6 +48,8 @@ class SourceState(Value):
     encounters: tuple[GameEncounter, ...] = ()
     quarantined: bool = False
     diagnostic: str | None = None
+    first_departure: FirstDepartureSelection | None = None
+    determined_at: UtcTimestamp | None = None
 
 
 class Capture(Value):
@@ -60,6 +62,8 @@ class Capture(Value):
     comparison_revision: str
     diagnostic: str | None = None
     encounters: tuple[GameEncounter, ...] = ()
+    first_departure: FirstDepartureSelection | None = None
+    determined_at: UtcTimestamp | None = None
 
 
 class Delivery(Value):

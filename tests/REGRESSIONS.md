@@ -5793,3 +5793,54 @@ with their owners; Game Evidence’s pure interface remains explicitly narrower.
 I’s regular `runners tempo-cli.test` lane owns the original-fence, original-deadline
 and advancing-main automatic-start relaunch regressions and six negative release
 verification cases. The shared CLI fixture and operator suite are unchanged.
+
+## Global first-departure selection (#619)
+
+`backend/tests/test_product_first_boundary.py` owns these synthetic legal-history
+regressions, separate from retained per-repertoire/reentry diagnostics:
+
+- `test_first_boundary_accepts_any_surviving_authored_alternative`
+- `test_opponent_first_gap_blocks_later_own_effect_after_reentry`
+- `test_learner_first_miss_emits_one_exact_target`
+- `test_correct_unseen_encounter_has_no_urgent_consequence`
+- `test_interior_card_decision_maps_before_wrong_move`
+- `test_membership_survives_missing_or_ambiguous_physical_mapping`
+- `test_unsupported_alternative_does_not_authorize_ambiguous_target`
+- `test_conflicting_policy_context_is_not_erased_by_equal_physical_mapping`
+- `test_terminal_or_unavailable_scope_cannot_manufacture_uniqueness`
+- `test_ended_competing_route_is_not_discarded_to_manufacture_target`
+- `test_unfinished_competing_route_is_not_discarded_to_manufacture_target`
+- `test_coverage_end_and_missing_own_continuation_are_not_recall_failures`
+- `test_color_and_start_position_define_actor`
+- `test_unknown_introduction_chronology_does_not_block_exact_miss`
+- `test_selection_is_stable_under_scope_order_aliases_and_reimport`
+- `test_alias_chronology_does_not_block_current_physical_target`
+- `test_opposite_color_scope_is_not_assumed_from_a_failed_read`
+- `test_positive_authored_coverage_remains_true_with_incomplete_scope`
+
+`backend/tests/test_game_collection_status.py` owns
+`test_native_first_boundary_capture_is_atomic_and_reader_retains_selected_global_result`
+(disposable PostgreSQL page rollback/durable election/read-only projection) and
+`test_new_selection_redacts_route_scope_and_retains_finite_policy_diagnostics`.
+`test_public_surface_game_ingestion.py` retains identity and inert-import proof
+for the new public selector. Existing projection/capture suites retain immutable
+keys, conflict guards and correct-unseen diagnostic evidence without urgency.
+
+`backend/tests/test_product_feedback_jobs.py` additionally owns
+`test_capture_retains_global_selection_without_per_repertoire_false_effect` and
+`test_old_source_and_capture_json_keep_absent_selection_explicit`.
+
+`backend/tests/test_product_encounter_projection.py` owns
+`test_foreign_historical_chronology_does_not_block_new_current_miss_projection`:
+a new command omits only obsolete chronology scoped to another game while
+retained snapshots/selections and already frozen commands remain intact.
+
+Independent review repairs: `test_recognized_provider_contradiction_cannot_relabel_source_or_effect`
+and `test_provider_alias_and_generic_legacy_source_meanings_are_preserved` in
+`test_product_first_boundary.py`; `test_new_commands_in_either_envelope_respect_opponent_first_boundary`
+in `test_product_feedback_jobs.py`. New legacy lapse envelopes obey the same
+global selection; old frozen commands remain retained for qualification.
+Review B's source-clock regression is
+`test_corrected_held_source_cannot_create_or_inherit_determination_clock` in
+`test_product_feedback_jobs.py`; the existing new-selection redaction regression
+also masks `decision.selected_response_uci` and rejects raw move leakage.

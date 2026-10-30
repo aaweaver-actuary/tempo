@@ -82,7 +82,7 @@ owner delivery happens after that transaction has released its connection.
   advance independently; comparison remains explicitly unresolved.
 - Source identity is a hash of workspace/provider/provider-game ID. Account,
   original raw PGN, supplied source revision/digest/time precision and comparison
-  revision remain captured. The versioned `comparison-facts-v1` identity hashes
+  revision remain captured. The versioned `comparison-facts-v2-first-departure` identity hashes
   compatible material snapshots and unresolved repertoire IDs, excludes
   `membership.captured_at`, and sorts unordered collections without reordering
   authored moves. Actual source versions, routes, boundaries, target mappings and
@@ -133,6 +133,8 @@ flowchart LR
   Runtime["T10 outer composition / optional runner"] --> C["Coordinator + injected clock"]
   C --> Provider["Acquisition capability: finite timeout"]
   C --> Pure["Verified normalization / same-color snapshots / per-repertoire comparer"]
+  Pure --> First["Pure global first-boundary selector / complete relevant scope"]
+  First -->|"selected result + original determination marker"| Store
   Pure -->|"comparison unavailable: retain valid source + diagnostic"| Unresolved["Unresolved comparison / acquisition may advance"]
   Unresolved --> Store
   Pure -->|"verified PGN history"| Identity["Optional SourceIdentity binding"]
@@ -168,17 +170,40 @@ have `membership='present'`, while incomplete/unavailable authored evidence is
 reportable mapping uncertainty does not invent a move departure. The existing
 exact authored-anchor/index/card reentry checks remain, and retain earlier findings.
 
-`project_encounters` preserves #570's unknown-introduction behavior and admits
-these existing `known_unavailable` diagnostics only with a unique available exact
-current target and all alias facts agreeing:
-`introduction_evidence_unavailable`, `game_occurrence_time_not_exact`,
-`chronology_requires_timezone`, `conflicting_introduction_chronology`, and
-`introduced_content_identity_unproved`. All mappings at the exact repertoire
-position are checked before the finding's claimed card; conflicting card/revision/
-decision/response alternatives cannot be filtered away. Duplicate identical logical
-occurrences emit once; conflicting commands for the same key emit none. Findings
-remain retained. This neither fabricates chronology nor relaxes lapse eligibility;
-Study owns all current disposition, admission, priority and settlement.
+`select_first_boundary` is the pure #619 action policy, exported through the
+workflow interface. It traverses one combined `RouteFrontier` from the legal
+game prefix. Any surviving authored alternative proves coverage; introduction
+state and physical-card availability do not affect that traversal. It stops at
+the first actual boundary and retains the explicit status, actor, one-based ply,
+pre-move position, expected alternatives, complete relevant scope revisions,
+surviving authored occurrences and exact target, if one exists. Ended competing
+routes and missing selected scope cannot be dropped to manufacture authority.
+
+`project_encounters` emits at most one missed command, only for `own_actionable`.
+Correct unseen encounters and later reentry findings remain diagnostics without
+an urgent effect. Opponent-first gaps, coverage ends and unresolved/ambiguous
+targets emit none. New exact targets carry their real authored route occurrence;
+an old global mapping can be specialized only when one occurrence is proven.
+Alias equivalence uses the existing public resolver on detached current facts,
+ignoring only historical introduction timestamp/chronology fields; the emitted
+decision retains an original member and all current identity/state facts must
+agree. There is no introduction-before-game gate. Study still revalidates current
+source/configuration/publication/target authority and owns the consequence.
+If an original mapping's chronology assertion belongs to another game, only a
+new command's detached decision omits that paired assertion; the retained
+snapshot/selection and previously frozen commands retain their original facts.
+
+`SourceState.first_departure` and `Capture.first_departure` retain this election
+in the existing atomic page/capture/checkpoint write. `determined_at` records
+the first durable actionable election and survives equivalent retries; it is not
+Study acceptance, scheduler application, queue availability, issuance or settlement.
+Old JSON without these optional fields remains readable with null defaults.
+The `comparison-facts-v2-first-departure` revision distinguishes the changed
+comparison policy without changing the logical game effect key. Original frozen
+commands and historical findings are retained; #621 owns their qualification.
+The explicit legacy lapse capture mode also requires that same actionable global
+boundary and exact matching finding before minting a new command. Envelope
+compatibility does not permit later or incomplete-scope automatic effects.
 
 Existing workflow fields carry unresolved comparison evidence without a DTO or
 schema change:
@@ -325,8 +350,8 @@ nontruncating advisory validation lock before either command; do not unlink it.
 
 ## Immediately next release: encounter-priority delivery (#489 addendum)
 
-With `encounter_feedback=True`, every newly emitted mapped encounter, including
-a confirmed introduced miss, is an immutable `GameEncounter` sent through the
+With `encounter_feedback=True`, the selected exact learner first departure is
+an immutable missed `GameEncounter` sent through the
 public `EncounterFeedbackPort.accept_encounter`. Expected/played/source/chronology
 facts remain intact; Study owns current disposition and scheduling. Accepted
 `pending` receipts finish Games delivery without queue access or availability

@@ -241,7 +241,9 @@ class CollectionObservations:
                 payload->'original'->'source_revision' source_revision,
                 payload->'normalized'->'source_revision' canonical_source_revision,
                 payload->'normalized'->>'game_id' canonical_game_id,
-                payload->'normalized'->>'learner_color' learner_color
+                payload->'normalized'->>'learner_color' learner_color,
+                payload->'first_departure' first_departure,
+                payload->>'determined_at' determined_at
                 FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'=%s
                 AND payload->'normalized'->>'source_id'=ANY(%s)
                 AND payload->'original'->>'source_game_id'=%s ORDER BY source_key LIMIT 3""",
@@ -254,6 +256,11 @@ class CollectionObservations:
                         "learner_color": canonical[0]["color"] if canonical else None,
                         "comparison": "unresolved", "diagnostic": "retained_collection_comparison_absent"}
             source = sources[0]
+            selection = source.get("first_departure")
+            if selection is not None:
+                from app.contracts.product_v02.games import FirstDepartureSelection
+                selection = FirstDepartureSelection.model_validate_json(json.dumps(selection))
+                source["first_departure"] = selection.model_dump(mode="json")
             findings = self._rows("""SELECT finding FROM product_feedback_sources s,
                 LATERAL jsonb_array_elements(s.payload->'findings') finding
                 WHERE source_key=%s ORDER BY (finding->>'ply')::int,finding->>'repertoire_id',
@@ -285,13 +292,15 @@ class CollectionObservations:
                     "diagnostic": diagnostic})
             retained = [row["finding"] for row in findings[:1000]]
             return {"provider": provider, "provider_game_id": game_id, **source,
+                    "selection_diagnostic": None if selection is not None else "selected_first_boundary_not_recorded",
                     "repertoires": retained_summaries(retained, source["learner_color"]),
                     "findings": retained,
                     "findings_truncated": len(findings) > 1000, "receipts": receipts,
                     "deliveries_truncated": len(deliveries) > 100,
                     "comparison": "unresolved" if source["diagnostic"] or source["quarantined"]
-                        or not findings or len(findings) > 1000
-                        or any(f["membership"] in {"unknown", "conflict"} for f in retained)
+                        or (selection.status == "unresolved" if selection is not None else
+                            not findings or len(findings) > 1000
+                            or any(f["membership"] in {"unknown", "conflict"} for f in retained))
                         else "retained_evidence"}
         return self._section(read)
 
