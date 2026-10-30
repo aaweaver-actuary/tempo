@@ -26,6 +26,7 @@ class PreparedCurrentStudyWork:
     admitted: bool
     clock: Callable
     priority: dict[str, str]
+    is_control: bool = False
 
     def apply(self, database):
         if not self.admitted or not feedback_preparation_admitted(database,lock=True):
@@ -58,6 +59,8 @@ def register_current_next_card_priority(*, read=read_connection,
         # This callback is deliberately pure. Gateway preparers can run before
         # discovering a complete/conflicting operation or a stale attempt token.
         delivery = local_handoff_prepare() if local_handoff_prepare else None
+        if delivery is not None and delivery.is_control:
+            return delivery
         with read() as database:
             if not installed(database):
                 return delivery or NoNextCardWork()

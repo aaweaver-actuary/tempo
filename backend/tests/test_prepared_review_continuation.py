@@ -86,6 +86,34 @@ def test_next_card_preparation_is_an_explicit_command_not_a_queue_read(queued_at
     assert prepared == [True]
 
 
+def test_prepared_control_precedes_pending_study_work_without_applying_during_preparation(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.product_composition import next_card_priority as composition
+    from app.study import game_feedback
+    from app.study.interfaces.next_card import NoNextCardWork
+    prepared, study_preparations = {}, []
+    def no_apply(_writer):
+        raise AssertionError('Preparation applied a control before the operation receipt fence')
+    control = SimpleNamespace(priority=None,is_control=True,apply=no_apply)
+    observed = SimpleNamespace(key=object(),qualification=None,
+        progress=SimpleNamespace(determined_at='2026-01-01T00:00:00Z',stream='forward'))
+    @contextmanager
+    def read():
+        yield object()
+    monkeypatch.setattr(composition,'configure_next_card_work',lambda **work:prepared.update(work))
+    monkeypatch.setattr(composition,'installed',lambda _db:True)
+    monkeypatch.setattr(composition,'feedback_preparation_admitted',lambda _db:True)
+    monkeypatch.setattr(composition,'next_feedback_preparation',lambda *_args,**_kwargs:observed)
+    monkeypatch.setattr(composition,'PostgresGameFeedbackStore',lambda _db:SimpleNamespace(study_day=lambda _now:date(2026,1,1)))
+    monkeypatch.setattr(game_feedback,'effect_id',lambda _key:'accepted-study')
+    monkeypatch.setattr(composition,'prepare_feedback_effect',lambda *_args,**_kwargs:study_preparations.append(True) or object())
+    composition.register_current_next_card_priority(read=read,local_handoff_prepare=lambda:control)
+    assert prepared['prepare']() is control
+    assert study_preparations == []
+    assert NoNextCardWork().is_control is False
+
+
 def test_current_queue_day_and_review_day_share_configured_timezone(queued_attempts, monkeypatch):
     from app.queue_commands import current_study_day
     from app.services.learning_review_adapter import LearningReviewAdapter, command_from_request

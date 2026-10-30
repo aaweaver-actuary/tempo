@@ -13,6 +13,7 @@ class NextCardPreparation:
 class PreparedNextCardWork(Protocol):
     """Ephemeral owner preparation; apply only after the command receipt fence."""
     priority: dict[str, str] | None
+    is_control: bool
     def apply(self, writer: object) -> NextCardPreparation: ...
 
 
@@ -20,6 +21,7 @@ class PreparedNextCardWork(Protocol):
 class NoNextCardWork:
     result: NextCardPreparation = NextCardPreparation()
     priority: None = None
+    is_control: bool = False
 
     def apply(self, _writer: object) -> NextCardPreparation:
         return self.result
