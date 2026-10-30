@@ -16,9 +16,10 @@ def test_native_unreserved_snapshot_read_profile_refuses_writes_and_keeps_backgr
     from tempo_legacy_database.adapters import postgres_store
     with owned_postgres() as fixture:
         conninfo = fixture.raw.info.dsn
+        password = fixture.raw.pgconn.password.decode()
     @contextmanager
     def borrowed(**options):
-        with psycopg.connect(conninfo, row_factory=postgres_store.tempo_row_factory) as raw:
+        with psycopg.connect(conninfo, password=password, row_factory=postgres_store.tempo_row_factory) as raw:
             yield raw
     monkeypatch.setattr(postgres_store, '_pool', lambda read_only, **options: SimpleNamespace(connection=borrowed))
     with postgres_store.connection(read_only=True, repertoire_snapshot=True) as reader:
