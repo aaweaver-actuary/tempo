@@ -186,3 +186,52 @@ def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reaso
     result = queue_application.presentation_rows(None, '2026-10-28', read=reader, limit=16)
     assert result[0]['gameplay_priority_reason'] == reason and result[0]['eligible']
     assert not any('FROM study_game_feedback' in sql for sql, _ in calls)
+
+
+def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(monkeypatch):
+    import sqlite3
+    from tempo_legacy_database.adapters.queue_refresh import presentation
+
+    monkeypatch.setattr(presentation.postgres_store, 'configured', lambda: True)
+    with sqlite3.connect(':memory:') as database:
+        database.row_factory = sqlite3.Row
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY, content_type TEXT, revision INT);
+            CREATE TABLE daily_queue(id INT PRIMARY KEY, card_id TEXT, position INT, queue_date TEXT,
+                status TEXT, admission_kind TEXT, gameplay_priority_reason TEXT, cycle INT,
+                attempt_state TEXT, attempt_failed INT, review_result_json TEXT);
+            CREATE TABLE queue_attempt_origins(queue_entry_id INT,card_id TEXT,revision INT,issued_as_head INT);
+            CREATE TABLE opening_evidence_attempts(queue_entry_id INT);
+            CREATE TABLE teaching_states(card_id TEXT);
+        """)
+        database.executemany("INSERT INTO cards VALUES(?,'opening',2)", [(f'card-{n}',) for n in range(575)])
+        database.executemany("INSERT INTO daily_queue VALUES(?,?,?,'today','queued','new',NULL,0,'clean',0,NULL)",
+                             [(n, f'card-{n}', n) for n in range(575)])
+        database.executemany('INSERT INTO opening_evidence_attempts VALUES(?)',
+                             [(None,)] + [(-n,) for n in range(1,5312)] + [(3,)])
+        database.executemany('INSERT INTO queue_attempt_origins VALUES(?,?,?,?)', [
+            (1,'card-1',2,1), (2,'card-2',1,1), (3,'wrong-card',2,1),
+            (4,'card-4',2,0), (None,'card-5',2,1),
+        ])
+        database.execute("INSERT INTO teaching_states VALUES('card-7')")
+        expected = [tuple(row) for row in database.execute("""
+            SELECT q.id,
+                EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id
+                       AND o.card_id=c.id AND o.revision=c.revision AND o.issued_as_head=1),
+                EXISTS(SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id),
+                EXISTS(SELECT 1 FROM teaching_states t WHERE t.card_id=c.id)
+            FROM daily_queue q JOIN cards c ON c.id=q.card_id ORDER BY q.id
+        """)]
+        def read(statement, parameters):
+            if statement.startswith('SELECT q.id,q.card_id'):
+                return database.execute(statement, parameters).fetchall()
+            if statement.startswith('SELECT DISTINCT card_id FROM reviews'):
+                return []
+            return [(n,) for n in range(575)]
+        rows, reviewed, eligible = presentation.presentation_facts(None, 'today', 'miss', read=read)
+        assert [(r['id'],r['issued'],r['presented'],r['taught']) for r in rows] == expected
+        assert {r['id'] for r in rows if r['issued']} == {1}
+        assert {r['id'] for r in rows if r['presented']} == {3}
+        assert {r['id'] for r in rows if r['taught']} == {7}
+        assert all(r[field] in (0,1) for r in rows for field in ('issued','presented','taught'))
+        assert len(rows) == len(eligible) == 575 and reviewed == set()
