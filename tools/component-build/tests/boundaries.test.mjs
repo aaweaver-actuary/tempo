@@ -170,6 +170,36 @@ for (const { name, kind, command, originalInputs } of [
   assert.deepEqual(suite.inputs.map(input => realpathSync(resolve(repository, suite.cwd, input))), originalPaths.map(path => realpathSync(path)));
   assert.doesNotThrow(() => validateManifest(manifest, repository, { componentIds: ["content"] }));
 });
+for (const { id, packageName, publicExports } of [
+  {
+    id: "learning-remediation", packageName: "tempo_learning_remediation",
+    publicExports: ["AcceptedDecision", "AdmissionPort", "AdmissionProposal", "AdmissionResult", "AttemptAuthority",
+      "Candidate", "CandidateFactsPort", "ContentAuthority", "CurrentMissProjection", "Eligibility", "ReceiveContext",
+      "RemediationError", "ReviewOutcome", "WorkItem", "WorkPage", "Preparation", "PostgresRepository",
+      "PAGE_SIZE", "MAX_PREPARATION_PAGES", "evaluate_eligibility", "order_candidates", "propose_admission",
+      "validate_delivery", "prepare_admissions", "apply_admission", "current_miss_sql",
+      "LegacyAcceptedDecision", "LegacyAuthority", "accepted_storage_identity"],
+  },
+  {
+    id: "game-classification", packageName: "tempo_game_classification",
+    publicExports: ["UnimplementedClassification", "FindingKind", "classify_response", "resolve_equivalent_mapping"],
+  },
+]) test(`M02 ${id} registration matches its existing public package exports`, () => {
+  const component = manifest.components.find(candidate => candidate.id === id);
+  assert.equal(component.status, "implemented");
+  assert.deepEqual(component.publicExports, publicExports);
+  const source = resolve(repository, component.root, "src", packageName, "__init__.py");
+  const result = spawnSync(python, ["-I", "-c", `
+import ast, json, pathlib, sys
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+exports = [ast.literal_eval(node.value) for node in tree.body
+           if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
+assert len(exports) == 1, "Expected one explicit public export declaration"
+print(json.dumps(exports[0]))
+`, source], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), publicExports);
+});
 test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
   const plannedComponent = manifest.components.find(component => component.status === "planned");
   assert.ok(plannedComponent, "The false-implemented fixture requires a planned component");
