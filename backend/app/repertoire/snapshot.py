@@ -5,7 +5,7 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 """
 from __future__ import annotations
 
-from collections import Counter, OrderedDict
+from collections import Counter
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -121,20 +121,17 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
     route_positions = {}
-    # Graph aliases often reuse the same exact executable. Keep only detached
-    # turn/position facts in this invocation, never mutable Boards or authority.
-    # Bounds cap retained replay data independently of the number of graph uses.
-    replayed = OrderedDict()
+    # Every needed authored executable is replayed once in this invocation.
+    # The retained values contain detached positions only and share exact route
+    # aliases; existing source-row/total-ply bounds cap this retained input.
+    replayed = {}
     position_key = lru_cache(maxsize=1024)(opening_position_key)
+    valid_card_start = lru_cache(maxsize=1024)(lambda fen: chess.Board(fen).is_valid())
     def replay_positions(starting_fen, moves):
         key = (starting_fen, tuple(moves))
         if key not in replayed:
             replayed[key] = tuple((frame.turn, canonical_fen_key(frame.fen(en_passant='legal')))
                 for frame in _frames(starting_fen, moves))
-            if len(replayed) > 128:
-                replayed.popitem(last=False)
-        else:
-            replayed.move_to_end(key)
         return replayed[key]
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
@@ -164,19 +161,25 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
                     for ply, (_turn, key) in enumerate(replay_positions(route.starting_fen, route.moves)):
                         occurrences.setdefault(key, []).append(ply)
                     index = MappingProxyType({key: tuple(plies) for key, plies in occurrences.items()})
-                    route_positions[route_key] = (route, index)
+                    route_positions[route_key] = (route, index,
+                        replay_positions(route.starting_fen, route.moves))
                 except (ValueError, TypeError, KeyError):
-                    route_positions[route_key] = (route, None)
-            cached_route, positions = route_positions[route_key]
+                    route_positions[route_key] = (route, None, None)
+            cached_route, positions, route_frames = route_positions[route_key]
             if cached_route is not route or positions is None:
                 continue
-            card_frames = replay_positions(card["start_fen"], executable)
+            if not valid_card_start(card["start_fen"]):
+                continue
             roots = [ply for ply in positions.get(position_key(graph["starting_fen"]), ())
                      if tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.
             if len(roots) != 1:
                 continue
+            # Exact normalized root plus the same ordered executable proves
+            # these legal positions. Replaying the physical slice independently
+            # cannot add authority; retain its own starting-position validity.
+            card_frames = route_frames[roots[0]:roots[0] + len(executable) + 1]
         except (ValueError, TypeError, KeyError):
             continue
         introduction, introduced_at = _introduction(card)

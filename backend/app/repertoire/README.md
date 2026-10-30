@@ -192,11 +192,14 @@ when conflicted. No schema or stored relationship changes are introduced.
   metadata and non-size errors remain distinct ordinary errors.
 - `_mappings` lazily indexes canonical position keys once per needed authored
   route within one invocation. It retains every occurrence and still requires
-  exactly one matching executable slice. Exact starting-FEN/move executables
-  reuse detached turn/position frames through a 128-entry invocation-local
-  cache; raw FEN normalization retains at most 1,024 entries. No cached boards
-  or cross-call reuse are retained; chronology, unavailable cards, conflicts and mapping identity
-  keep their existing semantics.
+  exactly one matching executable slice. Exact authored starting-FEN/move aliases
+  share detached turn/position frames within the existing source-row and total-ply
+  bounds. Once the legal authored root and ordered physical slice match, mappings
+  use those proved positions rather than replaying each card independently. The
+  physical starting position must still be valid; clocks cannot change ordinary
+  position identity. Raw FEN normalization and validity retain at most 1,024
+  entries each. No cached boards or cross-call reuse are retained; chronology,
+  unavailable cards, conflicts and mapping identity keep their existing semantics.
 - Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
   read-only `repertoire_snapshot=True` connection context with no transaction
   or statement deadline, exits that context, then calls public

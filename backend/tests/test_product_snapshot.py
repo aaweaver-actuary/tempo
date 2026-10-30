@@ -781,3 +781,40 @@ def test_prepared_publication_owns_complete_facts_and_cannot_accept_caller_snaps
     assert prepared.snapshot == expected
     assert prepared.publication_facts()['cards'][0]['archived'] == 0
     assert prepared.publication_facts()['lines'][0]['moves_json'] != '[]'
+
+
+def test_snapshot_physical_slice_uses_its_proved_legal_authored_frames(monkeypatch):
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    route_moves = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6']
+    board = chess.Board()
+    for move in route_moves[:2]: board.push_uci(move)
+    # Clocks do not change the same legal repertoire position.
+    card_start = board.fen().split(); card_start[-2:] = ['27', '19']
+    facts['lines'][0]['moves_json'] = json.dumps(route_moves)
+    facts['cards'][0].update(start_fen=' '.join(card_start), moves_json=json.dumps(route_moves[2:5]))
+    facts['graphs'][0].update(starting_fen=board.fen(), moves_json=json.dumps(route_moves[2:5]))
+    original, calls = projection._frames, []
+    def replay(start, moves):
+        calls.append((start, tuple(moves)))
+        return original(start, moves)
+    monkeypatch.setattr(projection, '_frames', replay)
+    result = projection.project_published_repertoire(facts)
+    assert [(item.route_ply, item.selected_response_uci) for item in result.decision_presentations] == [
+        (2, 'g1f3'), (4, 'f1b5')]
+    assert result.decision_presentations[0].position_key == ' '.join(board.fen().split()[:4])
+    assert calls == [(facts['lines'][0]['start_fen'], tuple(route_moves))]
+
+
+def test_snapshot_invalid_physical_root_cannot_borrow_valid_authored_legality():
+    from app.repertoire import project_published_repertoire
+    from tempo_evidence_math import opening_position_key
+    facts = repertoire_facts()
+    start = '4k3/8/8/8/8/8/8/4K3 w - - 0 1'
+    invalid = start.replace('- -', '- e6')
+    assert chess.Board(start).is_valid() and not chess.Board(invalid).is_valid()
+    assert opening_position_key(start) == opening_position_key(invalid)
+    facts['lines'][0].update(start_fen=start, moves_json='["e1e2"]')
+    facts['cards'][0].update(start_fen=invalid, moves_json='["e1e2"]')
+    facts['graphs'][0].update(starting_fen=start, moves_json='["e1e2"]')
+    assert project_published_repertoire(facts).decision_presentations == ()

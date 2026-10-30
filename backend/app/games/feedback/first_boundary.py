@@ -128,6 +128,9 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
            if snapshot.learner_color == game.learner_color):
         return result("unresolved", diagnostic="unsupported_selected_variant")
     routes, traversals, seen = [], [], set()
+    # Alias identities remain distinct while their exact legal chess execution
+    # is shared within this selection. Existing complete input bounds apply.
+    replayed = {}
     try:
         for snapshot in snapshots:
             if snapshot.learner_color != game.learner_color:
@@ -143,7 +146,10 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
                 if identity in seen:
                     continue
                 seen.add(identity)
-                frames = replay_line(route.starting_fen, route.moves)
+                executable = (route.starting_fen, tuple(route.moves))
+                if executable not in replayed:
+                    replayed[executable] = replay_line(route.starting_fen, route.moves)
+                frames = replayed[executable]
                 routes.append((snapshot, route, boundaries[route.route_id], frames))
                 traversals.append(TraversalRoute(tuple(frame["comparison_key"] for frame in frames), tuple(route.moves)))
     except (ValueError, KeyError):
