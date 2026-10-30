@@ -252,3 +252,24 @@ def test_opposite_color_scope_is_not_assumed_from_a_failed_read():
 def test_positive_authored_coverage_remains_true_with_incomplete_scope():
     result = select(game(("e2e4",)), snapshot(complete=False))
     assert result.status == "covered" and result.diagnostic == "positive_coverage_with_incomplete_scope"
+
+
+@pytest.mark.parametrize("source_id,provider", [("lichess", "chesscom"), ("chess.com", "lichess"), ("chesscom", "lichess")])
+def test_recognized_provider_contradiction_cannot_relabel_source_or_effect(source_id, provider):
+    from app.games.feedback.coordinator import project_encounters
+    current = game().model_copy(update={"source_id": source_id})
+    source = IntroductionGameScope(provider=provider, game_id=current.game_id,
+        source_revision=current.source_revision, source_digest=current.source_digest)
+    with pytest.raises(ValueError, match="first_boundary_provider_mismatch"):
+        select_first_boundary(current, snapshots=(snapshot(),), source=source)
+    assert project_encounters(current, findings=(), snapshots=(snapshot(),), source=source,
+        detected_at=NOW, occurred_at=current.played_at) == ()
+
+
+@pytest.mark.parametrize("source_id,provider", [("chess.com", "chesscom"), ("chesscom", "chesscom"), ("retained-observed-source", "lichess")])
+def test_provider_alias_and_generic_legacy_source_meanings_are_preserved(source_id, provider):
+    current = game().model_copy(update={"source_id": source_id})
+    source = IntroductionGameScope(provider=provider, game_id=current.game_id,
+        source_revision=current.source_revision, source_digest=current.source_digest)
+    selected = select_first_boundary(current, snapshots=(snapshot(),), source=source)
+    assert selected.status == "own_actionable" and selected.source == source

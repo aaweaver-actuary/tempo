@@ -5851,3 +5851,9 @@ keys, conflict guards and correct-unseen diagnostic evidence without urgency.
 `test_foreign_historical_chronology_does_not_block_new_current_miss_projection`:
 a new command omits only obsolete chronology scoped to another game while
 retained snapshots/selections and already frozen commands remain intact.
+
+Independent review repairs: `test_recognized_provider_contradiction_cannot_relabel_source_or_effect`
+and `test_provider_alias_and_generic_legacy_source_meanings_are_preserved` in
+`test_product_first_boundary.py`; `test_new_commands_in_either_envelope_respect_opponent_first_boundary`
+in `test_product_feedback_jobs.py`. New legacy lapse envelopes obey the same
+global selection; old frozen commands remain retained for qualification.

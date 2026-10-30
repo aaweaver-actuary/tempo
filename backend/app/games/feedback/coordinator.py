@@ -301,6 +301,15 @@ class Coordinator:
                 for finding in findings:
                     if self.encounter_feedback or finding.kind != "confirmed_miss" or (finding.decision_id, finding.ply) in occupied_keys or finding.ply in prior_plies:
                         continue
+                    if first_departure is None or first_departure.status != "own_actionable":
+                        continue
+                    selected = first_departure.decision
+                    if (finding.ply, finding.position_key, finding.expected_uci, finding.played_uci,
+                            finding.decision_id, finding.presentation_id, finding.presentation_revision) != (
+                            first_departure.ply, first_departure.position_key, first_departure.expected_uci,
+                            first_departure.played_uci, selected.decision_id, selected.presentation_id,
+                            selected.presentation_revision):
+                        continue
                     effect_key = GameEffectKey(workspace_id=spec.workspace_id, provider=spec.provider,
                         game_id=finding.game_id, decision_id=finding.decision_id, occurrence_ply=finding.ply)
                     lapse = GameLapse(key=effect_key, finding=finding, detected_at=self.clock.utc_now(),
