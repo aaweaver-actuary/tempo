@@ -6027,3 +6027,12 @@ Independent #620 review repairs add:
 - The remapped native settlement journey forbids chess and `try_current` specifically inside the settlement hook at 250ms/100ms. A small receiving-owner header/immutable-receipt digest and exact map/card fence replace its repeated repertoire reconstruction; pre-existing ordinary Study regrouping remains a separate path.
 - `test_native_one_review_settles_one_obligation_and_foreground_consumes_retained_completion` proves the normal review hook updates one same-card obligation and the next explicit owner unit settles the remaining obligation from the exact retained real receipt, without another reset or invented completion.
 - The acknowledged-priority native regression now removes its real configuration to produce an actual qualification hold. Modern urgency disappears, and the same queued target can re-enter foreground preparation after the durable retry boundary. Actual legacy resets alone retain the compatibility fallback.
+
+### #624 prospective current-target assembly
+
+`test_prospective_boundary_preparation_resolves_only_explicit_candidates_and_preserves_complete_scope`
+keeps the full authored frontier across explicit target resolution, including
+unavailable competitors and the complete candidate-bound rejection. The adjacent
+collection-factory case proves this optional Study preparation capability is
+removed when delivery is disabled. The public workflow cold-import guard includes
+the two declared preparation value/port exports.

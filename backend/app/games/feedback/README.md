@@ -300,6 +300,17 @@ Study independently checks those exact original mappings and fences its current
 binding in the borrowed writer; unavailable or contradictory lineage remains a
 hold, and a superseded card alone grants no replacement authority.
 
+For a new feedback capture with no retained command yet, the same binding starts
+from the pure selector's prospective first boundary. The optional
+`FirstBoundaryPreparation` root enumerates every explicit mapping at its exact
+surviving route occurrences, deduplicates identical facts, and asks the existing
+Study owner for their current physical presentations. It preserves all routes,
+scope/publication identity and logical decisions, then Games reruns the same pure
+selector. Ambiguous/unavailable competitors stay present. A candidate set larger
+than the receiving owner's existing 64-binding limit stays unresolved as a whole;
+no prefix is selected. The resulting new command is still requalified and fenced
+by Study at acceptance. Collection-only construction never supplies this capability.
+
 The explicit next-card composition calls `pending_determined_feedback` (SELECT
 only) and PURE `prepare_determined_feedback`. Preparation returns one original
 delivery and its separately prepared current owner facts, with no acknowledgment,
@@ -345,6 +356,9 @@ reads use the public encounter status for qualified legacy lapses as well.
 
 ```mermaid
 flowchart LR
+  Frontier["Complete scope / pure prospective first boundary"] --> Target["Feedback only: explicit boundary candidates / closed Study-owner reads"]
+  Target --> Recheck["Same pure selector / complete scope retained"]
+  Recheck --> Capture
   Capture["Complete Games comparison / atomic original capture"] --> Witness["Separate durable qualification / original determination"]
   Retained["Original frozen commands"] --> Qualify["Current complete-scope first-boundary qualification"]
   Qualify --> Witness

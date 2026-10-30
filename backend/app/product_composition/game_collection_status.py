@@ -60,18 +60,19 @@ def _bound_diagnostic(value):
 
 def _repertoire_readiness(connections, repertoire_id):
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
-        read_repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_ROW_BYTES, MAX_SNAPSHOT_BYTES)
+        read_repertoire_json, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_ROW_BYTES, MAX_SNAPSHOT_BYTES)
     from app.repertoire import project_published_repertoire, RepertoireSnapshotBoundExceeded
     result = {}
     try:
         with connections() as database:
-            facts = read_repertoire(database, repertoire_id)
+            encoded = read_repertoire_json(database, repertoire_id)
+        facts = json.loads(encoded)
         result = dict(name=facts["repertoire"]["name"],
             learner_colors=sorted({row["trained_color"] for row in facts["lines"]}),
             publication_state=facts["repertoire"]["graph_state"],
             publication_revision=facts["repertoire"]["graph_generation"],
             source_rows=len(facts["lines"]), graph_rows=len(facts["graphs"]),
-            source_bytes=len(json.dumps(facts, ensure_ascii=False).encode()),
+            source_bytes=len(encoded.encode()),
             limits=dict(source_rows=MAX_SOURCE_ROWS, graph_rows=MAX_GRAPH_ROWS,
                         row_bytes=MAX_ROW_BYTES, snapshot_bytes=MAX_SNAPSHOT_BYTES))
         # Pure projection runs after the bounded reader transaction is released.
@@ -112,6 +113,7 @@ def _redacted(value, key=""):
             "missing_or_ambiguous_physical_target", "current_presentation_unavailable",
             "physical_target_occurrence_unbound", "positive_coverage_with_incomplete_scope",
             "authored_continuation_unavailable", "ambiguous_authored_policy", "ended_competing_route",
+            "current_target_candidates_exceed_owner_bound", "current_target_binding_unproved", "current_target_authority_unavailable",
             "feedback_composition_unavailable", "managed_mode_reader_unavailable"}
         return value if value in safe else "redacted_diagnostic"
     if value is not None and (key in PRIVATE_FIELDS or key == "source_revision" and isinstance(value, str)):

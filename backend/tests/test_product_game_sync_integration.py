@@ -42,7 +42,7 @@ def policy(provider, **changes):
                              source_revision=1, **changes)
 
 
-def collection_runtime(store, *, learning=None, delivery_enabled=False):
+def collection_runtime(store, *, learning=None, delivery_enabled=False,first_boundary_preparation=None):
     snapshot = RepertoireSnapshot.model_validate_json(json.dumps(fixture("snapshot")))
     miss = PGN.replace("1. e4 e5 2. Nf3 Nc6", "1. d4")
     rows = [{"id": "collection-game", "createdAt": 1792929600000,
@@ -50,6 +50,7 @@ def collection_runtime(store, *, learning=None, delivery_enabled=False):
     return create_game_sync(policies=(policy("lichess"),), store=store,
         snapshots=SimpleNamespace(snapshot=lambda repertoire: snapshot), learning=learning,
         delivery_enabled=delivery_enabled, encounter_feedback=True, clock=FakeClock(),
+        first_boundary_preparation=first_boundary_preparation,
         transport_factory=lambda: httpx.MockTransport(lambda request: httpx.Response(200,
             content="\n".join(json.dumps(row) for row in rows),
             headers={"Content-Type": "application/x-ndjson"})))
@@ -799,3 +800,52 @@ def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, f
         result = worker.snapshot("rep")
         assert result.membership.complete and result.membership.revision == 3
     assert events == ["enter", "exit", "decode", "projection"]
+
+
+@pytest.mark.parametrize("fault",["none","missing","ambiguous","changed_logical","too_many","incomplete"])
+def test_prospective_boundary_preparation_resolves_only_explicit_candidates_and_preserves_complete_scope(fault):
+    from app.games.feedback.first_boundary import select_first_boundary
+    from app.product_composition.current_first_boundary import prepare_current_first_boundary
+    from test_product_delivery_qualification import setup_case
+    case = setup_case()
+    mapping = case.command.decision.model_copy(update={"available":False})
+    maps = [mapping]
+    if fault in {"ambiguous","too_many"}:
+        count = 1 if fault == "ambiguous" else 64
+        maps += [mapping.model_copy(update={"presentation_id":f"other-{index}","decision_id":f"decision-other-{index}"})
+            for index in range(count)]
+    authored = case.snapshot.model_copy(update={"decision_presentations":case.snapshot.decision_presentations[:-1]+tuple(maps)})
+    if fault == "incomplete":
+        authored = authored.model_copy(update={"membership":authored.membership.model_copy(update={"complete":False})})
+    selected = select_first_boundary(case.game,snapshots=(authored,),source=case.command.source)
+    before, calls = authored.model_dump_json(),[]
+    def owner(original,*,read_connection):
+        calls.append(original)
+        assert original.route_ply == 2 and original.position_key == case.command.decision.position_key
+        if fault == "missing": return None
+        current = original.model_copy(update={"presentation_id":"joined-"+original.presentation_id,
+            "presentation_revision":2,"available":True})
+        if fault == "changed_logical":
+            current = current.model_copy(update={"decision_id":"forged-decision"})
+        return SimpleNamespace(original=original,current=current)
+    prepared = prepare_current_first_boundary(case.game,snapshots=(authored,),selection=selected,
+        connections=lambda:pytest.fail("projection itself opened database"),target_prepare=owner)
+    assert authored.model_dump_json() == before
+    assert prepared.snapshots[0].membership == authored.membership
+    assert prepared.snapshots[0].boundaries == authored.boundaries
+    actual = select_first_boundary(case.game,snapshots=prepared.snapshots,source=case.command.source)
+    assert actual.status == ("own_actionable" if fault == "none" else "unresolved" if fault == "incomplete" else "own_unmapped")
+    if fault in {"too_many","incomplete"}:
+        assert calls == []
+    elif fault == "ambiguous":
+        assert len(calls) == 2  # Neither unavailable competitor was discarded.
+    else:
+        assert calls == [mapping]
+
+
+def test_collection_factory_does_not_prepare_optional_current_study_targets():
+    runtime = collection_runtime(GamesMemoryStore(),first_boundary_preparation=lambda *args,**kwargs:
+        pytest.fail("collection-only constructed/called Study target preparation"))
+    assert runtime.runner.coordinator.first_boundary_preparation is None
+    runtime.runner.coordinator.store.enqueue(collection_job("collection-current-target-isolation"))
+    assert runtime.run_once() == "page"

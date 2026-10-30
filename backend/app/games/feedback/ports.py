@@ -167,6 +167,17 @@ class SourceIdentity(Protocol):
     def bind_source(self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
 
 
+class PreparedFirstBoundaryScope(Value):
+    snapshots: tuple[RepertoireSnapshot, ...]
+    diagnostic: str | None = None
+
+
+class FirstBoundaryPreparation(Protocol):
+    """Prepare explicit current mappings outside writer; selector stays pure."""
+    def __call__(self, game: CanonicalGame, *, snapshots: tuple[RepertoireSnapshot, ...],
+                 selection: FirstDepartureSelection) -> PreparedFirstBoundaryScope: ...
+
+
 class Comparer(Protocol):
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]: ...

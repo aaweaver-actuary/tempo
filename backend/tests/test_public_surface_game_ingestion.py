@@ -31,7 +31,7 @@ SURFACES = {
         "app.games.feedback.jobs": ("FeedbackRunner",),
         "app.games.feedback.ports": ("Acquisition", "AcquisitionFailure", "Capture", "Clock", "Comparer",
             "ConcurrentUpdate", "Delivery", "DeliveryDeferred", "GamesStore", "JobSpec", "JobState", "Normalizer",
-            "PageCommit", "SourceIdentity", "SourceState"),
+            "PageCommit", "SourceIdentity", "SourceState", "FirstBoundaryPreparation", "PreparedFirstBoundaryScope"),
         "app.games.feedback.review": ("GameReview", "ReviewStore", "ReviewUnavailable", "SyncConfiguration"),
     },
     "tempo_game_evidence.interfaces": {

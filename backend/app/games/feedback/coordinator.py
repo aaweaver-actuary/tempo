@@ -10,7 +10,7 @@ from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartu
 from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
-from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier,
+from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier, FirstBoundaryPreparation,
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
 from .first_boundary import select_first_boundary
 from .qualification import acknowledge_qualified_delivery, selection_supports_original
@@ -122,6 +122,7 @@ class Coordinator:
                  learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
                  qualifier: DeliveryQualifier | None = None,
+                 first_boundary_preparation: FirstBoundaryPreparation | None = None,
                  effect_identity=None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
@@ -135,6 +136,7 @@ class Coordinator:
         self.source_identity = source_identity
         self.qualifier = qualifier
         self.effect_identity = effect_identity
+        self.first_boundary_preparation = first_boundary_preparation
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
@@ -251,6 +253,16 @@ class Coordinator:
                             source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
                                 source_revision=normalized.source_revision, source_digest=normalized.source_digest),
                             selected_repertoire_ids=spec.repertoire_ids, unavailable_repertoire_ids=unresolved)
+                        if self.first_boundary_preparation is not None and first_departure.status == "own_unmapped":
+                            prepared = self.first_boundary_preparation(normalized,snapshots=snapshots,
+                                selection=first_departure)
+                            first_departure = select_first_boundary(normalized,snapshots=prepared.snapshots,
+                                source=first_departure.source,selected_repertoire_ids=spec.repertoire_ids,
+                                unavailable_repertoire_ids=unresolved)
+                            compatible = tuple(snapshot for snapshot in prepared.snapshots
+                                if snapshot.learner_color == normalized.learner_color)
+                            if prepared.diagnostic is not None and first_departure.status == "own_unmapped":
+                                first_departure = first_departure.model_copy(update={"diagnostic":prepared.diagnostic})
                         if self.encounter_feedback:
                             encounters = _encounter_for_selection(first_departure, detected_at=self.clock.utc_now(),
                                 occurred_at=(normalized.played_at if record.time_precision in {"second", "millisecond"} else None),

@@ -529,6 +529,11 @@ class CurrentProviderPriorityIntake:
         from app.study.game_feedback import effect_id
         return effect_id(key)
 
+    def prepare_first_boundary(self,game,*,snapshots,selection):
+        from .current_first_boundary import prepare_current_first_boundary
+        return prepare_current_first_boundary(game,snapshots=snapshots,selection=selection,
+            connections=self.connections)
+
     def prepare(self, delivery):
         """The coordinator persists this qualification before any Study call."""
         self._qualification_facts = None

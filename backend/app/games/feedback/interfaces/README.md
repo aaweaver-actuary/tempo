@@ -77,3 +77,11 @@ view lazily; `product-game-review-composition.test.tsx` preserves the existing
 browser attempt token through successful and failed optional reads. Independent
 Study does not import the legacy optional workspace. Actual PostgreSQL role,
 packaged/browser and full provider-sync acceptance remain separate.
+
+`FirstBoundaryPreparation` is an optional outer-composition capability receiving
+the already selected prospective boundary and complete immutable snapshots. It
+returns `PreparedFirstBoundaryScope`; Games then runs the ordinary pure selector
+again. It does not authorize Study or change authored scope. The current root
+resolves only explicit boundary candidates through Study's current-presentation
+owner outside any writer. Collection-only construction strips this capability
+and requires no Study receiver or additional Study readiness.

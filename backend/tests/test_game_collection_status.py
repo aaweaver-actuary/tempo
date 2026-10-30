@@ -423,13 +423,13 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     def read(*args):
         if stage == "read":
             raise error
-        return dict(repertoire=dict(name="private-name", graph_state="ready", graph_generation=7), lines=[], graphs=[])
+        return json.dumps(dict(repertoire=dict(name="private-name", graph_state="ready", graph_generation=7), lines=[], graphs=[]))
 
     def project(*args):
         assert not entered
         raise error
 
-    monkeypatch.setattr(product_snapshot, "read_repertoire", read)
+    monkeypatch.setattr(product_snapshot, "read_repertoire_json", read)
     monkeypatch.setattr(repertoire, "project_published_repertoire", project)
     result = _repertoire_readiness(connections, "private-id")
     assert result["availability"] == "unavailable"
@@ -441,7 +441,7 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     # The same text on an arbitrary ValueError never gains the typed permission.
     def unknown(*args):
         raise ValueError("repertoire_snapshot_exceeds_bound")
-    monkeypatch.setattr(product_snapshot, "read_repertoire", unknown)
+    monkeypatch.setattr(product_snapshot, "read_repertoire_json", unknown)
     assert _repertoire_readiness(connections, "private-id") == dict(
         availability="unavailable", diagnostic="repertoire_read_unavailable")
 

@@ -5,7 +5,7 @@ from ..first_boundary import select_first_boundary
 from ..jobs import FeedbackRunner
 from ..ports import (
     Acquisition, AcquisitionFailure, Capture, Clock, Comparer, ConcurrentUpdate,
-    Delivery, DeliveryDeferred, GamesStore, JobSpec, JobState, Normalizer, PageCommit, SourceIdentity,
+    Delivery, DeliveryDeferred, FirstBoundaryPreparation, PreparedFirstBoundaryScope, GamesStore, JobSpec, JobState, Normalizer, PageCommit, SourceIdentity,
     SourceState,
 )
 from ..review import GameReview, ReviewStore, ReviewUnavailable, SyncConfiguration
@@ -14,6 +14,7 @@ __all__ = (
     "Acquisition", "AcquisitionFailure", "Capture", "Clock", "Comparer",
     "ConcurrentUpdate", "ContinuousSync", "Coordinator", "Delivery", "DeliveryDeferred",
     "FeedbackRunner", "ForwardWindow", "GameReview", "GamesStore", "JobSpec",
+    "FirstBoundaryPreparation", "PreparedFirstBoundaryScope",
     "JobState", "Normalizer", "PageCommit", "ReviewStore", "ReviewUnavailable",
     "SourceIdentity", "SourceState", "SyncConfiguration", "delivery_for",
     "project_encounters", "select_first_boundary", "stable_id",
