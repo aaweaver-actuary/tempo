@@ -165,6 +165,25 @@ def test_pending_target_count_observes_committed_issuance_without_prefetch_or_re
         assert committed_issuance_count(connection, determined) == 1
 
 
+def test_actual_issuance_count_keeps_distinct_revisions_on_same_queue_entry(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import (
+        committed_issuance_count, first_target_issuance,
+    )
+    determined = '2000-01-01T00:00:00Z'
+    client = TestClient(main.app)
+    assert client.get('/api/queue/today').status_code == 200
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET revision=2 WHERE id='active-a'")
+    assert client.get('/api/queue/today').status_code == 200
+    with database.read_connection() as connection:
+        origins = connection.execute("""SELECT queue_entry_id,revision,issuance_sequence
+            FROM queue_attempt_origins WHERE card_id='active-a' ORDER BY revision""").fetchall()
+        assert [(row['queue_entry_id'],row['revision'],row['issuance_sequence']) for row in origins] == [
+            (queued_attempts['active-a'],1,1),(queued_attempts['active-a'],2,2)]
+        assert committed_issuance_count(connection, determined) == 2
+        assert first_target_issuance(connection, 'active-a', 2, determined)[1] == 2
+
+
 def test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation(queued_attempts):
     from tempo_legacy_database.adapters.study.issuance import stamp_issued_head, attempt_issuance, issuance_frontier
     with database.connection() as connection:

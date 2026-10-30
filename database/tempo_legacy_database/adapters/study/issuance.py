@@ -90,7 +90,9 @@ def committed_issuance_count(database, determined_at, *, through_issuance_sequen
         determined_at = datetime.fromisoformat(determined_at.replace('Z', '+00:00')).astimezone(timezone.utc).isoformat()
     ceiling = ' AND issuance_sequence<=?' if through_issuance_sequence is not None else ''
     parameters = (determined_at, through_issuance_sequence) if through_issuance_sequence is not None else (determined_at,)
-    return int(database.execute("""SELECT COUNT(DISTINCT queue_entry_id) FROM queue_attempt_origins
+    # The origin PK includes card/revision: a new content revision can issue
+    # again on the same retained queue row and is a distinct actual generation.
+    return int(database.execute("""SELECT COUNT(*) FROM queue_attempt_origins
         WHERE issued_as_head=1 AND issued_at>? AND issuance_sequence IS NOT NULL""" + ceiling,
         parameters).fetchone()[0])
 
