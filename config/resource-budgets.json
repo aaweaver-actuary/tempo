@@ -21,7 +21,7 @@
       "memoryMiB": 96
     },
     "game-feedback-worker": {
-      "memoryMiB": 256,
+      "memoryMiB": 512,
       "pidsLimit": 96
     }
   },
@@ -57,7 +57,7 @@
       "memoryMiB": 256
     },
     "game-feedback-worker": {
-      "memoryMiB": 256,
+      "memoryMiB": 512,
       "pidsLimit": 96
     }
   },
