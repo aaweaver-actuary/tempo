@@ -1,3 +1,12 @@
+## Lichess export application identification
+
+`backend/tests/test_product_continuous_sync.py::test_lichess_export_identifies_tempo_to_provider`
+requires the real export adapter to identify Tempo to Lichess, preserving the
+NDJSON, identity-encoding and configured filter headers/parameters in one bounded
+request. Without the identifying User-Agent, real exports returned 404 while
+the approved profile resolved. A single diagnostic with Tempo identification
+returned 200; no durable jobs or sources were written by that diagnostic.
+
 ## T18 bounded proposal policy
 
 `backend/tests/test_product_proposals.py` owns the pure proposal regressions:
@@ -6087,3 +6096,66 @@ command, and compares both owed-target and ready-urgency readers.
 `test_feedback_priority_paths_survive_bounded_sql_translation` keeps every nested
 JSON key and the scalar SQL-NULL fallback through the actual compatibility
 translator; truncating the ready-priority path must fail the regression.
+
+### #615 Task P — assembled bound diagnostics and partial comparison
+
+The existing `games-collection-release` selection owns the actual mixed-readiness
+extension of `test_packaged_collection_retains_deviations_reconciles_and_never_delivers`.
+Both fixture providers select two healthy repertoires and one complete-sample,
+real SQL `estimated_snapshot_bytes` refusal. Actual packaged identity/public/private
+status and preview commands feed the real operator policy: strict refusal, exact
+shared token partial readiness, unknown token/error, reader-role, corrupt scope
+and schema negatives; after fixture-owned repair the actual reconciler supplies
+new findings and a still-supplied healthy token becomes unused. Original source,
+checkpoint, nonzero retry, pending-command, no-Study-write, replay and ordinary
+protected-review assertions remain. Frozen-release/process metadata is synthetic
+in that policy evaluation; installed operator orchestration is separate evidence.
+
+N's owning `backend/tests/test_product_snapshot.py` retains:
+
+- `test_snapshot_read_bound_diagnostic_is_private_and_defensively_copied`
+- `test_snapshot_read_reports_simultaneous_bounds_without_claiming_complete_size`
+- `test_snapshot_actual_serialized_byte_refusal_is_exact`
+- `test_snapshot_projection_row_refusals_are_exact`
+- `test_snapshot_projection_aggregate_authored_moves_refusal_is_exact`
+- `test_snapshot_route_replay_is_local_lazy_and_once_per_needed_route`
+- `test_snapshot_route_cache_preserves_baseline_full_projection`
+- `test_snapshot_repeated_position_roots_remain_ambiguous`
+- `test_snapshot_route_cache_identity_includes_repertoire`
+
+The same file owns malformed-metadata/non-size distinctions. The existing native
+`test_native_snapshot_bound_envelope_withholds_facts_and_reports_source_sentinel`
+in `backend/tests/test_product_feedback_jobs_postgres.py` owns executed SQL sentinel
+and withheld-facts proof. `test_current_snapshot_projection_begins_after_connection_exit`
+in `backend/tests/test_product_game_sync_integration.py` owns actual composition
+transaction release. Its existing recurrence test uses an explicit 24-hour seed
+and retains the original conflict, persistence and enqueue-once assertions.
+
+O's owning `backend/tests/test_game_collection_status.py` retains:
+
+- `test_readiness_is_cached_once_per_report_and_copied_then_recomputed`
+- `test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic`
+- `test_public_bound_redaction_preserves_only_valid_numeric_owner_contract`
+- `test_identity_only_calls_only_identity_and_emits_complete_envelope`
+- `test_identity_only_rejects_game_and_provider_selectors`
+- `test_identity_only_missing_reader_credentials_never_uses_writer`
+- `test_identity_only_native_reader_does_not_touch_other_ports`
+- `test_identity_only_unavailable_identity_exits_two`
+
+The regular `runners game-review-collection` lane retains all F/G/#612 cases and:
+
+- `collection bound allowance is explicit selected scope and shared across providers`
+- `collection allowance cannot suppress malformed bounds incomplete scope or other failures`
+- `collection healthy allowed repertoire restores complete selected readiness`
+- `collection main independently preserves schema when full reader times out`
+- `collection main requires independent identity and blocks conflicting schema`
+- `collection main retains nonzero reader diagnostics without accepting failed or incomplete output`
+- `collection main allowance is invocation scoped deduplicated and permits only partial collection`
+- `collection main rejects raw wildcard and malformed allowance tokens before external commands`
+- `collection probe failures expose only fixed classifications and complete JSON`
+- `collection main healthy allowance is unused and invalid installed API never runs probes`
+- `collection main blocks malformed full-reader identity while retaining independent schema`
+
+No budget/deadline, schema, Study delivery authority, provider concurrency or
+foreground guard changes. #616 full-size support and #617 cross-page reuse remain
+separate; a current report does not establish deployed or percentile latency.

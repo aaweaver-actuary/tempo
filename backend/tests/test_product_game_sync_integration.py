@@ -592,7 +592,9 @@ def test_native_review_configuration_projection_and_retry_are_durable(owned_post
             stale = configuration | {"account": "Different"}
             assert (await client.post(base + "/configuration", json={"configuration": stale, "expected_revision": 0})).status_code == 409
             # Explicit recurrence is durable and enqueues at most one due unit.
-            recurring = configuration | {"interval_seconds": 60, "revision": 2}
+            recurring = configuration | {"interval_seconds": 60, "revision": 2,
+                "window": {"start_at": "2026-10-24T12:00:00Z",
+                           "end_at": "2026-10-25T12:00:00Z", "precision": "second"}}
             assert (await client.post(base + "/configuration", json={"configuration": recurring, "expected_revision": 1})).status_code == 200
             assert reopened.enqueue_due() is True
             assert reopened.enqueue_due() is False

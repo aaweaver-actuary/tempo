@@ -33,6 +33,11 @@ is `True` for rated-only, `False` for casual-only, or `None` for both. Requested
 filters are retained as immutable facts. Only bullet/blitz/rapid/classical are
 supported. Identity is `(provider, account, source_game_id)`, never a timestamp.
 
+Export requests identify the application as `tempo-game-collection/0.1.0` with
+the Tempo repository URL. Lichess requires an identifying User-Agent; an
+unidentified client can receive 404 for exports while profile lookup succeeds
+([upstream API issue #667](https://github.com/lichess-org/api/issues/667)).
+
 Each record retains exact original PGN, its SHA-256 digest, explicit caller-owned
 positive `source_revision`, UTC played time and millisecond precision. The
 adapter does not invent a provider revision or allocate durable revision numbers.

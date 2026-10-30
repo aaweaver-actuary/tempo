@@ -102,7 +102,8 @@ async def _read(client: httpx.AsyncClient, account: str, params: dict[str, objec
             check_cancel()
             async with client.stream(
                 "GET", f"https://lichess.org/api/games/user/{account}", params=params,
-                headers={"Accept": "application/x-ndjson", "Accept-Encoding": "identity"},
+                headers={"Accept": "application/x-ndjson", "Accept-Encoding": "identity",
+                         "User-Agent": "tempo-game-collection/0.1.0 (+https://github.com/aaweaver-actuary/tempo)"},
                 timeout=timeout, follow_redirects=False,
             ) as response:
                 check_cancel()
