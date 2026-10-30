@@ -274,3 +274,163 @@ def test_missing_reader_never_uses_writer_or_dispatches(monkeypatch, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["providers"]["availability"] == "unavailable"
     assert "games_reader_profile_required" in result["unresolved"]
+
+
+def _bound_payload(stage="read"):
+    return dict(code="repertoire_snapshot_exceeds_bound", stage=stage, sample_complete=False,
+        violations=[dict(dimension="source_rows", observed=10001, limit=10000, observation="lower_bound")])
+
+
+def test_readiness_is_cached_once_per_report_and_copied_then_recomputed(stored):
+    from psycopg.types.json import Jsonb
+    selected = ["synthetic-healthy", "synthetic-bound", "synthetic-unknown"]
+    for provider in ("lichess", "chesscom"):
+        configuration = {**stored.spec, "provider": provider, "repertoire_ids": selected,
+                         "speeds": ["rapid"], "rated": None, "interval_seconds": 60}
+        with stored.database.admin() as database:
+            database.execute_native("INSERT INTO product_feedback_configuration(workspace_id,provider,revision,next_run_at,payload) VALUES(%s,%s,1,0,%s)",
+                                    (stored.identity, provider, Jsonb(configuration)))
+    calls = []
+    repaired = False
+
+    def readiness(repertoire):
+        calls.append(repertoire)
+        if repertoire == selected[2] and not repaired:
+            raise ValueError("repertoire_snapshot_exceeds_bound")
+        if repertoire == selected[1] and not repaired:
+            return dict(availability="unavailable", diagnostic="repertoire_snapshot_exceeds_bound", bound=_bound_payload())
+        return dict(availability="available", learner_color="white")
+
+    stored.reader.repertoire_readiness = readiness
+    first = stored.reader.report(workspace=stored.identity)
+    assert calls == selected
+    left, right = first["providers"]["items"]
+    assert left["selected_repertoire_count"] == right["selected_repertoire_count"] == 3
+    assert left["repertoires_truncated"] is right["repertoires_truncated"] is False
+    assert left["repertoire_readiness"] == right["repertoire_readiness"]
+    assert left["repertoire_readiness"][2]["diagnostic"] == "repertoire_read_unavailable"
+    left["repertoire_readiness"][1]["bound"]["violations"][0]["observed"] = 99999
+    assert right["repertoire_readiness"][1]["bound"]["violations"][0]["observed"] == 10001
+    repaired = True
+    second = stored.reader.report(workspace=stored.identity)
+    assert calls == selected * 2
+    assert all(r["availability"] == "available" for p in second["providers"]["items"] for r in p["repertoire_readiness"])
+    repaired = False
+    third = stored.reader.report(workspace=stored.identity)
+    assert calls == selected * 3
+    assert third["providers"]["items"][0]["repertoire_readiness"][1]["availability"] == "unavailable"
+
+
+@pytest.mark.parametrize("stage", ["read", "projection"])
+def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(monkeypatch, stage):
+    from contextlib import contextmanager
+    from app.product_composition.game_collection_status import _repertoire_readiness
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    import app.repertoire as repertoire
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    error = RepertoireSnapshotBoundExceeded(stage=stage, sample_complete=False,
+        violations=_bound_payload()["violations"])
+    entered = False
+
+    @contextmanager
+    def connections():
+        nonlocal entered
+        entered = True
+        try:
+            yield object()
+        finally:
+            entered = False
+
+    def read(*args):
+        if stage == "read":
+            raise error
+        return dict(repertoire=dict(name="private-name", graph_state="ready", graph_generation=7), lines=[], graphs=[])
+
+    def project(*args):
+        assert not entered
+        raise error
+
+    monkeypatch.setattr(product_snapshot, "read_repertoire", read)
+    monkeypatch.setattr(repertoire, "project_published_repertoire", project)
+    result = _repertoire_readiness(connections, "private-id")
+    assert result["availability"] == "unavailable"
+    assert result["diagnostic"] == "repertoire_snapshot_exceeds_bound"
+    assert result["bound"] == _bound_payload(stage)
+    if stage == "projection":
+        assert result["publication_state"] == "ready" and result["publication_revision"] == 7
+    assert all(private not in _encode(result) for private in ("private-id", "private-name"))
+    # The same text on an arbitrary ValueError never gains the typed permission.
+    def unknown(*args):
+        raise ValueError("repertoire_snapshot_exceeds_bound")
+    monkeypatch.setattr(product_snapshot, "read_repertoire", unknown)
+    assert _repertoire_readiness(connections, "private-id") == dict(
+        availability="unavailable", diagnostic="repertoire_read_unavailable")
+
+
+def test_public_bound_redaction_preserves_only_valid_numeric_owner_contract():
+    payload = _bound_payload()
+    payload["private"] = "private-pgn"
+    payload["violations"][0]["private"] = "private-account"
+    encoded = _encode(dict(diagnostic="repertoire_snapshot_exceeds_bound", bound=payload, repertoire_id="private-id"))
+    assert all(private not in encoded for private in ("private-pgn", "private-account", "private-id"))
+    result = json.loads(encoded)
+    assert result["bound"] == _bound_payload()
+    assert result["diagnostic"] == "repertoire_snapshot_exceeds_bound"
+    for field, value in (("violations", []), ("stage", "private-error"), ("stage", []), ("sample_complete", "false")):
+        bad = {**payload, field: value}
+        assert json.loads(_encode(dict(bound=bad)))["bound"] is None
+    for field, value in (("observed", True), ("observed", 10000), ("limit", -1),
+                         ("dimension", []), ("observation", []), ("observed", float("inf"))):
+        bad = _bound_payload()
+        bad["violations"][0][field] = value
+        assert json.loads(_encode(dict(bound=bad)))["bound"] is None
+
+
+def test_identity_only_calls_only_identity_and_emits_complete_envelope(capsys):
+    class IdentityOnly:
+        def __getattr__(self, name):
+            raise AssertionError("identity-only touched " + name)
+
+        def identity(self):
+            return dict(availability="available", reader_role="fixture_reader", transaction_read_only="on", schema_version=987)
+
+    assert main(["--identity-only"], reader_factory=IdentityOnly) == 0
+    raw = capsys.readouterr().out
+    assert raw.endswith("\n") and raw.count("\n") == 1
+    assert json.loads(raw) == dict(schema_version=1, read_only=True, identity=IdentityOnly().identity())
+
+
+@pytest.mark.parametrize("selectors", [["--provider", "lichess"], ["--game-id", "synthetic"]])
+def test_identity_only_rejects_game_and_provider_selectors(selectors):
+    with pytest.raises(SystemExit) as error:
+        main(["--identity-only", *selectors], reader_factory=lambda: pytest.fail("reader must not be constructed"))
+    assert error.value.code == 2
+
+
+def test_identity_only_missing_reader_credentials_never_uses_writer(monkeypatch, capsys):
+    monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "must-not-be-used")
+    assert main(["--identity-only"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result == dict(schema_version=1, read_only=True,
+        identity=dict(availability="unavailable", diagnostic="games_reader_profile_required"))
+
+
+def test_identity_only_native_reader_does_not_touch_other_ports(stored, monkeypatch, capsys):
+    monkeypatch.setenv("TEMPO_DATABASE_READ_URL", stored.database.dsn)
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "must-not-be-used")
+    def forbidden(*args, **kwargs):
+        pytest.fail("identity-only touched a full-report section")
+    for name in ("report", "providers", "collection", "delivery", "selected_game"):
+        monkeypatch.setattr(CollectionObservations, name, forbidden)
+    assert main(["--identity-only"]) == 0
+    identity = json.loads(capsys.readouterr().out)["identity"]
+    assert identity["availability"] == "available"
+    assert identity["reader_role"] == stored.database.role
+    assert identity["transaction_read_only"] == "on"
+
+
+def test_identity_only_unavailable_identity_exits_two(capsys):
+    reader = SimpleNamespace(identity=lambda: dict(availability="unavailable", diagnostic="collection_read_unavailable"))
+    assert main(["--identity-only"], reader_factory=lambda: reader) == 2
+    assert json.loads(capsys.readouterr().out)["identity"]["availability"] == "unavailable"

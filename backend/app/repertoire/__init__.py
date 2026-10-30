@@ -9,8 +9,8 @@ __all__ = [
     "RouteAdjacency", "RouteOccurrence", "build_index", "position_key",
 ]
 
-from .snapshot import (CapturedSnapshotAdapter, CurrentSnapshotAdapter, PublishedSnapshotAdapter,
+from .snapshot import (RepertoireSnapshotBoundExceeded, CapturedSnapshotAdapter, CurrentSnapshotAdapter, PublishedSnapshotAdapter,
                        project_capture, project_repertoire, project_published_repertoire)
 
-__all__ += ["CapturedSnapshotAdapter", "CurrentSnapshotAdapter", "project_capture", "project_repertoire",
+__all__ += ["RepertoireSnapshotBoundExceeded", "CapturedSnapshotAdapter", "CurrentSnapshotAdapter", "project_capture", "project_repertoire",
             "PublishedSnapshotAdapter", "project_published_repertoire"]

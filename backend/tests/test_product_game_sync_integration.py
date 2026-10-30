@@ -591,7 +591,9 @@ def test_native_review_configuration_projection_and_retry_are_durable(owned_post
             stale = configuration | {"account": "Different"}
             assert (await client.post(base + "/configuration", json={"configuration": stale, "expected_revision": 0})).status_code == 409
             # Explicit recurrence is durable and enqueues at most one due unit.
-            recurring = configuration | {"interval_seconds": 60, "revision": 2}
+            recurring = configuration | {"interval_seconds": 60, "revision": 2,
+                "window": {"start_at": "2026-10-24T12:00:00Z",
+                           "end_at": "2026-10-25T12:00:00Z", "precision": "second"}}
             assert (await client.post(base + "/configuration", json={"configuration": recurring, "expected_revision": 1})).status_code == 200
             assert reopened.enqueue_due() is True
             assert reopened.enqueue_due() is False
@@ -763,3 +765,34 @@ def test_preview_agrees_with_continuous_after_interleaved_manual_request(monkeyp
     assert preview["next_window"] == store.enqueued[-1].window.model_dump(mode="json")
     assert preview["previous"]["spec"]["job_id"].startswith("following:")
     assert store.jobs[manual.job_id].status == "quarantined"
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, fails):
+    from contextlib import contextmanager
+    import app.product_composition.game_sync_current as composition
+    from app.repertoire import project_published_repertoire
+    from test_product_snapshot import repertoire_facts, EnvelopeReader, snapshot_envelope
+    events = []
+    facts = repertoire_facts()
+    if fails: facts["repertoire"]["graph_state"] = "failed"
+    @contextmanager
+    def connections():
+        events.append("enter")
+        try:
+            yield EnvelopeReader(snapshot_envelope(bounded=True, facts=facts))
+        finally:
+            events.append("exit")
+    def observed_projection(value):
+        assert events == ["enter", "exit"]
+        events.append("projection")
+        return project_published_repertoire(value)
+    monkeypatch.setattr(composition, "project_published_repertoire", observed_projection)
+    worker = composition.CurrentRepertoireSnapshots(connections)
+    if fails:
+        with pytest.raises(ValueError, match="repertoire_publication_unavailable"):
+            worker.snapshot("rep")
+    else:
+        result = worker.snapshot("rep")
+        assert result.membership.complete and result.membership.revision == 3
+    assert events == ["enter", "exit", "projection"]

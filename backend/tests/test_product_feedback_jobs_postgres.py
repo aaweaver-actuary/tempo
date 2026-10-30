@@ -358,3 +358,30 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
         pending_attempts=pending.attempts, receiver_supplied=False, captures=len(captures),
         study_rows_unchanged={table: len(rows) for table, rows in before.items()},
         provider_fixture_requests=len(requests)), indent=2))
+
+
+
+def test_native_snapshot_bound_envelope_withholds_facts_and_reports_source_sentinel(owned_postgres):
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
+        STATEMENT, read_repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_SNAPSHOT_BYTES, MAX_ROW_BYTES,
+    )
+    repertoire = "snapshot-bound-" + uuid.uuid4().hex
+    with owned_postgres() as database:
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Synthetic','fixture','2026-10-26')", (repertoire,))
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            SELECT %s || '-' || n::text,%s,'Synthetic','white',%s,'["e2e4"]','2026-10-26'
+            FROM generate_series(1,10002) n""", (repertoire, repertoire,
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
+        envelope = database.execute_native(STATEMENT, (repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS,
+            MAX_SNAPSHOT_BYTES, MAX_ROW_BYTES)).fetchone()["snapshot"]
+        assert envelope["exists"] and not envelope["bounded"] and envelope["facts"] is None
+        assert envelope["line_count"] == 10001  # Real total is larger than the sentinel.
+        assert all(envelope[key] == 0 for key in ("card_count", "membership_count", "graph_count"))
+        assert 0 < envelope["largest_row"] <= MAX_ROW_BYTES
+        assert 0 < envelope["estimated_bytes"] <= MAX_SNAPSHOT_BYTES
+        with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+            read_repertoire(database, repertoire)
+        assert caught.value.diagnostic() == dict(code="repertoire_snapshot_exceeds_bound", stage="read",
+            sample_complete=False, violations=[dict(dimension="source_rows", observed=10001,
+                                                    limit=10000, observation="lower_bound")])

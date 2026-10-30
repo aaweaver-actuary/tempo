@@ -6,6 +6,7 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 from __future__ import annotations
 
 from collections import Counter
+from types import MappingProxyType
 from datetime import datetime, timezone
 import json
 from typing import Callable, Mapping
@@ -20,6 +21,37 @@ from app.contracts.product_v02.repertoire import (
 )
 
 MAX_CAPTURE_BYTES = 32 * 1024 * 1024
+
+
+class RepertoireSnapshotBoundExceeded(ValueError):
+    """A proved budget refusal containing only public numeric diagnostics."""
+
+    def __init__(self, *, stage, sample_complete, violations):
+        dimensions = {"source_rows", "card_rows", "membership_rows", "graph_rows",
+                      "row_bytes", "estimated_snapshot_bytes", "snapshot_bytes", "authored_moves"}
+        observations = {"exact", "lower_bound", "conservative_estimate"}
+        if stage not in {"read", "projection"} or type(sample_complete) is not bool:
+            raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+        copied = []
+        for violation in violations:
+            if (set(violation) != {"dimension", "observed", "limit", "observation"}
+                    or violation["dimension"] not in dimensions
+                    or violation["observation"] not in observations
+                    or type(violation["observed"]) is not int
+                    or type(violation["limit"]) is not int
+                    or violation["limit"] < 0 or violation["observed"] <= violation["limit"]):
+                raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+            copied.append(tuple(violation[key] for key in ("dimension", "observed", "limit", "observation")))
+        if not copied:
+            raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+        self._stage, self._sample_complete, self._violations = stage, sample_complete, tuple(copied)
+        super().__init__("repertoire_snapshot_exceeds_bound")
+
+    def diagnostic(self):
+        return {"code": "repertoire_snapshot_exceeds_bound", "stage": self._stage,
+                "sample_complete": self._sample_complete,
+                "violations": [dict(zip(("dimension", "observed", "limit", "observation"), values))
+                               for values in self._violations]}
 
 
 def _introduction(card):
@@ -85,6 +117,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     cards_by_id = {row["id"]: row for row in cards if counts[row["id"]] == 1}
     memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
+    route_positions = {}
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
         route = routes.get((graph["repertoire_id"], graph["line_id"]))
@@ -106,11 +139,22 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
                     or executable != json.loads(card["moves_json"])
                     or opening_position_key(graph["starting_fen"]) != opening_position_key(card["start_fen"])):
                 continue
-            route_frames = _frames(route.starting_fen, route.moves)
+            route_key = (route.repertoire_id, route.route_id)
+            if route_key not in route_positions:
+                try:
+                    occurrences = {}
+                    for ply, frame in enumerate(_frames(route.starting_fen, route.moves)):
+                        occurrences.setdefault(opening_position_key(frame.fen()), []).append(ply)
+                    index = MappingProxyType({key: tuple(plies) for key, plies in occurrences.items()})
+                    route_positions[route_key] = (route, index)
+                except (ValueError, TypeError, KeyError):
+                    route_positions[route_key] = (route, None)
+            cached_route, positions = route_positions[route_key]
+            if cached_route is not route or positions is None:
+                continue
             card_frames = _frames(card["start_fen"], executable)
-            roots = [ply for ply, frame in enumerate(route_frames)
-                     if opening_position_key(frame.fen()) == opening_position_key(graph["starting_fen"])
-                     and tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
+            roots = [ply for ply in positions.get(opening_position_key(graph["starting_fen"]), ())
+                     if tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.
             if len(roots) != 1:
@@ -253,8 +297,10 @@ def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, publi
     The source digest excludes capture time and every schedule/review/queue field.
     """
     encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    if len(encoded.encode()) > MAX_CAPTURE_BYTES:
-        raise ValueError("repertoire_snapshot_exceeds_bound")
+    encoded_bytes = len(encoded.encode())
+    if encoded_bytes > MAX_CAPTURE_BYTES:
+        raise RepertoireSnapshotBoundExceeded(stage="projection", sample_complete=True, violations=[
+            dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_CAPTURE_BYTES, observation="exact")])
     source = json.loads(encoded)
     header = source["repertoire"]
     repertoire_id = header["id"]
@@ -262,17 +308,22 @@ def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, publi
         raise ValueError("repertoire_workspace_unknown")
     if json.loads(header.get("canonical_prefix_moves_json", "[]")):
         raise ValueError("canonical_prefix_snapshot_unsupported")
-    if (len(source["lines"]) > 10000 or len(source["cards"]) > 10000
-            or len(source["memberships"]) > 10000 or len(source["graphs"]) > 20000):
-        raise ValueError("repertoire_snapshot_exceeds_bound")
+    violations = [dict(dimension=dimension, observed=len(source[name]), limit=limit, observation="exact")
+                  for name, dimension, limit in (("lines", "source_rows", 10000), ("cards", "card_rows", 10000),
+                      ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000))
+                  if len(source[name]) > limit]
+    if violations:
+        raise RepertoireSnapshotBoundExceeded(stage="projection", sample_complete=True, violations=violations)
     if any(row["repertoire_id"] != repertoire_id for name in ("lines", "memberships", "graphs")
            for row in source[name]):
         raise ValueError("repertoire_snapshot_scope_mismatch")
     routes = tuple(AuthoredRoute(repertoire_id=repertoire_id, route_id=row["id"],
         policy_id=repertoire_id, learner_color=row["trained_color"], starting_fen=row["start_fen"],
         moves=json.loads(row["moves_json"])) for row in sorted(source["lines"], key=lambda row: row["id"]))
-    if sum(len(route.moves) for route in routes) > 100000:
-        raise ValueError("repertoire_snapshot_exceeds_bound")
+    authored_moves = sum(len(route.moves) for route in routes)
+    if authored_moves > 100000:
+        raise RepertoireSnapshotBoundExceeded(stage="projection", sample_complete=True, violations=[
+            dict(dimension="authored_moves", observed=authored_moves, limit=100000, observation="exact")])
     colors = {route.learner_color for route in routes}
     if len(colors) != 1:
         raise ValueError("repertoire_color_unknown" if not colors else "repertoire_color_ambiguous")
