@@ -210,6 +210,8 @@ class PostgresGamesStore:
             rows = database.execute("""SELECT page_json::text FROM product_feedback_pages
                 WHERE job_id=%s AND input_continuation IS NOT DISTINCT FROM %s
                 LIMIT 2""", (job_id, continuation)).fetchall()
+        if not rows:
+            raise ValueError("historical_page_missing")
         if len(rows) != 1:
             raise ValueError("historical_page_missing_or_ambiguous")
         return rows[0][0]

@@ -152,7 +152,16 @@ def retained_records(store, manifest):
             continue
         cursor, seen = None, set()
         for _ in range(job.pages_committed):
-            page = parse_page(store.retained_page(spec.job_id, cursor), spec.provider)
+            try:
+                page = parse_page(store.retained_page(spec.job_id, cursor), spec.provider)
+            except ValueError as error:
+                # An idempotent saved-page replay can increment the commit
+                # counter without adding another distinct page. A missing
+                # pending cursor is normal only while that job is incomplete.
+                if (str(error) == "historical_page_missing" and cursor is not None
+                        and cursor == job.continuation and job.status != "complete"):
+                    break
+                raise
             if (page.provider, page.account, page.window, page.filters) != (
                     spec.provider, spec.account, spec.window, spec.filters):
                 raise ValueError("historical_retained_page_scope_mismatch")
@@ -219,7 +228,8 @@ def report(store, review, manifest, *, compare=False):
         receipt_deferred_reasons=dict(deferrals), study_progress_current=False,
         jobs=[None if j is None else dict(job_id=j.spec.job_id, status=j.status,
             window_complete=j.window_complete, pages_committed=j.pages_committed,
-            error=j.error, next_attempt_at=j.next_attempt_at, lease_until=j.lease_until) for j in jobs])
+            error=j.error, next_attempt_at=j.next_attempt_at, lease_until=j.lease_until,
+            history_recoveries=[item.model_dump(mode="json") for item in j.history_recoveries]) for j in jobs])
 
 
 @contextmanager
@@ -373,18 +383,34 @@ def recover_legacy_precision(manifest, *, store, review, admission, stopped):
     return dict(recovered=recovered, page_records=count, prepared=True, interrupted=False)
 
 
+def retry_lichess_provider_limit(manifest, *, store, review, admission, clock):
+    configuration = next((c for c in manifest.configurations if c.provider == "lichess"),None)
+    if configuration is None or review.configuration(manifest.workspace_id,"lichess") != configuration:
+        raise ValueError("history_provider_limit_saved_scope_changed")
+    spec = manifest.job(configuration)
+    job = store.load_job(spec.job_id)
+    if job is None:
+        raise ValueError("history_provider_limit_failure_required")
+    with admission():
+        if review.configuration(manifest.workspace_id,"lichess") != configuration:
+            raise ValueError("history_provider_limit_saved_scope_changed")
+        receipt = store.resume_history_provider_limit(expected=job, configuration=configuration,
+            recorded_at=clock.utc_now())
+    return dict(prepared=True, receipt=receipt.model_dump(mode="json"))
+
+
 def main(compare=False, argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("plan", "run", "status", "recover-precision"))
+    parser.add_argument("operation", choices=("plan", "run", "status", "recover-precision", "retry-provider-limit"))
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--max-units", type=int, default=50)
     options = parser.parse_args(argv)
     if not 1 <= options.max_units <= 10000:
         parser.error("--max-units must be 1..10000")
-    if compare and options.operation == "recover-precision":
-        parser.error("recover-precision applies only to collection")
-    writing = options.operation in {"run", "recover-precision"}
+    if compare and options.operation in {"recover-precision", "retry-provider-limit"}:
+        parser.error("recovery operations apply only to collection")
+    writing = options.operation in {"run", "recover-precision", "retry-provider-limit"}
     variable = "TEMPO_DATABASE_WRITE_URL" if writing else "TEMPO_DATABASE_READ_URL"
     dsn = os.getenv(variable)
     if not dsn:
@@ -444,6 +470,10 @@ def main(compare=False, argv=None):
                     recovery = recover_legacy_precision(manifest, store=store, review=review,
                         admission=historical_admission, stopped=stopped)
                     units = None
+                elif options.operation == "retry-provider-limit":
+                    recovery = retry_lichess_provider_limit(manifest, store=store, review=review,
+                        admission=historical_admission, clock=clock)
+                    units = None
                 else:
                     units = run_history(manifest, store=store, review=review, clock=clock,
                         admission=lambda: historical_admission(comparison=compare),
@@ -463,7 +493,7 @@ def main(compare=False, argv=None):
     else:
         result = report(store, review, manifest, compare=compare)
         result["read_only"] = True
-    operation = ("recover-precision" if options.operation == "recover-precision"
+    operation = (options.operation if options.operation in {"recover-precision","retry-provider-limit"}
         and not (result.get("recovery") or {}).get("prepared") else "run")
     result["resume"] = f"python scripts/{'check' if compare else 'import'}-game-history.py {operation} --manifest {str(options.manifest)!r} --workspace {manifest.workspace_id!r}"
     print(json.dumps(result, indent=2))
@@ -475,7 +505,7 @@ def entrypoint(compare=False):
         return main(compare=compare)
     except (OSError, ValueError) as error:
         reason = str(error)
-        if not reason.startswith(("historical_", "history_precision_")) or not reason.replace("_", "").isalnum():
+        if not reason.startswith(("historical_", "history_precision_", "history_provider_limit_")) or not reason.replace("_", "").isalnum():
             reason = "historical_operation_failed"
         print(json.dumps(dict(complete=False, reason=reason)))
         return 2
@@ -488,6 +518,6 @@ def entrypoint(compare=False):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2 or sys.argv[1] not in {"collect", "compare"}:
-        raise SystemExit("usage: python -m app.product_composition.game_history_scripts {collect|compare} {plan|run|status|recover-precision} --manifest PATH")
+        raise SystemExit("usage: python -m app.product_composition.game_history_scripts {collect|compare} {plan|run|status|recover-precision|retry-provider-limit} --manifest PATH")
     phase = sys.argv.pop(1)
     raise SystemExit(entrypoint(compare=phase == "compare"))

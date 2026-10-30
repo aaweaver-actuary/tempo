@@ -379,6 +379,13 @@ saved page is replayed. It refuses existing deliveries, changed scope or source,
 additional captures, unproved precision, or any other quarantine. Incomplete
 recovery returns nonzero and can be resumed; original quarantine evidence stays.
 
+After installing the bounded-response adapter, `collect retry-provider-limit
+--manifest PATH` can requeue a historical Lichess job failed specifically with
+`lichess_response_limit`. It requires the same saved scope, unchanged failed
+cursor and an unambiguous committed predecessor, and stores a failure receipt
+before requeueing. Other failures and committed cursors remain held. Continue
+with the ordinary `collect run` command after the operation reports `prepared`.
+
 Comparison completion means traversal and delivery acknowledgment, not actual
 Study admission, issuance or human settlement. Receipt admission/disposition and
 deferral counts describe saved acknowledgment receipts; `study_progress_current`

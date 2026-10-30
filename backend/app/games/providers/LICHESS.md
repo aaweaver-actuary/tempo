@@ -60,6 +60,14 @@ The next request includes boundary overlap, so its explicit `max` may grow up to
 1000 even with `page_size=100`. A response containing `max` source rows always
 returns `saturated=True`, `complete=False`, and an opaque continuation.
 
+When the provider returns more rows than requested, the adapter validates the
+whole response's timestamp ordering, identity shape and duplicate fingerprints
+before consuming a bounded page. It accepts no more than 10,000 response rows
+or the existing 8 MiB byte limit. Remaining rows are reached through the same
+inclusive timestamp/identity continuation; an out-of-order or conflicting tail
+fails the page instead of silently skipping it. New records and rejections both
+count against the per-page record budget.
+
 The continuation binds account, exact window, normalized filters, source revision
 and page size. It stores the last millisecond and IDs/digests already emitted at
 that millisecond. The next request starts inclusively at that boundary, deduplicates

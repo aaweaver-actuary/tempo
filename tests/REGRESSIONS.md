@@ -34,6 +34,10 @@ UTC-second proof and the explicit effect-free initial-page recovery: mismatches
 and prior deliveries remain held; original captures and canonical rows survive;
 an interrupted 95-of-100 recovery resumes; and the exact saved page advances
 without provider refetch. Its PostgreSQL fixture is task-owned and disposable.
+`backend/tests/test_historical_provider_pagination.py` covers oversized sorted
+provider responses, equal timestamps, out-of-order tail rejection, pending-page
+status and fenced provider-limit retry with retained failure receipts. Its
+PostgreSQL cases use task-owned disposable fixtures.
 Its native case uses the existing labelled disposable PostgreSQL fixture to
 prove canonical source publication, original-page readback, historical-job claim
 isolation, unchanged Refresh/forward settings and no Study writes during collection.
