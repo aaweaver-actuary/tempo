@@ -6332,10 +6332,10 @@ identity, lifecycle, inspection and output safeguards retain their existing poli
 
 ## All-repertoire collector memory allocation
 
-`historical comparison requires its bounded 1024 MiB worker allowance` in
+`historical comparison requires its bounded 1536 MiB worker allowance` in
 `tests/runner/game-review-collection.test.mjs` owns the operator resource guard
-after the concurrent historical command and worker exceeded the prior 512 MiB
-cap. The runtime overlay and optional inventory specify 1024 MiB; the development
+after the concurrent historical command and worker approached the prior 1024 MiB
+cap. The runtime overlay and optional inventory specify 1536 MiB; the development
 fixture remains at 512 MiB and within its 2048 MiB aggregate budget. CPU policy,
 PID limit and Study allocations are unchanged, and the guard rejects a mismatch.
 This configuration check does not establish actual runtime memory sufficiency.

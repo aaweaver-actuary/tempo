@@ -21,7 +21,7 @@
       "memoryMiB": 96
     },
     "game-feedback-worker": {
-      "memoryMiB": 1024,
+      "memoryMiB": 1536,
       "pidsLimit": 96
     }
   },
