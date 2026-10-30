@@ -331,7 +331,7 @@ it("feature dependency boundary contains no Study controllers, live clients, pri
     const source = readFileSync(`app/features/repertoire-review/${file}`, "utf8");
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const imports = parsed.statements.filter(ts.isImportDeclaration).map(statement => (statement.moduleSpecifier as ts.StringLiteral).text);
-    for (const path of imports) expect(path, `${file}: ${path}`).toMatch(/^(?:react|chess\.js|@tempo\/board-ui|\.\/(?:api|state|PositionViewer|EvidencePanel|ConflictPanel|ProposalPanel|styles\.css)|\.\.\/product-api\/contracts|\.\.\/\.\.\/components\/(?:ui|buttons\/BaseButton)|\.\.\/\.\.\/hooks\/use-board-history|\.\.\/\.\.\/\.\.\/packages\/board-ui\/styles\/board\.css)$/);
+    for (const path of imports) expect(path, `${file}: ${path}`).toMatch(/^(?:react|chess\.js|@tempo\/board-ui(?:\/styles\.css)?|\.\/(?:api|state|PositionViewer|EvidencePanel|ConflictPanel|ProposalPanel|styles\.css)|\.\.\/product-api\/contracts|\.\.\/\.\.\/components\/(?:ui|buttons\/BaseButton)|\.\.\/\.\.\/hooks\/use-board-history)$/);
     expect(source).not.toMatch(/\bfetch\s*\(|localStorage|sessionStorage|useTrainingStore|home_view|training_view|tactics_view/);
   }
 });
