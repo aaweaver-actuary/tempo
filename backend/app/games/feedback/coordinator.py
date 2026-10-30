@@ -273,8 +273,6 @@ class Coordinator:
                     normalized.source_revision, normalized.source_digest)
             held = changed or bool(previous and previous.quarantined) or integrity_error
             determined_at = previous.determined_at if previous else None
-            if first_departure is not None and first_departure.status == "own_actionable" and determined_at is None:
-                determined_at = self.clock.utc_now()
             effects = list(previous.effects) if previous else []
             confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
             observations = {}
@@ -328,6 +326,9 @@ class Coordinator:
                     deliveries.append(delivery_for(key, encounter))
             if held and not integrity_error:
                 diagnostic = "changed_source_requires_D08_resolution"
+            if (not held and first_departure is not None and first_departure.status == "own_actionable"
+                    and determined_at is None):
+                determined_at = self.clock.utc_now()
             sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
                 record_fingerprint=previous.record_fingerprint if previous else fingerprint,
@@ -336,7 +337,8 @@ class Coordinator:
                 first_departure=previous.first_departure if changed else first_departure,
                 determined_at=determined_at, quarantined=held, diagnostic=diagnostic))
             captures.append(Capture(source_key=key, account=spec.account, record=record, provider_record_json=record.model_dump_json(), normalized=normalized,
-                findings=findings, encounters=encounters, first_departure=first_departure, determined_at=determined_at,
+                findings=findings, encounters=encounters, first_departure=first_departure,
+                determined_at=None if changed else determined_at,
                 comparison_revision=comparison_revision, diagnostic=diagnostic))
             quarantined = quarantined or held
         resumable = page.continuation is not None and page.continuation != job.continuation

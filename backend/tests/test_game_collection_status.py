@@ -176,7 +176,8 @@ def test_new_selection_redacts_route_scope_and_retains_finite_policy_diagnostics
     assert value["surviving_routes"][0]["route_id"].startswith("redacted:")
     assert value["surviving_routes"][0]["policy_id"].startswith("redacted:")
     assert value["decision"]["position_key"].startswith("redacted:")
-    assert "source-rep" not in encoded and "card-route" not in encoded
+    assert value["decision"]["selected_response_uci"].startswith("redacted:")
+    assert "source-rep" not in encoded and "card-route" not in encoded and "e2e4" not in encoded
     assert json.loads(_encode(dict(identity={}, diagnostic="selected_scope_incomplete_or_unavailable")))["diagnostic"] == "selected_scope_incomplete_or_unavailable"
 
 

@@ -12,7 +12,7 @@ import subprocess
 MAX_OUTPUT_BYTES = 256 * 1024
 PRIVATE_FIELDS = frozenset({"account", "workspace_id", "provider_game_id", "canonical_game_id",
     "game_id", "job_id", "source_key", "repertoire_id", "repertoire_ids", "presentation_id",
-    "decision_id", "operation_id", "owner_receipt_id", "position_key", "expected_uci", "played_uci",
+    "decision_id", "operation_id", "owner_receipt_id", "position_key", "expected_uci", "played_uci", "selected_response_uci",
     "source_digest", "comparison_revision", "name", "route_id", "policy_id", "snapshot_id", "digest"})
 
 

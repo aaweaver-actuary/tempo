@@ -5888,3 +5888,8 @@ the eager raw capability. Existing
 `test_product_game_sync_integration.py::test_current_snapshot_projection_begins_after_connection_exit`
 now also proves decoding occurs after the connection exits, on success and
 publication failure, while retaining the original projection boundary.
+
+Review B's source-clock regression is
+`test_corrected_held_source_cannot_create_or_inherit_determination_clock` in
+`test_product_feedback_jobs.py`; the existing new-selection redaction regression
+also masks `decision.selected_response_uci` and rejects raw move leakage.
