@@ -366,9 +366,18 @@ and is created once with mode 0600; retain it for resume.
 Repertoire checking uses current accepted repertoire material. Missing scope or
 ambiguous targets remain unresolved. A later run revisits a completed unresolved
 comparison without changing occurrence identities. Changed saved configuration
-requires a new plan/manifest. An in-progress failed/quarantined source requires
-its owning recovery workflow; these scripts never clear quarantine or backoff.
+requires a new plan/manifest. Ordinary runs never clear quarantine or backoff;
+only the narrowly verified precision recovery below can resolve its own case.
 Provider games unpublished at import time cannot be guaranteed present.
+
+The supported precision recovery is `collect recover-precision --manifest PATH`
+through the installed module entry point. It handles only an initial Lichess
+history page quarantined because an existing legacy PGN second and the captured
+provider millisecond instant prove the same source. The Games owner revalidates
+each effect-free initial capture and records its resolution before the original
+saved page is replayed. It refuses existing deliveries, changed scope or source,
+additional captures, unproved precision, or any other quarantine. Incomplete
+recovery returns nonzero and can be resumed; original quarantine evidence stays.
 
 Comparison completion means traversal and delivery acknowledgment, not actual
 Study admission, issuance or human settlement. Receipt admission/disposition and

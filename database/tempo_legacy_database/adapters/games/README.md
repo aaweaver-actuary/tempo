@@ -64,3 +64,12 @@ with no purpose), while exact claims retain account leases and retry admission.
 History therefore does not become a forward or Refresh-now checkpoint. Existing
 tables, atomic page/capture/source/outbox transactions, keys and ownership are
 unchanged; no new migration or storage relationship is introduced.
+
+The canonical source adapter recognizes Lichess's legacy PGN UTC-second and a
+matching provider millisecond timestamp only with exact PGN, provider identity,
+player, moves, result and starting position. It retains the legacy row and raw
+provider capture. Its explicit first-page history recovery locks and revalidates
+the quarantined job, original page, initial source/capture, existing game and
+empty outbox, then appends a resolution capture and updates that source. The
+job can resume only when every source in that saved page is available and its
+original serialized page key is verified. Other quarantine cases stay held.

@@ -185,6 +185,9 @@ class SourceIdentity(Protocol):
     Raw acquisition provenance stays in Capture.record. The returned game's
     digest/revision/time spelling are the canonical source owner's facts;
     commit_page must fence the same identity before publishing any command.
+    An owner may also provide occurrence_compatible(verified, bound, record,
+    spec) to prove a loss of precision without changing the occurrence; absence
+    of that capability leaves the existing exact-time requirement in force.
     """
     def bind_source(self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
 

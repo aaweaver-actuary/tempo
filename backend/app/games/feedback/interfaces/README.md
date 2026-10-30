@@ -18,6 +18,12 @@ owns the two phases without changing the public command or receipt types.
 defers every selected snapshot; source changes and integrity failures still take
 the ordinary quarantine and control path.
 
+The canonical source owner can additionally prove that a Lichess provider's
+millisecond instant belongs to the exact second recorded by legacy PGN
+`UTCDate`/`UTCTime`. The coordinator rejects an occurrence-time change unless
+that explicitly injected owner capability proves compatibility; the original
+provider timestamp and capture stay unchanged.
+
 `select_first_boundary(game, snapshots=..., source=...,
 selected_repertoire_ids=..., unavailable_repertoire_ids=...)` consumes only
 supplied canonical history and authored snapshots, returning the shared

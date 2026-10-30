@@ -118,6 +118,26 @@ class RetainedPages:
         return page
 
 
+class RecoveredFirstPage:
+    """Replay the original quarantined page once before provider pagination resumes."""
+    def __init__(self, store, spec, underlying):
+        self.store, self.spec, self.underlying = store, spec, underlying
+
+    def fetch_page(self, *, account, window, continuation=None):
+        if continuation is not None:
+            return self.underlying.fetch_page(account=account, window=window, continuation=continuation)
+        job = self.store.load_job(self.spec.job_id)
+        if (job is None or job.spec != self.spec or job.status != "running"
+                or job.error != "history_precision_replay_saved_page"
+                or (account, window) != (self.spec.account, self.spec.window)):
+            raise ValueError("history_precision_replay_job_mismatch")
+        page = parse_page(self.store.retained_page(self.spec.job_id, None), self.spec.provider)
+        if (page.provider, page.account, page.window, page.filters) != (
+                self.spec.provider, account, window, self.spec.filters):
+            raise ValueError("history_precision_replay_scope_mismatch")
+        return page
+
+
 class DeferredSnapshots:
     def snapshot(self, repertoire_id):
         raise ValueError("historical_collection_comparison_deferred")
@@ -259,8 +279,12 @@ def run_history(manifest, *, store, review, clock, admission, stopped,
                     if review.configuration(manifest.workspace_id, configuration.provider) != configuration:
                         raise ValueError("historical_saved_configuration_changed")
                     store.enqueue(spec)
+                    prior = store.load_job(spec.job_id)
+                    if (not compare and prior.error == "history_precision_replay_saved_page"
+                            and not isinstance(runner.coordinator.providers[spec.provider], RecoveredFirstPage)):
+                        runner.coordinator.providers[spec.provider] = RecoveredFirstPage(store, spec,
+                            runner.coordinator.providers[spec.provider])
                     if unresolved:
-                        prior = store.load_job(spec.job_id)
                         if prior.status == "complete":
                             store.save_job(prior.model_copy(update={"status": "queued",
                                 "continuation": None, "window_complete": False,
@@ -310,16 +334,57 @@ def run_history(manifest, *, store, review, clock, admission, stopped,
             runner.close()
 
 
+def recover_legacy_precision(manifest, *, store, review, admission, stopped):
+    configuration = next((c for c in manifest.configurations if c.provider == "lichess"), None)
+    if configuration is None or review.configuration(manifest.workspace_id, "lichess") != configuration:
+        raise ValueError("history_precision_saved_scope_changed")
+    spec = manifest.job(configuration)
+    job = store.load_job(spec.job_id)
+    if (job is None or job.spec != spec or job.status != "quarantined"
+            or job.error != "unresolved_page_boundary" or job.continuation is not None
+            or job.last_checkpoint_at is not None or job.pages_committed != 1 or job.rejections):
+        raise ValueError("history_precision_job_not_initial_quarantine")
+    page = parse_page(store.retained_page(spec.job_id, None), spec.provider)
+    if (page.provider, page.account, page.window, page.filters) != (
+            spec.provider, spec.account, spec.window, spec.filters):
+        raise ValueError("history_precision_original_page_mismatch")
+    recovered = 0
+    for record in page.records:
+        if stopped.is_set():
+            return dict(recovered=recovered, interrupted=True, prepared=False)
+        key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
+        source = store.source(key)
+        if source is None:
+            raise ValueError("history_precision_page_sources_missing")
+        if not source.quarantined:
+            continue
+        verified = WorkflowNormalizer().normalize(record, spec)
+        with admission():
+            if review.configuration(manifest.workspace_id, "lichess") != configuration:
+                raise ValueError("history_precision_saved_scope_changed")
+            store.recover_initial_history_precision(spec=spec, record=record, verified=verified,
+                configuration=configuration)
+        recovered += 1
+    with admission():
+        if review.configuration(manifest.workspace_id, "lichess") != configuration:
+            raise ValueError("history_precision_saved_scope_changed")
+        count = store.resume_initial_history_page(spec=spec, page_document=page.model_dump_json(),
+            configuration=configuration)
+    return dict(recovered=recovered, page_records=count, prepared=True, interrupted=False)
+
+
 def main(compare=False, argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("plan", "run", "status"))
+    parser.add_argument("operation", choices=("plan", "run", "status", "recover-precision"))
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--max-units", type=int, default=50)
     options = parser.parse_args(argv)
     if not 1 <= options.max_units <= 10000:
         parser.error("--max-units must be 1..10000")
-    writing = options.operation == "run"
+    if compare and options.operation == "recover-precision":
+        parser.error("recover-precision applies only to collection")
+    writing = options.operation in {"run", "recover-precision"}
     variable = "TEMPO_DATABASE_WRITE_URL" if writing else "TEMPO_DATABASE_READ_URL"
     dsn = os.getenv(variable)
     if not dsn:
@@ -375,15 +440,21 @@ def main(compare=False, argv=None):
                 return runtime.runner
 
             try:
-                units = run_history(manifest, store=store, review=review, clock=clock,
-                    admission=lambda: historical_admission(comparison=compare),
-                    stopped=stopped, runner_factory=factory,
-                    compare=compare, maximum_units=options.max_units)
+                if options.operation == "recover-precision":
+                    recovery = recover_legacy_precision(manifest, store=store, review=review,
+                        admission=historical_admission, stopped=stopped)
+                    units = None
+                else:
+                    units = run_history(manifest, store=store, review=review, clock=clock,
+                        admission=lambda: historical_admission(comparison=compare),
+                        stopped=stopped, runner_factory=factory,
+                        compare=compare, maximum_units=options.max_units)
+                    recovery = None
                 deferred = False
             except BackgroundAdmissionDeferred:
-                units, deferred = None, True
+                units, deferred, recovery = None, True, None
             result = report(store, review, manifest, compare=compare)
-            result.update(bounded_units=units, deferred=deferred, interrupted=stopped.is_set())
+            result.update(bounded_units=units, deferred=deferred, interrupted=stopped.is_set(), recovery=recovery)
         finally:
             for runtime in owned:
                 runtime.close()
@@ -392,7 +463,9 @@ def main(compare=False, argv=None):
     else:
         result = report(store, review, manifest, compare=compare)
         result["read_only"] = True
-    result["resume"] = f"python scripts/{'check' if compare else 'import'}-game-history.py run --manifest {str(options.manifest)!r} --workspace {manifest.workspace_id!r}"
+    operation = ("recover-precision" if options.operation == "recover-precision"
+        and not (result.get("recovery") or {}).get("prepared") else "run")
+    result["resume"] = f"python scripts/{'check' if compare else 'import'}-game-history.py {operation} --manifest {str(options.manifest)!r} --workspace {manifest.workspace_id!r}"
     print(json.dumps(result, indent=2))
     return 0 if options.operation == "plan" or result["complete"] else 1
 
@@ -402,7 +475,7 @@ def entrypoint(compare=False):
         return main(compare=compare)
     except (OSError, ValueError) as error:
         reason = str(error)
-        if not reason.startswith("historical_") or not reason.replace("_", "").isalnum():
+        if not reason.startswith(("historical_", "history_precision_")) or not reason.replace("_", "").isalnum():
             reason = "historical_operation_failed"
         print(json.dumps(dict(complete=False, reason=reason)))
         return 2
@@ -415,6 +488,6 @@ def entrypoint(compare=False):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2 or sys.argv[1] not in {"collect", "compare"}:
-        raise SystemExit("usage: python -m app.product_composition.game_history_scripts {collect|compare} {plan|run|status} --manifest PATH")
+        raise SystemExit("usage: python -m app.product_composition.game_history_scripts {collect|compare} {plan|run|status|recover-precision} --manifest PATH")
     phase = sys.argv.pop(1)
     raise SystemExit(entrypoint(compare=phase == "compare"))
