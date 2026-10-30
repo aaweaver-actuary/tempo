@@ -16,6 +16,7 @@ from tempo_legacy_database.adapters.redis_control.wake_runtime.wakes import (
 WAKE_TASK_NAMES = frozenset({
     'app.tasks.poll_background_tasks', 'app.tasks.recover_operations',
     'app.tasks.recover_active_coverage', 'app.tasks.ensure_daily_queue',
+    'app.tasks.maintain_game_feedback',
 })
 WAKE_HEADER = 'tempo-wake-token'
 QUEUE_REFRESH_HEADER = 'queue_refresh_wake'

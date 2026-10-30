@@ -1,5 +1,96 @@
 # One imported game to ordinary Study (#488)
 
+## Durable Game Review commands and Settings recovery (#590)
+
+The goal is to compare retained/provider games with the user's repertoire and
+move the matching card forward in Study when its repertoire move was missed.
+That miss establishes importance whether the card was learned, needs introduction,
+or has unknown introduction chronology. The label and could-have-known history
+are not reinforcement prerequisites. Preserve actual timestamps and returned
+dispositions; use the existing Study-owned priority and ordinary consumption
+behavior. These commands durably request that work. Engines, coaching and
+explanations are outside this slice.
+
+The reader-profile API dispatches configure, manual sync and legacy feedback
+retry through the existing command gateway. `game_review_commands.py` registers
+those three handlers on the existing foreground command worker. Games borrows
+the command transaction; its configuration/job or legacy delivery mutation and
+the operation receipt commit together. Configure uses `Idempotency-Key`; sync
+and feedback retry retain the request's `operation_id`. Reads acquire no writer
+credential. Provider HTTP and Study queue refresh do not run in these handlers.
+
+```mermaid
+sequenceDiagram
+  participant Settings as Games settings / Game Review
+  participant Journal as Games browser pending record
+  participant API as Reader HTTP API
+  participant Gateway as Existing durable command gateway
+  participant Command as Foreground command worker / writer
+  participant Games as Games configuration / job / legacy delivery
+  Settings->>Journal: Persist original save bytes or manual-run identity
+  Settings->>API: Configure / sync / legacy retry with original operation ID
+  API->>Gateway: Dispatch bounded command
+  Gateway->>Command: Execute or replay original operation
+  Note over Command,Games: Validate new ongoing seed before configuration write; invalid seed fails with 422
+  Command->>Games: Borrow caller transaction; fence current facts
+  Note over Command,Games: Games mutation and operation receipt commit atomically
+  Command-->>API: Completed result or pending operation
+  API-->>Settings: Actual result / pending / failure
+  Settings->>API: Resolve original operation at Games API origin
+  Note over Settings,API: Selected Learning origin does not redirect Games receipt reads
+  Settings->>Journal: Clear matching terminal save/run only
+```
+
+`GameSyncSettings` is mounted only in the existing Games Settings tab. Its
+endpoint/workspace-scoped browser record survives unmount/reload, retains the
+original configuration bytes or manual-run ID after an uncertain response, and
+locks edits until that operation is resolved. Loading saved settings does not
+prove a pending save succeeded. A sync result of `pending` means a durable job
+request, not completed acquisition or an available Study card. Legacy lapse
+retry keeps its existing current-finding/source fences; encounter redelivery
+is not exposed through that legacy command.
+
+Games save and recovery explicitly query receipts at the Games API origin. The
+shared status reader retains its selected Learning origin by default for Study;
+Game Review derives its override from the actual command endpoint. Legacy account
+and automatic-sync controls/browser mirroring are removed, while global settings
+retain loaded compatibility values for Next Opponent and the old sync consumers.
+The still-used finding threshold remains separate and uses the global save.
+
+Settings explicitly distinguishes **Historical/manual import** from **Ongoing
+collection**. The existing `interval_seconds` field remains the wire choice:
+`null` disables recurrence and preserves arbitrary-width fixed historical ranges;
+ongoing collection requires an explicit integer interval of 60–86400 seconds.
+Both require increasing UTC dates and explicit account, repertoires, speeds and
+supported rated policy. Ongoing seeds must span 60–86400 seconds inclusive.
+Settings preserves existing UTC seconds/milliseconds and never shortens dates.
+`GameReview.configure` enforces seed width before the store write; the stored
+`SyncConfiguration` parser remains unchanged so an old incompatible range can
+still be read and corrected. A new incompatible ongoing write fails with an
+actionable 422 explaining how to adjust the seed or choose historical/manual
+import. Durable dispatch can initially return 202 before recording that failure.
+
+The selected ongoing worker advances acquisition windows from the saved seed;
+Settings does not start it or establish that it is active. Overlap and
+reconciliation cadence remain operator/process inputs checked by launch
+preflight, without Settings fields or a schema migration. A manual run requests
+the saved range or seed once, independently of ongoing process activation.
+An unconfirmed command, an accepted request with acquisition pending, acquisition
+complete, and actual Study effects are different facts. This collection-only
+release promises no Study reprioritization. The original save bytes, revision,
+operation ID and Games-origin recovery are retained, even if loading current
+settings displays another revision or an incompatible old range.
+
+This slice requires only the command gateway and schema already on main. It
+does not package or activate an optional provider worker, alter Study
+maintenance, or solve #581. The owning HTTP, native command and UI cases are
+`test_product_game_review_commands.py`,
+`test_product_game_review_commands_postgres.py`, and
+`product-game-sync-settings.test.tsx`. They are extracted from #558; prior
+evidence is retained there. Current focused qualification and exact tested
+revisions are recorded in PR #591; they do not establish installation or the
+complete Games-to-Study journey.
+
 ## Continuous-provider public priority intake (#489 / #491)
 
 The optional Games process receives an `EncounterFeedbackPort` from the

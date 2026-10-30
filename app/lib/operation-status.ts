@@ -2,7 +2,7 @@ import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } fro
 import { backgroundFetch } from "./background-fetch";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
-type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean };
+type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string };
 
 export class PendingOperationError extends Error {
   constructor(readonly operationId: string, message?: string, readonly blocked = false) {
@@ -31,7 +31,7 @@ export async function confirmOperationResponse(response: Response, options: Oper
 // Resolve a known command through the same receipt semantics as a 202 response.
 export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
   const request = options.fetch ?? (options.background ? backgroundFetch : fetch);
-  const status = await request(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`,
+  const status = await request(`${options.baseUrl ?? API_URL}/api/operations/${encodeURIComponent(operationId)}`,
     options.signal ? { signal: options.signal } : undefined);
   if (status.status === 404 && options.allowMissing) return status;
   if (!status.ok)

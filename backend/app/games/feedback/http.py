@@ -6,7 +6,7 @@ does not create a coordinator, access a table or call a Study implementation.
 import json
 from typing import Literal, Protocol
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import Field, field_validator
 
 from app.contracts.product_v02 import Identifier, Value
@@ -97,7 +97,8 @@ def create_game_review_router(operations: GameReviewOperations) -> APIRouter:
         return invoke(operations.configuration, provider)
 
     @router.post("/configuration", response_model=SyncConfiguration)
-    def configure(request: ConfigureRequest):
-        return invoke(operations.configure, request.configuration, request.expected_revision)
+    def configure(request: ConfigureRequest, idempotency_key: str | None = Header(default=None)):
+        options = {"operation_id": idempotency_key} if idempotency_key else {}
+        return invoke(operations.configure, request.configuration, request.expected_revision, **options)
 
     return router

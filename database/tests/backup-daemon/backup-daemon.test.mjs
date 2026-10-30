@@ -87,12 +87,12 @@ before(async () => {
     services.push(configuration.services["postgres-backup"]);
   }
   backupService = services[0];
-  for (const field of ["command", "entrypoint", "stop_signal", "image", "cpus", "mem_limit"])
+  for (const field of ["command", "entrypoint", "stop_signal", "image", "mem_limit"])
     assert.deepEqual(services[0][field], services[1][field], `Compose ${field} must agree`);
   assert.deepEqual(backupService.entrypoint, ["sh", "-ec"]);
   assert.equal(backupService.command.length, 1);
   assert.equal(backupService.stop_signal, "SIGTERM");
-  assert.equal(Number(backupService.cpus), 0.05);
+  assert.equal(backupService.cpus, undefined);
   assert.equal(Number(backupService.mem_limit), 96 * 1024 * 1024);
   // `compose config` escapes dollars for Compose round trips. Docker run takes
   // the final shell argument directly, so consume that escaping exactly once.
@@ -150,6 +150,7 @@ async function runCase(phase) {
       await writeFile(join(bin, commandName), `#!/bin/sh\nexec /bin/bash /helpers/fake-command.sh ${commandName} "$@"\n`, { mode: 0o755 });
     containerId = await docker([
       "run", "--detach", "--name", name, "--label", `tempo.backup-fixture=${fixtureOwner}`,
+      // Deliberately constrained shutdown scenario; ordinary service CPU is unrestricted.
       "--cpus", "0.05", "--memory", "96m", "--network", "none", "--tmpfs", "/var/lib/postgresql",
       "--stop-signal", backupService.stop_signal, "--stop-timeout", "10",
       "--mount", `type=bind,src=${backups},dst=/backups`,

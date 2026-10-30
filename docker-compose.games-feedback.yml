@@ -1,0 +1,36 @@
+# Optional Games provider process, composed with current docker-compose.yml.
+# Prepared inactive profile; explicit operator readiness and apply are required.
+# No default profile, Study dependency, API writer URL or Study delivery.
+services:
+  game-feedback-worker:
+    profiles: [games-feedback]
+    init: true
+    labels:
+      tempo.collection.owner: managed-game-collection
+      tempo.collection.mode: collect-only
+    mem_limit: 256m
+    pids_limit: 96
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # This prepared profile collects durable Games evidence without Study delivery.
+    # Empty operator inputs permit inactive packaging, never successful startup.
+    # The switch requires explicit numeric values; no overlap/window is inferred.
+    command: ["python", "-m", "app.product_composition.game_sync_current", "--workspace", "legacy",
+      "--collect-only", "--follow", "--overlap-seconds", "${TEMPO_PRODUCT_GAME_SYNC_OVERLAP_SECONDS:-}",
+      "--reconcile-interval-seconds", "${TEMPO_PRODUCT_GAME_SYNC_RECONCILE_INTERVAL_SECONDS:-}"]
+    environment:
+      TEMPO_PRODUCT_GAME_SYNC_ENABLED: "1"
+      TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_DATABASE_READ_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_REDIS_URL: redis://redis:6379/0
+      PGPASSFILE: /run/secrets/worker_pgpass
+      TZ: ${TZ:-America/New_York}
+    secrets:
+      - source: writer_pgpass
+        target: worker_pgpass
+        mode: 0400
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped

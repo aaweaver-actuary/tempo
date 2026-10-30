@@ -234,9 +234,9 @@ function run(command, argumentsList, options = {}) {
   if(command==='docker'&&argumentsList[0]==='run') {
     for(const value of [maintenanceHelpContainer,`tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`,
       `com.docker.compose.project=${project}`,'com.docker.compose.service=maintenance-help'])assert(argumentsList.includes(value),'Untracked standalone maintenance startup');
-    assert.equal(argumentsList[argumentsList.indexOf('--cpus')+1],'0.2');
+    assert(!argumentsList.includes('--cpus'));
     assert.equal(argumentsList[argumentsList.indexOf('--memory')+1],'256m');
-    return withDevelopmentStartup(['maintenance-help'],project,execute,{oneOff:true,allocations:{'maintenance-help':{cpus:0.2,memoryMiB:256}}});
+    return withDevelopmentStartup(['maintenance-help'],project,execute,{oneOff:true,allocations:{'maintenance-help':{memoryMiB:256}}});
   }
   if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
     const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
@@ -1044,7 +1044,7 @@ const actions = {
     maintenanceImageCleanupRequired = true;
     await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]));
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
-      run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--cpus", "0.2", "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `database/tooling/${script}`, "--help"]);
+      run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `database/tooling/${script}`, "--help"]);
     }
     console.log("PASS PostgreSQL maintenance image starts migration and import commands");
   },

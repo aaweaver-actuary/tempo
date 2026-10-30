@@ -7,10 +7,12 @@ from .ports import AcquisitionFailure, ConcurrentUpdate
 
 
 class FeedbackRunner:
-    def __init__(self, coordinator, *, owned_resources=(), lease_seconds: float = 120):
+    def __init__(self, coordinator, *, delivery_enabled: bool = True,
+                 owned_resources=(), lease_seconds: float = 120):
         if not 1 <= lease_seconds <= 300:
             raise ValueError("finite work lease required")
         self.coordinator = coordinator
+        self.delivery_enabled = delivery_enabled
         self._owned = tuple(owned_resources)
         self._stop = threading.Event()
         self._unit = threading.Lock()
@@ -30,7 +32,7 @@ class FeedbackRunner:
         try:
             coordinator = self.coordinator
             now = coordinator.clock.now()
-            if self._prefer_delivery:
+            if self.delivery_enabled and self._prefer_delivery:
                 pending = coordinator.store.pending_delivery(now)
                 if pending:
                     coordinator.deliver(pending)
@@ -51,7 +53,7 @@ class FeedbackRunner:
                         "error": str(error) if isinstance(error, AcquisitionFailure) else "optional_unit_failed"}))
                 self._prefer_delivery = True
                 return "page"
-            pending = coordinator.store.pending_delivery(now)
+            pending = coordinator.store.pending_delivery(now) if self.delivery_enabled else None
             if pending:
                 coordinator.deliver(pending)
                 self._prefer_delivery = False

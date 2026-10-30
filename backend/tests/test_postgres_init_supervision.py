@@ -55,7 +55,7 @@ def _owned(container_id, owner, image):
     assert not current["HostConfig"].get("PortBindings")
     assert all(mount["Type"] == "tmpfs" for mount in current["Mounts"])
     assert current["HostConfig"]["Memory"] == 384 * 1024 * 1024
-    assert current["HostConfig"]["NanoCpus"] == 400_000_000
+    assert current["HostConfig"]["NanoCpus"] == 0
     assert current["HostConfig"]["PidsLimit"] == 64
     assert not any("PASSWORD=" in entry for entry in current["Config"]["Env"])
     return current
@@ -175,7 +175,7 @@ def _case(image, owner, init_enabled, evidence):
         assert not _docker("ps", "-aq", "--filter", f"name=^/{name}$").stdout.strip()
         arguments = ["run", "--detach", "--pull=never", "--name", name,
             "--label", "tempo.owner=" + owner, "--label", "tempo.disposable=true",
-            "--network=none", "--memory=384m", "--memory-swap=384m", "--cpus=0.4",
+            "--network=none", "--memory=384m", "--memory-swap=384m",
             "--pids-limit=64", "--read-only", "--user=postgres",
             "--tmpfs", "/var/lib/postgresql:rw,nosuid,nodev,size=256m,mode=1777",
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777",

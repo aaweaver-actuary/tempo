@@ -7,6 +7,7 @@ import json
 import random
 import sqlite3
 import uuid
+from typing import Callable
 
 from tempo_legacy_database.connections import read_connection, background_read_connection
 from tempo_legacy_database.adapters import postgres_store
@@ -420,7 +421,24 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *
         return submit_background_write(operation, label=f"yield:{task_id}")
 
 
-def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
+def defer_task_for_connection_failure(task: dict, *, wake: Callable[[datetime], None] | None = None) -> bool:
+    """Reconcile an unchanged claim on a fresh writer after connection loss."""
+    eligible_at = _now() + timedelta(seconds=1)
+    def operation(database):
+        changed = storage.defer_for_connection_failure(database, (
+            _iso(eligible_at), _iso(), task['id'], task['generation'], task['lease_token']))
+        if changed:
+            _record_event(database, task['id'], task['generation'], 'yielded',
+                          task.get('phase'), 'database_connection_unavailable', kind=task['kind'])
+        return bool(changed)
+    with activity_gate.background_control():
+        changed = submit_background_write(operation, label=f"connection-recovery:{task['id']}")
+    if changed and wake is not None:
+        wake(eligible_at)
+    return changed
+
+
+def defer_task_for_transaction_timeout(task: dict, error: Exception, *, wake: Callable[[datetime], None] | None = None) -> bool:
     """Preserve a checkpoint and cool repeated deadline failures down to 60 s.
 
     A transaction deadline is not evidence of a competing lock. Keep its error
@@ -461,6 +479,8 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
     # ETA is only a capacity hint; execution-time claims still enforce eligibility.
     if committed_retry_at is not None and task['kind'] == 'daily_queue':
         wake_queue_refresh(eligible_at=committed_retry_at)
+    if committed_retry_at is not None and wake is not None:
+        wake(committed_retry_at)
     return committed_retry_at is not None
 
 

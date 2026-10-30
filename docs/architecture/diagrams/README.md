@@ -6,6 +6,9 @@ Database table/key/field views live in the [database directory index](../../../d
 
 The [current backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; reviewing or relocating source does not establish deployment isolation.
 
+The [verification workflow view](../../../.github/workflows/README.md#verification-without-publishing)
+records source-only checks and the removal of Pages publication.
+
 ## Source and status
 
 **SOURCE IMPLEMENTED / #503:** [Study recombination](../../../backend/app/study/recombination/README.md)
@@ -193,11 +196,12 @@ ownership; its status alone does not prove adoption.
 | [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md), [Content](../../../services/content/README.md), [Game Evidence](../../../services/game-evidence/README.md), [Intelligence](../../../services/intelligence/README.md). |
 | [Legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling) | System: where do current full-app dependencies cross those target boundaries? | Legacy app/backend owners; [Home](../../../app/views/home_view.tsx), [backend root](../../../backend/app/main.py), [Compose](../../../docker-compose.yml). |
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
-| [Managed builder allocation](../../../scripts/README.md#managed-builder-allocation) | Development resource boundary: how do daemon/requested CPU limits, memory admission, Study quiet control and verified cleanup compose? | Shared builder guard owner; [development-budget](../../../scripts/development-budget.mjs). Fixed aggregate CPU/internal-fanout policy removed in proposed source; real Study responsiveness and 1 CPU / 1536 MiB build remain unproved. |
+| [Managed builder allocation](../../../scripts/README.md#managed-builder-allocation) | Development resource boundary: how do unrestricted/default or explicit CPU limits, memory admission, Study quiet control and verified cleanup compose? | Shared builder guard owner; [development-budget](../../../scripts/development-budget.mjs). Ordinary CPU quotas and fixed internal fanout removed in source; memory/Study/ownership controls retained. Installed Study responsiveness and a real builder workload remain unproved. |
 | [Study dependency detail](../../../app/README.md#main-study-path-and-source-gap) | Component: which adapters and semantic ports serve Study, and how is optional workspace ownership excluded from Study? | Study browser/session and Learning owners (merged MAIN source); [connection](../../../app/lib/study-connection.ts), [ReviewStore](../../../services/learning/application/src/tempo_learning_review/ports.py). |
 | [Conditional Study build/offline assets](../../../static/README.md#conditional-study-build-and-offline-assets-main) | Build/data flow: can emitted optional chunks enter the required offline shell without executing? | Study build and offline-shell owners; [inventory plugin](../../../scripts/offline-shell-assets.ts), [service worker](../../../public/sw.js), [readiness client](../../../app/lib/offline-shell.ts). PR324 retains actual emitted-artifact and synthetic offline evidence; combined deployment unverified. |
 | [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the merged endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
 | [Games reader](../../../apps/workbench-web/README.md#merged-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
+| [Game Review commands and Settings recovery](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590) | Sequence: original browser intent, reader API dispatch, borrowed writer and durable receipt | Games command/API owner #590; current-main extraction untested, provider activation and Study settlement separate. |
 | [Review and lost-response recovery](../../../services/learning/runtime/README.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
 | [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
 | [Publication and activation](../../../services/content/README.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
@@ -242,3 +246,8 @@ Keep explanatory detail and source links beside each bounded view.
 This criterion preserves data, permissions, applicable gates, and independence
 of the changed path under [root working rules](../../../AGENTS.md). It does not
 assign unrelated extraction or waive safeguards.
+
+
+Task G collection operator: [canonical managed lifecycle view](../../../scripts/README.md#games-collection-operator).
+This proposed/unmerged source view distinguishes the Games-only switch from
+Study's independent lifecycle; installed resource isolation is unverified.

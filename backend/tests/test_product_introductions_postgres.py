@@ -48,7 +48,7 @@ def owned_postgres(tmp_path_factory):
         report["image_id"] = image
         report["container_id"] = docker("run", "--detach", "--name", container,
             "--label", "tempo.owner=" + identity, "--label", "tempo.disposable=true",
-            "--memory", "384m", "--memory-swap", "384m", "--cpus", "1", "--pids-limit", "128",
+            "--memory", "384m", "--memory-swap", "384m", "--pids-limit", "128",
             "--tmpfs", "/var/lib/postgresql:rw,size=512m", "--publish", "127.0.0.1::5432",
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
             "-c", "max_connections=16").stdout.strip()

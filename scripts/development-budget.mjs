@@ -10,6 +10,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readHostStudyActivity } from './host-study-activity.mjs';
 
+/** @typedef {{cpus?: number, memoryMiB: number, pidsLimit?: number}} DevelopmentAllocation */
 export const resourceBudgets = JSON.parse(readFileSync(new URL('../config/resource-budgets.json', import.meta.url), 'utf8'));
 const defaultLockDirectory = join(tmpdir(), 'tempo-development-resource-budget-v1.lock');
 const budgetDirectory = () => process.env.TEMPO_DEVELOPMENT_BUDGET_DIRECTORY ?? defaultLockDirectory;
@@ -49,6 +50,18 @@ export async function acquireDevelopmentAdmission({ directory = budgetDirectory(
 }
 
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
+
+/** Omission means unrestricted; explicit caps retain exact quota precision. */
+export function validateDevelopmentCpuLimit(cpus) {
+  if (cpus !== undefined && (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000)))
+    throw new Error('CPU limits require positive finite CPUs with an exact CPU quota');
+  return cpus;
+}
+
+function unrestrictedCpu(host) {
+  return (host.NanoCpus === undefined || host.NanoCpus === 0) &&
+    (host.CpuQuota === undefined || [0, -1].includes(host.CpuQuota));
+}
 
 /** Explicit or selected daemon allocation; never an idle CPU or Study safety claim. */
 export async function readDevelopmentCpuAllocation({ cpus, docker = defaultDocker } = {}) {
@@ -109,9 +122,9 @@ export async function reconcileDevelopmentBuilder(name, { directory = budgetDire
 
 function snapshotBuildLimits(limits) {
   const { cpus, memoryMiB } = limits ?? {};
-  if (!Number.isFinite(cpus) || !(cpus > 0) || !Number.isSafeInteger(cpus * 100000) ||
-      !Number.isSafeInteger(memoryMiB) || !(memoryMiB > 0))
-    throw new Error('Managed build limits require positive finite CPUs with an exact CPU quota and positive integer memoryMiB');
+  validateDevelopmentCpuLimit(cpus);
+  if (!Number.isSafeInteger(memoryMiB) || !(memoryMiB > 0))
+    throw new Error('Managed build limits require positive integer memoryMiB');
   if (memoryMiB > resourceBudgets.development.memoryMiB)
     throw new Error('Managed build limits exceed the aggregate development memory budget');
   return Object.freeze({ cpus, memoryMiB });
@@ -127,7 +140,8 @@ export function assertDevelopmentCapacity(requestedServices, project, docker = a
   for (const container of existing) {
     const host = container.HostConfig;
     const limit = host.NanoCpus / 1e9 || host.CpuQuota / host.CpuPeriod;
-    if (!Number.isFinite(limit) || !(limit > 0) || !Number.isFinite(host.Memory) || !(host.Memory > 0))
+    const validCpu = unrestrictedCpu(host) || Number.isFinite(limit) && limit > 0;
+    if (!validCpu || !Number.isFinite(host.Memory) || !(host.Memory > 0))
       throw new Error('An existing managed development container has unbounded resources');
     memory += host.Memory / 1024 / 1024;
   }
@@ -144,9 +158,11 @@ export function assertDevelopmentCapacity(requestedServices, project, docker = a
 }
 
 function validateDevelopmentAllocation(limit) {
-  if (!Number.isFinite(limit.cpus) || !(limit.cpus > 0) ||
-      !Number.isFinite(limit.memoryMiB) || !(limit.memoryMiB > 0))
-    throw new Error('Development allocations require positive finite CPU and memory limits');
+  validateDevelopmentCpuLimit(limit.cpus);
+  if (!Number.isFinite(limit.memoryMiB) || !(limit.memoryMiB > 0))
+    throw new Error('Development allocations require positive finite memory limits');
+  if (limit.pidsLimit !== undefined && (!Number.isSafeInteger(limit.pidsLimit) || limit.pidsLimit <= 0))
+    throw new Error('Development PID limits require a positive integer');
 }
 
 const synchronousDocker = args => execFileSync('docker', args, {encoding:'utf8',timeout:5000});
@@ -246,11 +262,8 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
     const buildConfig = join(buildDirectory, 'buildkitd.toml');
     await prepare(buildConfig);
     await quiet();
-    // The daemon's allocation is a kernel cap, not evidence of idle headroom.
-    const buildLimits = requestedLimits ?? snapshotBuildLimits({
-      cpus: await readDevelopmentCpuAllocation({docker}), memoryMiB: defaultMemoryMiB,
-    });
-    const cpuPeriod = 100000, cpuQuota = buildLimits.cpus * cpuPeriod;
+    const buildLimits = requestedLimits ?? snapshotBuildLimits({memoryMiB: defaultMemoryMiB});
+    const cpuPeriod = 100000, cpuQuota = buildLimits.cpus === undefined ? undefined : buildLimits.cpus * cpuPeriod;
     const managedIds = (await docker(['ps', '--filter', 'label=tempo.resource-class=development', '--format', '{{.ID}}'])).trim();
     const managedContainers = managedIds ? await docker(['inspect', ...managedIds.split(/\s+/)]) : '[]';
     assertDevelopmentCapacity([], '__builder', args => args[0] === 'ps' ? managedIds : managedContainers,
@@ -262,14 +275,15 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
     await docker(['buildx', 'create', '--name', name, '--driver', 'docker-container', '--buildkitd-config', buildConfig, '--driver-opt', 'image=moby/buildkit:rootless',
       '--driver-opt', `env.TEMPO_RESOURCE_OWNER=${token}`,
       '--driver-opt', `memory=${buildLimits.memoryMiB}m`,
-      '--driver-opt', `cpu-period=${cpuPeriod}`, '--driver-opt', `cpu-quota=${cpuQuota}`,
+      ...(cpuQuota === undefined ? [] : ['--driver-opt', `cpu-period=${cpuPeriod}`, '--driver-opt', `cpu-quota=${cpuQuota}`]),
       '--driver-opt', 'default-load=true']);
     await docker(['buildx', 'inspect', name, '--bootstrap']);
     const [container] = JSON.parse(await docker(['inspect', `buildx_buildkit_${name}0`]));
     const host = container.HostConfig;
-    if (!/^1000(?::1000)?$/.test(container.Config?.User ?? "") || host.Memory !== buildLimits.memoryMiB * 1024 * 1024 ||
-        host.CpuQuota !== cpuQuota || host.CpuPeriod !== cpuPeriod ||
-        (host.NanoCpus ?? 0) !== 0 && host.NanoCpus !== buildLimits.cpus * 1e9)
+    const cpuMatches = cpuQuota === undefined ? unrestrictedCpu(host)
+      : host.CpuQuota === cpuQuota && host.CpuPeriod === cpuPeriod &&
+        ((host.NanoCpus ?? 0) === 0 || host.NanoCpus === buildLimits.cpus * 1e9);
+    if (!/^1000(?::1000)?$/.test(container.Config?.User ?? "") || host.Memory !== buildLimits.memoryMiB * 1024 * 1024 || !cpuMatches)
       throw new Error('Managed builder kernel limits do not match the development budget');
     result = await build(name);
   } catch (error) { failure = error;
@@ -306,7 +320,8 @@ export function composeResourceLimits(services, owner, allocations = resourceBud
     const limit = allocations[name];
     if (!limit) throw new Error(`No bounded development allocation for ${name}`);
     validateDevelopmentAllocation(limit);
-    return [name, { cpus: limit.cpus, mem_limit: `${limit.memoryMiB}m`,
+    return [name, { ...(limit.cpus === undefined ? {} : {cpus: limit.cpus}), mem_limit: `${limit.memoryMiB}m`,
+      ...(limit.pidsLimit === undefined ? {} : {pids_limit: limit.pidsLimit}),
       labels: { 'tempo.resource-owner': owner, 'tempo.resource-class': 'development' } }];
   }));
   const memory = services.reduce((sum, name) => sum + allocations[name].memoryMiB, 0);
