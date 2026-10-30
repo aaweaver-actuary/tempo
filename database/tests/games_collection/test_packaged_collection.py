@@ -973,10 +973,15 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         stage = 'same_source_reconciliation_replay'
         with case.transaction() as database:
             captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
+            reconciliation_before = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
         inputs['now'] += 601
         (directory/'provider.json').write_text(json.dumps(inputs))
-        entry('foreground-worker','worker')
+        replay_run = entry('foreground-worker','worker')
+        assert replay_run['durable_checkpoints_retained'] and replay_run['bounded_units']>1
+        report['source_replay_run'] = replay_run
         with case.transaction() as database:
+            reconciliation_after = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
+            assert reconciliation_after>reconciliation_before, 'packaged_feedback_retained_reconciliation_did_not_complete'
             captures_after_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
             assert captures_after_replay>=captures_before_replay
             assert database.execute_native('SELECT COUNT(*) FROM product_feedback_sources').fetchone()[0]==1
