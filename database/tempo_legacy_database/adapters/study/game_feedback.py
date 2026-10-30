@@ -465,14 +465,29 @@ def next_feedback_preparation(database, day, *, now=None):
               AND buried.queue_date=%s AND buried.status='buried')
           AND (effect.status='pending' OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
-        ORDER BY CASE effect.payload_json::jsonb->'owner'->'progress'->>'stream' WHEN 'forward' THEN 0 ELSE 1 END,
-          effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',effect.effect_key LIMIT 1""",
+        ORDER BY CASE COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'stream',
+                              effect.payload_json::jsonb->'owner'->'qualification'->>'stream')
+                       WHEN 'forward' THEN 0 ELSE 1 END,
+          COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',
+                   effect.payload_json::jsonb->'owner'->'qualification'->>'determined_at')::timestamptz,
+          effect.effect_key LIMIT 1""",
         (now or datetime.now(timezone.utc),day,day)).fetchone()
     return PostgresGameFeedbackStore._effect(row) if row else None
 
 
-def pending_feedback_preparation(database, day):
-    return next_feedback_preparation(database, day) is not None
+def pending_feedback_preparation(database, day, *, before_priority=None):
+    observed = next_feedback_preparation(database, day)
+    if observed is None:
+        return False
+    if before_priority is None:
+        return True
+    facts = observed.progress or observed.qualification
+    pending = (facts.stream != 'forward',instant(facts.determined_at),effect_id(observed.key))
+    candidate = (before_priority['urgent_stream'] != 'forward',
+        instant(before_priority['urgent_determined_at']),before_priority['urgent_effect_id'])
+    # Ready live work can issue ahead of discretionary historical preparation;
+    # earlier same-class obligations still keep their actual FIFO authority.
+    return pending <= candidate
 
 
 def retained_encounter_introduction_query():
