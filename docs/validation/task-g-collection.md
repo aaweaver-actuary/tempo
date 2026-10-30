@@ -197,7 +197,7 @@ registrations and existing-export rows are repaired, but full checker closure is
 still unresolved: after scoped prerequisites it fails
 `Consumer bypasses public package: app/features/game-review/GameReviewView.tsx`
 on the main-identical relative Board UI stylesheet import. The package already
-exports `./styles.css`, while root adoption is incomplete. H confirmed the same bypass in `app/components/PositionViewer.tsx` and that the
+exports `./styles.css`, while root adoption is incomplete. H confirmed the same bypass in `app/features/repertoire-review/PositionViewer.tsx` and that the
 assembly maps only the renderer, not the exported stylesheet. The bounded repair
 belongs to the root frontend assembly owner: support the existing public CSS
 export in the assembly, replace both relative imports, and retain named consumer
