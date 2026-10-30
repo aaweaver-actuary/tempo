@@ -14,7 +14,7 @@ import re
 from app.contracts.product_v02.learning import FirstDepartureWitness
 from app.games.feedback.ports import Delivery, DeliveryDeferred
 from app.games.feedback.qualification import (acknowledge_control_delivery, acknowledge_qualified_delivery,
-    held_delivery, qualify_delivery)
+    delivery_for, held_delivery, qualify_delivery, select_first_boundary)
 from app.repertoire import project_capture, PreparedPublishedRepertoire
 from app.services.feedback_diagnostics import diagnose_feedback, feedback_span, feedback_work
 from .encounters import receive_admitted_encounter
@@ -180,9 +180,7 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
     from inspect import signature
-    from app.games.feedback.coordinator import delivery_for
     if selector is None:
-        from app.games.feedback.interfaces import select_first_boundary
         selector = select_first_boundary
     reads = PostgresReviewStore(connections)
     with feedback_span('source_configuration_read'):
@@ -269,7 +267,6 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
     health. Study maintenance may use it for an outstanding old priority receipt
     even when Games no longer has a pending delivery to retry.
     """
-    from app.games.feedback.coordinator import delivery_for
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
     if connections is None:
         if not callable(read):

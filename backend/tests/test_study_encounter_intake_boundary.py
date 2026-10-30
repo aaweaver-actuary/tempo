@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from test_product_game_lapse_postgres import owned_postgres,case,NOW
+from test_product_game_lapse_postgres import owned_postgres,case,NOW,_qualify_case
 from test_scaled_game_priority_postgres import scaled_queue
 from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
 from tempo_legacy_database.adapters.study.game_feedback_authority import (
@@ -84,6 +84,9 @@ def representative(case):
     from tempo_game_evidence_contracts.legacy import fingerprint
     command=command.model_copy(update={'decision':min(snapshot.decision_presentations,key=lambda item:item.route_id),
         'source':command.source.model_copy(update={'source_revision':1,'source_digest':fingerprint(capture['game'])})})
+    # scaled_queue qualified its earlier single-route shape. Replace only that
+    # owned fixture source after the representative source/alias changes.
+    _qualify_case(case, capture, command)
     try:yield capture,snapshot,command
     finally:
         with case.transaction() as database:
@@ -101,11 +104,48 @@ def state(database,case):
             WHERE o.card_id LIKE %s AND o.issued_as_head=1 ORDER BY q.id""",(case.card_id+':%',)).fetchall()])
 
 
+@contextmanager
+def without_games_producer(monkeypatch):
+    original = builtins.__import__
+    def guarded(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == 'app.games' or name.startswith('app.games.'):
+            # The current source fence parses these existing inert values. It
+            # must not acquire the optional GameReview/Coordinator capability.
+            values_only = (name == 'app.games.feedback.review' and bool(fromlist)
+                and set(fromlist) <= {'SyncConfiguration', 'ReviewUnavailable'})
+            if not values_only:
+                raise AssertionError('Study refresh loaded optional Games producer')
+        return original(name, globals, locals, fromlist, level)
+    with monkeypatch.context() as guard:
+        guard.setattr(builtins, '__import__', guarded)
+        with pytest.raises(AssertionError, match='optional Games producer'):
+            __import__('app.games.feedback.coordinator')
+        with pytest.raises(AssertionError, match='optional Games producer'):
+            __import__('app.games.feedback.review', fromlist=('GameReview',))
+        yield
+
+
+def assert_one_again_preserves_human_history(database, case, before, effect):
+    from app.study.game_feedback import effect_id
+    after = state(database, case)
+    assert len(after['reviews']) == len(before['reviews']) + 1
+    assert after['reviews'][:-1] == before['reviews']
+    assert after['receipts'] == before['receipts'] and after['protected'] == before['protected']
+    assert effect.progress.scheduling_review_id == effect.review_id
+    review = database.execute_native('SELECT internal_rating,source_kind,source_ref FROM reviews WHERE id=%s',
+        (effect.review_id,)).fetchone()
+    assert tuple(review) == ('again', 'game_lapse', effect_id(effect.key))
+    assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+        (case.card_id,)).fetchone()[0] == 1
+    return after
+
+
 def test_intake_never_calls_queue_and_commits_once_when_refresh_fails(case,monkeypatch):
     from app.services import queue_priority_promotion,queue_presentation,review_service,queue_application
     from tempo_legacy_database.adapters import postgres_store
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     with representative(case) as (capture,snapshot,command):
+        qualified = case.qualified
         with case.transaction() as database:before=state(database,case)
         def forbidden(*args,**kwargs):raise RuntimeError('queue processing unavailable')
         with monkeypatch.context() as guard:
@@ -122,17 +162,25 @@ def test_intake_never_calls_queue_and_commits_once_when_refresh_fails(case,monke
                 accepted=receive_captured_encounter(database,capture=capture,snapshot=snapshot,command=command,clock=lambda:NOW)
                 print('INTAKE_TOTAL_MS',round((time.perf_counter()-started)*1000,2))
                 assert accepted.admission_status=='pending' and accepted.observation_recorded
-                assert accepted.reason=='study_priority_pending' and accepted.available_by is None
+                assert accepted.reason=='first_departure_qualification_pending' and accepted.available_by is None
             with case.transaction() as database:
                 duplicate=receive_captured_encounter(database,capture=capture,snapshot=snapshot,command=command,clock=lambda:NOW)
                 assert duplicate.outcome=='duplicate' and duplicate.owner_receipt_id==accepted.owner_receipt_id
                 assert state(database,case)==before
+                upgraded = current_owner_encounter_intake(database, retained_owner_capture=capture,
+                    snapshot=snapshot, clock=lambda: NOW, prepared_decisions=qualified.prepared.prepared_decisions,
+                    qualification=qualified.prepared.qualification).accept_qualified(command,
+                        qualification=qualified.prepared.qualification)
+                assert upgraded.owner_receipt_id == accepted.owner_receipt_id
+                assert upgraded.reason == 'study_priority_pending' and upgraded.disposition == 'introduced_again'
+                assert state(database, case) == before
         with monkeypatch.context() as guard:
             guard.setattr(PostgresGameFeedbackStore,'promote_encounter',forbidden)
             with pytest.raises(RuntimeError,match='queue processing unavailable'):
                 with case.transaction() as database:
                     current_owner_encounter_feedback(database,retained_owner_capture=capture,snapshot=snapshot,
-                        clock=lambda:NOW,introductions=None,introduction_policy=None).refresh_encounter(command.key)
+                        clock=lambda:NOW,introductions=None,introduction_policy=None,
+                        prepared_decisions=qualified.prepared.prepared_decisions).refresh_encounter(command.key)
         # A stale Study-only ordering plan cannot roll back committed intake.
         from app.services.queue_priority_promotion import prepare_priority_promotion,StalePriorityPromotion
         plan=prepare_priority_promotion(NOW.date().isoformat(),case.card_id,read=case.transaction)
@@ -147,7 +195,8 @@ def test_intake_never_calls_queue_and_commits_once_when_refresh_fails(case,monke
             with case.transaction() as database:
                 database.execute_native('UPDATE background_tasks SET payload_json=%s WHERE id=%s',('{"after":"changed"}',cursor))
                 current_owner_encounter_feedback(database,retained_owner_capture=capture,snapshot=snapshot,
-                    clock=lambda:NOW,introductions=None,introduction_policy=None,prepared_priority=plan).refresh_encounter(command.key)
+                    clock=lambda:NOW,introductions=None,introduction_policy=None,prepared_priority=plan,
+                    prepared_decisions=qualified.prepared.prepared_decisions).refresh_encounter(command.key)
         with case.transaction() as database:
             assert database.execute_native('SELECT payload_json FROM background_tasks WHERE id=%s',(cursor,)).fetchone()[0]=='{"after":"before"}'
         with case.transaction() as database:
@@ -168,25 +217,22 @@ def test_study_refresh_without_games_consumes_accepted_priority(case,monkeypatch
         with case.transaction() as database:
             before=state(database,case)
             accepted=receive_captured_encounter(database,capture=capture,snapshot=snapshot,command=command,clock=lambda:NOW)
+            assert accepted.reason == 'first_departure_qualification_pending' and accepted.progress is None
             task=durable_tasks.enqueue_task_in_transaction(database,KIND,case.card_id,{'after':''})
             storage.claim_lease(database,('study-refresh-lease',(NOW+timedelta(days=2)).isoformat(),
                 NOW.isoformat(),NOW.isoformat(),task['id'],task['generation']))
             claimed=dict(storage.task_by_id(database,(task['id'],)))
-        original=builtins.__import__
-        def no_games(name,*args,**kwargs):
-            if name=='app.games' or name.startswith('app.games.'):
-                raise AssertionError('Study refresh loaded optional Games producer')
-            return original(name,*args,**kwargs)
-        monkeypatch.setattr(builtins,'__import__',no_games)
-        assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
-            capture=lambda *_:capture,clock=lambda:NOW) is False
+        with without_games_producer(monkeypatch):
+            assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
+                capture=lambda *_:capture,clock=lambda:NOW) is False
         with case.transaction() as database:
             effect=PostgresGameFeedbackStore(database).get(command.key)
             assert effect.status=='applied' and effect.admission_status=='available'
-            assert effect.encounter==command and effect.disposition=='review_priority'
+            assert effect.encounter==command and effect.disposition=='introduced_again'
             assert current_owner_encounter_intake(database,retained_owner_capture=capture,snapshot=snapshot,
                 clock=lambda:NOW).encounter_status(command.key).owner_receipt_id==accepted.owner_receipt_id
-            assert state(database,case)==before and len(before['reviews'])==9 and len(before['receipts'])==9 and len(before['protected'])==25
+            assert_one_again_preserves_human_history(database, case, before, effect)
+            assert len(before['reviews'])==9 and len(before['receipts'])==9 and len(before['protected'])==25
             assert database.execute_native('SELECT position FROM daily_queue WHERE card_id=%s AND queue_date=%s',
                 (case.card_id,NOW.date().isoformat())).fetchone()[0]==1
 

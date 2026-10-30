@@ -134,6 +134,11 @@ flowchart LR
   C --> Provider["Acquisition capability: finite timeout"]
   C --> Pure["Verified normalization / same-color snapshots / per-repertoire comparer"]
   Pure --> First["Pure global first-boundary selector / complete relevant scope"]
+  StudyPrep["Accepted Study closed-read qualification composition"] --> Qualification["Public pure qualification leaf\nimmutable delivery facts + first-boundary policy"]
+  Qualification --> First
+  Qualification --> Envelope["Games-owned immutable Delivery / original identity"]
+  C --> Qualification
+  StudyPrep --> PG
   First -->|"selected result + original determination marker"| Store
   Pure -->|"comparison unavailable: retain valid source + diagnostic"| Unresolved["Unresolved comparison / acquisition may advance"]
   Unresolved --> Store
@@ -146,7 +151,9 @@ flowchart LR
   Study["normal Study"] --> Receipt
 ```
 
-Study has no new Games import/call/wait/lifecycle dependency. Shared host/database
+Study's domain and receipt writers do not call the optional Games producer.
+Accepted-work preparation uses the public pure qualification leaf and retained
+owner reads; it does not load Coordinator, provider or job execution. Shared host/database
 contention remains a deployment limit, not proven isolation. Provider adapters
 must enforce finite I/O and bounded pages; cooperative cancellation cannot
 interrupt a provider that violates that contract. A 120-second reclaim lease
@@ -178,6 +185,25 @@ the first actual boundary and retains the explicit status, actor, one-based ply,
 pre-move position, expected alternatives, complete relevant scope revisions,
 surviving authored occurrences and exact target, if one exists. Ended competing
 routes and missing selected scope cannot be dropped to manufacture authority.
+
+`app.games.feedback.qualification` is the inert public qualification leaf for
+closed-read composition: `delivery_for` constructs the original immutable
+envelope and `select_first_boundary` supplies the unchanged pure policy. It
+imports only value contracts, the Games-owned value module and pure selection;
+it creates no producer, worker, provider, connection or startup dependency.
+`stable_id`, `source_revision` and `delivery_for` live with those immutable
+workflow facts in `ports.py`; `coordinator.py` retains exact compatibility
+reexports and unchanged operation IDs/command bytes. The retained source writer
+fence still validates its existing `SyncConfiguration` and `ReviewUnavailable`
+value/error types; importing the `GameReview` facade is not required.
+
+An old raw missed request is accepted as
+`first_departure_qualification_pending`, with its identity/history retained.
+Only real complete-scope qualification authorizes the current G02 consequence:
+one actual `game_lapse` Again for introduced work, followed by ordinary Study
+issuance and genuine settlement. Independent maintenance revalidates that owner
+proof without invoking the optional producer; a pending receipt alone grants no
+queue or scheduling authority.
 
 `project_encounters` emits at most one missed command, only for `own_actionable`.
 Correct unseen encounters and later reentry findings remain diagnostics without

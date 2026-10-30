@@ -1,6 +1,8 @@
 """Games-owned workflow facts and capabilities; shared DTOs stay with T01."""
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
@@ -114,6 +116,25 @@ class Delivery(Value):
     @property
     def command(self) -> GameLapse | GameEncounter | GameEffectControl:
         return self.control if self.control is not None else (self.encounter if self.encounter is not None else self.lapse)
+
+
+def stable_id(*parts: object) -> str:
+    return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
+    if isinstance(command, GameLapse):
+        return command.finding.source_revision
+    return command.source.source_revision if isinstance(command, GameEncounter) else command.source_revision
+
+
+def delivery_for(source_key: str, command: GameLapse | GameEncounter | GameEffectControl) -> Delivery:
+    """Construct immutable delivery facts without loading an optional producer."""
+    kind = "lapse" if isinstance(command, GameLapse) else ("encounter" if isinstance(command, GameEncounter) else command.action)
+    return Delivery(operation_id=stable_id(kind, command.key.logical_id(), source_revision(command)), source_key=source_key,
+                    lapse=command if isinstance(command, GameLapse) else None,
+                    encounter=command if isinstance(command, GameEncounter) else None,
+                    control=command if isinstance(command, GameEffectControl) else None)
 
 
 class PageCommit(Value):
