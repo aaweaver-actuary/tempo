@@ -56,6 +56,12 @@ positions; stable urgent priority; versioned fingerprints and preparation fences
 The named fresh-urgent-cycle and pre-mutation provenance cases distinguish new
 obligations from positioned retries and keep replacement ranks/unmixed additions
 dirty until actual presentation. Verified controlled edits retain the sequence.
+`test_urgent_target_precedes_unissued_historical_flags_but_preserves_actual_attempt`
+and `test_live_urgent_cohort_is_durable_fifo_before_history_and_ordinary_work`
+own #622's urgent exception, forward/history order and six-plus cohort FIFO.
+The old expectation that unissued guided/reinforcement flags pin a target was
+changed under the explicit first-departure next-head requirement; genuine
+issued/evidence/explicit/unavailable protections remain covered.
 `test_queue_presentation.py::test_runtime_balances_admitted_work_and_replays_without_moving_issued_head`
 owns actual admission/refresh/reload through the independent runtime and restricted
 PostgreSQL. Existing `test_eligibility.py`, `test_families.py` and

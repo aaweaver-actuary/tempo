@@ -130,6 +130,14 @@ five-card promise. Actual first-head generation and ordinal are read from the
 existing [attempt origins](../issuance.py), at schema55; no queue position or
 priority receipt stands in for issuance.
 
+The prepared ownership fingerprint treats the one intended scheduling target
+separately: its immutable content/revision, repertoire, archived/validation and
+supersession facts remain fenced while its planned Again/introduction can change
+scheduling fields. Other cards retain their full row-version fence. Queue row
+ownership, actual issuance, evidence and teaching facts are still rechecked.
+Current authority/card locking is required before any target mutation; this
+presentation preparation never grants that authority.
+
 The permanent owning regression is
 [test_scaled_game_priority_postgres.py](../../../../../backend/tests/test_scaled_game_priority_postgres.py):
 805/1005queued rows,25protected attempts, nine real reviews, one priority effect

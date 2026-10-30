@@ -29,6 +29,8 @@ from . import study_attempt_commands  # noqa: F401 - registers Study attempt com
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
 from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
+from .product_composition.next_card_priority import register_current_next_card_priority
+register_current_next_card_priority()
 from . import review_commands  # noqa: F401 - registers foreground review command
 from . import opening_evidence_api  # noqa: F401 - registers shadow checkpoint command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command

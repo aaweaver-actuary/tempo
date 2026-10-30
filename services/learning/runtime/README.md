@@ -232,12 +232,14 @@ each cohort. Frozen selection and new-opening relative rank remain authoritative
 opening slots can move across other categories. This policy also runs in legacy
 Study-only refresh, without enabling optional analysis or admission providers.
 
-Issued attempts, teaching/presentation checkpoints, unavailable rows, explicit
-entries and positioned repeats keep their physical positions. Mandatory real-game
-misses retain priority among the remaining movable slots. Existing failed
-remediation repeats and first-success reinforcement retain their positioned
-behavior; a fresh urgent admission after an earlier completed cycle can still
-move into priority. A receipt carries across a controlled completion, burial or
+Issued attempts, active presentation evidence, unavailable rows and explicit user
+placement keep their physical positions. The first-departure urgent overlay can
+move ahead of unissued teaching/repeat/failure flags while preserving those
+candidate payloads. Without urgent work, ordinary mixing retains its positioned
+repeat behavior. Ready forward work precedes historical drain; original
+determination and stable effect identity define FIFO within each class. Six
+simultaneous targets remain visible backlog rather than an impossible five-card
+claim. A receipt carries across a controlled completion, burial or
 positioned insertion only if the pre-mutation membership and frozen activation
 matched that receipt. Unmixed admissions and replacement ranks remain dirty.
 Reloads and refreshes reuse the saved order; legacy prepared publication

@@ -9,6 +9,31 @@ from tempo_legacy_database.adapters.study.issuance import (
 )
 
 
+def qualified_command(case, clock):
+    """Typed owner-port fixture; global source validation belongs to #620/#624."""
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    from app.study.encounter_feedback import encounter_digest
+    from test_product_game_lapse import qualification_for
+    mapping = case.decisions.mappings[0].model_copy(update={'route_id':'route-a','route_ply':0})
+    command = GameEncounter(key=case.lapse.key,
+        source=IntroductionGameScope(provider=case.lapse.key.provider,game_id=case.lapse.key.game_id,
+            source_revision=case.lapse.finding.source_revision,source_digest=case.lapse.finding.source_digest),
+        decision=mapping,expected_uci=mapping.selected_response_uci,
+        played_uci=case.lapse.finding.played_uci,observation='missed',
+        detected_at=clock.isoformat(),occurred_at=case.lapse.occurred_at,payload_digest='0'*64)
+    command = command.model_copy(update={'payload_digest':encounter_digest(command)})
+    qualification = qualification_for(command)
+    class Decisions:
+        def current_qualified(self, candidate, witness):
+            assert candidate == command and witness.matches(candidate)
+            return (mapping,)
+        def current_encounter(self, candidate):
+            assert candidate == command
+            return (mapping,)
+    return command,qualification,Decisions()
+
+
 def entry(database, card_id, day, *, position=0):
     return database.execute_native("""INSERT INTO daily_queue(queue_date,card_id,cycle,position)
         VALUES(%s,%s,(SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE card_id=%s),%s)
@@ -72,3 +97,72 @@ def test_native_prepared_priority_moves_unissued_repeat_but_preserves_issued_ori
         stamp_issued_head(database, repeated, case.card_id, 1)
         with pytest.raises(PriorityPositionConflict):
             apply_priority_positions(database, NOW.date().isoformat(), ((repeated,21,22),))
+
+
+def test_native_pending_reset_saves_current_review_then_issues_urgent_target_first(case, monkeypatch):
+    from app import queue_commands
+    from app.contracts.transport.study import ReviewRequest
+    from app.services import queue_next_card
+    from app.services.learning_review_adapter import LearningReviewAdapter, command_from_request
+    from app.services.queue_priority_promotion import prepare_priority_promotion
+    from app.study.encounter_feedback import EncounterFeedback
+    from app.study.interfaces.next_card import NextCardPreparation
+    from tempo_learning_review import ReviewPolicy, submit_review
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, feedback_queue_priorities
+    from tempo_legacy_database.adapters import postgres_store
+    clock = NOW+timedelta(days=10)
+    day = clock.date().isoformat()
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda *_args,**_kwargs: day)
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    command,qualification,decisions = qualified_command(case,clock)
+    active, ordinary = case.card_id+'-active', case.card_id+'-ordinary'
+    with case.transaction() as database:
+        for position,card_id in enumerate((active,ordinary)):
+            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,
+                state,due_date,content_type) SELECT %s,repertoire_id,kind,start_fen,moves_json,
+                'learning',%s,'tactic' FROM cards WHERE id=%s""", (card_id,day,case.card_id))
+            entry(database,card_id,day,position=position)
+        ids = {row['card_id']:row['id'] for row in database.execute_native(
+            'SELECT id,card_id FROM daily_queue WHERE queue_date=%s',(day,)).fetchall()}
+        entry(database,case.card_id,day,position=2)
+        stamp_issued_head(database,ids[active],active,1,now=clock-timedelta(seconds=1))
+        accepted = EncounterFeedback(PostgresGameFeedbackStore(database),decisions,
+            clock=lambda:clock,introductions=None,introduction_policy=None).accept_qualified(command,qualification=qualification)
+        assert accepted.admission_status == 'pending' and accepted.progress.scheduling_review_id is None
+    request = ReviewRequest(outcome='correct',queue_entry_id=ids[active],expected_revision=1,
+        attempt_id=active+'-review',prepared_next=dict(queue_entry_id=ids[ordinary],card_id=ordinary,
+            revision=1,cycle=0,local_date=day))
+    with case.transaction() as database:
+        adapter = LearningReviewAdapter(database,request,observed_at=clock,
+            policy_provider=lambda:ReviewPolicy('UTC',7))
+        completed = submit_review(adapter,command_from_request(active,request),
+            lambda:adapter.context(command_from_request(active,request))).as_dict()
+        assert completed['persisted'] and 'prepared_continuation' not in completed
+        assert attempt_issuance(database,ids[ordinary],ordinary,1) is None
+    # The explicit command's owner capability performs preparation with closed
+    # readers before its own writer, independently of an optional Games process.
+    def prepare():
+        priority = prepare_priority_promotion(day,case.card_id,read=case.transaction,
+            priority_order=dict(urgent_determined_at=qualification.determined_at,
+                urgent_stream='forward',urgent_effect_id='fixture-effect'))
+        with case.transaction() as database:
+            available = EncounterFeedback(PostgresGameFeedbackStore(database,prepared_priority=priority),
+                decisions,clock=lambda:clock,introductions=None,introduction_policy=None).refresh_encounter(command.key)
+            assert available.admission_status == 'available' and available.progress.scheduling_review_id is not None
+        return NextCardPreparation(True)
+    monkeypatch.setattr(queue_next_card,'_prepare',prepare)
+    assert queue_next_card.prepare_next_card_command({}).progressed
+    monkeypatch.setattr(queue_commands.queue_storage,'stamp_issued_head',
+        lambda database,entry_id,card_id,revision: stamp_issued_head(database,entry_id,card_id,revision,
+            now=clock+timedelta(microseconds=1)))
+    with case.transaction() as database:
+        target = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",(case.card_id,)).fetchone()[0]
+        assert queue_commands.issue_queue_head(database,dict(queue_date=day,entry_id=target,
+            card_id=case.card_id,expected_revision=1)) == {'issued':True}
+        effect = PostgresGameFeedbackStore(database).get(command.key)
+        assert effect.progress.first_issued.queue_entry_id == target
+        assert effect.progress.first_issued_ordinal == 1
+        assert effect.progress.first_issued.issuance_sequence > effect.progress.remediation_fence.after_issuance_sequence
+        assert feedback_queue_priorities(database,[case.card_id])[case.card_id]['urgent_stream'] == 'forward'
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='study'",(active,)).fetchone()[0] == 1
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 1

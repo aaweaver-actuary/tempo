@@ -9,6 +9,11 @@ def is_postgres_connection(database):
     return isinstance(database, PostgresConnection)
 
 
+def study_timezone(database):
+    row = database.execute('SELECT timezone FROM settings WHERE id=1').fetchone()
+    return row[0] if row else None
+
+
 def warm_queue_refresh_sql(warm_completion_sql):
     from tempo_legacy_database.adapters.postgres_store import postgres_sql
 
@@ -59,6 +64,13 @@ def issued_origin(database, entry_id, card_id, expected_revision):
             "AND revision=? AND issued_as_head=1",
             (entry_id, card_id, expected_revision),
         ).fetchone()
+
+
+def issued_origin_day(database, entry_id, card_id, expected_revision):
+    row = database.execute("""SELECT queue_date FROM queue_attempt_origins
+        WHERE queue_entry_id=? AND card_id=? AND revision=? AND issued_as_head=1""",
+        (entry_id, card_id, expected_revision)).fetchone()
+    return row[0] if row else None
 
 
 def stamp_issued_head(database, entry_id, card_id, expected_revision):

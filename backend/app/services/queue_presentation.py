@@ -20,12 +20,17 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
     prioritized_card_ids = tuple(row['card_id'] for row in rows
         if row['gameplay_priority_reason'] in game_priority_reasons)
     owed_card_ids = set()
+    ready_priority = {}
     if prioritized_card_ids:
-        from tempo_legacy_database.adapters.study.game_feedback import owed_feedback_card_ids
+        from tempo_legacy_database.adapters.study.game_feedback import owed_feedback_card_ids, feedback_queue_priorities
         owed_card_ids = owed_feedback_card_ids(database, prioritized_card_ids, read=read, include_regrouped=bool(regrouped))
+        ready_priority = feedback_queue_priorities(database, prioritized_card_ids, read=read)
     for row in rows:
-        if row['gameplay_priority_reason'] in game_priority_reasons and row['card_id'] not in owed_card_ids:
-            row['gameplay_priority_reason'] = None
+        if row['gameplay_priority_reason'] in game_priority_reasons:
+            if row['card_id'] not in owed_card_ids or row['card_id'] not in ready_priority:
+                row['gameplay_priority_reason'] = None
+            else:
+                row.update(ready_priority[row['card_id']])
         from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
         if presentation_storage.is_postgres_connection(database) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
             from .legacy_study_remediation import has_current_miss

@@ -5946,3 +5946,12 @@ fresh matched game emits an owner command is replaced by
 `test_matched_new_capture_commits_source_checkpoint_without_study_effect`, as
 required by #618/#619. Frozen matched commands remain independently covered by
 the retained-qualification fixture; their old bytes are never rewritten.
+
+## First-departure urgent head and actual issuance (#622)
+
+- `backend/tests/test_queue_attempt_issuance.py::test_actual_issuance_generation_is_once_and_prefetch_is_not_counted` and `test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation` retain real authority without inventing historical stamps.
+- `backend/tests/test_study_attempt_issuance_postgres.py` uses the existing disposable owning PostgreSQL fixture. Named cases cover committed ordinal counting across rollback gaps/reload/rollover, unknown legacy issuance, unissued repeat versus issued position guards, and `test_native_pending_reset_saves_current_review_then_issues_urgent_target_first`: one real saved current review, one actual Again, then target authority at ordinal one. Its typed current-decision fixture is a component seam; #624 owns complete provider/source authority assembly.
+- `backend/tests/test_prepared_review_continuation.py::test_ready_local_feedback_declines_ordinary_successor_without_rolling_back_review`, `test_next_card_preparation_is_an_explicit_command_not_a_queue_read`, and `test_current_queue_day_and_review_day_share_configured_timezone` own bounded command/continuation/day behavior.
+- `backend/tests/test_queue_refresh_read_database_split.py::test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority` distinguishes pending/priority-only evidence from ready Study authority; existing reader plumbing retains closed paged reads.
+- `tests/unit/prepared-review-continuation-regressions.test.ts::determined_local_priority_prepares_before_new_head_without_showing_an_ordinary_successor` and `priority_reconciliation_retains_issued_board_and_replaces_only_upcoming_work` own explicit preparation and active-board preservation. Existing offline/replay/prepared-continuation cases remain controls.
+- Pure urgent FIFO and unissued historical-flag regressions are registered in `services/learning/runtime/REGRESSIONS.md`. These source/component checks do not establish installed feedback activation or a provider-to-browser deadline.

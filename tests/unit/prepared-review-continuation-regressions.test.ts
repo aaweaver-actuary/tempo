@@ -26,6 +26,55 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it('determined_local_priority_prepares_before_new_head_without_showing_an_ordinary_successor', async () => {
+  const active = useTrainingStore.getState().attempt;
+  let releasePreparation!: (response: Response) => void;
+  const preparation = new Promise<Response>(resolve => { releasePreparation = resolve; });
+  let queueReads = 0;
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/api/queue/prepare-next')) {
+      expect(options?.method).toBe('POST');
+      return preparation;
+    }
+    queueReads++;
+    if (queueReads === 1) return Response.json({ detail: { code: 'study_feedback_preparation_pending' } }, { status:503 });
+    return Response.json({ cards:[queue[2],queue[1]],count:2,local_date:localDayKey() });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const seen: number[] = [];
+  const unsubscribe = useTrainingStore.subscribe(state => {
+    const id = state.getCard()?.queueEntryId;
+    if (id && seen.at(-1) !== id) seen.push(id);
+  });
+  try {
+    const loading = fetchAndInitializeQueue(true,{replaySavedReviews:false});
+    await vi.waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.endsWith('/api/queue/prepare-next'))).toBe(true));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+    expect(useTrainingStore.getState().attempt).toEqual(active);
+    releasePreparation(Response.json({progressed:true,pending:false,reason:null}));
+    await loading;
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(503);
+    expect(seen).not.toContain(502);
+    expect(fetcher.mock.calls.find(([url]) => url.endsWith('/api/queue/prepare-next'))?.[1]?.method).toBe('POST');
+    // This bounded local next-card path must progress during continuous Study;
+    // it does not borrow the optional provider/background quiet-window gate.
+    expect(fetcher.mock.calls.filter(([url]) => url.includes('/api/queue/window'))
+      .every(([,options]) => !options?.headers)).toBe(true);
+  } finally { unsubscribe(); }
+});
+
+it('priority_reconciliation_retains_issued_board_and_replaces_only_upcoming_work', async () => {
+  const active = useTrainingStore.getState().attempt;
+  const board = useTrainingStore.getState().getCard();
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+    cards:[queue[0],queue[2],queue[1]],count:3,local_date:localDayKey(),
+  })));
+  await fetchAndInitializeQueue(false,{replaySavedReviews:false,preservePreparedAttempt:true});
+  expect(useTrainingStore.getState().getCard()).toEqual(board);
+  expect(useTrainingStore.getState().attempt).toEqual(active);
+  expect(useTrainingStore.getState().practiceCards.map(card => card.queueEntryId)).toEqual([501,503,502]);
+});
+
 it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revision", "cycle", "date", "failed-flag", "failed-marker"])(
   "flush_settlement_audit overlapping continuation observers preserve %s authorization boundary", async invalidation => {
     const submitted = useTrainingStore.getState().attempt;

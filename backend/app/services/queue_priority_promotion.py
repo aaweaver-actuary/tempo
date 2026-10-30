@@ -42,7 +42,7 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
     """
     prepare_presentation_queries(MISS_REASON)
     with read() as database:
-        before = priority_ownership_state(database,queue_date)
+        before = priority_ownership_state(database,queue_date,target_card_id=card_id)
     rows, after = [], 0
     while True:
         with read() as database:
@@ -54,7 +54,7 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
             break
         after = page[-1]['id']
     with read() as database:
-        if priority_ownership_state(database,queue_date) != before:
+        if priority_ownership_state(database,queue_date,target_card_id=card_id) != before:
             raise StalePriorityPromotion('priority_ownership_changed_during_preparation')
     targets = [row for row in rows if row['card_id'] == card_id]
     if len(targets) != 1:

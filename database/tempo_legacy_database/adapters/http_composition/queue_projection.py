@@ -193,6 +193,14 @@ def available_head(database, current_day: Callable[[], str], *, miss_reason: str
     ).fetchone()
 
 
+def retained_entry_issued(database, entry_id, original_day, *, miss_reason):
+    return database.execute(availability.available_attempt_sql(miss_reason) + """
+        AND q.id=? AND EXISTS(SELECT 1 FROM queue_attempt_origins origin
+          WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
+            AND origin.revision=c.revision AND origin.issued_as_head=1)""",
+        (original_day, entry_id)).fetchone()
+
+
 def mark_entry_failed(database, entry_id: int):
     return database.execute(
         """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'

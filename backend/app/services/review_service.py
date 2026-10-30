@@ -119,7 +119,7 @@ def ensure_card_queued_after(
         if (not protect_presented or preserve_order
                 or (day,card_id,priority_reason) != (prepared_priority.queue_date,
                     prepared_priority.card_id,prepared_priority.priority_reason)
-                or storage.priority_ownership_state(database,day) != prepared_priority.ownership_state):
+                or storage.priority_ownership_state(database,day,target_card_id=card_id) != prepared_priority.ownership_state):
             raise StalePriorityPromotion('priority_presentation_changed')
     entry = storage.queued_entry(database, day, card_id)
     if prepared_priority is not None and (not entry or entry['id'] != prepared_priority.entry_id):

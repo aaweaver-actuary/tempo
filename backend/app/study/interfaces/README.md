@@ -41,6 +41,12 @@ flowchart LR
   Intake -->|accepted / pending once| Evidence[Study-owned effect ledger]
   Evidence --> Refresh[Independent Study refresh]
   Refresh --> Queue[Canonical Study queue]
+  Browser[Ordinary Study client] -->|explicit prepare-next command| Next[Bounded local preparation outside writer]
+  Evidence --> Next
+  Next -->|Study-owned apply and promotion| Queue
+  Queue --> Head[Existing head writer rechecks local pending work]
+  Head --> Origins[Retained first issuance generation and time]
+  Origins -->|actual pickup and completion fence| Evidence
 ```
 
 This depicts the source boundary; shared host/database resource isolation and
@@ -62,3 +68,27 @@ PostgreSQL fixture and a cached qualified worker image, with no pull/build.
 `TEMPO_PRIORITY_WORKER_IMAGE` may select that test artifact; the default is the
 retained `ea0b9746` image. It retains the 250ms transaction limit under constrained
 worker/database CPU, and tests pickup/replay against stale queue statistics.
+
+## Explicit next-card preparation
+
+[`NextCardPreparation`](next_card.py) reports one bounded local command unit.
+The composition root injects optional new Games handoff only with verified mode
+intent. Accepted Study obligations use their own owner independently of that
+producer. Construction performs no reads, opens no connection and starts no work.
+`queue.prepare_next` prepares outside its command writer; genuine head issuance
+only rechecks pending/ready facts and stamps actual attempt authority.
+
+A new ordinary prepared successor is declined while actionable local work needs
+preparation. The user's real review commits and replays normally. The next queue
+acquisition receives the explicit `study_feedback_preparation_pending` response,
+performs `POST /api/queue/prepare-next` through the existing foreground worker,
+then rereads before installing a new card. Ordinary queue GETs never prepare an
+effect. An already-issued board remains valid, including over rollover; upcoming
+unissued data can reconcile without changing its moves, generation or result.
+The bounded local request remains foreground work during continuous practice;
+optional provider HTTP and full projection retain their background gates.
+
+Schema55 records actual origins once. See the [canonical data dictionary](../../../../database/tempo_legacy_database/schema/study-queue-review-1/README.md#publicqueue_attempt_origins).
+Read-only status may hydrate a missed optional receipt projection from that same
+ledger; no read invents issuance or mutates the receipt. The final provider/mode
+assembly and installed proof remain #624 responsibilities.

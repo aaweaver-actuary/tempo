@@ -89,8 +89,20 @@ def _presentation_reader(rows, *, owed=(), reviewed=(), eligible=(), failure=Non
     return read, calls
 
 
+def _ready_priority_capability(monkeypatch, identities):
+    # This suite owns bounded-reader plumbing. The native #622 owner case proves
+    # the real ready/reset receipt query; a pending receipt alone is not ready.
+    from tempo_legacy_database.adapters.study import game_feedback
+    def ready(database, requested, *, read=None):
+        assert database is None and callable(read)
+        return {identity:dict(urgent_stream='forward',urgent_determined_at='2026-10-28T00:00:00Z',
+            urgent_effect_id='effect-'+identity) for identity in identities if identity in requested}
+    monkeypatch.setattr(game_feedback,'feedback_queue_priorities',ready)
+
+
 def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection(monkeypatch):
     monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
+    _ready_priority_capability(monkeypatch, ('card-1','card-2'))
     rows = [_priority_presentation_row(1, 'product_game_lapse'),
             _priority_presentation_row(2, 'product_game_encounter', cycle=1),
             _priority_presentation_row(3, None, admission_kind='explicit')]
@@ -105,6 +117,7 @@ def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection
     assert [row['eligible'] for row in result] == [True, True, False]
     assert [row['position'] for row in result] == [1, 2, 3]
     assert result[2] == {**rows[2], 'eligible': False}
+    assert result[0]['urgent_stream'] == result[1]['urgent_stream'] == 'forward'
     owed_calls = [(sql, ids) for sql, ids in calls if 'FROM study_game_feedback' in sql]
     assert len(owed_calls) == 1 and owed_calls[0][1] == ('card-1', 'card-2')
     assert '?' in owed_calls[0][0] and all(identity not in owed_calls[0][0] for identity in ('card-1', 'card-2'))
@@ -112,6 +125,7 @@ def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection
 
 def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatch):
     monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
+    _ready_priority_capability(monkeypatch, ('card-1','card-2'))
     rows = [_priority_presentation_row(number,
         'product_game_lapse' if number % 2 else 'product_game_encounter') for number in range(1, 16)]
     for number, row in enumerate(rows):
@@ -127,6 +141,15 @@ def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatc
     owed_calls = [(sql, ids) for sql, ids in calls if 'FROM study_game_feedback' in sql]
     assert len(owed_calls) == 1 and owed_calls[0][1] == ('card-1', 'card-2', 'card-3', 'card-4')
     assert "status IN ('pending','applied')" in owed_calls[0][0]
+
+
+def test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority(monkeypatch):
+    monkeypatch.setattr(reads.postgres_store,'configured',lambda:False)
+    _ready_priority_capability(monkeypatch, ())
+    rows = [_priority_presentation_row(1,'product_game_encounter')]
+    reader,_ = _presentation_reader(rows,owed=('card-1',),eligible=(1,))
+    projected, = queue_application.presentation_rows(None,'2026-10-28',read=reader,limit=16)
+    assert projected['eligible'] and projected['gameplay_priority_reason'] is None
 
 
 def test_game_priority_native_presentation_uses_borrowed_connection():
