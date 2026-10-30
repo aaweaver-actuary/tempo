@@ -24,6 +24,11 @@ and [operator boundary](../../../scripts/README.md#games-collection-operator).
 image, roles, actual runtime identities, network, migration and cleanup owner.
 It is a separate explicit selection; collection-only qualification does not
 inherit the 30-transition recovery target.
+The registered `study-recovery` suite uses `qualify_recovery.py` to bind host
+fixture imports to this checkout before invoking pytest. The component runner
+supplies the existing managed Docker environment, admission and cleanup journal.
+Run `node tools/component-build/test-lane.mjs --suite study-recovery`; a plain
+pytest command does not establish managed resource admission.
 
 The recovery wrapper selects the existing PostgreSQL fixture's explicit
 `study-recovery` profile: 1 GiB memory and one nonexternal, task-owned labelled

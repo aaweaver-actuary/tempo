@@ -2037,7 +2037,7 @@
       "owner": "Study recovery delivery",
       "kind": "postgres",
       "cwd": ".",
-      "command": "python -m pytest database/tests/games_collection/test_study_recovery_packaged.py -q",
+      "command": "python database/tests/games_collection/qualify_recovery.py",
       "inputs": [
         "backend/app/games",
         "backend/app/product_composition/game_sync.py",
