@@ -274,11 +274,35 @@ cases establish their original UI invariants only. Actual ordinary browser moves
 saves, preparation and issuance cannot be replaced by host-inserted queue,
 completed-attempt or review facts.
 
-Remaining before a resolved/active claim: final #624 A/B review at one coherent
+At the historical stopped checkpoint, remaining before a resolved/active claim were final #624 A/B review at one coherent
 pin; the frozen backend/web package and real browser journey; applicable exact-main
 CI/installer gates; supported inactive readback with approved full selected scope
 and retained-effect inventory; and authorized managed activation/real-provider
-observations. Publication is currently denied and not executed pending direct
-human confirmation at the parent task. No branch-push workaround, formal GitHub
+observations. Publication was denied and not executed pending direct
+human confirmation at that parent task. No branch-push workaround, formal GitHub
 approval, live migration, installation or activation has occurred here. The prior
-one-off `--no-ci` choice supplies no continuing bypass authority.
+one-off `--no-ci` choice did not itself supply continuing bypass authority.
+
+### Continued #624 source integration — October 30
+
+The current assignment explicitly resumes implementation, installation and
+activation. Current AGENTS separately approves the existing managed `--no-ci`
+path. Draft PR #635 carries the recovered integration; the stopped original and
+its uncommitted merge remain preserved. Source-only coordination is in #624;
+private runtime observations remain local.
+
+The integrated source now includes the global GameDetail contract/API/screen,
+corrected-scope reanalysis and per-occurrence clocks, complete-scope Study intake,
+the released snapshot reader and unreserved read-only source profile, truthful
+current-target progress, and managed feedback mode. Current main's new-opening
+promotion retains urgent FIFO and genuine attempt protections. Independent
+semantic and persistence/client reviews cover those changed joins.
+
+The first packaged run at `5b0fe71b` failed all three selected cases: the
+collection fixture lacked its actual image-inspection binding, and both feedback
+cases reached genuine provider capture/global selection but held on a removed
+snapshot-reader import. Failure receipts and verified owned-resource cleanup are
+retained. The fixture and reader consumer are repaired; the next exact candidate
+must still demonstrate all three actual packaged cases before installation or
+activation is claimed. Native source-profile SQL enforcement passed separately;
+pure checks, collection and source reviews are not substituted for that journey.
