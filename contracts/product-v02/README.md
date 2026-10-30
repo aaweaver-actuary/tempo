@@ -20,6 +20,49 @@ does not mean `available`. Failed sync requires an error and operation identity.
 `GameReviewApi` adds `recentGames`, `gameDetail`, `sync` and `retryFeedback` with
 request-local AbortSignal/operation/repertoire context; no transport starts here.
 
+## Game Review authoritative read result
+
+`GameDetail` adds four backward-compatible read fields. `first_departure` is the
+retained `FirstDepartureSelection`, default null; null means no authoritative
+comparison is recorded, including when diagnostic findings are empty.
+`determined_at` defaults null and retains the producer's original actionable
+determination, never the read time. `comparison_revision` is an opaque retained
+comparison identifier, default null; it is not an effect identity.
+`comparison_freshness` defaults `unknown`, with `current` requiring a supported
+bounded identity witness and `stale` requiring a positively observed mismatch.
+None of these values grants Study mutation or current scheduling authority.
+
+The global selection retains all seven existing statuses and complete relevant
+selected-scope facts. Optional `repertoire_id` filtering affects diagnostic
+findings only; it does not narrow or recompute the primary selection. Readers
+must not substitute the first finding or infer coverage from an empty list.
+The selected provider, canonical game identity, learner color, and known
+boundary ply/played move/actor must agree with the original replay history,
+including Black to move and non-initial starting positions.
+
+`GameDetail.source_revision` remains original provider provenance. The nested
+`first_departure.source` uses the canonical source owner's revision and digest
+after `SourceIdentity.bind_source`; these revision integers can legitimately
+differ. Do not rewrite either to manufacture equality. The read projection owns
+binding the retained canonical source to the displayed original history.
+Comparison freshness must include the relevant configuration/publication facts
+when available; a reader without that bounded witness returns `unknown`.
+
+Receipt variants retain their original fields and meaning. Correlate selected
+progress through the original logical effect key (workspace, provider, canonical
+game, decision and occurrence ply) and the matching canonical source evidence,
+not physical card equality; supported remapping can change the current target.
+A legacy `applied_at` does not prove ordinary Again, `accepted` does not prove
+queue presence, and queue presence does not prove issuance or settlement.
+The owning qualified receipt's explicit application, issuance and genuine review
+evidence establish those stages. An ambiguous association remains unknown.
+
+The shared examples in [`fixtures/game-detail`](fixtures/game-detail) cover the
+seven statuses, current/stale/unknown, mixed legacy/qualified receipt shapes,
+an earlier irrelevant diagnostic, and Black from a non-initial FEN. Both owning
+Python and TypeScript contract suites round-trip the same values and reject
+contradictory history identities. Omitted new fields still parse to null/unknown.
+
 ## Public seams and owners
 
 | Direction | Public value / operation | State and effect owner |

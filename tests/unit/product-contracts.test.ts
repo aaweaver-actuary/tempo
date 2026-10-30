@@ -16,6 +16,38 @@ describe("product v0.2 shared wire", () => {
       expect(JSON.parse(JSON.stringify(schema.parse(payload)))).toEqual(payload);
     });
   }
+  for (const file of readdirSync(resolve(directory, "game-detail")).filter(file => file.endsWith(".json"))) {
+    it(`game_detail_authoritative_selection_shared_round_trip ${file}`, () => {
+      const payload = fixture(`game-detail/${file.slice(0, -5)}`);
+      const detail = GameDetailSchema.parse(payload);
+      expect(JSON.parse(JSON.stringify(detail))).toEqual(payload);
+      expect(detail.first_departure!.source.source_revision).not.toBe(detail.source_revision);
+      if (file === "own_actionable.json") {
+        expect(detail.findings[0].ply).toBe(1);
+        expect(detail.first_departure!.ply).toBe(3);
+        expect(detail.receipts[0]).not.toHaveProperty("interface_version");
+        expect(detail.receipts[1]).toHaveProperty("progress.schedule_applied_at", "2026-10-26T12:01:00Z");
+      }
+    });
+  }
+  it("game_detail_legacy_omissions_remain_unknown_not_covered", () => {
+    const payload = fixture("game-detail");
+    for (const key of ["first_departure", "determined_at", "comparison_revision", "comparison_freshness"]) delete payload[key];
+    payload.findings = [];
+    const detail = GameDetailSchema.parse(payload);
+    expect([detail.first_departure, detail.determined_at, detail.comparison_revision, detail.comparison_freshness]).toEqual([null, null, null, "unknown"]);
+  });
+  it.each(["provider", "game", "color", "ply", "played", "actor"])("game_detail_rejects_selection_from_contradictory_original_history %s", fault => {
+    const payload = fixture("game-detail/own_actionable");
+    const selection = payload.first_departure;
+    if (fault === "provider") selection.source.provider = "chesscom";
+    else if (fault === "game") selection.source.game_id = "different-game";
+    else if (fault === "color") payload.player_color = "black";
+    else if (fault === "ply") selection.ply = 5;
+    else if (fault === "played") payload.moves[2] = "b1c3";
+    else Object.assign(selection, { status: "opponent_gap", actor: "opponent", decision: null });
+    expect(() => GameDetailSchema.parse(payload)).toThrow();
+  });
   it.each([["kind", "guessed_miss"], ["ply", 0], ["ply", true], ["source_revision", 0], ["introduced_before_game", null], ["expected_uci", ["e2e4", "g1f3"]]])("rejects unproved/invalid %s", (field, value) => {
     expect(() => FindingSchema.parse({ ...fixture("confirmed-introduced-miss"), [field as string]: value })).toThrow();
   });

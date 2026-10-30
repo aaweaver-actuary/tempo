@@ -46,6 +46,45 @@ def test_shared_json_round_trip(path):
     assert json.loads(value.model_dump_json()) == document["payload"]
 
 
+@pytest.mark.parametrize("path", sorted((FIXTURES / "game-detail").glob("*.json")), ids=lambda path: path.stem)
+def test_game_detail_authoritative_selection_shared_round_trip(path):
+    payload = json.loads(path.read_text())["payload"]
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert json.loads(value.model_dump_json()) == payload
+    assert value.first_departure.source.source_revision != value.source_revision
+    if path.stem == "own_actionable":
+        assert value.findings[0].ply == 1 and value.first_departure.ply == 3
+        assert type(value.receipts[0]) is LearningReceipt
+        assert isinstance(value.receipts[1], EncounterReceipt)
+        assert value.receipts[1].progress.schedule_applied_at is not None
+
+
+def test_game_detail_legacy_omissions_remain_unknown_not_covered():
+    payload = fixture("game-detail")
+    for key in ("first_departure", "determined_at", "comparison_revision", "comparison_freshness"):
+        del payload[key]
+    payload["findings"] = []
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert value.first_departure is None and value.determined_at is None
+    assert value.comparison_revision is None and value.comparison_freshness == "unknown"
+
+
+@pytest.mark.parametrize("fault", ["provider", "game", "color", "ply", "played", "actor"])
+def test_game_detail_rejects_selection_from_contradictory_original_history(fault):
+    payload = json.loads((FIXTURES / "game-detail/own_actionable.json").read_text())["payload"]
+    selection = payload["first_departure"]
+    if fault == "provider": selection["source"]["provider"] = "chesscom"
+    elif fault == "game": selection["source"]["game_id"] = "different-game"
+    elif fault == "color": payload["player_color"] = "black"
+    elif fault == "ply": selection["ply"] = 5
+    elif fault == "played": payload["moves"][2] = "b1c3"
+    else:
+        # An opponent-gap shape is valid in isolation; White moves at ply 3.
+        selection.update(status="opponent_gap", actor="opponent", decision=None)
+    with pytest.raises(ValidationError):
+        GameDetail.model_validate_json(json.dumps(payload))
+
+
 @pytest.mark.parametrize("field,value", [("kind", "guessed_miss"), ("ply", 0), ("ply", True), ("source_revision", 0), ("introduced_before_game", None), ("expected_uci", ["e2e4", "g1f3"])])
 def test_invalid_or_unproved_finding_cannot_authorize_lapse(field, value):
     payload = fixture("confirmed-introduced-miss")
