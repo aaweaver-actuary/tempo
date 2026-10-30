@@ -26,7 +26,7 @@ flowchart LR
   Selector --> Facts["Games findings and original outbox"]
   Facts --> Intake["Qualified Study intake<br/>existing active managed-mode fences"]
   Intake --> Study["Study-owned Again / introduction<br/>priority, issuance and settlement"]
-  Gate["Background admission / foreground priority<br/>bounded units and retained retries"] --> Import
+  Gate["Background admission / foreground priority<br/>bounded units and retained retries<br/>optional worker: 1024 MiB / 96 PIDs"] --> Import
   Gate --> Replay
 ```
 
