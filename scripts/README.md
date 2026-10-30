@@ -229,6 +229,9 @@ build or hide a build/export error. Failed builds retain the prior current cache
 candidate cleanup diagnostics preserve the original failure. Builders remain
 disposable, and failed builder cleanup still retains its journal and lane. The
 helper neither verifies application artifacts nor authorizes installation.
+The Bake command grants filesystem read/write access only to the helper's
+verified import generation and new export generation. Disabled, ineligible and
+caller-configured caches receive no automatic filesystem grants.
 
 ```mermaid
 flowchart TD

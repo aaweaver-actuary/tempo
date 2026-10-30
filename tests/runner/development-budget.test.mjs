@@ -557,7 +557,8 @@ test('C1 Web cache cold build exports intermediate layers without changing other
   let bakeFile;
   assert.equal(await cacheBuild(specification, options, async (enriched, args, file) => {
     bakeFile = file;
-    assert.deepEqual(args, ['buildx','bake','--builder',state.name,'--file',file,'--load']);
+    assert.deepEqual(args, ['buildx','bake','--builder',state.name,'--file',file,'--load',
+      `--allow=fs.write=${cacheDestination(enriched)}`]);
     assert.equal(Object.hasOwn(enriched.target.web, 'cache-from'), false);
     assert.deepEqual(enriched.target.web['cache-to'], [{type:'local', dest:cacheDestination(enriched), mode:'max'}]);
     const restored = structuredClone(enriched); delete restored.target.web['cache-to'];
@@ -587,10 +588,13 @@ test('C2 Web cache survives disposable builder replacement', () => webCacheFixtu
     names.push(state.name); await writeCacheExport(cacheDestination(specification));
   });
   const first = await readCacheJson(join(cacheDirectory, 'current.json'));
-  await cacheBuild(webCacheSpecification(), options, async specification => {
+  await cacheBuild(webCacheSpecification(), options, async (specification, args) => {
     names.push(state.name);
     assert.deepEqual(specification.target.web['cache-from'], [{type:'local', src:join(cacheDirectory, first.generation)}]);
     assert.notEqual(cacheDestination(specification), join(cacheDirectory, first.generation));
+    assert.deepEqual(args.filter(argument => argument.startsWith('--allow=')), [
+      `--allow=fs.read=${join(cacheDirectory, first.generation)}`,
+      `--allow=fs.write=${cacheDestination(specification)}`]);
     await writeCacheExport(cacheDestination(specification));
     assert.deepEqual(await readCacheJson(join(cacheDirectory, 'current.json')), first);
     assert((await lstat(join(cacheDirectory, first.generation))).isDirectory());
@@ -656,8 +660,19 @@ test('C4 Web cache respects explicit settings and target eligibility', async t =
   for (const [name, change] of cases) await t.test(name, () => webCacheFixture(async ({cacheDirectory, options}) => {
     const specification = webCacheSpecification(); change(specification.target.web, specification);
     const original = structuredClone(specification); let calls = 0;
-    await cacheBuild(specification, options, async enriched => {calls++; assert.deepEqual(enriched, original);});
+    await cacheBuild(specification, options, async (enriched, args) => {
+      calls++; assert.deepEqual(enriched, original);
+      assert.deepEqual(args.filter(argument => argument.startsWith('--allow=')), []);
+    });
     assert.equal(calls, 1); assert.deepEqual(specification, original);
+    await assert.rejects(lstat(cacheDirectory), {code:'ENOENT'});
+  }));
+  await t.test('disabled automatic cache grants no filesystem access', () => webCacheFixture(async ({cacheDirectory, options}) => {
+    const specification = webCacheSpecification();
+    await cacheBuild(specification, {...options, cache:false}, async (actual, args) => {
+      assert.deepEqual(actual, specification);
+      assert.deepEqual(args.filter(argument => argument.startsWith('--allow=')), []);
+    });
     await assert.rejects(lstat(cacheDirectory), {code:'ENOENT'});
   }));
   for (const absolute of [false, true]) await t.test(absolute ? 'absolute Dockerfile' : 'normalized relative Dockerfile', () => webCacheFixture(async ({options}) => {

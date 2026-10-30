@@ -309,11 +309,13 @@ export async function managedComposeBuild(prepare, executeBuild, options = {}) {
   return managedBuild(async builder => {
     const specification = JSON.parse(await prepare());
     if (!specification.target || !Object.keys(specification.target).length) throw new Error('No selected Compose build targets');
-    return withWebBuildCache(specification, async enrichedSpecification => {
+    return withWebBuildCache(specification, async (enrichedSpecification, cachePaths = {}) => {
       const directory = await mkdtemp(join(tmpdir(),'tempo-budget-bake-'));
       try {
         const path = join(directory,'build.json'); await writeFile(path,JSON.stringify(enrichedSpecification),{mode:0o600});
-        return await executeBuild(['buildx','bake','--builder',builder,'--file',path,'--load']);
+        return await executeBuild(['buildx','bake','--builder',builder,'--file',path,'--load',
+          ...(cachePaths.read ? [`--allow=fs.read=${cachePaths.read}`] : []),
+          ...(cachePaths.write ? [`--allow=fs.write=${cachePaths.write}`] : [])]);
       } finally { await rm(directory,{recursive:true,force:true}); }
     }, cache);
   }, builderOptions);

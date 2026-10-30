@@ -5028,7 +5028,8 @@ permission to omit known peers or a demonstration of real Study responsiveness.
 `C6 Web cache retention cannot replace current with invalid or oversized output`
 are owned by the already registered `tests/runner/development-budget.test.mjs`.
 They use private synthetic OCI exports and injected managed Docker capabilities
-to cover `mode=max`, unchanged Bake inputs/other targets, distinct disposable
+to cover `mode=max`, exact-generation Bake filesystem grants, unchanged
+Bake inputs/other targets, distinct disposable
 builders, atomic generation replacement, original build failures, retained builder
 cleanup ownership, explicit/disabled cache settings, per-invocation environment
 resolution, bounded retention, malformed metadata and symlink/unmarked-entry

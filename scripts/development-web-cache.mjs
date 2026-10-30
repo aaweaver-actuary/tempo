@@ -137,7 +137,7 @@ export async function withWebBuildCache(specification, execute, cache) {
     try { await removeGeneration(configuration.directory, candidate); }
     catch (error) { warn(new Error(`candidate cleanup failed: ${error.message}`)); }
   };
-  let enriched;
+  let enriched, cachePaths;
   try {
     const {directory} = configuration;
     await prepareRoot(directory);
@@ -166,6 +166,7 @@ export async function withWebBuildCache(specification, execute, cache) {
     enriched = {...specification, target: {...specification.target, web: {...specification.target.web,
       ...(source ? {'cache-from': [{type: 'local', src: source}]} : {}),
       'cache-to': [{type: 'local', dest: destination, mode: 'max'}]}}};
+    cachePaths = {read: source, write: destination};
   } catch (error) {
     warn(new Error(`setup failed; automatic caching disabled: ${error.message}`));
     await cleanup();
@@ -173,7 +174,7 @@ export async function withWebBuildCache(specification, execute, cache) {
   }
 
   let result;
-  try { result = await execute(enriched); }
+  try { result = await execute(enriched, cachePaths); }
   catch (error) { await cleanup(); throw error; }
 
   const {directory, maxBytes} = configuration;
