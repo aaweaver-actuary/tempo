@@ -682,6 +682,99 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
                 (receipt.owner_receipt_id,)).fetchone()[0] == 1
 
 
+@pytest.mark.parametrize('split',[False,True])
+def test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_or_second_reset(
+    feedback_lineage_owner,monkeypatch,split,
+):
+    """An actual earlier source capture stays byte-identical across owner lineage."""
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.legacy_game_observation import capture_game
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.repertoire import project_published_repertoire
+    from app.services.postgres_integrity import current_integrity_certificate
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from app.games.feedback.coordinator import delivery_for
+    from app.games.feedback.qualification import acknowledge_qualified_delivery
+    from product_encounter_fixtures import qualified_feedback_source
+    transaction = feedback_lineage_owner
+    observed = datetime.now(timezone.utc)
+    with transaction() as database:
+        encoded = read_repertoire_json(database,'r11-repertoire')
+    snapshot = project_published_repertoire(json.loads(encoded))
+    original = next(item for item in snapshot.decision_presentations if item.presentation_id == 'A')
+    game_id = 'lichess:prejoin-feedback-'+uuid4().hex
+    with transaction() as database:
+        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+            played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
+            VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
+            (game_id,game_id.removeprefix('lichess:'),(observed-timedelta(days=1)).isoformat(),chess.STARTING_FEN,'a'*64))
+    def rows(statement,parameters=()):
+        with transaction() as database:
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+    def metadata(repertoire_id):
+        header = repertoire_metadata(rows,repertoire_id)[0]
+        with transaction() as database:
+            certificate = current_integrity_certificate(database,repertoire_id,header['graph_generation'])
+        return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
+    captured = capture_game(original.repertoire_id,game_id,(0,),reader=rows,metadata=metadata,now=observed)
+    game = retained_canonical_game(captured)
+    template = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
+        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
+        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
+        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
+        occurred_at=game.played_at,payload_digest='e'*64)
+    with qualified_feedback_source(transaction,capture=captured,command=template,clock=lambda:observed,
+            stream='reconciliation',capture_provider_source=True) as source:
+        command = source.command
+        assert command.decision.presentation_id == 'A'
+        delivery = source.store.delivery(delivery_for(source.source.source_key,command).operation_id)
+        frozen = delivery.command.model_dump_json()
+        determined = source.source.determined_at
+        feedback_lineage_fixture(transaction,monkeypatch,split=split)
+        observed = datetime.now(timezone.utc)
+        source.recompare()
+        source.reprepare()
+        current = source.prepared
+        target = current.qualification.selection.decision
+        assert target.presentation_id != 'A' and target.decision_id == command.key.decision_id
+        assert source.source.determined_at == current.qualification.determined_at == determined
+        assert source.source.effects == (command,)
+        with transaction() as database:
+            receiver = current_owner_encounter_intake(database,retained_owner_capture=captured,
+                snapshot=current.target_snapshot,prepared_decisions=current.prepared_decisions,
+                qualification=current.qualification,clock=lambda:observed)
+            accepted = receiver.accept_qualified(command,qualification=current.qualification)
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
+            clock=lambda:observed,qualification_prepare=lambda original:current)
+        with transaction() as database:
+            available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
+            assert available.admission_status == 'available'
+        source.store.save_delivery(acknowledge_qualified_delivery(delivery,available),serviced=True)
+        source.recompare()
+        source.reprepare()
+        with transaction() as database:
+            repeated = current_owner_encounter_intake(database,retained_owner_capture=captured,
+                snapshot=source.prepared.target_snapshot,prepared_decisions=source.prepared.prepared_decisions,
+                qualification=source.prepared.qualification,clock=lambda:observed).accept_qualified(
+                    command,qualification=source.prepared.qualification)
+            assert repeated.progress.scheduling_review_id == available.progress.scheduling_review_id
+            assert database.execute_native('SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s',
+                (source.source.source_key,)).fetchone()[0] == 1
+            assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
+                (accepted.owner_receipt_id,)).fetchone()[0] == 1
+            result,_ = ordinary_current_review(database,target.presentation_id,monkeypatch)
+        assert source.store.delivery(delivery.operation_id).command.model_dump_json() == frozen
+        with transaction() as database:
+            settled = PostgresGameFeedbackStore(database).get(command.key)
+            assert settled.status == 'settled' and settled.progress.settlement.review_id == result['review_id']
+            assert settled.encounter == command and settled.progress.determined_at == determined
+
+
 def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None, prepared_recombination=None):
     """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
     from app.queue_commands import issue_queue_head
