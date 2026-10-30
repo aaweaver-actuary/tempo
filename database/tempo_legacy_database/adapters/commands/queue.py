@@ -103,7 +103,12 @@ def lock_current_queue_task(database):
 def current_projection(database, queue_date, active_task):
     projection_lock_clause = " FOR UPDATE" if active_task else ""
     return database.execute(
-        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?" + projection_lock_clause,
+        """SELECT projection.state,projection.refresh_pending,
+                  (SELECT day.membership_hash FROM daily_queue_days AS day
+                   WHERE day.queue_date=projection.queue_date) AS presentation_membership_hash,
+                  EXISTS(SELECT 1 FROM daily_queue AS entry
+                         WHERE entry.queue_date=projection.queue_date AND entry.status='queued') AS has_queued_entries
+           FROM queue_projections AS projection WHERE projection.queue_date=?""" + projection_lock_clause,
         (queue_date,),
     ).fetchone()
 

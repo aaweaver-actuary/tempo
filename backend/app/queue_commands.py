@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .services import queue_application
+from .services.queue_ordering import PRESENTATION_VERSION
 from .command_gateway import register_command
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
@@ -115,7 +116,9 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
     # An absent task cannot be locked: let refresh enqueue it before locking the
     # projection. A ready projection still needs no new task.
     projection = queue_storage.current_projection(database, queue_date, active_task)
-    if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+    if (projection and projection["state"] == "ready" and not projection["refresh_pending"]
+            and (not projection["has_queued_entries"]
+                 or (projection["presentation_membership_hash"] or "").startswith(PRESENTATION_VERSION + ":"))):
         return {"queue_date": queue_date, "refresh_pending": False}
     if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
             and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):

@@ -163,16 +163,20 @@ def presentation_facts(database, day, miss_reason: str, *, read=None, after_entr
                     statement.replace('?', '%s'), parameters).fetchall()) if native else (
                     lambda statement, parameters: database.execute(statement, parameters).fetchall())
     # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
-    presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
+    # Match the ownership fence's uncorrelated sets: historical evidence must
+    # not be rescanned for every queued row when current-day estimates are low.
+    # Nullable legacy evidence IDs remain absent, as with the prior EXISTS.
+    presented = ("q.id IN (SELECT attempt.queue_entry_id FROM opening_evidence_attempts attempt "
+                 "WHERE attempt.queue_entry_id IS NOT NULL)"
                  if postgres_store.configured() else "0")
     statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
                   q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
                   (q.review_result_json IS NOT NULL) review_completed,c.revision,
-                  EXISTS(SELECT 1 FROM queue_attempt_origins origin
-                    WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
-                      AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
+                  COALESCE((q.id,c.id,c.revision) IN (
+                    SELECT origin.queue_entry_id,origin.card_id,origin.revision
+                    FROM queue_attempt_origins origin WHERE origin.issued_as_head=1),FALSE) issued,
                   """ + presented + """ presented,
-                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught
+                  c.id IN (SELECT taught.card_id FROM teaching_states taught) taught
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=? AND q.status='queued'"""
     parameters = [day]
