@@ -38,7 +38,9 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
     import chess.pgn
     game = retained_canonical_game(capture)
     @contextmanager
-    def raw_reads():
+    def raw_reads(*, repertoire_snapshot=False):
+        # Match the source-reader capability without replacing the verified
+        # disposable owner's transaction, limits or source facts.
         with transaction() as database:
             yield database.raw
     with transaction() as database:
