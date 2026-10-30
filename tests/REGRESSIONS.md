@@ -6069,3 +6069,10 @@ and their affected selector/issuance/compatibility boundaries. The explicit
 `games-collection-release` suite remains the separate pinned-image/provider and
 real-server browser journey; collection, fixture syntax and mocked browser cases
 alone do not establish packaged or browser acceptance.
+
+The `fresh_original_available` join/split variants retain the actual owner's
+unchanged original A flags instead of adding the separate superseded-card fixture
+condition. A new source command keeps its authored A spelling; the independently
+qualified witness and actual Study consequence use the owner-resolved current B.
+Both variants keep the original logical key/bytes/determination and settle once.
+The superseded-card variants remain separate required cases.

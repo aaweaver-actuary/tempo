@@ -34,6 +34,8 @@ REQUIRED = (
     "backend/tests/test_prepared_review_continuation.py::test_prepared_control_precedes_pending_study_work_without_applying_during_preparation",
     "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[False-fresh]",
     "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[True-fresh]",
+    "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[False-fresh_original_available]",
+    "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[True-fresh_original_available]",
     "backend/tests/test_product_recombination_postgres.py::test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_or_second_reset",
     "backend/tests/test_product_recombination_postgres.py::test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles",
 )

@@ -381,7 +381,7 @@ def feedback_lineage_owner(owned_postgres,monkeypatch):
             raw.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
 
 
-def feedback_lineage_fixture(transaction,monkeypatch,*,split=False,graph_spacing=False):
+def feedback_lineage_fixture(transaction,monkeypatch,*,split=False,graph_spacing=False,legacy_superseded=True):
     """Earn the generated presentation through the existing real join/split path."""
     from app.contracts.product_v02.repertoire import DecisionPresentation
     from tempo_evidence_math import opening_position_key
@@ -406,7 +406,8 @@ def feedback_lineage_fixture(transaction,monkeypatch,*,split=False,graph_spacing
     with transaction() as database:
         options=psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
         options['password']=database.raw.pgconn.password.decode()
-        database.execute_native("UPDATE cards SET superseded_by=%s WHERE id='A'",(combined,))
+        if legacy_superseded:
+            database.execute_native("UPDATE cards SET superseded_by=%s WHERE id='A'",(combined,))
     original=DecisionPresentation(decision_id=decision_identity('A',0,[]),repertoire_id='r11-repertoire',
         position_key=opening_position_key(chess.STARTING_FEN),selected_response_uci='e2e4',
         presentation_id='A',presentation_revision=1,repertoire_revision=1,
@@ -532,7 +533,7 @@ def test_feedback_current_target_lineage_does_not_bypass_original_control(feedba
         owner.prepare_game_feedback_target(original,read_connection=read_connection)
 
 
-@pytest.mark.parametrize('capture_path',['retained','fresh'])
+@pytest.mark.parametrize('capture_path',['retained','fresh','fresh_original_available'])
 @pytest.mark.parametrize('split',[False,True])
 def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement(
     feedback_lineage_owner,monkeypatch,split,capture_path,
@@ -549,7 +550,8 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
     from product_encounter_fixtures import qualified_feedback_source
     import tempo_legacy_database.adapters.study.recombination as owner
     transaction = feedback_lineage_owner
-    original,read_connection,_ = feedback_lineage_fixture(transaction,monkeypatch,split=split)
+    original,read_connection,_ = feedback_lineage_fixture(transaction,monkeypatch,split=split,
+        legacy_superseded=capture_path != 'fresh_original_available')
     observed = datetime.now(timezone.utc)
     game_id = 'lichess:current-feedback-'+uuid4().hex
     with transaction() as database:
@@ -573,10 +575,15 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
         expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
         occurred_at=game.played_at,payload_digest='e'*64)
     with qualified_feedback_source(transaction,capture=captured,command=command,clock=lambda:observed,
-            capture_provider_source=capture_path == 'fresh') as source:
-        if capture_path == 'fresh':
+            capture_provider_source=capture_path.startswith('fresh')) as source:
+        if capture_path.startswith('fresh'):
             command = source.command
-            assert command.decision.presentation_id != original.presentation_id
+            if capture_path == 'fresh_original_available':
+                # Actual joins retain this authored physical spelling in the
+                # publication. Immutable capture stays A; qualification resolves B.
+                assert command.decision.presentation_id == original.presentation_id
+            else:
+                assert command.decision.presentation_id != original.presentation_id
             assert command.key.decision_id == original.decision_id
             assert source.source.first_departure.status == 'own_actionable'
             assert source.source.first_departure.decision == command.decision
@@ -613,7 +620,7 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
                 actual = database.execute_native('SELECT card_id,source_kind,source_ref FROM reviews WHERE id=%s',
                     (available.progress.scheduling_review_id,)).fetchone()
                 assert tuple(actual) == (target.presentation_id,'game_lapse',available.owner_receipt_id)
-        if capture_path == 'fresh':
+        if capture_path.startswith('fresh'):
             from app.games.feedback.qualification import acknowledge_qualified_delivery
             source.store.save_delivery(acknowledge_qualified_delivery(retained_delivery,available),serviced=True)
             source.recompare()
