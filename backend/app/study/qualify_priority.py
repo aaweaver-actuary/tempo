@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 REQUIRED = (
     "backend/tests/test_study_priority_interface.py",
     "backend/tests/test_next_card_preparation_selection.py",
+    "backend/tests/test_study_qualification_leaf.py",
     "backend/tests/test_study_feedback_preparation_trace.py",
     "backend/tests/test_queue_projection_postgres.py",
     "backend/tests/test_product_snapshot.py",

@@ -153,7 +153,8 @@ flowchart LR
 
 Study's domain and receipt writers do not call the optional Games producer.
 Accepted-work preparation uses the public pure qualification leaf and retained
-owner reads; it does not load Coordinator, provider or job execution. Shared host/database
+owner reads. The pure leaf constructs no producer, provider or job execution;
+the existing full monolith composition retains the cold-import limitation below. Shared host/database
 contention remains a deployment limit, not proven isolation. Provider adapters
 must enforce finite I/O and bounded pages; cooperative cancellation cannot
 interrupt a provider that violates that contract. A 120-second reclaim lease
@@ -195,7 +196,11 @@ it creates no producer, worker, provider, connection or startup dependency.
 workflow facts in `ports.py`; `coordinator.py` retains exact compatibility
 reexports and unchanged operation IDs/command bytes. The retained source writer
 fence still validates its existing `SyncConfiguration` and `ReviewUnavailable`
-value/error types; importing the `GameReview` facade is not required.
+value/error types. Fresh-process proof covers the pure qualification leaf; the
+full cold provider composition still imports `GameReview` through its existing
+`game_review` module. Warm maintenance guards do not prove that entire
+composition's cold facade exclusion. This is not independent packaging with
+Games source removed.
 
 An old raw missed request is accepted as
 `first_departure_qualification_pending`, with its identity/history retained.

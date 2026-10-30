@@ -6346,3 +6346,12 @@ the default native fixture unchanged; `backend/tests/test_study_recovery_accepta
 owns its allocation-contract guard. The recovery profile is not a pass on the
 default 384 MiB/tmpfs stress fixture; its disk-backed 1 GiB allocation and exact
 container/volume cleanup are separately recorded by the assembled run.
+
+The accepted-qualification import repair is covered by
+`backend/tests/test_study_qualification_leaf.py::test_retained_qualification_leaf_preserves_frozen_delivery_identities`
+and `test_retained_qualification_leaf_imports_without_games_producer_or_infrastructure`.
+Fresh-process exclusion covers that leaf, not every legacy composition import.
+The three native intake/deferred-priority cases retain original human history,
+protected attempts and rollback while qualifying the real current Again effect.
+Parameterized runner discovery validates exact collected IDs; fairness assertions
+retain prior global service cursors and assert precise subsequent turns.
