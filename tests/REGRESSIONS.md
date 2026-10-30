@@ -5840,3 +5840,7 @@ and `test_provider_alias_and_generic_legacy_source_meanings_are_preserved` in
 `test_product_first_boundary.py`; `test_new_commands_in_either_envelope_respect_opponent_first_boundary`
 in `test_product_feedback_jobs.py`. New legacy lapse envelopes obey the same
 global selection; old frozen commands remain retained for qualification.
+Review B's source-clock regression is
+`test_corrected_held_source_cannot_create_or_inherit_determination_clock` in
+`test_product_feedback_jobs.py`; the existing new-selection redaction regression
+also masks `decision.selected_response_uci` and rejects raw move leakage.

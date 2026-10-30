@@ -1032,3 +1032,26 @@ def test_new_commands_in_either_envelope_respect_opponent_first_boundary(encount
     source, = h.store.sources.values()
     assert source.first_departure.status == "opponent_gap" and source.first_departure.ply == 2
     assert source.findings == findings and source.effects == () and not h.store.deliveries
+
+
+@pytest.mark.parametrize("original_observation", ["matched", "missed"])
+def test_corrected_held_source_cannot_create_or_inherit_determination_clock(original_observation):
+    h = encounter_harness(observation=original_observation)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original, = h.store.sources.values()
+    assert (original.determined_at is None) == (original_observation == "matched")
+    h.clock.value += 60
+    h.page[0] = page(records=(record(2, "corrected"),))
+    h.coordinator.normalizer = harness().coordinator.normalizer
+    h.coordinator.comparer = harness(kinds=("known_unintroduced",)).coordinator.comparer
+    correction = spec("corrected-determination")
+    h.store.enqueue(correction)
+    h.coordinator.capture_page(h.store.load_job(correction.job_id))
+    source, = h.store.sources.values()
+    changed_capture = list(h.store.captures.values())[-1]
+    assert source.quarantined and source.first_departure == original.first_departure
+    assert source.determined_at == original.determined_at
+    assert changed_capture.first_departure.status == "own_actionable"
+    assert changed_capture.determined_at is None
+    assert changed_capture.diagnostic == "changed_source_requires_D08_resolution"
