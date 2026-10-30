@@ -1000,4 +1000,3 @@ def test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox(na
         before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "0" * 64)
     assert case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
         before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "f" * 64)
-
