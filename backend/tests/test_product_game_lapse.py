@@ -270,6 +270,75 @@ def test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns():
         assert source['export_digest'] == fingerprint(source['game'])
 
 
+@pytest.mark.parametrize("scope", ["complete_ten", "empty", "duplicate"])
+def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope(scope):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions, CurrentDecisionUnavailable
+    from app.contracts.product_v02.learning import GameEffectKey, GameEncounter
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    from app.games.feedback.first_boundary import select_first_boundary
+    from app.repertoire import project_published_repertoire
+    from tempo_game_review_contracts import CanonicalGame
+    from test_product_snapshot import repertoire_facts
+
+    publications = []
+    for index in range(10):
+        facts = repertoire_facts()
+        repertoire = "selected-" + str(index)
+        color = "white" if index == 9 else "black"
+        facts['repertoire']['id'] = repertoire
+        for field in ('lines', 'memberships', 'graphs'):
+            for row in facts[field]: row['repertoire_id'] = repertoire
+        for field in ('lines', 'cards', 'graphs'):
+            for row in facts[field]: row['trained_color'] = color
+        publications.append(facts)
+    raw = dict(id="full-scope-game", provider="lichess", color="white",
+        start_fen=publications[-1]['lines'][0]['start_fen'], moves_json='["d2d4"]',
+        played_at="2026-10-25T12:00:00Z")
+    current = CanonicalGame(workspace_id="fixture", game_id=raw['id'], game_revision=1,
+        source_id='lichess', source_revision=1, source_digest=fingerprint(raw),
+        starting_fen=raw['start_fen'], moves=['d2d4'], learner_color='white', played_at=raw['played_at'])
+    snapshots = tuple(project_published_repertoire(facts) for facts in publications)
+    selected = select_first_boundary(current, snapshots=snapshots,
+        source=IntroductionGameScope(provider='lichess', game_id=current.game_id,
+            source_revision=current.source_revision, source_digest=current.source_digest),
+        selected_repertoire_ids=tuple(facts['repertoire']['id'] for facts in publications))
+    assert selected.status == 'own_actionable' and selected.decision.repertoire_id == 'selected-9'
+    command = GameEncounter(key=GameEffectKey(workspace_id=current.workspace_id, provider='lichess',
+        game_id=current.game_id, decision_id=selected.decision.decision_id, occurrence_ply=selected.ply),
+        source=selected.source, decision=selected.decision, expected_uci=selected.expected_uci[0],
+        played_uci=selected.played_uci, observation='missed', detected_at=NOW.isoformat(),
+        occurred_at=current.played_at, payload_digest=current.source_digest)
+    witness = FirstDepartureWitness(selection=selected, configuration_revision=1,
+        determined_at=NOW.isoformat(), stream='forward')
+    authority = object.__new__(CurrentOwnerDecisions)
+    authority.database = None
+    authority.authority = SimpleNamespace(workspace_id=current.workspace_id)
+    authority.source = dict(game=raw, tables=dict(cards=publications[-1]['cards']))
+    # Capture/executable validation and native row fencing have unchanged owning
+    # proofs. Isolate this pure complete-publication preparation boundary here.
+    prepared = []
+    authority._validate_executable = lambda command, card, **kwargs: prepared.append(command)
+    if scope == 'empty': publications = []
+    if scope == 'duplicate': publications[-1] = publications[0]
+    before = deepcopy(publications)
+    options = dict(qualified_publications=publications, qualification_fence=lambda *_: None,
+                   game=current, select_first_boundary=select_first_boundary)
+    if scope != 'complete_ten':
+        with pytest.raises(CurrentDecisionUnavailable, match='first_departure_selected_scope_unproved'):
+            authority.prepare_qualified(command, witness, **options)
+        assert prepared == []
+    else:
+        assert authority.prepare_qualified(command, witness, **options) is authority
+        assert len(authority._qualified_captures) == 10
+        assert [header['id'] for header in authority._qualified_captures] == ["selected-" + str(index) for index in range(10)]
+        assert prepared == [command]
+        assert authority.database is None
+    assert publications == before
+
+
 @pytest.fixture
 def encounter_owner():
     from types import SimpleNamespace

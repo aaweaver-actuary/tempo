@@ -99,7 +99,7 @@ class CurrentOwnerDecisions:
                  'first_departure_current_owner_capability_required')
         from app.repertoire import project_published_repertoire
         publications = tuple(json.loads(json.dumps(facts)) for facts in qualified_publications)
-        _require(0 < len(publications) <= 8
+        _require(bool(publications)
                  and len({item['repertoire']['id'] for item in publications}) == len(publications),
                  'first_departure_selected_scope_unproved')
         snapshots = tuple(project_published_repertoire(facts) for facts in publications)
