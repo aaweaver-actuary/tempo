@@ -5838,7 +5838,7 @@ N's owning `backend/tests/test_product_snapshot.py` retains:
 
 - `test_snapshot_read_bound_diagnostic_is_private_and_defensively_copied`
 - `test_snapshot_read_reports_simultaneous_bounds_without_claiming_complete_size`
-- `test_snapshot_actual_serialized_byte_refusal_is_exact`
+- `test_repertoire_snapshot_has_no_whole_snapshot_byte_cap`
 - `test_snapshot_projection_row_refusals_are_exact`
 - `test_snapshot_projection_aggregate_authored_moves_refusal_is_exact`
 - `test_snapshot_route_replay_is_local_lazy_and_once_per_needed_route`
@@ -5857,6 +5857,7 @@ and retains the original conflict, persistence and enqueue-once assertions.
 O's owning `backend/tests/test_game_collection_status.py` retains:
 
 - `test_readiness_is_cached_once_per_report_and_copied_then_recomputed`
+- `test_status_enumerates_all_selected_repertoires_and_preserves_last_read_failure`
 - `test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic`
 - `test_public_bound_redaction_preserves_only_valid_numeric_owner_contract`
 - `test_identity_only_calls_only_identity_and_emits_complete_envelope`
@@ -5865,8 +5866,21 @@ O's owning `backend/tests/test_game_collection_status.py` retains:
 - `test_identity_only_native_reader_does_not_touch_other_ports`
 - `test_identity_only_unavailable_identity_exits_two`
 
+The all-repertoire selection repair removes the obsolete eight-repertoire cap;
+10- and 17-repertoire cases prove complete scope without a replacement count cap:
+`test_configuration_and_acquisition_job_preserve_all_selected_repertoires` in
+`backend/tests/test_product_game_review_commands.py`,
+`test_capture_attempts_every_selected_repertoire_and_retains_last_read_failure`
+in `backend/tests/test_product_feedback_jobs.py`, and
+`test_history_preview_compares_every_selected_repertoire_without_a_count_cap`
+in `backend/tests/test_product_game_history.py`. Status retains every selected
+row and the last failed read, with one readiness read per repertoire across both
+providers. Existing snapshot, page, position, output and transaction safeguards
+remain in force; none of these synthetic cases claims live snapshot availability.
+
 The regular `runners game-review-collection` lane retains all F/G/#612 cases and:
 
+- `collection readiness accepts all selected repertoires beyond eight and checks the last one`
 - `collection bound allowance is explicit selected scope and shared across providers`
 - `collection allowance cannot suppress malformed bounds incomplete scope or other failures`
 - `collection healthy allowed repertoire restores complete selected readiness`
@@ -5882,3 +5896,30 @@ The regular `runners game-review-collection` lane retains all F/G/#612 cases and
 No budget/deadline, schema, Study delivery authority, provider concurrency or
 foreground guard changes. #616 full-size support and #617 cross-page reuse remain
 separate; a current report does not establish deployed or percentile latency.
+
+
+## Whole-repertoire snapshot limits removed by explicit product request
+
+The former 32 MiB whole-repertoire refusal is superseded by
+`backend/tests/test_product_snapshot.py::test_repertoire_snapshot_has_no_whole_snapshot_byte_cap`.
+The graph-count ceiling is also removed after the real all-repertoire preflight
+exposed it; `test_repertoire_snapshot_retains_graphs_beyond_old_count_cap` owns
+complete retention beyond 20,000 graph uses. Game-scoped capture, per-row,
+source/card/membership row-count and authored-move safeguards are unchanged.
+`backend/tests/test_product_game_review_commands.py::test_repertoire_snapshot_connection_is_read_only_without_short_deadline`
+proves only the explicit repertoire-read profile disables the 250 ms deadline;
+ordinary Games transactions retain their limits and connections close on exit.
+Worker/status composition checks request that profile and still release the
+transaction before pure chess projection. The existing disposable PostgreSQL
+owner in `backend/tests/test_product_feedback_jobs_postgres.py` additionally owns:
+
+- `test_native_snapshot_read_accepts_estimate_above_old_byte_cap`
+- `test_native_repertoire_snapshot_profile_outlives_quarter_second_and_rejects_writes`
+
+These cases preserve source completeness, read-only enforcement and ordinary
+transaction settings while removing the two explicitly withdrawn restrictions.
+
+The collection operator's full snapshot report has no fixed subprocess deadline.
+`collection full snapshot read has no fixed subprocess deadline while other commands remain bounded`
+checks that only the full reader receives the no-deadline execution setting;
+identity, lifecycle, inspection and output safeguards retain their existing policy.

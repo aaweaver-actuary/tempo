@@ -381,7 +381,7 @@ def test_repertoire_only_snapshot_unknown_color_scope_or_overflow_is_explicit():
     with pytest.raises(ValueError, match="repertoire_color_unknown"): project_repertoire(facts)
     with pytest.raises(ValueError, match="scope_mismatch"):
         CurrentSnapshotAdapter(lambda _: repertoire_facts()).snapshot("other")
-    facts = repertoire_facts(); facts["graphs"] *= 20001
+    facts = repertoire_facts(); facts["lines"] *= 10001
     with pytest.raises(ValueError, match="exceeds_bound"): project_repertoire(facts)
 
 
@@ -425,9 +425,7 @@ class EnvelopeReader:
     ("line_count", "source_rows", 10000, "lower_bound", False),
     ("card_count", "card_rows", 10000, "lower_bound", False),
     ("membership_count", "membership_rows", 10000, "lower_bound", False),
-    ("graph_count", "graph_rows", 20000, "lower_bound", False),
     ("largest_row", "row_bytes", 65536, "exact", True),
-    ("estimated_bytes", "estimated_snapshot_bytes", 32 * 1024 * 1024, "conservative_estimate", True),
 ])
 def test_snapshot_read_bound_diagnostic_is_private_and_defensively_copied(field, dimension, limit, observation, complete):
     from app.repertoire import RepertoireSnapshotBoundExceeded
@@ -457,12 +455,12 @@ def test_snapshot_read_reports_simultaneous_bounds_without_claiming_complete_siz
     assert not diagnostic["sample_complete"]
     assert [(v["dimension"], v["observation"]) for v in diagnostic["violations"]] == [
         ("source_rows", "lower_bound"), ("card_rows", "lower_bound"),
-        ("membership_rows", "lower_bound"), ("graph_rows", "lower_bound"),
-        ("row_bytes", "lower_bound"), ("estimated_snapshot_bytes", "conservative_estimate")]
+        ("membership_rows", "lower_bound"),
+        ("row_bytes", "lower_bound")]
 
 
 @pytest.mark.parametrize("changes", [{"line_count": None}, {"card_count": True},
-    {"graph_count": 20002}, {"estimated_bytes": "33554433"}, {"largest_row": -1}, {}])
+    {"membership_count": 10002}, {"largest_row": -1}, {}])
 def test_snapshot_missing_or_malformed_bound_metadata_remains_non_size(changes):
     from app.repertoire import RepertoireSnapshotBoundExceeded
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
@@ -483,24 +481,36 @@ def test_snapshot_false_bound_without_proof_is_not_a_size_error():
     assert not isinstance(caught.value, RepertoireSnapshotBoundExceeded)
 
 
-@pytest.mark.parametrize("owner", ["read", "projection"])
-def test_snapshot_actual_serialized_byte_refusal_is_exact(owner):
-    from app.repertoire import RepertoireSnapshotBoundExceeded, project_repertoire
+def test_repertoire_snapshot_has_no_whole_snapshot_byte_cap():
+    from app.repertoire import project_repertoire
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
-    facts = repertoire_facts(); facts["repertoire"]["name"] = "x" * (32 * 1024 * 1024)
-    options = dict(ensure_ascii=False)
-    if owner == "projection": options.update(sort_keys=True, separators=(",", ":"))
-    measured = len(json.dumps(facts, **options).encode())
-    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
-        if owner == "projection": project_repertoire(facts)
-        else: read_repertoire(EnvelopeReader(snapshot_envelope(bounded=True, facts=facts)), "rep")
-    assert caught.value.diagnostic() == dict(code="repertoire_snapshot_exceeds_bound", stage=owner,
-        sample_complete=True, violations=[dict(dimension="snapshot_bytes", observed=measured,
-                                             limit=33554432, observation="exact")])
+    facts = repertoire_facts()
+    facts["repertoire"]["name"] = "x" * (32 * 1024 * 1024)
+    envelope = snapshot_envelope(bounded=True, facts=facts, estimated_bytes=64 * 1024 * 1024)
+    result = read_repertoire(EnvelopeReader(envelope), "rep")
+    assert result is facts
+    snapshot = project_repertoire(result)
+    assert snapshot.membership.complete and snapshot.membership.routes
+    assert facts["repertoire"]["name"] == "x" * (32 * 1024 * 1024)
+
+
+def test_repertoire_snapshot_retains_graphs_beyond_old_count_cap():
+    from app.repertoire import project_repertoire
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    facts = repertoire_facts()
+    graph = facts["graphs"][0]
+    facts["graphs"] = [graph | dict(decision_index=index) for index in range(20001)]
+    result = read_repertoire(EnvelopeReader(snapshot_envelope(
+        bounded=True, facts=facts, graph_count=20001)), "rep")
+    assert len(result["graphs"]) == 20001
+    snapshot = project_repertoire(result)
+    assert snapshot.membership.complete
+    # Repeated explicit uses of the same physical decision remain one target.
+    assert len(snapshot.decision_presentations) == 2
 
 
 @pytest.mark.parametrize("name,dimension,limit", [("lines", "source_rows", 10000),
-    ("cards", "card_rows", 10000), ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000)])
+    ("cards", "card_rows", 10000), ("memberships", "membership_rows", 10000)])
 def test_snapshot_projection_row_refusals_are_exact(name, dimension, limit):
     from app.repertoire import RepertoireSnapshotBoundExceeded, project_repertoire
     facts = repertoire_facts(); facts[name] *= limit + 1

@@ -48,6 +48,26 @@ def prepare(reader, comparer, request=None, policy=None):
         run_id="bounded-history", detected_at="2026-10-27T00:00:00Z", policy_identity=policy)
 
 
+@pytest.mark.parametrize("count", [10, 17])
+def test_history_preview_compares_every_selected_repertoire_without_a_count_cap(count):
+    value = selection().model_dump(mode="json")
+    value["repertoire_ids"] = [f"repertoire-{index}" for index in range(count)]
+    request = HistorySelection.model_validate_json(json.dumps(value))
+    compared = []
+
+    class AllRepertoiresComparer:
+        projection_available = False
+
+        def compare(self, selection, game_id, repertoire_id, detected_at):
+            compared.append(repertoire_id)
+            return HistoryComparison(1, ())
+
+    plan = prepare(Reader([RetainedHistoryGame("retained-game", False, 1)]),
+                   AllRepertoiresComparer(), request)
+    assert compared == value["repertoire_ids"]
+    assert plan.preview.positions_compared == count
+
+
 def test_zero_eligible_misses_with_unknown_authority_is_not_reported_as_correct():
     plan = prepare(Reader([RetainedHistoryGame("retained-game", False, 4)]),
                    Comparer(ValueError("current_source_mapping_bound_exceeded")))

@@ -42,7 +42,7 @@ class DedicatedGamesConnections:
         self.read_only=read_only
 
     @contextmanager
-    def __call__(self):
+    def __call__(self, *, repertoire_snapshot=False):
         import psycopg
         from ..postgres_store import tempo_row_factory
         if not self._slot.acquire(timeout=0.25):
@@ -51,10 +51,16 @@ class DedicatedGamesConnections:
             with psycopg.connect(self.dsn, autocommit=True, connect_timeout=2,
                                  row_factory=tempo_row_factory, application_name="tempo-product-games") as database:
                 with database.transaction():
-                    if self.read_only:
+                    if self.read_only or repertoire_snapshot:
                         database.execute("SET TRANSACTION READ ONLY")
-                    database.execute("""SELECT set_config('transaction_timeout','250ms',true),
-                        set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
+                    if repertoire_snapshot:
+                        # Whole-repertoire reads are read-only and finish before
+                        # chess projection. Keep ordinary Games writes bounded.
+                        database.execute("""SELECT set_config('transaction_timeout','0',true),
+                            set_config('lock_timeout','100ms',true),set_config('statement_timeout','0',true)""")
+                    else:
+                        database.execute("""SELECT set_config('transaction_timeout','250ms',true),
+                            set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
                     yield database
         finally:
             self._slot.release()

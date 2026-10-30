@@ -59,7 +59,7 @@ class CurrentRepertoireSnapshots:
         self.connections = connections
 
     def snapshot(self, repertoire_id):
-        with self.connections() as database:
+        with self.connections(repertoire_snapshot=True) as database:
             facts = read_repertoire(database, repertoire_id)
         return project_published_repertoire(facts)
 
