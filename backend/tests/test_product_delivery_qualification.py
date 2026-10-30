@@ -169,6 +169,28 @@ def test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progr
     assert acknowledged.receipt == receipt and len(store.reviews) == len(store.effects) == 1
 
 
+def test_historical_held_legacy_ack_loss_recovers_controlled_owner_without_new_reset():
+    from app.study.encounter_feedback import EncounterFeedback
+    from app.games.feedback.qualification import acknowledge_qualified_delivery
+    from test_product_game_lapse import owner,fixture,qualification_for
+    store,decisions,clock,legacy = owner.__wrapped__()
+    original = fixture("lapse",GameLapse)
+    legacy.accept_lapse(original)
+    control = GameEffectControl(key=original.key,source_revision=original.finding.source_revision,
+        action="hold",reason="reanalysis")
+    legacy.control_effect(control)
+    witness = qualification_for(original)
+    current = EncounterFeedback(store,decisions,clock=lambda:clock[0],introductions=None,introduction_policy=None)
+    receipt = current.accept_qualified(original,qualification=witness)
+    assert receipt.status == "held" and receipt.interface_version == "0.2.1" and receipt.progress is None
+    assert receipt.outcome == "historical_preserved"
+    delivery = delivery_for("original-source",original).model_copy(update={"qualification_status":"ready",
+        "qualification":witness,"determined_at":witness.determined_at,"stream":witness.stream})
+    acknowledged = acknowledge_qualified_delivery(delivery,receipt)
+    assert acknowledged.state == "acknowledged" and acknowledged.command == original
+    assert store.get(original.key).control == control and len(store.reviews) == len(store.effects) == 1
+
+
 @pytest.mark.parametrize("complete",[True,False])
 def test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preserves_history(complete):
     from test_product_feedback_jobs import encounter_harness,spec
@@ -224,7 +246,8 @@ def test_unqualified_concrete_game_review_fallback_cannot_call_legacy_scheduler(
         review.deliver(delivery_for(case.source.source_key,case.command))
 
 
-def test_public_legacy_retry_rejects_nonselected_original_before_any_writer(monkeypatch):
+@pytest.mark.parametrize("fault",["nonselected","changed_boot"])
+def test_public_legacy_retry_rejects_unsafe_preparation_before_any_writer(monkeypatch,fault):
     from fastapi import HTTPException
     from app.product_composition import game_review_commands as commands,provider_priority,managed_runtime
     from test_product_game_lapse import fixture
@@ -240,14 +263,16 @@ def test_public_legacy_retry_rejects_nonselected_original_before_any_writer(monk
         calls.append(selected.command)
         rejected = selected.model_copy(update={"state":"failed","qualification_status":"ineligible",
             "qualification_reason":"first_departure_opponent_gap"})
-        return provider_priority.PreparedDeterminedFeedback(selected,rejected,None,"trusted-boot")
+        return provider_priority.PreparedDeterminedFeedback(selected,rejected,
+            None if fault == "nonselected" else object(),"trusted-boot" if fault == "nonselected" else "previous-boot")
     monkeypatch.setattr(commands,"PostgresReviewStore",Reads)
     monkeypatch.setattr(provider_priority,"prepare_delivery_feedback",qualify_selected)
     monkeypatch.setattr(managed_runtime,"current_managed_runtime_identity",lambda:"trusted-boot")
     with pytest.raises(HTTPException) as held:
         commands.prepare_retry(dict(finding=original.finding.model_dump(mode="json"),operation_id="retry-original"),
             connections=lambda:pytest.fail("retry opened a writer"),clock=FakeClock())
-    assert held.value.status_code == 409 and held.value.detail == "first_departure_opponent_gap"
+    assert held.value.status_code == (409 if fault == "nonselected" else 503)
+    assert held.value.detail == ("first_departure_opponent_gap" if fault == "nonselected" else "verified_feedback_mode_required")
     assert calls == [original] and delivery.state == "pending"
 
 

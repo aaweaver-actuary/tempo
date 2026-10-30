@@ -54,7 +54,7 @@ class PreparedRetry:
     request: object
     source: object
     work: object
-    runtime_id: str
+    current_runtime_id: str
 
 
 def prepare_retry(payload, *, connections=None, clock=None, capture=None, workspace="legacy"):
@@ -84,6 +84,8 @@ def prepare_retry(payload, *, connections=None, clock=None, capture=None, worksp
             runtime_id=current_managed_runtime_identity())
     work = prepare_delivery_feedback(candidates[0],connections=connections,clock=clock,
         admitted=admitted,capture=capture)
+    # Fresh trusted root identity AFTER all expensive preparation. This object
+    # is ephemeral; the gateway never persists/reuses prepared server facts.
     runtime_id = current_managed_runtime_identity()
     if work is None or runtime_id is None or runtime_id != work.mode_runtime_id:
         raise HTTPException(503,"verified_feedback_mode_required")
@@ -102,13 +104,13 @@ def retry(database, prepared):
     try:
         # The handler runs only after the gateway request hash/token/receipt
         # fence. Reuse actual prepared mode/source locks before retry bookkeeping.
-        fence_feedback_handoff(database,work.delivery.command.key.workspace_id,runtime_id=prepared.runtime_id)
+        fence_feedback_handoff(database,work.delivery.command.key.workspace_id,runtime_id=prepared.current_runtime_id)
         work.provider_feedback.qualification_fence(database,work.delivery.command,work.delivery.qualification)
         review = command_review(database,workspace=work.delivery.command.key.workspace_id)
         delivery = review.store.request_retry(review.workspace,prepared.source,request.finding,request.operation_id)
         if delivery.state != "acknowledged":
             result = apply_prepared_determined_feedback(database,work,clock=clock,
-                current_runtime_id=prepared.runtime_id)
+                current_runtime_id=prepared.current_runtime_id)
             if not result.progressed:
                 raise HTTPException(409,result.held_reason or "qualified_feedback_retry_pending")
         owner = EncounterFeedback(PostgresGameFeedbackStore(database),None,

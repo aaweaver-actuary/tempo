@@ -5987,6 +5987,11 @@ the retained-qualification fixture; their old bytes are never rewritten.
 - `test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset`
   reuses the actual legacy owner settlement and proves same-key acknowledgment
   without fabricated progress or another scheduling review.
+- The adjacent actual-owner historical-held case retains its hold control and
+  saved review while acknowledging the same old receipt. The public retry POST
+  response and strict frontend client each accept both the old base receipt and
+  the qualified progress receipt without stripping fields. Unsafe preparation
+  and a changed boot identity are rejected before any writer opens.
 
 Independent #620 review repairs add:
 

@@ -242,7 +242,7 @@ export interface GameReviewApi {
   recentGames(request?: { signal?: AbortSignal }): Promise<RecentGames>;
   gameDetail(request: { provider: GameSummary["provider"]; game_id: string; repertoire_id?: string; signal?: AbortSignal }): Promise<GameDetail>;
   sync(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<ProviderSyncStatus>;
-  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<LearningReceipt>;
+  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<EncounterReceipt | LearningReceipt>;
   findings(gameId: string): Promise<readonly Finding[]>;
   feedbackStatus(key: GameEffectKey): Promise<LearningReceipt | null>;
 }

@@ -45,8 +45,11 @@ def acknowledge_qualified_delivery(delivery, receipt):
             or receipt.source_revision != source.source_revision or not receipt.owner_receipt_id
             or receipt.source_digest != source.source_digest or receipt.observation != "missed"):
         raise ValueError("receiver_qualified_receipt_provenance_mismatch")
-    historical_settled = receipt.interface_version == "0.2.1" and receipt.status == "settled" and receipt.progress is None
-    if not historical_settled and (qualification is None or receipt.interface_version != "0.2.2" or receipt.progress is None
+    historical_final = receipt.interface_version == "0.2.1" and receipt.progress is None and (
+        receipt.status == "settled" or (receipt.status == "held"
+            and receipt.reason in {"source_hold","source_withdraw"}
+            and receipt.outcome in {"historical_preserved","withdrawn","duplicate"}))
+    if not historical_final and (qualification is None or receipt.interface_version != "0.2.2" or receipt.progress is None
             or receipt.progress.determined_at != qualification.determined_at
             or receipt.progress.stream != qualification.stream):
         raise ValueError("receiver_first_departure_policy_receipt_required")
