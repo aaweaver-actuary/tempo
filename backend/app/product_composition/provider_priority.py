@@ -15,8 +15,9 @@ from app.contracts.product_v02.learning import FirstDepartureWitness
 from app.games.feedback.ports import Delivery, DeliveryDeferred
 from app.games.feedback.qualification import (acknowledge_control_delivery, acknowledge_qualified_delivery,
     delivery_for, held_delivery, qualify_delivery, select_first_boundary)
-from app.repertoire import project_capture, PreparedPublishedRepertoire
-from app.services.feedback_diagnostics import diagnose_feedback, feedback_span, feedback_work
+from app.repertoire import project_capture, PreparedFirstBoundaryRepertoire
+from app.services.feedback_diagnostics import (diagnose_feedback, feedback_span, feedback_work,
+    feedback_preparation_work)
 from .encounters import receive_admitted_encounter
 from .game_review import CurrentStudyFeedback, CurrentStudyReceiptReads
 from .retained_game import retained_canonical_game
@@ -176,12 +177,12 @@ def _current_feedback_targets(command, snapshots, *, connections, target_prepare
 
 
 def _qualified_facts(command, *, connections, clock, delivery=None, selector=None, target_prepare=None):
-    """Read bounded source/config/publications; close connections before replay."""
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    """Complete authored scope first, then complete bindings for elected routes."""
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
+        read_authored_scope, read_candidate_bindings)
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
-    from inspect import signature
-    if selector is None:
-        selector = select_first_boundary
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    base_selector = selector or select_first_boundary
     reads = PostgresReviewStore(connections)
     with feedback_span('source_configuration_read'):
         configuration = reads.configuration(command.key.workspace_id, command.key.provider)
@@ -191,26 +192,60 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
             raise DeliveryDeferred("first_departure_source_unavailable")
         original = delivery_for(source.source_key, command)
         delivery = reads.delivery(original.operation_id) or original
-    publications, snapshots, unavailable = [], [], []
-    if configuration is not None:
+    publications, unavailable = [], []
+    game = source.normalized if source is not None else None
+    if configuration is not None and game is not None:
         for repertoire_id in configuration.repertoire_ids:
             try:
-                # Production owners declare the snapshot keyword; legacy
-                # injected no-argument readers retain their supplied contract.
-                options = ({"repertoire_snapshot": True}
-                    if "repertoire_snapshot" in signature(connections).parameters else {})
+                # Each supported read keeps its ordinary finite statement
+                # deadline. All legal execution follows the closed read.
                 with feedback_span('publication_read'):
-                    with connections(**options) as database:
-                        facts = read_repertoire(database, repertoire_id)
-                # The adapter owns decoding; all chess projection follows exit.
+                    with connections() as database:
+                        facts = read_authored_scope(database, repertoire_id)
                 with feedback_span('publication_projection'):
-                    publication = PreparedPublishedRepertoire(facts)
-                    snapshot = publication.snapshot
+                    publication = PreparedFirstBoundaryRepertoire(facts, game=game)
+                    feedback_preparation_work(publication.work)
             except ValueError:
                 unavailable.append(repertoire_id)
             else:
                 publications.append(publication)
-                snapshots.append(snapshot)
+
+    def selected(current_game, **arguments):
+        # Custom injected selectors retain their original public protocol.
+        # The production selector accepts only Repertoire-owned exact-game
+        # execution; Study independently repeats policy over these same facts.
+        if base_selector is select_first_boundary:
+            arguments['prepared_repertoires'] = tuple(publications)
+        return base_selector(current_game, **arguments)
+
+    snapshots = tuple(value.snapshot for value in publications)
+    if configuration is not None and game is not None:
+        source_scope = IntroductionGameScope(provider=configuration.provider,
+            game_id=game.game_id, source_revision=game.source_revision, source_digest=game.source_digest)
+        with feedback_span('first_boundary_route_selection'):
+            boundary = selected(game, snapshots=snapshots, source=source_scope,
+                selected_repertoire_ids=configuration.repertoire_ids,
+                unavailable_repertoire_ids=tuple(unavailable))
+        if boundary.status == 'own_unmapped' and boundary.diagnostic == 'missing_or_ambiguous_physical_target':
+            completed = []
+            for publication in publications:
+                facts = publication.authored_facts()
+                repertoire_id = facts['repertoire']['id']
+                route_ids = tuple(sorted({route.route_id for route in boundary.surviving_routes
+                    if route.repertoire_id == repertoire_id}))
+                if route_ids:
+                    try:
+                        with feedback_span('candidate_binding_read'):
+                            with connections() as database:
+                                bindings = read_candidate_bindings(database, repertoire_id=repertoire_id,
+                                    expected_header=facts['repertoire'], route_ids=route_ids)
+                        with feedback_span('candidate_binding_projection'):
+                            publication = publication.with_bindings(bindings)
+                    except ValueError:
+                        unavailable.append(repertoire_id)
+                completed.append(publication)
+            publications[:] = completed
+            snapshots = tuple(value.snapshot for value in publications)
     with feedback_span('current_target_prepare'):
         snapshots, prepared_targets = _current_feedback_targets(command, snapshots,
             connections=connections, target_prepare=target_prepare)
@@ -219,10 +254,10 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
         qualified = qualify_delivery(delivery, source=source, configuration=configuration,
             snapshots=tuple(snapshots), unavailable=tuple(unavailable),
             determined_at=original_determination, retry_at=clock.now() + 30,
-            select_first_boundary=selector)
+            select_first_boundary=selected)
     from app.study.game_feedback import effect_id
     qualified = qualified.model_copy(update={"owner_effect_id": effect_id(command.key)})
-    return qualified, source, configuration, tuple(publications), selector, prepared_targets
+    return qualified, source, configuration, tuple(publications), selected, prepared_targets
 
 
 def _prepare_qualified_owner(command, qualification, *, source, configuration,

@@ -18,6 +18,7 @@ from app.contracts.product_v02.games import (
     FirstDepartureRoute, FirstDepartureScope, FirstDepartureSelection,
 )
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot
+from app.repertoire import PreparedFirstBoundaryRepertoire
 
 __all__ = ["select_first_boundary"]
 
@@ -51,7 +52,8 @@ def _snapshot_key(snapshot: RepertoireSnapshot) -> str:
 def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[RepertoireSnapshot],
                           source: IntroductionGameScope,
                           selected_repertoire_ids: Iterable[str] | None = None,
-                          unavailable_repertoire_ids: Iterable[str] = ()) -> FirstDepartureSelection:
+                          unavailable_repertoire_ids: Iterable[str] = (),
+                          prepared_repertoires: Iterable[PreparedFirstBoundaryRepertoire] = ()) -> FirstDepartureSelection:
     """Select supplied facts only; the Study owner still revalidates authority.
 
     Pass the original configured selection and every failed read explicitly.
@@ -74,6 +76,23 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
             raise ValueError("first_boundary_workspace_mismatch")
         supplied[_snapshot_key(snapshot)] = snapshot
     snapshots = tuple(supplied[key] for key in sorted(supplied))
+    prepared = {}
+    for value in prepared_repertoires:
+        if type(value) is not PreparedFirstBoundaryRepertoire or not value.for_game(game):
+            raise ValueError("first_boundary_prepared_scope_mismatch")
+        identity = value.snapshot.membership.snapshot_id
+        if identity in prepared and prepared[identity] is not value:
+            raise ValueError("first_boundary_prepared_scope_mismatch")
+        prepared[identity] = value
+    observed = set()
+    for snapshot in snapshots:
+        value = prepared.get(snapshot.membership.snapshot_id)
+        if value is not None:
+            if not value.accepts(snapshot):
+                raise ValueError("first_boundary_prepared_scope_mismatch")
+            observed.add(snapshot.membership.snapshot_id)
+    if observed != set(prepared):
+        raise ValueError("first_boundary_prepared_scope_mismatch")
     unavailable = set(unavailable_repertoire_ids)
     selected = (set(selected_repertoire_ids) if selected_repertoire_ids is not None else
                 {repertoire for snapshot in snapshots for repertoire in snapshot.membership.scope_repertoire_ids})
@@ -90,15 +109,18 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
             complete=item.membership.complete and item.membership.available,
             available=item.membership.available) for item in values}
         versions = set()
-        for item in values:
-            route_ids = {route.route_id for route in item.membership.routes if route.repertoire_id == repertoire_id}
-            payload = dict(
-                routes=[route.model_dump(mode="json") for route in item.membership.routes if route.repertoire_id == repertoire_id],
-                boundaries=[boundary.model_dump(mode="json") for boundary in item.boundaries if boundary.route_id in route_ids],
-                mappings=[mapping.model_dump(mode="json") for mapping in item.decision_presentations if mapping.repertoire_id == repertoire_id])
-            for values_for_field in payload.values():
-                values_for_field.sort(key=lambda value: json.dumps(value, sort_keys=True))
-            versions.add(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+        # One supplied version cannot contradict itself. Keep the complete
+        # canonical payload comparison whenever more than one is supplied.
+        if len(values) > 1:
+            for item in values:
+                route_ids = {route.route_id for route in item.membership.routes if route.repertoire_id == repertoire_id}
+                payload = dict(
+                    routes=[route.model_dump(mode="json") for route in item.membership.routes if route.repertoire_id == repertoire_id],
+                    boundaries=[boundary.model_dump(mode="json") for boundary in item.boundaries if boundary.route_id in route_ids],
+                    mappings=[mapping.model_dump(mode="json") for mapping in item.decision_presentations if mapping.repertoire_id == repertoire_id])
+                for values_for_field in payload.values():
+                    values_for_field.sort(key=lambda value: json.dumps(value, sort_keys=True))
+                versions.add(json.dumps(payload, sort_keys=True, separators=(",", ":")))
         if repertoire_id in unavailable or len(facts) != 1 or len(versions) > 1:
             colours = {item.learner_color for item in values}
             scope.append(FirstDepartureScope(repertoire_id=repertoire_id,
@@ -146,10 +168,14 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
                 if identity in seen:
                     continue
                 seen.add(identity)
-                executable = (route.starting_fen, tuple(route.moves))
-                if executable not in replayed:
-                    replayed[executable] = replay_line(route.starting_fen, route.moves)
-                frames = replayed[executable]
+                owner_execution = prepared.get(snapshot.membership.snapshot_id)
+                if owner_execution is not None:
+                    frames = owner_execution.replay_route(game, route)
+                else:
+                    executable = (route.starting_fen, tuple(route.moves))
+                    if executable not in replayed:
+                        replayed[executable] = replay_line(route.starting_fen, route.moves)
+                    frames = replayed[executable]
                 routes.append((snapshot, route, boundaries[route.route_id], frames))
                 traversals.append(TraversalRoute(tuple(frame["comparison_key"] for frame in frames), tuple(route.moves)))
     except (ValueError, KeyError):

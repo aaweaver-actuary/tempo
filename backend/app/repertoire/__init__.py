@@ -15,3 +15,7 @@ from .snapshot import (RepertoireSnapshotBoundExceeded, CapturedSnapshotAdapter,
 
 __all__ += ["RepertoireSnapshotBoundExceeded", "CapturedSnapshotAdapter", "CurrentSnapshotAdapter", "project_capture", "project_repertoire",
             "PublishedSnapshotAdapter", "project_published_repertoire", "PreparedPublishedRepertoire"]
+
+from .feedback_scope import PreparedFirstBoundaryRepertoire
+
+__all__ += ["PreparedFirstBoundaryRepertoire"]

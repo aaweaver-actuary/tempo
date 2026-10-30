@@ -58,6 +58,7 @@ class CurrentOwnerDecisions:
         self._prepared_encounter = None
         self._qualified = None
         self._qualified_captures = ()
+        self._qualified_candidate_captures = ()
         self._qualification_fence = None
         self._prepared_targets = ()
         _require(source['authority'] == source['observed_after']
@@ -98,11 +99,17 @@ class CurrentOwnerDecisions:
                  'first_departure_preparation_requires_closed_owner_reads')
         _require(callable(qualification_fence) and callable(select_first_boundary),
                  'first_departure_current_owner_capability_required')
-        from app.repertoire import PreparedPublishedRepertoire, project_published_repertoire
+        from app.repertoire import (PreparedPublishedRepertoire, PreparedFirstBoundaryRepertoire,
+                                    project_published_repertoire)
         prepared = tuple(qualified_publications)
-        _require(all(type(item) is PreparedPublishedRepertoire or isinstance(item, Mapping)
+        _require(all(type(item) in {PreparedPublishedRepertoire, PreparedFirstBoundaryRepertoire}
+                     or isinstance(item, Mapping)
                      for item in prepared), 'first_departure_current_publication_preparation_required')
-        publications = tuple(item.publication_facts() if type(item) is PreparedPublishedRepertoire
+        _require(all(item.for_game(game) for item in prepared
+                     if type(item) is PreparedFirstBoundaryRepertoire),
+                 'first_boundary_prepared_scope_mismatch')
+        publications = tuple(item.authored_facts() if type(item) is PreparedFirstBoundaryRepertoire
+            else item.publication_facts() if type(item) is PreparedPublishedRepertoire
             else json.loads(json.dumps(item)) for item in prepared)
         _require(bool(publications)
                  and len({item['repertoire']['id'] for item in publications}) == len(publications),
@@ -110,8 +117,11 @@ class CurrentOwnerDecisions:
         # Repertoire constructed these immutable snapshots from its owned full
         # read. Reuse that projection only; Study independently reselects below
         # and still fences every source/publication and target in its writer.
-        snapshots = tuple(item.snapshot if type(item) is PreparedPublishedRepertoire
+        snapshots = tuple(item.snapshot if type(item) in {
+            PreparedPublishedRepertoire, PreparedFirstBoundaryRepertoire}
             else project_published_repertoire(facts) for item, facts in zip(prepared, publications))
+        self._qualified_candidate_captures = tuple(item.candidate_facts() for item in prepared
+            if type(item) is PreparedFirstBoundaryRepertoire and item.candidate_facts() is not None)
         from .recombination import PreparedFeedbackTarget
         targets = tuple(prepared_targets)
         _require(len(targets) <= 64 and all(isinstance(item,PreparedFeedbackTarget) for item in targets),
@@ -169,6 +179,12 @@ class CurrentOwnerDecisions:
         self._qualification_fence(self.database, command, qualification)
         for header in sorted(self._qualified_captures, key=lambda item:item['id']):
             self._fence_selected_publication(header)
+        from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import fence_candidate_bindings
+        for candidate in sorted(self._qualified_candidate_captures, key=lambda item:item['repertoire']['id']):
+            try:
+                fence_candidate_bindings(self.database, candidate)
+            except ValueError as error:
+                raise CurrentDecisionUnavailable(str(error)) from error
         target = self.prepared_target(qualification.selection.decision)
         if target is not None:
             from .recombination import fence_game_feedback_target

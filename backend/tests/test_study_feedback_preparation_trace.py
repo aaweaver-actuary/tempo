@@ -45,6 +45,29 @@ def test_feedback_trace_retains_safe_inner_reason_without_payload_or_result(capl
     assert diagnostics._current.get() is None
 
 
+def test_feedback_trace_aggregates_only_fixed_numeric_preparation_work(caplog):
+    caplog.set_level(logging.INFO, logger='tempo.study.feedback')
+    work = dict(input_plies=160, prefix_nodes=80, replayed_nodes=80,
+        projected_frame_records=81, accounting_batches=1,
+        work_limit_plies=100000, accounting_interval_nodes=128,
+        private_source='private PGN credentials', elapsed_seconds=float('nan'))
+    @diagnostics.diagnose_feedback
+    def prepare():
+        diagnostics.feedback_preparation_work(work)
+        diagnostics.feedback_preparation_work(work | dict(input_plies=40))
+        diagnostics.feedback_preparation_work(work | dict(input_plies=True))
+        diagnostics.feedback_preparation_work({'private': 'do not serialize'})
+        return True
+    assert prepare() is True
+    record, = records(caplog)
+    assert record['preparation_work'] == dict(repertoires=2,
+        input_plies=200, max_repertoire_input_plies=160,
+        prefix_nodes=160, replayed_nodes=160, projected_frame_records=162,
+        accounting_batches=2, work_limit_plies=100000, accounting_interval_nodes=128)
+    assert 'private' not in json.dumps(record) and 'NaN' not in json.dumps(record)
+    assert 'elapsed_seconds' not in record['preparation_work']
+
+
 def test_feedback_trace_redacts_unrecognized_reason_status_and_sqlstate(caplog):
     caplog.set_level(logging.INFO, logger='tempo.study.feedback')
     error = RemediationError('private_status', 'private_game_id')

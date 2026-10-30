@@ -1,4 +1,5 @@
 """Bounded, payload-free diagnostics for the independent Study feedback sweep."""
+from collections.abc import Mapping
 from contextvars import ContextVar
 from contextlib import contextmanager
 from functools import wraps
@@ -36,6 +37,27 @@ def feedback_work(identity, version=None):
         record['work_token'] = sha256(identity.encode()).hexdigest()[:16]
         if type(version) is int:
             record['work_version'] = version
+
+
+def feedback_preparation_work(work):
+    """Record fixed numeric work facts only; never serialize the owner value."""
+    record = _current.get()
+    if record is None or not isinstance(work, Mapping):
+        return
+    fields = ('input_plies', 'prefix_nodes', 'replayed_nodes',
+              'projected_frame_records', 'accounting_batches')
+    limits = ('work_limit_plies', 'accounting_interval_nodes')
+    if (any(type(work.get(field)) is not int or work[field] < 0 for field in fields)
+            or any(type(work.get(field)) is not int or work[field] <= 0 for field in limits)):
+        return
+    values = record.setdefault('preparation_work', dict(repertoires=0,
+        max_repertoire_input_plies=0, **{field: 0 for field in fields}))
+    values['repertoires'] += 1
+    values['max_repertoire_input_plies'] = max(values['max_repertoire_input_plies'], work['input_plies'])
+    for field in fields:
+        values[field] += work[field]
+    for field in limits:
+        values[field] = work[field]
 
 
 @contextmanager

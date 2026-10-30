@@ -269,3 +269,71 @@ read-only execution, single-statement source consistency, borrowed rollback,
 conflict visibility, SQL parameter binding and overflow refusal. It has no live
 or engine/provider dependency. #491/#501 own runtime wiring and central test
 registration; #492 owns its approval/publication transaction and callback.
+
+## Game-bound first-boundary preparation
+
+The recovery path uses public `PreparedFirstBoundaryRepertoire(facts, game=...)`
+from [feedback_scope.py](feedback_scope.py), retaining the full snapshot API
+above for its other consumers. Construction accepts the complete authored owner
+read, including full-source card/membership counts, and the exact canonical game.
+It never accepts caller-supplied execution frames or a readiness assertion.
+
+All applicable authored routes and their full tails are legally executed.
+Invocation-local exact prefixes and aliases share execution; no mutable Board
+survives construction. Public standard chess bitboards, color, turn, cleaned
+castling rights and legally relevant EP form a private exact in-memory identity
+equivalent to the ordinary canonical legal-EP FEN. Persisted FEN/card IDs are
+unchanged. Within each cap, game positions are rendered once; unrelated positions stay numerically
+retained and cannot manufacture a match. Every route identity, endpoint,
+same-repertoire own-response conflict and illegal tail remains available to the
+selector. Immutable projected frames are shared for exact aliases, while every
+route occurrence stays present.
+
+`with_bindings(owner_facts)` returns another immutable cap using the complete
+graph/card/membership owner read for the elected surviving route IDs. Every
+candidate graph is retained, including missing physical references; the existing
+exact graph/card/root/executable mapping law still applies. Omitting an actual
+candidate route leaves physical authority unknown. The membership digest is
+explicitly `game_bound_first_boundary_repertoire`, containing full authored
+scope, exact game and the named candidate binding read. It does not claim a full
+physical catalogue. Reusing execution requires matching exact game bytes and
+immutable membership, routes and boundaries. Supplied mapping facts remain fully
+validated; Study independently compares its own prepared selection before any
+effect.
+
+```mermaid
+flowchart LR
+  Compose["Product composition"] --> Authored["Database owner: complete authored scope"]
+  Authored --> Cap["Repertoire-owned exact-game legal execution"]
+  Selector["Games pure first-boundary selector"] --> Cap
+  Compose --> Selector
+  Selector --> Routes["Every surviving candidate route ID"]
+  Routes --> Read["Database owner: complete candidate binding read"]
+  Read --> Bind["Repertoire with_bindings; detached immutable facts"]
+  Bind --> Qualify["Pure qualification selection"]
+  Bind --> Study["Study independently selects original facts plus validated current target"]
+  Study --> Fence["Short writer: source/configuration/header fences then exact candidate relation"]
+  Fence --> Target["Existing target currentness and atomic learning effect"]
+```
+
+The cap opens no connection, transaction, provider or worker. Its detached
+candidate facts are re-read by the owning database adapter in Study's writer;
+an earlier graph/card/member/block/delete/absence change rejects preparation.
+Freshness linearizes at that exact relation read. No global phantom lock is
+claimed for later independent integrity changes; the existing selected-target
+locks remain mandatory.
+
+The existing 10,000-route/card/membership and 100,000-authored-ply bounds remain.
+Work is counted inside 128-node input/replay batches; elapsed stage diagnostics
+are observations, not a hard deadline or resumable durable proof. The existing
+feedback diagnostic aggregates only fixed numeric work counts/limits/intervals;
+it never logs routes, positions, source IDs, moves or owner facts. No new
+graph-count or aggregate-byte limit is added. Actual preparation service,
+background progress, full-writer duration and browser responsiveness require the
+assembled acceptance. There is no persistent proof cache or schema change.
+
+[The focused owner cases](../../tests/test_game_bound_repertoire_preparation.py)
+compare policy with the full selector, including illegal tails, conflicts,
+coverage/end, unavailable mappings, complete versus omitted candidates, exact
+EP/castling/clocks, source ownership, wrong games, read-only alias frames and
+Study's rejection of producer mapping substitution.

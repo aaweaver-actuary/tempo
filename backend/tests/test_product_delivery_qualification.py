@@ -457,14 +457,21 @@ def test_mode_admission_is_required_without_worker_health_dependency():
 
 @pytest.mark.parametrize("reader", ["dedicated", "injected"])
 def test_qualification_projects_complete_publication_after_reader_exit(monkeypatch, reader):
-    import json
     from app.product_composition import provider_priority as composition
+    from app.repertoire import PreparedFirstBoundaryRepertoire, project_published_repertoire
     from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
     from tempo_legacy_database.adapters.games import product_review
+    from test_product_snapshot import repertoire_facts
+    from test_game_bound_repertoire_preparation import authored, candidate
     case, reading, events = setup_case(), [False], []
+    facts = repertoire_facts()
+    case.snapshot = project_published_repertoire(facts)
+    case.command = command(case.game, case.snapshot, 3)
+    case.source = case.source.model_copy(update={'effects': (case.command,)})
     @contextmanager
     def owned_read(*, repertoire_snapshot=False):
-        assert repertoire_snapshot == (reader == "dedicated")
+        # Both bounded reads retain the ordinary statement deadline.
+        assert not repertoire_snapshot
         reading[0] = True
         try:
             yield object()
@@ -483,19 +490,31 @@ def test_qualification_projects_complete_publication_after_reader_exit(monkeypat
     def owner_read(database, repertoire):
         assert reading[0] and repertoire == "rep"
         events.append("read")
-        return {"complete": "publication"}
-    def project(facts):
-        assert not reading[0] and facts == {"complete": "publication"}
+        return authored(facts)
+    def binding_read(database, *, repertoire_id, expected_header, route_ids):
+        assert reading[0] and repertoire_id == 'rep'
+        assert expected_header == facts['repertoire'] and route_ids == ('route',)
+        events.append('bindings_read')
+        return candidate(facts)
+    def project(source, *, game):
+        assert not reading[0] and source == authored(facts) and game == case.game
         events.append("project")
-        return SimpleNamespace(snapshot=case.snapshot)
+        return PreparedFirstBoundaryRepertoire(source, game=game)
+    original_bind = PreparedFirstBoundaryRepertoire.with_bindings
+    def bind(prepared, source):
+        assert not reading[0] and source == candidate(facts)
+        events.append('bindings_project')
+        return original_bind(prepared, source)
     monkeypatch.setattr(product_review, "PostgresReviewStore", Reads)
-    monkeypatch.setattr(product_snapshot, "read_repertoire", owner_read)
-    monkeypatch.setattr(composition, "PreparedPublishedRepertoire", project)
+    monkeypatch.setattr(product_snapshot, "read_authored_scope", owner_read)
+    monkeypatch.setattr(product_snapshot, "read_candidate_bindings", binding_read)
+    monkeypatch.setattr(composition, "PreparedFirstBoundaryRepertoire", project)
+    monkeypatch.setattr(PreparedFirstBoundaryRepertoire, 'with_bindings', bind)
     result = composition._qualified_facts(case.command, connections=connections,
         clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command),
         target_prepare=lambda *args,**kwargs:None)
     assert result[0].qualification_status == "ready"
-    assert events == ["read", "closed", "project"]
+    assert events == ["read", "closed", "project", "bindings_read", "closed", "bindings_project"]
 
 
 @pytest.mark.parametrize("binding",["none","valid","identity_change","hold"])
