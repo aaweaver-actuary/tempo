@@ -68,23 +68,56 @@ try:
         feedback = sys.argv[1] == 'feedback-worker'
         from app.product_composition import game_sync_current as current
         original = current.current_provider_worker
+        actual_admission = current.current_sync_admission
+        recovery_runtime = False
         def build(**kwargs):
             runtime = original(**kwargs, clock=Clock(), transport_factory=LocalHTTP)
             if feedback:
-                print(json.dumps({'feedback_runtime_prepared': True}), flush=True)
+                print(json.dumps({'feedback_runtime_prepared': True,
+                                  'recovery_runtime_prepared': recovery_runtime}), flush=True)
             return runtime
         current.current_provider_worker = build
         current.current_sync_admission = feedback_admitted if feedback else admitted
         sys.argv = ['worker', *(['--feedback'] if feedback else ['--collect-only']), '--follow', '--overlap-seconds', '0',
             '--reconcile-interval-seconds', '600', '--once', '--max-units', '50']
         current.main()
-    elif sys.argv[1] == 'feedback-configure':
+        if feedback and Path('/qualification/recovery-lifetime').exists():
+            deadline = time.monotonic() + 600
+            while not Path('/qualification/recovery-configuration-ready').exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('recovery_fixture_configuration_not_released')
+                time.sleep(.05)
+            inputs = json.loads(Path('/qualification/provider.json').read_text())
+            recovery_runtime = True
+            @contextmanager
+            def recovery_admitted():
+                global inputs
+                deadline = time.monotonic() + 180
+                while not Path('/qualification/recovery-producer-start').exists():
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('recovery_fixture_actual_admission_not_released')
+                    time.sleep(.05)
+                inputs = json.loads(Path('/qualification/provider.json').read_text())
+                # Preserve the original production controls and resource lease.
+                # Only HTTP inputs/clock and the start barrier are synthetic.
+                with actual_admission():
+                    print(json.dumps({'recovery_actual_admission_granted': True}), flush=True)
+                    yield
+            current.current_sync_admission = recovery_admitted
+            sys.argv = ['worker', '--feedback', '--follow', '--overlap-seconds', '0',
+                '--reconcile-interval-seconds', '600', '--once', '--max-units', '8']
+            current.main()
+            print(json.dumps({'recovery_actual_worker_finished': True}), flush=True)
+    elif sys.argv[1] in {'feedback-configure', 'recovery-configure'}:
         from app.games.feedback.review import SyncConfiguration
         from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore
         connections = DedicatedGamesConnections(os.environ['TEMPO_DATABASE_WRITE_URL'])
         configuration = SyncConfiguration.model_validate_json(json.dumps(inputs['configuration']))
-        PostgresReviewStore(connections).configure(configuration, 0)
-        print(json.dumps({'configured': True, 'revision': configuration.revision}))
+        store = PostgresReviewStore(connections)
+        previous = store.configuration(configuration.workspace_id, configuration.provider) if sys.argv[1] == 'recovery-configure' else None
+        store.configure(configuration, previous.revision if previous else 0)
+        print(json.dumps({'configured': True, 'revision': configuration.revision,
+                          'selected_repertoire_count': len(configuration.repertoire_ids)}))
     elif sys.argv[1] == 'feedback-capabilities':
         from app.product_composition.game_collection_status import feedback_release_capabilities
         print(json.dumps(feedback_release_capabilities()))

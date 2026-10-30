@@ -375,7 +375,8 @@ def feedback_case(feedback_postgres):
 
 
 @pytest.mark.parametrize("introduced", [False, True], ids=["unseen", "introduced"])
-def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced):
+def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced,
+                                                                          recovery_mode=None):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
     from app.games.feedback.ports import Delivery
@@ -450,6 +451,8 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
             end_at=(now-timedelta(hours=1)).replace(microsecond=0).isoformat(),precision='second'),repertoire_ids=[repertoire],
         speeds=['rapid'],rated=True,interval_seconds=60,revision=1))
     (directory/'provider.json').write_text(json.dumps(inputs))
+    if recovery_mode is not None:
+        (directory/'recovery-lifetime').write_text('continue with original production admission\n')
     nginx = (ROOT/'nginx.conf').read_text()
     assert nginx.count('proxy_pass http://api:8000;')==1
     (directory/'nginx.conf').write_text(nginx)
@@ -1041,6 +1044,15 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(target_id,)).fetchone()[0]==int(introduced)
         report.update(operation_id=operation_id,key=original['key'],qualification=settled['qualification'],receipt=settled['receipt'],source_replay_receipt=replayed['receipt'])
         report['stages'].append('same_key_settlement')
+        if recovery_mode is not None:
+            stage = 'study_recovery_thirty_transitions'
+            from study_recovery_acceptance import run_recovery
+            run_recovery(case, root=ROOT, directory=directory, report=report, inputs=inputs,
+                entry=entry, api=api, execute=execute, docker=docker, containers=containers,
+                original_repertoire=repertoire, web_url=web_url, study_only=recovery_mode,
+                mode_intent=mode,
+                custom_target=dict(card_id=target_id, repertoire_id=repertoire, occurrence_ply=1,
+                    prefix=[], expected='e2e4', wrong='d2d4', starting_fen=capture['game']['start_fen']))
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
         if stage in ('natural_refresh_before_explicit_request','browser_requests_fresh_refresh',
@@ -1097,6 +1109,10 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 logs = docker('logs',resource['id'],check=False)
                 text = (logs.stdout+'\n'+logs.stderr).replace(reader_password,'<reader-secret>').replace(writer_password,'<writer-secret>')
                 report.setdefault('runtime_logs',{})[role]=text[-12000:]
+                if recovery_mode is not None:
+                    for private in (admin_dsn, reader_dsn, writer_dsn):
+                        text = text.replace(private, '<redacted-connection>')
+                    (evidence/('recovery-'+owner+'-'+role+'.log')).write_text(text)
                 docker('rm','-f',resource['id'])
             absent = docker('inspect',resource['id'],check=False)
             assert absent.returncode!=0 and 'no such' in absent.stderr.lower()
