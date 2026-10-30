@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
+import { assessSelectedReadiness, readProbe, collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
 import { targetKey } from '../../scripts/tempo-deployment.mjs';
 import { configurationFingerprint } from '../../scripts/tempo-runtime.mjs';
 import { cliFixture } from './tempo-cli-fixture.mjs';
 const revision = 'a'.repeat(40), imageId = 'sha256:' + 'b'.repeat(64);
 function facts() {
+  const identity = {availability: 'available', schema_version: 54, reader_role: 'tempo_reader', transaction_read_only: 'on'};
   const configuration = { interval_seconds: 60, window: {start_at: '2026-10-29T10:00:00Z', end_at: '2026-10-29T11:00:00Z'} };
   return { candidate: revision, release: { revision, schema: 54, configFingerprint: 'frozen', images: {[serviceName]: imageId} }, fingerprint: 'frozen',
     maintenance: {status: 'clear'},
+    identityProbe: {status: 'success', json_status: 'valid', evidence: {schema_version: 1, read_only: true, identity}},
+    fullReaderProbe: {status: 'success', json_status: 'valid'},
     target: {project: 'fixture', root: '/fixture'}, hostCommands: [], containers: [],
     service: { command: ['python', '-m', 'app.product_composition.game_sync_current', '--collect-only', '--follow', '--overlap-seconds', '300', '--reconcile-interval-seconds', '600'],
       environment: {TEMPO_PRODUCT_GAME_SYNC_ENABLED: '1', TEMPO_DATABASE_WRITE_URL: 'postgresql://tempo_writer@postgres:5432/tempo',
@@ -19,9 +22,11 @@ function facts() {
       secrets: [{source: 'writer_pgpass', target: 'worker_pgpass'}], mem_limit: 268435456, pids_limit: 96,
       labels: {'tempo.collection.owner': 'managed-game-collection', 'tempo.collection.mode': 'collect-only'} },
     image: {Id: imageId, Config: {Labels: {'org.opencontainers.image.revision': revision}}},
-    report: {schema_version: 1, read_only: true, identity: {availability: 'available', schema_version: 54}, collection: {availability: 'available'}, delivery: {availability: 'available'},
+    report: {schema_version: 1, read_only: true, identity, collection: {availability: 'available'}, delivery: {availability: 'available'},
       providers: {availability: 'available', items: [{provider: 'lichess', configured: true, configuration, required_inputs: {account: true},
-        repertoire_readiness: [{availability: 'available', learner_color: 'white'}]}]}},
+        selected_repertoire_count: 1, repertoires_truncated: false,
+        repertoire_readiness: [{repertoire_id: 'redacted:111111111111', availability: 'available', learner_color: 'white'}]},
+        {provider: 'chesscom', configured: false}]}},
     preview: {providers: [{provider: 'lichess', configured: true, configuration}]} };
 }
 test('collection switch requires structured configuration and installed identity despite successful reads', () => {
@@ -372,12 +377,17 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
       if (same(action, ['ps', '-aq'])) return 'fixture-api\nfixture-collector\n';
       if (same(action, ['inspect', 'fixture-api', 'fixture-collector'])) return JSON.stringify([api, collector]);
       if (same(action, ['image', 'inspect', imageId]) || same(action, ['image', 'inspect', apiImage])) {
-        return JSON.stringify([{Id: action[2], Config: {Labels: {'org.opencontainers.image.revision': revision}}}]);
+        return JSON.stringify([{Id: action[2], Config: {Labels: {'org.opencontainers.image.revision': action[2] === apiImage ? input.apiRevision ?? revision : revision}}}]);
       }
       if (same(action.slice(0, composePrefix.length), composePrefix)) {
         const composeAction = action.slice(composePrefix.length);
         if (same(composeAction, ['config', '--format', 'json'])) return JSON.stringify(configuration);
+        if (same(composeAction, ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status', '--identity-only'])) {
+          if (input.identityRead) return input.identityRead();
+          return JSON.stringify(input.identityProbe.evidence);
+        }
         if (same(composeAction, ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status', '--workspace', 'legacy', '--limit', '20'])) {
+          if (input.fullRead) return input.fullRead();
           return JSON.stringify(input.report);
         }
         if (same(composeAction, ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_sync_current', '--preview', '--follow', '--overlap-seconds', '300'])) {
@@ -399,10 +409,11 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
     throw new Error('Unexpected fixture command: ' + JSON.stringify({program, args}));
   };
   const actionCalls = action => calls.filter(call => call.program === 'docker' && call.args[2] === 'compose' && call.args.includes(action));
-  const invoke = async (operation, {apply = true} = {}) => {
+  const invoke = async (operation, {apply = true, allowances = []} = {}) => {
     try {
       await main([operation, '--config', fixture.registration, '--candidate', revision,
-        ...(['enable', 'disable'].includes(operation) && apply ? ['--apply'] : [])], {runCommand});
+        ...(['enable', 'disable'].includes(operation) && apply ? ['--apply'] : []),
+        ...allowances.flatMap(token => ['--allow-bound-repertoire', token])], {runCommand});
       return outputs.at(-1);
     } finally {
       assert.deepEqual(unexpected, [], 'fixture must recognize every external command');
@@ -491,4 +502,174 @@ test('collection main rejects missing apply before locking or inspecting', async
   for (const operation of ['enable', 'disable']) await assert.rejects(fixture.invoke(operation, {apply: false}), /--apply/);
   assert.deepEqual(fixture.calls, []);
   assert.deepEqual(fixture.lockObservations, []);
+});
+
+
+const oversizedToken = 'redacted:222222222222';
+const bound = () => ({code: 'repertoire_snapshot_exceeds_bound', stage: 'read', sample_complete: false,
+  violations: [{dimension: 'source_rows', observed: 10001, limit: 10000, observation: 'lower_bound'}]});
+function partialScope(input, both = false) {
+  const p = input.report.providers.items[0];
+  p.repertoire_readiness.push({repertoire_id: oversizedToken, availability: 'unavailable',
+    diagnostic: 'repertoire_snapshot_exceeds_bound', bound: bound()});
+  p.selected_repertoire_count = 2;
+  if (both) {
+    input.report.providers.items[1] = {...structuredClone(p), provider: 'chesscom'};
+    input.preview.providers.push({...structuredClone(input.preview.providers[0]), provider: 'chesscom'});
+  }
+  input.allowances = [oversizedToken];
+  return input;
+}
+const coverage = input => assessSelectedReadiness(input.report, input.allowances, {fullReaderSuccessful: true, collectionOnly: true});
+
+test('collection bound allowance is explicit selected scope and shared across providers', () => {
+  const input = partialScope(facts(), true);
+  assert.deepEqual(collectionBlockers(input), []);
+  assert.deepEqual(coverage(input).deferred_comparisons, [{token: oversizedToken,
+    providers: ['lichess', 'chesscom'], diagnostic: 'repertoire_snapshot_exceeds_bound', bound: bound(),
+    allowance_status: 'explicitly_allowed'}]);
+  assert.equal(coverage(input).comparison_coverage, 'partial');
+  delete input.allowances;
+  assert.ok(collectionBlockers(input).includes('lichess:repertoire_readiness_unresolved'));
+});
+
+test('collection allowance cannot suppress malformed bounds incomplete scope or other failures', async t => {
+  const cases = {
+    'unknown token': i => i.allowances = ['redacted:ffffffffffff'],
+    'wrong diagnostic': i => i.report.providers.items[0].repertoire_readiness[1].diagnostic = 'repertoire_read_unavailable',
+    'unready publication': i => i.report.providers.items[0].repertoire_readiness[1].publication_state = 'pending',
+    'missing publication': i => i.report.providers.items[0].repertoire_readiness[1].publication_state = null,
+    'invalid publication revision': i => i.report.providers.items[0].repertoire_readiness[1].publication_revision = 0,
+    'full reader writable': i => i.report.identity = {...i.report.identity, transaction_read_only: 'off'},
+    'missing bound': i => delete i.report.providers.items[0].repertoire_readiness[1].bound,
+    'unknown bound fields': i => i.report.providers.items[0].repertoire_readiness[1].bound.private = 'secret',
+    'unknown violation fields': i => i.report.providers.items[0].repertoire_readiness[1].bound.violations[0].private = 'secret',
+    'empty violations': i => i.report.providers.items[0].repertoire_readiness[1].bound.violations = [],
+    'string measurement': i => i.report.providers.items[0].repertoire_readiness[1].bound.violations[0].observed = '10001',
+    'unproved bound': i => i.report.providers.items[0].repertoire_readiness[1].bound.violations[0].observed = 10000,
+    'wrong dimension': i => i.report.providers.items[0].repertoire_readiness[1].bound.violations[0].dimension = 'private',
+    'truncated': i => i.report.providers.items[0].repertoires_truncated = true,
+    'missing count': i => delete i.report.providers.items[0].selected_repertoire_count,
+    'mismatched count': i => i.report.providers.items[0].selected_repertoire_count = 3,
+    'duplicate token': i => i.report.providers.items[0].repertoire_readiness[0].repertoire_id = oversizedToken,
+    'missing provider': i => i.report.providers.items.pop(),
+    'selection diagnostic': i => i.report.providers.items[0].selection_diagnostic = 'wrong_scope',
+    'zero healthy': i => {i.report.providers.items[0].repertoire_readiness.shift(); i.report.providers.items[0].selected_repertoire_count = 1;},
+    'delivery command': i => i.service.command = i.service.command.filter(c => c !== '--collect-only'),
+    'pending maintenance': i => i.maintenance = {status: 'blocked', code: 'migration_pending'},
+    'identity unavailable': i => i.identityProbe.evidence.identity.availability = 'unavailable',
+    'reader writable': i => i.identityProbe.evidence.identity.transaction_read_only = 'off',
+    'full reader failed': i => i.fullReaderProbe.status = 'timeout',
+  };
+  for (const [name, mutate] of Object.entries(cases)) await t.test(name, () => {
+    const input = partialScope(facts()); mutate(input);
+    assert.notDeepEqual(collectionBlockers(input), []);
+  });
+  const conflict = partialScope(facts(), true);
+  conflict.report.providers.items[1].repertoire_readiness[1].bound.violations[0].observed++;
+  assert.ok(collectionBlockers(conflict).includes('selected_repertoire_observations_conflict:' + oversizedToken));
+});
+
+test('collection healthy allowed repertoire restores complete selected readiness', () => {
+  const input = facts(); input.allowances = ['redacted:111111111111'];
+  assert.deepEqual(collectionBlockers(input), []);
+  assert.equal(coverage(input).comparison_coverage, 'complete');
+  assert.deepEqual(coverage(input).deferred_comparisons, []);
+  assert.deepEqual(coverage(input).unused_bound_allowances, input.allowances);
+});
+
+function readerFailure(failure, stdout, exitStatus = null) {
+  return Object.assign(new Error('private stderr and connection must never escape'), {failure, stdout, exitStatus});
+}
+
+test('collection main independently preserves schema when full reader times out', async t => {
+  const fixture = collectionMainFixture(t);
+  fixture.input.fullRead = () => {throw readerFailure('timeout', '{');};
+  const output = await fixture.invoke('status');
+  assert.equal(output.observed_schema, 54);
+  assert.equal(output.activation_ready, false);
+  assert.equal(output.evidence, null);
+  assert.deepEqual(output.reader_probes.full, {status: 'timeout', exit_status: null, json_status: 'malformed'});
+  assert.ok(output.blockers.includes('full_reader_timeout'));
+  assert.equal(output.blockers.includes('collection_schema_unverified'), false);
+  assert.equal(JSON.stringify(output).includes('private stderr'), false);
+  await assert.rejects(fixture.invoke('enable'), /full_reader_timeout/);
+  assert.equal(fixture.actionCalls('up').length, 0);
+});
+
+test('collection main requires independent identity and blocks conflicting schema', async t => {
+  const fixture = collectionMainFixture(t);
+  fixture.input.identityRead = () => {throw readerFailure('nonzero_exit', '{}', 2);};
+  let output = await fixture.invoke('status');
+  assert.equal(output.observed_schema, null);
+  assert.ok(output.blockers.includes('collection_schema_unverified'));
+  assert.equal(output.reader_probes.full.status, 'success');
+  fixture.input.identityRead = () => JSON.stringify({...fixture.input.identityProbe.evidence,
+    identity: {...fixture.input.report.identity, schema_version: 53}});
+  output = await fixture.invoke('status');
+  assert.ok(output.blockers.includes('collection_schema_observations_conflict'));
+  assert.ok(output.blockers.includes('collection_schema_mismatch'));
+  await assert.rejects(fixture.invoke('enable'), /collection_schema_observations_conflict/);
+  assert.equal(fixture.actionCalls('up').length, 0);
+});
+
+test('collection main retains nonzero reader diagnostics without accepting failed or incomplete output', async t => {
+  const fixture = collectionMainFixture(t);
+  fixture.input.fullRead = () => {throw readerFailure('nonzero_exit', JSON.stringify(fixture.input.report), 2);};
+  let output = await fixture.invoke('status');
+  assert.deepEqual(output.evidence, fixture.input.report);
+  assert.deepEqual(output.reader_probes.full, {status: 'nonzero_exit', exit_status: 2, json_status: 'valid'});
+  assert.equal(output.activation_ready, false);
+  for (const stdout of ['{', JSON.stringify({...fixture.input.report, truncated: true}), '{}', 'null', 'x'.repeat(4 * 1024 * 1024 + 1)]) {
+    fixture.input.fullRead = () => stdout;
+    output = await fixture.invoke('status');
+    assert.equal(output.activation_ready, false);
+    assert.equal(output.evidence, null);
+  }
+  assert.equal(fixture.actionCalls('up').length, 0);
+});
+
+test('collection main allowance is invocation scoped deduplicated and permits only partial collection', async t => {
+  const fixture = collectionMainFixture(t);
+  partialScope(fixture.input, true);
+  const before = readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8');
+  await assert.rejects(fixture.invoke('enable'), /repertoire_readiness_unresolved/);
+  const output = await fixture.invoke('enable', {allowances: [oversizedToken, oversizedToken]});
+  assert.equal(output.activation_ready, true);
+  assert.equal(output.comparison_coverage, 'partial');
+  assert.equal(output.comparison_coverage_scope, 'selected_repertoire_readiness');
+  assert.equal(output.deferred_comparisons.length, 1);
+  assert.deepEqual(output.deferred_comparisons[0].providers, ['lichess', 'chesscom']);
+  assert.equal(fixture.actionCalls('up').length, 1);
+  assert.equal(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'), before);
+  assert.equal((await fixture.invoke('status')).activation_ready, false);
+  assert.equal((await fixture.invoke('disable')).running, false);
+});
+
+test('collection main rejects raw wildcard and malformed allowance tokens before external commands', async t => {
+  const fixture = collectionMainFixture(t);
+  for (const token of ['', 'all', '*', 'private-repertoire', 'redacted:ABCDEF123456', 'redacted:123'])
+    await assert.rejects(fixture.invoke('enable', {allowances: [token]}), /exact public redacted repertoire token/);
+  assert.equal(fixture.calls.length, 0);
+});
+
+test('collection probe failures expose only fixed classifications and complete JSON', () => {
+  const probe = readProbe(() => {throw new Error('postgresql://secret');});
+  assert.deepEqual(probe, {status: 'process_error', exit_status: null, json_status: 'unavailable', evidence: null});
+});
+
+
+test('collection main healthy allowance is unused and invalid installed API never runs probes', async t => {
+  const fixture = collectionMainFixture(t);
+  let output = await fixture.invoke('status', {allowances: ['redacted:111111111111']});
+  assert.equal(output.activation_ready, true);
+  assert.equal(output.comparison_coverage, 'complete');
+  assert.deepEqual(output.unused_bound_allowances, ['redacted:111111111111']);
+  fixture.input.apiRevision = 'f'.repeat(40);
+  const before = fixture.calls.length;
+  output = await fixture.invoke('status');
+  assert.ok(output.blockers.includes('installed_api_revision_mismatch'));
+  assert.equal(output.reader_probes.identity.status, 'unavailable');
+  assert.equal(output.reader_probes.full.status, 'unavailable');
+  assert.equal(fixture.calls.slice(before).some(call => call.args.includes('exec')), false);
 });
