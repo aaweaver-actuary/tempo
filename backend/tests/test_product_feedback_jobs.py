@@ -80,7 +80,7 @@ class MemoryStore:
         return min(ready, key=lambda d: (d.control is None, d.next_attempt_at, d.operation_id)) if ready else None
     def delivery(self, operation_id):
         return self.deliveries.get(operation_id)
-    def save_delivery(self, delivery):
+    def save_delivery(self, delivery, *, serviced=False):
         prior = self.deliveries[delivery.operation_id]
         self.deliveries[delivery.operation_id] = delivery.model_copy(update={"state": "superseded"}) if prior.state == "superseded" else delivery
 

@@ -278,7 +278,9 @@ bounded delivery unit keeps controls first, alternates eligible forward and
 historical work when both are ready, and preserves oldest determination/FIFO
 within each class with a deterministic operation tie-breaker. The last service
 sequence lives in the existing delivery JSON, so restart or an equal attempt clock
-does not reset the turn. This fairness rule controls intake, not Study's urgent
+does not reset the turn. A completed qualification unit spends its turn even when
+held or ineligible; service accounting does not charge a transport attempt.
+This fairness rule controls intake, not Study's urgent
 presentation order or scheduling severity.
 
 `provider_priority.prepare_feedback_qualification` prepares complete published
@@ -309,6 +311,19 @@ the command gateway's receipt/request-hash/token fence may
 atomically in the same borrowed writer. A savepoint rolls both owners back if a
 current fence, receipt or acknowledgment fails. The standalone optional worker's
 mutating `advance_determined_feedback` remains a separate entrypoint.
+Its worker service cursor is never read or advanced by the borrowed Study writer.
+Pending hold/withdraw controls are local work even without a determination
+witness and take explicit `is_control` precedence over accepted preparation.
+They use the same receipt-fenced borrowed transaction for Study control and Games
+acknowledgment, with no source replay or fabricated determination timestamp.
+
+The public retained-lapse retry command uses `prepare_delivery_feedback` and
+the same qualified borrowed apply. It cannot invoke the old chronology scheduler
+as a bypass. A settled historical `0.2.1` owner receipt may acknowledge its exact
+original source/key without inventing `0.2.2` progress or another reset.
+Conclusive complete reanalysis which disqualifies accepted work emits the existing
+hold control while preserving original commands, receipts and genuine reviews;
+missing comparison proof alone does not withdraw it.
 
 Verified managed feedback-mode intent is required. The root captures the trusted
 container boot identity outside the writer after preparation; borrowed apply

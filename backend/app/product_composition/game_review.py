@@ -36,13 +36,17 @@ def create_game_review(*, workspace, connections, learning, clock, runtime=None)
     if getattr(connections, "read_only", False):
         def delivery(_):
             raise ReviewUnavailable("games_writer_profile_required", 503)
+    elif runtime is None and (not callable(getattr(learning,"prepare",None))
+            or not callable(getattr(learning,"accept_qualified",None))):
+        def delivery(_):
+            raise ReviewUnavailable("qualified_provider_encounter_receiver_required",503)
     else:
         from app.games.feedback.coordinator import Coordinator
         from .game_sync import WorkflowComparer, WorkflowNormalizer
         delivery = runtime.runner.coordinator.deliver if runtime is not None else Coordinator(
             providers={}, normalizer=WorkflowNormalizer(), comparer=WorkflowComparer(),
             snapshots=UnavailableSnapshot(), store=PostgresGamesStore(connections),
-            learning=learning, clock=clock).deliver
+            learning=learning, clock=clock,qualifier=learning).deliver
     return GameReview(workspace=workspace, store=PostgresReviewStore(connections),
         learning=learning, build_job=configured_job, deliver=delivery, now=clock.now)
 

@@ -13,7 +13,7 @@ import re
 
 from app.contracts.product_v02.learning import FirstDepartureWitness
 from app.games.feedback.ports import Delivery, DeliveryDeferred
-from app.games.feedback.qualification import (acknowledge_qualified_delivery,
+from app.games.feedback.qualification import (acknowledge_control_delivery, acknowledge_qualified_delivery,
     held_delivery, qualify_delivery)
 from app.repertoire import project_capture, project_published_repertoire
 from .encounters import receive_admitted_encounter
@@ -80,9 +80,15 @@ class PreparedDeterminedFeedback:
 
     @property
     def priority(self):
+        if self.is_control:
+            return None
         return dict(urgent_stream=self.delivery.stream,
             urgent_determined_at=self.delivery.determined_at,
             urgent_effect_id=self.delivery.owner_effect_id)
+
+    @property
+    def is_control(self):
+        return self.delivery.control is not None
 
 
 @dataclass(frozen=True)
@@ -352,6 +358,21 @@ def prepare_determined_feedback(*, workspace, connections, clock, admitted, capt
         ready_only=True, workspace=workspace, priority_order=True)
     if original is None:
         return None
+    return prepare_delivery_feedback(original,connections=connections,clock=clock,admitted=admitted,
+        capture=capture,selector=selector)
+
+
+def prepare_delivery_feedback(original, *, connections, clock, admitted, capture=None, selector=None):
+    """Pure preparation of one server-read immutable delivery, including controls."""
+    if not _admitted(admitted):
+        return None
+    from .managed_runtime import current_managed_runtime_identity
+    from app.study.game_feedback import effect_id
+    runtime_id = current_managed_runtime_identity()
+    if runtime_id is None:
+        return None
+    if original.control is not None:
+        return PreparedDeterminedFeedback(original,original,None,runtime_id)
     qualified, provider = original, None
     try:
         qualified, source, configuration, publications, selected, targets = _qualified_facts(
@@ -378,6 +399,14 @@ def prepare_determined_feedback(*, workspace, connections, clock, admitted, capt
     if provider is not None and provider.mode_runtime_id != runtime_id:
         return None
     return PreparedDeterminedFeedback(original, qualified, provider, runtime_id)
+
+
+def _control_effect_in_transaction(database,command,*,clock):
+    from app.study.game_feedback import GameFeedback
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    owner = GameFeedback(PostgresGameFeedbackStore(database),None,
+        clock=lambda:datetime.fromisoformat(clock.utc_now().replace("Z","+00:00")))
+    return owner.control_effect(command)
 
 
 def _accept_prepared_provider(database, prepared, *, clock, current_runtime_id=None):
@@ -431,6 +460,11 @@ def apply_prepared_determined_feedback(database, prepared, *, clock, current_run
                 expected=prepared.original_delivery)
             if current.state != "pending":
                 return LocalFeedbackProgress(False, False, "delivery_already_disposed")
+            if prepared.is_control:
+                receipt = _control_effect_in_transaction(database,prepared.delivery.control,clock=clock)
+                saved = save_delivery_in_transaction(database,
+                    acknowledge_control_delivery(prepared.delivery,receipt),expected=current)
+                return LocalFeedbackProgress(saved.state == "acknowledged",False,saved.error)
             if provider is None:
                 save_delivery_in_transaction(database, prepared.delivery, expected=current)
                 return LocalFeedbackProgress(False, prepared.delivery.state == "pending",
@@ -592,7 +626,15 @@ class CurrentProviderPriorityIntake:
         return receipt  # The delivery acknowledgment follows this commit.
 
     def control_effect(self, command):
-        return self.controls.control_effect(command)
+        self._require_local_admission()
+        from .managed_runtime import current_managed_runtime_identity
+        from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
+        runtime_id = current_managed_runtime_identity()
+        if runtime_id is None:
+            raise DeliveryDeferred("managed_feedback_runtime_identity_unavailable")
+        with self.connections.writer() as database:
+            fence_feedback_handoff(database,command.key.workspace_id,runtime_id=runtime_id)
+            return _control_effect_in_transaction(database,command,clock=self.clock)
 
     def encounter_status(self, key):
         return self.reads.encounter_status(key)

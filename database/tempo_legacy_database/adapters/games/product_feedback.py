@@ -120,12 +120,13 @@ def _borrowed_writer(database):
     return raw
 
 
-def lock_delivery_in_transaction(database, operation_id: str, *, expected=None):
+def lock_delivery_in_transaction(database, operation_id: str, *, expected=None, service_cursor=False):
     """Games-owned short row fence in the caller's existing transaction."""
     raw = _borrowed_writer(database)
-    locked = raw.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:game-feedback-delivery',0))").fetchone()[0]
-    if not locked:
-        raise ConcurrentUpdate("delivery service cursor busy")
+    if service_cursor:
+        locked = raw.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:game-feedback-delivery',0))").fetchone()[0]
+        if not locked:
+            raise ConcurrentUpdate("delivery service cursor busy")
     row = raw.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s FOR UPDATE NOWAIT",
         (operation_id,)).fetchone()
     if row is None:
@@ -136,10 +137,11 @@ def lock_delivery_in_transaction(database, operation_id: str, *, expected=None):
     return actual
 
 
-def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None):
+def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None, record_service=False):
     """Persist one outbox result without starting or committing a transaction."""
     raw = _borrowed_writer(database)
-    previous = lock_delivery_in_transaction(raw, delivery.operation_id, expected=expected)
+    previous = lock_delivery_in_transaction(raw, delivery.operation_id, expected=expected,
+        service_cursor=record_service)
     if previous.command != delivery.command or previous.source_key != delivery.source_key:
         raise ValueError("captured delivery command cannot be replaced")
     if delivery.attempts < previous.attempts:
@@ -150,7 +152,8 @@ def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None)
         delivery = delivery.model_copy(update={"state": "superseded"})
     elif previous.state != "pending":
         return previous
-    if delivery.attempts > previous.attempts and delivery.control is None:
+    delivery = delivery.model_copy(update={"service_sequence":max(delivery.service_sequence,previous.service_sequence)})
+    if record_service and delivery.control is None:
         sequence = raw.execute("""SELECT COALESCE(MAX(
             COALESCE((payload->>'service_sequence')::bigint,0)),0)+1
             FROM product_feedback_deliveries""").fetchone()[0]
@@ -299,8 +302,8 @@ class PostgresGamesStore:
                   AND (%s::text IS NULL OR COALESCE(delivery.payload->'encounter'->'key'->>'workspace_id',
                        delivery.payload->'lapse'->'key'->>'workspace_id',
                        delivery.payload->'control'->'key'->>'workspace_id')=%s)
-                  AND (NOT %s OR (delivery.command_kind<>'control'
-                       AND delivery.payload->>'qualification_status' IN ('ready','held')
+                  AND (NOT %s OR delivery.command_kind='control' OR (
+                       delivery.payload->>'qualification_status' IN ('ready','held')
                        AND delivery.payload->'qualification'<>'null'::jsonb))
                 ORDER BY CASE WHEN command_kind='control' THEN 0
                     WHEN %s THEN CASE WHEN payload->>'stream'='forward' THEN 1 ELSE 2 END
@@ -323,22 +326,22 @@ class PostgresGamesStore:
         """Bounded existence observation, with no dispatch or source replay."""
         with self._transaction() as database:
             return database.execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
-                WHERE state='pending' AND command_kind<>'control'
+                WHERE state='pending'
                   AND next_attempt_at<=extract(epoch FROM clock_timestamp())
-                  AND (payload->>'qualification_status'='ready'
+                  AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
+                      payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s
+                  AND (command_kind='control' OR ((payload->>'qualification_status'='ready'
                     OR (payload->>'qualification_status'='held'
                         AND COALESCE((payload->>'qualification_retryable')::boolean,true)
                         AND payload->'qualification'<>'null'::jsonb))
-                  AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
-                      payload->'lapse'->'key'->>'workspace_id')=%s
                   AND (%s::text IS NULL OR (
                         CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END,
                         (payload->>'determined_at')::timestamptz,
                         COALESCE(payload->>'owner_effect_id','')) < (
-                        CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))""",
+                        CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))))""",
                 (workspace, before_stream, before_stream,
                  before_determined_at, before_effect_id)).fetchone()[0]
 
-    def save_delivery(self, delivery: Delivery) -> None:
+    def save_delivery(self, delivery: Delivery, *, serviced=False) -> None:
         with self._transaction() as database:
-            save_delivery_in_transaction(database, delivery)
+            save_delivery_in_transaction(database, delivery, record_service=serviced)

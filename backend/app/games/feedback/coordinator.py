@@ -275,16 +275,23 @@ class Coordinator:
             held = changed or bool(previous and previous.quarantined) or integrity_error
             determined_at = previous.determined_at if previous else None
             effects = list(previous.effects) if previous else []
-            confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
             observations = {}
             for item in encounters:
                 observations.setdefault(item.key.logical_id(), set()).add(encounter_observation(item))
-            compared_repertoires = {repertoire for snapshot in compatible
-                for repertoire in snapshot.membership.scope_repertoire_ids} - unresolved
+            conclusive = (first_departure is not None and first_departure.selected_scope
+                and all(scope.complete and scope.available for scope in first_departure.selected_scope)
+                and first_departure.status not in {"unresolved","own_unmapped"})
             for effect in effects:
-                if isinstance(effect, GameLapse):
-                    still_supported = (effect.finding.repertoire_id not in compared_repertoires
-                        or (effect.key.decision_id, effect.key.occurrence_ply) in confirmed)
+                if conclusive:
+                    # Global positive proof may disqualify an old accepted
+                    # effect even when it emits no replacement encounter.
+                    still_supported = (first_departure.status == "own_actionable"
+                        and first_departure.ply == effect.key.occurrence_ply
+                        and first_departure.decision.decision_id == effect.key.decision_id)
+                elif isinstance(effect, GameLapse):
+                    # Missing/ambiguous comparison is a hold, not positive
+                    # disqualification of an already accepted original lapse.
+                    still_supported = True
                 else:
                     current = observations.get(effect.key.logical_id())
                     # Later admission/learning or missing proof cannot erase history.
@@ -387,10 +394,12 @@ class Coordinator:
             return
         delivery = current
         command = delivery.command
+        serviced = False
         try:
             if delivery.control is None and self.qualifier is not None:
                 delivery = self.qualifier.prepare(delivery)
-                self.store.save_delivery(delivery)
+                self.store.save_delivery(delivery,serviced=True)
+                serviced = True
                 current = self.store.delivery(delivery.operation_id)
                 if current.state != "pending" or delivery.qualification_status != "ready":
                     return
@@ -415,17 +424,17 @@ class Coordinator:
                 raise ValueError("receiver_receipt_identity_mismatch")
             state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
             self.store.save_delivery(delivery.model_copy(update={"state": state, "receipt": receipt,
-                "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}))
+                "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}),serviced=not serviced)
         except DeliveryDeferred as error:
             self.store.save_delivery(delivery.model_copy(update={"qualification_status": "held",
                 "qualification_reason": error.reason, "qualification_retryable": error.retryable,
                 "error": error.reason,
-                "next_attempt_at": self.clock.now() + error.retry_after}))
+                "next_attempt_at": self.clock.now() + error.retry_after}),serviced=not serviced)
         except Exception as error:
             # A receiver may already have committed. Preserve this exact command.
             delay = max(min(300, 2 ** min(delivery.attempts + 1, 8)), getattr(error, "retry_after", 0))
             self.store.save_delivery(delivery.model_copy(update={"attempts": delivery.attempts + 1,
-                "next_attempt_at": self.clock.now() + delay, "error": "owner_acknowledgment_uncertain"}))
+                "next_attempt_at": self.clock.now() + delay, "error": "owner_acknowledgment_uncertain"}),serviced=not serviced)
 
     def withdraw_source(self, job: JobState, source_key: str) -> None:
         """Durably quarantine an explicitly deleted/excluded source and fence its effects.

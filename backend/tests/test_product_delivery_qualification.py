@@ -145,6 +145,91 @@ def test_retained_legacy_lapse_has_compatible_or_terminal_disposition():
     assert qualify(case, original).qualification_status == "held"
 
 
+def test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset():
+    from datetime import timedelta
+    from app.study.game_feedback import Completion
+    from app.study.encounter_feedback import EncounterFeedback
+    from app.games.feedback.qualification import acknowledge_qualified_delivery
+    from test_product_game_lapse import (owner,fixture,NOW as STAMP,CARD,issued_attempt,qualification_for)
+    store,decisions,clock,legacy = owner.__wrapped__()
+    original = fixture("lapse",GameLapse)
+    legacy.accept_lapse(original)
+    completion = Completion(100,CARD,1,STAMP+timedelta(hours=1),True,"study",
+        issued_attempt(CARD,1,8,STAMP+timedelta(minutes=1)))
+    clock[0] = completion.reviewed_at
+    legacy.settle(completion)
+    witness = qualification_for(original)
+    current = EncounterFeedback(store,decisions,clock=lambda:clock[0],introductions=None,introduction_policy=None)
+    receipt = current.accept_qualified(original,qualification=witness)
+    assert receipt.status == "settled" and receipt.interface_version == "0.2.1" and receipt.progress is None
+    delivery = delivery_for("original-source",original).model_copy(update={"qualification_status":"ready",
+        "qualification":witness,"determined_at":witness.determined_at,"stream":witness.stream})
+    acknowledged = acknowledge_qualified_delivery(delivery,receipt)
+    assert acknowledged.state == "acknowledged" and acknowledged.command == original
+    assert acknowledged.receipt == receipt and len(store.reviews) == len(store.effects) == 1
+
+
+@pytest.mark.parametrize("complete",[True,False])
+def test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preserves_history(complete):
+    from test_product_feedback_jobs import encounter_harness,spec
+    h = encounter_harness()
+    h.store.enqueue(spec()); assert h.runner.run_once() == "page"
+    assert h.runner.run_once() == "delivery"
+    original, = h.store.deliveries.values()
+    assert original.state == "acknowledged"
+    authored = snapshot(("d2d4",),repertoire="white",route_id="now-covered")
+    if not complete:
+        authored = authored.model_copy(update={"membership":authored.membership.model_copy(
+            update={"complete":False,"available":False})})
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _:authored)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args,**kwargs:())
+    h.store.enqueue(spec("reanalysis")); assert FeedbackRunner(h.coordinator).run_once() == "page"
+    controls = [item for item in h.store.deliveries.values() if item.control is not None]
+    assert len(controls) == int(complete)
+    if controls:
+        assert controls[0].control.key == original.command.key and controls[0].control.action == "hold"
+    source, = h.store.sources.values()
+    assert source.effects == (original.command,) and h.store.delivery(original.operation_id).receipt == original.receipt
+
+
+def test_unqualified_concrete_game_review_fallback_cannot_call_legacy_scheduler():
+    from app.product_composition.game_review import create_game_review
+    from app.games.feedback.review import ReviewUnavailable
+    case = setup_case()
+    learning = SimpleNamespace(accept_lapse=lambda *_:pytest.fail("old scheduler called"))
+    review = create_game_review(workspace="fixture",connections=lambda:pytest.fail("Games writer opened"),
+        learning=learning,clock=FakeClock())
+    with pytest.raises(ReviewUnavailable,match="qualified_provider_encounter_receiver_required"):
+        review.deliver(delivery_for(case.source.source_key,case.command))
+
+
+def test_public_legacy_retry_rejects_nonselected_original_before_any_writer(monkeypatch):
+    from fastapi import HTTPException
+    from app.product_composition import game_review_commands as commands,provider_priority,managed_runtime
+    from test_product_game_lapse import fixture
+    original = fixture("lapse",GameLapse)
+    delivery = delivery_for("original-source",original)
+    source = SimpleNamespace(source_key=delivery.source_key,quarantined=False,findings=(original.finding,))
+    class Reads:
+        def __init__(self, connections): pass
+        def source_detail(self,*args): return source
+        def deliveries(self,*args): return (delivery,)
+    calls = []
+    def qualify_selected(selected,**kwargs):
+        calls.append(selected.command)
+        rejected = selected.model_copy(update={"state":"failed","qualification_status":"ineligible",
+            "qualification_reason":"first_departure_opponent_gap"})
+        return provider_priority.PreparedDeterminedFeedback(selected,rejected,None,"trusted-boot")
+    monkeypatch.setattr(commands,"PostgresReviewStore",Reads)
+    monkeypatch.setattr(provider_priority,"prepare_delivery_feedback",qualify_selected)
+    monkeypatch.setattr(managed_runtime,"current_managed_runtime_identity",lambda:"trusted-boot")
+    with pytest.raises(HTTPException) as held:
+        commands.prepare_retry(dict(finding=original.finding.model_dump(mode="json"),operation_id="retry-original"),
+            connections=lambda:pytest.fail("retry opened a writer"),clock=FakeClock())
+    assert held.value.status_code == 409 and held.value.detail == "first_departure_opponent_gap"
+    assert calls == [original] and delivery.state == "pending"
+
+
 class QualifiedReceiver:
     def __init__(self, *, lose_ack=False, defer=False):
         self.receipts, self.calls = {}, []
@@ -340,7 +425,7 @@ def test_current_target_enrichment_requires_explicit_owner_and_keeps_complete_pu
 
 
 @pytest.fixture
-def native_handoff(owned_postgres, monkeypatch):
+def native_handoff(owned_postgres, monkeypatch,request):
     """Real publication/source, immutable outbox, mode and Study owner join."""
     import hashlib
     import chess
@@ -358,24 +443,40 @@ def native_handoff(owned_postgres, monkeypatch):
     from test_product_game_lapse import NOW as STAMP
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     monkeypatch.setattr(managed_runtime, "current_managed_runtime_identity", lambda: RUNTIME)
-    with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
+    legacy = getattr(request,"param",None) == "lapse"
+    with retained_history_case(owned_postgres, state="introduced" if legacy else "unintroduced", ordinary_limit=0, study_only=True) as case:
         @contextmanager
         def connections():
             with case.transaction() as database:
                 database.execute_native("""SELECT set_config('transaction_timeout','250ms',true),
                     set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
                 yield database.raw
+        @contextmanager
+        def writer():
+            with case.transaction() as database:
+                database.execute_native("""SELECT set_config('transaction_timeout','250ms',true),
+                    set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
+                yield database
+        connections.writer = writer
         captured = case.capture(case.game_ids[0])
         original, canonical = case.command(captured), retained_canonical_game(captured)
+        if legacy:
+            from app.games.feedback.comparison import compare_game
+            from app.repertoire import project_capture
+            finding, = compare_game(canonical,provider="lichess",time_precision="second",
+                snapshot=project_capture(captured,comparison_game=canonical))
+            assert finding.kind == "confirmed_miss"
+            original = GameLapse(key=original.key,finding=finding,detected_at=original.detected_at,
+                occurred_at=original.occurred_at,payload_digest=original.payload_digest)
         pgn = chess.pgn.Game(); pgn.setup(chess.Board(canonical.starting_fen))
-        pgn.add_variation(chess.Move.from_uci(original.played_uci))
+        pgn.add_variation(chess.Move.from_uci(original.finding.played_uci if legacy else original.played_uci))
         text = str(pgn)
         record = GameRecord(source_game_id=captured["game"]["provider_game_id"],source_revision=1,
             source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,
             played_at=canonical.played_at,time_precision="second")
         source = SourceState(source_key=case.card_id+"-source",version=1,original=record,
-            record_fingerprint=record.source_digest,normalized=canonical,findings=(),
-            comparison_revision="original-capture",effects=(original,),encounters=(original,))
+            record_fingerprint=record.source_digest,normalized=canonical,findings=(original.finding,) if legacy else (),
+            comparison_revision="original-capture",effects=(original,),encounters=() if legacy else (original,))
         config = SyncConfiguration(workspace_id=canonical.workspace_id,provider="lichess",account="synthetic",
             window=GameWindow(start_at=(STAMP-timedelta(days=2)).isoformat(),end_at=STAMP.isoformat(),
                 precision="second"),repertoire_ids=(case.repertoire_id,),speeds=("rapid",),rated=None,
@@ -403,15 +504,18 @@ def native_handoff(owned_postgres, monkeypatch):
             with case.transaction() as database:
                 database.execute_native("""INSERT INTO product_feedback_deliveries
                     (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
-                    VALUES(%s,%s,%s,'encounter','pending',0,%s::jsonb)""",
-                    (delivery.operation_id,source.source_key,original.key.logical_id(),delivery.model_dump_json()))
+                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb)""",
+                    (delivery.operation_id,source.source_key,original.key.logical_id(),delivery.command_kind,delivery.model_dump_json()))
             yield SimpleNamespace(case=case,workspace=canonical.workspace_id,connections=connections,
                 store=store,modes=modes,source=source,original=delivery,capture=capture,clock=clock,
                 runtime_id=RUNTIME,intent=intent)
         finally:
             with case.transaction() as database:
+                import json
                 database.execute_native("DELETE FROM product_feedback_deliveries WHERE source_key=%s",(source.source_key,))
                 database.execute_native("DELETE FROM product_feedback_sources WHERE source_key=%s",(source.source_key,))
+                database.execute_native("DELETE FROM product_feedback_jobs WHERE payload->'spec'->'repertoire_ids'=%s::jsonb",
+                    (json.dumps([case.repertoire_id]),))
                 database.execute_native("DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider='lichess'",
                     (canonical.workspace_id,))
                 database.execute_native("DELETE FROM product_feedback_managed_mode WHERE workspace_id=%s",(canonical.workspace_id,))
@@ -439,6 +543,11 @@ def test_native_pure_prepare_and_receipt_fenced_apply_commit_both_owners_atomica
         lambda:pytest.fail("runtime filesystem read inside writer"))
     def apply(database):
         database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        actual_execute = database.raw.execute
+        def bounded_execute(statement,*args,**kwargs):
+            assert not ("MAX(" in str(statement) and "product_feedback_deliveries" in str(statement)), "Study writer scanned retained service history"
+            return actual_execute(statement,*args,**kwargs)
+        monkeypatch.setattr(database.raw,"execute",bounded_execute)
         return composition.apply_prepared_determined_feedback(database,prepared,
             clock=case.clock,current_runtime_id=case.runtime_id)
     # A gateway failure AFTER successful source apply rolls back both owners.
@@ -472,6 +581,78 @@ def test_native_pure_prepare_and_receipt_fenced_apply_commit_both_owners_atomica
         assert database.execute_native("SELECT count(*) FROM study_game_feedback WHERE card_id=%s",(case.case.card_id,)).fetchone()[0] == 1
         assert not apply(database).progressed  # Stale prepared original cannot advance another unit.
     assert case.store.delivery(case.original.operation_id) == acknowledged
+
+
+@pytest.mark.parametrize("path",["worker","gateway"])
+def test_native_continuous_foreground_delivers_control_before_accepted_study_work(native_handoff,monkeypatch,path):
+    from app.product_composition import provider_priority as composition
+    from app.games.feedback.ports import JobSpec,PageCommit
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    case = native_handoff
+    prepared = composition.prepare_determined_feedback(workspace=case.workspace,connections=case.connections,
+        clock=case.clock,admitted=lambda:True,capture=case.capture)
+    with case.connections.writer() as database:
+        assert composition.apply_prepared_determined_feedback(database,prepared,
+            clock=case.clock,current_runtime_id=case.runtime_id).progressed
+    control = delivery_for(case.source.source_key,GameEffectControl(key=case.original.command.key,
+        source_revision=1,action="hold",reason="reanalysis"))
+    spec = JobSpec(job_id=uuid.uuid4().hex,workspace_id=case.workspace,provider="lichess",account="synthetic",
+        window=setup_case().configuration.window,repertoire_ids=(case.case.repertoire_id,))
+    case.store.commit_page(PageCommit(job=case.store.enqueue(spec),sources=(),captures=(),deliveries=(control,)))
+    assert composition.pending_determined_feedback(workspace=case.workspace,connections=case.connections,
+        admitted=lambda:True,before_priority=prepared.priority)
+    monkeypatch.setattr(composition,"_qualified_facts",lambda *args,**kwargs:pytest.fail("control replayed/projection work"))
+    if path == "gateway":
+        selected = composition.prepare_determined_feedback(workspace=case.workspace,connections=case.connections,
+            clock=case.clock,admitted=lambda:True,capture=case.capture)
+        assert selected.is_control and selected.priority is None
+        with case.connections.writer() as database:
+            result = composition.apply_prepared_determined_feedback(database,selected,
+                clock=case.clock,current_runtime_id=case.runtime_id)
+            assert result.progressed
+    else:
+        intake = composition.CurrentProviderPriorityIntake(connections=case.connections,clock=case.clock,
+            operation_stopped=lambda:False,admitted=lambda:True,capture=case.capture)
+        coordinator = Coordinator(providers={},normalizer=None,comparer=None,snapshots=None,
+            store=case.store,learning=intake,clock=case.clock,qualifier=intake)
+        case.store.claim_job = lambda *args:pytest.fail("foreground control claimed provider work")
+        assert FeedbackRunner(coordinator).run_delivery_once() == "delivery"
+    actual = case.store.delivery(control.operation_id)
+    assert actual.state == "acknowledged" and actual.command == control.command
+    with case.case.transaction() as database:
+        effect = PostgresGameFeedbackStore(database).get(case.original.command.key)
+        assert effect.status == "held" and effect.control == control.command
+        assert effect.encounter == case.original.command
+
+
+@pytest.mark.parametrize("native_handoff",["lapse"],indirect=True)
+def test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receipt(native_handoff,monkeypatch):
+    from app import command_gateway as gateway
+    from app.product_composition import game_review_commands as commands
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    case = native_handoff
+    operation = "qualified-retry-"+uuid.uuid4().hex
+    payload = dict(finding=case.original.lapse.finding.model_dump(mode="json"),operation_id=operation)
+    prepare = lambda value:commands.prepare_retry(value,connections=case.connections,clock=case.clock,
+        capture=case.capture,workspace=case.workspace)
+    selected = prepare(payload)
+    assert selected.work.delivery.command == case.original.command
+    assert case.store.delivery(case.original.operation_id) == case.original
+    monkeypatch.setattr(gateway,"_handlers",{})
+    monkeypatch.setattr(gateway,"_preparers",{})
+    monkeypatch.setattr(gateway,"_writer_connection",lambda background:case.case.transaction())
+    gateway.register_command("product_games.retry_feedback",commands.retry,prepare=prepare)
+    first = gateway.execute_command(operation,"product_games.retry_feedback",payload)
+    assert first is not None and first["interface_version"] == "0.2.2"
+    assert first == gateway.execute_command(operation,"product_games.retry_feedback",payload)
+    actual = case.store.delivery(case.original.operation_id)
+    assert actual.state == "acknowledged" and actual.command == case.original.command
+    with case.case.transaction() as database:
+        effect = PostgresGameFeedbackStore(database).get(case.original.command.key)
+        assert effect.lapse == case.original.command and effect.progress.determined_at == case.original.determined_at
+        assert database.execute_native("SELECT count(*) FROM study_game_feedback WHERE card_id=%s",(case.case.card_id,)).fetchone()[0] == 1
+        database.execute_native("DELETE FROM product_feedback_retry_requests WHERE workspace_id=%s AND operation_id=%s",(case.workspace,operation))
+        database.execute_native("DELETE FROM operation_receipts WHERE operation_id=%s",(operation,))
 
 
 @pytest.mark.parametrize("change",["boot","mode","source","control"])
@@ -567,7 +748,7 @@ def test_native_live_and_history_deliveries_have_bounded_fair_progress(native_de
         selected = restored.pending_delivery(100, workspace=case.workspace)
         seen.append(selected.operation_id)
         restored.save_delivery(selected.model_copy(update={"attempts": selected.attempts + 1,
-            "next_attempt_at": 200}))
+            "next_attempt_at": 200}),serviced=True)
     assert seen == [live[0].operation_id, history[0].operation_id,
         live[1].operation_id, history[1].operation_id, live[2].operation_id]
     with case.connections() as database:
@@ -577,6 +758,27 @@ def test_native_live_and_history_deliveries_have_bounded_fair_progress(native_de
     assert sorted(item.service_sequence for item in retained) == [1, 2, 3, 4, 5]
     assert all(item.command == next(original.command for original in live + history
         if original.operation_id == item.operation_id) for item in retained)
+
+
+@pytest.mark.parametrize("disposition",["ineligible","held"])
+def test_native_semantic_qualification_spends_fair_turn_without_transport_attempt(native_deliveries,disposition):
+    case = native_deliveries
+    live = [case.seed("forward",ordinal) for ordinal in (1,3)]
+    history = [case.seed("reconciliation",ordinal) for ordinal in (2,4,5)]
+    case.store.save_delivery(live[0].model_copy(update={"attempts":1,"next_attempt_at":200}),serviced=True)
+    selected = case.store.pending_delivery(100,workspace=case.workspace)
+    assert selected == history[0]
+    qualifier = SimpleNamespace(prepare=lambda delivery:delivery.model_copy(update={
+        "state":"failed" if disposition == "ineligible" else "pending",
+        "qualification_status":disposition,"qualification_reason":"first_departure_covered"
+            if disposition == "ineligible" else "first_departure_preparation_unavailable","next_attempt_at":200}))
+    coordinator = Coordinator(providers={},normalizer=None,comparer=None,snapshots=None,store=case.store,
+        learning=SimpleNamespace(accept_qualified=lambda *args,**kwargs:pytest.fail("ineligible sent toStudy")),
+        clock=FakeClock(),qualifier=qualifier)
+    coordinator.deliver(selected)
+    disposed = case.store.delivery(selected.operation_id)
+    assert disposed.attempts == 0 and disposed.service_sequence == 2 and disposed.qualification_status == disposition
+    assert case.store.pending_delivery(100,workspace=case.workspace).operation_id == live[1].operation_id
 
 
 def test_native_controls_win_after_qualification_and_delayed_ack(native_deliveries):

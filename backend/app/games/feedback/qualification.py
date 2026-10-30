@@ -4,7 +4,7 @@ No storage, provider or Study implementation is imported. Composition supplies
 complete current owner snapshots; a missing scope remains a hold.
 """
 from app.contracts.product_v02.learning import (EncounterReceipt, FirstDepartureWitness,
-    GameEncounter)
+    GameEncounter, LearningReceipt)
 from app.contracts.product_v02.repertoire import IntroductionGameScope
 
 
@@ -22,13 +22,24 @@ def acknowledge_qualified_delivery(delivery, receipt):
             or receipt.source_revision != source.source_revision or not receipt.owner_receipt_id
             or receipt.source_digest != source.source_digest or receipt.observation != "missed"):
         raise ValueError("receiver_qualified_receipt_provenance_mismatch")
-    if (qualification is None or receipt.interface_version != "0.2.2" or receipt.progress is None
+    historical_settled = receipt.interface_version == "0.2.1" and receipt.status == "settled" and receipt.progress is None
+    if not historical_settled and (qualification is None or receipt.interface_version != "0.2.2" or receipt.progress is None
             or receipt.progress.determined_at != qualification.determined_at
             or receipt.progress.stream != qualification.stream):
         raise ValueError("receiver_first_departure_policy_receipt_required")
     state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
     return delivery.model_copy(update={"state": state, "receipt": receipt,
         "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None})
+
+
+def acknowledge_control_delivery(delivery, receipt):
+    command = delivery.control
+    if (command is None or not isinstance(receipt,LearningReceipt) or receipt.key != command.key
+            or receipt.source_revision != command.source_revision or not receipt.owner_receipt_id):
+        raise ValueError("receiver_control_receipt_identity_mismatch")
+    state = "failed" if receipt.outcome in {"conflict","stale_revision"} else "acknowledged"
+    return delivery.model_copy(update={"state":state,"receipt":receipt,
+        "attempts":delivery.attempts+1,"error":receipt.reason if state == "failed" else None})
 
 
 def qualify_delivery(delivery, *, source, configuration, snapshots, unavailable=(),

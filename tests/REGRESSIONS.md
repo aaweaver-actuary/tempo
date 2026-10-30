@@ -5965,3 +5965,22 @@ the retained-qualification fixture; their old bytes are never rewritten.
 - `test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement` uses actual earned join/split state, full publication/source/config qualification and Study's prepared owner binding. The bounded feedback writer forbids executable/`try_current` replay. Its join case also applies the reset to B, records genuine later failed Study reviews and an actual split to C, preserves B's scheduler receipt/first issuance in prior-fence history, and settles only a genuine post-remap generation of C.
 - Specialist current-target cases in `test_product_recombination_postgres.py` cover closed READ ONLY preparation, no-chess 250ms/100ms writer fences, current source/map/definition/receipt/membership/integrity changes, nonblocking busy route, original occurrence/revision/control checks, and null-deadline obligation retention. Both #620 independent reviews cover the complete specialist delta.
 - Existing encounter native fixtures now qualify actionable misses from actual source/config/publication facts. Correct unseen play remains frequency only; ordinary-introduction races preserve the first accepted intent; historical qualified misses preserve human history while applying the real current Again. Alias provenance assertions retain all source routes and the immutable original command.
+
+### #621 independent review repairs
+
+- The borrowed-writer atomicity case rejects any retained delivery `MAX` scan;
+  worker service accounting remains outside Study. The native semantic-turn case
+  proves both ineligible and held qualification spend a fairness turn without a
+  transport attempt.
+- `test_native_continuous_foreground_delivers_control_before_accepted_study_work`
+  covers worker-local and pure gateway control paths using the actual Study owner.
+  The helper's `is_control` root-ordering regression covers precedence over
+  accepted Study preparation.
+- `test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preserves_history`
+  distinguishes positive disqualification from missing evidence.
+- `test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receipt`
+  and its pure nonselected-original rejection guard the existing public retry
+  endpoint. The fallback receiver rejects an unavailable qualified capability.
+- `test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset`
+  reuses the actual legacy owner settlement and proves same-key acknowledgment
+  without fabricated progress or another scheduling review.
