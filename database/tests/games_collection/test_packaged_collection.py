@@ -288,29 +288,30 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     roles = importlib.util.module_from_spec(roles_spec); roles_spec.loader.exec_module(roles)
     reader_password, writer_password = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
     roles.provision(admin_dsn, reader_password, writer_password)
-    reader_dsn = make_conninfo(host='127.0.0.1',port=5432,dbname=database_name,user='tempo_reader',password=reader_password)
-    writer_dsn = make_conninfo(host='127.0.0.1',port=5432,dbname=database_name,user='tempo_writer',password=writer_password)
+    reader_dsn = make_conninfo(host='postgres',port=5432,dbname=database_name,user='tempo_reader',password=reader_password)
+    writer_dsn = make_conninfo(host='postgres',port=5432,dbname=database_name,user='tempo_writer',password=writer_password)
     directory = tmp_path/'feedback-qualification'; directory.mkdir()
     shutil.copyfile(ROOT/'backend/tests/fixtures/product_collection_packaged.py',directory/'entry.py')
     now = datetime.now(timezone.utc)
     from datetime import timedelta
     pgn = '[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n[SetUp "1"]\n[FEN "'+capture['game']['start_fen']+'"]\n\n1. d4 1-0\n'
-    played = now-timedelta(days=1)
+    played = now-timedelta(minutes=90)
     inputs = dict(now=now.timestamp(),lichess=[dict(id=source_id,createdAt=int(played.timestamp()*1000),
         rated=True,speed='rapid',pgn=pgn)],chesscom={},configuration=dict(workspace_id='legacy',provider='lichess',
-        account='Learner',window=dict(start_at=(now-timedelta(days=2)).isoformat(),
+        account='Learner',window=dict(start_at=(now-timedelta(hours=3)).isoformat(),
             end_at=(now-timedelta(hours=1)).isoformat(),precision='second'),repertoire_ids=[repertoire],
         speeds=['rapid'],rated=True,interval_seconds=60,revision=1))
     (directory/'provider.json').write_text(json.dumps(inputs))
     nginx = (ROOT/'nginx.conf').read_text()
     assert nginx.count('proxy_pass http://api:8000;')==1
-    (directory/'nginx.conf').write_text(nginx.replace('proxy_pass http://api:8000;','proxy_pass http://127.0.0.1:8000;'))
+    (directory/'nginx.conf').write_text(nginx)
     budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
         image=image,web_image=web_image,schema=56,
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
     stage = 'role_startup'
     browser, browser_log = None, None
+    network, postgres_attached = None, False
     evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
     browser_evidence = evidence/('browser-'+owner); browser_evidence.mkdir()
 
@@ -332,7 +333,7 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
         budget = budgets[role]
         secret = tmp_path/(role+'.env')
         common = ['TEMPO_TEST_INSTANCE=disposable','TZ=UTC','TEMPO_COORDINATOR_MODE=external',
-            'TEMPO_PRODUCT_GAME_SYNC_ENABLED=1','TEMPO_REDIS_URL=redis://127.0.0.1:6379/0',
+            'TEMPO_PRODUCT_GAME_SYNC_ENABLED=1','TEMPO_REDIS_URL=redis://redis:6379/0',
             'PYTHONDONTWRITEBYTECODE=1','TEMPO_DATABASE_READ_URL='+(reader_dsn if role=='api' else writer_dsn)]
         if role != 'api':
             common.append('TEMPO_DATABASE_WRITE_URL='+writer_dsn)
@@ -340,8 +341,12 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
         name = owner+'-'+role
         arguments = ['run','--detach','--name',name,'--init','--label','tempo.owner='+owner,
             '--label','tempo.disposable=true','--label','com.docker.compose.service='+role,
-            '--network','container:'+pg['Id'],'--read-only','--tmpfs','/tmp:rw,size=32m',
+            '--read-only','--tmpfs','/tmp:rw,size=32m',
             '--memory',str(budget['memoryMiB'])+'m','--pids-limit',str(budget.get('pidsLimit',96))]
+        if kind=='web':
+            arguments += ['--network','container:'+pg['Id']]
+        else:
+            arguments += ['--network',network['id'],'--network-alias',role]
         if kind=='backend':
             arguments += ['--env-file',str(secret),'--mount','type=bind,src='+str(directory)+',dst=/qualification,readonly']
         elif kind=='redis':
@@ -382,6 +387,20 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         return json.loads(execute('api','python','-B','-c',code,input=json.dumps(dict(method=method,path=path,body=body,
             headers={'Idempotency-Key':identity} if identity else {}))))
 
+    def health_ready():
+        observed = api('GET','/api/health')
+        diagnostic = json.dumps(observed['body'])
+        for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+            diagnostic = diagnostic.replace(private,'<redacted>')
+        if len(diagnostic.encode('utf8'))>4096:
+            body = dict(truncated=True,prefix=diagnostic.encode('utf8')[:4000].decode('utf8',errors='replace'))
+        else:
+            body = json.loads(diagnostic)
+        snapshot = dict(status=observed['status'],body=body)
+        report.setdefault('first_health_response',snapshot)
+        report['last_health_response']=snapshot
+        return observed['status']==200
+
     def wait_for(observe, reason):
         deadline = time.monotonic()+45
         while True:
@@ -419,6 +438,16 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
     browser_name = 'packaged first-departure feedback uses real browser saves and issuance'
 
     try:
+        network_name = owner+'-runtime'
+        network_id = docker('network','create','--driver','bridge','--label','tempo.owner='+owner,
+            '--label','tempo.disposable=true',network_name).stdout.strip()
+        network = dict(id=network_id,name=network_name)
+        observed_network = json.loads(docker('network','inspect',network_id).stdout)[0]
+        assert observed_network['Name']==network_name and observed_network['Driver']=='bridge'
+        assert observed_network['Labels']['tempo.owner']==owner and observed_network['Labels']['tempo.disposable']=='true'
+        report['network']=network
+        docker('network','connect','--alias','postgres',network_id,pg['Id'])
+        postgres_attached=True
         launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
         launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
             '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
@@ -428,7 +457,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
         launch('game-feedback-worker',['python','-B','-c',fixture_entry,'feedback-worker'])
-        wait_for(lambda: api('GET','/api/health')['status']==200,'packaged_feedback_api_not_ready')
+        wait_for(health_ready,'packaged_feedback_api_not_ready')
         def actual_collector_prepared():
             observed = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
             assert observed['State']['Running'], 'packaged_feedback_collector_exited_before_verification'
@@ -651,8 +680,24 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             absent = docker('inspect',resource['id'],check=False)
             assert absent.returncode!=0 and 'no such' in absent.stderr.lower()
             cleanup.append(dict(service=role,container=resource['id'],image=resource['image'],removed=True))
-        report['cleanup_verified']=len(cleanup)==len(containers)
+        report['cleanup_verified']=len(cleanup)==len(containers) and network is None
         report['runtimes']=cleanup
+        if network is not None:
+            report['network_cleanup_verified']=False
+            (evidence/('feedback-'+owner+'.json')).write_text(json.dumps(report,indent=2,default=str))
+            observed_network = json.loads(docker('network','inspect',network['id']).stdout)[0]
+            assert observed_network['Id']==network['id'] and observed_network['Name']==network['name']
+            assert observed_network['Labels']['tempo.owner']==owner and observed_network['Labels']['tempo.disposable']=='true'
+            assert set(observed_network['Containers'])==({pg['Id']} if postgres_attached else set())
+            if postgres_attached:
+                owned_pg = json.loads(docker('inspect',pg['Id']).stdout)[0]
+                assert owned_pg['Config']['Labels']['tempo.owner']==owner and owned_pg['Config']['Labels']['tempo.disposable']=='true'
+                docker('network','disconnect',network['id'],pg['Id'])
+            docker('network','rm',network['id'])
+            absent = docker('network','inspect',network['id'],check=False)
+            assert absent.returncode!=0 and 'no such' in absent.stderr.lower()
+            report['network_cleanup_verified']=True
+            report['cleanup_verified']=len(cleanup)==len(containers)
         evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
         (evidence/('feedback-'+owner+'.json')).write_text(json.dumps(report,indent=2,default=str))
         assert report.get('browser_process_group_removed',True), 'packaged_feedback_browser_process_group_remained'
