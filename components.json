@@ -1398,6 +1398,7 @@
         "Candidate",
         "CandidateFactsPort",
         "ContentAuthority",
+        "CurrentMissProjection",
         "Eligibility",
         "ReceiveContext",
         "RemediationError",
@@ -1414,7 +1415,10 @@
         "validate_delivery",
         "prepare_admissions",
         "apply_admission",
-        "current_miss_sql"
+        "current_miss_sql",
+        "LegacyAcceptedDecision",
+        "LegacyAuthority",
+        "accepted_storage_identity"
       ],
       "dependencies": [
         "tempo_game_evidence_contracts"
@@ -1646,7 +1650,10 @@
       "status": "implemented",
       "root": "packages/game-classification",
       "publicExports": [
-        "UnimplementedClassification"
+        "UnimplementedClassification",
+        "FindingKind",
+        "classify_response",
+        "resolve_equivalent_mapping"
       ],
       "dependencies": [
         "tempo_game_review_contracts"
