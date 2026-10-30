@@ -733,7 +733,16 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert original_delivery.operation_id==operation_id and delivery[1]['encounter']==original
         assert original['observation']=='missed' and original['played_uci']=='d2d4' and original['expected_uci']=='e2e4'
         with case.transaction() as database:
-            refresh_requested_after = database.execute_native('SELECT clock_timestamp()').fetchone()[0]
+            # One statement captures the task generation and event boundary
+            # before the browser is released to save its protected attempt.
+            # Completion timestamps cannot prove a new refresh was requested.
+            pre_save_refresh = dict(database.execute_native("""SELECT clock_timestamp() AS boundary_at,
+                task.id AS task_id,task.generation,
+                (SELECT COALESCE(MAX(id),0) FROM background_task_events) AS event_id
+                FROM (SELECT 1) baseline LEFT JOIN background_tasks task
+                    ON task.kind='daily_queue' AND task.deduplication_key='current'""").fetchone())
+            refresh_requested_after = pre_save_refresh['boundary_at']
+        report['natural_refresh_pre_save_boundary'] = pre_save_refresh
         provider_ready(dict(stage='source',operation_id=operation_id,key=original['key']))
         stage = 'browser_save_prepare_and_reread'
         inspection_marker = wait_for(lambda:browser_ready('inspect'),'packaged_feedback_browser_inspection_missing')
@@ -812,9 +821,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                         ON control.source='durable' AND control.work_id=task.id
                     WHERE task.kind='daily_queue' AND task.deduplication_key='current'
                     ORDER BY task.id LIMIT 2""").fetchall()
-                events, phase_events = [], {}
+                events, phase_events, generation_enqueue = [], {}, None
                 if tasks:
                     identity = (tasks[0]['id'],event_generation if event_generation is not None else tasks[0]['generation'])
+                    enqueue_row = database.execute_native("""SELECT id,event,phase,created_at
+                        FROM background_task_events WHERE task_id=%s AND generation=%s AND event='enqueued'
+                        ORDER BY id LIMIT 1""",identity).fetchone()
+                    generation_enqueue = dict(enqueue_row) if enqueue_row is not None else None
                     events = database.execute_native("""SELECT id,task_id,generation,event,phase,detail,created_at
                         FROM background_task_events WHERE task_id=%s AND generation=%s
                         ORDER BY id DESC LIMIT 12""",identity).fetchall()
@@ -836,7 +849,8 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                     FROM cards card LEFT JOIN daily_queue queue ON queue.card_id=card.id AND queue.id=%s
                     WHERE card.id=%s LIMIT 2""",(target_marker['target_entry_id'],target_id)).fetchall()
             return dict(tasks=[bounded(dict(row)) for row in tasks],events=[bounded(dict(row)) for row in events],
-                phase_events=phase_events,projections=[bounded(dict(row)) for row in projections],
+                phase_events=phase_events,generation_enqueue=generation_enqueue,
+                projections=[bounded(dict(row)) for row in projections],
                 targets=[bounded(dict(row)) for row in targets])
         def eligible_target(observed):
             assert len(observed['targets'])==1, 'packaged_feedback_target_missing'
@@ -851,12 +865,10 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['natural_refresh_requested_after']=refresh_requested_after
         report['natural_refresh_before_request']=refresh_observation()
         eligible_target(report['natural_refresh_before_request'])
-        baseline_tasks = report['natural_refresh_before_request']['tasks']
-        assert len(baseline_tasks)==1, 'packaged_feedback_natural_refresh_task_missing'
-        baseline_generation = baseline_tasks[0]['generation']
-        baseline_identity = (baseline_tasks[0]['id'],baseline_generation)
+        baseline_generation, baseline_identity = None, None
         stage = 'natural_refresh_before_explicit_request'
         def natural_refresh():
+            nonlocal baseline_generation, baseline_identity
             observed = refresh_observation(baseline_generation)
             if observed!=report.get('last_natural_refresh_observation'):
                 report.setdefault('first_natural_refresh_observation',observed)
@@ -864,8 +876,25 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 previous = report.get('natural_refresh_observation_changes',0)
                 report['natural_refresh_observation_changes']=min(previous+1,20)
                 report['natural_refresh_observation_count_capped']=previous>=20
-            assert len(observed['tasks'])==1, 'packaged_feedback_natural_refresh_task_missing'
+            assert len(observed['tasks'])<=1, 'packaged_feedback_duplicate_natural_refresh_task'
+            if not observed['tasks']:
+                return None
             task = observed['tasks'][0]
+            enqueue = observed['generation_enqueue']
+            if baseline_identity is None:
+                prior_generation = pre_save_refresh['generation']
+                newer_generation = (pre_save_refresh['task_id']==task['id'] and prior_generation is not None
+                    and task['generation']>prior_generation)
+                requested_after_boundary = (enqueue is not None and enqueue['id']>pre_save_refresh['event_id']
+                    and datetime.fromisoformat(enqueue['created_at'].replace('Z','+00:00'))>=refresh_requested_after)
+                if not (newer_generation or requested_after_boundary):
+                    return None  # An older generation finishing now is insufficient.
+                assert enqueue is not None and enqueue['event']=='enqueued', 'packaged_feedback_natural_refresh_enqueue_missing'
+                baseline_generation = task['generation']
+                baseline_identity = (task['id'],baseline_generation)
+                report['natural_refresh_generation_provenance'] = dict(task_id=task['id'],
+                    generation=baseline_generation,newer_generation=newer_generation,
+                    requested_after_boundary=requested_after_boundary,enqueue=enqueue)
             assert (task['id'],task['generation'])==baseline_identity, 'packaged_feedback_natural_refresh_generation_changed'
             eligible_target(observed)
             assert task['state']!='failed', 'packaged_feedback_natural_refresh_task_failed'
