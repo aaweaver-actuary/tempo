@@ -42,6 +42,27 @@ def test_root_discards_preparation_when_fresh_boot_changes_before_writer(monkeyp
     assert registered['local_handoff_prepare']() is None
 
 
+def test_foreground_local_handoff_forwards_unreserved_snapshot_profile_without_a_writer(monkeypatch):
+    from tempo_legacy_database import connections as owner
+    registered, calls = {}, []
+    @contextmanager
+    def read_connection(*, repertoire_snapshot=False):
+        calls.append(repertoire_snapshot)
+        yield SimpleNamespace(raw='read-only-source')
+    def prepare(**options):
+        with options['connections'](repertoire_snapshot=True) as raw:
+            assert raw == 'read-only-source'
+        return None
+    monkeypatch.setattr(owner, 'read_connection', read_connection)
+    monkeypatch.setattr(managed_runtime, 'current_managed_runtime_identity', lambda: 'boot')
+    monkeypatch.setattr(provider_priority, 'prepare_determined_feedback', prepare)
+    monkeypatch.setattr(next_card_priority, 'register_current_next_card_priority', lambda **kwargs: registered.update(kwargs))
+    feedback_release.register_feedback_next_card_priority()
+    assert calls == []
+    assert registered['local_handoff_prepare']() is None
+    assert calls == [True]
+
+
 def test_native_root_observes_source_and_applies_one_unit_only_after_receipt_fence(native_handoff,monkeypatch):
     """Full source/publications -> registered pure root -> same borrowed writer."""
     from app.services import queue_next_card

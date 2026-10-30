@@ -176,8 +176,9 @@ def _current_feedback_targets(command, snapshots, *, connections, target_prepare
 
 def _qualified_facts(command, *, connections, clock, delivery=None, selector=None, target_prepare=None):
     """Read bounded source/config/publications; close connections before replay."""
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    from inspect import signature
     from app.games.feedback.coordinator import delivery_for
     if selector is None:
         from app.games.feedback.interfaces import select_first_boundary
@@ -194,10 +195,13 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
     if configuration is not None:
         for repertoire_id in configuration.repertoire_ids:
             try:
-                with connections() as database:
-                    facts_json = read_repertoire_json(database, repertoire_id)
-                # Decoding and chess work both follow the bounded read context.
-                facts = json.loads(facts_json)
+                # Production owners declare the snapshot keyword; legacy
+                # injected no-argument readers retain their supplied contract.
+                options = ({"repertoire_snapshot": True}
+                    if "repertoire_snapshot" in signature(connections).parameters else {})
+                with connections(**options) as database:
+                    facts = read_repertoire(database, repertoire_id)
+                # The adapter owns decoding; all chess projection follows exit.
                 snapshot = project_published_repertoire(facts)
             except ValueError:
                 unavailable.append(repertoire_id)
@@ -260,8 +264,11 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
         if not callable(read):
             raise DeliveryDeferred("first_departure_owner_read_required")
         @contextmanager
-        def connections():
-            with read() as database:
+        def connections(*, repertoire_snapshot=False):
+            from tempo_legacy_database.connections import read_connection
+            options = ({"repertoire_snapshot": True} if repertoire_snapshot
+                and read is read_connection else {})
+            with read(**options) as database:
                 yield database.raw
     if not callable(getattr(clock, "utc_now", None)):
         original_clock = clock

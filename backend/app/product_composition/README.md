@@ -431,7 +431,7 @@ separate operator gates.
 flowchart LR
   Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
   Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
-  Pending --> Prepare["Explicit prepare-next: pure local capture / complete publication / current owner target"]
+  Pending --> Prepare["Explicit prepare-next: unreserved read-only publication; close read before replay / current owner target"]
   Prepare --> Fence["Gateway request hash / attempt token / receipt"]
   Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
   Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
@@ -446,6 +446,21 @@ outbox before an already-ready live target. Full preparation finishes before the
 command writer, and a fresh trusted boot identity is captured at its end. The
 prepared wrapper applies only after the gateway fence. Accepted Study preparation
 uses bounded foreground reads and continues independently of Games mode/process.
+
+Qualification consumes Repertoire's released `read_repertoire` mapping port;
+the removed raw-JSON reader is not a compatibility dependency. Projection and
+chess replay run only after the source context exits. Dedicated Games reads use
+their existing `repertoire_snapshot=True` profile. Explicit foreground
+prepare-next and retry forward that profile through the existing unreserved
+`read_connection` and reader pool: READ ONLY, no whole-snapshot transaction or
+statement deadline, and the existing 100ms lock limit. Writers and reserved
+background connections reject that profile; normal readers retain their defaults.
+
+The independent background sweep retains its 250ms database sections and
+foreground-preemptible shared lease. Dense source requalification may therefore
+defer there. Ordinary explicit prepare-next can prepare an already accepted
+obligation without the optional producer, outside the saved-review writer;
+this is not proof that dense background requalification always completes.
 
 ## Explicit on-demand Games refresh
 

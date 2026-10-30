@@ -56,8 +56,10 @@ def register_feedback_next_card_priority(*, workspace="legacy",read=None,clock=N
     runtime_id = current_managed_runtime_identity()
 
     @contextmanager
-    def connections():
-        with read() as database:
+    def connections(*, repertoire_snapshot=False):
+        options = ({"repertoire_snapshot": True} if repertoire_snapshot
+            and read is read_connection else {})
+        with read(**options) as database:
             yield database.raw
 
     def admitted():

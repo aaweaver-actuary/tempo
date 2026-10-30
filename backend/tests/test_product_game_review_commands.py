@@ -58,6 +58,42 @@ def test_repertoire_snapshot_connection_is_read_only_without_short_deadline(monk
     assert calls[-1] == "closed"
 
 
+def test_pooled_repertoire_snapshot_profile_is_unreserved_read_only_and_leaves_background_budget(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters import postgres_store
+    calls, pools = [], []
+    class Database:
+        def execute(self, sql, parameters=()): calls.append((sql, parameters))
+    @contextmanager
+    def borrowed(**options):
+        assert options in ({}, {"timeout": 0.1})
+        yield Database()
+    def pool(read_only, *, background=False):
+        pools.append((read_only, background))
+        return SimpleNamespace(connection=borrowed)
+    monkeypatch.setattr(postgres_store, "_pool", pool)
+    with postgres_store.connection(read_only=True, repertoire_snapshot=True) as database:
+        assert database.read_only
+    assert pools == [(True, False)]
+    assert calls[0][0] == "SET TRANSACTION READ ONLY"
+    assert "set_config('transaction_timeout','0'" in calls[1][0]
+    assert "set_config('lock_timeout','100ms'" in calls[1][0]
+    assert "set_config('statement_timeout','0'" in calls[1][0]
+    calls.clear()
+    with postgres_store.connection(read_only=True, background=True): pass
+    assert pools[-1] == (True, True)
+    assert calls[0][1] == ('250ms', '25ms')
+    count = len(pools)
+    for options, reason in [
+        ({"repertoire_snapshot": True}, "repertoire_snapshot_requires_read_only"),
+        ({"read_only": True, "background": True, "repertoire_snapshot": True}, "repertoire_snapshot_requires_unreserved_reader"),
+    ]:
+        with pytest.raises(ValueError, match=reason):
+            with postgres_store.connection(**options): pytest.fail("invalid source read was opened")
+    assert len(pools) == count
+
+
 @pytest.mark.parametrize("count", [1, 10, 17])
 def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch, count):
     from app import command_dispatch

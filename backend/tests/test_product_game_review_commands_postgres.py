@@ -9,6 +9,30 @@ import pytest
 from test_product_game_lapse_postgres import owned_postgres
 
 
+def test_native_unreserved_snapshot_read_profile_refuses_writes_and_keeps_background_budget(owned_postgres, monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    import psycopg
+    from tempo_legacy_database.adapters import postgres_store
+    with owned_postgres() as fixture:
+        conninfo = fixture.raw.info.dsn
+    @contextmanager
+    def borrowed(**options):
+        with psycopg.connect(conninfo, row_factory=postgres_store.tempo_row_factory) as raw:
+            yield raw
+    monkeypatch.setattr(postgres_store, '_pool', lambda read_only, **options: SimpleNamespace(connection=borrowed))
+    with postgres_store.connection(read_only=True, repertoire_snapshot=True) as reader:
+        assert tuple(reader.execute_native("SELECT current_setting('transaction_read_only'), "
+            "current_setting('transaction_timeout'), current_setting('statement_timeout'), "
+            "current_setting('lock_timeout')").fetchone()) == ('on', '0', '0', '100ms')
+    with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+        with postgres_store.connection(read_only=True, repertoire_snapshot=True) as reader:
+            reader.execute_native('UPDATE settings SET id=id WHERE false')
+    with postgres_store.connection(read_only=True, background=True) as reader:
+        assert tuple(reader.execute_native("SELECT current_setting('transaction_timeout'), "
+            "current_setting('lock_timeout')").fetchone()) == ('250ms', '25ms')
+
+
 def test_native_review_commands_commit_with_receipt_replay_and_rollback(owned_postgres, monkeypatch):
     from fastapi import HTTPException
     from app import command_gateway as gateway

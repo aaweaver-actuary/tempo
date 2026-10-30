@@ -259,7 +259,12 @@ def _pool(read_only: bool, *, background: bool = False) -> ConnectionPool:
 
 @contextmanager
 def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,
-               repeatable_read: bool = False, pool_timeout_seconds: float | None = None) -> Iterator[PostgresConnection]:
+               repeatable_read: bool = False, pool_timeout_seconds: float | None = None,
+               repertoire_snapshot: bool = False) -> Iterator[PostgresConnection]:
+    if repertoire_snapshot and not read_only:
+        raise ValueError("repertoire_snapshot_requires_read_only")
+    if repertoire_snapshot and background:
+        raise ValueError("repertoire_snapshot_requires_unreserved_reader")
     started_at = time.perf_counter()
     acquired_at = configured_at = handled_at = None
     committed = False
@@ -274,9 +279,16 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
             if repeatable_read:
                 # Isolation must be selected before the background timeout SELECTs.
                 database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            if read_only and (authoritative or repeatable_read):
+            if read_only and (authoritative or repeatable_read or repertoire_snapshot):
                 database.execute("SET TRANSACTION READ ONLY")
-            if background:
+            if repertoire_snapshot:
+                # The released whole-repertoire source profile is read-only.
+                # This profile never borrows the short background reserved
+                # section; ordinary background reads retain their budget.
+                database.execute("SELECT set_config('transaction_timeout','0',true), "
+                                 "set_config('lock_timeout','100ms',true), "
+                                 "set_config('statement_timeout','0',true)")
+            elif background:
                 transaction_limit = _background_timeout_ms(
                     "TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS", 250,
                     minimum=50, maximum=10000,

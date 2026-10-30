@@ -80,8 +80,9 @@ def prepare_retry(payload, *, connections=None, clock=None, capture=None, worksp
     if connections is None:
         from tempo_legacy_database.connections import read_connection
         @contextmanager
-        def connections():
-            with read_connection() as database:
+        def connections(*, repertoire_snapshot=False):
+            options = {"repertoire_snapshot": True} if repertoire_snapshot else {}
+            with read_connection(**options) as database:
                 yield database.raw
     clock = clock or SystemClock()
     request = RetryFeedbackRequest.model_validate_json(json.dumps(payload))

@@ -455,45 +455,47 @@ def test_mode_admission_is_required_without_worker_health_dependency():
     assert not result.progressed and not result.pending and result.held_reason == "feedback_mode_not_admitted"
 
 
-def test_qualification_decodes_complete_publication_after_reader_exit(monkeypatch):
+@pytest.mark.parametrize("reader", ["dedicated", "injected"])
+def test_qualification_projects_complete_publication_after_reader_exit(monkeypatch, reader):
     import json
     from app.product_composition import provider_priority as composition
     from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
     from tempo_legacy_database.adapters.games import product_review
     case, reading, events = setup_case(), [False], []
     @contextmanager
-    def connections():
+    def owned_read(*, repertoire_snapshot=False):
+        assert repertoire_snapshot == (reader == "dedicated")
         reading[0] = True
         try:
             yield object()
         finally:
             reading[0] = False
             events.append("closed")
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+    class DedicatedReads(DedicatedGamesConnections):
+        def __call__(self, *, repertoire_snapshot=False):
+            return owned_read(repertoire_snapshot=repertoire_snapshot)
+    connections = DedicatedReads("unused") if reader == "dedicated" else lambda: owned_read()
     class Reads:
         def __init__(self, connections): pass
         def configuration(self, *args): return case.configuration
         def source_detail(self, *args): return case.source
-    def raw_read(database, repertoire):
+    def owner_read(database, repertoire):
         assert reading[0] and repertoire == "rep"
-        events.append("raw")
-        return '{"complete":"publication"}'
-    def decode(text):
-        assert not reading[0]
-        events.append("decode")
-        return json.loads(text)
+        events.append("read")
+        return {"complete": "publication"}
     def project(facts):
         assert not reading[0] and facts == {"complete": "publication"}
         events.append("project")
         return case.snapshot
     monkeypatch.setattr(product_review, "PostgresReviewStore", Reads)
-    monkeypatch.setattr(product_snapshot, "read_repertoire_json", raw_read)
-    monkeypatch.setattr(composition, "json", SimpleNamespace(loads=decode))
+    monkeypatch.setattr(product_snapshot, "read_repertoire", owner_read)
     monkeypatch.setattr(composition, "project_published_repertoire", project)
     result = composition._qualified_facts(case.command, connections=connections,
         clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command),
         target_prepare=lambda *args,**kwargs:None)
     assert result[0].qualification_status == "ready"
-    assert events == ["raw", "closed", "decode", "project"]
+    assert events == ["read", "closed", "project"]
 
 
 @pytest.mark.parametrize("binding",["none","valid","identity_change","hold"])
