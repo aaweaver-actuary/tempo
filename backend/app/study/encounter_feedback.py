@@ -17,6 +17,7 @@ from app.contracts.product_v02.repertoire import DecisionPresentation
 from app.study.game_feedback import (CardFacts, CurrentDecisionPort, Effect, GameFeedback,
     GameFeedbackStore, effect_id, encoded, instant, semantic_digest)
 from app.services.scheduling_review_application import apply_scheduling_review
+from app.study.interfaces.feedback_observation import FeedbackObservation
 
 if TYPE_CHECKING:
     from app.study.introductions.application import CommitResult
@@ -132,7 +133,7 @@ class EncounterFeedback(GameFeedback):
         # A key-only control tombstone has no encounter facts to report yet.
         return self._encounter_receipt(effect, effect.encounter, "duplicate") if effect and (effect.encounter or effect.lapse) else None
 
-    def feedback_observation(self,key):
+    def feedback_observation(self,key) -> FeedbackObservation | None:
         """Current receiving-owner queue/issuance facts without mutation."""
         return self.store.feedback_observation(key,instant(self.clock()))
 
