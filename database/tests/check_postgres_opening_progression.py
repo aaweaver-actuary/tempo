@@ -274,7 +274,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
     name = 'presentation_protection_' + uuid.uuid4().hex
     marker = 'tempo:new-first-publication:' + name
     fixture_dsn = psycopg.conninfo.make_conninfo(**{**info, 'dbname': name})
-    report = dict(database=name,queue_rows=575,historical_evidence_rows=5312,
+    report = dict(database=name,queue_rows=575,historical_evidence_rows=5655 if frozen else 5312,
                   transaction_limit_ms=250,cleanup_verified=False,frozen_enabled=frozen,
                   frozen_predicate_source_sha256=hashlib.sha256(Path(__import__('tempo_legacy_database.adapters.frozen_order',fromlist=['__file__']).__file__).read_bytes()).hexdigest(),
                   production_source_sha256=hashlib.sha256(Path(storage.__file__).read_bytes()).hexdigest())
@@ -319,8 +319,8 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                   json_build_object('synthetic',(SELECT string_agg(md5(n::text||':'||b::text),'') FROM generate_series(1,16) b))::text,
                   json_build_object('synthetic',(SELECT string_agg(md5(n::text||':'||b::text),'') FROM generate_series(17,46) b))::text,
                   %s,'UTC',CASE WHEN n=1 THEN NULL ELSE -n END,'complete'
-                FROM generate_series(1,5312) n CROSS JOIN LATERAL
-                  (SELECT id,card_id,revision FROM opening_evidence_presentations WHERE card_id='card-0504' ORDER BY id LIMIT 1) p""",(now,))
+                FROM generate_series(1,%s) n CROSS JOIN LATERAL
+                  (SELECT id,card_id,revision FROM opening_evidence_presentations WHERE card_id='card-0504' ORDER BY id LIMIT 1) p""",(now,5655 if frozen else 5312))
             db.execute_native("""INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,
                   repertoire_id,card_id,card_revision,trained_color,context_json,manifest_json,started_at,
                   study_timezone,queue_entry_id,state)
@@ -350,6 +350,19 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                 db.execute_native("UPDATE cards SET moves_json='[\"d2d4\"]' WHERE id='card-0510'")
                 db.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('proof-added','Added membership','synthetic',%s)",(now,))
                 db.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('proof-added','card-0511')")
+                # The owner intentionally retains origins after card deletion.
+                # Match the implicated history cardinality and 43-date skipscan
+                # shape without copying live cards, queues or learning history.
+                db.execute_native("""INSERT INTO queue_attempt_origins(
+                    queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,
+                    admission_repertoire_id,last_status,legacy,start_fen,moves_json,trained_color,content_type)
+                    SELECT -n,'synthetic-deleted-'||n,1,(%s::date-(n %% 43)::integer)::text,
+                        0,'review','synthetic-retired','complete',1,%s,'["e2e4"]','white','opening'
+                    FROM generate_series(1,30321-(SELECT count(*) FROM queue_attempt_origins)) n""",(day,chess.STARTING_FEN))
+                origin_count,origin_dates=db.execute_native('SELECT count(*),count(DISTINCT queue_date) FROM queue_attempt_origins').fetchone()
+                evidence_count=db.execute_native('SELECT count(*) FROM opening_evidence_attempts').fetchone()[0]
+                assert (origin_count,origin_dates,evidence_count)==(30321,43,5656)
+                report.update(retained_origin_rows=origin_count,origin_dates=origin_dates,total_evidence_rows=evidence_count)
         with postgres_store.connection(read_only=True) as db:
             rows = refresh.queue_application.presentation_rows(db,day)
             protected = queue_ordering._protected_queue_ids(rows)
