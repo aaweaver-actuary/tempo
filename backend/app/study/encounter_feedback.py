@@ -7,7 +7,7 @@ Again application; canonical introduction remains a separate disposition.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 from typing import TYPE_CHECKING, Callable, Literal, Protocol
 
@@ -116,7 +116,7 @@ class EncounterFeedback(GameFeedback):
             values["reason"] = "existing_lapse_obligation"
         # This target is not a promise while admission is blocked or its control
         # reason is not yet supplied by the owner. Detection itself stays stored.
-        if admission in {"pending", "not_requested"}:
+        if admission in {"pending", "not_requested"} or effect.progress is not None:
             values["available_by"] = None
         progress = self.store.observed_progress(effect)
         extra = dict(interface_version="0.2.2", progress=progress) if progress else {}
@@ -170,7 +170,7 @@ class EncounterFeedback(GameFeedback):
             encounter=command if isinstance(command, GameEncounter) else None,
             lapse=command if isinstance(command, GameLapse) else None, payload_hash=digest,
             qualification=qualification,
-            available_by=min(instant(command.detected_at), now) + timedelta(hours=48),
+            available_by=None,
             card_id=card.presentation_id, card_revision=card.presentation_revision)
         effect = self._accept_priority(effect, now)
         self.store.save(effect, now)

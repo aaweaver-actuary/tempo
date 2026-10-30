@@ -9,9 +9,11 @@ from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
 
 
-@pytest.mark.parametrize('state',['introduced','unintroduced'])
+@pytest.mark.parametrize('state,command_kind',[
+    ('introduced','encounter'),('unintroduced','encounter'),('introduced','lapse'),
+])
 def test_qualified_global_publication_reaches_exact_study_consequence_and_real_settlement(
-    owned_postgres,monkeypatch,state,
+    owned_postgres,monkeypatch,state,command_kind,
 ):
     """One complete source/owner/queue proof, separate from actual provider HTTP."""
     from contextlib import contextmanager
@@ -34,7 +36,7 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     # Parametrized cases share a workspace ledger; keep their fixed clocks in
     # actual causal order so an earlier fixture is not a future issuance.
-    determined = NOW+timedelta(minutes=3 if state=='unintroduced' else 0)
+    determined = NOW+timedelta(minutes=6 if command_kind=='lapse' else 3 if state=='unintroduced' else 0)
     timeline = [determined-timedelta(minutes=1)]
     actual_stamp = issuance.stamp_issued_head
     monkeypatch.setattr(issuance,'stamp_issued_head',
@@ -51,17 +53,27 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
         timeline[0] = determined
         captured = case.capture(case.game_ids[0]); original = case.command(captured)
         canonical = retained_canonical_game(captured)
+        if command_kind == 'lapse':
+            from app.games.feedback.comparison import compare_game
+            from app.contracts.product_v02.learning import GameLapse
+            target_snapshot = project_capture(captured,comparison_game=canonical)
+            finding, = compare_game(canonical,provider='lichess',time_precision='second',snapshot=target_snapshot)
+            assert finding.kind == 'confirmed_miss'
+            original = GameLapse(key=original.key,finding=finding,detected_at=original.detected_at,
+                occurred_at=original.occurred_at,payload_digest=original.payload_digest)
         raw = captured['game']
         pgn = chess.pgn.Game(); pgn.setup(chess.Board(canonical.starting_fen))
         pgn.headers.update(White='synthetic',Black='opponent',Result='*')
-        pgn.add_variation(chess.Move.from_uci(original.played_uci))
+        pgn.add_variation(chess.Move.from_uci(original.played_uci if command_kind=='encounter'
+                                             else original.finding.played_uci))
         text = str(pgn)
         record = GameRecord(source_game_id=raw['provider_game_id'],source_revision=1,
             source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,
             played_at=canonical.played_at,time_precision='second')
         source = SourceState(source_key=case.card_id+'-source',version=1,original=record,
             record_fingerprint=record.source_digest,normalized=canonical,findings=(),
-            comparison_revision='original-synthetic-capture',effects=(original,),encounters=(original,))
+            comparison_revision='original-synthetic-capture',effects=(original,),
+            encounters=(original,) if command_kind=='encounter' else ())
         config = SyncConfiguration(workspace_id=canonical.workspace_id,provider='lichess',account='synthetic',
             window=GameWindow(start_at=(NOW-timedelta(days=2)).isoformat(),end_at=NOW.isoformat(),precision='second'),
             repertoire_ids=(case.repertoire_id,),speeds=('rapid',),rated=None,interval_seconds=None)
@@ -77,6 +89,11 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
             assert prepared.qualification.selection.decision.presentation_id == case.card_id
             assert prepared.qualification.selection.selected_scope[0].snapshot_id.startswith('publication:')
             assert prepared.target_snapshot.membership.snapshot_id.startswith('product:')
+            # Every executable/chess proof has finished. The writer may only
+            # recheck prepared source/version/target facts for either old kind.
+            def writer_replay_forbidden(*args,**kwargs):
+                pytest.fail('qualified writer replayed the target executable')
+            prepared.prepared_decisions._validate_executable = writer_replay_forbidden
             with case.transaction() as database:
                 owner = current_owner_encounter_intake(database,retained_owner_capture=prepared.target_capture,
                     snapshot=prepared.target_snapshot,clock=lambda:determined,qualification=prepared.qualification,
@@ -105,7 +122,7 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
             with case.transaction() as database:
                 effect = PostgresGameFeedbackStore(database).get(original.key)
                 assert effect.status == 'settled' and effect.settlement_review_id == first['review_id']
-                assert effect.encounter == original and effect.progress.first_issued_ordinal == 1
+                assert (effect.encounter or effect.lapse) == original and effect.progress.first_issued_ordinal == 1
                 assert effect.progress.settlement.attempt.queue_entry_id == target
                 assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
                     (case.card_id,)).fetchone()[0] == 1
