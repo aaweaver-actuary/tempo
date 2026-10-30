@@ -273,7 +273,10 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
         database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
             SELECT %s,repertoire_id,kind,start_fen,moves_json,'locked',CURRENT_DATE,'opening'
             FROM cards WHERE id=%s""", (target_id,case.card_id))
-        database.execute_native('UPDATE cards SET due_date=CURRENT_DATE WHERE id=%s',(case.card_id,))
+        # The general retained-history proof deliberately uses a timestamp.
+        # This ordinary browser seed follows canonical admission's day storage.
+        database.execute_native("""UPDATE cards SET due_date=CURRENT_DATE,
+            introduced_at=split_part(introduced_at,'T',1) WHERE id=%s""",(case.card_id,))
     target_case = SimpleNamespace(transaction=case.transaction,card_id=target_id,
         decisions=SimpleNamespace(mappings=(case.decisions.mappings[0].model_copy(update={'presentation_id':target_id}),)),
         lapse=case.lapse.model_copy(update={'key':case.lapse.key.model_copy(update={'game_id':uuid.uuid4().hex}),
@@ -695,7 +698,9 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 docker('network','disconnect',network['id'],pg['Id'])
             docker('network','rm',network['id'])
             absent = docker('network','inspect',network['id'],check=False)
-            assert absent.returncode!=0 and 'no such' in absent.stderr.lower()
+            missing = absent.stderr.lower()
+            assert (absent.returncode!=0 and network['id'] in missing
+                and ('no such network' in missing or 'network '+network['id']+' not found' in missing))
             report['network_cleanup_verified']=True
             report['cleanup_verified']=len(cleanup)==len(containers)
         evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
