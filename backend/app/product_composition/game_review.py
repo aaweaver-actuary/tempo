@@ -25,7 +25,8 @@ def configured_job(configuration, operation_id):
     from .game_sync import sync_job
     return sync_job(job_id=operation_id, workspace_id=configuration.workspace_id,
         account=configuration.account, window=configuration.window,
-        repertoire_ids=configuration.repertoire_ids, policy=configuration_policy(configuration))
+        repertoire_ids=configuration.repertoire_ids, policy=configuration_policy(configuration)).model_copy(
+            update={"configuration_revision": configuration.revision})
 
 
 def create_game_review(*, workspace, connections, learning, clock, runtime=None):

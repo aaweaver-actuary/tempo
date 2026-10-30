@@ -5,9 +5,9 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
-from app.contracts.product_v02 import Value
+from app.contracts.product_v02 import UtcTimestamp, Value
 from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameRejection, GameWindow
-from app.contracts.product_v02.learning import EncounterReceipt, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
+from app.contracts.product_v02.learning import EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
 
@@ -19,6 +19,8 @@ class JobSpec(Value):
     window: GameWindow
     repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=8)
     filters: tuple[tuple[str, str], ...] = ()
+    configuration_revision: int | None = Field(default=None, ge=1)
+    stream: Literal["forward", "reconciliation", "manual"] = "manual"
 
 
 class JobState(Value):
@@ -73,11 +75,29 @@ class Delivery(Value):
     next_attempt_at: float = 0
     receipt: EncounterReceipt | LearningReceipt | None = None
     error: str | None = None
+    # Qualification never replaces the original command or its logical key.
+    qualification_status: Literal["pending", "ready", "held", "ineligible"] = "pending"
+    qualification_reason: str | None = None
+    qualification: FirstDepartureWitness | None = None
+    determined_at: UtcTimestamp | None = None
+    origin_job_id: str | None = None
+    configuration_revision: int | None = Field(default=None, ge=1)
+    stream: Literal["forward", "reconciliation", "manual"] | None = None
+    service_sequence: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def exactly_one_command(self):
         if sum(item is not None for item in (self.lapse, self.encounter, self.control)) != 1:
             raise ValueError("delivery requires exactly one semantic owner command")
+        if self.qualification is not None:
+            if self.control is not None or not self.qualification.matches(self.command):
+                raise ValueError("qualification must bind the original automatic command")
+            if self.determined_at != self.qualification.determined_at:
+                raise ValueError("qualification cannot restart the actionable determination")
+        if self.qualification_status == "ready" and self.qualification is None:
+            raise ValueError("ready delivery requires complete first-departure qualification")
+        if self.qualification_status in {"held", "ineligible"} and not self.qualification_reason:
+            raise ValueError("held or ineligible delivery requires an explicit reason")
         return self
 
     @property
@@ -151,7 +171,14 @@ class GamesStore(Protocol):
     def save_job(self, job: JobState) -> None: ...
     def source(self, source_key: str) -> SourceState | None: ...
     def commit_page(self, commit: PageCommit) -> None: ...
-    def pending_delivery(self, now: float) -> Delivery | None: ...
+    def pending_delivery(self, now: float, *, ready_only: bool = False,
+                         workspace: str | None = None) -> Delivery | None: ...
+    def has_determined_delivery(self, workspace: str) -> bool: ...
     def save_delivery(self, delivery: Delivery) -> None: ...
     def delivery(self, operation_id: str) -> Delivery | None: ...
+
+
+class DeliveryQualifier(Protocol):
+    """Complete local comparison before owner delivery, outside its writer."""
+    def prepare(self, delivery: Delivery) -> Delivery: ...
 
