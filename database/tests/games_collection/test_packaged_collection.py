@@ -531,15 +531,15 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         (directory/'provider.json').write_text(json.dumps(inputs))
         (directory/'feedback-start').write_text('actual_mode_verified\n')
         stage = 'provider_first_departure'
+        def bounded(value):
+            if isinstance(value,str):
+                for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+                    value = value.replace(private,'<redacted>')
+                return value[:200]
+            if isinstance(value,dict): return {key:bounded(item) for key,item in value.items()}
+            if isinstance(value,list): return [bounded(item) for item in value[:2]]
+            return value
         def actual_delivery():
-            def bounded(value):
-                if isinstance(value,str):
-                    for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
-                        value = value.replace(private,'<redacted>')
-                    return value[:200]
-                if isinstance(value,dict): return {key:bounded(item) for key,item in value.items()}
-                if isinstance(value,list): return [bounded(item) for item in value[:2]]
-                return value
             with case.transaction() as database:
                 source_rows = database.execute_native("""SELECT source_key,version,
                     payload->'quarantined' AS quarantined,payload->>'diagnostic' AS diagnostic,
@@ -624,6 +624,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert receipt['progress']['target']['card_id']==target_id
         assert receipt['progress']['first_issued']['queue_entry_id']==target_marker['target_entry_id']
         assert 1<=receipt['progress']['first_issued_ordinal']<=5
+        report['feedback_before_refresh']=bounded(dict(operation_id=operation_id,
+            delivery_state=before_review['delivery_state'],key=receipt['key'],
+            **{name:receipt.get(name) for name in ('status','outcome','owner_receipt_id','applied_at',
+                'disposition','admission_status','deferred_reason')},
+            progress={name:receipt['progress'].get(name) for name in ('determined_at','target',
+                'introduction_applied_at','remediation_fence','first_issued','first_issued_ordinal')}))
+        assert receipt['status']=='applied' and receipt['progress']['introduction_applied_at']
         with case.transaction() as database:
             assert tuple(database.execute_native("""SELECT queue_entry_id,card_id,revision,issuance_sequence,issued_at
                 FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=%s""",protected_origin[:3]).fetchone())==protected_origin
@@ -631,19 +638,107 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
             assert database.execute_native('SELECT card_id FROM reviews WHERE id=%s',
                 (protected_review['response']['review_id'],)).fetchone()[0]==case.card_id
-        stage = 'actual_unseen_refresh_before_browser_completion'
-        def actual_unseen_refresh():
+        def refresh_observation(event_generation=None):
             with case.transaction() as database:
-                row = database.execute_native("""SELECT generation,state,payload_json,updated_at FROM background_tasks
-                    WHERE kind='daily_queue' AND deduplication_key='current' AND state='complete'
-                    AND updated_at::timestamptz>%s""",(refresh_requested_after,)).fetchone()
-                if row is None:
-                    return None
-                assert database.execute_native("SELECT 1 FROM daily_queue WHERE id=%s AND card_id=%s AND status='queued'",
-                    (target_marker['target_entry_id'],target_id)).fetchone(), 'packaged_feedback_unseen_refresh_removed_owed_target'
-                assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(target_id,)).fetchone()[0]
-                assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
-                return dict(row)
+                tasks = database.execute_native("""SELECT task.id,task.generation,task.state,task.phase,
+                    task.payload_json::jsonb->>'_queue_phase' AS payload_phase,
+                    task.payload_json::jsonb->>'queue_date' AS queue_date,
+                    task.lease_token IS NOT NULL AS lease_present,task.lease_expires_at,
+                    task.attempt_count,task.next_attempt_at,task.last_error,task.updated_at,task.completed_at,
+                    task.transaction_timeout_count,task.transaction_timeout_checkpoint,
+                    control.work_id IS NOT NULL AS control_present,control.paused,control.promoted,
+                    control.phase AS control_phase,control.updated_at AS control_updated_at
+                    FROM background_tasks task LEFT JOIN background_activity control
+                        ON control.source='durable' AND control.work_id=task.id
+                    WHERE task.kind='daily_queue' AND task.deduplication_key='current'
+                    ORDER BY task.id LIMIT 2""").fetchall()
+                events, phase_events = [], {}
+                if tasks:
+                    identity = (tasks[0]['id'],event_generation if event_generation is not None else tasks[0]['generation'])
+                    events = database.execute_native("""SELECT id,task_id,generation,event,phase,detail,created_at
+                        FROM background_task_events WHERE task_id=%s AND generation=%s
+                        ORDER BY id DESC LIMIT 12""",identity).fetchall()
+                    phase_events = dict(database.execute_native("""SELECT
+                        MIN(id) FILTER (WHERE event='slice_complete' AND phase='reconcile_unseen') AS reconcile_entered,
+                        MIN(id) FILTER (WHERE event='slice_complete' AND phase='admit_due') AS reconcile_completed,
+                        MIN(id) FILTER (WHERE event='published' AND phase='published') AS published
+                        FROM background_task_events WHERE task_id=%s AND generation=%s""",identity).fetchone())
+                projections = database.execute_native("""SELECT queue_date,state,generation,refresh_pending,
+                    last_error,updated_at,blocked_count FROM queue_projections WHERE queue_date=%s LIMIT 2""",
+                    (protected_queue['local_date'],)).fetchall()
+                targets = database.execute_native("""SELECT card.id,card.revision,card.repertoire_id,card.content_type,
+                    card.introduced_at,queue.id AS queue_entry_id,queue.queue_date,queue.status,
+                    queue.admission_kind,queue.cycle,queue.position,
+                    (SELECT COUNT(*) FROM reviews WHERE card_id=card.id) AS review_count,
+                    EXISTS(SELECT 1 FROM queue_attempt_origins origin WHERE origin.queue_entry_id=queue.id
+                        AND origin.card_id=card.id AND origin.revision=card.revision
+                        AND origin.issued_as_head=1 AND origin.issuance_sequence IS NOT NULL) AS genuinely_issued
+                    FROM cards card LEFT JOIN daily_queue queue ON queue.card_id=card.id AND queue.id=%s
+                    WHERE card.id=%s LIMIT 2""",(target_marker['target_entry_id'],target_id)).fetchall()
+            return dict(tasks=[bounded(dict(row)) for row in tasks],events=[bounded(dict(row)) for row in events],
+                phase_events=phase_events,projections=[bounded(dict(row)) for row in projections],
+                targets=[bounded(dict(row)) for row in targets])
+        def eligible_target(observed):
+            assert len(observed['targets'])==1, 'packaged_feedback_target_missing'
+            target = observed['targets'][0]
+            assert (target['id']==target_id and target['revision']==receipt['progress']['target']['card_revision']
+                and target['queue_entry_id']==target_marker['target_entry_id'] and target['status']=='queued'
+                and target['content_type']=='opening' and target['repertoire_id']!='__retained_cards__'
+                and target['introduced_at']==target['queue_date'] and target['review_count']==0
+                and (target['admission_kind'] or '')!='explicit' and target['genuinely_issued']), \
+                'packaged_feedback_unseen_refresh_target_not_eligible'
+            return target
+        report['natural_refresh_requested_after']=refresh_requested_after
+        report['natural_refresh_before_request']=refresh_observation()
+        eligible_target(report['natural_refresh_before_request'])
+        baseline_tasks = report['natural_refresh_before_request']['tasks']
+        assert len(baseline_tasks)<=1, 'packaged_feedback_duplicate_refresh_task'
+        baseline_generation = baseline_tasks[0]['generation'] if baseline_tasks else 0
+        report['refresh_control_before_request']=bounded(api('GET','/api/system/foreground-active'))
+        provider_ready(dict(stage='request-refresh',baseline_generation=baseline_generation))
+        stage = 'browser_requests_fresh_refresh'
+        requested_marker = wait_for(lambda:browser_ready('refresh-requested'),'packaged_feedback_browser_refresh_request_missing')
+        requested = requested_marker['request']
+        report['browser_refresh_request']=requested
+        assert requested_marker['target_entry_id']==target_marker['target_entry_id']
+        assert requested['settings']==requested['response'] and requested['settings']['new_cards_per_day']==0
+        assert requested['settings']['study_only_mode'] is True and requested['identity']
+        assert requested['status'] in (200,202)
+        stage = 'actual_unseen_refresh_before_browser_completion'
+        refresh_identity = None
+        def actual_unseen_refresh():
+            nonlocal refresh_identity
+            observed = refresh_observation(refresh_identity[1] if refresh_identity else None)
+            if observed!=report.get('last_requested_refresh_observation'):
+                report.setdefault('first_requested_refresh_observation',observed)
+                report['last_requested_refresh_observation']=observed
+                previous = report.get('requested_refresh_observation_changes',0)
+                report['requested_refresh_observation_changes']=min(previous+1,20)
+                report['requested_refresh_observation_count_capped']=previous>=20
+            assert len(observed['tasks'])<=1, 'packaged_feedback_duplicate_refresh_task'
+            if not observed['tasks'] or observed['tasks'][0]['generation']<=baseline_generation:
+                return None
+            task = observed['tasks'][0]
+            identity = (task['id'],task['generation'])
+            if refresh_identity is None:
+                refresh_identity = identity
+                report['requested_refresh_identity']=dict(task_id=identity[0],generation=identity[1],
+                    baseline_generation=baseline_generation)
+            assert identity==refresh_identity, 'packaged_feedback_refresh_generation_changed'
+            eligible_target(observed)
+            assert task['state']!='failed', 'packaged_feedback_refresh_task_failed'
+            phases = observed['phase_events']
+            if not all(phases.get(name) for name in ('reconcile_entered','reconcile_completed','published')):
+                return None
+            assert phases['reconcile_entered']<phases['reconcile_completed']<phases['published'], \
+                'packaged_feedback_refresh_phase_order_invalid'
+            if task['state']!='complete' or task['phase']!='published':
+                return None
+            assert len(observed['projections'])==1, 'packaged_feedback_refresh_projection_missing'
+            projection = observed['projections'][0]
+            if projection['state']!='ready' or projection['refresh_pending']!=0:
+                return None
+            return dict(**task,phase_events=phases,projection=projection,target=observed['targets'][0])
         report['actual_sliced_unseen_refresh'] = wait_for(actual_unseen_refresh,'packaged_feedback_unseen_refresh_pending')
         provider_ready(dict(stage='refresh',generation=report['actual_sliced_unseen_refresh']['generation']))
         stage = 'browser_clean_completion_and_replay'
@@ -693,6 +788,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['stages'].append('same_key_settlement')
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
+        if stage in ('browser_requests_fresh_refresh','actual_unseen_refresh_before_browser_completion'):
+            try:
+                report['refresh_observation_at_failure']=refresh_observation(
+                    refresh_identity[1] if stage=='actual_unseen_refresh_before_browser_completion' and refresh_identity else None)
+                report['refresh_control_at_failure']=bounded(api('GET','/api/system/foreground-active'))
+            except Exception as diagnostic_error:
+                report['refresh_failure_observation_error']=type(diagnostic_error).__name__
         raise
     finally:
         if browser is not None:

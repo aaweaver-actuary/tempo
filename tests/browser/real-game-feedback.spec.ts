@@ -66,6 +66,7 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
   const directory = dirname(scenarioPath);
   const reviews: Array<{ card_id: string; identity: string; body: Record<string, unknown>;
     response: Record<string, unknown>; replay: Record<string, unknown> }> = [];
+  const refreshRequests: Array<Record<string, unknown>> = [];
   const network: Array<{ sequence: number; kind: string; status: number; url: string; body: unknown }> = [];
   const consoleErrors: string[] = [], pageErrors: string[] = [];
   const pending = new Set<Promise<void>>();
@@ -170,8 +171,30 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
     expect(issued, "Browser reread and displayed the urgent target from the real queue").toBeDefined();
     const targetEntry = Number(await page.locator("#train").getAttribute("data-queue-entry-id"));
     expect(targetEntry).toBe((issued!.body as { cards: Array<{ queue_entry_id: number }> }).cards[0].queue_entry_id);
-    await browserReady({ stage: "target", target_entry_id: targetEntry, protected_review: protectedReview });
+    const targetFen = await board.getAttribute("data-fen");
+    expect(targetFen).toBeTruthy();
+    await browserReady({ stage: "target", target_entry_id: targetEntry, target_fen: targetFen, protected_review: protectedReview });
+    await providerReady("request-refresh");
+    const requestedRefresh = await page.evaluate(async () => {
+      const current = await fetch("/api/settings");
+      if (current.status !== 200) throw new Error(`Actual settings read failed: ${current.status}`);
+      const settings = await current.json() as Record<string, unknown>;
+      if (settings.new_cards_per_day !== 0 || settings.study_only_mode !== true)
+        throw new Error("Owned refresh must preserve zero allowance and Study-only mode");
+      const identity = `packaged-refresh:${crypto.randomUUID()}`;
+      const response = await fetch("/api/settings", { method: "PUT",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": identity },
+        body: JSON.stringify(settings) });
+      return { identity, settings, status: response.status, receipt: await response.json() as Record<string, unknown> };
+    });
+    refreshRequests.push(requestedRefresh);
+    const refreshedSettings = await confirmed(requestedRefresh.status, requestedRefresh.receipt);
+    refreshRequests[0].response = refreshedSettings;
+    expect(refreshedSettings).toEqual(requestedRefresh.settings);
+    await browserReady({ stage: "refresh-requested", request: refreshRequests[0], target_entry_id: targetEntry });
     await providerReady("refresh");
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(targetEntry));
+    await expect(board).toHaveAttribute("data-fen", targetFen!);
     // A genuinely unseen opening can first teach its move. Use its natural
     // requeued attempt for the clean completion; do not suppress assistance.
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -188,6 +211,7 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
   } finally {
     await Promise.all([...pending]);
     await testInfo.attach("actual-browser-correspondence", { contentType: "application/json",
-      body: JSON.stringify({ scenario, reviews, network, console_errors: consoleErrors, page_errors: pageErrors }) });
+      body: JSON.stringify({ scenario, reviews, refresh_requests: refreshRequests, network,
+        console_errors: consoleErrors, page_errors: pageErrors }) });
   }
 });
