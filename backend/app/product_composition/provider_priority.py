@@ -16,6 +16,7 @@ from app.games.feedback.ports import Delivery, DeliveryDeferred
 from app.games.feedback.qualification import (acknowledge_control_delivery, acknowledge_qualified_delivery,
     held_delivery, qualify_delivery)
 from app.repertoire import project_capture, project_published_repertoire
+from app.services.feedback_diagnostics import diagnose_feedback, feedback_span, feedback_work
 from .encounters import receive_admitted_encounter
 from .game_review import CurrentStudyFeedback, CurrentStudyReceiptReads
 from .retained_game import retained_canonical_game
@@ -184,8 +185,9 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
         from app.games.feedback.interfaces import select_first_boundary
         selector = select_first_boundary
     reads = PostgresReviewStore(connections)
-    configuration = reads.configuration(command.key.workspace_id, command.key.provider)
-    source = reads.source_detail(command.key.workspace_id, command.key.provider, command.key.game_id)
+    with feedback_span('source_configuration_read'):
+        configuration = reads.configuration(command.key.workspace_id, command.key.provider)
+        source = reads.source_detail(command.key.workspace_id, command.key.provider, command.key.game_id)
     if delivery is None:
         if source is None:
             raise DeliveryDeferred("first_departure_source_unavailable")
@@ -199,22 +201,26 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
                 # injected no-argument readers retain their supplied contract.
                 options = ({"repertoire_snapshot": True}
                     if "repertoire_snapshot" in signature(connections).parameters else {})
-                with connections(**options) as database:
-                    facts = read_repertoire(database, repertoire_id)
+                with feedback_span('publication_read'):
+                    with connections(**options) as database:
+                        facts = read_repertoire(database, repertoire_id)
                 # The adapter owns decoding; all chess projection follows exit.
-                snapshot = project_published_repertoire(facts)
+                with feedback_span('publication_projection'):
+                    snapshot = project_published_repertoire(facts)
             except ValueError:
                 unavailable.append(repertoire_id)
             else:
                 publications.append(facts)
                 snapshots.append(snapshot)
-    snapshots, prepared_targets = _current_feedback_targets(command, snapshots,
-        connections=connections, target_prepare=target_prepare)
+    with feedback_span('current_target_prepare'):
+        snapshots, prepared_targets = _current_feedback_targets(command, snapshots,
+            connections=connections, target_prepare=target_prepare)
     original_determination = delivery.determined_at or getattr(source, "determined_at", None) or clock.utc_now()
-    qualified = qualify_delivery(delivery, source=source, configuration=configuration,
-        snapshots=tuple(snapshots), unavailable=tuple(unavailable),
-        determined_at=original_determination, retry_at=clock.now() + 30,
-        select_first_boundary=selector)
+    with feedback_span('first_boundary_qualification'):
+        qualified = qualify_delivery(delivery, source=source, configuration=configuration,
+            snapshots=tuple(snapshots), unavailable=tuple(unavailable),
+            determined_at=original_determination, retry_at=clock.now() + 30,
+            select_first_boundary=selector)
     from app.study.game_feedback import effect_id
     qualified = qualified.model_copy(update={"owner_effect_id": effect_id(command.key)})
     return qualified, source, configuration, tuple(publications), selector, prepared_targets
@@ -232,23 +238,27 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
         if runtime_id is None:
             raise DeliveryDeferred("managed_feedback_runtime_identity_unavailable")
     decision = qualification.selection.decision
-    target_capture = capture(decision.repertoire_id, command.key.game_id,
-        (command.key.occurrence_ply - 1,))
-    game = retained_canonical_game(target_capture)
-    target_snapshot = project_capture(target_capture, comparison_game=game)
+    with feedback_span('target_capture'):
+        target_capture = capture(decision.repertoire_id, command.key.game_id,
+            (command.key.occurrence_ply - 1,))
+    with feedback_span('target_projection'):
+        game = retained_canonical_game(target_capture)
+        target_snapshot = project_capture(target_capture, comparison_game=game)
     source_fence = partial(fence_qualified_feedback,
         expected_configuration=configuration, expected_source=source,
         require_active_mode=require_active_mode, mode_runtime_id=runtime_id)
-    decisions = CurrentOwnerDecisions(None, retained_owner_capture=target_capture,
-        snapshot=target_snapshot).prepare_qualified(command, qualification,
-            qualified_publications=publications,
-            prepared_targets=prepared_targets,
-            qualification_fence=source_fence,
-            game=game, select_first_boundary=selector)
+    with feedback_span('current_owner_validation'):
+        decisions = CurrentOwnerDecisions(None, retained_owner_capture=target_capture,
+            snapshot=target_snapshot).prepare_qualified(command, qualification,
+                qualified_publications=publications,
+                prepared_targets=prepared_targets,
+                qualification_fence=source_fence,
+                game=game, select_first_boundary=selector)
     return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions,
         require_active_mode, runtime_id, source_fence, prepared_targets)
 
 
+@diagnose_feedback
 def prepare_feedback_qualification(command, *, connections=None, read=None, clock,
                                    qualification=None, determination=None, stream=None,
                                    capture=None, selector=None, require_active_mode=False):
@@ -400,10 +410,12 @@ def prepare_determined_feedback(*, workspace, connections, clock, admitted, capt
         capture=capture,selector=selector)
 
 
+@diagnose_feedback
 def prepare_delivery_feedback(original, *, connections, clock, admitted, capture=None, selector=None):
     """Pure preparation of one server-read immutable delivery, including controls."""
     if not _admitted(admitted):
         return None
+    feedback_work(original.operation_id, original.configuration_revision)
     from .managed_runtime import current_managed_runtime_identity
     from app.study.game_feedback import effect_id
     runtime_id = current_managed_runtime_identity()
