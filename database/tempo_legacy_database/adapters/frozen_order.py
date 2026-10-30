@@ -191,6 +191,8 @@ def legacy_queue_predicate(miss_reason: str):
         columns="1", additional_where="AND card.id=c.id LIMIT 1",
     )
     miss_reason = miss_reason.replace("'", "''")
+    # Evaluate historical presentation membership once, preserving NULL-as-absent
+    # semantics, rather than rescanning that history for each queued card.
     return """ AND NOT (
         c.content_type='opening'
         AND EXISTS(SELECT 1 FROM frozen_opening_activation active
@@ -200,7 +202,8 @@ def legacy_queue_predicate(miss_reason: str):
         AND COALESCE(q.admission_kind,'')<>'explicit'
         AND NOT (q.gameplay_priority_reason='""" + miss_reason + "' AND EXISTS(" + mandatory_miss + "))" + """
         AND NOT EXISTS(SELECT 1 FROM reviews reviewed WHERE reviewed.card_id=c.id)
-        AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.card_id=c.id)
+        AND c.id NOT IN(SELECT attempt.card_id FROM opening_evidence_attempts attempt
+                         WHERE attempt.card_id IS NOT NULL)
         AND NOT EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id)
         AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins exposed_origin
             WHERE exposed_origin.card_id=c.id AND

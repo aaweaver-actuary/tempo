@@ -253,3 +253,47 @@ def test_changed_captured_content_does_not_trust_a_forged_mandatory_reason(datab
     from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',lambda database,card_id:False)
     assert not order.proposal_valid(database,{'card_id':'b','reason':order.MISS_REASON,'frozen_token':['run',1]})
+
+
+@pytest.mark.parametrize('exposure,allowed', [
+    ('none',False), ('evidence',True), ('review',True), ('teaching',True),
+    ('issued',True), ('origin_failed',True), ('origin_result',True), ('origin_complete',True),
+    ('queue_failed',True), ('queue_result',True), ('queue_complete',True), ('queue_started',True),
+    ('explicit',True), ('not_legacy',True), ('not_opening',True), ('inactive',True),
+])
+def test_legacy_frozen_exposure_membership_matches_correlated_history_with_nulls(database,monkeypatch,exposure,allowed):
+    from tempo_legacy_database.adapters import frozen_order as storage, real_game_miss_projection
+    # This predicate keeps its separate mandatory-miss capability unchanged.
+    monkeypatch.setattr(real_game_miss_projection,'outstanding_miss_sql',lambda **_: 'SELECT 1 WHERE 0')
+    database.execute('ALTER TABLE cards ADD COLUMN content_type TEXT')
+    database.execute("UPDATE cards SET content_type='opening'")
+    database.execute('ALTER TABLE daily_queue ADD COLUMN gameplay_priority_reason TEXT')
+    database.execute('ALTER TABLE daily_queue ADD COLUMN admission_kind TEXT')
+    activate(database)
+    database.execute("INSERT INTO daily_queue VALUES(1,'a',0,NULL,'queued','clean',NULL,'new')")
+    database.execute("INSERT INTO queue_attempt_origins VALUES('a',0,0,NULL,'queued',1)")
+    database.executemany('INSERT INTO opening_evidence_attempts VALUES(?)',
+                         [(None,)]+[(f'historical-{n}',) for n in range(5312)])
+    if exposure=='evidence': database.execute("INSERT INTO opening_evidence_attempts VALUES('a')")
+    if exposure=='review': database.execute("INSERT INTO reviews VALUES('a')")
+    if exposure=='teaching': database.execute("INSERT INTO teaching_states VALUES('a')")
+    if exposure=='issued': database.execute("UPDATE queue_attempt_origins SET issued_as_head=1")
+    if exposure=='origin_failed': database.execute("UPDATE queue_attempt_origins SET attempt_failed=1")
+    if exposure=='origin_result': database.execute("UPDATE queue_attempt_origins SET review_result_json='{}'")
+    if exposure=='origin_complete': database.execute("UPDATE queue_attempt_origins SET last_status='complete'")
+    if exposure=='queue_failed': database.execute("UPDATE daily_queue SET attempt_failed=1")
+    if exposure=='queue_result': database.execute("UPDATE daily_queue SET review_result_json='{}'")
+    if exposure=='queue_complete': database.execute("UPDATE daily_queue SET status='complete'")
+    if exposure=='queue_started': database.execute("UPDATE daily_queue SET attempt_state='guided'")
+    if exposure=='explicit': database.execute("UPDATE daily_queue SET admission_kind='explicit'")
+    if exposure=='not_legacy': database.execute("UPDATE queue_attempt_origins SET legacy=0")
+    if exposure=='not_opening': database.execute("UPDATE cards SET content_type='tactic'")
+    if exposure=='inactive': database.execute("UPDATE frozen_opening_activation SET run_id=NULL")
+    current=storage.legacy_queue_predicate(order.MISS_REASON)
+    # Keep the exact preceding EXISTS shape as the independent semantic oracle.
+    historical=current.replace(
+        'AND c.id NOT IN(SELECT attempt.card_id FROM opening_evidence_attempts attempt\n                         WHERE attempt.card_id IS NOT NULL)',
+        'AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.card_id=c.id)')
+    prefix='SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE 1=1'
+    assert database.execute(prefix+current).fetchall()==database.execute(prefix+historical).fetchall()
+    assert bool(database.execute(prefix+current).fetchall()) is allowed
