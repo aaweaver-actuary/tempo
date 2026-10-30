@@ -242,6 +242,9 @@ def test_opposite_color_scope_is_not_assumed_from_a_failed_read():
     opposite = snapshot(("e2e4", "e7e5"), repertoire="black", color="black")
     result = select(game(), captured, opposite, selected_repertoire_ids=("rep", "black"))
     assert result.status == "own_actionable" and len(result.selected_scope) == 1
+    absent = select(game(()), opposite, selected_repertoire_ids=("black",))
+    assert absent.status == "unresolved" and absent.diagnostic == "no_compatible_repertoire"
+    assert absent.selected_scope == ()
     missing = select(game(), captured, selected_repertoire_ids=("rep", "black"), unavailable_repertoire_ids=("black",))
     assert missing.status == "unresolved" and len(missing.selected_scope) == 2
 
