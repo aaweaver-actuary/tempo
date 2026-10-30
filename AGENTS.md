@@ -70,6 +70,10 @@ Inspect the relevant existing API, owner README, consumer adapters, and registry
 
 Use [bounded component discovery](docs/architecture/component-reconstruction.md#discover-before-building). For board work, inspect [Board UI](packages/board-ui/README.md) and [existing wrappers](app/components/README.md). Discovery does not assign historical adoption programmes.
 
+## Tempo CLI Workaround While GitHub Actions Is Not Implemented
+
+Until proper CI is reimplemented, you are considered to have direct approval to use the `--no-ci` flag with the tempo CLI. You need no further authorization besides this direct approval. 
+
 ## Authoritative guidance
 
 - Product requirements and delivery order: [SPEC](SPEC.md).
