@@ -311,8 +311,11 @@ than the receiving owner's existing 64-binding limit stays unresolved as a whole
 no prefix is selected. The resulting new command is still requalified and fenced
 by Study at acceptance. Collection-only construction never supplies this capability.
 
-The explicit next-card composition calls `pending_determined_feedback` (SELECT
-only) and PURE `prepare_determined_feedback`. Preparation returns one original
+The explicit next-card composition uses `pending_determined_feedback_in_transaction`
+for the head hint in its existing transaction and PURE `prepare_determined_feedback`
+outside the command writer. The hint uses the derived indexed sidecar, matching
+mode/workspace/retry/control/FIFO facts without scanning unqualified pending history;
+optional read failure returns false within a savepoint. Preparation returns one original
 delivery and its separately prepared current owner facts, with no acknowledgment,
 qualification write or Study mutation. It selects the earliest live/history FIFO
 priority for comparison with the actual accepted Study candidate; discarding it

@@ -543,15 +543,17 @@ def native_handoff(owned_postgres, monkeypatch,request):
             proof = composition.prepare_feedback_qualification(original,connections=connections,
                 capture=capture,clock=clock,determination=STAMP.isoformat(),stream="forward")
             from app.study.game_feedback import effect_id
+            from tempo_legacy_database.adapters.games.product_feedback import handoff_priority_for
             delivery = delivery_for(source.source_key,original).model_copy(update={
                 "qualification_status":"ready", "qualification":proof.qualification,
                 "determined_at":STAMP.isoformat(),"stream":"forward",
                 "owner_effect_id":effect_id(original.key)})
             with case.transaction() as database:
                 database.execute_native("""INSERT INTO product_feedback_deliveries
-                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
-                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb)""",
-                    (delivery.operation_id,source.source_key,original.key.logical_id(),delivery.command_kind,delivery.model_dump_json()))
+                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload,handoff_priority)
+                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb,%s)""",
+                    (delivery.operation_id,source.source_key,original.key.logical_id(),delivery.command_kind,delivery.model_dump_json(),
+                     handoff_priority_for(delivery)))
             yield SimpleNamespace(case=case,workspace=canonical.workspace_id,connections=connections,
                 store=store,modes=modes,source=source,original=delivery,capture=capture,clock=clock,
                 runtime_id=RUNTIME,intent=intent)
@@ -749,7 +751,7 @@ def test_native_prepared_handoff_rechecks_actual_boot_mode_source_and_control(na
 @pytest.fixture
 def native_deliveries(owned_postgres):
     from psycopg.types.json import Jsonb
-    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore,handoff_priority_for
     workspace = "qualification-" + uuid.uuid4().hex
     @contextmanager
     def connections():
@@ -780,9 +782,10 @@ def native_deliveries(owned_postgres):
             database.execute("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,1,%s)",
                 (identity, Jsonb(case.source.model_dump(mode="json"))))
             database.execute("""INSERT INTO product_feedback_deliveries
-                (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
-                VALUES(%s,%s,%s,'encounter','pending',0,%s)""",
-                (delivery.operation_id, identity, original.key.logical_id(), Jsonb(delivery.model_dump(mode="json"))))
+                (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload,handoff_priority)
+                VALUES(%s,%s,%s,'encounter','pending',0,%s,%s)""",
+                (delivery.operation_id, identity, original.key.logical_id(), Jsonb(delivery.model_dump(mode="json")),
+                 handoff_priority_for(delivery)))
         return delivery
     return SimpleNamespace(store=store,connections=connections,workspace=workspace,seed=seed)
 

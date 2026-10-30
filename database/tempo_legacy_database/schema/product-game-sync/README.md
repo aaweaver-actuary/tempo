@@ -100,6 +100,7 @@ erDiagram
     TEXT state
     DOUBLE next_attempt_at
     JSONB payload
+    TEXT handoff_priority
   }
   product_feedback_configuration {
     TEXT workspace_id PK
@@ -170,8 +171,7 @@ The existing `product_feedback_deliveries.payload` JSON now retains separate
 `qualification_status` (`pending`, `ready`, `held`, `ineligible`), finite reason and
 retryability, the typed current first-departure witness, original determination,
 actual origin job/stream/configuration revision where known, and a service
-sequence for live/history intake fairness. No new table, column or effect identity
-is introduced for qualification. Original lapse/encounter/control bytes remain
+sequence for live/history intake fairness. Qualification introduces no new effect identity. Original lapse/encounter/control bytes remain
 unchanged; source/capture/checkpoint/outbox publication remains atomic.
 
 Controls supersede pending automatic records before delivery. A delayed owner
@@ -196,3 +196,19 @@ The status inventory's qualification counts have delivery-record grain. An
 accepted/pending receipt counted at acknowledgment is not a current queue,
 issuance or settlement observation. The canonical policy and bounded failure flow
 are documented by [the Games owner](../../../../backend/app/games/feedback/README.md#first-departure-delivery-qualification--621).
+
+#624 adds a nullable `product_feedback_deliveries.handoff_priority` text sidecar
+in the still-unpublished migration056. It is a derived read projection, never
+independent eligibility, retry or scheduling authority. Existing Games capture
+and delivery-save transactions atomically derive it from the actual matching
+witness (or existing control), stream, canonical UTC original determination and
+opaque owner tie. Unqualified legacy collection rows, semantic holds and disposed
+records have no eligible index entry. Original command/payload/time are unchanged.
+
+`product_feedback_determined_pending` indexes workspace, this canonical ordering
+with C collation and retry-after time only where `state='pending' AND
+handoff_priority IS NOT NULL`. Borrowed head observation uses that exact partial
+predicate and priority cutoff; it neither scans unqualified pending history nor
+creates another ledger. Migration derivation uses only stored qualified/control
+facts; absent witness or legacy labels do not invent first-departure authority.
+No live migration/backfill has been performed.

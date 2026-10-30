@@ -108,7 +108,7 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
         def prepare(original):
             return prepare_feedback_qualification(original,read=transaction,
                 capture=lambda repertoire,game_id,plies:capture,clock=clock,
-                determination=command.detected_at,stream=stream)
+                determination=source.determined_at or command.detected_at,stream=stream)
         result = SimpleNamespace(prepare=prepare,source=source,command=command,store=store,configuration=config)
         def recompare():
             nonlocal source

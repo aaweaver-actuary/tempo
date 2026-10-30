@@ -7,6 +7,7 @@ migration, never an automatic runtime migration or live-schema initializer.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime,timezone
 
 from app.games.feedback.ports import ConcurrentUpdate, Delivery, JobSpec, JobState, PageCommit, SourceState
 
@@ -34,12 +35,17 @@ CREATE TABLE product_feedback_deliveries (
     operation_id TEXT PRIMARY KEY,
     source_key TEXT NOT NULL REFERENCES product_feedback_sources(source_key),
     effect_key TEXT NOT NULL, command_kind TEXT NOT NULL, state TEXT NOT NULL,
-    next_attempt_at DOUBLE PRECISION NOT NULL, payload JSONB NOT NULL
+    next_attempt_at DOUBLE PRECISION NOT NULL, payload JSONB NOT NULL,
+    handoff_priority TEXT
 );
 CREATE INDEX product_feedback_ready_jobs ON product_feedback_jobs(status, next_attempt_at, attempts);
 CREATE INDEX product_feedback_ready_deliveries ON product_feedback_deliveries(state, next_attempt_at);
 CREATE INDEX product_feedback_effect_controls ON product_feedback_deliveries(effect_key)
     WHERE command_kind='control' AND state IN ('pending','acknowledged');
+CREATE INDEX product_feedback_determined_pending ON product_feedback_deliveries
+    ((COALESCE(payload->'encounter'->'key'->>'workspace_id',payload->'lapse'->'key'->>'workspace_id',
+        payload->'control'->'key'->>'workspace_id')),handoff_priority COLLATE "C",next_attempt_at)
+    WHERE state='pending' AND handoff_priority IS NOT NULL;
 """
 
 
@@ -158,9 +164,9 @@ def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None,
             COALESCE((payload->>'service_sequence')::bigint,0)),0)+1
             FROM product_feedback_deliveries""").fetchone()[0]
         delivery = delivery.model_copy(update={"service_sequence": sequence})
-    raw.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb
-        WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at,
-        delivery.model_dump_json(), delivery.operation_id))
+    raw.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb,
+        handoff_priority=%s WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at,
+        delivery.model_dump_json(), handoff_priority_for(delivery),delivery.operation_id))
     return delivery
 
 
@@ -268,10 +274,10 @@ class PostgresGamesStore:
                         payload=jsonb_set(payload,'{state}','"superseded"'::jsonb)
                         WHERE effect_key=%s AND command_kind IN ('lapse','encounter') AND state='pending'""", (command.key.logical_id(),))
                 database.execute("""INSERT INTO product_feedback_deliveries
-                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
-                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb) ON CONFLICT(operation_id) DO NOTHING""",
+                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload,handoff_priority)
+                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb,%s) ON CONFLICT(operation_id) DO NOTHING""",
                     (delivery.operation_id, delivery.source_key, command.key.logical_id(),
-                     delivery.command_kind, delivery.model_dump_json()))
+                     delivery.command_kind, delivery.model_dump_json(),handoff_priority_for(delivery)))
 
     def delivery(self, operation_id: str) -> Delivery | None:
         with self._transaction() as database:
@@ -342,19 +348,39 @@ def has_determined_delivery_in_transaction(database, workspace: str, *, before_s
     acquired. Optional-schema errors are contained by the composition's savepoint.
     """
     execute = getattr(database,"execute_native",None) or database.execute
+    cutoff = (handoff_priority_key(before_stream,before_determined_at,before_effect_id)
+              if before_stream is not None else None)
+    bound = ' AND handoff_priority COLLATE "C" < %s COLLATE "C"' if cutoff is not None else ''
     return execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
-        WHERE state='pending'
-          AND next_attempt_at<=extract(epoch FROM clock_timestamp())
+        WHERE state='pending' AND handoff_priority IS NOT NULL
+          AND next_attempt_at<=extract(epoch FROM statement_timestamp())
           AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
-              payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s
-          AND (command_kind='control' OR ((payload->>'qualification_status'='ready'
-            OR (payload->>'qualification_status'='held'
-                AND COALESCE((payload->>'qualification_retryable')::boolean,true)
-                AND payload->'qualification'<>'null'::jsonb))
-          AND (%s::text IS NULL OR (
-                CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END,
-                (payload->>'determined_at')::timestamptz,
-                COALESCE(payload->>'owner_effect_id','')) < (
-                CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))))""",
-        (workspace, before_stream, before_stream,
-         before_determined_at, before_effect_id)).fetchone()[0]
+              payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s"""
+        + bound + ")",(workspace,cutoff) if cutoff is not None else (workspace,)).fetchone()[0]
+
+
+def handoff_priority_key(stream,determined_at,effect_id):
+    """Canonical derived ordering only; the original clock/key remain unchanged."""
+    parsed = datetime.fromisoformat(determined_at.replace("Z","+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ValueError("handoff priority requires original UTC determination")
+    return ("0:" if stream == "forward" else "1:") + parsed.astimezone(timezone.utc).isoformat(
+        timespec="microseconds") + ":" + (effect_id or "")
+
+
+def handoff_priority_for(delivery):
+    """Small indexed sidecar derived from typed original owner facts at writes.
+
+    Unqualified collection history has no sidecar. A legacy label/clock alone
+    cannot enter the head hint; the actual witness must match the original.
+    """
+    if delivery.state != "pending":
+        return None
+    if delivery.control is not None:
+        return ""
+    witness = delivery.qualification
+    if (witness is None or not witness.matches(delivery.command)
+            or delivery.qualification_status not in {"ready","held"}
+            or (delivery.qualification_status == "held" and not delivery.qualification_retryable)):
+        return None
+    return handoff_priority_key(witness.stream,witness.determined_at,delivery.owner_effect_id)
