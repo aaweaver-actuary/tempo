@@ -3,8 +3,8 @@
 These are test facts, not product commands or scheduling policy. The owning
 PostgreSQL fixture supplies the transaction and disposes its capped container.
 """
-from contextlib import contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager,ExitStack
+from dataclasses import dataclass,field
 from datetime import timedelta
 import hashlib
 import json
@@ -102,6 +102,8 @@ class HistoryCase:
     protected_id: str
     game_ids: tuple[str, ...]
     state: str
+    resources: object = field(default_factory=ExitStack,compare=False)
+    qualifications: dict = field(default_factory=dict,compare=False)
 
     def command(self, capture):
         """Shared factual command from actual synthetic owner rows, no effect."""
@@ -248,6 +250,7 @@ def retained_history_case(transaction, *, state, played="d2d4", ordinary_limit=2
                 VALUES(%s,%s,0,'review')""", (NOW.date().isoformat(), protected))
         yield case
     finally:
+        case.resources.close()
         with transaction() as database:
             database.execute_native("DELETE FROM study_game_feedback WHERE card_id=ANY(%s)", ([target, protected],))
             database.execute_native("DELETE FROM imported_games WHERE id=ANY(%s)", (list(games),))

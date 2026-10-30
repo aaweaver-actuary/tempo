@@ -64,6 +64,13 @@ has no scheduling review. Old priority `applied_at` alone proves neither Again
 nor admission. The owner JSON keeps separate qualification, immutable accepted
 disposition, current target, actual application/issuance/settlement progress and
 bounded preparation retry time. Original occurrence/source facts stay unchanged.
+For a generated current target, the existing owner section also retains the
+prepared source-header binding and immutable result/receipt digest. The normal
+review's one-effect settlement hook rechecks those bounded facts, current map,
+card revision and membership; it does not replay a repertoire. Remaining
+same-card obligations consume the retained actual completion one at a time in
+the existing preparation path. Physical remaps append prior issuance fences and
+preserve the original real scheduler receipt and first service.
 New qualified effects leave `available_by` null because their service promise is
 actual front/five-card issuance. Upgraded old effects preserve a real legacy
 column as history; version 0.2.2 receipts do not present it as a new deadline.

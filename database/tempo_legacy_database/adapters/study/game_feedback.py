@@ -101,6 +101,7 @@ class PostgresGameFeedbackStore:
                 if owner.get("remediation_fence") else None,
             preparation_retry_at=instant(owner['preparation_retry_at'])
                 if owner.get('preparation_retry_at') else None,
+            target_authority=owner.get('target_authority'),
         )
 
     def get(self, key):
@@ -111,6 +112,21 @@ class PostgresGameFeedbackStore:
     def save(self, effect, now):
         self._writer()
         previous = self.get(effect.key)
+        if (effect.progress is not None and effect.status=='applied'
+                and effect.admission_status=='available' and effect.reason is None):
+            from tempo_game_evidence_contracts.legacy import fingerprint
+            candidates = [item for item in self.prepared_targets if
+                item.current.decision_id == effect.key.decision_id
+                and item.current.presentation_id == effect.progress.target.card_id
+                and item.current.presentation_revision == effect.progress.target.card_revision]
+            if len(candidates)==1:
+                prepared = candidates[0]
+                source = json.loads(prepared.source.source_json)
+                effect = replace(effect,target_authority=dict(
+                    target=effect.progress.target.model_dump(mode='json'),
+                    route_id=prepared.current.route_id,repertoire_id=prepared.current.repertoire_id,
+                    source_binding=source['binding'],
+                    record_digest=fingerprint(json.loads(prepared.binding_json)['record'])))
         lapse, command = effect.lapse, effect.encounter or effect.lapse
         payload = None
         if command is not None:
@@ -123,7 +139,7 @@ class PostgresGameFeedbackStore:
                     remediation_fence=effect.remediation_fence.model_dump(mode="json")
                         if effect.remediation_fence else None,
                     preparation_retry_at=effect.preparation_retry_at.isoformat()
-                        if effect.preparation_retry_at else None)))
+                        if effect.preparation_retry_at else None,target_authority=effect.target_authority)))
         self.database.execute_native("""INSERT INTO study_game_feedback(
             effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,card_revision,
             decision_id,occurred_at,detected_at,received_at,available_by,status,reason,applied_at,
@@ -185,11 +201,11 @@ class PostgresGameFeedbackStore:
         if effect is None or (effect.encounter is None and effect.lapse is None):
             return None
         from .issuance import committed_issuance_count,attempt_issuance
-        from .recombination import effect_target
+        from .recombination import feedback_target_matches
         progress = self.observed_progress(effect)
         target = progress.target if progress else EncounterTarget(card_id=effect.card_id,
             card_revision=effect.card_revision)
-        compatible = effect_target(self.database,effect) == target.card_id
+        compatible = feedback_target_matches(self.database,effect,target.card_id)
         queued = self.database.execute_native("""SELECT queue.id queue_entry_id,queue.queue_date,
             queue.status,queue.attempt_state,card.id card_id,card.revision card_revision
             FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
@@ -277,18 +293,41 @@ class PostgresGameFeedbackStore:
         from .recombination import installed as recombination_installed
         if recombination_installed(self.database):
             rows = self.database.execute_native("""SELECT effect.* FROM study_game_feedback effect
-                WHERE effect.status IN ('pending','applied') AND (effect.card_id=%s OR EXISTS(
+                WHERE effect.status='applied' AND (effect.card_id=%s OR EXISTS(
                     SELECT 1 FROM study_recombination_current current
                     JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
                     WHERE current.presentation_id=%s AND current.decision_id=effect.decision_id
                       AND p.result_json->'presentation'->>'repertoire_id'=COALESCE(effect.payload_json::jsonb->'finding'->>'repertoire_id',
                           effect.payload_json::jsonb->'command'->'finding'->>'repertoire_id',
                           effect.payload_json::jsonb->'command'->'decision'->>'repertoire_id')))
-                ORDER BY effect.effect_key""", (card_id,card_id)).fetchall()
+                ORDER BY effect.effect_key LIMIT 1""", (card_id,card_id)).fetchall()
             return tuple(self._effect(row) for row in rows)
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback
-            WHERE card_id=%s AND status IN ('pending','applied') ORDER BY effect_key""", (card_id,)).fetchall()
+            WHERE card_id=%s AND status='applied' ORDER BY effect_key LIMIT 1""", (card_id,)).fetchall()
         return tuple(self._effect(row) for row in rows)
+
+    def saved_completion(self,effect):
+        """One retained genuine completion for bounded later owner consumption."""
+        progress = effect.progress
+        fence = progress.remediation_fence if progress else effect.remediation_fence
+        if effect.status!='applied' or fence is None:
+            return None
+        row = self.database.execute_native("""SELECT review.id,review.reviewed_at,review.source_kind
+            FROM reviews review JOIN review_attempt_receipts receipt ON receipt.review_id=review.id
+            JOIN queue_attempt_origins origin ON origin.queue_entry_id=receipt.queue_entry_id
+              AND origin.card_id=receipt.card_id AND origin.card_id=review.card_id
+            WHERE review.card_id=%s AND origin.revision=%s AND review.rating='correct'
+              AND review.guided=0 AND review.invalidated_at IS NULL AND review.source_kind='study'
+              AND origin.issued_as_head=1 AND origin.issuance_sequence>%s AND origin.issued_at>=%s
+            ORDER BY origin.issuance_sequence,review.id LIMIT 1""",
+            (fence.target.card_id,fence.target.card_revision,fence.after_issuance_sequence,
+             instant(fence.established_at))).fetchone()
+        if row is None:
+            return None
+        from .issuance import completion_issuance
+        issued = completion_issuance(self.database,row['id'],fence.target.card_id,fence.target.card_revision)
+        return Completion(row['id'],fence.target.card_id,fence.target.card_revision,
+            instant(row['reviewed_at']),True,row['source_kind'],issued)
 
 
     def promote_effect(self, effect, day):
@@ -318,7 +357,21 @@ class PostgresGameFeedbackStore:
 
 
     def completion_matches(self, effect, completion):
-        from .recombination import effect_target, current_presentation_available
+        from .recombination import effect_target, current_presentation_available,feedback_target_matches
+        if effect.progress is not None:
+            if effect.progress.target != EncounterTarget(card_id=completion.card_id,card_revision=completion.revision):
+                return False
+            if effect.target_authority is not None or effect.progress.target.card_id != effect.card_id:
+                from .recombination import fence_feedback_completion
+                return fence_feedback_completion(self.database,effect,completion)
+            # The ordinary review already holds the actual card/revision. A
+            # changed explicit binding must be prepared/remapped before it can
+            # settle, never discovered by repertoire replay under this hook.
+            row = self.database.execute_native("SELECT revision,superseded_by,archived,pending_validation "
+                "FROM cards WHERE id=%s",(completion.card_id,)).fetchone()
+            return bool(row and row['revision']==completion.revision and not any(
+                row[field] for field in ('superseded_by','archived','pending_validation'))
+                and feedback_target_matches(self.database,effect,completion.card_id))
         target = effect_target(self.database,effect)
         if target!=completion.card_id:
             return False
@@ -382,9 +435,10 @@ def feedback_queue_priorities(database, card_ids, *, read=None):
         AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','progress','target','card_id')
             IN (""" + placeholders + """) OR effect.card_id IN (""" + placeholders + """))
         AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','admission_status')='available'
-             OR EXISTS(SELECT 1 FROM reviews actual WHERE actual.id=effect.review_id
+             OR (json_extract_path_text(CAST(effect.payload_json AS json),'owner','progress') IS NULL
+               AND EXISTS(SELECT 1 FROM reviews actual WHERE actual.id=effect.review_id
                  AND actual.source_kind='game_lapse' AND actual.source_ref=effect.effect_key
-                 AND actual.invalidated_at IS NULL))"""
+                 AND actual.invalidated_at IS NULL)))"""
     parameters = (*ids,*ids)
     rows = read(statement, parameters) if read is not None else database.execute_native(statement, parameters).fetchall()
     result = {}
@@ -510,8 +564,20 @@ def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
           AND NOT EXISTS(SELECT 1 FROM daily_queue buried WHERE buried.card_id=card.id
               AND buried.queue_date=%s AND buried.status='buried')
           AND (effect.status='pending'
+            OR effect.payload_json::jsonb->'owner'->>'admission_status'='pending'
             OR COALESCE(effect.payload_json::jsonb->'owner'->'progress','null'::jsonb)='null'::jsonb
             OR effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id' IS DISTINCT FROM card.id
+            OR EXISTS(SELECT 1 FROM reviews completed
+                JOIN review_attempt_receipts receipt ON receipt.review_id=completed.id
+                JOIN queue_attempt_origins origin ON origin.queue_entry_id=receipt.queue_entry_id
+                  AND origin.card_id=completed.card_id AND origin.card_id=receipt.card_id
+                WHERE completed.card_id=card.id AND completed.rating='correct' AND completed.guided=0
+                  AND completed.invalidated_at IS NULL AND completed.source_kind='study'
+                  AND origin.revision=card.revision AND origin.issued_as_head=1
+                  AND origin.issuance_sequence>(effect.payload_json::jsonb->'owner'->'progress'
+                      ->'remediation_fence'->>'after_issuance_sequence')::bigint
+                  AND origin.issued_at>=(effect.payload_json::jsonb->'owner'->'progress'
+                      ->'remediation_fence'->>'established_at')::timestamptz)
             OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
         """ + ("""AND COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
@@ -600,7 +666,8 @@ def invalidate_saved_review(database, card_id, review_id):
         if effect.status != 'settled' or effect.settlement_review_id != review_id:
             continue
         progress = effect.progress.model_copy(update={'settlement':None}) if effect.progress else None
-        store.save(replace(effect,status='applied' if effect.applied_at is not None else 'pending',
+        store.save(replace(effect,status=('held' if effect.control or effect.conflict_json
+            else 'applied' if effect.applied_at is not None else 'pending'),
             progress=progress,settled_at=None,settlement_review_id=None,reason='settling_review_invalidated'),
             datetime.now(timezone.utc))
 

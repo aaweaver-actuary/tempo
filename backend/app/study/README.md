@@ -247,6 +247,22 @@ instead requires canonical admission and a post-admission generation, with no
 game scheduling review. Read status can hydrate actual first issuance from the
 durable origins; optional receipt denormalization never invents an endpoint.
 
+The normal review hook settles one obligation. The same per-effect preparation
+unit consumes a retained genuine completion for remaining obligations, including
+while foreground Study continues; it does not repeat their resets or issue a
+fabricated attempt. Modern current-presentation settlement uses the prepared
+owner's source-header and immutable receipt digest with bounded current map/card
+fences. It performs no repertoire or chess reconstruction under the effect lock.
+Actual completion remains terminal after a later source hold or conflict, while
+the retained control prevents new influence. Invalidating that actual review
+reopens both receipt representations and preserves any source hold.
+
+An owner-proved physical remap retains the original application and first-issued
+endpoint in prior-fence history. It captures fresh issuance authority for the
+current target and requires its genuine completion without applying Again twice.
+Raw retained intake without complete Games qualification remains pending; it
+does not fabricate source/configuration history to gain introduction authority.
+
 The internal refresh factory `current_owner_encounter_feedback` alone receives
 `introductions`, `introduction_policy` and optional immutable `prepared_priority`.
 The independent sweep additionally uses the [prepared introduction path](introductions/README.md#prepared-independent-study-sweep--558-repair),

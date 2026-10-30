@@ -87,6 +87,7 @@ class Effect:
     # Legacy lapse payloads also retain their real reset fence in owner JSON.
     remediation_fence: RemediationFence | None = None
     preparation_retry_at: datetime | None = None
+    target_authority: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -182,7 +183,7 @@ class GameFeedback:
             if prior.control or prior.status == "held":
                 return self._receipt(prior, "historical_preserved" if prior.applied_at else "withdrawn")
             if prior.payload_hash != semantic_digest(lapse):
-                changed = replace(prior, status="held", reason="changed_source_quarantined",
+                changed = replace(prior, status='settled' if prior.status=='settled' else "held", reason="changed_source_quarantined",
                                   conflict_json=lapse.model_dump_json())
                 self.store.save(changed, now)
                 return self._receipt(changed, "conflict")
@@ -206,7 +207,7 @@ class GameFeedback:
         effect = prior or Effect(command.key, command.source_revision, now)
         # Opaque source revisions cannot be ordered. A correction is conservative
         # and permanent until explicit D08 resolution; it cannot undo history.
-        effect = replace(effect, status="held", reason="source_" + command.action,
+        effect = replace(effect, status='settled' if effect.status=='settled' else "held", reason="source_" + command.action,
                          control=command)
         self.store.save(effect, now)
         return self._receipt(effect, "historical_preserved" if effect.applied_at else "withdrawn")
@@ -290,34 +291,45 @@ class GameFeedback:
         if not completion.clean or completion.source_kind not in {"study", "study_exercise"}:
             return
         now = instant(self.clock())
-        for observed in self.store.card_effects(completion.card_id):
+        for observed in self.store.card_effects(completion.card_id)[:1]:
             self.store.lock_effect(observed.key)
             effect = self.store.get(observed.key)
-            matches = (self.targets.completion_matches(effect, completion) if self.targets else
-                effect.card_id == completion.card_id and effect.card_revision == completion.revision)
-            progress = self.store.observed_progress(effect)
-            fence = progress.remediation_fence if progress else effect.remediation_fence
-            if (effect.status != "applied" or not matches or fence is None
-                    or completion.issuance is None or not fence.precedes(completion.issuance)):
-                continue
-            # Priority alone, and an attempt issued before the reset/admission,
-            # cannot discharge a newly owed consequence. Unseen admission has no
-            # scheduler review and deliberately uses its own application proof.
-            if progress is not None:
-                applied = (progress.introduction_applied_at if effect.disposition == "first_introduction"
-                           else progress.schedule_applied_at if effect.review_id is not None else None)
-                if applied is None:
-                    continue
-                if progress.first_issued is None:
-                    # The queue owner supplies the true ordinal with its durable
-                    # issuance. Completion alone cannot invent that measurement.
-                    continue
-                progress = progress.model_copy(update={"settlement": EncounterSettlement(
-                    review_id=completion.review_id, attempt=completion.issuance)})
-            else:
-                if effect.review_id is None:
-                    continue
-                progress = None
-            self.store.save(replace(effect, status="settled", reason="genuine_review",
-                progress=progress, settled_at=completion.reviewed_at,
-                settlement_review_id=completion.review_id), now)
+            settled = self._settled_effect(effect,completion)
+            if settled is not None:
+                self.store.save(settled,now)
+
+    def _saved_settlement(self,effect):
+        reader = getattr(self.store,'saved_completion',None)
+        completion = reader(effect) if reader is not None else None
+        return self._settled_effect(effect,completion) if completion is not None else None
+
+    def _settled_effect(self,effect,completion):
+        if not completion.clean or completion.source_kind not in {'study','study_exercise'}:
+            return None
+        matches = (self.targets.completion_matches(effect, completion) if self.targets else
+            effect.card_id == completion.card_id and effect.card_revision == completion.revision)
+        progress = self.store.observed_progress(effect)
+        fence = progress.remediation_fence if progress else effect.remediation_fence
+        if (effect.status != "applied" or not matches or fence is None
+                or completion.issuance is None or not fence.precedes(completion.issuance)):
+            return None
+        # Priority alone, and an attempt issued before the reset/admission,
+        # cannot discharge a newly owed consequence. Unseen admission has no
+        # scheduler review and deliberately uses its own application proof.
+        if progress is not None:
+            applied = (progress.introduction_applied_at if effect.disposition == "first_introduction"
+                       else progress.schedule_applied_at if effect.review_id is not None else None)
+            if applied is None:
+                return None
+            if progress.first_issued is None:
+                # The queue owner supplies the true ordinal with its durable
+                # issuance. Completion alone cannot invent that measurement.
+                return None
+            progress = progress.model_copy(update={"settlement": EncounterSettlement(
+                review_id=completion.review_id, attempt=completion.issuance)})
+        else:
+            if effect.review_id is None:
+                return None
+            progress = None
+        return replace(effect,status="settled",reason="genuine_review",progress=progress,
+            settled_at=completion.reviewed_at,settlement_review_id=completion.review_id)

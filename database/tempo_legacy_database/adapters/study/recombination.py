@@ -1107,6 +1107,61 @@ def feedback_admission_target(prepared: PreparedFeedbackTarget):
         prepared.current.presentation_id,offset,moves[:offset])})
 
 
+def fence_feedback_completion(database,effect,completion):
+    """Bounded current binding for an already applied qualified obligation.
+
+    Application retained only the owner-prepared header/receipt digest, never
+    a new lineage decision or replayable repertoire. The ordinary review owns
+    its card lock; this hook takes only nonblocking existing route/source fences.
+    """
+    authority = effect.target_authority
+    if (not authority or effect.progress is None
+            or authority.get('target') != effect.progress.target.model_dump(mode='json')):
+        return False
+    route_id,repertoire_id = authority['route_id'],authority['repertoire_id']
+    if not PostgresRecombinationStore(database).try_lock_route(route_id):
+        return False
+    if not database.execute_native('SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))',
+            ('tempo:opening-graph:'+repertoire_id,)).fetchone()[0]:
+        return False
+    try:
+        header = _source_header(database,repertoire_id,fence=True)
+        _current_certificate(header,repertoire_id)
+        if _source_binding(header) != authority['source_binding']:
+            return False
+        record = _feedback_record(database,completion.card_id,fence=True)
+        if record is None or fingerprint(dict(record)) != authority['record_digest']:
+            return False
+        result = record['result_json']
+        presentation = Presentation.model_validate_json(_json(result['presentation']))
+        receipt = PresentationChangeReceipt.model_validate_json(_json(record['receipt_json']))
+        change = record['change_json']
+        card = _feedback_card(database,completion.card_id)
+        components = [item for item in presentation.components if item.decision_id==effect.key.decision_id]
+        if (receipt.status!='applied' or receipt.plan_id!=change['command_id']
+                or receipt.owner_receipt_id!='recombination:'+change['command_id']
+                or sum(item==result for item in change['results'])!=1
+                or len(components)!=1 or not card or card['revision']!=completion.revision
+                or presentation.revision!=completion.revision or presentation.route_id!=route_id
+                or presentation.repertoire_id!=repertoire_id or card['content_type']!='opening'
+                or any(card[field] for field in ('archived','pending_validation','superseded_by'))
+                or card['start_fen']!=result['starting_fen']
+                or tuple(json.loads(card['moves_json']))!=tuple(result['moves'])):
+            return False
+        mappings = _feedback_mapping(database,route_id,presentation.components,fence=True)
+        if len(mappings)!=len(presentation.components) or any(
+                row['presentation_id']!=completion.card_id for row in mappings):
+            return False
+        memberships = database.execute_native('SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s '
+            'ORDER BY repertoire_id LIMIT 2 FOR SHARE SKIP LOCKED',(completion.card_id,)).fetchall()
+        blocked = database.execute_native('SELECT 1 FROM deleted_cards WHERE card_id=%s UNION ALL '
+            'SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s LIMIT 1',
+            (completion.card_id,completion.card_id)).fetchone()
+        return len(memberships)==1 and memberships[0][0]==repertoire_id and not blocked
+    except (ValueError,KeyError,TypeError):
+        return False
+
+
 def is_current_occurrence(database,occurrence):
     """Explicit Study regrouping proof for #487's physical target validator.
 
@@ -1245,13 +1300,26 @@ def effect_target(database, effect):
     """Resolve only explicit decision lineage, retaining the original effect row."""
     if not installed(database):
         return effect.card_id
+    rows = feedback_effect_targets(database,effect)
+    return rows[0] if len(rows)==1 else effect.card_id
+
+
+def feedback_effect_targets(database,effect):
     repertoire_id = (effect.lapse.finding.repertoire_id if effect.lapse else
                      effect.encounter.decision.repertoire_id if getattr(effect, 'encounter', None) else None)
     rows = database.execute_native("""SELECT DISTINCT current.presentation_id FROM study_recombination_current current
         JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
         WHERE current.decision_id=%s AND p.result_json->'presentation'->>'repertoire_id'=%s LIMIT 2""",
         (effect.key.decision_id,repertoire_id)).fetchall()
-    return rows[0][0] if len(rows)==1 else effect.card_id
+    return tuple(row[0] for row in rows)
+
+
+def feedback_target_matches(database,effect,target):
+    """Modern observations never treat ambiguous lineage as original authority."""
+    rows = feedback_effect_targets(database,effect)
+    if rows:
+        return rows==(target,)
+    return target==effect.card_id and _feedback_record(database,target) is None
 
 
 def record_admitted_failure(database, effect):

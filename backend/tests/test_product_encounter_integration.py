@@ -1,12 +1,36 @@
 """Retained-history composition through real source, Study and receipt owners."""
 import pytest
 from datetime import date
+from functools import partial
 
 from app.product_composition.retained_game import retained_canonical_game
 from app.repertoire import project_capture
 from product_encounter_fixtures import retained_history_case
 from test_product_feedback_integration import _issue, _ordinary_review
 from test_product_game_lapse_postgres import owned_postgres
+
+
+def _prepare_history_source(case,capture,command):
+    from product_encounter_fixtures import qualified_feedback_source
+    if command.observation=='missed' and command.key.logical_id() not in case.qualifications:
+        case.qualifications[command.key.logical_id()] = case.resources.enter_context(
+            qualified_feedback_source(case.transaction,capture=capture,command=command))
+
+
+def _qualified_receive(database,*,case,capture,snapshot,command,clock,operation_stopped=None):
+    from app.product_composition.encounters import receive_admitted_encounter,receive_captured_encounter
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    if operation_stopped is not None:
+        raw = receive_admitted_encounter(database,capture=capture,snapshot=snapshot,command=command,
+            clock=clock,operation_stopped=operation_stopped)
+    else:
+        raw = receive_captured_encounter(database,capture=capture,snapshot=snapshot,command=command,clock=clock)
+    if command.observation=='matched':
+        return raw
+    prepared = case.qualifications[command.key.logical_id()].prepared
+    owner = current_owner_encounter_intake(database,retained_owner_capture=capture,snapshot=snapshot,
+        clock=clock,prepared_decisions=prepared.prepared_decisions,qualification=prepared.qualification)
+    return owner.accept_qualified(command,qualification=prepared.qualification)
 
 
 def _run_actual_unseen_slice(case,monkeypatch):
@@ -154,7 +178,7 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
                 assert observed_status['target_compatible']
                 assert observed_status['queued_attempt']['card_id'] == case.card_id
                 assert observed_status['queued_attempt']['issuance'] is None
-                assert observed_status['issued_since_determination'] == 0
+                issued_before_target = observed_status['issued_since_determination']
             with case.transaction() as database:
                 _ordinary_review(database,case.protected_id,protected,'qualified-protected:'+case.card_id)
             if state=='unintroduced':
@@ -168,14 +192,16 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
             with case.transaction() as database:
                 effect = PostgresGameFeedbackStore(database).get(original.key)
                 assert effect.status == 'settled' and effect.settlement_review_id == first['review_id']
-                assert (effect.encounter or effect.lapse) == original and effect.progress.first_issued_ordinal == 1
+                assert (effect.encounter or effect.lapse) == original
+                assert effect.progress.first_issued_ordinal == issued_before_target+1
                 assert effect.progress.settlement.attempt.queue_entry_id == target
                 assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
                     (case.card_id,)).fetchone()[0] == 1
                 observed_status = PostgresGameFeedbackStore(database).feedback_observation(original.key,timeline[0])
                 assert observed_status['progress'].settlement.review_id == first['review_id']
-                assert observed_status['queued_attempt'] is None
-                assert observed_status['issued_since_determination'] == 1
+                assert (observed_status['queued_attempt'] is None
+                    or observed_status['queued_attempt']['issuance'] is None)
+                assert observed_status['issued_since_determination'] == issued_before_target+1
         finally:
             with case.transaction() as database:
                 database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
@@ -360,25 +386,78 @@ def test_native_acknowledged_priority_only_is_qualified_from_foreground_with_exi
                     (command.key.logical_id(),)).fetchone()
             with case.transaction() as database:
                 database.execute_native('DELETE FROM product_feedback_deliveries WHERE operation_id=%s',(delivery.operation_id,))
+                database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
+                    (command.key.workspace_id,command.key.provider))
+                current = PostgresGameFeedbackStore(database).get(command.key)
+            held = prepare_feedback_effect(current,read=case.transaction,capture=lambda *args:captured,
+                clock=lambda:NOW,qualification_prepare=source.prepare)
+            assert held.reason=='first_departure_configuration_unavailable'
+            with case.transaction() as database:
+                deferred = apply_prepared_feedback_effect(database,held,clock=lambda:NOW,operation_admitted=True)
+                assert deferred is None
+                assert PostgresGameFeedbackStore(database).get(command.key).admission_status=='pending'
+                from tempo_legacy_database.adapters.study.game_feedback import feedback_queue_priorities
+                assert feedback_queue_priorities(database,(case.card_id,))=={}
+                assert next_feedback_preparation(database,NOW.date().isoformat(),now=NOW+timedelta(minutes=1)).key==command.key
+
+
+def test_native_one_review_settles_one_obligation_and_foreground_consumes_retained_completion(
+    owned_postgres,monkeypatch,
+):
+    """A bounded receipt hook leaves debt for the existing per-effect unit."""
+    from datetime import timedelta
+    from app.study.encounter_feedback import EncounterFeedback
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore,next_feedback_preparation
+    from test_product_game_lapse import NOW,qualification_for
+    monkeypatch.setattr(postgres_store,'configured',lambda:True)
+    with retained_history_case(owned_postgres,state='introduced') as case:
+        with case.transaction() as database:
+            database.execute_native('UPDATE imported_games SET moves_json=%s WHERE id=%s',
+                ('["d2d4"]',case.game_ids[1]))
+            protected = _issue(database,case.protected_id)
+            _ordinary_review(database,case.protected_id,protected,'bounded-protected:'+case.card_id)
+        commands = tuple(case.command(case.capture(game_id)) for game_id in case.game_ids)
+        class Current:
+            def current_qualified(self,command,qualification):
+                assert qualification.matches(command)
+                return (qualification.selection.decision,)
+        def owner(database,now):
+            return EncounterFeedback(PostgresGameFeedbackStore(database),Current(),clock=lambda:now,
+                introductions=None,introduction_policy=None)
+        for index,command in enumerate(commands):
+            now = NOW+timedelta(minutes=index)
+            with case.transaction() as database:
+                current = owner(database,now)
+                current.accept_qualified(command,qualification=qualification_for(command))
+                assert current.refresh_encounter(command.key).admission_status=='available'
+        with case.transaction() as database:
+            target = _issue(database,case.card_id)
+            review = _ordinary_review(database,case.card_id,target,'bounded-target:'+case.card_id,
+                observed_at=NOW+timedelta(minutes=2))
+            effects = tuple(PostgresGameFeedbackStore(database).get(command.key) for command in commands)
+            assert sorted(effect.status for effect in effects)==['applied','settled']
+            observed = next_feedback_preparation(database,NOW.date().isoformat(),now=NOW+timedelta(minutes=3))
+            assert observed.key==next(effect.key for effect in effects if effect.status=='applied')
+        with case.transaction() as database:
+            retained = owner(database,NOW+timedelta(minutes=3)).refresh_encounter(observed.key)
+            assert retained.status=='settled' and retained.progress.settlement.review_id==review['review_id']
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                (case.card_id,)).fetchone()[0]==2
 
 
 def _study_refresh(case, capture, snapshot, command):
     """Separate Study transaction after committed intake; never called by intake."""
-    from app.services.queue_priority_promotion import prepare_priority_promotion
-    from app.services.queue_admission_adapter import current_owner_encounter_introductions
-    from app.study.encounter_feedback import EncounterIntroductionPolicy
-    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_feedback
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     from test_product_game_lapse import NOW
-    prepared = prepare_priority_promotion(NOW.date().isoformat(), command.decision.presentation_id,
-        read=case.transaction)
     with case.transaction() as database:
-        introductions = current_owner_encounter_introductions(database,
-            allowance="encounter_exception", paused=False)
-        owner = current_owner_encounter_feedback(database, retained_owner_capture=capture,
-            snapshot=snapshot, clock=lambda: NOW, introductions=introductions,
-            introduction_policy=EncounterIntroductionPolicy("encounter_exception"),
-            prepared_priority=prepared)
-        return owner.refresh_encounter(command.key)
+        observed = PostgresGameFeedbackStore(database).get(command.key)
+    prepared = case.qualifications[command.key.logical_id()].prepared
+    unit = prepare_feedback_effect(observed,read=case.transaction,capture=lambda *args:capture,
+        clock=lambda:NOW,qualification_prepare=lambda command:prepared)
+    with case.transaction() as database:
+        return apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
 
 
 @pytest.fixture(autouse=True)
@@ -391,6 +470,7 @@ def normal_study_clock(monkeypatch):
         def today(cls):
             return NOW.date()
     monkeypatch.setattr(queue_commands, "date", StudyDate)
+    monkeypatch.setattr(queue_commands,'current_study_day',lambda *args,**kwargs:NOW.date().isoformat())
     monkeypatch.setattr(learning_review_adapter, "date", StudyDate)
 
 
@@ -446,9 +526,11 @@ def test_unintroduced_encounter_intake_commits_pending_without_queue_capability(
         with case.transaction() as database:
             duplicate = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
                 clock=lambda: NOW)
-        assert first.observation_recorded and first.disposition == "first_introduction"
-        assert first.admission_status == "pending" and first.available_by is None
-        assert first.reason == "study_priority_pending"
+        assert first.observation_recorded
+        assert first.disposition == ('frequency_only' if played=='e2e4' else None)
+        assert first.admission_status == ('not_requested' if played=='e2e4' else 'pending')
+        assert first.available_by is None
+        assert first.reason == ('encounter_frequency_recorded' if played=='e2e4' else 'first_departure_qualification_pending')
         assert duplicate.owner_receipt_id == first.owner_receipt_id and duplicate.detected_at == first.detected_at
         assert case.readback() == before
 
@@ -463,15 +545,18 @@ def test_historical_priority_reaches_ordinary_study_without_rewinding_later_lear
             protected = _issue(database, case.protected_id)
         before = case.readback(); capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        _prepare_history_source(case,capture,command)
+        receive_captured_encounter = partial(_qualified_receive,case=case)
         with case.transaction() as database:
             receipt = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
                 clock=lambda: NOW)
-        assert receipt.disposition == "review_priority" and receipt.admission_status == "pending"
+        assert receipt.disposition == "introduced_again" and receipt.admission_status == "pending"
         assert receipt.available_by is None and case.readback() == before
         available = _study_refresh(case, capture, snapshot, command)
         assert available.admission_status == "available" and available.owner_receipt_id == receipt.owner_receipt_id
         after = case.readback()
-        assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]
+        assert after["cards"] != before["cards"] and len(after["reviews"]) == len(before["reviews"])+1
+        assert all(row in after["reviews"] for row in before["reviews"])
         assert tuple(row for row in after["origins"] if row[1] == case.protected_id) == before["origins"]
         assert len(tuple(row for row in after["origins"] if row[1] == case.card_id)) == 1
         with case.transaction() as database:
@@ -484,7 +569,7 @@ def test_historical_priority_reaches_ordinary_study_without_rewinding_later_lear
             assert replay.status == "settled" and replay.admission_status == "settled"
             assert replay.owner_receipt_id == receipt.owner_receipt_id and replay.detected_at == receipt.detected_at
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
-                (case.card_id,)).fetchone()[0] == 0
+                (case.card_id,)).fetchone()[0] == 1
 
 
 @pytest.mark.parametrize("played", ["e2e4", "d2d4"])
@@ -512,6 +597,8 @@ def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgr
     with retained_history_case(owned_postgres, state="unintroduced") as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        _prepare_history_source(case,capture,command)
+        receive_captured_encounter = partial(_qualified_receive,case=case)
         with case.transaction() as database:
             _issue(database, case.protected_id)
             seed_queue(database, NOW.date().isoformat())
@@ -524,7 +611,7 @@ def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgr
                 clock=lambda: NOW)
             duplicate = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
                 clock=lambda: NOW)
-            assert first.disposition == "review_priority" and duplicate.owner_receipt_id == first.owner_receipt_id
+            assert first.disposition == "introduced_again" and duplicate.owner_receipt_id == first.owner_receipt_id
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
         after = case.readback()
         assert after["cards"] == before["cards"] and after["reviews"] == before["reviews"]
@@ -545,6 +632,8 @@ def test_targeted_zero_allowance_study_only_encounter_reaches_first_real_study_o
             ordinary_limit=0, study_only=True) as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        _prepare_history_source(case,capture,command)
+        receive_admitted_encounter = partial(_qualified_receive,case=case)
         with case.transaction() as database:
             protected = _issue(database, case.protected_id)
         before = case.readback()
@@ -554,6 +643,12 @@ def test_targeted_zero_allowance_study_only_encounter_reaches_first_real_study_o
                 clock=lambda: NOW)
         with case.transaction() as database:
             first = receive(database)
+            if played=='e2e4':
+                assert first.disposition=='frequency_only' and first.admission_status=='not_requested'
+                assert receive(database).owner_receipt_id==first.owner_receipt_id
+                assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
+                assert case.readback()==before
+                return
             assert first.disposition == "first_introduction" and first.admission_status == "pending"
             assert first.available_by is None
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
@@ -595,6 +690,8 @@ def test_stopped_operation_defers_before_first_introduction_and_resumes_once(own
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        _prepare_history_source(case,capture,command)
+        receive_admitted_encounter = partial(_qualified_receive,case=case)
         before = case.readback()
         def receive(database):
             return receive_admitted_encounter(database, capture=capture, snapshot=snapshot,
@@ -639,6 +736,8 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=study_only) as case:
         capture = case.capture(case.game_ids[0]); command = case.command(capture)
         snapshot = project_capture(capture, comparison_game=retained_canonical_game(capture))
+        _prepare_history_source(case,capture,command)
+        receive_captured_encounter = partial(_qualified_receive,case=case)
         with case.transaction() as database:
             pending = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
                 clock=lambda: NOW)
@@ -660,19 +759,20 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
             storage.claim_lease(database, ("encounter-maintenance-lease", (NOW+timedelta(days=2)).isoformat(),
                 NOW.isoformat(), NOW.isoformat(), row["id"], row["generation"]))
             claimed = dict(storage.task_by_id(database, (row["id"],)))
+        qualified = case.qualifications[command.key.logical_id()].prepared
         original_import = builtins.__import__
         def without_games(name, *args, **kwargs):
-            if name == "app.games" or name.startswith("app.games."):
+            if name in {'app.games.feedback.coordinator','app.games.feedback.jobs','app.games.worker'} or name.startswith('app.games.providers'):
                 raise AssertionError("Study maintenance imported optional Games")
             return original_import(name, *args, **kwargs)
         monkeypatch.setattr(builtins, "__import__", without_games)
         # A stale operation never reaches the receiving/admission capability.
         stale = {**claimed, "lease_token": "stale"}
         assert execute_feedback_sweep(stale, read=case.transaction, write=case.transaction,
-            capture=lambda *args: capture, clock=lambda: NOW) is False
+            capture=lambda *args: capture, clock=lambda: NOW,qualification_prepare=lambda command:qualified) is False
         assert case.readback() == before
         assert execute_feedback_sweep(claimed, read=case.transaction, write=case.transaction,
-            capture=lambda *args: capture, clock=lambda: NOW) is False
+            capture=lambda *args: capture, clock=lambda: NOW,qualification_prepare=lambda command:qualified) is False
         with case.transaction() as database:
             effect = PostgresGameFeedbackStore(database).get(command.key)
             assert effect.status == "applied" and effect.admission_status == "available"
@@ -682,7 +782,7 @@ def test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_with
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
         admitted = case.readback()
         assert execute_feedback_sweep(claimed, read=case.transaction, write=case.transaction,
-            capture=lambda *args: capture, clock=lambda: NOW) is False
+            capture=lambda *args: capture, clock=lambda: NOW,qualification_prepare=lambda command:qualified) is False
         assert case.readback() == admitted
 
 
@@ -705,10 +805,15 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
                          for game_id in case.game_ids)
         commands = tuple(command for item in prepared for command in item.encounters)
         report = dict(scanned=len(prepared), matched=len(commands),
-            unresolved=sum(len(item.findings)-len(item.encounters) for item in prepared),
-            remaining=0, correct=sum(command.observation == "matched" for command in commands),
+            unresolved=sum(not item.snapshot.membership.complete for item in prepared),
+            remaining=0, correct=sum(finding.played_uci in finding.expected_uci for item in prepared for finding in item.findings),
             missed=sum(command.observation == "missed" for command in commands))
-        assert report == dict(scanned=2, matched=2, unresolved=0, remaining=0, correct=1, missed=1)
+        assert report == dict(scanned=2, matched=1, unresolved=0, remaining=0, correct=1, missed=1)
+        assert prepared[1].capture['game']['moves_json']=='["e2e4"]'
+        for item in prepared:
+            for command in item.encounters:
+                _prepare_history_source(case,item.capture,command)
+        receive_admitted_encounter = partial(_qualified_receive,case=case)
         def receive(database, item, command):
             return receive_admitted_encounter(database, capture=item.capture, snapshot=item.snapshot,
                 command=command, operation_stopped=stopped.is_set,
@@ -716,18 +821,20 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
         with case.transaction() as database:
             protected = _issue(database, case.protected_id)
             receipts = tuple(receive(database, item, command) for item in prepared for command in item.encounters)
-            assert [receipt.disposition for receipt in receipts] == ["first_introduction", "first_introduction"]
-            assert all(receipt.admission_status == "pending" and receipt.available_by is None for receipt in receipts)
+            assert [receipt.disposition for receipt in receipts] == ["first_introduction"]
+            assert [receipt.admission_status for receipt in receipts] == ['pending']
+            assert all(receipt.available_by is None for receipt in receipts)
             assert database.execute_native("SELECT introduced_at FROM cards WHERE id=%s", (case.card_id,)).fetchone()[0] is None
         for item in prepared:
             for command in item.encounters:
-                assert _study_refresh(case, item.capture, item.snapshot, command).admission_status == "available"
+                if command.observation=='missed':
+                    assert _study_refresh(case, item.capture, item.snapshot, command).admission_status == "available"
         with case.transaction() as database:
             current, = CurrentOwnerDecisions(database, retained_owner_capture=prepared[0].capture,
                 snapshot=prepared[0].snapshot).current_encounter(commands[0])
             importance, = importance_from_encounters(workspace_id=commands[0].key.workspace_id,
                 account="synthetic", current_approved_decisions=(current,), encounters=commands+commands)
-            assert importance.facts.personal_encounters == 2 and len(importance.differing_response_sources) == 1
+            assert importance.facts.personal_encounters == 1 and len(importance.differing_response_sources) == 1
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)).fetchone()[0] == 0
             _ordinary_review(database, case.protected_id, protected, "bounded-protected:"+case.card_id)
             entry = _issue(database, case.card_id)

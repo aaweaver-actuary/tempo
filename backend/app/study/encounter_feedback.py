@@ -159,7 +159,7 @@ class EncounterFeedback(GameFeedback):
                 return self._encounter_receipt(previous, command,
                     "historical_preserved" if previous.applied_at else "withdrawn")
             if previous.payload_hash != digest:
-                changed = replace(previous, status="held", reason="changed_source_quarantined",
+                changed = replace(previous, status='settled' if previous.status=='settled' else "held", reason="changed_source_quarantined",
                                   conflict_json=command.model_dump_json())
                 self.store.save(changed, now)
                 return self._encounter_receipt(changed, command, "conflict")
@@ -295,6 +295,10 @@ class EncounterFeedback(GameFeedback):
                     (progress.remediation_fence,),remediation_fence=self._fence(target,now))
             progress = progress.model_copy(update=changes)
             effect = replace(effect,progress=progress)
+        if progress.remediation_fence is not None:
+            settled = self._saved_settlement(effect)
+            if settled is not None:
+                return settled
         if progress.remediation_fence is None:
             fence = self._fence(target, now)
             if disposition == "introduced_again":

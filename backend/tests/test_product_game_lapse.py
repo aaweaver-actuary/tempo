@@ -528,7 +528,37 @@ def test_settlement_is_disposition_specific(encounter_owner):
     service.settle(replace(completion,issuance=None))
     assert store.get(command.key).status == 'applied'
     service.settle(completion)
+
     assert store.get(command.key).status == 'settled' and not store.reviews
+
+
+@pytest.mark.parametrize('introduced',[False,True])
+@pytest.mark.parametrize('action',['hold','withdraw','conflict'])
+def test_settled_encounter_keeps_actual_history_readable_after_source_control_or_conflict(
+    encounter_owner,introduced,action,
+):
+    from app.contracts.product_v02.learning import GameEffectControl
+    store,_,_,_,service,command = encounter_owner
+    if introduced:
+        store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1))
+    accept_and_refresh(service,command)
+    fresh = issued_attempt(CARD,1,8,NOW+timedelta(minutes=1))
+    store.observed_progress = lambda effect:effect.progress.model_copy(update={
+        'first_issued':fresh,'first_issued_ordinal':1})
+    service.settle(Completion(105,CARD,1,NOW+timedelta(minutes=2),True,'study',fresh))
+    original = service.encounter_status(command.key)
+    if action=='conflict':
+        changed = command.model_copy(update={'played_uci':'c2c4'})
+        assert service.accept_encounter(changed).outcome=='conflict'
+    else:
+        service.control_effect(GameEffectControl(key=command.key,source_revision=2,action=action,reason='reanalysis'))
+    retained = service.encounter_status(command.key)
+    assert retained.status=='settled' and retained.admission_status=='settled'
+    assert retained.progress==original.progress
+    assert retained.model_dump_json()
+    assert store.get(command.key).encounter==command
+    assert service.accept_encounter(command).progress==original.progress
+    assert len(store.reviews)==int(introduced)
 
 
 def test_replay_and_unrelated_completion_cannot_settle(encounter_owner):

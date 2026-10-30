@@ -630,8 +630,25 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
                 assert remapped.progress.prior_remediation_fences == (available.progress.remediation_fence,)
                 assert remapped.progress.remediation_fence.after_issuance_sequence >= prior_progress.first_issued.issuance_sequence
             target = current_target
-        with transaction() as database:
-            result,_ = ordinary_current_review(database,target.presentation_id,monkeypatch)
+        from tempo_legacy_database.adapters.study import game_feedback as feedback_owner
+        settle = feedback_owner.settle_saved_review
+        settlement_called = []
+        def bounded_settlement(database,*args):
+            with monkeypatch.context() as hook:
+                hook.setattr(owner.CurrentStudyRecombination,'try_current',forbidden)
+                hook.setattr(owner.chess,'Board',forbidden)
+                database.execute_native("SET LOCAL transaction_timeout='250ms'")
+                database.execute_native("SET LOCAL statement_timeout='250ms'")
+                database.execute_native("SET LOCAL lock_timeout='100ms'")
+                settle(database,*args)
+                settlement_called.append(True)
+            # Ordinary Study's pre-existing optional after-save recombination
+            # is a separate path, outside this hook-local contract proof.
+        with monkeypatch.context() as hook:
+            hook.setattr(feedback_owner,'settle_saved_review',bounded_settlement)
+            with transaction() as database:
+                result,_ = ordinary_current_review(database,target.presentation_id,monkeypatch)
+        assert settlement_called
         with transaction() as database:
             settled = PostgresGameFeedbackStore(database).get(command.key)
             assert settled.status == 'settled' and settled.progress.settlement.review_id == result['review_id']

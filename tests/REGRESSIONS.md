@@ -5987,3 +5987,10 @@ the retained-qualification fixture; their old bytes are never rewritten.
 - `test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset`
   reuses the actual legacy owner settlement and proves same-key acknowledgment
   without fabricated progress or another scheduling review.
+
+Independent #620 review repairs add:
+
+- `test_settled_encounter_keeps_actual_history_readable_after_source_control_or_conflict` covers both real Again and canonical introduction, followed by hold, withdrawal or semantic conflict. Terminal actual completion and immutable original command remain readable and no consequence repeats.
+- The remapped native settlement journey forbids chess and `try_current` specifically inside the settlement hook at 250ms/100ms. A small receiving-owner header/immutable-receipt digest and exact map/card fence replace its repeated repertoire reconstruction; pre-existing ordinary Study regrouping remains a separate path.
+- `test_native_one_review_settles_one_obligation_and_foreground_consumes_retained_completion` proves the normal review hook updates one same-card obligation and the next explicit owner unit settles the remaining obligation from the exact retained real receipt, without another reset or invented completion.
+- The acknowledged-priority native regression now removes its real configuration to produce an actual qualification hold. Modern urgency disappears, and the same queued target can re-enter foreground preparation after the durable retry boundary. Actual legacy resets alone retain the compatibility fallback.
