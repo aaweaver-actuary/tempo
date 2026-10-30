@@ -206,8 +206,13 @@ export function collectionBlockers({ candidate, release, service, image, report,
     if (report?.managed_mode?.availability !== 'available' || Number(expectedSchema) < 56)
       blockers.push('managed_feedback_mode_bridge_unavailable');
     const ci = release.evidence;
-    if (ci?.commit !== candidate || !Number.isSafeInteger(ci?.run_id) || ci.run_id < 1 ||
-        ci.url !== 'https://github.com/aaweaver-actuary/tempo/actions/runs/' + ci.run_id)
+    // The managed installer records an explicit --no-ci choice in its frozen
+    // receipt. Preserve that fact without manufacturing successful CI evidence.
+    const ciDisabled = ci?.verification === 'ci-disabled' &&
+      !Object.hasOwn(ci, 'run_id') && !Object.hasOwn(ci, 'url');
+    const verifiedRun = ci?.verification == null && Number.isSafeInteger(ci?.run_id) && ci.run_id > 0 &&
+      ci.url === 'https://github.com/aaweaver-actuary/tempo/actions/runs/' + ci.run_id;
+    if (ci?.commit !== candidate || !(ciDisabled || verifiedRun))
       blockers.push('feedback_qualified_release_evidence_required');
   }
   const providers = Array.isArray(report?.providers?.items) ? report.providers.items : [];
@@ -476,7 +481,7 @@ export async function main(
     snapshot = { registrationText, receiptText };
     last = {release, baseConfiguration, configuration, configuredMode, prefix, modeEvidence, verifiedRuntimes, targetFingerprint};
     return { blockers, running, stopSafe, observedMode, modeIntentVerified, output: { candidate, installed_revision: release.revision, schema: release.schema,
-      maintenance,
+      maintenance, release_verification: release.evidence ?? null,
       ...Object.fromEntries(Object.entries(readiness).filter(([key]) => key !== 'blockers')),
       reader_probes: {identity: probeOutcome(identityProbe), full: probeOutcome(fullReaderProbe)},
       identity_evidence: identityProbe.evidence?.identity ?? null,

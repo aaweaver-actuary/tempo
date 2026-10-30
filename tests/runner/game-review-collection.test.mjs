@@ -523,6 +523,45 @@ test('feedback plan and status never change mode intent configuration or running
   assert.equal(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'), before);
 });
 
+test('feedback accepts the exact installer no-ci receipt while preserving activation guards', async t => {
+  const input = facts();
+  input.mode = 'feedback'; input.service = serviceInMode(input.service, 'feedback');
+  input.release.schema = 56; input.report.identity.schema_version = 56;
+  input.report.managed_mode = {availability: 'available', intent: null};
+  input.report.feedback_capabilities = {availability: 'available', policy_version: 'first_departure_v1', receipt_interface_version: '0.2.2',
+    selector: true, current_authority: true, again: true, canonical_introduction: true, retained_qualification: true,
+    foreground_handoff: true, issuance_fence: true};
+  input.release.evidence = {commit: revision, verification: 'ci-disabled'};
+  assert.deepEqual(collectionBlockers(input), []);
+  for (const evidence of [null, {}, {commit: 'c'.repeat(40), verification: 'ci-disabled'},
+    {commit: revision, verification: 'unavailable'}, {commit: revision},
+    {commit: revision, verification: 'ci-disabled', run_id: 7}]) {
+    const invalid = structuredClone(input); invalid.release.evidence = evidence;
+    assert.ok(collectionBlockers(invalid).includes('feedback_qualified_release_evidence_required'));
+  }
+  for (const [mutate, blocker] of [
+    [value => { value.report.feedback_capabilities.again = false; }, 'feedback_capabilities_unverified'],
+    [value => { value.report.managed_mode.availability = 'unavailable'; }, 'managed_feedback_mode_bridge_unavailable'],
+    [value => { value.report.identity.schema_version = 54; }, 'collection_schema_mismatch'],
+    [value => { value.image.Config.Labels['org.opencontainers.image.revision'] = 'c'.repeat(40); }, 'collector_image_unverified'],
+    [value => { value.fingerprint = 'changed'; }, 'frozen_configuration_mismatch'],
+    [value => { value.maintenance.status = 'pending'; }, 'collection_maintenance_unavailable'],
+    [value => { value.service.labels['tempo.collection.owner'] = 'unverified'; }, 'collector_resource_or_ownership_mismatch'],
+    [value => { partialScope(value); }, 'lichess:repertoire_readiness_unresolved'],
+  ]) {
+    const invalid = structuredClone(input); mutate(invalid);
+    assert.ok(collectionBlockers(invalid).includes(blocker), blocker);
+  }
+  const fixture = collectionMainFixture(t, {modern: true});
+  const receipt = JSON.parse(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'));
+  receipt.evidence = input.release.evidence;
+  writeFileSync(join(fixture.stateDirectory, 'deployment.json'), JSON.stringify(receipt));
+  const plan = await fixture.invoke('plan', {mode: 'feedback'});
+  assert.equal(plan.activation_ready, true);
+  assert.deepEqual(plan.release_verification, {commit: revision, verification: 'ci-disabled'});
+  assert.equal(fixture.actionCalls('run').length, 0); assert.equal(fixture.actionCalls('up').length, 0);
+});
+
 test('managed feedback enables idempotently and changes mode only after the previous worker stops', async t => {
   const fixture = collectionMainFixture(t, {modern: true});
   const enabled = await fixture.invoke('enable', {mode: 'feedback'});

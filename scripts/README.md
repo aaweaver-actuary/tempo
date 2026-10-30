@@ -357,11 +357,16 @@ with a competing runner prevent activation; unrelated legacy workers are reporte
 and preserved. Existing accepted Study obligations keep their own lifecycle.
 
 Feedback requires every selected repertoire to be healthy and complete, source
-schema 56, the exact release's successful main-CI receipt, and explicit compatible
+schema 56, the exact release's successful main-CI receipt or the managed installer's
+explicit `tempo start --no-ci` / `tempo restart --no-ci` receipt, and explicit compatible
 selector, current-authority, Again, canonical-introduction, retained-qualification,
 foreground-handoff and issuance-fence capabilities. Missing composition declarations
 deny feedback before receiver construction. HTTP success or an available receipt
 cannot establish these capabilities. The installed reader remains read-only.
+The operator reports the frozen `release_verification` evidence. A
+`verification: "ci-disabled"` receipt records absent CI qualification; it does not
+claim a successful Actions run or relax source, image, ownership, mode, schema,
+maintenance or complete-scope checks. The operator has no separate CI-bypass flag.
 
 Collection-only normally requires every selected repertoire to be healthy. The repeatable
 `--allow-bound-repertoire redacted:<12-lowercase-hex-digits>` option permits only
