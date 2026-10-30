@@ -43,7 +43,9 @@ flowchart LR
   Refresh --> Queue[Canonical Study queue]
   Browser[Ordinary Study client] -->|explicit prepare-next command| Next[Bounded local preparation outside writer]
   Evidence --> Next
-  Next -->|Study-owned apply and promotion| Queue
+  Next --> Receipt[Existing operation identity replay and attempt-token fence]
+  Receipt --> Apply[One prepared owner unit in borrowed command writer]
+  Apply -->|Study-owned apply and promotion| Queue
   Queue --> Head[Existing head writer rechecks local pending work]
   Head --> Origins[Retained first issuance generation and time]
   Origins -->|actual pickup and completion fence| Evidence
@@ -75,8 +77,14 @@ worker/database CPU, and tests pickup/replay against stale queue statistics.
 The composition root injects optional new Games handoff only with verified mode
 intent. Accepted Study obligations use their own owner independently of that
 producer. Construction performs no reads, opens no connection and starts no work.
-`queue.prepare_next` prepares outside its command writer; genuine head issuance
-only rechecks pending/ready facts and stamps actual attempt authority.
+`queue.prepare_next` only reads/prepares outside its command writer. Its selected
+owner unit applies in the same borrowed writer **after** the operation identity,
+replay and attempt-token fence. Completed/conflicting operations and stale
+attempts cannot advance another obligation. A failed owner unit rolls back with
+the handler savepoint. New Games intake uses the same pure-preparation/borrowed
+apply seam; the mutating optional-worker advance function is never a gateway
+preparer. Genuine head issuance only rechecks pending/ready facts and stamps
+actual attempt authority.
 
 A new ordinary prepared successor is declined while actionable local work needs
 preparation. The user's real review commits and replays normally. The next queue
@@ -87,6 +95,14 @@ effect. An already-issued board remains valid, including over rollover; upcoming
 unissued data can reconcile without changing its moves, generation or result.
 The bounded local request remains foreground work during continuous practice;
 optional provider HTTP and full projection retain their background gates.
+
+The gate compares the ready candidate against earlier same-class local work;
+pending historical preparation cannot block an already-ready live target. Only
+a movable eligible urgent target relaxes ordinary repeat-position protections.
+Burying a retained prior-day board retires its real row and keeps a current-day
+exclusion marker, while its history/origin remains intact. The ordinary review
+adapter captures its current time, settings timezone and Study day once at the
+card/day boundary, preserving that day if the wall clock crosses midnight.
 
 Schema55 records actual origins once. See the [canonical data dictionary](../../../../database/tempo_legacy_database/schema/study-queue-review-1/README.md#publicqueue_attempt_origins).
 Read-only status may hydrate a missed optional receipt projection from that same

@@ -88,10 +88,21 @@ def mark_attempt_failed(database, entry_id):
 def bury_attempt_card(database, queue_date, entry_id):
     database.execute(
         """UPDATE daily_queue SET status='buried'
-           WHERE queue_date=? AND status!='complete'
+           WHERE (queue_date=? OR id=?) AND status!='complete'
              AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
-        (queue_date, entry_id),
+        (queue_date, entry_id, entry_id),
     )
+    # Rollover preserves real issued boards. Burying that board retires its old
+    # row AND retains today's exclusion even when it had no current-day row.
+    database.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,status)
+        SELECT ?,original.card_id,
+            (SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue q
+             WHERE q.queue_date=? AND q.card_id=original.card_id),
+            (SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue q WHERE q.queue_date=?),'buried'
+        FROM daily_queue original WHERE original.id=? AND original.queue_date<>?
+          AND NOT EXISTS(SELECT 1 FROM daily_queue held
+              WHERE held.queue_date=? AND held.card_id=original.card_id AND held.status='buried')""",
+        (queue_date,queue_date,queue_date,entry_id,queue_date,queue_date))
 
 
 def lock_current_queue_task(database):

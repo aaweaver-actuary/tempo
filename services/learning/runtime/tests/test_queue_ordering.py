@@ -172,6 +172,27 @@ def test_live_urgent_cohort_is_durable_fifo_before_history_and_ordinary_work():
     assert ordering._priority_queue_order(ordering._priority_queue_order(rows)) == ordering._priority_queue_order(rows)
 
 
+def test_urgent_fifo_compares_actual_utc_instants_at_microsecond_precision():
+    rows = rows_for(('review','opening',3))
+    for row in rows:
+        row.update(gameplay_priority_reason=ordering.MISS_REASON,urgent_stream='forward')
+    rows[0].update(urgent_determined_at='2026-10-30T00:00:00.000001Z',urgent_effect_id='b')
+    rows[1].update(urgent_determined_at='2026-10-30T00:00:00.000001+00:00',urgent_effect_id='a')
+    rows[2].update(urgent_determined_at='2026-10-30T00:00:00.000002Z',urgent_effect_id='0')
+    assert ordering._priority_queue_order(rows) == [rows[1],rows[0],rows[2]]
+
+
+def test_unavailable_priority_does_not_relax_ordinary_positioned_repeat():
+    rows = rows_for(('review','opening',6))
+    rows[2].update(cycle=1,attempt_state='guided')
+    rows[-1].update(eligible=False)
+    ordinary = plan(rows,1)[2]
+    rows[-1]['gameplay_priority_reason'] = ordering.MISS_REASON
+    held_only = plan(rows,1)[2]
+    assert held_only == ordinary
+    assert held_only[2] == rows[2]
+
+
 def test_prior_v3_receipt_cannot_certify_replacement_activation_or_unmixed_append():
     rows = rows_for(("new", "opening", 3))
     token = ['old', 1]

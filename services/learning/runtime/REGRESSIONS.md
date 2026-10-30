@@ -59,6 +59,9 @@ dirty until actual presentation. Verified controlled edits retain the sequence.
 `test_urgent_target_precedes_unissued_historical_flags_but_preserves_actual_attempt`
 and `test_live_urgent_cohort_is_durable_fifo_before_history_and_ordinary_work`
 own #622's urgent exception, forward/history order and six-plus cohort FIFO.
+`test_urgent_fifo_compares_actual_utc_instants_at_microsecond_precision` preserves
+ordering across equivalent UTC spellings; `test_unavailable_priority_does_not_relax_ordinary_positioned_repeat`
+keeps a held priority label from changing ordinary repeat protections.
 The old expectation that unissued guided/reinforcement flags pin a target was
 changed under the explicit first-departure next-head requirement; genuine
 issued/evidence/explicit/unavailable protections remain covered.

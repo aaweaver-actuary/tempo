@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from fractions import Fraction
 import hashlib
 import json
@@ -83,7 +84,7 @@ def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) ->
 def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
     """Urgent FIFO precedes unissued ordinary work, retaining genuine attempts."""
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
-    protected = _protected_queue_ids(rows, urgent=True)
+    protected = _protected_queue_ids(rows, urgent=any(_movable_urgent(row) for row in rows))
     movable = [row for row in slots if row["id"] not in protected]
     priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
                       key=_urgent_order)
@@ -112,11 +113,23 @@ def _spread_groups(groups, seed, scope):
     return [event[3] for event in sorted(events)]
 
 
-def _urgent_order(row):
+def urgent_priority_key(row):
     # The source class and durable determination come from the owning effect.
     # Legacy missing provenance is historical/unknown, never invented live work.
-    return (row.get("urgent_stream") != "forward", row.get("urgent_determined_at", ""),
-            row.get("urgent_effect_id", ""), row["position"], row["id"])
+    determined = row.get('urgent_determined_at')
+    moment = (datetime.fromisoformat(determined.replace('Z','+00:00')) if determined
+              else datetime.min.replace(tzinfo=timezone.utc))
+    return (row.get("urgent_stream") != "forward", moment, row.get("urgent_effect_id", ""))
+
+
+def _urgent_order(row):
+    return (*urgent_priority_key(row), row["position"], row["id"])
+
+
+def _movable_urgent(row):
+    return bool(row['gameplay_priority_reason'] == MISS_REASON and row.get('eligible', True)
+        and row['admission_kind'] != 'explicit' and not row.get('issued', False)
+        and not row.get('presented', False) and not row.get('review_completed', False))
 
 
 def _protected_queue_ids(rows: Sequence[QueueOrderingRow], *, preserve_through_entry_id=None,
@@ -159,7 +172,7 @@ def _plan_daily_queue_order(
     """
     seed = saved["seed"] if saved else int(hashlib.sha256(day.encode()).hexdigest()[:15], 16)
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
-    urgent = any(row["gameplay_priority_reason"] == MISS_REASON for row in rows)
+    urgent = any(_movable_urgent(row) for row in rows)
     protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id,
                                      urgent=urgent)
     movable = [row for row in slots if row["id"] not in protected]

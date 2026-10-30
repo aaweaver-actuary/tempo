@@ -1929,16 +1929,10 @@ def bury_queue_entry(entry_id: int,
         from .command_dispatch import dispatch_command
         return dispatch_command("queue.bury", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
-    day = date.today().isoformat()
     with connection() as db:
-        from .queue_commands import validate_available_attempt
-        validate_available_attempt(db, entry_id, request.card_id if request else None,
-                                   request.expected_revision if request else None)
-        previous_order = capture_daily_queue_order(db, day)
-        # Retained rows prevent same-day refreshes from readmitting the card.
-        queue_projection_storage.bury_entry(db, day, entry_id)
-        preserve_daily_queue_order(db, day, previous=previous_order)
-    return {"buried": True, "queue_entry_id": entry_id}
+        from .queue_commands import bury_queue_entry as bury_owned_entry
+        return bury_owned_entry(db, {"entry_id":entry_id,
+            **(request.model_dump(exclude_none=True) if request else {})})
 
 
 @app.post("/api/cards/{identifier}/review")

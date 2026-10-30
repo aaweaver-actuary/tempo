@@ -82,7 +82,7 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     # next-card command performs preparation outside this writer transaction.
     from .services.queue_next_card import pending_next_card_preparation
     if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
-            and pending_next_card_preparation(database, payload['queue_date'])):
+            and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
         return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
     read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
     head = read_head(payload["queue_date"])
@@ -117,13 +117,19 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     entry_id = int(payload["entry_id"])
     queue_date = current_study_day(database)
     _lock_attempt_card(database, entry_id)
-    lock_queue_date_for_position(database, queue_date)
+    original_day = (queue_storage.issued_origin_day(database,entry_id,payload['card_id'],payload['expected_revision'])
+                    if payload.get('card_id') is not None and payload.get('expected_revision') is not None else None)
+    if queue_storage.is_postgres_connection(database):
+        for day in sorted({queue_date, original_day or queue_date}):
+            lock_queue_date_for_position(database, day)
     validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     previous_order = capture_daily_queue_order(database, queue_date)
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     queue_storage.bury_attempt_card(database, queue_date, entry_id)
     preserve_daily_queue_order(database, queue_date, previous=previous_order)
+    if original_day and original_day != queue_date:
+        preserve_daily_queue_order(database,original_day)
     return {"buried": True, "queue_entry_id": entry_id}
 
 

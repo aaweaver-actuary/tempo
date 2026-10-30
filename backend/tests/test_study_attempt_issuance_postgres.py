@@ -145,17 +145,39 @@ def test_native_pending_reset_saves_current_review_then_issues_urgent_target_fir
         priority = prepare_priority_promotion(day,case.card_id,read=case.transaction,
             priority_order=dict(urgent_determined_at=qualification.determined_at,
                 urgent_stream='forward',urgent_effect_id='fixture-effect'))
-        with case.transaction() as database:
-            available = EncounterFeedback(PostgresGameFeedbackStore(database,prepared_priority=priority),
-                decisions,clock=lambda:clock,introductions=None,introduction_policy=None).refresh_encounter(command.key)
-            assert available.admission_status == 'available' and available.progress.scheduling_review_id is not None
-        return NextCardPreparation(True)
+        class Prepared:
+            def apply(self,database):
+                available = EncounterFeedback(PostgresGameFeedbackStore(database,prepared_priority=priority),
+                    decisions,clock=lambda:clock,introductions=None,introduction_policy=None).refresh_encounter(command.key)
+                assert available.admission_status == 'available' and available.progress.scheduling_review_id is not None
+                return NextCardPreparation(True)
+        return Prepared()
     monkeypatch.setattr(queue_next_card,'_prepare',prepare)
-    assert queue_next_card.prepare_next_card_command({}).progressed
+    prepared = queue_next_card.prepare_next_card_command({})
+    with case.transaction() as database:
+        assert queue_next_card.prepared_next_card_result(database,prepared)['progressed']
     monkeypatch.setattr(queue_commands.queue_storage,'stamp_issued_head',
         lambda database,entry_id,card_id,revision: stamp_issued_head(database,entry_id,card_id,revision,
             now=clock+timedelta(microseconds=1)))
     with case.transaction() as database:
+        from test_product_game_lapse import qualification_for
+        from tempo_legacy_database.adapters.study.game_feedback import pending_feedback_preparation
+        historical = command.model_copy(update={
+            'key':command.key.model_copy(update={'game_id':command.key.game_id+'-history'}),
+            'source':command.source.model_copy(update={'game_id':command.key.game_id+'-history'}),
+            'detected_at':(clock-timedelta(days=3)).isoformat()})
+        history_qualification = qualification_for(historical).model_copy(update={'stream':'reconciliation'})
+        class HistoricalDecisions:
+            def current_qualified(self,candidate,witness):
+                assert candidate == historical and witness.matches(candidate)
+                return (historical.decision,)
+        EncounterFeedback(PostgresGameFeedbackStore(database),HistoricalDecisions(),clock=lambda:clock,
+            introductions=None,introduction_policy=None).accept_qualified(historical,qualification=history_qualification)
+        # A pending historical occurrence cannot force preparing the entire
+        # backlog before this already-ready live head gets actual service.
+        assert pending_feedback_preparation(database,day)
+        ready = feedback_queue_priorities(database,[case.card_id])[case.card_id]
+        assert not pending_feedback_preparation(database,day,before_priority=ready)
         target = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",(case.card_id,)).fetchone()[0]
         assert queue_commands.issue_queue_head(database,dict(queue_date=day,entry_id=target,
             card_id=case.card_id,expected_revision=1)) == {'issued':True}
@@ -166,3 +188,47 @@ def test_native_pending_reset_saves_current_review_then_issues_urgent_target_fir
         assert feedback_queue_priorities(database,[case.card_id])[case.card_id]['urgent_stream'] == 'forward'
         assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='study'",(active,)).fetchone()[0] == 1
         assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 1
+
+
+def test_native_next_card_operation_fence_precedes_all_owner_writes(case,monkeypatch):
+    """Real gateway receipts/savepoint; the marker is not fabricated Study history."""
+    from app import command_gateway,queue_commands  # noqa: F401 - installs queue handlers for an isolated selection
+    from app.services import queue_next_card
+    from app.study.interfaces.next_card import NextCardPreparation
+    operation = 'next-head-'+case.card_id
+    with case.transaction() as database:
+        database.execute_native('CREATE TABLE IF NOT EXISTS next_card_fixture_units(case_id TEXT PRIMARY KEY,units BIGINT NOT NULL)')
+        database.execute_native('INSERT INTO next_card_fixture_units VALUES(%s,0)',(case.card_id,))
+    class Prepared:
+        priority = None
+        def apply(self,database):
+            database.execute_native('UPDATE next_card_fixture_units SET units=units+1 WHERE case_id=%s',(case.card_id,))
+            return NextCardPreparation(True)
+    prepared_reads = []
+    def prepare():
+        prepared_reads.append(True)  # Harmless pure preparation can repeat.
+        return Prepared()
+    monkeypatch.setattr(queue_next_card,'_prepare',prepare)
+    monkeypatch.setattr(command_gateway,'_writer_connection',lambda _background:case.transaction())
+    first = command_gateway._execute_command(operation,'queue.prepare_next',{})
+    assert first['progressed']
+    assert command_gateway._execute_command(operation,'queue.prepare_next',{}) == first
+    with pytest.raises(command_gateway.CommandConflict):
+        command_gateway._execute_command(operation,'queue.prepare_next',{'reused':'different'})
+    stale_operation = operation+'-stale'
+    execute,saved,token,_ = command_gateway.record_operation_attempt(stale_operation,'queue.prepare_next',{},background=False)
+    assert execute and saved == {} and token
+    assert command_gateway._execute_command(stale_operation,'queue.prepare_next',{},attempt_token='expired-attempt') is None
+    with case.transaction() as database:
+        assert database.execute_native('SELECT units FROM next_card_fixture_units WHERE case_id=%s',(case.card_id,)).fetchone()[0] == 1
+    assert command_gateway._execute_command(stale_operation,'queue.prepare_next',{},attempt_token=token)['progressed']
+    class FailingPrepared(Prepared):
+        def apply(self,database):
+            super().apply(database)
+            raise RuntimeError('owner unit failed after write')
+    monkeypatch.setattr(queue_next_card,'_prepare',FailingPrepared)
+    assert command_gateway._execute_command(operation+'-rollback','queue.prepare_next',{}) is None
+    with case.transaction() as database:
+        assert database.execute_native('SELECT units FROM next_card_fixture_units WHERE case_id=%s',(case.card_id,)).fetchone()[0] == 2
+        assert database.execute_native('SELECT state FROM operation_receipts WHERE operation_id=%s',(operation+'-rollback',)).fetchone()[0] == 'failed'
+    assert len(prepared_reads) == 4  # First, complete replay, stale, current token.

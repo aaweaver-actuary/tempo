@@ -153,6 +153,25 @@ def test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_genera
         json={'card_id':'active-a','expected_revision':1}).status_code == 200
 
 
+def test_bury_preserved_issued_board_retires_original_and_holds_current_day(queued_attempts,monkeypatch):
+    from datetime import timedelta
+    from app import queue_commands
+    current_day = date.today().isoformat()
+    old_day = (date.today()-timedelta(days=1)).isoformat()
+    with database.connection() as connection:
+        connection.execute('UPDATE daily_queue SET queue_date=? WHERE id=?',(old_day,queued_attempts['active-a']))
+        connection.execute('UPDATE queue_attempt_origins SET queue_date=?,issued_as_head=1 WHERE queue_entry_id=?',
+                           (old_day,queued_attempts['active-a']))
+    monkeypatch.setattr(queue_commands,'current_study_day',lambda *_args,**_kwargs:current_day)
+    with database.connection() as connection:
+        result = queue_commands.bury_queue_entry(connection,dict(entry_id=queued_attempts['active-a'],
+            card_id='active-a',expected_revision=1))
+        assert result['buried'] is True
+        assert connection.execute('SELECT status FROM daily_queue WHERE id=?',(queued_attempts['active-a'],)).fetchone()[0] == 'buried'
+        assert connection.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='active-a' AND queue_date=? AND status='buried'",
+                                  (current_day,)).fetchone()[0] == 1
+
+
 @pytest.mark.parametrize('action', ['fail', 'bury'])
 @pytest.mark.parametrize('replacement', ['revision', 'card'])
 def test_issued_marker_cannot_transfer_to_replacement_identity(queued_attempts, action, replacement):

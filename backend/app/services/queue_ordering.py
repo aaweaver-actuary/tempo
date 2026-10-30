@@ -7,6 +7,7 @@ QueueOrderingRow = _owned.QueueOrderingRow
 SavedQueueOrder = _owned.SavedQueueOrder
 QueueOrderPlan = _owned.QueueOrderPlan
 PRESENTATION_VERSION = _owned.PRESENTATION_VERSION
+urgent_priority_key = _owned.urgent_priority_key
 _queue_membership_hash = _owned._queue_membership_hash
 _queue_order_fingerprint = _owned._queue_order_fingerprint
 _preserved_queue_fingerprint = _owned._preserved_queue_fingerprint
