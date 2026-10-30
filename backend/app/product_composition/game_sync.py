@@ -251,6 +251,7 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
                      qualifier=None,
                      effect_identity=None,
                      first_boundary_preparation=None,
+                     preserve_existing_comparison: bool = False,
                      transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
     """Wire published concrete seams; the caller selects when bounded units run.
 
@@ -274,7 +275,7 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
         effect_identity=effect_identity,
         first_boundary_preparation=first_boundary_preparation if delivery_enabled else None,
         clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions,
-        encounter_feedback=encounter_feedback)
+        encounter_feedback=encounter_feedback, preserve_existing_comparison=preserve_existing_comparison)
     return GameSyncRuntime(FeedbackRunner(coordinator, delivery_enabled=delivery_enabled), stop,
                            (provider.acquisition.cancel for provider in providers.values()),admission=admission,
                            local_admission=local_admission)

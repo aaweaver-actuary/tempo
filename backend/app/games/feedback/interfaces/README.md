@@ -10,6 +10,14 @@ recurrence; `GameReview` exposes saved facts/configuration. Named state values,
 ports, failures and identity/projection operations retain class/function identity.
 There is no connection, provider, process, root assembly or timer on import.
 
+`JobSpec.purpose` also accepts `history` for finite manual acquisition and saved-page
+comparison. These jobs require exact-job claims; ordinary collectors and Refresh
+checkpoints exclude them. The [operator composition](../../../product_composition/README.md#one-time-historical-games-scripts)
+owns the two phases without changing the public command or receipt types.
+`Coordinator` can preserve an existing comparison when a caller explicitly
+defers every selected snapshot; source changes and integrity failures still take
+the ordinary quarantine and control path.
+
 `select_first_boundary(game, snapshots=..., source=...,
 selected_repertoire_ids=..., unavailable_repertoire_ids=...)` consumes only
 supplied canonical history and authored snapshots, returning the shared

@@ -200,12 +200,26 @@ class PostgresGamesStore:
             row = database.execute("SELECT payload::text FROM product_feedback_jobs WHERE job_id=%s", (job_id,)).fetchone()
             return JobState.model_validate_json(row[0]) if row else None
 
+    def retained_page(self, job_id: str, continuation: str | None) -> str:
+        """Read one exact committed acquisition page for offline comparison.
+
+        A completed import has one immutable page per input cursor. Conflicting
+        retained pages are an integrity error, never an arbitrary selection.
+        """
+        with self._transaction() as database:
+            rows = database.execute("""SELECT page_json::text FROM product_feedback_pages
+                WHERE job_id=%s AND input_continuation IS NOT DISTINCT FROM %s
+                LIMIT 2""", (job_id, continuation)).fetchall()
+        if len(rows) != 1:
+            raise ValueError("historical_page_missing_or_ambiguous")
+        return rows[0][0]
+
     def claim_job(self, now: float, lease_until: float, *, job_id: str | None = None) -> JobState | None:
         with self._transaction() as database:
             # Account admission precedes row locks everywhere. A nonwaiting
             # transaction lock closes the cross-process different-job claim race.
             scope = ("job_id=%s" if job_id is not None else
-                     "payload->'spec'->>'purpose' IS DISTINCT FROM 'refresh'")
+                     "COALESCE(payload->'spec'->>'purpose','sync')='sync'")
             rows = database.execute(f"""SELECT payload FROM (
                 SELECT DISTINCT ON (payload->'spec'->>'provider',lower(payload->'spec'->>'account'))
                     payload::text AS payload,attempts,next_attempt_at,job_id

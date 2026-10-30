@@ -55,3 +55,12 @@ opens a connection, locks rows, replays sources or dispatches work. Composition
 contains optional failures with a savepoint and checks the managed-mode hint;
 actual acceptance still uses the separately locked mode/source/current fences.
 No schema changes accompany this borrowed-read adapter.
+
+`product_feedback.retained_page` reads one immutable original provider page by
+job and input continuation for the [finite historical operator](../../../../backend/app/product_composition/README.md#one-time-historical-games-scripts).
+Zero or multiple matching pages fail closed. Historical jobs use the additive
+JSON purpose `history`; generic claims accept only `sync` (including older rows
+with no purpose), while exact claims retain account leases and retry admission.
+History therefore does not become a forward or Refresh-now checkpoint. Existing
+tables, atomic page/capture/source/outbox transactions, keys and ownership are
+unchanged; no new migration or storage relationship is introduced.

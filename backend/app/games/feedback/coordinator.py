@@ -106,13 +106,15 @@ class Coordinator:
                  qualifier: DeliveryQualifier | None = None,
                  first_boundary_preparation: FirstBoundaryPreparation | None = None,
                  effect_identity=None,
-                 encounter_feedback: bool = False, max_page_records: int = 100,
+                 encounter_feedback: bool = False, preserve_existing_comparison: bool = False,
+                 max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
             raise ValueError("page bounds exceed optional workflow budget")
         if not 1 <= max_page_positions <= 100000:
             raise ValueError("position batch exceeds optional workflow budget")
         self.encounter_feedback = encounter_feedback
+        self.preserve_existing_comparison = preserve_existing_comparison
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
         self.source_identity = source_identity
@@ -347,13 +349,20 @@ class Coordinator:
             if (not held and first_departure is not None and first_departure.status == "own_actionable"
                     and determined_at is None):
                 determined_at = self.clock.utc_now()
-            sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
+            source = SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
                 record_fingerprint=previous.record_fingerprint if previous else fingerprint,
                 normalized=previous.normalized if changed else normalized, findings=findings,
                 comparison_revision=comparison_revision, effects=tuple(effects), encounters=encounters,
                 first_departure=previous.first_departure if changed else first_departure,
-                determined_at=determined_at, quarantined=held, diagnostic=diagnostic))
+                determined_at=determined_at, quarantined=held, diagnostic=diagnostic)
+            # A collection-only backfill deliberately does not read repertoires.
+            # Its missing observation must not replace a previously saved one.
+            # Corrections and integrity failures still take the normal hold path.
+            if (self.preserve_existing_comparison and previous is not None and not held
+                    and not snapshots and unresolved == set(spec.repertoire_ids)):
+                source = previous
+            sources.append(source)
             captures.append(Capture(source_key=key, account=spec.account, record=record, provider_record_json=record.model_dump_json(), normalized=normalized,
                 findings=findings, encounters=encounters, first_departure=first_departure,
                 determined_at=None if changed else determined_at,
