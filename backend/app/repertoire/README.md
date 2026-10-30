@@ -185,6 +185,10 @@ when conflicted. No schema or stored relationship changes are introduced.
   JSON rows. The final encoded-size check still enforces the unchanged 32 MiB
   bound. All source fields, one-statement MVCC semantics and comparison digests
   remain unchanged; this accounting correction requires no paging or cache.
+  The same SELECT returns bounded facts as raw JSON text alongside its numeric
+  envelope. The reader checks that text's exact UTF-8 length before decoding,
+  avoiding a second full Python serialization inside the borrowed transaction.
+  Existing scripted envelopes remain readable and callers receive the same dict.
   Pure repertoire projection also caps
   aggregate authored moves at 100,000. A proved budget refusal raises public
   `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged

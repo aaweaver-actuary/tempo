@@ -165,8 +165,11 @@ def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_fa
     actual_bytes = len(json.dumps(expected, ensure_ascii=False).encode())
     # Lower the fixture cap rather than increasing the production 32 MiB cap.
     monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", actual_bytes + 1024)
-    envelope = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()["snapshot"]
-    assert envelope["bounded"] and envelope["facts"] == expected
+    row = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()
+    envelope = row["snapshot"]
+    assert envelope["bounded"] and envelope["facts"] is None
+    assert json.loads(row["facts_json"]) == expected
+    assert len(row["facts_json"].encode()) == actual_bytes
     assert actual_bytes <= envelope["estimated_bytes"] <= actual_bytes + 1024
     actual = storage.read_repertoire(connection, "rep")
     assert actual == expected and actual["lines"][0]["name"] == name

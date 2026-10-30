@@ -5881,3 +5881,5 @@ reuse the explicit task-owned native snapshot fixture and preserve the productio
 32 MiB/count/row limits. Existing owning cases retain one-MVCC-view consistency,
 source/revision changes, conflicts, unavailable physical references, rollback,
 sentinel overflow and parameter-bound selection.
+`backend/tests/test_product_snapshot.py::test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding`
+retains the returned facts and exact 32 MiB refusal for the raw-wire path.

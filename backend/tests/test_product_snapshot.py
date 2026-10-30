@@ -499,6 +499,24 @@ def test_snapshot_actual_serialized_byte_refusal_is_exact(owner):
                                              limit=33554432, observation="exact")])
 
 
+def test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding():
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    facts = repertoire_facts()
+    facts["repertoire"]["name"] = 'Escaped " \\ \n café'
+    encoded = json.dumps(facts, ensure_ascii=False)
+    class WireReader(EnvelopeReader):
+        def fetchone(self):
+            return {"snapshot": self.envelope, "facts_json": encoded}
+    reader = WireReader(snapshot_envelope(bounded=True, facts=None))
+    assert read_repertoire(reader, "rep") == facts
+    encoded = '"' + "x" * (32 * 1024 * 1024) + '"'
+    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
+        read_repertoire(reader, "rep")
+    assert caught.value.diagnostic()["violations"] == [dict(dimension="snapshot_bytes",
+        observed=len(encoded.encode()), limit=33554432, observation="exact")]
+
+
 @pytest.mark.parametrize("name,dimension,limit", [("lines", "source_rows", 10000),
     ("cards", "card_rows", 10000), ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000)])
 def test_snapshot_projection_row_refusals_are_exact(name, dimension, limit):

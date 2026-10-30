@@ -95,14 +95,16 @@ SELECT jsonb_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
-    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
+    'facts',NULL
+) snapshot,
+CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
         'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
         'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
         'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM cards c),'[]'::jsonb),
         'memberships',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY card_id) FROM memberships m),'[]'::jsonb),
         'graphs',coalesce((SELECT jsonb_agg(to_jsonb(g) ORDER BY line_id,decision_index) FROM graphs g),'[]'::jsonb)
-    ) ELSE NULL END
-) snapshot FROM allowed
+    )::text ELSE NULL END facts_json
+FROM allowed
 """
 
 
@@ -142,13 +144,26 @@ def read_repertoire(database, repertoire_id: str) -> dict:
         if not violations:
             raise ValueError("invalid_repertoire_snapshot_bound_metadata")
         raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
-    facts = document["facts"]
-    encoded_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
+    try:
+        facts_json = row["facts_json"]
+    except (TypeError, KeyError):
+        facts_json = row[1] if not isinstance(row, dict) and len(row) > 1 else None
+    # SQL's bounded JSON text is already the final serialization. Measuring it
+    # before decoding avoids encoding the complete capture again while the
+    # borrowed reader transaction is still open. Old scripted envelopes remain
+    # readable; the public return value and source facts are unchanged.
+    if facts_json is not None:
+        if not isinstance(facts_json, str):
+            raise ValueError("invalid_repertoire_snapshot_serialization")
+        encoded_bytes = len(facts_json.encode())
+    else:
+        facts = document["facts"]
+        encoded_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
     if encoded_bytes > MAX_SNAPSHOT_BYTES:
         from app.repertoire import RepertoireSnapshotBoundExceeded
         raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[
             dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_SNAPSHOT_BYTES, observation="exact")])
-    return facts
+    return json.loads(facts_json) if facts_json is not None else facts
 
 
 def current_snapshot(database, repertoire_id: str):
