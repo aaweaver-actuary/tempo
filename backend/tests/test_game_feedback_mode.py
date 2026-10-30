@@ -23,15 +23,18 @@ for source in ("packages/game-review-contracts/src", "packages/chess-core/src", 
 
 from app.games.feedback.interfaces.managed_mode import ManagedGamesModeIntent, ManagedModeAdmissionDenied
 from app.product_composition.game_feedback_mode import main
+from app.product_composition.managed_runtime import current_managed_runtime_identity, initialize_runtime_identity
 from tempo_legacy_database.adapters.games.managed_mode import (
     ManagedGamesModeStore, feedback_handoff_admitted, fence_feedback_handoff, read_feedback_mode,
 )
 from test_product_game_lapse_postgres import owned_postgres
 
+RUNTIME = "b" * 12 + ":" + "2" * 32
+
 
 def intent(workspace="fixture", *, generation=1, mode="feedback", phase="active"):
     active = phase == "active"
-    runtimes = [dict(service=service, container_id=letter * 64, hostname=letter * 12,
+    runtimes = [dict(service=service, container_id=letter * 64, hostname=letter * 12, boot_nonce="2" * 32,
                      image="sha256:" + "d" * 64)
                 for service, letter in (("api", "a"), ("foreground-worker", "b"), ("game-feedback-worker", "c"))]
     return ManagedGamesModeIntent.model_validate_json(json.dumps(dict(schema_version=1, workspace_id=workspace, generation=generation,
@@ -45,8 +48,23 @@ def intent(workspace="fixture", *, generation=1, mode="feedback", phase="active"
     ("feedback", "transitioning", False), ("collect-only", "active", False)])
 def test_only_verified_feedback_admits_actual_bound_runtime(mode, phase, admitted):
     value = intent(mode=mode, phase=phase)
-    assert value.admits("b" * 12) is admitted
-    assert not value.admits("9" * 12)  # Recreated/foreign command worker is not the verified one.
+    assert value.admits(RUNTIME) is admitted
+    assert not value.admits("9" * 12 + ":" + "2" * 32)  # Foreign command worker is not the verified one.
+
+
+def test_same_container_restart_cannot_reuse_stale_intent_after_failed_clear(tmp_path):
+    path = tmp_path / "runtime.json"
+    first = initialize_runtime_identity(path, hostname="b" * 12)
+    payload = intent().model_dump(mode="json")
+    payload["runtimes"][1]["boot_nonce"] = first["boot_nonce"]
+    old_intent = ManagedGamesModeIntent.model_validate_json(json.dumps(payload))
+    assert old_intent.admits(current_managed_runtime_identity(path, hostname="b" * 12))
+    # Failed inactive clear leaves the old DB intent. Restart the SAME hostname.
+    second = initialize_runtime_identity(path, hostname="b" * 12)
+    assert second["boot_nonce"] != first["boot_nonce"]
+    assert not old_intent.admits(current_managed_runtime_identity(path, hostname="b" * 12))
+    path.unlink()
+    assert current_managed_runtime_identity(path, hostname="b" * 12) is None
 
 
 @pytest.mark.parametrize("fault", ["missing_command_worker", "wrong_container", "wrong_worker_image", "inactive_verified", "duplicate_service"])
@@ -92,7 +110,7 @@ def test_native_shared_mode_fence_prevents_disable_commit_until_handoff_finishes
     with transaction() as database:
         database.execute_native("SET LOCAL transaction_timeout='250ms'")
         database.execute_native("SET LOCAL lock_timeout='100ms'")
-        assert fence_feedback_handoff(database, workspace, runtime_id="b" * 12) == value
+        assert fence_feedback_handoff(database, workspace, runtime_id=RUNTIME) == value
         with ThreadPoolExecutor(max_workers=1) as pool:
             attempted_disable = pool.submit(store.record, disabled, expected_generation=1)
             with pytest.raises(psycopg.errors.LockNotAvailable):
@@ -100,15 +118,15 @@ def test_native_shared_mode_fence_prevents_disable_commit_until_handoff_finishes
         # The short borrowed writer still owns the shared fence; no helper commit occurred.
         assert database.raw.info.transaction_status.name == "INTRANS"
     store.record(disabled, expected_generation=1)
-    assert not feedback_handoff_admitted(workspace, connections, runtime_id="b" * 12)
+    assert not feedback_handoff_admitted(workspace, connections, runtime_id=RUNTIME)
     with transaction() as database:
         with pytest.raises(ManagedModeAdmissionDenied):
-            fence_feedback_handoff(database, workspace, runtime_id="b" * 12)
+            fence_feedback_handoff(database, workspace, runtime_id=RUNTIME)
 
 
 def test_native_transition_wins_over_stale_outside_admission_snapshot(mode_case):
     workspace, connections, store, value, transaction = mode_case
-    assert feedback_handoff_admitted(workspace, connections, runtime_id="b" * 12)
+    assert feedback_handoff_admitted(workspace, connections, runtime_id=RUNTIME)
     transition = intent(workspace, generation=2, phase="transitioning")
     with transaction() as changing:
         changing.execute_native("SET LOCAL transaction_timeout='250ms'")
@@ -117,12 +135,12 @@ def test_native_transition_wins_over_stale_outside_admission_snapshot(mode_case)
         def stale_handoff():
             with transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
-                return fence_feedback_handoff(database, workspace, runtime_id="b" * 12)
+                return fence_feedback_handoff(database, workspace, runtime_id=RUNTIME)
         with ThreadPoolExecutor(max_workers=1) as pool:
             with pytest.raises(psycopg.errors.LockNotAvailable):
                 pool.submit(stale_handoff).result(timeout=1)
     assert read_feedback_mode(connections, workspace) == transition
-    assert not feedback_handoff_admitted(workspace, connections, runtime_id="b" * 12)
+    assert not feedback_handoff_admitted(workspace, connections, runtime_id=RUNTIME)
     with pytest.raises(ValueError, match="generation_changed"):
         store.record(intent(workspace, generation=2), expected_generation=1)
 
@@ -143,9 +161,22 @@ def test_native_mode_status_is_read_only_and_cannot_lend_write_authority(mode_ca
     assert read_feedback_mode(observed, workspace) == value
     assert seen[0] == "SET TRANSACTION READ ONLY"
     assert len(seen) == 2 and seen[1].startswith("SELECT ")
-    assert not feedback_handoff_admitted("absent-" + workspace, connections, runtime_id="b" * 12)
+    assert not feedback_handoff_admitted("absent-" + workspace, connections, runtime_id=RUNTIME)
     with connections() as database:
         database.execute("SET TRANSACTION READ ONLY")
         assert database.execute("SHOW transaction_read_only").fetchone()[0] == "on"
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             database.execute("DELETE FROM product_feedback_managed_mode WHERE workspace_id=%s", (workspace,))
+
+
+def test_native_same_hostname_new_boot_nonce_denies_stale_verified_intent(mode_case):
+    workspace, connections, store, value, transaction = mode_case
+    restarted = "b" * 12 + ":" + "3" * 32
+    assert feedback_handoff_admitted(workspace, connections, runtime_id=RUNTIME)
+    assert not feedback_handoff_admitted(workspace, connections, runtime_id=restarted)
+    with transaction() as database:
+        with pytest.raises(ManagedModeAdmissionDenied):
+            fence_feedback_handoff(database, workspace, runtime_id=restarted)
+    with transaction() as database:
+        with pytest.raises(ManagedModeAdmissionDenied):
+            fence_feedback_handoff(database, workspace)  # No trusted identity never opens a fence.

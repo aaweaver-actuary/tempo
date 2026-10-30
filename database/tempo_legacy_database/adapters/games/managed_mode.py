@@ -8,7 +8,6 @@ inside the fence.
 from __future__ import annotations
 
 from contextlib import contextmanager
-import socket
 
 from app.games.feedback.interfaces.managed_mode import ManagedGamesModeIntent, ManagedModeAdmissionDenied
 
@@ -45,7 +44,7 @@ def feedback_handoff_admitted(workspace: str, connections, *, runtime_id: str | 
     """Outside-writer hint only; acceptance must also take the real row fence."""
     try:
         intent = read_feedback_mode(connections, workspace)
-        return intent is not None and intent.admits(runtime_id or socket.gethostname())
+        return runtime_id is not None and intent is not None and intent.admits(runtime_id)
     except Exception:
         return False
 
@@ -59,13 +58,13 @@ def fence_feedback_handoff(database, workspace: str, *, runtime_id: str | None =
     Already accepted Study obligations do not consume this mode fence.
     """
     raw = getattr(database, "raw", database)
-    if getattr(database, "read_only", False) or raw.info.transaction_status.name != "INTRANS":
+    if runtime_id is None or getattr(database, "read_only", False) or raw.info.transaction_status.name != "INTRANS":
         raise ManagedModeAdmissionDenied()
     execute = getattr(database, "execute_native", None) or database.execute
     row = execute("SELECT payload::text,generation,mode,phase FROM product_feedback_managed_mode WHERE workspace_id=%s FOR SHARE NOWAIT",
                   (workspace,)).fetchone()
     intent = _intent(row, workspace)
-    if intent is None or not intent.admits(runtime_id or socket.gethostname()):
+    if runtime_id is None or intent is None or not intent.admits(runtime_id):
         raise ManagedModeAdmissionDenied()
     return intent
 

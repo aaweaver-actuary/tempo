@@ -15,6 +15,7 @@ class ManagedGamesRuntime(Value):
     service: Literal["api", "foreground-worker", "game-feedback-worker"]
     container_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     hostname: Annotated[str, Field(pattern=r"^[0-9a-f]{12}$")]
+    boot_nonce: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
     image: ImageIdentity
 
     @model_validator(mode="after")
@@ -59,7 +60,7 @@ class ManagedGamesModeIntent(Value):
 
     def admits(self, runtime_id: str) -> bool:
         return bool(self.mode == "feedback" and self.phase == "active" and self.verified_at is not None
-                    and any(item.hostname == runtime_id for item in self.runtimes))
+                    and any(item.hostname + ":" + item.boot_nonce == runtime_id for item in self.runtimes))
 
 
 class ManagedModeAdmissionDenied(ValueError):
@@ -68,3 +69,16 @@ class ManagedModeAdmissionDenied(ValueError):
 
     def __init__(self):
         super().__init__(self.reason)
+
+
+class FeedbackReleaseCapabilities(Value):
+    """Composition's actual wired release facts, never activation authority alone."""
+    policy_version: Literal["first_departure_v1"]
+    receipt_interface_version: Literal["0.2.2"]
+    selector: bool
+    current_authority: bool
+    again: bool
+    canonical_introduction: bool
+    retained_qualification: bool
+    foreground_handoff: bool
+    issuance_fence: bool
