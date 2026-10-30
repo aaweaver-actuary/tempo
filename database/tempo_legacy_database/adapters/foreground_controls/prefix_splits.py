@@ -36,7 +36,7 @@ def mark_split_pending_validation(database, parent_card_id: str, continuation_ca
 def latest_failed_study_review_id(database, card_id: str):
     return database.execute(
         "SELECT COALESCE(MAX(id),0) FROM reviews "
-        "WHERE card_id=? AND rating='again' AND source_kind='study' "
+        "WHERE card_id=? AND rating='again' AND source_kind IN ('study','game_lapse') "
         "AND invalidated_at IS NULL", (card_id,),
     ).fetchone()[0]
 

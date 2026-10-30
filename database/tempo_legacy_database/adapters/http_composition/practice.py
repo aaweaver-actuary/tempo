@@ -9,7 +9,8 @@ def card_state_rows(database):
 
 def review_count(database, day):
     return database.execute(
-        "SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=? AND invalidated_at IS NULL",
+        "SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=? AND invalidated_at IS NULL "
+        "AND source_kind!='game_lapse'",
         (day,),
     ).fetchone()[0]
 

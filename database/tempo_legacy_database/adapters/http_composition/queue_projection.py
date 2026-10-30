@@ -48,7 +48,7 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
                                               AND instr(c.recent_attempts_json,'"again"')>0
                                     THEN COALESCE((SELECT MAX(failed_review.id) FROM reviews failed_review
                                       WHERE failed_review.card_id=c.id AND failed_review.rating='again'
-                                        AND failed_review.source_kind='study'
+                                        AND failed_review.source_kind IN ('study','game_lapse')
                                         AND failed_review.invalidated_at IS NULL),0)
                                     ELSE 0 END latest_failed_review_id,
                                   EXISTS(SELECT 1 FROM reviews study_review
