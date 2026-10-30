@@ -272,6 +272,8 @@ def test_legacy_frozen_exposure_membership_matches_correlated_history_with_nulls
     activate(database)
     database.execute("INSERT INTO daily_queue VALUES(1,'a',0,NULL,'queued','clean',NULL,'new')")
     database.execute("INSERT INTO queue_attempt_origins VALUES('a',0,0,NULL,'queued',1)")
+    # Legacy nullable retained identities are neither membership nor exposure.
+    database.execute("INSERT INTO queue_attempt_origins VALUES(NULL,1,1,'{}','complete',1)")
     database.executemany('INSERT INTO opening_evidence_attempts VALUES(?)',
                          [(None,)]+[(f'historical-{n}',) for n in range(5312)])
     if exposure=='evidence': database.execute("INSERT INTO opening_evidence_attempts VALUES('a')")
@@ -294,6 +296,36 @@ def test_legacy_frozen_exposure_membership_matches_correlated_history_with_nulls
     historical=current.replace(
         'AND c.id NOT IN(SELECT attempt.card_id FROM opening_evidence_attempts attempt\n                         WHERE attempt.card_id IS NOT NULL)',
         'AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.card_id=c.id)')
+    historical=historical.replace(
+        'AND c.id IN(SELECT legacy_origin.card_id FROM queue_attempt_origins legacy_origin\n                    WHERE legacy_origin.legacy=1 AND legacy_origin.card_id IS NOT NULL)',
+        'AND EXISTS(SELECT 1 FROM queue_attempt_origins legacy_origin\n                   WHERE legacy_origin.card_id=c.id AND legacy_origin.legacy=1)')
+    historical=historical.replace(
+        "AND c.id NOT IN(SELECT exposed_origin.card_id FROM queue_attempt_origins exposed_origin\n            WHERE exposed_origin.card_id IS NOT NULL AND",
+        "AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins exposed_origin\n            WHERE exposed_origin.card_id=c.id AND")
+    prefix='SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE 1=1'
+    assert database.execute(prefix+current).fetchall()==database.execute(prefix+historical).fetchall()
+    assert bool(database.execute(prefix+current).fetchall()) is allowed
+
+
+@pytest.mark.parametrize('origin_card,issued,allowed', [
+    ('a',1,True), ('a',0,False), ('unrelated',1,False), (None,1,False),
+])
+def test_changed_frozen_definition_issued_origin_set_matches_correlated_exclusion_with_nulls(database,origin_card,issued,allowed):
+    from tempo_legacy_database.adapters import frozen_order as storage
+    for field in ('source_ref','source_fen','kind','content_type'):
+        database.execute(f'ALTER TABLE cards ADD COLUMN {field} TEXT')
+    database.execute('ALTER TABLE daily_queue ADD COLUMN gameplay_priority_reason TEXT')
+    database.execute("UPDATE cards SET kind='prefix',content_type='opening'")
+    activate(database)
+    database.execute("INSERT INTO daily_queue VALUES(1,'a',0,NULL,'queued','clean',NULL)")
+    database.execute("UPDATE cards SET revision=2 WHERE id='a'")
+    database.execute("INSERT INTO queue_attempt_origins VALUES(?,?,0,NULL,'queued',0)",(origin_card,issued))
+    # Always include unrelated NULL exposure; it must never poison NOT IN.
+    database.execute("INSERT INTO queue_attempt_origins VALUES(NULL,1,0,NULL,'queued',0)")
+    current=storage.stale_queue_predicate(order.MISS_REASON)
+    historical=current.replace(
+        'AND c.id NOT IN(SELECT origin.card_id FROM queue_attempt_origins origin\n                        WHERE origin.issued_as_head=1 AND origin.card_id IS NOT NULL)',
+        'AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin\n                       WHERE origin.card_id=c.id AND origin.issued_as_head=1)')
     prefix='SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE 1=1'
     assert database.execute(prefix+current).fetchall()==database.execute(prefix+historical).fetchall()
     assert bool(database.execute(prefix+current).fetchall()) is allowed
