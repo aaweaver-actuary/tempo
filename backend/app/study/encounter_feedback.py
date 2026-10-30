@@ -67,6 +67,17 @@ def encounter_digest(command: GameEncounter) -> str:
         occurred_at=command.occurred_at)).encode()).hexdigest()
 
 
+def qualified_encounter_view(command, qualification):
+    """Internal factual adapter; original old command bytes remain durable."""
+    if isinstance(command,GameEncounter):
+        return command
+    selected = qualification.selection
+    return GameEncounter(key=command.key,source=selected.source,decision=selected.decision,
+        expected_uci=command.finding.expected_uci[0],played_uci=command.finding.played_uci,
+        observation='missed',detected_at=command.detected_at,occurred_at=command.occurred_at,
+        payload_digest=command.payload_digest)
+
+
 class EncounterFeedback(GameFeedback):
     def __init__(self, store: EncounterStore, decisions: CurrentEncounterPort, *,
                  clock: Callable[[], datetime], introductions: EncounterIntroductions | None,
@@ -84,12 +95,7 @@ class EncounterFeedback(GameFeedback):
         # Compatibility view only: the durable original lapse stays unchanged.
         # The exact selected decision comes from the qualified owner witness;
         # no introduction-before-game fact is fabricated.
-        lapse, selected = effect.lapse, effect.qualification.selection
-        return GameEncounter(key=lapse.key, source=selected.source,
-            decision=selected.decision, expected_uci=lapse.finding.expected_uci[0],
-            played_uci=lapse.finding.played_uci, observation="missed",
-            detected_at=lapse.detected_at, occurred_at=lapse.occurred_at,
-            payload_digest=lapse.payload_digest)
+        return qualified_encounter_view(effect.lapse,effect.qualification)
 
     def _encounter_receipt(self, effect, command, outcome):
         original = self._command(effect) or command

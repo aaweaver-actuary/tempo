@@ -17,7 +17,7 @@ from tempo_game_evidence_contracts.legacy_scope import LegacyIntegrityCertificat
 
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.study.game_feedback import GameFeedback, game_scoped_introduction, instant
-from app.study.encounter_feedback import EncounterAuthorityUnavailable
+from app.study.encounter_feedback import EncounterAuthorityUnavailable, qualified_encounter_view
 from .game_feedback import PostgresGameFeedbackStore
 
 CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
@@ -122,12 +122,7 @@ class CurrentOwnerDecisions:
         self._qualified_captures = tuple(item['repertoire'] for item in publications)
         self._qualification_fence = qualification_fence
         self._qualified = (command.model_dump_json(), qualification.model_dump_json())
-        if hasattr(command, 'decision'):
-            self.prepare_encounter(command)
-        else:
-            cards = [row for row in self.source['tables']['cards'] if row['id'] == command.finding.presentation_id]
-            _require(len(cards) == 1, 'current_owner_card_changed')
-            self._validate_executable(command, cards[0], priority_only=False)
+        self.prepare_encounter(qualified_encounter_view(command,qualification))
         return self
 
     def current_qualified(self, command, qualification):
@@ -138,14 +133,7 @@ class CurrentOwnerDecisions:
             self._fence_selected_publication(header)
         # The legacy lapse becomes only an in-memory factual view. Its stored
         # bytes, payload digest, occurrence and logical identity stay original.
-        if not hasattr(command, 'decision'):
-            from app.contracts.product_v02.learning import GameEncounter
-            command = GameEncounter(key=command.key, source=qualification.selection.source,
-                decision=qualification.selection.decision, expected_uci=command.finding.expected_uci[0],
-                played_uci=command.finding.played_uci, observation='missed',
-                detected_at=command.detected_at, occurred_at=command.occurred_at,
-                payload_digest=command.payload_digest)
-        return self._current(command, priority_only=True)
+        return self._current(qualified_encounter_view(command,qualification),priority_only=True)
 
     def _fence_selected_publication(self, expected):
         """Fence the complete prepared read with source/publication ownership.
