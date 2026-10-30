@@ -112,3 +112,25 @@ current-owner fence cases pass against it. The fixture derives readiness from
 the schema owner so later additive 053 is validated rather than rejected by an
 obsolete hardcoded 51. Source/native proof is separate from browser, installed
 schema and deployment qualification.
+# Retained first-departure qualification (#621)
+
+The existing `product_feedback_deliveries.payload` JSON now retains separate
+`qualification_status` (`pending`, `ready`, `held`, `ineligible`), finite reason and
+retryability, the typed current first-departure witness, original determination,
+actual origin job/stream/configuration revision where known, and a service
+sequence for live/history intake fairness. No new table, column or effect identity
+is introduced for qualification. Original lapse/encounter/control bytes remain
+unchanged; source/capture/checkpoint/outbox publication remains atomic.
+
+Controls supersede pending automatic records before delivery. A delayed owner
+acknowledgment cannot reactivate them, replace a captured command, or restart its
+determination. Games' current source/config/control fence borrows the Study writer
+through the public composition; actual Study schedules, reviews, admission,
+issuance and settlement remain owned by Study. New handoff additionally consumes
+the separately owned managed-mode shared-row fence (schema56); accepted Study debt
+continues independently when optional feedback is off.
+
+The status inventory's qualification counts have delivery-record grain. An
+accepted/pending receipt counted at acknowledgment is not a current queue,
+issuance or settlement observation. The canonical policy and bounded failure flow
+are documented by [the Games owner](../../../../backend/app/games/feedback/README.md#first-departure-delivery-qualification--621).

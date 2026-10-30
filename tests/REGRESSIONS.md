@@ -5857,3 +5857,14 @@ and `test_provider_alias_and_generic_legacy_source_meanings_are_preserved` in
 `test_product_first_boundary.py`; `test_new_commands_in_either_envelope_respect_opponent_first_boundary`
 in `test_product_feedback_jobs.py`. New legacy lapse envelopes obey the same
 global selection; old frozen commands remain retained for qualification.
+# Game sync retained qualification — #621
+
+`backend/tests/test_product_delivery_qualification.py` owns the mixed frozen
+outbox, opponent-first suppression, legacy-lapse compatibility, unavailable scope,
+source correction, immutable retry/determination, distinct occurrences, lost
+acknowledgment, semantic hold, control race, foreground local progress and
+collection-only/mode-denial regressions. Its native selections prove durable
+live/history turn order across restart/equal clocks, controls after qualification
+and delayed acknowledgment, command immutability, nonretryable holds and the
+bounded truthful qualification inventory. Native cases reuse the existing
+`test_product_game_lapse_postgres.owned_postgres` fixture and require no live DSN.

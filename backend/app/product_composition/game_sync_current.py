@@ -119,6 +119,7 @@ def create_current_game_sync(*, workspace, connections, clock=None,
         clock=clock, source_identity=store,
         transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission,
         delivery_enabled=delivery_enabled, qualifier=learning if delivery_enabled else None,
+        effect_identity=getattr(learning, "effect_identity", None) if delivery_enabled else None,
         local_admission=configured_local_admission if delivery_enabled else None)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)

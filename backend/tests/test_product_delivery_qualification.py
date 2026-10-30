@@ -113,6 +113,21 @@ def test_recomparison_does_not_create_policy_version_effect_or_restart_clock():
     assert repeated.determined_at == repeated.qualification.determined_at == NOW
 
 
+def test_new_occurrences_share_target_but_not_effect_identity():
+    case = setup_case()
+    first = qualify(case)
+    later_game = case.game.model_copy(update={"game_id": "another-genuine-game"})
+    later_command = case.command.model_copy(update={"key": case.command.key.model_copy(
+        update={"game_id": later_game.game_id}), "source": case.command.source.model_copy(
+        update={"game_id": later_game.game_id})})
+    case.game, case.command = later_game, later_command
+    case.source = case.source.model_copy(update={"normalized": later_game,
+        "source_key": "another-source", "effects": (later_command,)})
+    second = qualify(case)
+    assert first.command.key != second.command.key and first.operation_id != second.operation_id
+    assert first.qualification.selection.decision.presentation_id == second.qualification.selection.decision.presentation_id
+
+
 def test_retained_legacy_lapse_has_compatible_or_terminal_disposition():
     from app.games.feedback.comparison import compare_game
     case = setup_case(introduced=True)
@@ -253,6 +268,7 @@ def native_deliveries(owned_postgres):
             yield database.raw
     store = PostgresGamesStore(connections)
     def seed(stream, ordinal):
+        from app.study.game_feedback import effect_id
         case = setup_case()
         identity = uuid.uuid4().hex
         current = case.game.model_copy(update={"workspace_id": workspace, "game_id": identity})
@@ -268,6 +284,7 @@ def native_deliveries(owned_postgres):
             update={"workspace_id": workspace})})
         delivery = qualify(case, delivery_for(identity, original).model_copy(update={"stream": stream}))
         delivery = delivery.model_copy(update={"determined_at": f"2026-10-30T00:00:{ordinal:02d}Z",
+            "owner_effect_id": effect_id(original.key),
             "qualification": delivery.qualification.model_copy(update={
                 "determined_at": f"2026-10-30T00:00:{ordinal:02d}Z"})})
         with connections() as database:
@@ -366,4 +383,24 @@ def test_native_inventory_distinguishes_qualification_and_acceptance(native_deli
     assert not report["qualification_reasons_truncated"]
     assert {item["diagnostic"] for item in report["qualification_reasons"]} == {
         "first_departure_source_changed", "not_selected_first_departure"}
+
+
+def test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox(native_deliveries):
+    case = native_deliveries
+    historical = case.seed("reconciliation", 1)
+    live = case.seed("forward", 3)
+    cutoff = dict(before_stream="forward", before_determined_at="2026-10-30T00:00:02Z",
+        before_effect_id="game-effect:" + "f" * 64)
+    assert not case.store.has_determined_delivery(case.workspace, **cutoff)
+    assert case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
+        before_determined_at="2026-10-30T00:00:00Z", before_effect_id="game-effect:" + "0" * 64)
+    case.store.save_delivery(live.model_copy(update={"state": "acknowledged", "attempts": 1}))
+    assert case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
+        before_determined_at="2026-10-30T00:00:02Z", before_effect_id="game-effect:" + "f" * 64)
+    assert not case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
+        before_determined_at="2026-10-30T00:00:00Z", before_effect_id="game-effect:" + "f" * 64)
+    assert not case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
+        before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "0" * 64)
+    assert case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
+        before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "f" * 64)
 

@@ -262,14 +262,26 @@ class PostgresGamesStore:
                 (workspace, workspace, now, workspace, workspace, ready_only)).fetchone()
             return Delivery.model_validate_json(row[0]) if row else None
 
-    def has_determined_delivery(self, workspace: str) -> bool:
+    def has_determined_delivery(self, workspace: str, *, before_stream: str | None = None,
+                               before_determined_at: str | None = None,
+                               before_effect_id: str | None = None) -> bool:
         """Bounded existence observation, with no dispatch or source replay."""
         with self._transaction() as database:
             return database.execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
                 WHERE state='pending' AND command_kind<>'control'
                   AND payload->>'qualification_status'='ready'
                   AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
-                      payload->'lapse'->'key'->>'workspace_id')=%s)""", (workspace,)).fetchone()[0]
+                      payload->'lapse'->'key'->>'workspace_id')=%s
+                  AND (%s::text IS NULL
+                    OR CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END
+                        < CASE WHEN %s='forward' THEN 0 ELSE 1 END
+                    OR (CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END
+                        = CASE WHEN %s='forward' THEN 0 ELSE 1 END AND (
+                            (payload->>'determined_at')::timestamptz < %s::timestamptz
+                            OR ((payload->>'determined_at')::timestamptz = %s::timestamptz
+                                AND (payload->>'owner_effect_id' IS NULL OR payload->>'owner_effect_id'<%s)))))""",
+                (workspace, before_stream, before_stream, before_stream,
+                 before_determined_at, before_determined_at, before_effect_id)).fetchone()[0]
 
     def save_delivery(self, delivery: Delivery) -> None:
         with self._transaction() as database:

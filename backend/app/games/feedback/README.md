@@ -255,6 +255,73 @@ these synthetic cases. Shared regression registration is handed to Agent G.
 
 ## Narrow PostgreSQL integration contract
 
+### First-departure delivery qualification — #621
+
+The original `Delivery.command` and effect key remain immutable, including stored
+`0.2.1` encounters and legacy lapses. `qualification.py` elects no new policy: it
+uses the public `select_first_boundary` result over the complete current selected
+scope. A separate `FirstDepartureWitness` binds that result, the actual provider
+configuration revision, original actionable determination and stream. New complete
+captures retain the ready witness in the same Games page/source/outbox transaction;
+retained commands are qualified before the first Study call.
+
+| Original retained work | Delivery disposition |
+| --- | --- |
+| Exact learner first departure with current complete authority | Same command/key through `accept_qualified`; Study chooses the immutable introduced/first-introduction disposition. |
+| Matched encounter, later miss, alternate-repertoire false candidate, opponent gap or deliberate end | Retained diagnostic history; terminal `ineligible`, with no Study call. |
+| Missing/incomplete scope, unavailable mapping or source/preparation | Explicit `held` reason. Retryable preparation retains its retry time; a known source contradiction needs relevant reconciliation or explicit retry. |
+| Acknowledged/settled owner effect | No new outbox occurrence. Study maintenance can qualify its outstanding priority-only effect through the same public preparation boundary. |
+
+Unknown original stream on old work is recorded as reconciliation qualification,
+never fabricated as forward work or decided by an arbitrary age cutoff. Each
+bounded delivery unit keeps controls first, alternates eligible forward and
+historical work when both are ready, and preserves oldest determination/FIFO
+within each class with a deterministic operation tie-breaker. The last service
+sequence lives in the existing delivery JSON, so restart or an equal attempt clock
+does not reset the turn. This fairness rule controls intake, not Study's urgent
+presentation order or scheduling severity.
+
+`provider_priority.prepare_feedback_qualification` prepares complete published
+repertoire facts separately from the exact target's retained capture. It uses the
+supplied bounded reader for capture rows and integrity metadata; the historical
+exporter's foreground-idle default is not the next-card command's reader. Every
+connection closes before chess/projection. Study recomputes the public selection
+outside its writer and rechecks current authority under the writer. Games supplies
+only its borrowed source/configuration/control fence; it never writes Study SQL.
+
+The explicit next-card composition may call `pending_determined_feedback` (SELECT
+only) and `advance_determined_feedback` (at most one local unit). Verified managed
+feedback-mode intent is required, with a second shared-row fence in the same
+acceptance writer. Inactive, collection-only, absent or contradictory intent
+authorizes no new delivery. Accepted Study obligations remain independent of that
+mode and of the optional process. Provider HTTP, acquisition pages and full capture
+retain the stricter foreground admission; a determined local unit can finish
+preparation during continuous practice outside review/head writer locks.
+
+The bounded status inventory reports command kinds/states, qualification counts,
+reasons, live/history ready backlog and oldest original determination. Its
+`accepted_pending_at_acknowledgment` count is explicitly the committed receipt at
+acknowledgment, not a current issuance or settlement census. Selected-game receipt
+reads use the public encounter status for qualified legacy lapses as well.
+
+```mermaid
+flowchart LR
+  Capture["Complete Games comparison / atomic original capture"] --> Witness["Separate durable qualification / original determination"]
+  Retained["Original frozen commands"] --> Qualify["Current complete-scope first-boundary qualification"]
+  Qualify --> Witness
+  Witness --> Local["One mode-admitted local preparation unit / connections closed"]
+  Local --> Fence["Borrowed Games source/config/control + mode fence"]
+  Fence --> Study["Study owner: accept same key / Again or introduction"]
+  Study --> Receipt["Committed owner receipt / separate actual issuance and settlement"]
+  Qualify --> Held["Retained held or terminal ineligible / no Study call"]
+```
+
+Focused policy/transport/native storage regressions are in
+[`test_product_delivery_qualification.py`](../../../tests/test_product_delivery_qualification.py).
+The existing owned PostgreSQL fixture verifies the changed storage boundary and
+its cleanup. This component proof is not installed activation or a browser timing
+claim; #624 owns the assembled provider-to-ordinary-Study journey.
+
 [`PostgresGamesStore`](../../../../database/tempo_legacy_database/adapters/games/product_feedback.py)
 accepts a dedicated `connections()` context factory yielding raw tuple-row
 PostgreSQL connections. It opens no pool, reads no environment/settings and has

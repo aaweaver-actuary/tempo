@@ -121,6 +121,7 @@ class Coordinator:
                  learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
                  qualifier: DeliveryQualifier | None = None,
+                 effect_identity=None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
@@ -132,6 +133,7 @@ class Coordinator:
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
         self.source_identity = source_identity
         self.qualifier = qualifier
+        self.effect_identity = effect_identity
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
@@ -359,6 +361,8 @@ class Coordinator:
         for delivery in deliveries:
             updates = {"origin_job_id": spec.job_id, "stream": spec.stream,
                        "configuration_revision": spec.configuration_revision}
+            if self.effect_identity is not None:
+                updates["owner_effect_id"] = self.effect_identity(delivery.command.key)
             source = selected_sources.get(delivery.source_key)
             if (delivery.control is None and spec.configuration_revision is not None
                     and source is not None and source.first_departure is not None

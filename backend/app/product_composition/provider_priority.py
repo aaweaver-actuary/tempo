@@ -138,6 +138,8 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
         snapshots=tuple(snapshots), unavailable=tuple(unavailable),
         determined_at=original_determination, retry_at=clock.now() + 30,
         select_first_boundary=selector)
+    from app.study.game_feedback import effect_id
+    qualified = qualified.model_copy(update={"owner_effect_id": effect_id(command.key)})
     return qualified, source, configuration, tuple(publications), selector
 
 
@@ -232,13 +234,26 @@ def _admitted(admitted):
         return False  # Optional mode evidence cannot become a Study health gate.
 
 
-def pending_determined_feedback(*, workspace, connections, admitted):
+def pending_determined_feedback(*, workspace, connections, admitted, before_priority=None):
     """Read-only predicate for composition; absent mode evidence denies intake."""
     if not _admitted(admitted):
         return False
     from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
     try:
-        return PostgresGamesStore(connections).has_determined_delivery(workspace)
+        bounds = {}
+        if before_priority is not None:
+            stream = before_priority.get("urgent_stream")
+            determined_at = before_priority.get("urgent_determined_at")
+            identity = before_priority.get("urgent_effect_id")
+            if (stream not in {"forward", "reconciliation", "manual"}
+                    or not isinstance(determined_at, str)
+                    or not isinstance(identity, str) or not re.fullmatch(r"game-effect:[0-9a-f]{64}", identity)):
+                return False
+            parsed = datetime.fromisoformat(determined_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return False
+            bounds = dict(before_stream=stream, before_determined_at=determined_at, before_effect_id=identity)
+        return PostgresGamesStore(connections).has_determined_delivery(workspace, **bounds)
     except Exception:
         return False
 
@@ -281,6 +296,13 @@ class CurrentProviderPriorityIntake:
         # Controls share the existing owner's ledger; they never promote a queue.
         self.controls = CurrentStudyFeedback(transactions=connections.writer,
             capture_for=None, fence_game=None, clock=clock)
+
+    @staticmethod
+    def effect_identity(key):
+        # Composition consumes the actual Study-owned identity function. Games
+        # stores its opaque value; it does not duplicate the hash algorithm.
+        from app.study.game_feedback import effect_id
+        return effect_id(key)
 
     def prepare(self, delivery):
         """The coordinator persists this qualification before any Study call."""
