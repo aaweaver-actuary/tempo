@@ -5868,3 +5868,16 @@ live/history turn order across restart/equal clocks, controls after qualificatio
 and delayed acknowledgment, command immutability, nonretryable holds and the
 bounded truthful qualification inventory. Native cases reuse the existing
 `test_product_game_lapse_postgres.owned_postgres` fixture and require no live DSN.
+
+## Complete snapshot byte accounting (#616)
+
+`backend/tests/test_product_snapshot_postgres.py` owns
+`test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts`
+(plain and escaped/Unicode source text; all fields, mappings and digest retained
+under a deliberately lower fixture cap) and
+`test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow`
+(actual byte refusal and no aggregated facts for an oversized raw row). They
+reuse the explicit task-owned native snapshot fixture and preserve the production
+32 MiB/count/row limits. Existing owning cases retain one-MVCC-view consistency,
+source/revision changes, conflicts, unavailable physical references, rollback,
+sentinel overflow and parameter-bound selection.

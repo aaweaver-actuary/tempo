@@ -177,8 +177,15 @@ when conflicted. No schema or stored relationship changes are introduced.
   sources fail explicitly instead of inventing factual values.
 - Each source category is bounded to 10,000 rows; current graph bindings to
   20,000. One extra sentinel row detects overflow. Raw row text is bounded to
-  64 KiB before JSON aggregation. A conservative JSON-escape estimate and final
-  encoded-size check enforce 32 MiB. Pure repertoire projection also caps
+  64 KiB before JSON aggregation. For a complete count/row-bounded sample, the
+  byte budget counts each row's actual PostgreSQL JSON text, two bytes per array
+  element and a fixed 1024-byte wrapper allowance; it does not multiply all
+  ordinary text by worst-case sixfold escaping. Samples that already overflow a
+  count/raw-row limit retain the earlier coarse diagnostic without constructing
+  JSON rows. The final encoded-size check still enforces the unchanged 32 MiB
+  bound. All source fields, one-statement MVCC semantics and comparison digests
+  remain unchanged; this accounting correction requires no paging or cache.
+  Pure repertoire projection also caps
   aggregate authored moves at 100,000. A proved budget refusal raises public
   `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged
   string `repertoire_snapshot_exceeds_bound`; it never certifies a bounded prefix.

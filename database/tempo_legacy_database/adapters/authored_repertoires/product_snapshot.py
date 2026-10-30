@@ -12,9 +12,11 @@ MAX_GRAPH_ROWS = 20000
 MAX_ROW_BYTES = 65536
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
-# Raw text is bounded before JSON aggregation. Six bytes per source byte covers
-# JSON escaping; 512 bytes per row covers fixed keys/scalars/array punctuation.
-# A row-count sentinel prevents a bounded prefix from claiming completeness.
+# Raw row/count sentinels run before JSON serialization. For a complete bounded
+# sample, count each row's actual JSON bytes rather than multiplying ordinary
+# text by the worst possible escape expansion. 1024 bytes covers the fixed
+# object/array wrapper; two bytes per row cover array separators. The unchanged
+# final encoded-size check remains authoritative. No source field is omitted.
 STATEMENT = """
 WITH limits AS (
     SELECT %s::text repertoire_id, %s::int source_limit, %s::int graph_limit,
@@ -68,14 +70,26 @@ WITH limits AS (
            count(*) FILTER (WHERE kind='cards') card_count,
            count(*) FILTER (WHERE kind='memberships') membership_count,
            count(*) FILTER (WHERE kind='graphs') graph_count,
-           coalesce(sum(bytes*6+512),0)+1024 estimated_bytes,
+           coalesce(sum(bytes*6+512),0)+1024 coarse_estimated_bytes,
            coalesce(max(bytes),0) largest_row
     FROM sizes
+), serialized_budget AS (
+    SELECT b.*,CASE WHEN b.line_count<=l.source_limit AND b.card_count<=l.source_limit
+        AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
+        AND b.largest_row<=l.row_byte_limit THEN
+          1024
+          +coalesce((SELECT sum(octet_length(to_jsonb(r)::text)) FROM repertoire r),0)
+          +coalesce((SELECT sum(octet_length(to_jsonb(s)::text)+2) FROM lines s),0)
+          +coalesce((SELECT sum(octet_length(to_jsonb(c)::text)+2) FROM cards c),0)
+          +coalesce((SELECT sum(octet_length(to_jsonb(m)::text)+2) FROM memberships m),0)
+          +coalesce((SELECT sum(octet_length(to_jsonb(g)::text)+2) FROM graphs g),0)
+        ELSE b.coarse_estimated_bytes END estimated_bytes
+    FROM budget b CROSS JOIN limits l
 ), allowed AS (
     SELECT b.*,b.line_count<=l.source_limit AND b.card_count<=l.source_limit
         AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
         AND b.estimated_bytes<=l.byte_limit AND b.largest_row<=l.row_byte_limit bounded
-    FROM budget b CROSS JOIN limits l
+    FROM serialized_budget b CROSS JOIN limits l
 )
 SELECT jsonb_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
