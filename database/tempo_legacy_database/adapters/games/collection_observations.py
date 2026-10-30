@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Protocol
 
 import json
@@ -86,6 +87,7 @@ class CollectionObservations:
     def providers(self, workspace: str, limit: int, provider: str | None) -> dict:
         def read():
             values = []
+            readiness_cache = {}
             for name in (provider,) if provider else ("lichess", "chesscom"):
                 spellings = aliases(name)
                 configurations = self._rows("""SELECT provider,revision,next_run_at,payload
@@ -131,12 +133,14 @@ class CollectionObservations:
                 selected = config.get("repertoire_ids", []) if config else []
                 readiness = []
                 for repertoire_id in selected[:8]:
-                    try:
-                        observation = (self.repertoire_readiness(repertoire_id) if self.repertoire_readiness else
-                            {"availability": "unavailable", "diagnostic": "repertoire_reader_not_supplied"})
-                    except Exception:
-                        observation = {"availability": "unavailable", "diagnostic": "repertoire_read_unavailable"}
-                    readiness.append({"repertoire_id": repertoire_id, **observation})
+                    if repertoire_id not in readiness_cache:
+                        try:
+                            observation = (self.repertoire_readiness(repertoire_id) if self.repertoire_readiness else
+                                {"availability": "unavailable", "diagnostic": "repertoire_reader_not_supplied"})
+                        except Exception:
+                            observation = {"availability": "unavailable", "diagnostic": "repertoire_read_unavailable"}
+                        readiness_cache[repertoire_id] = deepcopy(observation)
+                    readiness.append({**deepcopy(readiness_cache[repertoire_id]), "repertoire_id": repertoire_id})
                 fields = ("account", "window.start_at", "window.end_at", "window.precision",
                           "repertoire_ids", "speeds", "rated", "interval_seconds")
                 presence = {}
@@ -150,6 +154,7 @@ class CollectionObservations:
                         presence[field] = bool(part)
                 values.append({"provider": name, "configured": config is not None,
                     "configuration": config, "configuration_ambiguous": len(configurations) > 1,
+                    "selected_repertoire_count": len(selected),
                     "repertoire_readiness": readiness, "repertoires_truncated": len(selected) > 8,
                     "selection_diagnostic": None if selected else "selected_repertoire_ids_absent",
                     "required_inputs": presence, "current_jobs": jobs[:limit],
