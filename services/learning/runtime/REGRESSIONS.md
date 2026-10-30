@@ -41,7 +41,7 @@ a newer title, legacy metadata preservation, rejected inconsistent titles,
 same-transaction rollback and defensive writer scope. Pure tests alone do not
 qualify these storage effects or live activation.
 
-## Balanced daily presentation
+## New repertoire cards first
 
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`
 executes the production Study harness setup through fixture-key creation twice,
@@ -49,16 +49,22 @@ before any server or database starts, and requires distinct UUIDv4 keys. It
 guards the harness's missing `uuid` import; actual UI and durable review effects
 remain owned by `integration/study_tests/test_study_ui.py`.
 
-`test_queue_ordering.py` owns pure policy-v3 proportions across skewed, empty,
-single and multiple categories; identical membership under different seeds;
-stable replay; frozen opening relative rank across category slots; protected
-positions; stable urgent priority; versioned fingerprints and preparation fences.
+`test_queue_ordering.py` owns pure policy-v4 new-opening promotion across skewed,
+empty and protected queues; identical membership under different seeds; stable
+replay; frozen opening rank; null-content normalization; ordinary new tactics;
+protected positions; urgent priority; literal-v3 rejection and preparation fences.
+`test_new_child_crosses_preserve_through_untouched_reviews_without_reversing_them`
+and its ranked/protected counterpart require newly admitted openings to cross
+untouched ordinary reviews while actual attempts and retries keep their slots.
 The named fresh-urgent-cycle and pre-mutation provenance cases distinguish new
 obligations from positioned retries and keep replacement ranks/unmixed additions
 dirty until actual presentation. Verified controlled edits retain the sequence.
-`test_queue_presentation.py::test_runtime_balances_admitted_work_and_replays_without_moving_issued_head`
+`test_queue_presentation.py::test_runtime_puts_new_openings_first_and_replays_without_moving_issued_head`
 owns actual admission/refresh/reload through the independent runtime and restricted
-PostgreSQL. Existing `test_eligibility.py`, `test_families.py` and
+PostgreSQL. `test_queue_storage_separation.py` covers current/stale/missing/unmixed
+receipt readiness, empty-day no-op, and same-day active-task identity/retry reuse;
+these seam tests do not establish native locking.
+Existing `test_eligibility.py`, `test_families.py` and
 `test_remediation.py` remain the owners of competing issuance, quota/prerequisite
 gates, typed reviews, retry/reinforcement, remediation authority and exactly-once
 effects. This slice changes presentation only; it does not adopt soft cooldowns.
