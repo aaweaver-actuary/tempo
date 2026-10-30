@@ -325,23 +325,36 @@ class PostgresGamesStore:
                                before_effect_id: str | None = None) -> bool:
         """Bounded existence observation, with no dispatch or source replay."""
         with self._transaction() as database:
-            return database.execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
-                WHERE state='pending'
-                  AND next_attempt_at<=extract(epoch FROM clock_timestamp())
-                  AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
-                      payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s
-                  AND (command_kind='control' OR ((payload->>'qualification_status'='ready'
-                    OR (payload->>'qualification_status'='held'
-                        AND COALESCE((payload->>'qualification_retryable')::boolean,true)
-                        AND payload->'qualification'<>'null'::jsonb))
-                  AND (%s::text IS NULL OR (
-                        CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END,
-                        (payload->>'determined_at')::timestamptz,
-                        COALESCE(payload->>'owner_effect_id','')) < (
-                        CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))))""",
-                (workspace, before_stream, before_stream,
-                 before_determined_at, before_effect_id)).fetchone()[0]
+            return has_determined_delivery_in_transaction(database, workspace,
+                before_stream=before_stream,before_determined_at=before_determined_at,
+                before_effect_id=before_effect_id)
 
     def save_delivery(self, delivery: Delivery, *, serviced=False) -> None:
         with self._transaction() as database:
             save_delivery_in_transaction(database, delivery, record_service=serviced)
+
+
+def has_determined_delivery_in_transaction(database, workspace: str, *, before_stream=None,
+                                           before_determined_at=None,before_effect_id=None) -> bool:
+    """Observe pending Games facts in the caller's transaction, without mutation.
+
+    No connection, transaction configuration, source replay or row lock is
+    acquired. Optional-schema errors are contained by the composition's savepoint.
+    """
+    execute = getattr(database,"execute_native",None) or database.execute
+    return execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
+        WHERE state='pending'
+          AND next_attempt_at<=extract(epoch FROM clock_timestamp())
+          AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
+              payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s
+          AND (command_kind='control' OR ((payload->>'qualification_status'='ready'
+            OR (payload->>'qualification_status'='held'
+                AND COALESCE((payload->>'qualification_retryable')::boolean,true)
+                AND payload->'qualification'<>'null'::jsonb))
+          AND (%s::text IS NULL OR (
+                CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END,
+                (payload->>'determined_at')::timestamptz,
+                COALESCE(payload->>'owner_effect_id','')) < (
+                CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))))""",
+        (workspace, before_stream, before_stream,
+         before_determined_at, before_effect_id)).fetchone()[0]

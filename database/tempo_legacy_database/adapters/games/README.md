@@ -47,3 +47,11 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 The unsupported correction-first Games guided-review server and its exclusive adapter are retired in source. [Last implementation](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/database/tempo_legacy_database/adapters/games/guided_review/README.md) records its former session/finding/attempt behavior. Stored tables and [their schema description](../../schema/study-queue-review-1/README.md) remain unchanged; the existing snapshot reader remains. Ordinary Study scheduling and graph/repertoire ownership are separate and retained. No live data was removed.
+
+`product_feedback.has_determined_delivery_in_transaction` reuses the existing
+pending-source predicate on the caller's borrowed transaction. It reads only
+Games outbox facts, returns a boolean, and never changes transaction settings,
+opens a connection, locks rows, replays sources or dispatches work. Composition
+contains optional failures with a savepoint and checks the managed-mode hint;
+actual acceptance still uses the separately locked mode/source/current fences.
+No schema changes accompany this borrowed-read adapter.

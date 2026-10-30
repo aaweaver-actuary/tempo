@@ -380,3 +380,33 @@ the [canonical prepared-introduction sequence](../study/introductions/README.md#
 and [claimed-task connection recovery](../study/README.md#feedback-sweep-connection-recovery-558-repair).
 Queue due-work requests occur after effect locks close and reuse active Learning
 queue generations. Games availability is never a serving prerequisite.
+
+### First-departure foreground handoff (#624)
+
+`feedback_release.register_feedback_next_card_priority` is the explicit API and
+foreground-worker root. Construction starts no provider or Games worker and
+requires no Games readiness. It captures optional local boot identity outside
+writers; absent mode or optional read failure leaves ordinary Study usable.
+`feedback_capabilities` describes the concrete released callable bindings only;
+verified mode, exact image, selected scope, roles and packaged evidence remain
+separate operator gates.
+
+```mermaid
+flowchart LR
+  Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
+  Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
+  Pending --> Prepare["Explicit prepare-next: pure local capture / complete publication / current owner target"]
+  Prepare --> Fence["Gateway request hash / attempt token / receipt"]
+  Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
+  Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
+  Accept --> Study["Independent accepted Study preparation / issuance / settlement"]
+```
+
+The head hint uses the existing transaction, without another connection,
+filesystem lookup, projection, row fence or dispatch. A savepoint contains
+optional schema failure. Controls precede both accepted Study and new source
+FIFO; candidate-aware source observation cannot drain an entire historical
+outbox before an already-ready live target. Full preparation finishes before the
+command writer, and a fresh trusted boot identity is captured at its end. The
+prepared wrapper applies only after the gateway fence. Accepted Study preparation
+uses bounded foreground reads and continues independently of Games mode/process.

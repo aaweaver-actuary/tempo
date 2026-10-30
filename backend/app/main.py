@@ -168,6 +168,8 @@ async def lifespan(_: FastAPI):
         if os.getenv("TEMPO_DATABASE_WRITE_URL"):
             raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
         initialize()
+        from .product_composition.feedback_release import register_feedback_next_card_priority
+        register_feedback_next_card_priority()
         from .command_dispatch import dispatch_command
 
         startup_queue_request = dispatch_command(

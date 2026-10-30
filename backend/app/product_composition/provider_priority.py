@@ -321,20 +321,51 @@ def pending_determined_feedback(*, workspace, connections, admitted, before_prio
         return False
     from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
     try:
-        bounds = {}
-        if before_priority is not None:
-            stream = before_priority.get("urgent_stream")
-            determined_at = before_priority.get("urgent_determined_at")
-            identity = before_priority.get("urgent_effect_id")
-            if (stream not in {"forward", "reconciliation", "manual"}
-                    or not isinstance(determined_at, str)
-                    or not isinstance(identity, str) or not re.fullmatch(r"game-effect:[0-9a-f]{64}", identity)):
-                return False
-            parsed = datetime.fromisoformat(determined_at.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                return False
-            bounds = dict(before_stream=stream, before_determined_at=determined_at, before_effect_id=identity)
+        bounds = _pending_priority_bounds(before_priority)
+        if bounds is None:
+            return False
         return PostgresGamesStore(connections).has_determined_delivery(workspace, **bounds)
+    except Exception:
+        return False
+
+
+def _pending_priority_bounds(before_priority):
+    if before_priority is None:
+        return {}
+    stream = before_priority.get("urgent_stream")
+    determined_at = before_priority.get("urgent_determined_at")
+    identity = before_priority.get("urgent_effect_id")
+    if (stream not in {"forward", "reconciliation", "manual"}
+            or not isinstance(determined_at, str)
+            or not isinstance(identity, str) or not re.fullmatch(r"game-effect:[0-9a-f]{64}", identity)):
+        return None
+    parsed = datetime.fromisoformat(determined_at.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return None
+    return dict(before_stream=stream, before_determined_at=determined_at, before_effect_id=identity)
+
+
+def pending_determined_feedback_in_transaction(database, *, workspace, runtime_id, before_priority=None):
+    """Optional bounded source hint in the caller's existing head transaction.
+
+    The composition obtained the trusted process identity before this writer.
+    No producer, filesystem, connection, preparation or acceptance runs here.
+    Optional uncertainty returns false without poisoning ordinary Study.
+    """
+    from tempo_legacy_database.adapters.games.managed_mode import feedback_handoff_admitted_in_transaction
+    from tempo_legacy_database.adapters.games.product_feedback import has_determined_delivery_in_transaction
+    raw = getattr(database,"raw",database)
+    if runtime_id is None or getattr(getattr(raw,"info",None),"transaction_status",None) is None:
+        return False
+    if raw.info.transaction_status.name != "INTRANS":
+        return False
+    try:
+        bounds = _pending_priority_bounds(before_priority)
+        if bounds is None:
+            return False
+        with raw.transaction():
+            return (feedback_handoff_admitted_in_transaction(database,workspace,runtime_id=runtime_id)
+                and has_determined_delivery_in_transaction(database,workspace,**bounds))
     except Exception:
         return False
 
