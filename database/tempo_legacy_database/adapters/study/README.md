@@ -102,6 +102,14 @@ tables and canonical queue remain existing owners; no second queue is created.
 `study_game_feedback_owed(card_id,effect_key)` partially indexes pending/applied
 work. No producer can write these rows through this interface.
 
+`feedback_queue_priorities` uses single-step PostgreSQL JSON operators for its
+current target, available admission and absent-progress checks. The bounded
+reader passes these through the existing SQLite-to-PostgreSQL translator, which
+drops later arguments from variadic JSON-path calls. Nested extraction preserves
+the complete paths and the same SQL-NULL legacy-reset fallback as a borrowed
+native connection. The regrouped obligation lookup already uses single-step
+extraction; its complete repertoire paths share the focused translation regression.
+
 `retains_encounter_introduction(database, card_id)` and the complete
 `retained_encounter_introduction_query()` expose an existing same-revision material
 admission fact to Study's legacy admission/rebuild adapter. They grant no new

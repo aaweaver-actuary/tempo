@@ -432,10 +432,10 @@ def feedback_queue_priorities(database, card_ids, *, read=None):
         return {}
     placeholders = ','.join('?' if read is not None else '%s' for _ in ids)
     statement = """SELECT effect.* FROM study_game_feedback effect WHERE effect.status='applied'
-        AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','progress','target','card_id')
+        AND (CAST(effect.payload_json AS json)->'owner'->'progress'->'target'->>'card_id'
             IN (""" + placeholders + """) OR effect.card_id IN (""" + placeholders + """))
-        AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','admission_status')='available'
-             OR (json_extract_path_text(CAST(effect.payload_json AS json),'owner','progress') IS NULL
+        AND (CAST(effect.payload_json AS json)->'owner'->>'admission_status'='available'
+             OR (CAST(effect.payload_json AS json)->'owner'->>'progress' IS NULL
                AND EXISTS(SELECT 1 FROM reviews actual WHERE actual.id=effect.review_id
                  AND actual.source_kind='game_lapse' AND actual.source_ref=effect.effect_key
                  AND actual.invalidated_at IS NULL)))"""

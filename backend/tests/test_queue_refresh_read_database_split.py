@@ -209,3 +209,32 @@ def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reaso
     result = queue_application.presentation_rows(None, '2026-10-28', read=reader, limit=16)
     assert result[0]['gameplay_priority_reason'] == reason and result[0]['eligible']
     assert not any('FROM study_game_feedback' in sql for sql, _ in calls)
+
+
+@pytest.mark.parametrize('lookup,expected_paths', [
+    ('ready', {('owner','progress','target','card_id'),('owner','admission_status'),('owner','progress')}),
+    ('regrouped', {('presentation','repertoire_id'),('finding','repertoire_id'),
+        ('command','finding','repertoire_id'),('command','decision','repertoire_id')}),
+])
+def test_feedback_priority_paths_survive_bounded_sql_translation(lookup, expected_paths):
+    from sqlglot import exp, parse_one
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.study.game_feedback import feedback_queue_priorities, owed_feedback_card_ids
+    statements = []
+    def bounded(statement, parameters):
+        statements.append(postgres_sql(statement))
+        return []
+    if lookup=='ready':
+        assert feedback_queue_priorities(None, ('card-1',), read=bounded)=={}
+    else:
+        assert owed_feedback_card_ids(None, ('card-1',), read=bounded, include_regrouped=True)==set()
+    assert len(statements)==1
+    def path(node):
+        if not isinstance(node, (exp.JSONExtract,exp.JSONExtractScalar)):
+            return ()
+        return path(node.this)+tuple(part.this for part in node.expression.expressions
+            if isinstance(part,exp.JSONPathKey))
+    # Scalar terminal extraction also preserves SQL NULL for absent/JSON-null
+    # legacy progress; JSON object extraction would change that fallback.
+    scalar_paths = {path(node) for node in parse_one(statements[0],read='postgres').find_all(exp.JSONExtractScalar)}
+    assert expected_paths<=scalar_paths, statements[0]

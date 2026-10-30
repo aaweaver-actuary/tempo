@@ -12,6 +12,7 @@ import psycopg
 from psycopg.conninfo import make_conninfo
 
 from test_product_delivery_qualification import native_handoff, owned_postgres
+from test_product_recombination_postgres import feedback_lineage_owner
 
 
 PRESENTATION_FIELDS = (
@@ -171,3 +172,106 @@ def test_native_qualified_unseen_queue_randomization_bounded_and_writer_facts_ma
     assert report["prepared_presentation"] == report["writer_presentation"], report
     assert report["first_difference"] is None and report["publish_first_difference"] is None, report
     assert report["published"], report
+
+
+def test_native_actual_join_target_keeps_bounded_and_native_owed_urgency(feedback_lineage_owner, monkeypatch):
+    """An earned current target differs from the immutable original effect card."""
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+    import chess
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.games.feedback.coordinator import delivery_for
+    from app.legacy_game_observation import capture_game
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.services import queue_application, queue_ordering
+    from app.services.postgres_integrity import current_integrity_certificate
+    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore, feedback_queue_priorities, owed_feedback_card_ids,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    from product_encounter_fixtures import qualified_feedback_source
+    from test_product_recombination_postgres import feedback_lineage_fixture
+
+    transaction = feedback_lineage_owner
+    # The existing helper earns the join from real ordinary saves. It does not
+    # seed a current map, alias or generated presentation; retain authored A.
+    original, reader, _ = feedback_lineage_fixture(transaction, monkeypatch, legacy_superseded=False)
+    observed, game_id = datetime.now(timezone.utc), 'lichess:priority-parity-'+uuid4().hex
+    with transaction() as database:
+        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+            played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
+            VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
+            (game_id, game_id.removeprefix('lichess:'), (observed-timedelta(days=1)).isoformat(), chess.STARTING_FEN, 'a'*64))
+    def rows(statement, parameters=()):
+        with reader() as database:
+            return [dict(row) for row in database.execute_native(statement, parameters).fetchall()]
+    def metadata(repertoire_id):
+        header = repertoire_metadata(rows, repertoire_id)[0]
+        with reader() as database:
+            certificate = current_integrity_certificate(database, repertoire_id, header['graph_generation'])
+        return dict(header, integrity_current=certificate is not None, integrity_certificate=certificate)
+    captured = capture_game(original.repertoire_id, game_id, (0,), reader=rows, metadata=metadata, now=observed)
+    game = retained_canonical_game(captured)
+    template = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
+        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
+        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
+        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
+        occurred_at=game.played_at,payload_digest='e'*64)
+    with qualified_feedback_source(transaction,capture=captured,command=template,clock=lambda:observed,
+            capture_provider_source=True) as source:
+        command, prepared = source.command, source.prepared
+        target = prepared.qualification.selection.decision
+        assert command.decision.presentation_id == original.presentation_id == 'A'
+        assert target.presentation_id != original.presentation_id
+        delivery = source.store.delivery(delivery_for(source.source.source_key, command).operation_id)
+        original_bytes = delivery.command.model_dump_json()
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            accepted = current_owner_encounter_intake(database,retained_owner_capture=captured,
+                snapshot=prepared.target_snapshot,clock=lambda:observed,
+                prepared_decisions=prepared.prepared_decisions,qualification=prepared.qualification).accept_qualified(
+                    command,qualification=prepared.qualification)
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
+            clock=lambda:observed,qualification_prepare=lambda _:prepared)
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+            assert available.admission_status == 'available'
+            assert effect.card_id == 'A' and effect.progress.target.card_id == target.presentation_id
+        def bounded(statement, parameters=()):
+            with reader() as database:
+                return database.execute(statement, parameters).fetchall()
+        report = dict(effect_card_id=effect.card_id,target_card_id=target.presentation_id,
+            effect_key=command.key.model_dump(mode='json'),owner_receipt_id=accepted.owner_receipt_id)
+        root = Path(__file__).resolve().parents[2]
+        receipt_path = root/'test-results/collection-release'/('lineage-priority-parity-'+game_id.split(':')[-1]+'.json')
+        try:
+            with reader() as database:
+                native_owed = owed_feedback_card_ids(database,(target.presentation_id,),include_regrouped=True)
+                native_priority = feedback_queue_priorities(database,(target.presentation_id,))
+                native_rows = [row for row in queue_application.presentation_rows(database,observed.date().isoformat())
+                    if row['card_id']==target.presentation_id]
+            bounded_owed = owed_feedback_card_ids(None,(target.presentation_id,),read=bounded,include_regrouped=True)
+            bounded_priority = feedback_queue_priorities(None,(target.presentation_id,),read=bounded)
+            bounded_rows = [row for row in queue_application.presentation_rows(None,observed.date().isoformat(),read=bounded)
+                if row['card_id']==target.presentation_id]
+            report.update(native_owed=sorted(native_owed),bounded_owed=sorted(bounded_owed),
+                native_priority=native_priority,bounded_priority=bounded_priority,
+                native_fields=_field_facts(native_rows),bounded_fields=_field_facts(bounded_rows),
+                first_difference=_first_difference(bounded_rows,native_rows))
+        finally:
+            receipt_path.parent.mkdir(parents=True,exist_ok=True)
+            receipt_path.write_text(json.dumps(report,indent=2,default=str))
+            print(json.dumps(dict(lineage_guard_receipt=str(receipt_path),first_difference=report.get('first_difference'))))
+        assert native_owed == bounded_owed == {target.presentation_id}
+        assert native_priority == bounded_priority and target.presentation_id in native_priority
+        assert len(native_rows)==len(bounded_rows)==1
+        assert queue_ordering._queue_presentation_state(native_rows)==queue_ordering._queue_presentation_state(bounded_rows)
+        assert report['first_difference'] is None, report
+        assert source.store.delivery(delivery.operation_id).command.model_dump_json() == original_bytes
