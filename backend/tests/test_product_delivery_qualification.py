@@ -336,3 +336,34 @@ def test_native_nonretryable_held_delivery_is_not_a_transport_loop(native_delive
     assert case.store.pending_delivery(100, workspace=case.workspace) is None
     assert case.store.delivery(original.operation_id).attempts == 0
 
+
+def test_native_inventory_distinguishes_qualification_and_acceptance(native_deliveries):
+    from tempo_legacy_database.adapters.games.collection_observations import CollectionObservations
+    case = native_deliveries
+    live = case.seed("forward", 1)
+    held = case.seed("reconciliation", 2)
+    ineligible = case.seed("reconciliation", 3)
+    accepted = case.seed("forward", 4)
+    case.store.save_delivery(held.model_copy(update={"qualification_status": "held",
+        "qualification_reason": "first_departure_source_changed", "qualification_retryable": False}))
+    case.store.save_delivery(ineligible.model_copy(update={"state": "failed", "qualification_status": "ineligible",
+        "qualification_reason": "not_selected_first_departure"}))
+    receipt = QualifiedReceiver().accept_qualified(accepted.command, qualification=accepted.qualification)
+    case.store.save_delivery(accepted.model_copy(update={"state": "acknowledged", "attempts": 1,
+        "receipt": receipt}))
+    @contextmanager
+    def read_connections():
+        with case.connections() as database:
+            yield database
+    read_connections.read_only = True
+    report = CollectionObservations(read_connections).delivery(case.workspace)
+    assert report["availability"] == "available", report
+    assert report["qualification_ready_records"] == report["live_ready_records"] == 1
+    assert report["qualification_held_records"] == report["qualification_ineligible_records"] == 1
+    assert report["accepted_pending_at_acknowledgment"] == 1
+    assert report["study_progress_currently_observed"] is False
+    assert report["qualification_grain"] == "retained_delivery_records"
+    assert not report["qualification_reasons_truncated"]
+    assert {item["diagnostic"] for item in report["qualification_reasons"]} == {
+        "first_departure_source_changed", "not_selected_first_departure"}
+

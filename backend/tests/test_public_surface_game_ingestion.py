@@ -30,7 +30,7 @@ SURFACES = {
         "app.games.feedback.first_boundary": ("select_first_boundary",),
         "app.games.feedback.jobs": ("FeedbackRunner",),
         "app.games.feedback.ports": ("Acquisition", "AcquisitionFailure", "Capture", "Clock", "Comparer",
-            "ConcurrentUpdate", "Delivery", "GamesStore", "JobSpec", "JobState", "Normalizer",
+            "ConcurrentUpdate", "Delivery", "DeliveryDeferred", "GamesStore", "JobSpec", "JobState", "Normalizer",
             "PageCommit", "SourceIdentity", "SourceState"),
         "app.games.feedback.review": ("GameReview", "ReviewStore", "ReviewUnavailable", "SyncConfiguration"),
     },

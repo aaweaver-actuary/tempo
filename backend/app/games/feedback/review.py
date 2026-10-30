@@ -111,7 +111,7 @@ class GameReview:
             # Controls retain the original effect kind. The legacy read operation
             # cannot represent encounter disposition/admission/deferral fields.
             receipt = (self.learning.encounter_status(key)
-                if delivery.encounter is not None or key.logical_id() in encounter_keys
+                if delivery.encounter is not None or delivery.qualification is not None or key.logical_id() in encounter_keys
                 else self.learning.effect_status(key))
             if receipt is not None and receipt not in receipts:
                 receipts.append(receipt)

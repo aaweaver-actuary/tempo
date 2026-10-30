@@ -223,10 +223,45 @@ class CollectionObservations:
                     AS pending_undelivered_effects,
                 COUNT(DISTINCT d.effect_key) FILTER(WHERE d.state='pending' AND d.command_kind='control')
                     AS pending_controls,
-                COUNT(*) FILTER(WHERE d.state='acknowledged') AS acknowledged_delivery_records
+                COUNT(*) FILTER(WHERE d.state='acknowledged') AS acknowledged_delivery_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND COALESCE(d.payload->>'qualification_status','pending')='pending') AS qualification_pending_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='held') AS qualification_held_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control'
+                    AND d.payload->>'qualification_status'='ineligible') AS qualification_ineligible_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready') AS qualification_ready_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='acknowledged'
+                    AND d.payload->'receipt'->>'admission_status'='pending') AS accepted_pending_at_acknowledgment,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready'
+                    AND d.payload->>'stream'='forward') AS live_ready_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready'
+                    AND COALESCE(d.payload->>'stream','')<>'forward') AS historical_ready_records,
+                MIN((d.payload->>'determined_at')::timestamptz) FILTER(WHERE d.state='pending'
+                    AND d.payload->>'qualification_status'='ready')::text AS oldest_ready_determined_at
                 FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
                 WHERE s.payload->'normalized'->>'workspace_id'=%s""", (workspace,))[0]
-            return {**row, "observed_execution_mode": "unknown", "globally_disabled": None,
+            kinds = self._rows("""SELECT d.command_kind,d.state,
+                COALESCE(d.payload->>'qualification_status','pending') qualification_status,COUNT(*) records
+                FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
+                WHERE s.payload->'normalized'->>'workspace_id'=%s
+                GROUP BY d.command_kind,d.state,COALESCE(d.payload->>'qualification_status','pending')
+                ORDER BY d.command_kind,d.state,qualification_status LIMIT 65""", (workspace,))
+            reasons = self._rows("""SELECT d.payload->>'qualification_reason' diagnostic,COUNT(*) records
+                FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
+                WHERE s.payload->'normalized'->>'workspace_id'=%s
+                  AND d.payload->>'qualification_status' IN ('held','ineligible')
+                  AND d.payload->>'qualification_reason' IS NOT NULL
+                GROUP BY d.payload->>'qualification_reason' ORDER BY diagnostic LIMIT 21""", (workspace,))
+            return {**row, "qualification_grain": "retained_delivery_records",
+                    "command_kinds_and_states": kinds[:64], "command_kinds_truncated": len(kinds)>64,
+                    "qualification_reasons": reasons[:20], "qualification_reasons_truncated": len(reasons)>20,
+                    "study_progress_currently_observed": False,
+                    "acceptance_count_basis": "committed_owner_receipt_at_acknowledgment",
+                    "observed_execution_mode": "unknown", "globally_disabled": None,
                     "diagnostic": "process_and_delivery_disablement_require_runtime_evidence"}
         return self._section(read)
 
@@ -282,12 +317,17 @@ class CollectionObservations:
                 if self.receipts:
                     try:
                         owner = self.receipts()
-                        receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"]
+                        receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"] or delivery.qualification is not None
                                    else owner.effect_status(delivery.command.key))
                         diagnostic = None if receipt else "not_delivered"
                     except Exception:
                         diagnostic = "owner_receipt_read_unavailable"
                 receipts.append({"operation_id": delivery.operation_id, "delivery_state": delivery.state,
+                    "command_kind": delivery.command_kind,
+                    "delivery_qualification": {"status": delivery.qualification_status,
+                        "diagnostic": delivery.qualification_reason,
+                        "retryable": delivery.qualification_retryable,
+                        "determined_at": delivery.determined_at, "stream": delivery.stream},
                     "receipt": receipt.model_dump(mode="json") if receipt else None,
                     "diagnostic": diagnostic})
             retained = [row["finding"] for row in findings[:1000]]
