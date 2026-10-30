@@ -8,4 +8,9 @@ CREATE TABLE product_feedback_managed_mode (
     payload jsonb NOT NULL
 );
 
+-- The qualified handoff's existing control fence runs in the short borrowed
+-- writer. Match its original-effect lookup without scanning retained history.
+CREATE INDEX product_feedback_effect_controls ON product_feedback_deliveries(effect_key)
+    WHERE command_kind='control' AND state IN ('pending','acknowledged');
+
 INSERT INTO tempo_schema_migrations(version) VALUES(56);

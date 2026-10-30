@@ -38,6 +38,8 @@ CREATE TABLE product_feedback_deliveries (
 );
 CREATE INDEX product_feedback_ready_jobs ON product_feedback_jobs(status, next_attempt_at, attempts);
 CREATE INDEX product_feedback_ready_deliveries ON product_feedback_deliveries(state, next_attempt_at);
+CREATE INDEX product_feedback_effect_controls ON product_feedback_deliveries(effect_key)
+    WHERE command_kind='control' AND state IN ('pending','acknowledged');
 """
 
 

@@ -1,4 +1,23 @@
-# Optional game-feedback storage — migration 052
+# Optional game-feedback storage — migrations 052 and 056
+
+#623 adds [056_managed_game_feedback_mode.sql](../../ddl/migrations/056_managed_game_feedback_mode.sql)
+after the Study issuance owner 055, at source readiness 56. It stores one
+`product_feedback_managed_mode` row per workspace: `workspace_id` (text primary
+key), positive `generation` (bigint), finite `mode` (collect-only/feedback), finite
+`phase` (inactive/transitioning/active), and typed `payload` (jsonb). Payload mirrors
+the explicit managed operation/release revision, image, configuration/target
+fingerprints and verified service/container/boot identities; it has no card,
+provider-account or scheduling state. No FK gives this row a Study write edge.
+New Games handoff takes its shared row fence in the existing writer; operator
+disable/transition updates that same row exclusively. Already accepted Study
+obligations do not depend on this optional mode row.
+
+The same migration adds the narrowly matched `product_feedback_effect_controls`
+index on `product_feedback_deliveries(effect_key)` for
+`command_kind='control' AND state IN ('pending','acknowledged')`. This serves the
+existing current-control recheck inside the 250ms borrowed handoff writer,
+without scanning retained delivery history. Original command bytes/keys and
+controls are unchanged. No live migration has been run by this component.
 
 Source schema for [052_product_game_sync.sql](../../ddl/migrations/052_product_game_sync.sql),
 after Study-owned 051. Readiness advances **51 → 52**. This is additive Games-owned
