@@ -63,8 +63,10 @@ def study_recovery_assembly_allocations(configuration):
     allocation = {role: dict(configuration['developmentServices'][role]) for role in roles}
     allocation['postgres']['memoryMiB'] = postgres_fixture_profile('study-recovery-assembly')['memory_mib']
     allocation['foreground-worker']['memoryMiB'] = 384
-    for role in ('background-worker', 'game-feedback-worker'):
-        allocation[role] = dict(configuration['optionalServices'][role])
+    allocation['background-worker'] = dict(configuration['optionalServices']['background-worker'])
+    # Preserve the 2 GiB task-owned fixture; it does not claim the live
+    # historical comparison's larger production worker allocation.
+    allocation['game-feedback-worker'] = dict(configuration['developmentServices']['game-feedback-worker'])
     assert all(type(value['memoryMiB']) is int and value['memoryMiB'] > 0 for value in allocation.values())
     assert sum(value['memoryMiB'] for value in allocation.values()) <= configuration['development']['memoryMiB'], \
         'study_recovery_assembly_exceeds_development_budget'

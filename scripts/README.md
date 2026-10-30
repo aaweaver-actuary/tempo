@@ -141,10 +141,10 @@ this source does not execute or authorize a one-time cutover.
 
 `config/resource-budgets.json` lists service allocations. An omitted `cpus`
 means CPU-unrestricted execution; it is not zero available CPU. Memory remains
-mandatory. Games is listed in the optional and development inventories with its
-512 MiB memory and existing 96 PID limit. Other service memory allocations
-are unchanged. An inventory is not a promise that every listed service can run
-together: the expanded optional and development inventories each total 2560 MiB,
+mandatory. Games has a 1024 MiB optional-service allowance and a 512 MiB development
+fixture allowance, both with the existing 96 PID limit. Other service memory
+allocations are unchanged. An inventory is not a promise that every listed service can run
+together: the expanded optional inventory totals 3072 MiB and the development inventory 2560 MiB,
 and requested development combinations must still fit the **2048 MiB** ceiling.
 
 [`managedBuild`](development-budget.mjs) and `managedComposeBuild` accept
@@ -441,8 +441,9 @@ or unavailable repertoire evidence, unknown process inventory, frozen/image
 mismatch and competing collectors block enable. Unused providers may remain
 unconfigured. Configured providers need explicit recurrence, a 60-second to one-day
 seed, smaller explicit overlap and explicit reconciliation cadence. The prepared
-overlay uses 512 MiB/96 PIDs after measured out-of-memory failures with all
-repertoires selected. CPU remains unrestricted.
+overlay uses 1024 MiB/96 PIDs after a historical comparison and recurring
+feedback worker together exceeded 512 MiB. CPU remains unrestricted; this
+is a configured cap, not proof of host isolation or actual completion.
 Effective limits are checked on existing collectors. Host processes and containers
 with a competing runner prevent activation; unrelated legacy workers are reported
 and preserved. Existing accepted Study obligations keep their own lifecycle.

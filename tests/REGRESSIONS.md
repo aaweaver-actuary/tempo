@@ -6332,12 +6332,13 @@ identity, lifecycle, inspection and output safeguards retain their existing poli
 
 ## All-repertoire collector memory allocation
 
-`all-repertoire collection requires its calibrated 512 MiB worker allowance`
-in `tests/runner/game-review-collection.test.mjs` owns the memory allocation
-correction after live Docker OOM/exit-137 events at the former 256 MiB setting.
-The overlay, optional/development inventory, runtime ownership check and packaged
-fixture agree on 512 MiB. CPU policy, PID limit and all Study allocations remain
-unchanged; the guard still rejects a mismatched allocation.
+`historical comparison requires its bounded 1024 MiB worker allowance` in
+`tests/runner/game-review-collection.test.mjs` owns the operator resource guard
+after the concurrent historical command and worker exceeded the prior 512 MiB
+cap. The runtime overlay and optional inventory specify 1024 MiB; the development
+fixture remains at 512 MiB and within its 2048 MiB aggregate budget. CPU policy,
+PID limit and Study allocations are unchanged, and the guard rejects a mismatch.
+This configuration check does not establish actual runtime memory sufficiency.
 
 The changed full-repertoire source profile is covered by
 `test_native_unreserved_snapshot_read_profile_refuses_writes_and_keeps_background_budget`
