@@ -5940,3 +5940,9 @@ legacy envelope, while the adjacent compatibility case preserves old JSON.
 keeps the original decision/source and full authored scope across explicit
 current-presentation binding; missing, stale or identity-changing lineage cannot
 authorize a replacement by itself.
+`test_product_priority_intake_boundary.py` keeps its transport, acknowledgment-loss
+and outage assertions for an actionable miss. The obsolete expectation that a
+fresh matched game emits an owner command is replaced by
+`test_matched_new_capture_commits_source_checkpoint_without_study_effect`, as
+required by #618/#619. Frozen matched commands remain independently covered by
+the retained-qualification fixture; their old bytes are never rewritten.
