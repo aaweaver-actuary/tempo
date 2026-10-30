@@ -8,6 +8,7 @@ import json
 
 from app.games.feedback.review import GameReview, ReviewUnavailable, SyncConfiguration
 from app.study.game_feedback import GameFeedback
+from app.study.interfaces.feedback_observation import FeedbackObservation
 from app.repertoire import project_capture
 from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore, fence_imported_game
 from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
@@ -118,6 +119,9 @@ class CurrentStudyReceiptReads:
 
     def effect_status(self, key):
         return self._status("effect_status", key)
+
+    def feedback_observation(self, key) -> FeedbackObservation | None:
+        return self._status("feedback_observation", key)
 
 
 class SystemClock:

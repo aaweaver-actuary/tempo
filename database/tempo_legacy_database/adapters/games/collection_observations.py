@@ -8,11 +8,70 @@ from typing import Protocol
 import json
 
 from app.contracts.product_v02.learning import GameEffectKey, EncounterReceipt, LearningReceipt
+from app.study.interfaces.feedback_observation import FeedbackObservation
 
 
 class ReceiptReads(Protocol):
     def encounter_status(self, key: GameEffectKey) -> EncounterReceipt | None: ...
     def effect_status(self, key: GameEffectKey) -> LearningReceipt | None: ...
+    def feedback_observation(self, key: GameEffectKey) -> FeedbackObservation | None: ...
+
+
+def study_receipt_progress(receipt, observation: FeedbackObservation | None = None) -> dict:
+    """Project only actual owning receipt/queue facts; never infer issued from available."""
+    if receipt is None:
+        return {"stage": "not_accepted", "queue": {"availability": "unavailable"}}
+    value = receipt.model_dump(mode="json")
+    progress_value = getattr(receipt, "progress", None)
+    if observation is not None and observation.get("progress") is not None:
+        progress_value = observation["progress"]
+    progress = progress_value.model_dump(mode="json") if progress_value is not None else {}
+    history = progress.get("prior_remediation_fences") or []
+    original_target = history[0]["target"] if history else progress.get("target")
+    again = progress.get("scheduling_review_id") is not None and progress.get("schedule_applied_at") is not None
+    introduced = progress.get("introduction_applied_at") is not None
+    issued = progress.get("first_issued")
+    settled = progress.get("settlement")
+    queued_value = None if observation is None else observation.get("queued_attempt")
+    queue_issuance = queued_value.get("issuance") if queued_value else None
+    actual_attempts = (() if progress_value is None else (
+        progress_value.first_issued,
+        progress_value.settlement.attempt if progress_value.settlement else None,
+        queue_issuance))
+    current_issued = bool(progress_value and progress_value.remediation_fence and any(
+        attempt is not None and progress_value.remediation_fence.precedes(attempt) for attempt in actual_attempts))
+    if value["outcome"] == "withdrawn": stage = "withdrawn"
+    elif value["status"] == "held": stage = "held"
+    elif settled is not None: stage = "settled"
+    elif current_issued: stage = "issued"
+    elif history: stage = "remediation_pending"
+    elif again: stage = "again_applied"
+    elif introduced: stage = "introduced"
+    elif value["status"] == "settled": stage = "historical_settled"
+    elif value.get("disposition") == "review_priority": stage = "legacy_priority_needs_qualification"
+    else: stage = "accepted_pending"
+    queued = queued_value
+    if queued is not None:
+        queued = {name: queued.get(name) for name in ("queue_entry_id", "queue_date", "status", "attempt_state", "card_id", "card_revision", "issuance")}
+        if queued["issuance"] is not None:
+            queued["issuance"] = queued["issuance"].model_dump(mode="json")
+    return {"stage": stage, "owner_receipt_status": value["status"],
+        "owner_reported_admission": value.get("admission_status"),
+        "hold_reason": value.get("deferred_reason") or value.get("reason"),
+        "detected_at": value.get("detected_at"), "determined_at": progress.get("determined_at"),
+        "accepted_at": value.get("admitted_at"), "stream": progress.get("stream"),
+        "application_target": original_target, "current_target": progress.get("target"),
+        "again": {"observed": again, "review_id": progress.get("scheduling_review_id"),
+                  "applied_at": progress.get("schedule_applied_at")},
+        "introduction": {"observed": introduced, "applied_at": progress.get("introduction_applied_at")},
+        "queue": {"availability": "available" if observation is not None else "unavailable",
+                  "target_compatible": None if observation is None else observation.get("target_compatible"),
+                  "entry": queued},
+        "issuance": {"observed": issued is not None, "attempt": issued,
+                     "current_remediation_issued": current_issued,
+                     "ordinal": progress.get("first_issued_ordinal"),
+                     "issued_since_determination": None if observation is None else observation.get("issued_since_determination")},
+        "settlement": {"observed": settled is not None, "receipt": settled}}
 
 
 def provider_name(value: str) -> str:
@@ -326,12 +385,19 @@ class CollectionObservations:
                 delivery = Delivery.model_validate_json(json.dumps(row["payload"]))
                 receipt = None
                 diagnostic = "receipt_not_observed"
+                observation = None
                 if self.receipts:
                     try:
                         owner = self.receipts()
                         receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"] or delivery.qualification is not None
                                    else owner.effect_status(delivery.command.key))
                         diagnostic = None if receipt else "not_delivered"
+                        observe = getattr(owner, "feedback_observation", None)
+                        if receipt is not None and callable(observe):
+                            try:
+                                observation = observe(delivery.command.key)
+                            except Exception:
+                                observation = None  # Missing queue facts cannot erase an actual receipt.
                     except Exception:
                         diagnostic = "owner_receipt_read_unavailable"
                 receipts.append({"operation_id": delivery.operation_id, "delivery_state": delivery.state,
@@ -341,6 +407,7 @@ class CollectionObservations:
                         "retryable": delivery.qualification_retryable,
                         "determined_at": delivery.determined_at, "stream": delivery.stream},
                     "receipt": receipt.model_dump(mode="json") if receipt else None,
+                    "progress": study_receipt_progress(receipt, observation),
                     "diagnostic": diagnostic})
             retained = [row["finding"] for row in findings[:1000]]
             return {"provider": provider, "provider_game_id": game_id, **source,

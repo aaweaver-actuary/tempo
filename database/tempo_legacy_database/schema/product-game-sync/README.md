@@ -12,6 +12,29 @@ New Games handoff takes its shared row fence in the existing writer; operator
 disable/transition updates that same row exclusively. Already accepted Study
 obligations do not depend on this optional mode row.
 
+The payload is the frozen public
+[`ManagedGamesModeIntent`](../../../../../backend/app/games/feedback/interfaces/managed_mode.py):
+schema version, workspace/generation/mode/phase, operation ID, exact release revision,
+collector image, configuration/target fingerprints, update/verification times and
+verified runtimes. Each runtime binds service, full container ID, hostname prefix,
+fresh boot nonce and immutable image. Active feedback requires all three actual
+caller roles (API reader, foreground-worker and optional Games worker). Empty or
+recreated identities cannot authorize new handoff. The row is an operation/release
+mirror; it stores no event or scheduling ledger.
+
+```mermaid
+sequenceDiagram
+  participant Operator as Managed operator / target lock
+  participant Mode as Games workspace mode row
+  participant Handoff as Qualified borrowed writer
+  Operator->>Mode: Exclusive inactive/transitioning update (100ms lock bound)
+  Note over Operator,Mode: If this commits first, new handoff denies
+  Handoff->>Mode: SELECT FOR SHARE NOWAIT, fresh trusted runtime ID
+  Note over Handoff,Mode: If admitted first, shared fence remains through existing commit
+  Handoff->>Handoff: Existing Games/source/current Study acceptance transaction
+  Handoff->>Mode: Release row fence at existing commit/rollback
+```
+
 The same migration adds the narrowly matched `product_feedback_effect_controls`
 index on `product_feedback_deliveries(effect_key)` for
 `command_kind='control' AND state IN ('pending','acknowledged')`. This serves the
@@ -32,6 +55,13 @@ logical references without foreign keys to Study or Repertoire.
 
 ```mermaid
 erDiagram
+  product_feedback_managed_mode {
+    TEXT workspace_id PK
+    BIGINT generation
+    TEXT mode
+    TEXT phase
+    JSONB payload
+  }
   product_feedback_jobs {
     TEXT job_id PK
     BIGINT version

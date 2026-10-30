@@ -125,7 +125,8 @@ The actual database schema remains `identity.schema_version`; the envelope's
 version describes JSON format. Missing reader credentials never use writer ones.
 
 The full report (`schema_version=1`) has `read_only`, `identity`, `providers`,
-`collection`, `selected_game`, `delivery`, and `unresolved`. `selected_game` is null
+`collection`, `selected_game`, `delivery`, `managed_mode`, `feedback_capabilities`,
+and `unresolved`. `selected_game` is null
 without a selection. Read sections carry `availability=available|unavailable`;
 unavailable sections omit unknowable counts. Exit 2 means a required read section
 was unavailable; missing configuration or an unresolved comparison is a reported
@@ -175,8 +176,24 @@ operational state, not a command failure. Argument errors also exit 2.
   acknowledged delivery records. Acknowledged is not applied/available. The
   selected game's current receipt uses `CurrentStudyReceiptReads` through its
   public status capability; absent receipts are `not_delivered`, and unavailable
-  receipt reads never fall back to cached availability. Global delivery
-  disablement and execution mode remain unknown without runtime evidence.
+  receipt reads never fall back to cached availability. Its optional typed
+  `FeedbackObservation` supplies the compatible current queued attempt and actual
+  committed issued-generation count from the Study owner. Games executes no Study
+  SQL. Queue presence, owner-reported admission, actual issuance and settlement are
+  separate fields. Legacy priority `applied_at` never becomes an Again scheduling
+  review; the qualified progress retains actual review/time, original determination,
+  first service and current post-remap fence. Missing queue facts cannot erase an
+  actual receipt or become invented zero counts.
+- `managed_mode`: read-only Games workspace intent, including finite mode/phase,
+  operation/release/configuration and verified runtime/boot identities. This is
+  intended authority; only the operator's independent process inspection establishes
+  observed running mode. Unreadable/missing mode denies new feedback handoff while
+  ordinary Study and accepted obligations remain independent.
+- `feedback_capabilities`: typed optional composition declarations for the
+  first-departure policy and receipt interface. Missing, malformed or false
+  capabilities block feedback mode. The #624 composition owner binds them to the
+  actual qualified callables; neither HTTP success nor an available receipt is a
+  substitute. Identity-only inspection does not load this composition.
 
 Default output redacts private identifiers, accounts, positions/moves and
 free-form diagnostics. `--private` retains private scope/findings for a local
@@ -198,6 +215,9 @@ flowchart LR
   CLI -->|full report only| Repertoire["Existing bounded Repertoire read + public projection"]
   Reader --> Port["Injected public receipt status capability"]
   Port --> Receipt["CurrentStudyReceiptReads / receiving-owner read"]
+  Receipt --> Observation["Study-owned typed queue and actual issuance observations"]
+  Reader --> Mode["Games-owned managed mode intent / SELECT only"]
+  CLI --> Capability["Optional source-qualified composition capability"]
   Reader --> JSON["Bounded observations / explicit uncertainty"]
 ```
 

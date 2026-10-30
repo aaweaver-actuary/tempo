@@ -5672,6 +5672,24 @@ Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fak
 
 ## Task G integrated collection release
 
+#623 extends the same operator suite for explicit `collect-only`/`feedback`
+commands, frozen finite overrides, mode-specific scope/capability/CI readiness,
+verified stop-before-start switching, idempotency, lost intent acknowledgments,
+failed clears and ordinary Study lifecycle independence. The actual read-only
+status owner `backend/tests/test_game_collection_status.py` includes
+`test_status_distinguishes_priority_pending_actual_application_queue_and_fresh_issuance`:
+old priority time cannot claim Again, pending queue presence cannot claim issuance,
+and owner remapping retains the original application and first actual service.
+`backend/tests/test_game_feedback_mode.py` owns pure typed mode/boot/capability
+guards plus native `test_native_shared_mode_fence_prevents_disable_commit_until_handoff_finishes`,
+`test_native_transition_wins_over_stale_outside_admission_snapshot`,
+`test_native_mode_status_is_read_only_and_cannot_lend_write_authority`,
+`test_native_same_hostname_new_boot_nonce_denies_stale_verified_intent` and
+`test_native_original_effect_control_lookup_uses_its_narrow_index`. These reuse
+the existing task-owned PostgreSQL fixture and unchanged 250ms/100ms bounds.
+The #624 owner supplies the single composed packaged image/process/role proof;
+local source/native evidence does not establish installation or activation.
+
 Shared Settings registration belongs to the existing frontend lane (#603).
 `tests/runner/game-review-collection.test.mjs` owns explicit apply, read-only
 inspection, structured readiness, identity/resource checks, competing-runner

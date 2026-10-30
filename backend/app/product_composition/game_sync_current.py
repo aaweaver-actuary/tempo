@@ -240,6 +240,13 @@ def main():
         print(json.dumps(dict(read_only=True,providers=result)));return
     if os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED")!="1":
         raise RuntimeError("TEMPO_PRODUCT_GAME_SYNC_ENABLED=1 is required; no worker starts automatically")
+    if options.feedback:
+        from .game_collection_status import feedback_release_capabilities
+        from app.games.feedback.interfaces.managed_mode import FeedbackReleaseCapabilities
+        capability = feedback_release_capabilities()
+        required = set(FeedbackReleaseCapabilities.model_fields) - {"policy_version", "receipt_interface_version"}
+        if capability.get("availability") != "available" or any(capability.get(name) is not True for name in required):
+            raise ReviewUnavailable("qualified_feedback_composition_required", 503)
     dsn = os.environ.get("TEMPO_DATABASE_WRITE_URL")
     if not dsn:
         raise RuntimeError("TEMPO_DATABASE_WRITE_URL is required")

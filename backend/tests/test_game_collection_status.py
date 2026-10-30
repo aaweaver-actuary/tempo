@@ -510,3 +510,30 @@ def test_identity_only_unavailable_identity_exits_two(capsys):
     reader = SimpleNamespace(identity=lambda: dict(availability="unavailable", diagnostic="collection_read_unavailable"))
     assert main(["--identity-only"], reader_factory=lambda: reader) == 2
     assert json.loads(capsys.readouterr().out)["identity"]["availability"] == "unavailable"
+
+
+def test_status_distinguishes_priority_pending_actual_application_queue_and_fresh_issuance():
+    from app.contracts.product_v02.learning import EncounterReceipt
+    from tempo_legacy_database.adapters.games.collection_observations import study_receipt_progress
+    fixtures = ROOT / "contracts/product-v02/fixtures"
+    def receipt(folder, name):
+        return EncounterReceipt.model_validate_json(json.dumps(json.loads((fixtures / folder / (name+".json")).read_text())["payload"]))
+    legacy = receipt("encounters", "historical-review-priority")
+    old = study_receipt_progress(legacy)
+    assert old["stage"] == "legacy_priority_needs_qualification" and not old["again"]["observed"]
+    pending = receipt("first-departure", "protected-target-pending-reset")
+    facts = study_receipt_progress(pending, dict(progress=pending.progress, target_compatible=True,
+        queued_attempt=dict(queue_entry_id=1, queue_date="2026-10-30", status="queued", attempt_state="not_issued",
+            card_id=pending.progress.target.card_id, card_revision=1, issuance=None), issued_since_determination=6))
+    assert facts["stage"] == "accepted_pending" and facts["queue"]["entry"] is not None
+    assert not facts["introduction"]["observed"] and not facts["issuance"]["observed"]
+    assert facts["issuance"]["issued_since_determination"] == 6
+    remapped = receipt("first-departure", "remapped-again-preserves-first-service")
+    facts = study_receipt_progress(remapped)
+    assert facts["stage"] == "settled" and facts["again"]["review_id"] == 41
+    assert facts["application_target"]["card_id"] == "existing-physical-card"
+    assert facts["current_target"]["card_id"] == "current-composite-b"
+    assert facts["issuance"]["ordinal"] == 1 and facts["issuance"]["current_remediation_issued"]
+    public = _encode(dict(identity={}, selected_game=dict(progress=facts)))
+    assert "existing-physical-card" not in public and "current-composite-b" not in public
+    assert json.loads(public)["selected_game"]["progress"]["again"]["review_id"] == 41

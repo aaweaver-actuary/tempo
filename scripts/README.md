@@ -308,8 +308,10 @@ registration, deployment receipt, target validation and maintenance lock. It doe
 not install a release, change saved settings, start dependencies or migrate data.
 New managed releases automatically freeze the available Games overlay and build
 its image, while leaving the profile inactive. Old frozen receipts remain exact.
-The managed release must already contain the labeled collection-only service and
-immutable candidate image before enabling. Missing overlap/cadence are packaged
+The managed release must already contain the labeled optional service and
+immutable candidate image before enabling. `--mode collect-only` is the default;
+`--mode feedback` additionally requires the qualified first-departure composition.
+Missing overlap/cadence are packaged
 as empty arguments and block enable; no setting is guessed. Ordinary `tempo start` does not start this profile. Managed maintenance stops an
 enabled collector before its protected transition and leaves it inactive afterward.
 
@@ -317,6 +319,9 @@ enabled collector before its protected transition and leaves it inactive afterwa
 node /absolute/qualified/source/scripts/game-review-collection.mjs plan --candidate <40-character-commit>
 node /absolute/qualified/source/scripts/game-review-collection.mjs status --candidate <40-character-commit>
 node /absolute/qualified/source/scripts/game-review-collection.mjs enable --candidate <40-character-commit> --apply
+node /absolute/qualified/source/scripts/game-review-collection.mjs plan --candidate <40-character-commit> --mode feedback
+node /absolute/qualified/source/scripts/game-review-collection.mjs enable --candidate <40-character-commit> --mode feedback --apply
+node /absolute/qualified/source/scripts/game-review-collection.mjs enable --candidate <40-character-commit> --mode collect-only --apply
 node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
 ```
 
@@ -338,7 +343,14 @@ Effective limits are checked on existing collectors. Host processes and containe
 with a competing runner prevent activation; unrelated legacy workers are reported
 and preserved. Existing accepted Study obligations keep their own lifecycle.
 
-Strict mode requires every selected repertoire to be healthy. The repeatable
+Feedback requires every selected repertoire to be healthy and complete, source
+schema 56, the exact release's successful main-CI receipt, and explicit compatible
+selector, current-authority, Again, canonical-introduction, retained-qualification,
+foreground-handoff and issuance-fence capabilities. Missing composition declarations
+deny feedback before receiver construction. HTTP success or an available receipt
+cannot establish these capabilities. The installed reader remains read-only.
+
+Collection-only normally requires every selected repertoire to be healthy. The repeatable
 `--allow-bound-repertoire redacted:<12-lowercase-hex-digits>` option permits only
 an explicitly selected, currently observed `repertoire_snapshot_exceeds_bound`
 refusal from the Repertoire owner's typed diagnostic. Each configured provider
@@ -370,7 +382,8 @@ Its scope is always `selected_repertoire_readiness`, never a claim that all stor
 games have been compared. `deferred_comparisons` lists token, affected providers,
 `diagnostic`, sanitized `bound` details, and `allowance_status=explicitly_allowed`.
 Collection-level unresolved counts remain independent. An allowance is unnecessary
-for an ownership-verified disable.
+for an ownership-verified disable. This allowance is refused in feedback mode;
+deferred routes cannot establish negative membership in the configured union.
 
 Enable rereads persisted maintenance evidence under the existing target lock.
 The existing runtime recovery assessor remains authoritative: pending or invalid
@@ -382,14 +395,42 @@ operator never clears recovery evidence or runs migrations.
 
 Enable uses the frozen Compose graph with `--no-build --no-deps --pull never` and
 starts only `game-feedback-worker`. Its real `--follow` scheduler enqueues initial
-forward/reconciliation work. Disable stops only an identity-verified collector. An owned, stopped collection-only
-container from the previous release may be recreated for the verified new image;
-a stopped delivery-capable peer still blocks enable. Source bind mounts, foreign
+forward/reconciliation work. Disable stops only an identity-verified collector.
+The supported finite command and mode label are frozen in a small release-owned
+Compose override; the original configuration fingerprint and every remaining
+service field are still verified. A mode switch under the target lock first marks
+new handoff inactive, stops and verifies the old owned process, prepares the
+verified override, then starts and verifies the replacement before recording
+active intent. Repeated enable of the same verified mode is a no-op. Unknown
+delivery-capable peers still block enable. Source bind mounts, foreign
 working directories and durable worker volumes are refused. Disable preserves
-checkpoint, source, capture and pending-command tables. Neither
-operation drains Study delivery. Concurrent managed maintenance shares the target
+checkpoint, source, capture and pending-command tables. Collection-only retains
+outbox work without constructing a Study receiver. Feedback uses the public
+qualified intake; already accepted Study obligations remain independently servable
+after disable or a return to collection-only. Concurrent managed maintenance shares the target
 lock. Independent unmanaged launchers must respect that ownership; this wrapper
 cannot fence an arbitrary external process created after its inspection.
+
+The Games-owned workspace intent records the managed operation, generation,
+release/image/configuration identity and verified API, foreground-worker and
+collector identities. Each container start creates a fresh boot nonce. Trusted
+preparation rereads this identity outside the writer; the same borrowed Study
+writer then takes a nonblocking shared intent-row fence before new handoff.
+Disable/transition updates that row exclusively, so a stale precheck cannot commit
+a new handoff after disable wins. A failed optional intent clear still stops the
+collector and never blocks ordinary Study stop/start. Status reports the incomplete
+clear; after restoring the existing writer profile, repeat `disable --candidate
+<commit> --apply`. Never edit the row or running command by hand. A restarted
+container's fresh nonce rejects stale active intent even if clearing failed.
+Plan/status do not create a nonce, record intent, change an override or start work.
+
+Status separates intended mode, observed process mode and verified intent phase.
+Selected-game progress uses actual public Study observations: accepted pending,
+Again review/time, canonical introduction, compatible queued entry, first genuine
+issuance/ordinal and settlement. Queue presence alone is not issuance; historical
+priority `applied_at` is not an Again review. Original determination age and actual
+issued-generation counts survive retries and current-presentation remapping.
+Unavailable owner observations remain unavailable rather than becoming zero.
 
 Implemented source, proposed/unmerged integration; installed isolation remains
 unverified until the exact release is inspected and accepted.
@@ -409,14 +450,20 @@ flowchart LR
     Wrapper --> Lock[Existing managed target lock]
     Lock --> Inspect[Inspect current evidence under target lock]
     Inspect --> EnableChecks[Enable: maintenance, exact schema, complete readiness and explicit bound allowances]
-    EnableChecks -->|all clear| ComposeStart[Start only managed Games service]
+    EnableChecks -->|all clear| Transition[Deactivate handoff and stop old owned mode]
+    Transition --> ComposeStart[Start only verified managed Games mode]
     Inspect --> StopChecks[Disable: existing identity and ownership stopSafe checks]
     StopChecks -->|verified despite launch blockers| ComposeStop[Stop only managed Games service]
-    ComposeStart --> Collector[Packaged CLI: collect-only and follow]
+    ComposeStart --> Collector[Packaged CLI: explicit mode and follow]
+    Collector --> Verified[Verify actual command image and boot identities]
+    Verified --> Intent[(Games workspace mode intent)]
     ComposeStop -->|stop| Collector
     Collector --> Games[(Games source, captures, checkpoint, pending outbox)]
     Study[Ordinary Study and accepted obligations]
-    Collector -. no delivery or lifecycle call .-> Study
+    Collector -->|feedback only: public qualified intake| Fence[Existing borrowed writer: shared mode fence]
+    Intent --> Fence
+    Fence --> Study
+    ComposeStop -->|exclusive inactive update before stop| Intent
 ```
 
 Canonical behavioral/store boundaries remain in the

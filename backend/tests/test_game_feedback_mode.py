@@ -89,6 +89,7 @@ def test_mode_record_cli_requires_explicit_apply_before_constructing_writer():
 @pytest.mark.parametrize("flags,enabled", [([], False), (["--collect-only"], False), (["--feedback"], True)])
 def test_current_worker_cli_requires_explicit_feedback_instead_of_removed_collect_flag(monkeypatch, flags, enabled):
     from app.product_composition import game_sync_current as current
+    from app.product_composition import game_collection_status as status
     seen = []
     monkeypatch.setenv("TEMPO_PRODUCT_GAME_SYNC_ENABLED", "1")
     monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", "synthetic-connection-never-opened")
@@ -99,6 +100,9 @@ def test_current_worker_cli_requires_explicit_feedback_instead_of_removed_collec
         return object(), object()
     monkeypatch.setattr(current, "current_provider_worker", worker)
     monkeypatch.setattr(current, "run_optional_worker", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(status, "feedback_release_capabilities", lambda: {"availability": "available",
+        "selector": True, "current_authority": True, "again": True, "canonical_introduction": True,
+        "retained_qualification": True, "foreground_handoff": True, "issuance_fence": True})
     current.main()
     assert seen[0]["delivery_enabled"] is enabled
 
@@ -109,6 +113,18 @@ def test_current_worker_cli_rejects_conflicting_mode_before_opening_connections(
     with pytest.raises(SystemExit) as failed:
         current.main()
     assert failed.value.code == 2
+
+
+def test_feedback_cli_refuses_an_unqualified_composition_before_constructing_receiver(monkeypatch):
+    from app.product_composition import game_sync_current as current
+    from app.product_composition import game_collection_status as status
+    monkeypatch.setenv("TEMPO_PRODUCT_GAME_SYNC_ENABLED", "1")
+    monkeypatch.setattr(sys, "argv", ["game_sync_current", "--feedback"])
+    monkeypatch.setattr(status, "feedback_release_capabilities", lambda: {"availability": "unavailable"})
+    monkeypatch.setattr(current, "current_provider_worker", lambda **kwargs: pytest.fail("unqualified receiver constructed"))
+    with pytest.raises(Exception, match="qualified_feedback_composition_required"):
+        current.main()
+
 
 
 def test_feedback_capability_read_is_explicit_typed_and_never_inferred_from_http_or_receipt():
@@ -218,3 +234,29 @@ def test_native_same_hostname_new_boot_nonce_denies_stale_verified_intent(mode_c
     with transaction() as database:
         with pytest.raises(ManagedModeAdmissionDenied):
             fence_feedback_handoff(database, workspace)  # No trusted identity never opens a fence.
+
+
+def test_native_original_effect_control_lookup_uses_its_narrow_index(owned_postgres):
+    identity = "mode-index-" + uuid.uuid4().hex
+    with owned_postgres() as database:
+        database.execute_native("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,0,'{}'::jsonb)", (identity,))
+        database.execute_native("""INSERT INTO product_feedback_deliveries
+            (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
+            SELECT %s||':'||series,%s,'unrelated:'||series,'encounter','acknowledged',0,'{}'::jsonb
+            FROM generate_series(1,5000) series""", (identity, identity))
+        database.execute_native("""INSERT INTO product_feedback_deliveries
+            (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
+            VALUES(%s,%s,%s,'control','pending',0,'{}'::jsonb),
+                  (%s,%s,%s,'control','superseded',0,'{}'::jsonb)""",
+            (identity+":current", identity, identity, identity+":old", identity, identity))
+        database.execute_native("ANALYZE product_feedback_deliveries")
+        query = """SELECT operation_id FROM product_feedback_deliveries WHERE effect_key=%s
+            AND command_kind='control' AND state IN ('pending','acknowledged')"""
+        result = database.execute_native(query, (identity,)).fetchall()
+        assert [row[0] for row in result] == [identity+":current"]
+        plan = database.execute_native("EXPLAIN (FORMAT JSON) " + query, (identity,)).fetchone()[0]
+        def indexes(node):
+            yield node.get("Index Name")
+            for child in node.get("Plans", []):
+                yield from indexes(child)
+        assert "product_feedback_effect_controls" in set(indexes(plan[0]["Plan"]))
