@@ -22,7 +22,7 @@ def test_daily_mapping_uses_original_provider_fact():
     assert dict(record.source_metadata)['time_class'] == '"daily"'
 
 
-@pytest.mark.parametrize('blocker', ['none', 'configuration', 'delivery', 'source_changed', 'wide', 'replay_retry'])
+@pytest.mark.parametrize('blocker', ['none', 'configuration', 'delivery', 'source_changed', 'wide', 'replay_retry', 'new_canonical', 'new_write_failure'])
 def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(owned_postgres, monkeypatch, blocker):
     from app.product_composition.game_history_scripts import (new_manifest, recover_chesscom_daily,
         run_history, report, DeferredSnapshots, configuration_policy)
@@ -34,10 +34,12 @@ def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(o
     from tempo_legacy_database.adapters.games.sync.records import insert_imported_game
     from test_game_history_scripts import setup_scope
     from test_product_feedback_jobs import FakeClock
+    limited = blocker != 'wide'
     @contextmanager
     def connections():
         with owned_postgres() as db:
-            db.raw.execute("SET LOCAL transaction_timeout = '250ms'")
+            if limited:
+                db.raw.execute("SET LOCAL transaction_timeout = '250ms'")
             yield db.raw
     store=PostgresCanonicalGamesStore(connections)
     _, config, _, _ = setup_scope()
@@ -77,8 +79,9 @@ def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(o
     record=page.records[0]
     assert dict(record.source_metadata)['time_class']=='"daily"'
     prepared=_prepare(record,spec)
-    with owned_postgres() as db:
-        insert_imported_game(db,'chess.com:'+record.source_game_id,'chess.com',_values(prepared))
+    if blocker not in {'new_canonical','new_write_failure'}:
+        with owned_postgres() as db:
+            insert_imported_game(db,'chess.com:'+record.source_game_id,'chess.com',_values(prepared))
     original=store.bind_source
     def old_bind(game, *, record, spec):
         if record.source_game_id == page.records[0].source_game_id:
@@ -87,6 +90,9 @@ def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(o
     with monkeypatch.context() as patch:
         patch.setattr(store,'bind_source',old_bind)
         assert run(1)==1
+    # Seed the already-committed 100-record page without a timing assertion;
+    # the live page exists. Apply the deployed cap to the recovery itself.
+    limited = True
     failed=store.load_job(spec.job_id)
     assert failed.status=='quarantined' and failed.continuation==first.continuation
     key=stable_id(spec.workspace_id,spec.provider,record.source_game_id)
@@ -97,6 +103,11 @@ def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(o
             db.execute("""INSERT INTO product_feedback_deliveries
                 (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
                 VALUES('existing',%s,'existing','encounter','pending',0,'{}'::jsonb)""",(key,))
+        if blocker=='new_write_failure':
+            db.execute("""CREATE FUNCTION reject_daily_update() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'daily_update_failure'; END $$""")
+            db.execute("""CREATE TRIGGER reject_daily_update BEFORE UPDATE ON product_feedback_sources
+                FOR EACH ROW EXECUTE FUNCTION reject_daily_update()""")
     if blocker=='configuration':
         review.configure(config.model_copy(update={'revision':2}),1)
         with pytest.raises(ValueError,match='history_daily_saved_scope_changed'):
@@ -115,12 +126,32 @@ def test_daily_history_recovery_keeps_original_evidence_and_replays_exact_page(o
             recover_chesscom_daily(manifest,store=store,review=review,admission=nullcontext)
         assert store.source(key)==before and store.load_job(spec.job_id)==failed
         return
+    if blocker=='new_write_failure':
+        import psycopg
+        try:
+            with pytest.raises(psycopg.errors.RaiseException,match='daily_update_failure'):
+                recover_chesscom_daily(manifest,store=store,review=review,admission=nullcontext)
+            assert store.source(key)==before and store.load_job(spec.job_id)==failed
+            with connections() as db:
+                assert db.execute('SELECT count(*) FROM imported_games WHERE id=%s',
+                    ('chess.com:'+record.source_game_id,)).fetchone()[0]==0
+                assert db.execute('SELECT count(*) FROM product_feedback_captures WHERE source_key=%s',(key,)).fetchone()[0]==1
+        finally:
+            with connections() as db:
+                db.execute('DROP TRIGGER reject_daily_update ON product_feedback_sources')
+                db.execute('DROP FUNCTION reject_daily_update()')
+        return
     assert recover_chesscom_daily(manifest,store=store,review=review,admission=nullcontext)=={
         'prepared':True,'page_records':len(page.records),'recovered':1}
     with connections() as db:
         captures=db.execute('SELECT payload::text FROM product_feedback_captures WHERE source_key=%s',(key,)).fetchall()
         assert len(captures)==2 and any(row[0]==saved for row in captures)
     assert not store.source(key).quarantined
+    with connections() as db:
+        assert db.execute('SELECT count(*) FROM imported_games WHERE id=%s',
+            ('chess.com:'+record.source_game_id,)).fetchone()[0]==1
+    if blocker == 'wide':
+        limited = False  # Replay correctness is covered separately under the cap.
     if blocker == 'replay_retry':
         with monkeypatch.context() as patch:
             patch.setattr(store,'commit_page',lambda *args: (_ for _ in ()).throw(RuntimeError('synthetic failure')))
