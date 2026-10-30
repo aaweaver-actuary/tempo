@@ -61,6 +61,10 @@ def _candidate_web_image(revision):
 
 def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(case, tmp_path):
     image, revision = _candidate_image()
+    # The operator consumes the actual immutable image metadata validated by
+    # the candidate guard, never a fabricated image/label projection.
+    inspected = json.loads(subprocess.check_output(['docker','image','inspect',image],text=True))[0]
+    assert inspected['Id']==image and inspected['Config']['Labels']['org.opencontainers.image.revision']==revision
     repertoire, captured, _, _ = retained_owner_case(case, False)
     from app.games.feedback.review import SyncConfiguration
     from app.product_composition.game_review import configured_job
