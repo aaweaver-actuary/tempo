@@ -286,17 +286,23 @@ class Coordinator:
                     normalized.source_revision, normalized.source_digest)
             held = changed or bool(previous and previous.quarantined) or integrity_error
             determined_at = previous.determined_at if previous else None
-            if (previous is not None and previous.first_departure is not None
-                    and first_departure is not None and first_departure.status == "own_actionable"
-                    and previous.first_departure.status == "own_actionable" and not held):
-                def occurrence(selection):
-                    return (selection.source, selection.ply, selection.position_key,
-                        selection.expected_uci, selection.played_uci,
-                        selection.decision.decision_id if selection.decision is not None else None)
-                if occurrence(previous.first_departure) != occurrence(first_departure):
-                    # Corrected scope can reveal a different legitimate occurrence.
-                    # Retain the old command's clock, not as this new determination.
-                    determined_at = None
+            if (previous is not None and first_departure is not None
+                    and first_departure.status == "own_actionable" and not held):
+                original = next((effect for effect in previous.effects
+                    if selection_supports_original(first_departure, effect)), None)
+                retained = (self.store.delivery(delivery_for(key, original).operation_id)
+                    if original is not None else None)
+                # A source can pass through covered/unavailable comparisons or
+                # other occurrences. The original delivery owns each clock.
+                determined_at = retained.determined_at if retained is not None else None
+                if (determined_at is None and previous.first_departure is not None
+                        and previous.first_departure.status == "own_actionable"
+                        and previous.first_departure.source == first_departure.source
+                        and previous.first_departure.ply == first_departure.ply
+                        and previous.first_departure.decision.decision_id == first_departure.decision.decision_id
+                        and previous.first_departure.expected_uci == first_departure.expected_uci
+                        and previous.first_departure.played_uci == first_departure.played_uci):
+                    determined_at = previous.determined_at
             effects = list(previous.effects) if previous else []
             observations = {}
             for item in encounters:
@@ -396,6 +402,10 @@ class Coordinator:
             if self.effect_identity is not None:
                 updates["owner_effect_id"] = self.effect_identity(delivery.command.key)
             source = selected_sources.get(delivery.source_key)
+            if (delivery.control is None and source is not None and source.first_departure is not None
+                    and source.determined_at is not None
+                    and selection_supports_original(source.first_departure, delivery.command)):
+                updates["determined_at"] = source.determined_at
             if (delivery.control is None and spec.configuration_revision is not None
                     and source is not None and source.first_departure is not None
                     and source.first_departure.status == "own_actionable" and source.determined_at is not None):

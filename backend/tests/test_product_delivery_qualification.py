@@ -235,7 +235,8 @@ def test_changed_authored_response_same_logical_id_controls_original_accepted_ef
     assert h.store.delivery(original.operation_id).command == original.command
 
 
-def test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock():
+@pytest.mark.parametrize("intermediate", [None, "covered", "unresolved"])
+def test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock(intermediate):
     from app.games.feedback.comparison import compare_game
     from test_product_feedback_jobs import encounter_harness, spec
     h = encounter_harness()
@@ -252,6 +253,17 @@ def test_corrected_repertoire_scope_recompares_retained_source_without_quarantin
     original_source, = h.store.sources.values()
     original, = h.store.deliveries.values()
     assert original.command.key.occurrence_ply == 1
+    if intermediate is not None:
+        h.clock.value += 30
+        middle = snapshot(("d2d4", "d7d5", "c2c4"), repertoire="white", route_id="covered")
+        if intermediate == "unresolved":
+            middle = old.model_copy(update={"membership": old.membership.model_copy(
+                update={"complete": False, "available": False})})
+        h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: middle)
+        middle_request = spec("intermediate-scope")
+        h.store.enqueue(middle_request)
+        h.coordinator.capture_page(h.store.load_job(middle_request.job_id))
+        assert next(iter(h.store.sources.values())).first_departure.status == intermediate
     h.clock.value += 60
     h.coordinator.snapshots = SimpleNamespace(snapshot=lambda repertoire:
         corrected if repertoire == "london" else old)
@@ -268,7 +280,8 @@ def test_corrected_repertoire_scope_recompares_retained_source_without_quarantin
     later, = [item for item in h.store.deliveries.values()
         if item.encounter is not None and item.command.key.occurrence_ply == 3]
     assert later.command.decision.presentation_id == "card-london" and later.state == "pending"
-    assert len(h.store.captures) == 2
+    captures = 2 + int(intermediate is not None)
+    assert len(h.store.captures) == captures
     repeated = request.model_copy(update={"job_id": "same-corrected-scope"})
     h.clock.value += 60
     h.store.enqueue(repeated)
@@ -276,7 +289,17 @@ def test_corrected_repertoire_scope_recompares_retained_source_without_quarantin
     replayed, = h.store.sources.values()
     assert not replayed.quarantined and replayed.determined_at == current.determined_at
     assert h.store.delivery(later.operation_id).command == later.command
-    assert len(h.store.captures) == 2
+    assert len(h.store.captures) == captures
+    # Returning to the original occurrence retains its original clock, even
+    # though the source's most recent determination belonged to the later one.
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: old)
+    restored_request = spec("original-scope-restored")
+    h.clock.value += 60
+    h.store.enqueue(restored_request)
+    h.coordinator.capture_page(h.store.load_job(restored_request.job_id))
+    restored, = h.store.sources.values()
+    assert restored.determined_at == original_source.determined_at
+    assert h.store.delivery(original.operation_id).command == original.command
 
 
 def test_unqualified_concrete_game_review_fallback_cannot_call_legacy_scheduler():
