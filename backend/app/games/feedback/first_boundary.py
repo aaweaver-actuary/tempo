@@ -118,6 +118,8 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
             played_uci=None if position is None else position["move"], expected_uci=tuple(expected),
             decision=decision, surviving_routes=tuple(routes), diagnostic=diagnostic)
 
+    if not scope:
+        return result("unresolved", diagnostic="no_compatible_repertoire")
     if any(snapshot.variant != "standard" for snapshot in snapshots
            if snapshot.learner_color == game.learner_color):
         return result("unresolved", diagnostic="unsupported_selected_variant")
