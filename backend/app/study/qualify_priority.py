@@ -19,6 +19,7 @@ REQUIRED = (
     "backend/tests/test_study_recovery_acceptance.py",
     "backend/tests/test_study_feedback_preparation_trace.py",
     "backend/tests/test_queue_projection_postgres.py",
+    "backend/tests/test_product_game_bound_snapshot_postgres.py",
     "backend/tests/test_product_snapshot.py",
     "backend/tests/test_product_game_lapse.py::test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope",
     "backend/tests/test_product_game_lapse.py::test_qualified_owner_rejects_producer_shaped_prepared_publication",
