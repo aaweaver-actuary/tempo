@@ -19,7 +19,7 @@ class JobSpec(Value):
     window: GameWindow
     repertoire_ids: tuple[str, ...] = Field(min_length=1)
     filters: tuple[tuple[str, str], ...] = ()
-    purpose: Literal["sync", "refresh"] = "sync"
+    purpose: Literal["sync", "refresh", "history"] = "sync"
     configuration_revision: int | None = Field(default=None, ge=1)
     stream: Literal["forward", "reconciliation", "manual"] = "manual"
 

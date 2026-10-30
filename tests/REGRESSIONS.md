@@ -21,6 +21,19 @@ unscoped mappings. The suite includes the scoped dependency/cycle guard and
 concrete-infrastructure import rejection. It uses fake ports only and does not
 establish A07 product acceptance. See the [owner interface and examples](../backend/app/analysis/proposals/README.md).
 
+## One-time historical Games import and first departures
+
+`backend/tests/test_game_history_scripts.py` owns the frozen three-calendar-month
+scope, manifest integrity, paginated HTTP-to-saved-page import, exact-cursor
+resume, rate-limit retention, offline global first-departure replay, opponent-first
+suppression, unavailable-scope recheck and qualified acknowledgment replay.
+Its native case uses the existing labelled disposable PostgreSQL fixture to
+prove canonical source publication, original-page readback, historical-job claim
+isolation, unchanged Refresh/forward settings and no Study writes during collection.
+Synthetic intake receipts are kept distinct from actual Study application and issuance.
+Existing native `test_product_game_lapse_postgres.py` cases own introduced Again,
+unseen introduction, preserved history and active-attempt protection.
+
 ## T22 Study recombination and immutable presentation provenance
 
 `backend/tests/test_product_recombination_application.py` owns genuine saved

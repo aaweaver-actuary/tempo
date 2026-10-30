@@ -314,6 +314,73 @@ with their existing owners.
 
 ## Games collection operator
 
+### One-time historical import and repertoire checks
+
+`import-game-history.py` freezes the saved Games accounts, filters and repertoire
+selection for the three calendar months ending at planning time (UTC). A missing
+day is clamped to the last day of the earlier month. The window is half-open.
+It imports every provider-accessible game in that scope through the existing
+paginated adapters and canonical Games writer. Comparison is deferred and no
+new own-miss command is generated during collection. Existing source correction
+quarantines and safety controls remain intact.
+
+Use Tempo's configured Python environment with its installed backend packages.
+Plan/status require `TEMPO_DATABASE_READ_URL`; run requires
+`TEMPO_DATABASE_WRITE_URL`. Keep credentials in the existing environment, never
+in command arguments or the manifest. The chosen manifest parent must exist.
+
+```sh
+python scripts/import-game-history.py plan --manifest /tmp/tempo-game-history.json
+python scripts/import-game-history.py run --manifest /tmp/tempo-game-history.json
+python scripts/import-game-history.py status --manifest /tmp/tempo-game-history.json
+python scripts/check-game-history.py plan --manifest /tmp/tempo-game-history.json
+python scripts/check-game-history.py run --manifest /tmp/tempo-game-history.json
+python scripts/check-game-history.py status --manifest /tmp/tempo-game-history.json
+```
+
+The second script requires a complete import, replays its saved provider pages
+without HTTP, and selects one first departure across the complete applicable
+repertoire scope. An opponent departure is retained as a gap with no subsequent
+Study consequence. An exact own departure uses Study's qualified intake: unseen
+introduction or introduced Again once, plus urgent priority. It preserves active
+attempts, history, original commands and occurrence identities.
+
+Feedback run requires the existing qualified managed feedback mode and verified
+runtime identity. It does not enable that mode or recurring collection. In an
+installed qualified worker image, the equivalent entry points are
+`python -m app.product_composition.game_history_scripts collect ...` and
+`python -m app.product_composition.game_history_scripts compare ...` with the
+same arguments and a manifest path available to both invocations. A local source
+checkout alone cannot establish the installed worker's feedback identity.
+
+Both runs stop after `--max-units` bounded units (default 50). Repeat the same
+run command to resume. Exit 0 means the selected phase completed; 1 means
+incomplete/deferred work; 2 means an operation/input failure. Plan exits 0 when
+the scope was successfully inspected; this is not readiness or completion.
+No timers, automatic retries, recurrence changes, forward checkpoints or
+Refresh-now checkpoints are created. Status reports retained cursors, errors,
+exclusions, unique games and pending deliveries; it never calls a truncated or
+quarantined window complete. The private manifest contains no PGNs or credentials
+and is created once with mode 0600; retain it for resume.
+
+Repertoire checking uses current accepted repertoire material. Missing scope or
+ambiguous targets remain unresolved. A later run revisits a completed unresolved
+comparison without changing occurrence identities. Changed saved configuration
+requires a new plan/manifest. An in-progress failed/quarantined source requires
+its owning recovery workflow; these scripts never clear quarantine or backoff.
+Provider games unpublished at import time cannot be guaranteed present.
+
+Comparison completion means traversal and delivery acknowledgment, not actual
+Study admission, issuance or human settlement. Receipt admission/disposition and
+deferral counts describe saved acknowledgment receipts; `study_progress_current`
+is false. Use ordinary Games/Study for current progress. Historical intake yields
+to foreground activity and live urgent work. Study-only defers acquisition;
+comparison/intake does not change that setting or ordinary introduction limits.
+
+Architecture: [finite history composition](../backend/app/product_composition/README.md#one-time-historical-games-scripts).
+
+### Managed recurring worker
+
 `scripts/game-review-collection.mjs` is the thin operator for the explicitly
 optional Games service in an existing frozen managed release. It reuses Tempo's
 registration, deployment receipt, target validation and maintenance lock. It does

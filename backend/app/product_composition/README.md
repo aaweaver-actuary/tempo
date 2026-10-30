@@ -1,5 +1,46 @@
 # One imported game to ordinary Study (#488)
 
+## One-time historical Games scripts
+
+`game_history_scripts.py` composes finite manual history import and offline
+first-departure processing. Its two [script entry points](../../../scripts/README.md#one-time-historical-import-and-repertoire-checks)
+share a private immutable local manifest containing saved scope and a frozen
+three-calendar-month window. Database jobs own checkpoints and retry delays;
+the manifest owns neither credentials nor executable Study commands.
+
+```mermaid
+flowchart LR
+  Manifest["Frozen local run manifest<br/>accounts, filters, window, selected repertoires"] --> Import["Finite history import"]
+  Import --> Providers["Existing bounded provider adapters"]
+  Providers --> Commit["Games canonical page commit<br/>sources, original pages, captures, cursor"]
+  Commit --> Replay["Offline history comparison<br/>requires complete import"]
+  Manifest --> Replay
+  Scope["Current complete authored scope<br/>and current target preparation"] --> Replay
+  Replay --> Selector["Existing global first-departure selector"]
+  Selector --> Facts["Games findings and original outbox"]
+  Facts --> Intake["Qualified Study intake<br/>existing active managed-mode fences"]
+  Intake --> Study["Study-owned Again / introduction<br/>priority, issuance and settlement"]
+  Gate["Background admission / foreground priority<br/>bounded units and retained retries"] --> Import
+  Gate --> Replay
+```
+
+Historical jobs use `purpose=history`, exact-job claims and manual provenance.
+They cannot become automatic network jobs or Refresh-now checkpoints. Import
+defers repertoire reads and own-miss command generation; existing correction
+quarantine/control behavior remains. Replay reads the exact original provider
+page subtype and cursor, preserving metadata and canonical source identity.
+It commits comparisons through the existing Games page transaction, then delivers
+only outbox entries attached to the imported source set after the full traversal.
+Original commands, owner receipts and determination clocks survive retries.
+
+Missing scope remains unresolved; a later invocation can revisit a completed
+unresolved traversal. Opponent-first games produce no own-miss consequence.
+Provider I/O/replay never enters Study's short writer. Background admission,
+full pause, source quarantine, configuration fences and active managed feedback
+identity retain their existing owners. These scripts do not activate a service,
+modify recurrence, migrate storage or change ordinary Study startup. Their
+reports distinguish saved acknowledgment receipts from current Study progress.
+
 ## Durable Game Review commands and Settings recovery (#590)
 
 The goal is to compare retained/provider games with the user's repertoire and
