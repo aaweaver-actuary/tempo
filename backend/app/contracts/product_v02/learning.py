@@ -199,6 +199,10 @@ class EncounterProgress(Value):
             raise ValueError("actual first issuance and its measured ordinal must be supplied together")
         if self.first_issued is not None and (self.remediation_fence is None or not self.remediation_fence.precedes(self.first_issued)):
             raise ValueError("first remedial issuance must be a genuine post-application target generation")
+        if self.first_issued is not None and (
+                datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00")) <
+                datetime.fromisoformat(self.determined_at.replace("Z", "+00:00"))):
+            raise ValueError("target issuance cannot precede original actionable determination")
         if self.settlement is not None and (self.first_issued is None or self.remediation_fence is None
                 or not self.remediation_fence.precedes(self.settlement.attempt)
                 or self.settlement.attempt.issuance_sequence < self.first_issued.issuance_sequence):

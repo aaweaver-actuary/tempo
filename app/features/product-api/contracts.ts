@@ -69,9 +69,11 @@ const RawFirstDepartureSelectionSchema = z.strictObject({ policy_version: z.lite
   const facts = [value.ply, value.actor, value.position_key, value.played_uci];
   if (facts.some(item => item !== null) && !facts.every(item => item !== null)) fail("known boundary requires complete pre-move occurrence");
   if (value.status === "covered" && (facts.some(item => item !== null) || value.decision !== null || value.expected_uci.length)) fail("covered played moves cannot claim departure or target");
+  if (value.status === "covered" && !value.selected_scope.length) fail("absent relevant scope is unresolved, not covered");
   if (!["covered", "unresolved"].includes(value.status) && value.ply === null) fail("selected boundary must retain occurrence");
   if (["own_actionable", "own_unmapped", "missing_own_continuation"].includes(value.status) && value.actor !== "learner") fail("learner boundary requires learner actor");
   if (value.status === "opponent_gap" && value.actor !== "opponent") fail("opponent gap cannot authorize learner effect");
+  if (["own_actionable", "own_unmapped", "opponent_gap"].includes(value.status) && value.expected_uci.includes(value.played_uci!)) fail("departure cannot be a supported expected alternative");
   if (new Set(value.surviving_routes.map(item => JSON.stringify([item.repertoire_id, item.route_id, item.route_ply, item.policy_id]))).size !== value.surviving_routes.length) fail("surviving route occurrences must be distinct");
   if (value.surviving_routes.some(item => !scopes.has(item.repertoire_id) || scopes.get(item.repertoire_id)!.source_revision !== item.source_revision)) fail("route must bind selected source revision");
   if (value.status !== "own_actionable" && value.decision !== null) fail("non-actionable result cannot claim actionable target");
@@ -92,8 +94,17 @@ const RawEncounterTargetSchema = z.strictObject({ card_id: id, card_revision: re
 const RawIssuedAttemptEvidenceSchema = z.strictObject({ queue_entry_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), card_id: id, card_revision: revision, issuance_sequence: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), issued_at: utc });
 const RawRemediationFenceSchema = z.strictObject({ target: RawEncounterTargetSchema, after_issuance_sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), established_at: utc });
 const RawEncounterSettlementSchema = z.strictObject({ review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), attempt: RawIssuedAttemptEvidenceSchema });
+// PostgreSQL/Python preserve microseconds; Date.parse alone truncates them.
+function compareUtc(left: string, right: string): number {
+  const parts = (value: string) => {
+    const fraction = /\.(\d+)/.exec(value)?.[1] ?? "";
+    return [Date.parse(value.replace(/\.\d+(?=Z$|\+00:00$)/, "")), Number((fraction + "000000").slice(0, 6))];
+  };
+  const a = parts(left), b = parts(right);
+  return a[0] - b[0] || a[1] - b[1];
+}
 function followsFence(fence: z.infer<typeof RawRemediationFenceSchema>, attempt: z.infer<typeof RawIssuedAttemptEvidenceSchema>) {
-  return attempt.card_id === fence.target.card_id && attempt.card_revision === fence.target.card_revision && attempt.issuance_sequence > fence.after_issuance_sequence && Date.parse(attempt.issued_at) >= Date.parse(fence.established_at);
+  return attempt.card_id === fence.target.card_id && attempt.card_revision === fence.target.card_revision && attempt.issuance_sequence > fence.after_issuance_sequence && compareUtc(attempt.issued_at, fence.established_at) >= 0;
 }
 const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("first_departure_v1").default("first_departure_v1"), determined_at: utc, stream: z.enum(["forward", "reconciliation", "manual"]), target: RawEncounterTargetSchema, scheduling_review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), schedule_applied_at: utc.nullable(), introduction_applied_at: utc.nullable(), remediation_fence: RawRemediationFenceSchema.nullable(), first_issued: RawIssuedAttemptEvidenceSchema.nullable(), first_issued_ordinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), settlement: RawEncounterSettlementSchema.nullable() }).superRefine((value, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: "custom", message });
@@ -102,9 +113,10 @@ const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("f
   const application = value.schedule_applied_at ?? value.introduction_applied_at;
   const fence = value.remediation_fence;
   if ((fence === null) !== (application === null)) fail("application/admission needs issuance fence");
-  if (fence !== null && (fence.target.card_id !== value.target.card_id || fence.target.card_revision !== value.target.card_revision || application === null || Date.parse(fence.established_at) < Date.parse(application))) fail("fence binds actual target at or after application boundary");
+  if (fence !== null && (fence.target.card_id !== value.target.card_id || fence.target.card_revision !== value.target.card_revision || application === null || compareUtc(fence.established_at, application) < 0)) fail("fence binds actual target at or after application boundary");
   if ((value.first_issued === null) !== (value.first_issued_ordinal === null)) fail("first issuance and measured ordinal must be paired");
   if (value.first_issued !== null && (fence === null || !followsFence(fence, value.first_issued))) fail("remedial issuance must follow application");
+  if (value.first_issued !== null && compareUtc(value.first_issued.issued_at, value.determined_at) < 0) fail("target issuance cannot precede original determination");
   if (value.settlement !== null && (value.first_issued === null || fence === null || !followsFence(fence, value.settlement.attempt) || value.settlement.attempt.issuance_sequence < value.first_issued.issuance_sequence)) fail("settlement requires compatible post-application issued attempt");
 });
 
