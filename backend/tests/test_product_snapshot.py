@@ -713,3 +713,46 @@ def test_snapshot_route_cache_identity_includes_repertoire(monkeypatch):
     result = projection._mappings(source, routes, 3)
     assert [(m.repertoire_id, m.presentation_id) for m in result] == [
         ("rep", "physical"), ("rep", "physical"), ("other-repertoire", "second-card")]
+
+
+def test_snapshot_shared_executable_replay_scales_with_content_not_graph_uses(monkeypatch):
+    """Every physical occurrence survives without replaying shared chess content."""
+    import app.repertoire.snapshot as projection
+    facts = repertoire_facts()
+    line, graph = facts['lines'][0], facts['graphs'][0]
+    facts['lines'] = [line | dict(id='alias-' + str(index)) for index in range(64)]
+    facts['graphs'] = [graph | dict(line_id=item['id']) for item in facts['lines']]
+    original, calls = projection._frames, []
+    def replay(start, moves):
+        calls.append((start, tuple(moves)))
+        return original(start, moves)
+    monkeypatch.setattr(projection, '_frames', replay)
+    result = projection.project_published_repertoire(facts)
+    assert len(result.decision_presentations) == 128
+    assert {mapping.route_id for mapping in result.decision_presentations} == {line['id'] for line in facts['lines']}
+    assert len(calls) == 1
+    # Reuse ends with this invocation; a changed executable cannot borrow it.
+    for item in (*facts['lines'], *facts['cards'], *facts['graphs']):
+        item['moves_json'] = '["d2d4"]'
+    changed = projection.project_published_repertoire(facts)
+    assert len(changed.decision_presentations) == 64 and len(calls) == 2
+    assert {mapping.selected_response_uci for mapping in changed.decision_presentations} == {'d2d4'}
+    assert changed.membership.digest != result.membership.digest
+
+
+@pytest.mark.parametrize('fen,move', [
+    ('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5d6'),
+    ('4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5e6'),
+    ('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1'),
+])
+def test_snapshot_replay_reuse_preserves_legal_en_passant_and_castling_identity(fen, move):
+    from app.repertoire import project_published_repertoire
+    from tempo_evidence_math import opening_position_key
+    facts = repertoire_facts()
+    for item in (*facts['lines'], *facts['cards']):
+        item['start_fen'], item['moves_json'] = fen, json.dumps([move])
+    facts['graphs'][0].update(starting_fen=fen, moves_json=json.dumps([move]))
+    result = project_published_repertoire(facts)
+    mapping, = result.decision_presentations
+    assert mapping.position_key == opening_position_key(fen)
+    assert mapping.selected_response_uci == move

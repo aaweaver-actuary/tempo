@@ -5,7 +5,8 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 """
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, OrderedDict
+from functools import lru_cache
 from types import MappingProxyType
 from datetime import datetime, timezone
 import json
@@ -13,6 +14,7 @@ from typing import Callable, Mapping
 
 import chess
 from tempo_evidence_math import opening_position_key
+from tempo_chess_core import canonical_fen_key
 from tempo_game_evidence_contracts.legacy import authority_source_digest, authority_graph_digest, decision_identity, fingerprint
 from tempo_game_review_contracts import AuthoredRoute, CanonicalGame, RepertoireSnapshot as MembershipSnapshot
 
@@ -118,6 +120,21 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     memberships = {(row["repertoire_id"], row["card_id"]) for row in capture["tables"]["repertoire_cards"]}
     mappings = []
     route_positions = {}
+    # Graph aliases often reuse the same exact executable. Keep only detached
+    # turn/position facts in this invocation, never mutable Boards or authority.
+    # Bounds cap retained replay data independently of the number of graph uses.
+    replayed = OrderedDict()
+    position_key = lru_cache(maxsize=1024)(opening_position_key)
+    def replay_positions(starting_fen, moves):
+        key = (starting_fen, tuple(moves))
+        if key not in replayed:
+            replayed[key] = tuple((frame.turn, canonical_fen_key(frame.fen(en_passant='legal')))
+                for frame in _frames(starting_fen, moves))
+            if len(replayed) > 128:
+                replayed.popitem(last=False)
+        else:
+            replayed.move_to_end(key)
+        return replayed[key]
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
         route = routes.get((graph["repertoire_id"], graph["line_id"]))
@@ -137,14 +154,14 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
             executable = json.loads(graph["moves_json"])
             if (not executable or len(executable) > 1000
                     or executable != json.loads(card["moves_json"])
-                    or opening_position_key(graph["starting_fen"]) != opening_position_key(card["start_fen"])):
+                    or position_key(graph["starting_fen"]) != position_key(card["start_fen"])):
                 continue
             route_key = (route.repertoire_id, route.route_id)
             if route_key not in route_positions:
                 try:
                     occurrences = {}
-                    for ply, frame in enumerate(_frames(route.starting_fen, route.moves)):
-                        occurrences.setdefault(opening_position_key(frame.fen()), []).append(ply)
+                    for ply, (_turn, key) in enumerate(replay_positions(route.starting_fen, route.moves)):
+                        occurrences.setdefault(key, []).append(ply)
                     index = MappingProxyType({key: tuple(plies) for key, plies in occurrences.items()})
                     route_positions[route_key] = (route, index)
                 except (ValueError, TypeError, KeyError):
@@ -152,8 +169,8 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
             cached_route, positions = route_positions[route_key]
             if cached_route is not route or positions is None:
                 continue
-            card_frames = _frames(card["start_fen"], executable)
-            roots = [ply for ply in positions.get(opening_position_key(graph["starting_fen"]), ())
+            card_frames = replay_positions(card["start_fen"], executable)
+            roots = [ply for ply in positions.get(position_key(graph["starting_fen"]), ())
                      if tuple(route.moves[ply:ply + len(executable)]) == tuple(executable)]
             # Explicit graph membership + exact executable/history is required.
             # Matching FEN/SAN alone never creates a physical binding.
@@ -167,8 +184,8 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
         if known_before is True:
             introduction = "introduced"
         for offset, uci in enumerate(executable):
-            frame = card_frames[offset]
-            if frame.turn != (route.learner_color == "white"):
+            turn, key = card_frames[offset]
+            if turn != (route.learner_color == "white"):
                 continue
             # The bounded capture may omit an ended/diverged competing route,
             # but its public proof retains the exclusive-policy anchor. Never
@@ -180,7 +197,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
             mapping = DecisionPresentation(
                 decision_id=decision_identity(card["id"], offset, executable[:offset]),
                 repertoire_id=route.repertoire_id,
-                position_key=opening_position_key(frame.fen()), selected_response_uci=uci,
+                position_key=key, selected_response_uci=uci,
                 presentation_id=card["id"], presentation_revision=card["revision"],
                 repertoire_revision=revision, introduction=introduction, introduced_at=introduced_at,
                 route_id=route.route_id, route_ply=roots[0] + offset,
