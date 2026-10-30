@@ -175,3 +175,22 @@ def test_projector_keeps_conflicting_same_logical_key_as_findings_without_comman
     other_finding = findings[0].model_copy(update={"repertoire_id": "other"})
     assert project_encounters(game, findings=findings + (other_finding,), snapshots=(snapshot, other),
         source=scope, detected_at="2026-10-29T12:00:00Z", occurred_at=game.played_at) == ()
+
+
+def test_foreign_historical_chronology_does_not_block_new_current_miss_projection():
+    from app.games.feedback.interfaces import select_first_boundary
+    from app.contracts.product_v02.learning import FirstDepartureWitness
+    game, snapshot, findings, scope = inputs(count=2)
+    snapshot = snapshot.model_copy(update={"decision_presentations": tuple(item.model_copy(update={
+        "introduction_game": scope.model_copy(update={"game_id": "another-older-game"})})
+        for item in snapshot.decision_presentations)})
+    before = deepcopy(snapshot.model_dump())
+    selected = select_first_boundary(game, snapshots=(snapshot,), source=scope)
+    command, = project(game, snapshot, findings, scope)
+    assert command.decision.introduction_game is command.decision.introduced_before_game is None
+    assert selected.decision.introduction_game.game_id == "another-older-game"
+    assert command.decision == selected.decision.model_copy(update={"introduced_before_game": None, "introduction_game": None})
+    assert command.key.decision_id == selected.decision.decision_id
+    assert FirstDepartureWitness(selection=selected, configuration_revision=1,
+        determined_at=command.detected_at, stream="forward").matches(command)
+    assert snapshot.model_dump() == before

@@ -189,6 +189,9 @@ ignoring only historical introduction timestamp/chronology fields; the emitted
 decision retains an original member and all current identity/state facts must
 agree. There is no introduction-before-game gate. Study still revalidates current
 source/configuration/publication/target authority and owns the consequence.
+If an original mapping's chronology assertion belongs to another game, only a
+new command's detached decision omits that paired assertion; the retained
+snapshot/selection and previously frozen commands retain their original facts.
 
 `SourceState.first_departure` and `Capture.first_departure` retain this election
 in the existing atomic page/capture/checkpoint write. `determined_at` records

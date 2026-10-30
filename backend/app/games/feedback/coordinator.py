@@ -103,6 +103,10 @@ def _encounter_for_selection(selection: FirstDepartureSelection, *, detected_at:
     if selection.status != "own_actionable":
         return ()
     decision, source = selection.decision, selection.source
+    if decision.introduction_game is not None and decision.introduction_game != source:
+        # A new command cannot assert another game's chronology. Keep the
+        # captured selection intact and omit only this inapplicable old proof.
+        decision = decision.model_copy(update={"introduced_before_game": None, "introduction_game": None})
     return (GameEncounter(key=GameEffectKey(workspace_id=selection.workspace_id,
         provider=source.provider, game_id=source.game_id, decision_id=decision.decision_id,
         occurrence_ply=selection.ply), source=source, decision=decision,

@@ -5846,3 +5846,8 @@ keys, conflict guards and correct-unseen diagnostic evidence without urgency.
 `backend/tests/test_product_feedback_jobs.py` additionally owns
 `test_capture_retains_global_selection_without_per_repertoire_false_effect` and
 `test_old_source_and_capture_json_keep_absent_selection_explicit`.
+
+`backend/tests/test_product_encounter_projection.py` owns
+`test_foreign_historical_chronology_does_not_block_new_current_miss_projection`:
+a new command omits only obsolete chronology scoped to another game while
+retained snapshots/selections and already frozen commands remain intact.
