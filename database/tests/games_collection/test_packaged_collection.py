@@ -572,7 +572,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                             AND payload->'spec'->>'provider'='lichess'
                             AND payload->'spec'->>'account'=%s
                             AND payload->'spec'->>'configuration_revision'='1')
-                    ORDER BY job_id LIMIT 2""",(originating,not originating,inputs['configuration']['account'])).fetchall()
+                    ORDER BY job_id LIMIT 2""",(originating,not originating,inputs['configuration']['account'].casefold())).fetchall()
             deliveries = []
             for row in rows:
                 payload = row[1]
