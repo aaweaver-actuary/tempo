@@ -7,10 +7,10 @@ from datetime import datetime
 from typing import Iterable, Mapping
 
 from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection
-from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
+from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
-from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,
+from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier,
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
 from .first_boundary import select_first_boundary
 
@@ -116,6 +116,7 @@ class Coordinator:
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
                  learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
+                 qualifier: DeliveryQualifier | None = None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
@@ -126,6 +127,7 @@ class Coordinator:
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
         self.source_identity = source_identity
+        self.qualifier = qualifier
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
@@ -336,15 +338,57 @@ class Coordinator:
             "window_complete": complete, "last_checkpoint_at": self.clock.utc_now() if safe else job.last_checkpoint_at,
             "pages_committed": job.pages_committed + 1, "next_attempt_at": 0, "lease_until": 0,
             "error": error, "rejections": page.rejections})
-        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(deliveries),
+        # A new complete actionable selection is durable at the same checkpoint
+        # as its original command. Remaining local owner preparation may then
+        # progress during foreground practice without repeating provider work.
+        selected_sources = {source.source_key: source for source in sources}
+        prepared_deliveries = []
+        for delivery in deliveries:
+            updates = {"origin_job_id": spec.job_id, "stream": spec.stream,
+                       "configuration_revision": spec.configuration_revision}
+            source = selected_sources.get(delivery.source_key)
+            if (delivery.control is None and spec.configuration_revision is not None
+                    and source is not None and source.first_departure is not None
+                    and source.first_departure.status == "own_actionable" and source.determined_at is not None):
+                witness = FirstDepartureWitness(selection=source.first_departure,
+                    configuration_revision=spec.configuration_revision,
+                    determined_at=source.determined_at, stream=spec.stream)
+                if witness.matches(delivery.command):
+                    updates.update(qualification_status="ready", qualification=witness,
+                        determined_at=witness.determined_at)
+            prepared_deliveries.append(delivery.model_copy(update=updates))
+        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(prepared_deliveries),
             provider_page_json=page_json, input_continuation=job.continuation))
 
     def deliver(self, delivery: Delivery) -> None:
         """Persist the owner receipt; transport success alone is never evidence."""
+        current = self.store.delivery(delivery.operation_id)
+        if current is None or current.state != "pending":
+            return
+        delivery = current
         command = delivery.command
         try:
+            if delivery.control is None and self.qualifier is not None:
+                delivery = self.qualifier.prepare(delivery)
+                self.store.save_delivery(delivery)
+                current = self.store.delivery(delivery.operation_id)
+                if current.state != "pending" or delivery.qualification_status != "ready":
+                    return
+                # Source/control authority is checked again inside Study's
+                # short writer; this reread alone is not the acceptance fence.
+                delivery = current
             if delivery.control is not None:
                 receipt = self.learning.control_effect(command)
+            elif self.qualifier is not None:
+                receipt = self.learning.accept_qualified(command, qualification=delivery.qualification)
+                digest = (command.source.source_digest if delivery.encounter is not None
+                          else command.finding.source_digest)
+                if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (digest, "missed"):
+                    raise ValueError("receiver_qualified_receipt_provenance_mismatch")
+                if (receipt.interface_version != "0.2.2" or receipt.progress is None
+                        or receipt.progress.determined_at != delivery.qualification.determined_at
+                        or receipt.progress.stream != delivery.qualification.stream):
+                    raise ValueError("receiver_first_departure_policy_receipt_required")
             elif delivery.encounter is not None:
                 receipt = self.learning.accept_encounter(command)
                 if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (
@@ -358,6 +402,10 @@ class Coordinator:
             state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
             self.store.save_delivery(delivery.model_copy(update={"state": state, "receipt": receipt,
                 "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}))
+        except DeliveryDeferred as error:
+            self.store.save_delivery(delivery.model_copy(update={"qualification_status": "held",
+                "qualification_reason": error.reason, "error": error.reason,
+                "next_attempt_at": self.clock.now() + error.retry_after}))
         except Exception as error:
             # A receiver may already have committed. Preserve this exact command.
             delay = max(min(300, 2 ** min(delivery.attempts + 1, 8)), getattr(error, "retry_after", 0))

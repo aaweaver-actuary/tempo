@@ -4,12 +4,14 @@ Capture closes before the borrowed writer opens. Receiving acceptance records
 the owner's obligation only; independent Study refresh owns queue availability.
 """
 from dataclasses import dataclass
+from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
 import logging
 import re
 
 from app.contracts.product_v02.learning import FirstDepartureWitness
+from app.games.feedback.ports import DeliveryDeferred
 from app.games.feedback.qualification import held_delivery, qualify_delivery
 from app.repertoire import project_capture, project_published_repertoire
 from .encounters import receive_admitted_encounter
@@ -52,13 +54,6 @@ def _failure_code(error):
     return reason or (sqlstate if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate) else "unclassified")
 
 
-class DeliveryDeferred(RuntimeError):
-    """A known uncommitted preparation hold, distinct from uncertain transport."""
-    def __init__(self, reason, *, retry_after=30):
-        self.reason, self.retry_after = reason, retry_after
-        super().__init__(reason)
-
-
 @dataclass(frozen=True)
 class PreparedProviderFeedback:
     command: object
@@ -73,6 +68,39 @@ class LocalFeedbackProgress:
     progressed: bool
     pending: bool
     held_reason: str | None = None
+
+
+def _owner_capture(connections, supplied=None):
+    """Keep legacy capture's finite proofs while using the supplied read owner.
+
+    Its historical defaults use background admission. An explicit next-card
+    command supplies its own bounded read capability and must not wait for a
+    quiet foreground merely because the default exporter did so.
+    """
+    from app.legacy_game_observation import capture_game
+    if supplied is not None and supplied is not capture_game:
+        return supplied
+    from tempo_legacy_database.adapters.games.authority import headers
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    from app.services.postgres_integrity import current_integrity_certificate
+
+    def rows(statement, parameters=()):
+        with connections() as database:
+            return [dict(row) for row in database.execute(statement, parameters).fetchall()]
+
+    def metadata(repertoire_id):
+        facts = headers.repertoire_metadata(rows, repertoire_id)
+        if len(facts) != 1:
+            raise DeliveryDeferred("current_repertoire_authority_unavailable")
+        with connections() as raw:
+            certificate = current_integrity_certificate(PostgresConnection(raw), repertoire_id,
+                facts[0]["graph_generation"])
+        return {**facts[0], "integrity_current": certificate is not None,
+                "integrity_certificate": certificate}
+
+    def capture(repertoire_id, game_id, plies):
+        return capture_game(repertoire_id, game_id, plies, reader=rows, metadata=metadata)
+    return capture
 
 
 def _qualified_facts(command, *, connections, clock, delivery=None, selector=None):
@@ -131,8 +159,9 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
     return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions)
 
 
-def prepare_feedback_qualification(command, *, connections, clock,
-                                   qualification=None, capture=None, selector=None):
+def prepare_feedback_qualification(command, *, connections=None, read=None, clock,
+                                   qualification=None, determination=None, stream=None,
+                                   capture=None, selector=None):
     """Public local preparation for pending or already acknowledged obligations.
 
     This entry owns no writer/dispatch and never waits for optional process
@@ -141,9 +170,25 @@ def prepare_feedback_qualification(command, *, connections, clock,
     """
     from app.games.feedback.coordinator import delivery_for
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
-    if capture is None:
-        from app.legacy_game_observation import capture_game
-        capture = capture_game
+    if connections is None:
+        if not callable(read):
+            raise DeliveryDeferred("first_departure_owner_read_required")
+        @contextmanager
+        def connections():
+            with read() as database:
+                yield database.raw
+    if not callable(getattr(clock, "utc_now", None)):
+        original_clock = clock
+        class OwnerClock:
+            def now(self):
+                return original_clock().timestamp()
+            def utc_now(self):
+                value = original_clock()
+                if value.tzinfo is None:
+                    raise DeliveryDeferred("first_departure_aware_clock_required")
+                return value.isoformat()
+        clock = OwnerClock()
+    capture = _owner_capture(connections, capture)
     source = PostgresReviewStore(connections).source_detail(
         command.key.workspace_id, command.key.provider, command.key.game_id)
     if source is None:
@@ -154,8 +199,15 @@ def prepare_feedback_qualification(command, *, connections, clock,
     if qualification is not None:
         if not qualification.matches(command):
             raise DeliveryDeferred("qualification_original_command_mismatch")
-        delivery = delivery.model_copy(update={"determined_at": qualification.determined_at,
-            "stream": qualification.stream})
+        determination, stream = qualification.determined_at, qualification.stream
+    if determination is not None:
+        if delivery.determined_at is not None and delivery.determined_at != determination:
+            raise DeliveryDeferred("first_departure_determination_conflict")
+        delivery = delivery.model_copy(update={"determined_at": determination})
+    if stream is not None:
+        if delivery.stream is not None and delivery.stream != stream:
+            raise DeliveryDeferred("first_departure_stream_conflict")
+        delivery = delivery.model_copy(update={"stream": stream})
     qualified, source, configuration, publications, selector = _qualified_facts(command,
         connections=connections, clock=clock, delivery=delivery, selector=selector)
     if qualified.qualification_status != "ready":
@@ -212,11 +264,8 @@ class CurrentProviderPriorityIntake:
                  selector=None):
         if not callable(operation_stopped):
             raise ValueError("explicit_provider_operation_control_required")
-        if capture is None:
-            from app.legacy_game_observation import capture_game
-            capture = capture_game
         self.connections, self.clock = connections, clock
-        self.operation_stopped, self.capture = operation_stopped, capture
+        self.operation_stopped, self.capture = operation_stopped, _owner_capture(connections, capture)
         self.admitted, self.selector = admitted, selector
         self._qualification_facts = None  # One unit only, never a TTL/global cache.
         self.reads = CurrentStudyReceiptReads(connections, clock)
@@ -256,21 +305,30 @@ class CurrentProviderPriorityIntake:
                 raise DeliveryDeferred("feedback_mode_not_admitted")
         else:
             from .game_sync_current import _require_current_sync_controls
-            _require_current_sync_controls(allow_foreground=True)
+            from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+            try:
+                _require_current_sync_controls(allow_foreground=True)
+            except BackgroundAdmissionDeferred as error:
+                raise DeliveryDeferred("feedback_operation_not_admitted") from error
         stopped = self.operation_stopped()
         if type(stopped) is not bool or stopped:
             raise DeliveryDeferred("feedback_operation_stopped_or_unknown")
 
     def accept_qualified(self, command, *, qualification):
         """Accept the original command at the same Study owner with real fences."""
+        from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+        from app.games.feedback.review import ReviewUnavailable
         self._require_local_admission()
         try:
             prepared = self.prepare_qualified(command, qualification=qualification)
+            return self.accept_prepared(prepared)
         except DeliveryDeferred:
             raise
-        except ValueError as error:
-            raise DeliveryDeferred(_failure_code(error)) from error
-        return self.accept_prepared(prepared)
+        except (CurrentDecisionUnavailable, ReviewUnavailable, ValueError) as error:
+            code = _failure_code(error)
+            if code == "unclassified":
+                code = "first_departure_current_authority_unavailable"
+            raise DeliveryDeferred(code) from error
 
     def accept_prepared(self, prepared):
         from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake

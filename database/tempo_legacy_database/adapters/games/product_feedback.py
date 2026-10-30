@@ -239,7 +239,8 @@ class PostgresGamesStore:
                        delivery.payload->'lapse'->'key'->>'workspace_id',
                        delivery.payload->'control'->'key'->>'workspace_id')=%s)
                   AND (NOT %s OR (delivery.command_kind<>'control'
-                       AND delivery.payload->>'qualification_status'='ready'))
+                       AND delivery.payload->>'qualification_status' IN ('ready','held')
+                       AND delivery.payload->'qualification'<>'null'::jsonb))
                 ORDER BY CASE WHEN command_kind='control' THEN 0
                     WHEN COALESCE(payload->>'stream','')='forward'
                          AND NOT COALESCE((SELECT was_live FROM last_service),false) THEN 1

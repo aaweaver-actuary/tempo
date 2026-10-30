@@ -19,14 +19,15 @@ from .game_worker import run_optional_worker
 from contextlib import contextmanager
 
 
-def _require_current_sync_controls():
+def _require_current_sync_controls(*, allow_foreground=False):
     import os
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     from app.services.study_priority import control_snapshot
     policy=control_snapshot()
     if (os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED")!="1"
             or policy.get("available") is not True or type(policy.get("active")) is not bool
-            or type(policy.get("study_only_mode")) is not bool or policy["active"]):
+            or type(policy.get("study_only_mode")) is not bool
+            or (policy["active"] and not allow_foreground)):
         raise BackgroundAdmissionDeferred("Games sync is disabled, unavailable or waiting for foreground activity")
 
 
@@ -72,7 +73,9 @@ def create_current_game_sync(*, workspace, connections, clock=None,
     original outbox commit before any enabled delivery. Collection needs no
     receiver and leaves commands pending. Delivery never waits for queue refresh.
     """
-    if delivery_enabled and learning is None:
+    if delivery_enabled and (learning is None
+            or not callable(getattr(learning, "accept_qualified", None))
+            or not callable(getattr(learning, "prepare", None))):
         # Canonical identity is joined by SourceIdentity. The concrete receiving
         # seam still needs native qualification before default CLI activation.
         # Never fall back to the older lapse-only bridge or relabel a finding.
@@ -100,12 +103,23 @@ def create_current_game_sync(*, workspace, connections, clock=None,
                 # through clients constructed for the previous configuration.
                 raise ReviewUnavailable("sync_configuration_changed_restart_worker",503)
             yield
+    @contextmanager
+    def configured_local_admission():
+        # This grants only an already determined local delivery unit. Provider
+        # acquisition/full capture keeps its stricter foreground admission.
+        _require_current_sync_controls(allow_foreground=True)
+        current = tuple(value for provider in ("lichess", "chesscom")
+            if (value:=configuration_store.configuration(workspace,provider)) is not None)
+        if current != configurations:
+            raise ReviewUnavailable("sync_configuration_changed_restart_worker",503)
+        yield
     store = PostgresCanonicalGamesStore(connections)
     runtime = create_game_sync(policies=tuple(configuration_policy(value) for value in configurations),
         store=store, snapshots=CurrentRepertoireSnapshots(connections), learning=learning,
         clock=clock, source_identity=store,
         transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission,
-        delivery_enabled=delivery_enabled)
+        delivery_enabled=delivery_enabled, qualifier=learning if delivery_enabled else None,
+        local_admission=configured_local_admission if delivery_enabled else None)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)
     reconciliation_options = ({} if reconciliation_interval_seconds is None else

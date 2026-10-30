@@ -126,6 +126,13 @@ class ConcurrentUpdate(RuntimeError):
     """Another commit won; discard this uncommitted calculation and retry."""
 
 
+class DeliveryDeferred(RuntimeError):
+    """Known uncommitted semantic/preparation hold, not uncertain transport."""
+    def __init__(self, reason: str, *, retry_after: float = 30):
+        self.reason, self.retry_after = reason, max(0, retry_after)
+        super().__init__(reason)
+
+
 class AcquisitionFailure(RuntimeError):
     def __init__(self, reason: str, *, retry_after: float = 0, retryable: bool = True):
         super().__init__(reason)
