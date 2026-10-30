@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from . import queue_application
+from .queue_ordering import PRESENTATION_VERSION
 from .gateway import register_command
 from .review_conflicts import ReviewConflict
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
@@ -124,6 +125,8 @@ def ensure_current_queue(
         projection
         and projection["state"] == "ready"
         and not projection["refresh_pending"]
+        and (not projection["has_queued_entries"]
+             or (projection["presentation_membership_hash"] or "").startswith(PRESENTATION_VERSION + ":"))
     ):
         return {"queue_date": queue_date, "refresh_pending": False}
     if (

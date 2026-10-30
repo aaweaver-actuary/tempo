@@ -2500,7 +2500,11 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(mo
     assert observed == [(1, "tempo:admission:foreground", "browser-activity", 3000)]
 
 
-def test_postgres_daily_queue_rollover_requests_refresh_until_ready(monkeypatch):
+@pytest.mark.parametrize("receipt_kind,queued,ready", [
+    ("current", True, True), ("stale", True, False), ("missing", True, False),
+    ("unmixed", True, False), ("missing", False, True), ("stale", False, True),
+])
+def test_postgres_daily_queue_rollover_requests_refresh_until_ready(monkeypatch, receipt_kind, queued, ready):
     from app import tasks
 
     projection = None
@@ -2523,9 +2527,19 @@ def test_postgres_daily_queue_rollover_requests_refresh_until_ready(monkeypatch)
                         submitted.append((name, payload)) or {"refresh_pending": True})
     assert tasks.ensure_daily_queue.run()
     assert submitted == [("queue.ensure_current", {"queue_date": date.today().isoformat()})]
-    projection = {"state": "ready", "refresh_pending": 0}
+    from app.services.queue_ordering import PRESENTATION_VERSION
+    receipt = {"current": PRESENTATION_VERSION + ":receipt",
+               "stale": "queue-presentation-v2:receipt", "missing": None,
+               "unmixed": "unmixed:" + PRESENTATION_VERSION + ":receipt"}[receipt_kind]
+    projection = {"state": "ready", "refresh_pending": 0,
+                  "presentation_membership_hash": receipt, "has_queued_entries": queued}
+    assert tasks.ensure_daily_queue.run() is not ready
+    assert len(submitted) == (1 if ready else 2)
+    # A completed current-version publication makes the periodic check a no-op.
+    projection["presentation_membership_hash"] = PRESENTATION_VERSION + ":published"
+    before = len(submitted)
     assert not tasks.ensure_daily_queue.run()
-    assert len(submitted) == 1
+    assert len(submitted) == before
 
 
 def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards():

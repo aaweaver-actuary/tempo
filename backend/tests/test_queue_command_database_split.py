@@ -1,10 +1,13 @@
 """Foreground queue storage capture, lock order and warming boundaries."""
 import ast
+
+import pytest
 from pathlib import Path
 
 from app import queue_commands
 from app import queue_attempt_origins
 from app.services import durable_tasks
+from app.services.queue_ordering import PRESENTATION_VERSION
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.commands import queue as storage
 
@@ -90,7 +93,9 @@ def test_absent_queue_task_is_advisory_locked_then_rechecked_before_projection(m
                 return Cursor(None)
             if count == 2:
                 return Cursor({'id': 'task'})
-            return Cursor({'state': 'ready', 'refresh_pending': 0})
+            return Cursor({'state': 'ready', 'refresh_pending': 0,
+                           'has_queued_entries': True,
+                           'presentation_membership_hash': PRESENTATION_VERSION + ':receipt'})
 
         def execute_native(self, statement, parameters):
             events.append(('advisory', statement, parameters))
@@ -104,3 +109,57 @@ def test_absent_queue_task_is_advisory_locked_then_rechecked_before_projection(m
     assert events[1][2] == ('tempo:daily-queue:current:ensure',)
     assert events[-1][1].endswith(' FOR UPDATE')
     assert events[-1][2] == ('2026-10-21',)
+
+
+@pytest.mark.parametrize("receipt,queued,ready", [
+    (PRESENTATION_VERSION + ":receipt", True, True),
+    ("queue-presentation-v2:receipt", True, False),
+    (None, True, False),
+    ("unmixed:" + PRESENTATION_VERSION + ":receipt", True, False),
+    (None, False, True),
+    ("queue-presentation-v2:receipt", False, True),
+])
+def test_ready_day_version_requests_refresh_only_for_nonempty_stale_presentation(
+    monkeypatch, receipt, queued, ready,
+):
+    calls = []
+    monkeypatch.setattr(storage, 'lock_current_queue_task', lambda *_: None)
+    monkeypatch.setattr(storage, 'current_projection', lambda *_: dict(
+        state='ready', refresh_pending=0, has_queued_entries=queued,
+        presentation_membership_hash=receipt,
+    ))
+    monkeypatch.setattr(queue_commands, 'request_queue_refresh_in_transaction',
+                        lambda _db, day: calls.append(day) or dict(id='refresh'))
+    result = queue_commands.ensure_current_queue(None, {'queue_date': '2026-10-21'})
+    assert result['refresh_pending'] is not ready
+    assert calls == ([] if ready else ['2026-10-21'])
+
+
+@pytest.mark.parametrize("queued", [False, True])
+@pytest.mark.parametrize("receipt", [None, "saved-receipt"])
+def test_internal_readiness_queries_return_day_receipt_and_queued_presence(queued, receipt):
+    import sqlite3
+    from tempo_learning_database.adapters import queue_commands as learning_storage
+    from tempo_legacy_database.adapters.lifecycle import refresh_requests
+
+    with sqlite3.connect(":memory:") as database:
+        database.row_factory = sqlite3.Row
+        database.executescript("""
+            CREATE TABLE queue_projections(queue_date TEXT, state TEXT, refresh_pending INT);
+            CREATE TABLE daily_queue_days(queue_date TEXT PRIMARY KEY, membership_hash TEXT);
+            CREATE TABLE daily_queue(queue_date TEXT, status TEXT);
+            INSERT INTO queue_projections VALUES('2026-10-21','ready',0);
+            INSERT INTO daily_queue_days VALUES('other','other-receipt');
+            INSERT INTO daily_queue VALUES('other','queued');
+            INSERT INTO daily_queue VALUES('2026-10-21','complete');
+        """)
+        if receipt:
+            database.execute("INSERT INTO daily_queue_days VALUES(?,?)", ('2026-10-21', receipt))
+        if queued:
+            database.execute("INSERT INTO daily_queue VALUES(?,'queued')", ('2026-10-21',))
+        projections = [storage.current_projection(database, '2026-10-21', False),
+                       learning_storage.refresh_projection(database, '2026-10-21', False),
+                       refresh_requests.daily_queue_projection(database, '2026-10-21')]
+        for projection in projections:
+            assert dict(projection) == dict(state='ready', refresh_pending=0,
+                                           presentation_membership_hash=receipt, has_queued_entries=int(queued))

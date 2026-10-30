@@ -75,6 +75,7 @@ from .services.durable_tasks import claim_task, complete_task, defer_task_for_co
 
 from .services.durable_tasks import defer_task_for_foreground
 from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refresh_after_foreground_denial
+from .services.queue_ordering import PRESENTATION_VERSION
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import (
@@ -162,7 +163,9 @@ def ensure_daily_queue() -> bool:
     with activity_gate.foreground():
         with read_connection() as database:
             projection = daily_queue_projection(database, queue_date)
-        if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+        if (projection and projection["state"] == "ready" and not projection["refresh_pending"]
+                and (not projection["has_queued_entries"]
+                     or (projection["presentation_membership_hash"] or "").startswith(PRESENTATION_VERSION + ":"))):
             return False
         result = execute_command(
             uuid.uuid4().hex, "queue.ensure_current", {"queue_date": queue_date},

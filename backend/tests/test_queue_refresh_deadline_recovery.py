@@ -10,6 +10,7 @@ from psycopg.errors import TransactionTimeout
 from tempo_legacy_database import connections as database
 from app import activity_commands, queue_commands
 from app.services import durable_tasks
+from app.services.queue_ordering import PRESENTATION_VERSION
 
 
 QUEUE_DATE = "2026-10-07"
@@ -238,16 +239,23 @@ def test_issue135_pre_upgrade_deadline_checkpoint_resumes_without_losing_backoff
     assert json.loads(saved["transaction_timeout_checkpoint"])[0] == claimed["generation"]
 
 
-def test_issue135_periodic_ensure_preserves_current_queue_retry_error(queue_refresh_store):
+@pytest.mark.parametrize("state", ["queued", "leased", "retrying"])
+def test_issue135_periodic_ensure_preserves_current_queue_retry_error(queue_refresh_store, state):
     queued = _queue_task()
-    claimed = durable_tasks.claim_task("daily_queue")
-    assert _deadline(claimed)
-    before_ensure = _saved_task(queued["id"])
+    if state in {"leased", "retrying"}:
+        claimed = durable_tasks.claim_task("daily_queue")
+        if state == "retrying":
+            assert _deadline(claimed)
     with database.connection(background=True) as connection:
-        ensured = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
-    assert ensured["task_id"] == queued["id"] and ensured["refresh_pending"] is True
-    assert _saved_task(queued["id"]) == before_ensure
-    assert _projection()["last_error"] == "Daily queue database deadline exceeded"
+        payload = dict(queue_date=QUEUE_DATE, preserve_through_entry_id=42, _queue_phase="prepare", cursor=19)
+        connection.execute("UPDATE background_tasks SET payload_json=? WHERE id=?", (json.dumps(payload), queued["id"]))
+    before_ensure = _saved_task(queued["id"])
+    for _ in range(2):
+        with database.connection(background=True) as connection:
+            ensured = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+        assert ensured["task_id"] == queued["id"] and ensured["refresh_pending"] is True
+        assert _saved_task(queued["id"]) == before_ensure
+    assert _projection()["last_error"] == ("Daily queue database deadline exceeded" if state == "retrying" else None)
 
 
 def test_issue135_ensure_ready_projection_without_task_does_not_enqueue(queue_refresh_store):
@@ -309,3 +317,40 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
     assert saved["state"] == "queued" and saved["transaction_timeout_count"] == 0
     assert saved["last_error"] is None
     assert _projection()["last_error"] == "Replacement generation owns status"
+
+
+@pytest.mark.parametrize("receipt", [PRESENTATION_VERSION + ":receipt", "queue-presentation-v2:receipt", None,
+                                     "unmixed:" + PRESENTATION_VERSION + ":receipt"])
+def test_ready_nonempty_queue_adopts_version_once_without_replacing_active_generation(queue_refresh_store, receipt):
+    with database.connection(background=True) as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('ready','Ready','fixture',?)", (QUEUE_DATE,))
+        connection.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date)
+                              VALUES('ready-card','ready','prefix','fen','[]','learning',?)""", (QUEUE_DATE,))
+        connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(?,'ready-card',0,'queued')", (QUEUE_DATE,))
+        if receipt:
+            connection.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?)",
+                               (QUEUE_DATE, receipt, QUEUE_DATE))
+        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
+        ensured = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+    stale = receipt != PRESENTATION_VERSION + ":receipt"
+    assert ensured["refresh_pending"] is stale
+    if not stale:
+        with database.read_connection() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM background_tasks").fetchone()[0] == 0
+        return
+    before = _saved_task(ensured["task_id"])
+    with database.connection(background=True) as connection:
+        repeated = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+    assert repeated == ensured
+    assert _saved_task(ensured["task_id"]) == before
+    # Model completed publication at the readiness seam; C owns the real native publication journey.
+    with database.connection(background=True) as connection:
+        connection.execute("UPDATE background_tasks SET state='complete' WHERE id=?", (ensured["task_id"],))
+        connection.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?) "
+                           "ON CONFLICT(queue_date) DO UPDATE SET membership_hash=excluded.membership_hash",
+                           (QUEUE_DATE, PRESENTATION_VERSION + ":published", QUEUE_DATE))
+        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
+        published_task = dict(connection.execute("SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)).fetchone())
+        assert queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE}) == dict(
+            queue_date=QUEUE_DATE, refresh_pending=False)
+        assert dict(connection.execute("SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)).fetchone()) == published_task
