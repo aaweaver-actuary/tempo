@@ -98,7 +98,7 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
             "-c", "max_connections=16").stdout.strip()
         inventory = json.loads(docker("inspect", container).stdout)[0]
         report["mounts"] = inventory["Mounts"]
-        report["tmpfs"] = inventory["HostConfig"]["Tmpfs"]
+        report["tmpfs"] = inventory["HostConfig"].get("Tmpfs", {})
         report["memory_bytes"] = inventory["HostConfig"]["Memory"]
         report["pids_limit"] = inventory["HostConfig"]["PidsLimit"]
         report["published_ports"] = inventory["NetworkSettings"]["Ports"]
@@ -106,7 +106,7 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
         binding = inventory["NetworkSettings"]["Ports"]["5432/tcp"][0]
         assert binding["HostIp"] == "127.0.0.1"
         if volume:
-            assert not inventory['HostConfig']['Tmpfs']
+            assert not inventory['HostConfig'].get('Tmpfs', {})
             assert len(inventory['Mounts']) == 1
             mount, = inventory['Mounts']
             assert mount['Type'] == 'volume' and mount['Name'] == volume
