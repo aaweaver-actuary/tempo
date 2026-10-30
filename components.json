@@ -294,7 +294,12 @@
         "replay_positions",
         "ComparisonSnapshot",
         "compare_game",
-        "EvidenceStore"
+        "EvidenceStore",
+        "LegacyAuthorityToken",
+        "LegacyComparisonSnapshot",
+        "LegacyScopedComparisonSnapshot",
+        "PhysicalCard",
+        "preview_legacy_observation"
       ],
       "dependencies": [
         "tempo_repertoire_comparison",
