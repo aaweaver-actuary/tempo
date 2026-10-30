@@ -179,8 +179,11 @@ def select_first_boundary(game: CanonicalGame, *, snapshots: Iterable[Repertoire
             return result("unresolved", position=position, expected=expected, routes=facts,
                           diagnostic="selected_scope_conflicting" if contradictory else "selected_scope_incomplete_or_unavailable")
         if any(routes[index][2].deliberate for index, _ in terminal | ended):
-            return result("coverage_end", position=position, expected=expected, routes=facts,
-                          diagnostic="deliberate_authored_endpoint")
+            if not expected and facts and all(item.at_deliberate_end for item in facts):
+                return result("coverage_end", position=position, routes=facts,
+                              diagnostic="deliberate_authored_endpoint")
+            return result("unresolved", position=position, expected=expected, routes=facts,
+                          diagnostic="ended_competing_route")
         if ended or terminal and expected:
             return result("unresolved", position=position, expected=expected, routes=facts,
                           diagnostic="authored_continuation_unavailable")

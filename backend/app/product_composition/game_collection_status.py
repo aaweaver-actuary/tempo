@@ -37,7 +37,7 @@ def _redacted(value, key=""):
             "ambiguous_expected_response", "conflicting_authored_own_response",
             "missing_or_ambiguous_physical_target", "current_presentation_unavailable",
             "physical_target_occurrence_unbound", "positive_coverage_with_incomplete_scope",
-            "authored_continuation_unavailable", "ambiguous_authored_policy"}
+            "authored_continuation_unavailable", "ambiguous_authored_policy", "ended_competing_route"}
         return value if value in safe else "redacted_diagnostic"
     if value is not None and (key in PRIVATE_FIELDS or key == "source_revision" and isinstance(value, str)):
         # Stable opaque identities preserve correspondence without publishing raw values.
