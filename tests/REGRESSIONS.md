@@ -5933,3 +5933,6 @@ checks the four current admission/control races.
 #616 raw-read adoption. `test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox`
 and `test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle`
 guard candidate precedence and retained recovery time without a quiet-window wait.
+`test_game_review_qualified_legacy_lapse_keeps_current_progress_receipt` verifies
+the actual HTTP read/parser retains the current qualified receipt for an original
+legacy envelope, while the adjacent compatibility case preserves old JSON.

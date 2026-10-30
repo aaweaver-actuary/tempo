@@ -159,6 +159,25 @@ def test_game_review_legacy_receipt_json_is_unchanged():
     assert case.owner.calls == [("legacy", case.command.key)]
 
 
+def test_game_review_qualified_legacy_lapse_keeps_current_progress_receipt():
+    from app.contracts.product_v02.learning import FirstDepartureWitness
+    from test_product_delivery_qualification import QualifiedReceiver
+    case = scenario(legacy=True)
+    witness = FirstDepartureWitness(selection=case.source.first_departure,
+        configuration_revision=1,determined_at=case.source.determined_at,stream="reconciliation")
+    current = QualifiedReceiver().accept_qualified(case.command,qualification=witness)
+    qualified = case.delivery.model_copy(update={"qualification_status":"ready",
+        "qualification":witness,"determined_at":witness.determined_at,"receipt":current})
+    case.store.saved_deliveries = (qualified,)
+    case.owner.legacy,case.owner.current = False,current
+    response = get_game(case)
+    assert response.status_code == 200,response.text
+    assert response.json()["receipts"] == [current.model_dump(mode="json")]
+    parsed = GameDetail.model_validate_json(response.text)
+    assert parsed.receipts[0].progress.determined_at == witness.determined_at
+    assert case.owner.calls == [("encounter",case.command.key)]
+
+
 def test_game_review_owner_status_failure_does_not_publish_cached_availability():
     case = scenario()
     case.owner.unavailable = True
