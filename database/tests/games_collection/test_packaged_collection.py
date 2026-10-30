@@ -11,6 +11,7 @@ import secrets
 import subprocess
 import sys
 import shlex
+import signal
 import time
 import uuid
 
@@ -44,6 +45,18 @@ def _candidate_image():
     inspected = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
     assert image == inspected['Id'] and inspected['Config']['Labels']['org.opencontainers.image.revision'] == revision
     return image, revision
+
+
+def _candidate_web_image(revision):
+    image = os.environ.get('TEMPO_COLLECTION_TEST_WEB_IMAGE')
+    assert image, 'Set TEMPO_COLLECTION_TEST_WEB_IMAGE to the immutable qualified web image ID'
+    inspected = json.loads(subprocess.check_output(['docker','image','inspect',image],text=True))[0]
+    assert inspected['Id']==image and inspected['Config']['Labels']['org.opencontainers.image.revision']==revision
+    # Dockerfile.web copies the root context, including test sources. Keep the
+    # exact candidate closure; do not relabel a previous image after a repair.
+    subprocess.run(['git','diff','--exit-code',revision,'--','.'],cwd=ROOT,check=True,capture_output=True)
+    assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard'],cwd=ROOT,text=True).strip()
+    return image
 
 
 def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(case, tmp_path):
@@ -216,7 +229,9 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
 # Reuse the exact native setup/teardown owner with a fresh module-independent
 # lifetime. Running both packaged cases cannot lend retained collection rows or
 # configuration to the single feedback journey.
-feedback_postgres = pytest.fixture(scope='function', name='feedback_postgres')(inspect.unwrap(owned_postgres))
+@pytest.fixture
+def feedback_postgres(tmp_path_factory):
+    yield from inspect.unwrap(owned_postgres)(tmp_path_factory,additional_ports=(80,))
 
 
 @pytest.fixture
@@ -231,6 +246,7 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     import shutil
 
     image, revision = _candidate_image()
+    web_image = _candidate_web_image(revision)
     case = feedback_case
     with case.transaction() as database:
         info = database.raw.info
@@ -245,6 +261,9 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     owner = matches[0]['owner']
     pg = json.loads(subprocess.check_output(['docker','inspect',matches[0]['container_id']],text=True))[0]
     assert pg['Config']['Labels']['tempo.owner'] == owner and pg['Config']['Labels']['tempo.disposable'] == 'true'
+    binding = pg['NetworkSettings']['Ports']['80/tcp'][0]
+    assert binding['HostIp']=='127.0.0.1' and matches[0]['published_ports']['80/tcp']==[binding]
+    web_url = 'http://127.0.0.1:'+binding['HostPort']
     # Authored fixture facts only. Queue rows, introductions, attempt origins,
     # human reviews and effect receipts below come from installed owners.
     retained_owner_case(case, False)
@@ -282,9 +301,16 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
             end_at=(now-timedelta(hours=1)).isoformat(),precision='second'),repertoire_ids=[repertoire],
         speeds=['rapid'],rated=True,interval_seconds=60,revision=1))
     (directory/'provider.json').write_text(json.dumps(inputs))
+    nginx = (ROOT/'nginx.conf').read_text()
+    assert nginx.count('proxy_pass http://api:8000;')==1
+    (directory/'nginx.conf').write_text(nginx.replace('proxy_pass http://api:8000;','proxy_pass http://127.0.0.1:8000;'))
     budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
-    containers, report = {}, dict(candidate=revision,image=image,schema=56,fixture_container=pg['Id'],stages=[])
+    containers, report = {}, dict(candidate=revision,image=image,web_image=web_image,schema=56,
+        fixture_container=pg['Id'],web_origin=web_url,stages=[])
     stage = 'role_startup'
+    browser, browser_log = None, None
+    evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
+    browser_evidence = evidence/('browser-'+owner); browser_evidence.mkdir()
 
     def docker(*arguments, check=True, input=None):
         result = subprocess.run(['docker',*arguments],input=input,capture_output=True,text=True,timeout=45)
@@ -292,8 +318,9 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
             assert result.returncode == 0, 'packaged_feedback_docker_'+stage
         return result
 
-    def launch(role, command, *, backend=True):
-        selected_image = image if backend else json.loads(docker('image','inspect','redis:7-alpine').stdout)[0]['Id']
+    def launch(role, command, *, kind='backend'):
+        selected_image = (image if kind=='backend' else web_image if kind=='web'
+            else json.loads(docker('image','inspect','redis:7-alpine').stdout)[0]['Id'])
         budget = budgets[role]
         secret = tmp_path/(role+'.env')
         common = ['TEMPO_TEST_INSTANCE=disposable','TZ=UTC','TEMPO_COORDINATOR_MODE=external',
@@ -307,10 +334,14 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
             '--label','tempo.disposable=true','--label','com.docker.compose.service='+role,
             '--network','container:'+pg['Id'],'--read-only','--tmpfs','/tmp:rw,size=32m',
             '--memory',str(budget['memoryMiB'])+'m','--pids-limit',str(budget.get('pidsLimit',96))]
-        if backend:
+        if kind=='backend':
             arguments += ['--env-file',str(secret),'--mount','type=bind,src='+str(directory)+',dst=/qualification,readonly']
-        else:
+        elif kind=='redis':
             arguments += ['--tmpfs','/data:rw,size=32m']
+        else:
+            assert kind=='web'
+            arguments += ['--tmpfs','/var/cache/nginx:rw,size=16m','--tmpfs','/var/run:rw,size=1m',
+                '--mount','type=bind,src='+str(directory/'nginx.conf')+',dst=/etc/nginx/conf.d/default.conf,readonly']
         identifier = docker(*arguments,selected_image,*command).stdout.strip()
         containers[role] = dict(id=identifier,image=selected_image)
         inspected = json.loads(docker('inspect',identifier).stdout)[0]
@@ -350,19 +381,6 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert time.monotonic()<deadline, reason
             time.sleep(.1)
 
-    def command(path, body, identity):
-        result = api('POST',path,body,identity)
-        if result['status']==202:
-            operation = result['body']['operation_id']
-            def complete():
-                observed = api('GET','/api/operations/'+operation)
-                assert observed['status']==200
-                assert observed['body']['state']!='failed', 'packaged_feedback_operation_failed'
-                return observed['body'].get('response') if observed['body']['state']=='complete' else None
-            return wait_for(complete,'packaged_feedback_operation_pending')
-        assert result['status']==200, 'packaged_feedback_command_rejected'
-        return result['body']
-
     def queue():
         result = api('GET','/api/queue/window?limit=2')
         if result['status']==503:
@@ -373,13 +391,31 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert result['status']==200, 'packaged_feedback_queue_rejected'
         return result['body'] if result['body'].get('cards') else None
 
+    def provider_ready(value):
+        path = directory/'provider-ready.json'
+        temporary = path.with_suffix('.next')
+        temporary.write_text(json.dumps(value))
+        temporary.replace(path)
+
+    def browser_ready(expected_stage):
+        path = directory/'browser-ready.json'
+        if path.exists():
+            observed = json.loads(path.read_text())
+            if observed['stage']==expected_stage:
+                return observed
+        assert browser is not None and browser.poll() is None, 'packaged_feedback_browser_exited_before_'+expected_stage
+        return None
+
+    browser_name = 'packaged first-departure feedback uses real browser saves and issuance'
+
     try:
-        launch('redis',['redis-server','--appendonly','no','--save',''],backend=False)
+        launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
         launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
             '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
         launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
             '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
+        launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
         launch('game-feedback-worker',['python','-B','/qualification/entry.py','feedback-worker'])
         wait_for(lambda: api('GET','/api/health')['status']==200,'packaged_feedback_api_not_ready')
@@ -433,6 +469,22 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         recorded = json.loads(execute('game-feedback-worker','python','-m','app.product_composition.game_feedback_mode',
             'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
         assert recorded['applied'] and recorded['mode']=='feedback'
+        stage = 'actual_browser_start'
+        scenario = directory/'browser-scenario.json'
+        scenario.write_text(json.dumps(dict(version=1,protected_card_id=case.card_id,
+            protected_queue_entry_id=protected['queue_entry_id'],target_card_id=target_id)))
+        node = shutil.which('node')
+        cli = ROOT/'node_modules/@playwright/test/cli.js'
+        assert node and cli.is_file(), 'packaged_feedback_installed_playwright_required'
+        browser_report = browser_evidence/'playwright.json'
+        browser_log = (browser_evidence/'runner.log').open('w')
+        browser = subprocess.Popen([node,str(cli),'test','tests/browser/real-game-feedback.spec.ts',
+            '--config=playwright.config.ts','--project=chromium','--grep',browser_name,'--trace=on'],
+            cwd=ROOT,env=os.environ|dict(TEMPO_DOCKER_URL=web_url,TEMPO_PACKAGED_FEEDBACK_SCENARIO=str(scenario),
+                TEMPO_CI_REPORT=str(browser_report),TEMPO_TEST_OUTPUT_DIR=str(browser_evidence/'artifacts')),
+            stdout=browser_log,stderr=subprocess.STDOUT,text=True,start_new_session=True)
+        report['browser_process']=dict(pid=browser.pid,process_group=browser.pid,report=str(browser_report))
+        wait_for(lambda:browser_ready('protected'),'packaged_feedback_browser_protected_board_missing')
         inputs['now'] = datetime.now(timezone.utc).timestamp()
         (directory/'provider.json').write_text(json.dumps(inputs))
         (directory/'feedback-start').write_text('actual_mode_verified\n')
@@ -443,46 +495,42 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                     FROM product_feedback_deliveries delivery JOIN product_feedback_sources source USING(source_key)
                     WHERE source.payload->'original'->>'source_game_id'=%s""",(source_id,)).fetchall()
             assert len(rows)<=1, 'packaged_feedback_duplicate_original_effect'
-            return rows[0] if rows else None
+            if not rows:
+                return None
+            observed = Delivery.model_validate_json(json.dumps(rows[0][1]))
+            return rows[0] if observed.qualification_status=='ready' and observed.determined_at else None
         delivery = wait_for(actual_delivery,'packaged_feedback_original_delivery_missing')
         original_delivery = Delivery.model_validate_json(json.dumps(delivery[1]))
         assert original_delivery.command_kind=='encounter'
         operation_id, original = delivery[0], original_delivery.command.model_dump(mode='json')
         assert original_delivery.operation_id==operation_id and delivery[1]['encounter']==original
         assert original['observation']=='missed' and original['played_uci']=='d2d4' and original['expected_uci']=='e2e4'
-        stage = 'canonical_introduction'
-        for _unit in range(8):
-            command('/api/queue/prepare-next',{},'packaged-prepare:'+uuid.uuid4().hex)
-            with case.transaction() as database:
-                introduced = database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(target_id,)).fetchone()[0]
-                queued = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",(target_id,)).fetchone()
-            if introduced and queued:
-                break
-            time.sleep(.1)
-        assert introduced and queued, 'packaged_feedback_canonical_introduction_missing'
+        with case.transaction() as database:
+            refresh_requested_after = database.execute_native('SELECT clock_timestamp()').fetchone()[0]
+        provider_ready(dict(stage='source',operation_id=operation_id,key=original['key']))
+        stage = 'browser_save_prepare_and_reread'
+        target_marker = wait_for(lambda:browser_ready('target'),'packaged_feedback_browser_target_missing')
+        protected_review = target_marker['protected_review']
+        assert protected_review['card_id']==case.card_id and protected_review['body']['guided'] is False
+        assert protected_review['body']['queue_entry_id']==protected['queue_entry_id']
+        assert protected_review['response']['persisted'] and protected_review['replay']==protected_review['response']
         before_review = entry('api','feedback-state',operation_id)
         receipt = before_review['receipt']
         assert receipt['key']==original['key'] and receipt['disposition']=='first_introduction'
         assert before_review['qualification']['selection']['status']=='own_actionable'
         assert before_review['qualification']['selection']['ply']==original['key']['occurrence_ply']==1
         assert before_review['qualification']['selection']['decision']['presentation_id']==target_id
-        assert receipt['progress']['target']['card_id']==target_id and receipt['progress']['first_issued'] is None
+        assert receipt['progress']['target']['card_id']==target_id
+        assert receipt['progress']['first_issued']['queue_entry_id']==target_marker['target_entry_id']
+        assert 1<=receipt['progress']['first_issued_ordinal']<=5
         with case.transaction() as database:
             assert tuple(database.execute_native("""SELECT queue_entry_id,card_id,revision,issuance_sequence,issued_at
                 FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=%s""",protected_origin[:3]).fetchone())==protected_origin
             assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==(0,1)
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
-        assert wait_for(queue,'packaged_feedback_current_board_missing')['cards'][0]['queue_entry_id']==protected['queue_entry_id']
-        stage = 'ordinary_review_and_issuance'
-        def review(card, attempt):
-            body = dict(outcome='correct',guided=False,queue_entry_id=card['queue_entry_id'],expected_revision=card['revision'],attempt_id=attempt)
-            path, identity = '/api/cards/'+card['id']+'/review','review-attempt:'+attempt
-            saved = command(path,body,identity)
-            assert saved['persisted'] and command(path,body,identity)==saved
-            return saved
-        with case.transaction() as database:
-            refresh_requested_after = database.execute_native('SELECT clock_timestamp()').fetchone()[0]
-        review(protected,'packaged-protected:'+uuid.uuid4().hex)
+            assert database.execute_native('SELECT card_id FROM reviews WHERE id=%s',
+                (protected_review['response']['review_id'],)).fetchone()[0]==case.card_id
+        stage = 'actual_unseen_refresh_before_browser_completion'
         def actual_unseen_refresh():
             with case.transaction() as database:
                 row = database.execute_native("""SELECT generation,state,payload_json,updated_at FROM background_tasks
@@ -491,31 +539,53 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 if row is None:
                     return None
                 assert database.execute_native("SELECT 1 FROM daily_queue WHERE id=%s AND card_id=%s AND status='queued'",
-                    (queued[0],target_id)).fetchone(), 'packaged_feedback_unseen_refresh_removed_owed_target'
+                    (target_marker['target_entry_id'],target_id)).fetchone(), 'packaged_feedback_unseen_refresh_removed_owed_target'
                 assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(target_id,)).fetchone()[0]
+                assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
                 return dict(row)
         report['actual_sliced_unseen_refresh'] = wait_for(actual_unseen_refresh,'packaged_feedback_unseen_refresh_pending')
-        target_queue = wait_for(queue,'packaged_feedback_target_head_pending')
-        target = target_queue['cards'][0]
-        assert target['id']==target_id
-        issued = entry('api','feedback-state',operation_id)['receipt']
-        assert 1<=issued['progress']['first_issued_ordinal']<=5
-        assert issued['progress']['first_issued']['queue_entry_id']==target['queue_entry_id']
-        assert issued['progress']['determined_at']==before_review['qualification']['determined_at']
-        saved = review(target,'packaged-target:'+uuid.uuid4().hex)
+        provider_ready(dict(stage='refresh',generation=report['actual_sliced_unseen_refresh']['generation']))
+        stage = 'browser_clean_completion_and_replay'
+        completed_browser = wait_for(lambda:browser_ready('complete'),'packaged_feedback_browser_completion_missing')
+        assert browser.wait(timeout=5)==0, 'packaged_feedback_playwright_failed'
+        assert browser_report.is_file(), 'packaged_feedback_playwright_report_missing'
+        execution = json.loads(browser_report.read_text())
+        executed = []
+        def selected_tests(suites):
+            for suite in suites:
+                selected_tests(suite.get('suites',[]))
+                for spec in suite.get('specs',[]):
+                    for test in spec.get('tests',[]):
+                        executed.append(dict(title=spec['title'],id=test.get('testId') or spec.get('id'),
+                            project=test['projectName'],results=test.get('results',[])))
+        selected_tests(execution.get('suites',[]))
+        assert len(executed)==1 and executed[0]['title']==browser_name and executed[0]['project']=='chromium'
+        assert executed[0]['id'] and len(executed[0]['results'])==1 and executed[0]['results'][0]['status']=='passed'
+        attachments = executed[0]['results'][0].get('attachments',[])
+        assert any(item['name']=='trace' and Path(item['path']).is_file() for item in attachments)
+        assert any(item['name']=='actual-browser-correspondence' for item in attachments)
+        report['browser_execution']=executed
+        target_reviews = [item for item in completed_browser['reviews'] if item['card_id']==target_id]
+        clean_reviews = [item for item in target_reviews if item['body']['guided'] is False]
+        assert 1<=len(target_reviews)<=2 and len(clean_reviews)==1
+        clean = clean_reviews[0]
+        assert clean['response']['persisted'] and clean['replay']==clean['response']
         stage = 'same_key_settlement'
         settled = entry('api','feedback-state',operation_id)
         assert settled['command']==original and settled['receipt']['key']==original['key']
         assert settled['receipt']['status']=='settled'
-        assert settled['receipt']['progress']['settlement']['review_id']==saved['review_id']
-        assert settled['receipt']['progress']['settlement']['attempt']==issued['progress']['first_issued']
+        assert settled['receipt']['progress']['settlement']['review_id']==clean['response']['review_id']
         with case.transaction() as database:
-            assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'study\'',(target_id,)).fetchone()[0]==1
+            from tempo_legacy_database.adapters.study.issuance import attempt_issuance
+            actual_clean_origin = attempt_issuance(database,clean['body']['queue_entry_id'],target_id,clean['body']['expected_revision'])
+            assert actual_clean_origin is not None
+            assert settled['receipt']['progress']['settlement']['attempt']==actual_clean_origin.model_dump(mode='json')
+            assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'study\'',(target_id,)).fetchone()[0]==len(target_reviews)
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'game_lapse\'',(target_id,)).fetchone()[0]==0
             assert database.execute_native("SELECT payload->'encounter' FROM product_feedback_deliveries WHERE operation_id=%s",(operation_id,)).fetchone()[0]==original
             report['actual_issuances_after_determination'] = database.execute_native("""SELECT COUNT(*) FROM queue_attempt_origins
                 WHERE issued_as_head=1 AND issued_at>%s AND issuance_sequence IS NOT NULL""",
-                (issued['progress']['determined_at'],)).fetchone()[0]
+                (receipt['progress']['determined_at'],)).fetchone()[0]
             report['unseen_refresh_task'] = database.execute_native("""SELECT payload_json FROM background_tasks
                 WHERE kind='daily_queue' AND deduplication_key='current'""").fetchone()[0]
         report.update(operation_id=operation_id,key=original['key'],qualification=settled['qualification'],receipt=settled['receipt'])
@@ -524,6 +594,39 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
         raise
     finally:
+        if browser is not None:
+            if browser.poll() is None:
+                provider_ready(dict(stage='abort'))
+                try:
+                    browser.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(browser.pid,signal.SIGTERM)
+                    try:
+                        browser.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(browser.pid,signal.SIGKILL)
+                        browser.wait(timeout=5)
+            report['browser_exit']=browser.returncode
+            try:
+                os.killpg(browser.pid,0)
+            except ProcessLookupError:
+                report['browser_process_group_removed']=True
+            else:
+                os.killpg(browser.pid,signal.SIGTERM)
+                cleanup_deadline = time.monotonic()+5
+                while True:
+                    try:
+                        os.killpg(browser.pid,0)
+                    except ProcessLookupError:
+                        report['browser_process_group_removed']=True
+                        break
+                    if time.monotonic()>=cleanup_deadline:
+                        os.killpg(browser.pid,signal.SIGKILL)
+                        report['browser_process_group_removed']=False
+                        break
+                    time.sleep(.05)
+        if browser_log is not None:
+            browser_log.close()
         cleanup = []
         for role, resource in reversed(list(containers.items())):
             found = docker('inspect',resource['id'],check=False)
@@ -542,3 +645,4 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         report['runtimes']=cleanup
         evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
         (evidence/('feedback-'+owner+'.json')).write_text(json.dumps(report,indent=2,default=str))
+        assert report.get('browser_process_group_removed',True), 'packaged_feedback_browser_process_group_remained'
