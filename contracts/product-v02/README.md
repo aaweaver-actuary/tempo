@@ -259,6 +259,7 @@ serialization fields. New `0.2.2` receipts require `progress: EncounterProgress`
 | `scheduling_review_id`, `schedule_applied_at` | Paired actual ordinary Again receipt/time; priority `applied_at` alone supplies neither. |
 | `introduction_applied_at` | Canonical first introduction/current admission completed; mutually exclusive with an Again receipt for this accepted occurrence. |
 | `remediation_fence` | Current target, queue-owner `after_issuance_sequence` and truthful establishment time at/after application/admission. An old real reset may acquire a conservative current fence without replaying Again or backdating it. |
+| Optional `prior_remediation_fences` | Ordered previous target fences retained only after an authoritative Study-owned current-presentation remap. Empty history is omitted, preserving stored fixture shapes. The first retained target is the actual application target; current `target`/fence identify where remediation is now owed. |
 | `first_issued`, `first_issued_ordinal` | Paired actual target issuance and measured distinct new-issuance ordinal from determination; no five-card claim from a queue row. |
 | `settlement` | Durable genuine clean Study `review_id` plus compatible actual post-fence issued attempt. Withdrawn/historical-preserved terminal control is distinct from settled remediation. |
 
@@ -279,6 +280,23 @@ saved review receipt. Protected pre-reset attempts remain pending and save
 truthfully. Outstanding legacy priority-only receipts stay visibly legacy until
 qualified/applied once, including effects already acknowledged by Games;
 settled/withdrawn history is not reopened automatically.
+
+An actual post-application split/recombination may map original physical target A
+to current B without another Again. Study retains the original scheduler review,
+application time, logical key and determination, appends A's fence to
+`prior_remediation_fences`, and captures a fresh B fence through its authoritative
+lineage/current-presentation owner. Repeated remaps retain the ordered real fence
+history without dropping the original application. This receipt field is owner
+evidence, never permission for a producer to invent lineage. Pre-application
+remapping simply selects the actual target before its one application.
+
+Actual first issuance of A remains visible with its original ordinal; if B is
+the first served compatible target, B's actual issuance is used. An issuance
+at an old target must fall after that target's fence and no later than the next
+remap's captured frontier/time, so old-target service cannot be invented after
+retirement. Settlement always requires a fresh compatible attempt after the
+current target fence, even when genuine earlier A service is retained. This
+never relabels A's scheduling review as a new B reset or restarts the service clock.
 
 [`fixtures/first-departure`](fixtures/first-departure) supplies shared synthetic
 covered-alternative, introduced/unseen own boundary, opponent-before-later-miss,

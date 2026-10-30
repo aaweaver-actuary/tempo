@@ -108,7 +108,7 @@ function compareUtc(left: string, right: string): number {
 function followsFence(fence: z.infer<typeof RawRemediationFenceSchema>, attempt: z.infer<typeof RawIssuedAttemptEvidenceSchema>) {
   return attempt.card_id === fence.target.card_id && attempt.card_revision === fence.target.card_revision && attempt.issuance_sequence > fence.after_issuance_sequence && compareUtc(attempt.issued_at, fence.established_at) >= 0;
 }
-const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("first_departure_v1").default("first_departure_v1"), determined_at: utc, stream: z.enum(["forward", "reconciliation", "manual"]), target: RawEncounterTargetSchema, scheduling_review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), schedule_applied_at: utc.nullable(), introduction_applied_at: utc.nullable(), remediation_fence: RawRemediationFenceSchema.nullable(), first_issued: RawIssuedAttemptEvidenceSchema.nullable(), first_issued_ordinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), settlement: RawEncounterSettlementSchema.nullable() }).superRefine((value, ctx) => {
+const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("first_departure_v1").default("first_departure_v1"), determined_at: utc, stream: z.enum(["forward", "reconciliation", "manual"]), target: RawEncounterTargetSchema, scheduling_review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), schedule_applied_at: utc.nullable(), introduction_applied_at: utc.nullable(), remediation_fence: RawRemediationFenceSchema.nullable(), prior_remediation_fences: z.array(RawRemediationFenceSchema).min(1).optional(), first_issued: RawIssuedAttemptEvidenceSchema.nullable(), first_issued_ordinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), settlement: RawEncounterSettlementSchema.nullable() }).superRefine((value, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: "custom", message });
   if ((value.scheduling_review_id === null) !== (value.schedule_applied_at === null)) fail("Again needs actual scheduling review and application time");
   if (value.schedule_applied_at !== null && value.introduction_applied_at !== null) fail("one disposition cannot claim Again and introduction");
@@ -116,8 +116,19 @@ const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("f
   const fence = value.remediation_fence;
   if ((fence === null) !== (application === null)) fail("application/admission needs issuance fence");
   if (fence !== null && (fence.target.card_id !== value.target.card_id || fence.target.card_revision !== value.target.card_revision || application === null || compareUtc(fence.established_at, application) < 0)) fail("fence binds actual target at or after application boundary");
+  const history = value.prior_remediation_fences ?? [];
+  const fences = [...history, ...(fence !== null ? [fence] : [])];
+  if (history.length && fence === null) fail("prior remediation needs current application fence");
+  for (let index = 1; index < fences.length; index++) {
+    const previous = fences[index - 1], current = fences[index];
+    if ((previous.target.card_id === current.target.card_id && previous.target.card_revision === current.target.card_revision) || previous.after_issuance_sequence > current.after_issuance_sequence || compareUtc(previous.established_at, current.established_at) > 0) fail("owner remapping retains distinct targets and monotonic real fences");
+  }
+  if (fences.length && application !== null && compareUtc(fences[0].established_at, application) < 0) fail("original fence cannot precede actual application");
   if ((value.first_issued === null) !== (value.first_issued_ordinal === null)) fail("first issuance and measured ordinal must be paired");
-  if (value.first_issued !== null && (fence === null || !followsFence(fence, value.first_issued))) fail("remedial issuance must follow application");
+  if (value.first_issued !== null && !fences.some((candidate, index) => {
+    const following = fences[index + 1], issued = value.first_issued!;
+    return followsFence(candidate, issued) && (!following || (issued.issuance_sequence <= following.after_issuance_sequence && compareUtc(issued.issued_at, following.established_at) <= 0));
+  })) fail("first issuance must match actual current/prior post-application target window");
   if (value.first_issued !== null && compareUtc(value.first_issued.issued_at, value.determined_at) < 0) fail("target issuance cannot precede original determination");
   if (value.settlement !== null && (value.first_issued === null || fence === null || !followsFence(fence, value.settlement.attempt) || value.settlement.attempt.issuance_sequence < value.first_issued.issuance_sequence)) fail("settlement requires compatible post-application issued attempt");
   if (value.settlement !== null && value.first_issued !== null) {
