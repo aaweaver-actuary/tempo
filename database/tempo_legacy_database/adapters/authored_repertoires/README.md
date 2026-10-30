@@ -77,8 +77,8 @@ route_ids=...)` for complete graph/card/membership facts of the Repertoire owner
 derived surviving routes. Each call uses one MVCC statement on the borrowed
 connection; it owns no connection, commit, policy selector or learning effect.
 Stored FEN discovery hints do not filter candidate bindings. Graphs with missing
-physical cards remain observable, and a 100,001st candidate graph refuses the
-whole relation with numeric diagnostics.
+physical cards remain observable. The prior removal of a graph-count ceiling
+and whole-snapshot byte cap remains effective; no graph prefix is certified.
 
 ```mermaid
 flowchart LR

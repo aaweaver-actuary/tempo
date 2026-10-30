@@ -152,7 +152,6 @@ def current_published_snapshot(database, repertoire_id: str):
 # These game-bound reads preserve the original full-source count/row-byte
 # refusals. Only physical facts outside the proven candidate route set are
 # omitted; complete authored lines remain a separate mandatory owner input.
-MAX_CANDIDATE_GRAPHS = 100000
 _HEADER_FIELDS = ('id', 'scope_source_revision', 'canonical_prefix_revision',
                   'canonical_prefix_moves_json', 'graph_generation', 'graph_state', 'workspace_id')
 
@@ -172,7 +171,7 @@ _CANDIDATE_STATEMENT = _SOURCE_CTES + """, requested AS (
     SELECT unnest(%s::text[]) line_id
 ), candidate_graphs AS MATERIALIZED (
     SELECT g.* FROM graphs g JOIN requested wanted ON wanted.line_id=g.line_id
-    ORDER BY g.line_id,g.decision_index LIMIT %s
+    ORDER BY g.line_id,g.decision_index
 ), candidate_cards AS MATERIALIZED (
     SELECT c.* FROM cards c WHERE EXISTS(
         SELECT 1 FROM candidate_graphs g WHERE g.card_id=c.id)
@@ -189,7 +188,7 @@ SELECT jsonb_build_object(
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
     'candidate_graph_count',candidate_graph_count,'requested_line_count',requested_line_count,
-    'facts',CASE WHEN bounded AND repertoire_count=1 AND candidate_graph_count<%s THEN jsonb_build_object(
+    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
         'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
         'route_ids',coalesce((SELECT jsonb_agg(line_id ORDER BY line_id) FROM requested),'[]'::jsonb),
         'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM candidate_cards c),'[]'::jsonb),
@@ -256,18 +255,9 @@ def read_candidate_bindings(database, *, repertoire_id: str, expected_header: di
         raise ValueError('invalid_repertoire_scope')
     routes = _candidate_routes(route_ids)
     document = _read_game_bound_document(database, _CANDIDATE_STATEMENT,
-        (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES, list(routes),
-         MAX_CANDIDATE_GRAPHS + 1, MAX_CANDIDATE_GRAPHS + 1))
+        (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES, list(routes)))
     if document.get('requested_line_count') != len(routes):
         raise ValueError('first_departure_candidate_routes_changed')
-    observed = document.get('candidate_graph_count')
-    if type(observed) is not int or not 0 <= observed <= MAX_CANDIDATE_GRAPHS + 1:
-        raise ValueError('invalid_repertoire_snapshot_bound_metadata')
-    if observed > MAX_CANDIDATE_GRAPHS:
-        from app.repertoire import RepertoireSnapshotBoundExceeded
-        raise RepertoireSnapshotBoundExceeded(stage='read', sample_complete=False,
-            violations=[dict(dimension='graph_rows', observed=observed,
-                limit=MAX_CANDIDATE_GRAPHS, observation='lower_bound')])
     facts = document['facts']
     if (facts is None or not _same_header(facts['repertoire'], expected_header)
             or facts['repertoire'].get('graph_state') != 'ready'):

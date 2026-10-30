@@ -134,14 +134,27 @@ def test_game_bound_reads_keep_full_source_bounds_and_reject_unproved_route(scop
                 expected_header=header,route_ids=(scope.route,))
 
 
-def test_candidate_graph_sentinel_refuses_whole_relation(scope,monkeypatch):
-    header=scope.authored()['repertoire']
-    monkeypatch.setattr(storage,'MAX_CANDIDATE_GRAPHS',1)
-    with pytest.raises(ValueError,match='repertoire_snapshot_exceeds_bound') as error:
-        with scope.transaction() as database:
-            storage.read_candidate_bindings(database,repertoire_id=scope.repertoire,
-                expected_header=header,route_ids=(scope.route,))
-    assert error.value.diagnostic()['violations']==[dict(dimension='graph_rows',observed=2,limit=1,observation='lower_bound')]
+def test_game_bound_candidate_reader_keeps_prior_removal_of_graph_count_ceiling():
+    # This port check uses a large reported cardinality without allocating an
+    # artificial100k-row database. Native cases above own complete row equality;
+    # the established full snapshot regression owns redundant-use projection.
+    header=dict(id='rep',scope_source_revision=1,canonical_prefix_revision=0,
+        canonical_prefix_moves_json='[]',graph_generation=1,graph_state='ready',workspace_id='fixture')
+    facts=dict(repertoire=header,route_ids=['route'],cards=[],memberships=[],graphs=[])
+    document=dict(exists=True,bounded=True,facts=facts,requested_line_count=1,
+        candidate_graph_count=100001)
+    class Reader:
+        def execute_native(self,statement,parameters):
+            assert parameters==('rep',10000,65536,['route'])
+            # Source/card/membership sentinels remain in their original CTEs;
+            # complete candidate graphs gain no separate truncating LIMIT.
+            graph_relation=statement.split('candidate_graphs AS MATERIALIZED (',1)[1].split('), candidate_cards',1)[0]
+            assert 'LIMIT' not in graph_relation
+            return self
+        def fetchone(self):
+            return {'snapshot':document}
+    assert storage.read_candidate_bindings(Reader(),repertoire_id='rep',
+        expected_header=header,route_ids=('route',)) is facts
 
 
 def test_game_bound_reader_does_not_hide_oversized_non_candidate_source(scope):

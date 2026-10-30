@@ -6366,3 +6366,24 @@ fixture profile allocation. The separate `study-recovery` shared suite selects
 `database/tests/games_collection/test_study_recovery_packaged.py`. Its browser
 recorder is `tests/browser/study-recovery.spec.ts`. Listing/collection and fixture
 validation do not establish either measured run or the remaining fault matrix.
+
+The game-bound database read/freshness contract is owned by
+`backend/tests/test_product_game_bound_snapshot_postgres.py`:
+
+- `test_issue_recovery_complete_authored_scope_and_all_route_bindings_ignore_fen_hints`
+  compares complete authored facts and every requested route binding against the
+  original full read, retains missing physical rows and ignores discovery hints.
+- `test_issue_recovery_candidate_fence_rejects_every_changed_complete_relation`
+  covers thirteen actual PostgreSQL graph/card/introduction/revision/availability,
+  membership, block and permanent-deletion mutations before the freshness read.
+- `test_game_bound_reads_keep_full_source_bounds_and_reject_unproved_route` and
+  `test_game_bound_reader_does_not_hide_oversized_non_candidate_source` retain
+  full-source sentinels and raw row-byte refusals even for omitted physical facts.
+- `test_game_bound_candidate_reader_keeps_prior_removal_of_graph_count_ceiling`
+  preserves the existing explicit graph-ceiling removal in the new read port;
+  the established redundant-use projection regression remains unchanged.
+
+These checks establish the candidate relation's MVCC freshness point, not global
+phantom locking. Existing selected-target and atomic Study effect fences remain
+mandatory. Adapter timing and this named proof do not establish the assembled
+thirty-transition recovery acceptance or genuine installed observations.
