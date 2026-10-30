@@ -86,6 +86,15 @@ identity and route fields remain unchanged; that actual source revision is alrea
 checked against current rows in the same transaction. The boundary is documented
 by the [receiving owner](../../../../backend/app/study/README.md#next-release-encounter-importance-and-first-introduction).
 
+Preparation that found no current lineage still needs an absence fence in the
+borrowed writer. `fence_feedback_lineage_absence` takes the existing nonblocking
+route lock and probes the indexed route/decision map and physical identity.
+A newly installed map or unavailable generated identity holds the original key
+for fresh preparation; unchanged legacy card/publication fields do not permit
+an Again on a retired card. The route lock also protects the absent map key
+from a concurrent join until commit. The native regression is
+`test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles`.
+
 There are deliberately no foreign keys to cards/reviews/queue: deletion or future
 presentation rebinding must not cascade away owed evidence. Card and review IDs
 are logical Study-owned relationships, revalidated at use. Scheduling/history

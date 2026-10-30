@@ -167,6 +167,11 @@ class CurrentOwnerDecisions:
                 return (fence_game_feedback_target(self.database,target),)
             except ValueError as error:
                 raise CurrentDecisionUnavailable(str(error)) from error
+        from .recombination import fence_feedback_lineage_absence
+        try:
+            fence_feedback_lineage_absence(self.database,qualification.selection.decision)
+        except ValueError as error:
+            raise CurrentDecisionUnavailable(str(error)) from error
         # The legacy lapse becomes only an in-memory factual view. Its stored
         # bytes, payload digest, occurrence and logical identity stay original.
         return self._current(qualified_encounter_view(command,qualification),priority_only=True)

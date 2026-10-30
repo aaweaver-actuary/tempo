@@ -775,6 +775,154 @@ def test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_
             assert settled.encounter == command and settled.progress.determined_at == determined
 
 
+def test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles(
+    feedback_lineage_owner,monkeypatch,
+):
+    """A prepared absence of lineage is rechecked after a genuine later join."""
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.legacy_game_observation import capture_game
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.repertoire import project_published_repertoire
+    from app.services.postgres_integrity import current_integrity_certificate
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from app.games.feedback.coordinator import delivery_for
+    from product_encounter_fixtures import qualified_feedback_source
+    import tempo_legacy_database.adapters.study.recombination as lineage
+    transaction = feedback_lineage_owner
+    for identifier,count in (('A',3),('C',3),('B',2)):
+        for _ in range(count):
+            with transaction() as database:
+                result,_ = ordinary_current_review(database,identifier,monkeypatch)
+                assert result.get('recombination',{}).get('status')!='applied'
+    observed = datetime.now(timezone.utc)
+    with transaction() as database:
+        encoded = read_repertoire_json(database,'r11-repertoire')
+    snapshot = project_published_repertoire(json.loads(encoded))
+    original = next(item for item in snapshot.decision_presentations if item.presentation_id=='A')
+    game_id = 'lichess:stale-preparation-'+uuid4().hex
+    with transaction() as database:
+        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+            played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
+            VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
+            (game_id,game_id.removeprefix('lichess:'),(observed-timedelta(days=1)).isoformat(),chess.STARTING_FEN,'a'*64))
+    def rows(statement,parameters=()):
+        with transaction() as database:
+            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+    def metadata(repertoire_id):
+        header = repertoire_metadata(rows,repertoire_id)[0]
+        with transaction() as database:
+            certificate = current_integrity_certificate(database,repertoire_id,header['graph_generation'])
+        return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
+    captured = capture_game(original.repertoire_id,game_id,(0,),reader=rows,metadata=metadata,now=observed)
+    game = retained_canonical_game(captured)
+    template = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
+        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
+        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
+        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
+        occurred_at=game.played_at,payload_digest='e'*64)
+    with qualified_feedback_source(transaction,capture=captured,command=template,clock=lambda:observed,
+            stream='reconciliation',capture_provider_source=True) as source:
+        command,stale = source.command,source.prepared
+        assert stale.prepared_targets==()
+        frozen = source.store.delivery(delivery_for(source.source.source_key,command).operation_id).command.model_dump_json()
+        def forbidden(*args,**kwargs):
+            raise AssertionError('feedback absence fence replayed repertoire/chess')
+        # The absence probe owns the same route lock as genuine join/split.
+        # A competing owner cannot insert a new map before this writer commits;
+        # a competing feedback writer also declines immediately, without waits.
+        with monkeypatch.context() as short_writer:
+            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
+            short_writer.setattr(lineage.chess,'Board',forbidden)
+            with transaction() as database:
+                database.execute_native("SET LOCAL transaction_timeout='250ms'")
+                database.execute_native("SET LOCAL statement_timeout='250ms'")
+                database.execute_native("SET LOCAL lock_timeout='100ms'")
+                lineage.fence_feedback_lineage_absence(database,stale.qualification.selection.decision)
+                with transaction() as competitor:
+                    competitor.execute_native("SET LOCAL transaction_timeout='250ms'")
+                    competitor.execute_native("SET LOCAL statement_timeout='250ms'")
+                    competitor.execute_native("SET LOCAL lock_timeout='100ms'")
+                    assert not lineage.PostgresRecombinationStore(competitor).try_lock_route(original.route_id)
+                    with pytest.raises(ValueError,match='feedback_target_route_busy'):
+                        lineage.fence_feedback_lineage_absence(competitor,stale.qualification.selection.decision)
+        with transaction() as database:
+            old_card = tuple(database.execute_native('SELECT id,revision,archived,pending_validation,superseded_by '
+                'FROM cards WHERE id=%s',('A',)).fetchone())
+            old_source = tuple(database.execute_native('SELECT scope_source_revision FROM repertoires WHERE id=%s',
+                (original.repertoire_id,)).fetchone())
+            joined,_ = ordinary_current_review(database,'B',monkeypatch)
+            assert joined['recombination']['status']=='applied'
+            current_id = joined['recombination']['resulting_presentation_id']
+            assert tuple(database.execute_native('SELECT id,revision,archived,pending_validation,superseded_by '
+                'FROM cards WHERE id=%s',('A',)).fetchone())==old_card
+            assert tuple(database.execute_native('SELECT scope_source_revision FROM repertoires WHERE id=%s',
+                (original.repertoire_id,)).fetchone())==old_source
+        observed = datetime.now(timezone.utc)
+        def intake(database,prepared):
+            return current_owner_encounter_intake(database,retained_owner_capture=captured,
+                snapshot=prepared.target_snapshot,prepared_decisions=prepared.prepared_decisions,
+                qualification=prepared.qualification,clock=lambda:observed)
+        with monkeypatch.context() as short_writer:
+            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
+            short_writer.setattr(lineage.chess,'Board',forbidden)
+            with transaction() as database:
+                database.execute_native("SET LOCAL transaction_timeout='250ms'")
+                database.execute_native("SET LOCAL statement_timeout='250ms'")
+                database.execute_native("SET LOCAL lock_timeout='100ms'")
+                held = intake(database,stale).accept_qualified(command,qualification=stale.qualification)
+                assert held.reason=='feedback_target_lineage_changed' and held.admission_status=='pending'
+                effect = PostgresGameFeedbackStore(database).get(command.key)
+                assert effect.review_id is None
+        stale_unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
+            clock=lambda:observed,qualification_prepare=lambda command:stale)
+        assert stale_unit.reason is None
+        with monkeypatch.context() as short_writer:
+            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
+            short_writer.setattr(lineage.chess,'Board',forbidden)
+            with transaction() as database:
+                database.execute_native("SET LOCAL transaction_timeout='250ms'")
+                database.execute_native("SET LOCAL statement_timeout='250ms'")
+                database.execute_native("SET LOCAL lock_timeout='100ms'")
+                held = apply_prepared_feedback_effect(database,stale_unit,clock=lambda:observed,operation_admitted=True)
+                assert held.reason=='feedback_target_lineage_changed' and held.admission_status=='pending'
+                assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id='A' AND source_kind='game_lapse'").fetchone()[0]==0
+        source.reprepare()
+        fresh = source.prepared
+        assert fresh.qualification.selection.decision.presentation_id==current_id
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL statement_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            accepted = intake(database,fresh).accept_qualified(command,qualification=fresh.qualification)
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+            assert accepted.progress.target.card_id==current_id
+        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
+            clock=lambda:observed,qualification_prepare=lambda command:fresh)
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL statement_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
+            assert available.admission_status=='available'
+            review = database.execute_native('SELECT card_id FROM reviews WHERE id=%s',
+                (available.progress.scheduling_review_id,)).fetchone()
+            assert review[0]==current_id
+            assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
+                (available.owner_receipt_id,)).fetchone()[0]==1
+        with transaction() as database:
+            completed,_ = ordinary_current_review(database,current_id,monkeypatch)
+        with transaction() as database:
+            settled = PostgresGameFeedbackStore(database).get(command.key)
+            assert settled.status=='settled' and settled.progress.settlement.review_id==completed['review_id']
+            assert settled.encounter==command and settled.progress.target.card_id==current_id
+            assert settled.progress.determined_at==fresh.qualification.determined_at==stale.qualification.determined_at
+        assert source.store.delivery(delivery_for(source.source.source_key,command).operation_id).command.model_dump_json()==frozen
+
+
 def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None, prepared_recombination=None):
     """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
     from app.queue_commands import issue_queue_head

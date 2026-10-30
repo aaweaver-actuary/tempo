@@ -1090,6 +1090,28 @@ def fence_game_feedback_target(database, prepared: PreparedFeedbackTarget):
         introduction_matches_current_content=bool(card['introduced_at'])))
 
 
+def fence_feedback_lineage_absence(database,original: DecisionPresentation):
+    """Fence an original target whose preparation found no current lineage.
+
+    The existing route lock protects the absent (route, decision) key from a
+    concurrent join/split until this borrowed transaction commits. A new map or
+    an existing generated identity requires fresh positive owner preparation;
+    unchanged legacy card/publication fields cannot substitute for that proof.
+    """
+    if original.route_id is None or not installed(database):
+        raise ValueError('feedback_target_lineage_authority_unavailable')
+    store = PostgresRecombinationStore(database)
+    if not store.try_lock_route(original.route_id):
+        raise ValueError('feedback_target_route_busy')
+    if store.current_presentation(original.route_id,original.decision_id) is not None:
+        raise ValueError('feedback_target_lineage_changed')
+    # An owner-created presentation with a missing map is unavailable lineage,
+    # not an ordinary original target. Both probes use existing primary keys.
+    if database.execute_native('SELECT 1 FROM study_recombination_presentations WHERE presentation_id=%s',
+            (original.presentation_id,)).fetchone() is not None:
+        raise ValueError('feedback_target_lineage_changed')
+
+
 def feedback_admission_target(prepared: PreparedFeedbackTarget):
     """Physical spelling for canonical admission after explicit lineage proof.
 
