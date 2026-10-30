@@ -45,29 +45,55 @@ def docker(*args, check=True):
     return subprocess.run(["docker", *args], capture_output=True, text=True, check=check, timeout=20)
 
 
+def postgres_fixture_profile(profile):
+    """Finite fixture allocations; the default native proof is unchanged."""
+    if profile == 'default':
+        return dict(memory_mib=384, storage='tmpfs')
+    if profile == 'study-recovery':
+        return dict(memory_mib=1024, storage='owned-volume')
+    raise ValueError('unknown_owned_postgres_fixture_profile')
+
+
 @pytest.fixture(scope="module")
-def owned_postgres(tmp_path_factory, *, additional_ports=()):
+def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
     # The packaged browser journey reuses this exact owned network namespace;
     # only its existing web service may request an extra loopback-only port.
     assert additional_ports in ((),(80,))
     published = [value for port in additional_ports for value in ('--publish',f'127.0.0.1::{port}')]
+    allocation = postgres_fixture_profile(profile)
     identity = "tempo-game-feedback-" + uuid.uuid4().hex
     container = identity + "-postgres"
+    volume = identity + '-data' if allocation['storage'] == 'owned-volume' else None
     password = secrets.token_urlsafe(32)
     evidence = ROOT / "test-results/game-feedback-native" / identity
     evidence.mkdir(parents=True)
-    report = {"owner": identity, "container": container, "cleanup_verified": False}
+    report = {"owner": identity, "container": container, "cleanup_verified": False,
+              "profile": profile, "storage": allocation['storage']}
     secret = tmp_path_factory.mktemp("game-feedback-secret") / "postgres.env"
     secret.write_text("POSTGRES_PASSWORD=" + password + "\nPOSTGRES_DB=" + identity.replace("-", "_") + "\n")
     secret.chmod(0o600)
     database_name = identity.replace("-", "_")
     try:
+        assert not docker('container', 'ls', '--all', '--filter', 'name=^/' + container + '$',
+                          '--format', '{{.ID}}').stdout.strip()
+        if volume:
+            assert not docker('volume', 'ls', '--filter', 'name=^' + volume + '$',
+                              '--format', '{{.Name}}').stdout.strip()
+            docker('volume', 'create', '--label', 'tempo.owner=' + identity,
+                   '--label', 'tempo.disposable=true', volume)
+            stored = json.loads(docker('volume', 'inspect', volume).stdout)[0]
+            assert stored['Name'] == volume and stored['Driver'] == 'local'
+            assert stored['Labels']['tempo.owner'] == identity and stored['Labels']['tempo.disposable'] == 'true'
+            report['volume'] = volume
+        storage = (['--mount', 'type=volume,source=' + volume + ',destination=/var/lib/postgresql']
+                   if volume else ['--tmpfs', '/var/lib/postgresql:rw,size=512m'])
         image = docker("image", "inspect", IMAGE, "--format", "{{.Id}}").stdout.strip()
         report["image_id"] = image
         report["container_id"] = docker("run", "--detach", "--name", container,
             "--label", "tempo.owner=" + identity, "--label", "tempo.disposable=true",
-            "--memory", "384m", "--memory-swap", "384m", "--pids-limit", "128",
-            "--tmpfs", "/var/lib/postgresql:rw,size=512m", "--publish", "127.0.0.1::5432", *published,
+            "--memory", str(allocation['memory_mib']) + 'm',
+            "--memory-swap", str(allocation['memory_mib']) + 'm', "--pids-limit", "128",
+            *storage, "--publish", "127.0.0.1::5432", *published,
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
             "-c", "max_connections=16").stdout.strip()
         inventory = json.loads(docker("inspect", container).stdout)[0]
@@ -76,11 +102,18 @@ def owned_postgres(tmp_path_factory, *, additional_ports=()):
         report["memory_bytes"] = inventory["HostConfig"]["Memory"]
         report["pids_limit"] = inventory["HostConfig"]["PidsLimit"]
         report["published_ports"] = inventory["NetworkSettings"]["Ports"]
-        assert inventory["HostConfig"]["Tmpfs"] == {"/var/lib/postgresql": "rw,size=512m"}
-        assert report["memory_bytes"] == 384 * 1024 * 1024 and report["pids_limit"] == 128
+        assert report["memory_bytes"] == allocation['memory_mib'] * 1024 * 1024 and report["pids_limit"] == 128
         binding = inventory["NetworkSettings"]["Ports"]["5432/tcp"][0]
         assert binding["HostIp"] == "127.0.0.1"
-        assert all(mount["Type"] == "tmpfs" for mount in inventory["Mounts"])
+        if volume:
+            assert not inventory['HostConfig']['Tmpfs']
+            assert len(inventory['Mounts']) == 1
+            mount, = inventory['Mounts']
+            assert mount['Type'] == 'volume' and mount['Name'] == volume
+            assert mount['Destination'] == '/var/lib/postgresql' and mount['RW'] is True
+        else:
+            assert inventory["HostConfig"]["Tmpfs"] == {"/var/lib/postgresql": "rw,size=512m"}
+            assert all(mount["Type"] == "tmpfs" for mount in inventory["Mounts"])
         port = int(binding["HostPort"])
         report.update(port=port, database=database_name)
         options = dict(host="127.0.0.1", port=port, dbname=database_name, user="postgres",
@@ -152,6 +185,16 @@ def owned_postgres(tmp_path_factory, *, additional_ports=()):
             (evidence / 'postgres.log').write_text(logs.stdout + logs.stderr)
             docker("rm", "--force", current["Id"])
         assert not docker("container", "ls", "--all", "--filter", "name=^/" + container + "$", "--format", "{{.ID}}").stdout.strip()
+        if volume:
+            found_volume = docker('volume', 'inspect', volume, check=False)
+            if found_volume.returncode == 0:
+                stored = json.loads(found_volume.stdout)[0]
+                assert stored['Name'] == volume and stored['Labels']['tempo.owner'] == identity
+                assert stored['Labels']['tempo.disposable'] == 'true'
+                docker('volume', 'rm', volume)
+            absent = docker('volume', 'inspect', volume, check=False)
+            assert absent.returncode != 0 and 'no such volume' in absent.stderr.lower()
+            report['volume_cleanup_verified'] = True
         report["cleanup_verified"] = True
         (evidence / "fixture.json").write_text(json.dumps(report, indent=2))
         secret.unlink(missing_ok=True)
