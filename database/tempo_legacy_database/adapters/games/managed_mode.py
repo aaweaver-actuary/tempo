@@ -23,13 +23,22 @@ CREATE TABLE product_feedback_managed_mode (
 """
 
 
+def _intent(row, workspace):
+    if row is None:
+        return None
+    intent = ManagedGamesModeIntent.model_validate_json(row[0])
+    if (intent.workspace_id, intent.generation, intent.mode, intent.phase) != (workspace, row[1], row[2], row[3]):
+        raise ManagedModeAdmissionDenied()
+    return intent
+
+
 def read_feedback_mode(connections, workspace: str) -> ManagedGamesModeIntent | None:
     """One bounded read-only snapshot; an absent row is not authorization."""
     with connections() as database:
         database.execute("SET TRANSACTION READ ONLY")
-        row = database.execute("SELECT payload::text FROM product_feedback_managed_mode WHERE workspace_id=%s",
+        row = database.execute("SELECT payload::text,generation,mode,phase FROM product_feedback_managed_mode WHERE workspace_id=%s",
                                (workspace,)).fetchone()
-        return ManagedGamesModeIntent.model_validate_json(row[0]) if row else None
+        return _intent(row, workspace)
 
 
 def feedback_handoff_admitted(workspace: str, connections, *, runtime_id: str | None = None) -> bool:
@@ -53,9 +62,9 @@ def fence_feedback_handoff(database, workspace: str, *, runtime_id: str | None =
     if getattr(database, "read_only", False) or raw.info.transaction_status.name != "INTRANS":
         raise ManagedModeAdmissionDenied()
     execute = getattr(database, "execute_native", None) or database.execute
-    row = execute("SELECT payload::text FROM product_feedback_managed_mode WHERE workspace_id=%s FOR SHARE NOWAIT",
+    row = execute("SELECT payload::text,generation,mode,phase FROM product_feedback_managed_mode WHERE workspace_id=%s FOR SHARE NOWAIT",
                   (workspace,)).fetchone()
-    intent = ManagedGamesModeIntent.model_validate_json(row[0]) if row else None
+    intent = _intent(row, workspace)
     if intent is None or not intent.admits(runtime_id or socket.gethostname()):
         raise ManagedModeAdmissionDenied()
     return intent
