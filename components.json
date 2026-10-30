@@ -1970,7 +1970,10 @@
         "backend/tests/test_next_card_preparation_selection.py",
         "backend/tests/test_study_qualification_leaf.py",
         "backend/tests/test_study_feedback_preparation_trace.py",
-        "backend/tests/test_queue_projection_postgres.py"
+        "backend/tests/test_queue_projection_postgres.py",
+        "packages/game-review-contracts",
+        "backend/tests/fixtures/study_recovery_content.py",
+        "backend/tests/test_study_recovery_acceptance.py"
       ]
     },
     {
