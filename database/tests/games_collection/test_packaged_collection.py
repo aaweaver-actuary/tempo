@@ -134,7 +134,7 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
         (directory/'provider.json').write_text(json.dumps(inputs))
         name = 'tempo-g-collection-'+uuid.uuid4().hex
         args = ['docker','run','--rm','--name',name,'--label','tempo.owner='+matches[0]['owner'],
-            '--label','tempo.disposable=true','--read-only','--tmpfs','/tmp:rw,size=32m','--memory','256m','--pids-limit','96',
+            '--label','tempo.disposable=true','--read-only','--tmpfs','/tmp:rw,size=32m','--memory','512m','--pids-limit','96',
             '--network','container:'+pg['Id'],'--env-file',str(secret),'--mount','type=bind,src='+str(directory)+',dst=/qualification,readonly',
             image,'python','-B','-c',"exec(compile(open('/qualification/entry.py').read(), '/qualification/entry.py', 'exec'))",mode]
         try:
@@ -167,7 +167,7 @@ const service={command:['python','-m','app.product_composition.game_sync_current
  environment:{TEMPO_PRODUCT_GAME_SYNC_ENABLED:'1',
   TEMPO_DATABASE_WRITE_URL:'postgresql://tempo_writer@postgres:5432/tempo',
   TEMPO_DATABASE_READ_URL:'postgresql://tempo_writer@postgres:5432/tempo',PGPASSFILE:'/run/secrets/worker_pgpass'},
- secrets:[{source:'writer_pgpass',target:'worker_pgpass'}],mem_limit:268435456,pids_limit:96,
+ secrets:[{source:'writer_pgpass',target:'worker_pgpass'}],mem_limit:536870912,pids_limit:96,
  labels:{'tempo.collection.owner':'managed-game-collection','tempo.collection.mode':'collect-only'}};
 const identityProbe=readProbe(()=>JSON.stringify(input.identity));
 const fullReaderProbe=readProbe(()=>JSON.stringify(input.report));
