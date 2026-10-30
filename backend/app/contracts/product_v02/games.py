@@ -214,12 +214,16 @@ class FirstDepartureSelection(Value):
             raise ValueError("a known boundary requires its complete pre-move occurrence")
         if self.status == "covered" and (any(value is not None for value in facts) or self.decision is not None or self.expected_uci):
             raise ValueError("covered played moves cannot claim a departure or target")
+        if self.status == "covered" and not self.selected_scope:
+            raise ValueError("absent relevant scope must remain unresolved, not covered")
         if self.status not in {"covered", "unresolved"} and self.ply is None:
             raise ValueError("a selected boundary must retain its occurrence")
         if self.status in {"own_actionable", "own_unmapped", "missing_own_continuation"} and self.actor != "learner":
             raise ValueError("learner boundary must identify the learner actor")
         if self.status == "opponent_gap" and self.actor != "opponent":
             raise ValueError("opponent gap cannot authorize a learner effect")
+        if self.status in {"own_actionable", "own_unmapped", "opponent_gap"} and self.played_uci in self.expected_uci:
+            raise ValueError("a departure cannot be a supported expected alternative")
         routes = {(item.repertoire_id, item.route_id, item.route_ply, item.policy_id) for item in self.surviving_routes}
         if len(routes) != len(self.surviving_routes):
             raise ValueError("surviving route occurrences must be distinct")

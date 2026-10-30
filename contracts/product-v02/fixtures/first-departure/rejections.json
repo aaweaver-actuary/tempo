@@ -133,6 +133,44 @@
       "updates": {
         "configuration_revision": 0
       }
+    },
+    {
+      "name": "issuance_cannot_precede_determination",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.determined_at": "2026-10-27T12:00:00Z"
+      }
+    },
+    {
+      "name": "supported_opponent_alternative_is_not_departure",
+      "fixture": "opponent-before-later-own-miss",
+      "updates": {
+        "played_uci": "e7e5"
+      }
+    },
+    {
+      "name": "absent_scope_is_not_covered",
+      "fixture": "covered-authored-alternative",
+      "updates": {
+        "selected_scope": []
+      }
+    },
+    {
+      "name": "microsecond_pre_reset_issue_is_not_remediation",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.remediation_fence.established_at": "2026-10-26T12:01:00.000002Z",
+        "progress.first_issued.issued_at": "2026-10-26T12:01:00.000001Z",
+        "progress.settlement.attempt.issued_at": "2026-10-26T12:01:00.000001Z"
+      }
+    },
+    {
+      "name": "microsecond_fence_cannot_precede_application",
+      "fixture": "introduced-again-applied",
+      "updates": {
+        "progress.schedule_applied_at": "2026-10-26T12:01:00.000002Z",
+        "progress.remediation_fence.established_at": "2026-10-26T12:01:00.000001Z"
+      }
     }
   ]
 }

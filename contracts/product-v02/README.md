@@ -214,6 +214,10 @@ alternatives. Only `own_actionable` carries an exact available
 retain the existing physical card/revision; equivalent route aliases are not
 additional effects. A legacy global owner mapping can be specialized to an
 actually proven unique route occurrence; missing authority is not guessed.
+Historical `introduced_before_game` / `introduction_game` facts or introduction
+timestamp precision do not distinguish otherwise equivalent current physical
+route aliases. Current introduction state/availability and source/content mapping
+remain owner facts and are rechecked at first authoritative Study acceptance.
 
 `FirstDepartureScope` retains each selected relevant repertoire, actual snapshot
 ID/source revision/revision/digest, color, completeness and availability. Missing
