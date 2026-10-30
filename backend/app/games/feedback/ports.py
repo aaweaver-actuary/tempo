@@ -51,6 +51,7 @@ class JobState(Value):
     rejections: tuple[GameRejection, ...] = ()
     history_recoveries: tuple[HistoryProviderLimitRecovery, ...] = Field(
         default=(), max_length=8, exclude_if=lambda value: not value)
+    history_replay_cursor: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SourceState(Value):

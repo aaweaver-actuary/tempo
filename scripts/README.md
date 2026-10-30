@@ -379,6 +379,12 @@ saved page is replayed. It refuses existing deliveries, changed scope or source,
 additional captures, unproved precision, or any other quarantine. Incomplete
 recovery returns nonzero and can be resumed; original quarantine evidence stays.
 
+The narrowly scoped `collect recover-daily --manifest PATH` resolves one
+effect-free Chess.com daily-to-classical mapping quarantine on a noninitial
+saved historical page. It checks the exact configuration, checkpoint, original
+capture, canonical game and every page source, retains a resolution capture,
+and replays the saved page. Other conflicts remain quarantined.
+
 After installing the bounded-response adapter, `collect retry-provider-limit
 --manifest PATH` can requeue a historical Lichess job failed specifically with
 `lichess_response_limit`. It requires the same saved scope, unchanged failed

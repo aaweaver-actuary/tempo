@@ -79,3 +79,11 @@ only the exact unchanged failed job when its saved configuration and prior
 page are fenced and no page has committed at the failed input cursor. A typed
 receipt of the original failure and cursor digest remains in the job payload.
 This does not change any game source, capture, page or Study state.
+
+## Historical daily-game repair
+
+The Games owner maps Chess.com daily to classical, matching the acquisition
+adapter while retaining original provider metadata. Its guarded historical
+recovery keeps the original capture, adds resolution evidence, fences the
+saved configuration and source identities, and authorizes replay of the exact
+saved page only for the proven effect-free daily mapping conflict.
