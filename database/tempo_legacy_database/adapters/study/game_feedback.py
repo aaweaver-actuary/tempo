@@ -149,7 +149,9 @@ class PostgresGameFeedbackStore:
 
         if effect.review_id is not None and (previous is None or previous.review_id is None):
             from .recombination import record_admitted_failure
-            record_admitted_failure(self.database, effect)
+            actual = (replace(effect, applied_at=instant(effect.progress.schedule_applied_at))
+                      if effect.progress and effect.progress.schedule_applied_at else effect)
+            record_admitted_failure(self.database, actual)
 
     def study_day(self, now):
         from tempo_learning_review import review_day_at
@@ -334,24 +336,42 @@ def has_owed_feedback(database, card_id):
     return card_id in owed_feedback_card_ids(database, (card_id,))
 
 
-def feedback_queue_priorities(database, card_ids):
+def feedback_queue_priorities(database, card_ids, *, read=None):
     """Study-owned ready urgency; acceptance or old priority is insufficient."""
     ids = tuple(dict.fromkeys(card_ids))
-    if not ids or not installed(database):
+    if not ids or read is None and not installed(database):
         return {}
-    rows = database.execute_native("""SELECT * FROM study_game_feedback
-        WHERE status='applied' AND payload_json::jsonb->'owner'->'progress'->'target'->>'card_id'=ANY(%s)
-          AND payload_json::jsonb->'owner'->'progress'->'remediation_fence' IS NOT NULL
-          AND payload_json::jsonb->'owner'->>'admission_status'='available'""", (list(ids),)).fetchall()
+    placeholders = ','.join('?' if read is not None else '%s' for _ in ids)
+    statement = """SELECT effect.* FROM study_game_feedback effect WHERE effect.status='applied'
+        AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','progress','target','card_id')
+            IN (""" + placeholders + """) OR effect.card_id IN (""" + placeholders + """))
+        AND (json_extract_path_text(CAST(effect.payload_json AS json),'owner','admission_status')='available'
+             OR EXISTS(SELECT 1 FROM reviews actual WHERE actual.id=effect.review_id
+                 AND actual.source_kind='game_lapse' AND actual.source_ref=effect.effect_key
+                 AND actual.invalidated_at IS NULL))"""
+    parameters = (*ids,*ids)
+    rows = read(statement, parameters) if read is not None else database.execute_native(statement, parameters).fetchall()
     result = {}
     for row in rows:
         effect = PostgresGameFeedbackStore._effect(row)
         progress = effect.progress
-        if progress is None or progress.remediation_fence is None or effect.control:
+        if effect.control:
             continue
-        candidate = dict(urgent_determined_at=progress.determined_at,
-            urgent_stream=progress.stream, urgent_effect_id=effect_id(effect.key))
-        card_id = progress.target.card_id
+        if progress is not None and progress.remediation_fence is not None:
+            candidate = dict(urgent_determined_at=progress.determined_at,
+                urgent_stream=progress.stream, urgent_effect_id=effect_id(effect.key))
+            card_id = progress.target.card_id
+        elif effect.lapse is not None and effect.review_id is not None:
+            # Genuine retained resets remain owed while new-policy preparation
+            # runs. This uses the actual old detection fact as historical order,
+            # never a newly claimed first-departure/five-card guarantee.
+            candidate = dict(urgent_determined_at=effect.lapse.detected_at,
+                urgent_stream='reconciliation',urgent_effect_id=effect_id(effect.key))
+            card_id = effect.card_id
+        else:
+            continue
+        if card_id not in ids:
+            continue
         def order(item):
             return (item['urgent_stream'] != 'forward', instant(item['urgent_determined_at']), item['urgent_effect_id'])
         if card_id not in result or order(candidate) < order(result[card_id]):
@@ -375,7 +395,8 @@ def record_feedback_issuance(database, entry_id, card_id, revision):
     rows = database.execute_native("""SELECT identity_json FROM study_game_feedback
         WHERE status='applied'
           AND payload_json::jsonb->'owner'->'progress'->'target'->>'card_id'=%s
-        ORDER BY effect_key""", (card_id,)).fetchall()
+          AND COALESCE(payload_json::jsonb->'owner'->'progress'->'first_issued','null'::jsonb)='null'::jsonb
+        ORDER BY effect_key LIMIT 16""", (card_id,)).fetchall()
     store = PostgresGameFeedbackStore(database)
     for row in rows:
         key = GameEffectKey.model_validate_json(row['identity_json'])
