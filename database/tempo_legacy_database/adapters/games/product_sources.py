@@ -33,6 +33,8 @@ def _prepare(record, spec, provider_document=None):
         raise ValueError("duplicate_provider_metadata")
     metadata = {key: json.loads(value) for key, value in pairs}
     speed = metadata.get("speed", metadata.get("time_class"))
+    if spec.provider == "chesscom" and speed == "daily":
+        speed = "classical"
     rated = metadata.get("rated")
     if speed not in {"bullet", "blitz", "rapid", "classical"} or type(rated) is not bool:
         raise ValueError("explicit_provider_speed_and_rated_facts_required")
@@ -162,6 +164,93 @@ class PostgresCanonicalGamesStore(PostgresGamesStore):
         return (spec.provider == "lichess" and bound.source_id == "lichess"
             and verified.played_at == record.played_at
             and legacy_lichess_precision_matches(record, bound.played_at))
+
+    def recover_daily_history_page(self, *, expected, configuration, page_document, record, verified):
+        """Recover one effect-free daily mapping failure and replay its saved page."""
+        spec = expected.spec
+        if (spec.provider != "chesscom" or spec.purpose != "history" or spec.stream != "manual"
+                or expected.status != "quarantined" or expected.error != "unresolved_page_boundary"
+                or expected.continuation is None or expected.last_checkpoint_at is None
+                or expected.rejections or expected.window_complete or expected.history_replay_cursor is not None):
+            raise ValueError("history_daily_job_mismatch")
+        metadata = {key: json.loads(value) for key, value in record.source_metadata}
+        if metadata.get("time_class") != "daily" or "speed" in metadata:
+            raise ValueError("history_daily_record_mismatch")
+        prepared = _prepare(record, spec)
+        if (verified.workspace_id, verified.source_revision, verified.source_digest,
+                verified.played_at, verified.starting_fen, list(verified.moves), verified.learner_color) != (
+                spec.workspace_id, record.source_revision, record.source_digest, record.played_at,
+                prepared.start_fen, prepared.uci_moves, prepared.color):
+            raise ValueError("history_daily_verified_source_mismatch")
+        key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
+        with self._transaction() as raw:
+            _fence_history_configuration(raw, spec, configuration)
+            database = PostgresConnection(raw)
+            for alias in sorted(_aliases(spec.provider)):
+                storage.lock_import_identity(database, f"{alias}:{prepared.provider_game_id}")
+            existing = _current(raw, prepared, for_update=True)
+            if existing is None:
+                raise ValueError("history_daily_canonical_source_missing")
+            canonical = _bound_game(verified, _source_header(prepared, existing, original=record))
+            jobs = raw.execute("SELECT payload::text FROM product_feedback_jobs WHERE job_id=%s FOR UPDATE", (spec.job_id,)).fetchall()
+            if len(jobs) != 1 or JobState.model_validate_json(jobs[0][0]) != expected:
+                raise ValueError("history_daily_job_changed")
+            pages = raw.execute("""SELECT page_json::text,page_key FROM product_feedback_pages
+                WHERE job_id=%s AND input_continuation=%s FOR SHARE""", (spec.job_id, expected.continuation)).fetchall()
+            page = json.loads(page_document)
+            identity = hashlib.sha256((expected.continuation + "\0" + page_document).encode()).hexdigest()
+            if (len(pages) != 1 or json.loads(pages[0][0]) != page or pages[0][1] != identity
+                    or page.get("provider") != spec.provider or page.get("account") != spec.account
+                    or page.get("window") != spec.window.model_dump(mode="json")
+                    or page.get("rejections") or page.get("complete") is not False
+                    or not page.get("continuation") or page["continuation"] == expected.continuation):
+                raise ValueError("history_daily_page_mismatch")
+            records = page.get("records")
+            if not isinstance(records, list) or not records or len(records) > 100:
+                raise ValueError("history_daily_page_mismatch")
+            identities = [stable_id(spec.workspace_id, spec.provider, item.get("source_game_id")) for item in records]
+            if len(set(identities)) != len(identities) or identities.count(key) != 1:
+                raise ValueError("history_daily_page_mismatch")
+            states = raw.execute("SELECT payload::text FROM product_feedback_sources WHERE source_key=ANY(%s) ORDER BY source_key FOR UPDATE", (identities,)).fetchall()
+            states = {state.source_key: state for row in states if (state := SourceState.model_validate_json(row[0]))}
+            if set(states) != set(identities):
+                raise ValueError("history_daily_page_sources_missing")
+            for source_key, original in zip(identities, records):
+                state = states[source_key]
+                if (state.record_fingerprint != stable_id({k:v for k,v in original.items() if k != "source_revision"})
+                        or state.original.model_dump(mode="json") != {k:v for k,v in original.items() if k != "source_metadata"}
+                        or state.normalized is None or (source_key != key and state.quarantined)):
+                    raise ValueError("history_daily_page_sources_unresolved")
+            state = states[key]
+            if (records[identities.index(key)] != record.model_dump(mode="json") or state.version != 1
+                    or not state.quarantined or state.diagnostic != "unresolved_parsing_or_comparison_boundary"
+                    or state.normalized != verified or state.findings or state.effects or state.encounters
+                    or state.first_departure is not None or state.determined_at is not None):
+                raise ValueError("history_daily_source_changed_or_has_effects")
+            captures = raw.execute("SELECT payload::text FROM product_feedback_captures WHERE source_key=%s FOR SHARE", (key,)).fetchall()
+            if len(captures) != 1:
+                raise ValueError("history_daily_capture_not_unique")
+            capture = Capture.model_validate_json(captures[0][0])
+            if (capture.account != spec.account or capture.record != state.original or capture.normalized != verified or capture.diagnostic != state.diagnostic
+                    or capture.findings or capture.encounters or capture.first_departure is not None
+                    or capture.determined_at is not None
+                    or json.loads(capture.provider_record_json) != record.model_dump(mode="json")):
+                raise ValueError("history_daily_capture_mismatch")
+            if raw.execute("SELECT 1 FROM product_feedback_deliveries WHERE source_key=%s LIMIT 1", (key,)).fetchone():
+                raise ValueError("history_daily_delivery_exists")
+            revision = stable_id("chesscom-daily-classical-resolution-v1", key, state.record_fingerprint, canonical.source_digest)
+            evidence = capture.model_copy(update={"comparison_revision":revision, "normalized":canonical,
+                "diagnostic":"chesscom_daily_classical_resolution_v1"})
+            raw.execute("""INSERT INTO product_feedback_captures(source_key,source_revision,source_digest,comparison_revision,payload)
+                VALUES(%s,%s,%s,%s,%s::jsonb)""", (key, record.source_revision, record.source_digest, revision, evidence.model_dump_json()))
+            recovered = state.model_copy(update={"version":state.version+1, "normalized":canonical,
+                "quarantined":False, "diagnostic":"chesscom_daily_classical_resolution_v1"})
+            if raw.execute("UPDATE product_feedback_sources SET version=%s,payload=%s::jsonb WHERE source_key=%s AND version=%s",
+                    (recovered.version, recovered.model_dump_json(), key, state.version)).rowcount != 1:
+                raise ConcurrentUpdate("history_daily_source_changed")
+            self._save_job(raw, expected.model_copy(update={"status":"queued", "lease_until":0,
+                "error":"history_daily_replay_saved_page", "history_replay_cursor":expected.continuation}))
+            return key
 
     def recover_initial_history_precision(self, *, spec, record, verified, configuration):
         """Resolve only a newly captured, effect-free history precision conflict.

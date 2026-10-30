@@ -38,6 +38,10 @@ without provider refetch. Its PostgreSQL fixture is task-owned and disposable.
 provider responses, equal timestamps, out-of-order tail rejection, pending-page
 status and fenced provider-limit retry with retained failure receipts. Its
 PostgreSQL cases use task-owned disposable fixtures.
+`backend/tests/test_historical_chesscom_daily.py` owns the daily-to-classical
+mapping and guarded recovery of a noninitial saved page, including a full
+100-record page, retry without provider refetch, and rejection of changed
+configuration, source evidence, or existing delivery.
 Its native case uses the existing labelled disposable PostgreSQL fixture to
 prove canonical source publication, original-page readback, historical-job claim
 isolation, unchanged Refresh/forward settings and no Study writes during collection.

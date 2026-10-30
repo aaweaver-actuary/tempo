@@ -16,6 +16,8 @@ flowchart LR
   Providers --> Oversized["Over-limit response<br/>validate full ordering and bounded page"]
   Oversized --> Commit
   Commit --> Recovery["Explicit precision recovery<br/>owner revalidates held source and saved page"]
+  Commit --> DailyRecovery["Daily-game recovery<br/>owner fences source and entire saved page"]
+  DailyRecovery --> Import
   Recovery --> Commit
   Commit --> Replay["Offline history comparison<br/>requires complete import"]
   Manifest --> Replay
@@ -616,3 +618,9 @@ Focused regressions: `test_product_game_refresh.py`,
 `test_product_game_refresh_postgres.py`, `product-game-refresh.test.tsx`, and
 `game-refresh.spec.ts`. Native provider transport is synthetic; this is not an
 installation or an authorized live provider run.
+
+## Chess.com daily historical recovery
+
+The one-time history operator delegates the daily mapping recovery to Games,
+then uses the saved replay cursor to read the immutable page before resuming
+provider acquisition. Study queue effects remain with the Study owner.

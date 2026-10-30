@@ -104,3 +104,9 @@ again. It does not authorize Study or change authored scope. The current root
 resolves only explicit boundary candidates through Study's current-presentation
 owner outside any writer. Collection-only construction strips this capability
 and requires no Study receiver or additional Study readiness.
+
+## Saved historical replay
+
+An optional job replay cursor retains the exact saved page selected by the
+Games owner for daily-game recovery, including across transient retries. It is
+not a provider checkpoint and never authorizes Study writes.

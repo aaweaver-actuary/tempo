@@ -1990,6 +1990,7 @@
         "backend/tests/test_game_history_scripts.py",
         "backend/tests/test_historical_time_precision.py",
         "backend/tests/test_historical_provider_pagination.py",
+        "backend/tests/test_historical_chesscom_daily.py",
         "scripts/import-game-history.py",
         "scripts/check-game-history.py",
         "backend/app/product_composition/game_sync.py",

@@ -138,6 +138,26 @@ class RecoveredFirstPage:
         return page
 
 
+class RecoveredDailyPage:
+    """Replay exactly the saved quarantined page, then return to the provider."""
+    def __init__(self, store, spec, underlying, cursor):
+        self.store, self.spec, self.underlying, self.cursor = store, spec, underlying, cursor
+
+    def fetch_page(self, *, account, window, continuation=None):
+        if continuation != self.cursor:
+            return self.underlying.fetch_page(account=account, window=window, continuation=continuation)
+        job = self.store.load_job(self.spec.job_id)
+        if (job is None or job.spec != self.spec or job.status != "running"
+                or job.history_replay_cursor != continuation or continuation != job.continuation
+                or (account, window) != (self.spec.account, self.spec.window)):
+            raise ValueError("history_daily_replay_job_mismatch")
+        page = parse_page(self.store.retained_page(self.spec.job_id, continuation), self.spec.provider)
+        if (page.provider, page.account, page.window, page.filters) != (
+                self.spec.provider, account, window, self.spec.filters):
+            raise ValueError("history_daily_replay_scope_mismatch")
+        return page
+
+
 class DeferredSnapshots:
     def snapshot(self, repertoire_id):
         raise ValueError("historical_collection_comparison_deferred")
@@ -294,6 +314,11 @@ def run_history(manifest, *, store, review, clock, admission, stopped,
                             and not isinstance(runner.coordinator.providers[spec.provider], RecoveredFirstPage)):
                         runner.coordinator.providers[spec.provider] = RecoveredFirstPage(store, spec,
                             runner.coordinator.providers[spec.provider])
+                    if (not compare and prior.history_replay_cursor is not None
+                            and prior.history_replay_cursor == prior.continuation
+                            and not isinstance(runner.coordinator.providers[spec.provider], RecoveredDailyPage)):
+                        runner.coordinator.providers[spec.provider] = RecoveredDailyPage(store, spec,
+                            runner.coordinator.providers[spec.provider], prior.history_replay_cursor)
                     if unresolved:
                         if prior.status == "complete":
                             store.save_job(prior.model_copy(update={"status": "queued",
@@ -399,18 +424,45 @@ def retry_lichess_provider_limit(manifest, *, store, review, admission, clock):
     return dict(prepared=True, receipt=receipt.model_dump(mode="json"))
 
 
+def recover_chesscom_daily(manifest, *, store, review, admission):
+    configuration = next((c for c in manifest.configurations if c.provider == "chesscom"), None)
+    if configuration is None or review.configuration(manifest.workspace_id, "chesscom") != configuration:
+        raise ValueError("history_daily_saved_scope_changed")
+    spec = manifest.job(configuration)
+    job = store.load_job(spec.job_id)
+    if job is None or job.spec != spec or job.continuation is None:
+        raise ValueError("history_daily_job_mismatch")
+    page = parse_page(store.retained_page(spec.job_id, job.continuation), spec.provider)
+    if (page.provider, page.account, page.window, page.filters) != (
+            spec.provider, spec.account, spec.window, spec.filters):
+        raise ValueError("history_daily_page_mismatch")
+    candidates = [record for record in page.records
+        if (source := store.source(stable_id(spec.workspace_id, spec.provider, record.source_game_id)))
+        is not None and source.quarantined]
+    if len(candidates) != 1:
+        raise ValueError("history_daily_quarantine_count_mismatch")
+    record = candidates[0]
+    verified = WorkflowNormalizer().normalize(record, spec)
+    with admission():
+        if review.configuration(manifest.workspace_id, "chesscom") != configuration:
+            raise ValueError("history_daily_saved_scope_changed")
+        store.recover_daily_history_page(expected=job, configuration=configuration,
+            page_document=page.model_dump_json(), record=record, verified=verified)
+    return dict(prepared=True, page_records=len(page.records), recovered=1)
+
+
 def main(compare=False, argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("plan", "run", "status", "recover-precision", "retry-provider-limit"))
+    parser.add_argument("operation", choices=("plan", "run", "status", "recover-precision", "retry-provider-limit", "recover-daily"))
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--max-units", type=int, default=50)
     options = parser.parse_args(argv)
     if not 1 <= options.max_units <= 10000:
         parser.error("--max-units must be 1..10000")
-    if compare and options.operation in {"recover-precision", "retry-provider-limit"}:
+    if compare and options.operation in {"recover-precision", "retry-provider-limit", "recover-daily"}:
         parser.error("recovery operations apply only to collection")
-    writing = options.operation in {"run", "recover-precision", "retry-provider-limit"}
+    writing = options.operation in {"run", "recover-precision", "retry-provider-limit", "recover-daily"}
     variable = "TEMPO_DATABASE_WRITE_URL" if writing else "TEMPO_DATABASE_READ_URL"
     dsn = os.getenv(variable)
     if not dsn:
@@ -474,6 +526,10 @@ def main(compare=False, argv=None):
                     recovery = retry_lichess_provider_limit(manifest, store=store, review=review,
                         admission=historical_admission, clock=clock)
                     units = None
+                elif options.operation == "recover-daily":
+                    recovery = recover_chesscom_daily(manifest, store=store, review=review,
+                        admission=historical_admission)
+                    units = None
                 else:
                     units = run_history(manifest, store=store, review=review, clock=clock,
                         admission=lambda: historical_admission(comparison=compare),
@@ -493,7 +549,7 @@ def main(compare=False, argv=None):
     else:
         result = report(store, review, manifest, compare=compare)
         result["read_only"] = True
-    operation = (options.operation if options.operation in {"recover-precision","retry-provider-limit"}
+    operation = (options.operation if options.operation in {"recover-precision","retry-provider-limit", "recover-daily"}
         and not (result.get("recovery") or {}).get("prepared") else "run")
     result["resume"] = f"python scripts/{'check' if compare else 'import'}-game-history.py {operation} --manifest {str(options.manifest)!r} --workspace {manifest.workspace_id!r}"
     print(json.dumps(result, indent=2))
@@ -505,7 +561,7 @@ def entrypoint(compare=False):
         return main(compare=compare)
     except (OSError, ValueError) as error:
         reason = str(error)
-        if not reason.startswith(("historical_", "history_precision_", "history_provider_limit_")) or not reason.replace("_", "").isalnum():
+        if not reason.startswith(("historical_", "history_precision_", "history_provider_limit_", "history_daily_")) or not reason.replace("_", "").isalnum():
             reason = "historical_operation_failed"
         print(json.dumps(dict(complete=False, reason=reason)))
         return 2
