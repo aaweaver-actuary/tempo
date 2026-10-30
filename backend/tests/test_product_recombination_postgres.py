@@ -532,9 +532,10 @@ def test_feedback_current_target_lineage_does_not_bypass_original_control(feedba
         owner.prepare_game_feedback_target(original,read_connection=read_connection)
 
 
+@pytest.mark.parametrize('capture_path',['retained','fresh'])
 @pytest.mark.parametrize('split',[False,True])
 def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement(
-    feedback_lineage_owner,monkeypatch,split,
+    feedback_lineage_owner,monkeypatch,split,capture_path,
 ):
     """Actual publication/source -> prepared owner lineage -> one current Again."""
     from app.legacy_game_observation import capture_game
@@ -571,7 +572,17 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
         source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
         expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
         occurred_at=game.played_at,payload_digest='e'*64)
-    with qualified_feedback_source(transaction,capture=captured,command=command,clock=lambda:observed) as source:
+    with qualified_feedback_source(transaction,capture=captured,command=command,clock=lambda:observed,
+            capture_provider_source=capture_path == 'fresh') as source:
+        if capture_path == 'fresh':
+            command = source.command
+            assert command.decision.presentation_id != original.presentation_id
+            assert command.key.decision_id == original.decision_id
+            assert source.source.first_departure.status == 'own_actionable'
+            assert source.source.first_departure.decision == command.decision
+            from app.games.feedback.coordinator import delivery_for
+            retained_delivery = source.store.delivery(delivery_for(source.source.source_key,command).operation_id)
+            original_bytes = retained_delivery.command.model_dump_json()
         from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
         with pytest.raises(CurrentDecisionUnavailable,match='first_departure_canonical_source_unproved'):
             source.prepare(command.model_copy(update={'occurred_at':(observed-timedelta(days=2)).isoformat()}))
@@ -602,6 +613,19 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
                 actual = database.execute_native('SELECT card_id,source_kind,source_ref FROM reviews WHERE id=%s',
                     (available.progress.scheduling_review_id,)).fetchone()
                 assert tuple(actual) == (target.presentation_id,'game_lapse',available.owner_receipt_id)
+        if capture_path == 'fresh':
+            from app.games.feedback.qualification import acknowledge_qualified_delivery
+            source.store.save_delivery(acknowledge_qualified_delivery(retained_delivery,available),serviced=True)
+            source.recompare()
+            source.reprepare()
+            actual = source.store.delivery(retained_delivery.operation_id)
+            assert actual.command.model_dump_json() == original_bytes and actual.state == 'acknowledged'
+            assert source.source.effects == (command,) and not source.source.quarantined
+            with transaction() as database:
+                assert database.execute_native('SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s',
+                    (source.source.source_key,)).fetchone()[0] == 1
+                assert database.execute_native("SELECT count(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
+                    (available.owner_receipt_id,)).fetchone()[0] == 1
         if not split:
             # Genuine later failed Study attempts split this reset target. The
             # original accepted consequence remains on B, while current C gets
@@ -653,7 +677,7 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
             settled = PostgresGameFeedbackStore(database).get(command.key)
             assert settled.status == 'settled' and settled.progress.settlement.review_id == result['review_id']
             assert settled.progress.settlement.attempt.card_id == target.presentation_id
-            assert settled.encounter == command and settled.card_id == original.presentation_id
+            assert settled.encounter == command and settled.card_id == command.decision.presentation_id
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
                 (receipt.owner_receipt_id,)).fetchone()[0] == 1
 

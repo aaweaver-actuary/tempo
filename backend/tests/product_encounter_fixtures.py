@@ -20,7 +20,8 @@ from test_product_game_lapse import NOW
 
 
 @contextmanager
-def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW, stream='forward'):
+def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW, stream='forward',
+                              capture_provider_source=False):
     """Real disposable Games source/config plus closed-read Study preparation.
 
     Reused by the owning native suites; it does not bypass global selection,
@@ -46,6 +47,7 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
             'WHERE workspace_id=%s AND provider=%s',(game.workspace_id,command.key.provider)).fetchone()
     pgn = chess.pgn.Game(); pgn.setup(chess.Board(game.starting_fen))
     pgn.headers['White' if game.learner_color=='white' else 'Black'] = account
+    pgn.headers['Result'] = capture['game']['result']
     node = pgn
     for uci in game.moves:
         node = node.add_variation(chess.Move.from_uci(uci))
@@ -62,15 +64,61 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
         repertoire_ids=(repertoire_id,),window=GameWindow(start_at=(clock()-timedelta(days=3)).isoformat(),
             end_at=clock().isoformat(),precision='second'),speeds=('rapid',),rated=None,interval_seconds=None,revision=revision)
     PostgresReviewStore(raw_reads).configure(config,revision-1)
+    owned_jobs = []
     try:
-        with transaction() as database:
-            database.execute_native('INSERT INTO product_feedback_sources(source_key,version,payload) '
-                'VALUES(%s,1,%s::jsonb)',(source.source_key,source.model_dump_json()))
+        coordinator,store,spec = None,None,None
+        if capture_provider_source:
+            from functools import partial
+            from app.games.feedback.coordinator import Coordinator,stable_id
+            from app.games.feedback.ports import JobSpec
+            from app.games.providers.lichess_acquisition import LichessSourceRecord,LichessGamePage
+            from app.product_composition.current_first_boundary import prepare_current_first_boundary
+            from app.product_composition.game_sync_current import CurrentRepertoireSnapshots
+            from app.product_composition.game_sync import WorkflowNormalizer,WorkflowComparer
+            from tempo_legacy_database.adapters.games.product_sources import PostgresCanonicalGamesStore
+            assert command.key.provider == 'lichess'
+            provider_record = LichessSourceRecord(**record.model_dump(mode='python'),
+                source_metadata=(('speed','"rapid"'),('rated','false')))
+            page = LichessGamePage(provider='lichess',account=account,window=config.window,records=(provider_record,),
+                rejections=(),continuation=None,complete=True,saturated=False)
+            class Clock:
+                def now(self): return clock().timestamp()
+                def utc_now(self): return clock().isoformat()
+            store = PostgresCanonicalGamesStore(raw_reads)
+            spec = JobSpec(job_id='captured-feedback:'+uuid.uuid4().hex,workspace_id=game.workspace_id,
+                provider='lichess',account=account,window=config.window,repertoire_ids=config.repertoire_ids,
+                configuration_revision=config.revision,stream=stream)
+            coordinator = Coordinator(providers={'lichess':SimpleNamespace(fetch_page=lambda **kwargs:page)},
+                normalizer=WorkflowNormalizer(),comparer=WorkflowComparer(),snapshots=CurrentRepertoireSnapshots(raw_reads),
+                store=store,source_identity=store,learning=None,clock=Clock(),encounter_feedback=True,
+                first_boundary_preparation=partial(prepare_current_first_boundary,connections=raw_reads))
+            owned_jobs.append(spec.job_id)
+            coordinator.capture_page(store.enqueue(spec))
+            source = store.source(stable_id(game.workspace_id,'lichess',provider_record.source_game_id))
+            assert source is not None and not source.quarantined and len(source.effects) == 1, {
+                'diagnostic':source.diagnostic if source else None,
+                'quarantined':source.quarantined if source else None,
+                'selection':source.first_departure.model_dump(mode='json') if source and source.first_departure else None,
+                'findings':[(item.kind,item.diagnostic) for item in source.findings] if source else None}
+            command, = source.effects
+        else:
+            with transaction() as database:
+                database.execute_native('INSERT INTO product_feedback_sources(source_key,version,payload) '
+                    'VALUES(%s,1,%s::jsonb)',(source.source_key,source.model_dump_json()))
         def prepare(original):
             return prepare_feedback_qualification(original,read=transaction,
                 capture=lambda repertoire,game_id,plies:capture,clock=clock,
                 determination=command.detected_at,stream=stream)
-        result = SimpleNamespace(prepare=prepare,source=source)
+        result = SimpleNamespace(prepare=prepare,source=source,command=command,store=store)
+        def recompare():
+            nonlocal source
+            assert coordinator is not None
+            repeated = spec.model_copy(update={'job_id':'repeated-feedback:'+uuid.uuid4().hex})
+            owned_jobs.append(repeated.job_id)
+            coordinator.capture_page(store.enqueue(repeated))
+            source = store.source(source.source_key)
+            result.source = source
+        result.recompare = recompare
         def reprepare():
             prepared = prepare(command)
             target = prepared.qualification.selection.decision.model_copy(update={
@@ -85,7 +133,11 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
     finally:
         with transaction() as database:
             database.execute_native('DELETE FROM product_feedback_deliveries WHERE source_key=%s',(source.source_key,))
+            database.execute_native('DELETE FROM product_feedback_captures WHERE source_key=%s',(source.source_key,))
             database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
+            if owned_jobs:
+                database.execute_native("DELETE FROM product_feedback_pages WHERE job_id=ANY(%s)",(owned_jobs,))
+                database.execute_native("DELETE FROM product_feedback_jobs WHERE job_id=ANY(%s)",(owned_jobs,))
             database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
                 (config.workspace_id,config.provider))
             if old_config:
