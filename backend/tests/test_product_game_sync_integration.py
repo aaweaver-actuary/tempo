@@ -782,9 +782,14 @@ def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, f
         finally:
             events.append("exit")
     def observed_projection(value):
-        assert events == ["enter", "exit"]
+        assert events == ["enter", "exit", "decode"]
         events.append("projection")
         return project_published_repertoire(value)
+    def observed_decode(value):
+        assert events == ["enter", "exit"]
+        events.append("decode")
+        return json.loads(value)
+    monkeypatch.setattr(composition, "json", SimpleNamespace(loads=observed_decode))
     monkeypatch.setattr(composition, "project_published_repertoire", observed_projection)
     worker = composition.CurrentRepertoireSnapshots(connections)
     if fails:
@@ -793,4 +798,4 @@ def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, f
     else:
         result = worker.snapshot("rep")
         assert result.membership.complete and result.membership.revision == 3
-    assert events == ["enter", "exit", "projection"]
+    assert events == ["enter", "exit", "decode", "projection"]

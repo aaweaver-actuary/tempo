@@ -131,8 +131,8 @@ FROM allowed
 """
 
 
-def read_repertoire(database, repertoire_id: str) -> dict:
-    """One parameter-bound read; overflow fails, never a silently partial view."""
+def read_repertoire_json(database, repertoire_id: str) -> str:
+    """Eager bounded JSON text; callers can decode after releasing their reader."""
     if not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200:
         raise ValueError("invalid_repertoire_scope")
     execute = getattr(database, "execute_native", None) or database.execute
@@ -181,12 +181,18 @@ def read_repertoire(database, repertoire_id: str) -> dict:
         encoded_bytes = len(facts_json.encode())
     else:
         facts = document["facts"]
-        encoded_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
+        facts_json = json.dumps(facts, ensure_ascii=False)
+        encoded_bytes = len(facts_json.encode())
     if encoded_bytes > MAX_SNAPSHOT_BYTES:
         from app.repertoire import RepertoireSnapshotBoundExceeded
         raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[
             dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_SNAPSHOT_BYTES, observation="exact")])
-    return json.loads(facts_json) if facts_json is not None else facts
+    return facts_json
+
+
+def read_repertoire(database, repertoire_id: str) -> dict:
+    """Compatible eager dictionary read over the same bounded one-statement port."""
+    return json.loads(read_repertoire_json(database, repertoire_id))
 
 
 def current_snapshot(database, repertoire_id: str):

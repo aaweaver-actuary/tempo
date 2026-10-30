@@ -517,6 +517,20 @@ def test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding():
         observed=len(encoded.encode()), limit=33554432, observation="exact")]
 
 
+def test_raw_snapshot_port_is_eager_bounded_and_does_not_decode_in_reader(monkeypatch):
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot as storage
+    encoded = json.dumps(repertoire_facts(), ensure_ascii=False)
+    class WireReader(EnvelopeReader):
+        def fetchone(self):
+            return {"snapshot": self.envelope, "facts_json": encoded}
+    def refuse_decode(value):
+        raise AssertionError("large facts decoded while borrowing the reader")
+    monkeypatch.setattr(storage, "json", SimpleNamespace(loads=refuse_decode, dumps=json.dumps))
+    result = storage.read_repertoire_json(WireReader(snapshot_envelope(bounded=True, facts=None)), "rep")
+    assert result == encoded and json.loads(result) == repertoire_facts()
+
+
 @pytest.mark.parametrize("name,dimension,limit", [("lines", "source_rows", 10000),
     ("cards", "card_rows", 10000), ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000)])
 def test_snapshot_projection_row_refusals_are_exact(name, dimension, limit):

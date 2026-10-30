@@ -93,10 +93,11 @@ def main(argv=None, *, reader_factory=None):
 
             def repertoire_readiness(repertoire_id):
                 from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
-                    read_repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_ROW_BYTES, MAX_SNAPSHOT_BYTES)
+                    read_repertoire_json, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_ROW_BYTES, MAX_SNAPSHOT_BYTES)
                 from app.repertoire import project_published_repertoire
                 with connections() as database:
-                    facts = read_repertoire(database, repertoire_id)
+                    encoded = read_repertoire_json(database, repertoire_id)
+                facts = json.loads(encoded)
                 # Domain projection executes after its bounded reader is released.
                 result = {"name": facts["repertoire"]["name"],
                     "learner_colors": sorted({row["trained_color"] for row in facts["lines"]}),

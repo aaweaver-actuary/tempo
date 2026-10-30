@@ -5883,3 +5883,8 @@ source/revision changes, conflicts, unavailable physical references, rollback,
 sentinel overflow and parameter-bound selection.
 `backend/tests/test_product_snapshot.py::test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding`
 retains the returned facts and exact 32 MiB refusal for the raw-wire path.
+`test_raw_snapshot_port_is_eager_bounded_and_does_not_decode_in_reader` owns
+the eager raw capability. Existing
+`test_product_game_sync_integration.py::test_current_snapshot_projection_begins_after_connection_exit`
+now also proves decoding occurs after the connection exits, on success and
+publication failure, while retaining the original projection boundary.
