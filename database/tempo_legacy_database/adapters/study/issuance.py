@@ -78,6 +78,23 @@ def completion_issuance(database, review_id, card_id, revision):
     return _evidence(rows[0]) if len(rows) == 1 else None
 
 
+def committed_issuance_count(database, determined_at, *, through_issuance_sequence=None) -> int:
+    """Observe genuine committed issuances since the original determination.
+
+    This read works before the target is issued. Each retained queue generation
+    counts once, across clients and Study days; prefetch, old unknown issuances
+    and unused sequence values do not count. A ceiling reproduces the target's
+    ordinal without treating its monotone fence as a count.
+    """
+    if not isinstance(database, PostgresConnection):
+        determined_at = datetime.fromisoformat(determined_at.replace('Z', '+00:00')).astimezone(timezone.utc).isoformat()
+    ceiling = ' AND issuance_sequence<=?' if through_issuance_sequence is not None else ''
+    parameters = (determined_at, through_issuance_sequence) if through_issuance_sequence is not None else (determined_at,)
+    return int(database.execute("""SELECT COUNT(DISTINCT queue_entry_id) FROM queue_attempt_origins
+        WHERE issued_as_head=1 AND issued_at>? AND issuance_sequence IS NOT NULL""" + ceiling,
+        parameters).fetchone()[0])
+
+
 def first_target_issuance(database, card_id, revision, determined_at, *, after_issuance_sequence=0):
     """Return actual target authority and its card ordinal after determination.
 
@@ -93,7 +110,5 @@ def first_target_issuance(database, card_id, revision, determined_at, *, after_i
     evidence = _evidence(row)
     if evidence is None:
         return None
-    ordinal = database.execute("""SELECT COUNT(*) FROM queue_attempt_origins
-        WHERE issued_as_head=1 AND issued_at>? AND issuance_sequence<=?""",
-        (determined_at, evidence.issuance_sequence)).fetchone()[0]
-    return evidence, int(ordinal)
+    return evidence, committed_issuance_count(database, determined_at,
+        through_issuance_sequence=evidence.issuance_sequence)

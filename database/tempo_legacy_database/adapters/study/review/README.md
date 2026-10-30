@@ -128,7 +128,10 @@ one compatible target while the effect owner retains separate genuine game
 occurrences. Six simultaneous targets are FIFO backlog, not an unconditional
 five-card promise. Actual first-head generation and ordinal are read from the
 existing [attempt origins](../issuance.py), at schema55; no queue position or
-priority receipt stands in for issuance.
+priority receipt stands in for issuance. The same owner exposes
+`committed_issuance_count` before a target has issued, so pending status can
+observe genuine committed generations since the original determination without
+claiming that queue availability is issuance.
 
 The prepared ownership fingerprint treats the one intended scheduling target
 separately: its immutable content/revision, repertoire, archived/validation and

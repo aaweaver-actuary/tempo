@@ -142,6 +142,29 @@ def test_actual_issuance_generation_is_once_and_prefetch_is_not_counted(queued_a
         assert issuance_frontier(connection) == 1
 
 
+def test_pending_target_count_observes_committed_issuance_without_prefetch_or_reload(queued_attempts):
+    from datetime import datetime, timezone
+    from tempo_legacy_database.adapters.study.issuance import (
+        committed_issuance_count, first_target_issuance, stamp_issued_head,
+    )
+    determined = '2026-10-30T10:00:00+00:00'
+    with database.connection() as connection:
+        stamp_issued_head(connection, queued_attempts['active-a'], 'active-a', 1,
+                          now=datetime(2026,10,30,9,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 0
+        assert first_target_issuance(connection, 'not-yet-issued', 1, determined) is None
+        stamp_issued_head(connection, queued_attempts['later-b'], 'later-b', 1,
+                          now=datetime(2026,10,30,10,0,1,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 1
+        assert first_target_issuance(connection, 'later-b', 1, determined)[1] == 1
+        assert committed_issuance_count(connection, determined, through_issuance_sequence=1) == 0
+    database.initialize()
+    with database.connection() as connection:
+        stamp_issued_head(connection, queued_attempts['later-b'], 'later-b', 1,
+                          now=datetime(2026,10,31,10,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 1
+
+
 def test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation(queued_attempts):
     from tempo_legacy_database.adapters.study.issuance import stamp_issued_head, attempt_issuance, issuance_frontier
     with database.connection() as connection:
