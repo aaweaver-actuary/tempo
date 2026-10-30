@@ -123,7 +123,9 @@ class CurrentOwnerDecisions:
                  and game.game_id == raw['id'] and game.source_digest == fingerprint(raw)
                  and game.starting_fen == raw['start_fen']
                  and tuple(game.moves) == tuple(json.loads(raw['moves_json']))
-                 and game.learner_color == raw['color'] and game.played_at == raw['played_at'],
+                 and game.learner_color == raw['color'] and game.played_at == raw['played_at']
+                 and command.occurred_at is not None
+                 and instant(command.occurred_at) == instant(raw['played_at']),
                  'first_departure_canonical_source_unproved')
         selection = select_first_boundary(game, snapshots=snapshots,
             source=qualification.selection.source,

@@ -572,6 +572,9 @@ def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settle
         expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
         occurred_at=game.played_at,payload_digest='e'*64)
     with qualified_feedback_source(transaction,capture=captured,command=command,clock=lambda:observed) as source:
+        from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+        with pytest.raises(CurrentDecisionUnavailable,match='first_departure_canonical_source_unproved'):
+            source.prepare(command.model_copy(update={'occurred_at':(observed-timedelta(days=2)).isoformat()}))
         prepared = source.prepared
         target = prepared.qualification.selection.decision
         assert target.presentation_id != original.presentation_id and target.decision_id == original.decision_id
