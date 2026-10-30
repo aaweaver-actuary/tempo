@@ -384,10 +384,13 @@ claim; #624 owns the assembled provider-to-ordinary-Study journey.
 accepts a dedicated `connections()` context factory yielding raw tuple-row
 PostgreSQL connections. It opens no pool, reads no environment/settings and has
 no production schema initializer. Each method commits/rolls back and releases its
-connection before returning. Lock and statement timeouts are 100 ms / 250 ms.
+connection before returning. Ordinary Games lock and statement timeouts are
+100 ms / 250 ms. Whole-repertoire snapshot reads use a separate read-only
+profile without transaction/statement deadlines or a total snapshot-byte cap.
 Failures remain retryable without losing a checkpoint. Page sizes default to
-100 records / 8 MiB total raw PGN / 10,000 replay positions; snapshots are limited to eight requested
-repertoires. Integration must supply a bounded snapshot implementation and
+100 records / 8 MiB total raw PGN / 10,000 replay positions. The configured scope
+may include all user repertoires; no repertoire-count cap filters that scope or
+its readiness report. Integration must supply a bounded snapshot implementation and
 connection acquisition timeout, and preserve Study's resource allocation. Explicit
 record/position limits may increase up to 1,000 / 100,000 when the optional worker's
 budget supports that page. An oversized provider month/page fails visibly without

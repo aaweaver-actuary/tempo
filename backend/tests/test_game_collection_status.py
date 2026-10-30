@@ -360,6 +360,37 @@ def _bound_payload(stage="read"):
         violations=[dict(dimension="source_rows", observed=10001, limit=10000, observation="lower_bound")])
 
 
+@pytest.mark.parametrize("count", [10, 17])
+def test_status_enumerates_all_selected_repertoires_and_preserves_last_read_failure(monkeypatch, count):
+    selected = [f"repertoire-{index}" for index in range(count)]
+    reader = CollectionObservations(SimpleNamespace(read_only=True))
+    reads = []
+
+    def rows(statement, parameters=()):
+        if "FROM product_feedback_configuration" in statement:
+            return [dict(provider=parameters[1][0], revision=1, next_run_at=0,
+                         payload=dict(repertoire_ids=selected))]
+        if "COUNT(*) AS jobs" in statement:
+            return [dict(jobs=0, acquisition_windows_complete=0, terminal_complete_jobs=0)]
+        return []
+
+    def readiness(repertoire_id):
+        reads.append(repertoire_id)
+        if repertoire_id == selected[-1]:
+            raise ValueError("private read failure")
+        return dict(availability="available", learner_color="white")
+
+    monkeypatch.setattr(reader, "_rows", rows)
+    reader.repertoire_readiness = readiness
+    report = reader.providers("legacy", 20, None)
+    assert report["availability"] == "available" and reads == selected
+    for provider in report["items"]:
+        assert provider["selected_repertoire_count"] == count
+        assert provider["repertoires_truncated"] is False
+        assert [item["repertoire_id"] for item in provider["repertoire_readiness"]] == selected
+        assert provider["repertoire_readiness"][-1]["diagnostic"] == "repertoire_read_unavailable"
+
+
 def test_readiness_is_cached_once_per_report_and_copied_then_recomputed(stored):
     from psycopg.types.json import Jsonb
     selected = ["synthetic-healthy", "synthetic-bound", "synthetic-unknown"]
@@ -412,7 +443,8 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     entered = False
 
     @contextmanager
-    def connections():
+    def connections(*, repertoire_snapshot=False):
+        assert repertoire_snapshot is True
         nonlocal entered
         entered = True
         try:
@@ -423,13 +455,13 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     def read(*args):
         if stage == "read":
             raise error
-        return json.dumps(dict(repertoire=dict(name="private-name", graph_state="ready", graph_generation=7), lines=[], graphs=[]))
+        return dict(repertoire=dict(name="private-name", graph_state="ready", graph_generation=7), lines=[], graphs=[])
 
     def project(*args):
         assert not entered
         raise error
 
-    monkeypatch.setattr(product_snapshot, "read_repertoire_json", read)
+    monkeypatch.setattr(product_snapshot, "read_repertoire", read)
     monkeypatch.setattr(repertoire, "project_published_repertoire", project)
     result = _repertoire_readiness(connections, "private-id")
     assert result["availability"] == "unavailable"
@@ -441,7 +473,7 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     # The same text on an arbitrary ValueError never gains the typed permission.
     def unknown(*args):
         raise ValueError("repertoire_snapshot_exceeds_bound")
-    monkeypatch.setattr(product_snapshot, "read_repertoire_json", unknown)
+    monkeypatch.setattr(product_snapshot, "read_repertoire", unknown)
     assert _repertoire_readiness(connections, "private-id") == dict(
         availability="unavailable", diagnostic="repertoire_read_unavailable")
 

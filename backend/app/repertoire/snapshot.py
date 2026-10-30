@@ -297,10 +297,6 @@ def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, publi
     The source digest excludes capture time and every schedule/review/queue field.
     """
     encoded = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    encoded_bytes = len(encoded.encode())
-    if encoded_bytes > MAX_CAPTURE_BYTES:
-        raise RepertoireSnapshotBoundExceeded(stage="projection", sample_complete=True, violations=[
-            dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_CAPTURE_BYTES, observation="exact")])
     source = json.loads(encoded)
     header = source["repertoire"]
     repertoire_id = header["id"]
@@ -310,7 +306,7 @@ def _project_repertoire(facts: Mapping, *, captured_at: str | None = None, publi
         raise ValueError("canonical_prefix_snapshot_unsupported")
     violations = [dict(dimension=dimension, observed=len(source[name]), limit=limit, observation="exact")
                   for name, dimension, limit in (("lines", "source_rows", 10000), ("cards", "card_rows", 10000),
-                      ("memberships", "membership_rows", 10000), ("graphs", "graph_rows", 20000))
+                      ("memberships", "membership_rows", 10000))
                   if len(source[name]) > limit]
     if violations:
         raise RepertoireSnapshotBoundExceeded(stage="projection", sample_complete=True, violations=violations)

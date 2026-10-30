@@ -43,7 +43,7 @@ class FeedbackRunner:
             if self._stop.is_set():
                 self.close()
 
-    def run_once(self) -> str:
+    def run_once(self, *, job_id: str | None = None) -> str:
         if self._stop.is_set():
             self.close()
             return "stopped"
@@ -58,7 +58,8 @@ class FeedbackRunner:
                     coordinator.deliver(pending)
                     self._prefer_delivery = False
                     return "delivery"
-            job = coordinator.store.claim_job(now, now + self.lease_seconds)
+            job = (coordinator.store.claim_job(now, now + self.lease_seconds) if job_id is None
+                   else coordinator.store.claim_job(now, now + self.lease_seconds, job_id=job_id))
             if job:
                 try:
                     coordinator.capture_page(job, stopped=self._stop.is_set)

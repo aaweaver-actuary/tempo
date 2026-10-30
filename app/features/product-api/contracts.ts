@@ -242,6 +242,8 @@ export interface GameReviewApi {
   recentGames(request?: { signal?: AbortSignal }): Promise<RecentGames>;
   gameDetail(request: { provider: GameSummary["provider"]; game_id: string; repertoire_id?: string; signal?: AbortSignal }): Promise<GameDetail>;
   sync(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<ProviderSyncStatus>;
+  refresh(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<GameRefreshStatus>;
+  refreshStatus(request: { operation_id: string; signal?: AbortSignal }): Promise<GameRefreshStatus>;
   retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<EncounterReceipt | LearningReceipt>;
   findings(gameId: string): Promise<readonly Finding[]>;
   feedbackStatus(key: GameEffectKey): Promise<LearningReceipt | null>;
@@ -259,6 +261,13 @@ export type GameSummary = z.infer<typeof GameSummarySchema>;
 export type ProviderSyncStatus = z.infer<typeof ProviderSyncStatusSchema>;
 export type RecentGames = z.infer<typeof RecentGamesSchema>;
 export type GameDetail = z.infer<typeof GameDetailSchema>;
+
+export const GameRefreshStatusSchema = immutable(z.strictObject({
+  provider, operation_id: id, job_id: id, window: RawGameWindowSchema,
+  status: z.enum(["queued", "running", "retryable", "failed", "quarantined", "complete"]),
+  pages_committed: z.number().int().min(0), next_attempt_at: z.number().finite().min(0), error: z.string().nullable(),
+}));
+export type GameRefreshStatus = z.infer<typeof GameRefreshStatusSchema>;
 
 const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const probability = z.number().min(0).max(1);
@@ -369,4 +378,4 @@ export interface RepertoireReviewApi extends RepertoireChangePort {
   evidence(positionKey: string): Promise<readonly ProbabilityEvidence[]>;
 }
 
-export const PRODUCT_SCHEMAS = { GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, FirstDepartureSelection: FirstDepartureSelectionSchema, FirstDepartureWitness: FirstDepartureWitnessSchema, GameEncounter: GameEncounterSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema, PopulationSelection: PopulationSelectionSchema, ProbabilityEvidence: ProbabilityEvidenceSchema, EngineContext: EngineContextSchema, CandidateEvaluation: CandidateEvaluationSchema, EngineEvidence: EngineEvidenceSchema, Proposal: ProposalSchema, ProposalDecision: ProposalDecisionSchema, RepertoireChangeReceipt: RepertoireChangeReceiptSchema, Presentation: PresentationSchema, JoinPlan: JoinPlanSchema, PresentationChangeReceipt: PresentationChangeReceiptSchema, RankingInput: RankingInputSchema, RankingOutput: RankingOutputSchema } as const;
+export const PRODUCT_SCHEMAS = { GameRefreshStatus: GameRefreshStatusSchema, GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, FirstDepartureSelection: FirstDepartureSelectionSchema, FirstDepartureWitness: FirstDepartureWitnessSchema, GameEncounter: GameEncounterSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema, PopulationSelection: PopulationSelectionSchema, ProbabilityEvidence: ProbabilityEvidenceSchema, EngineContext: EngineContextSchema, CandidateEvaluation: CandidateEvaluationSchema, EngineEvidence: EngineEvidenceSchema, Proposal: ProposalSchema, ProposalDecision: ProposalDecisionSchema, RepertoireChangeReceipt: RepertoireChangeReceiptSchema, Presentation: PresentationSchema, JoinPlan: JoinPlanSchema, PresentationChangeReceipt: PresentationChangeReceiptSchema, RankingInput: RankingInputSchema, RankingOutput: RankingOutputSchema } as const;

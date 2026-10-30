@@ -42,7 +42,7 @@ class DedicatedGamesConnections:
         self.read_only=read_only
 
     @contextmanager
-    def __call__(self):
+    def __call__(self, *, repertoire_snapshot=False):
         import psycopg
         from ..postgres_store import tempo_row_factory
         if not self._slot.acquire(timeout=0.25):
@@ -51,10 +51,16 @@ class DedicatedGamesConnections:
             with psycopg.connect(self.dsn, autocommit=True, connect_timeout=2,
                                  row_factory=tempo_row_factory, application_name="tempo-product-games") as database:
                 with database.transaction():
-                    if self.read_only:
+                    if self.read_only or repertoire_snapshot:
                         database.execute("SET TRANSACTION READ ONLY")
-                    database.execute("""SELECT set_config('transaction_timeout','250ms',true),
-                        set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
+                    if repertoire_snapshot:
+                        # Whole-repertoire reads are read-only and finish before
+                        # chess projection. Keep ordinary Games writes bounded.
+                        database.execute("""SELECT set_config('transaction_timeout','0',true),
+                            set_config('lock_timeout','100ms',true),set_config('statement_timeout','0',true)""")
+                    else:
+                        database.execute("""SELECT set_config('transaction_timeout','250ms',true),
+                            set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
                     yield database
         finally:
             self._slot.release()
@@ -167,6 +173,69 @@ class PostgresReviewStore:
                 ORDER BY request.requested_at DESC,request.operation_id DESC LIMIT 1""",
                 (workspace, provider)).fetchone()
         return JobState.model_validate_json(row[0]) if row else None
+
+    def refresh_job(self, workspace, operation_id):
+        with self._transaction() as database:
+            row = database.execute("""SELECT job.payload::text FROM product_feedback_sync_requests request
+                JOIN product_feedback_jobs job ON job.job_id=request.job_id
+                WHERE request.workspace_id=%s AND request.operation_id=%s
+                  AND job.payload->'spec'->>'purpose'='refresh'""", (workspace, operation_id)).fetchone()
+        if row is None:
+            return None
+        return JobState.model_validate_json(row[0])
+
+    def enqueue_refresh(self, workspace, provider, operation_id, build_job):
+        """Serialize the pure job plan with configuration, aliases and checkpoints.
+
+        The caller's command transaction also stages the durable task/receipt.
+        build_job is pure policy supplied by the Games owner; it performs no I/O.
+        """
+        with self._transaction() as database:
+            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (f"tempo:product-sync-config:{workspace}:{provider}",))
+            prior = database.execute("""SELECT job.payload::text FROM product_feedback_sync_requests request
+                JOIN product_feedback_jobs job ON job.job_id=request.job_id
+                WHERE request.workspace_id=%s AND request.operation_id=%s""",
+                (workspace, operation_id)).fetchone()
+            if prior:
+                job = JobState.model_validate_json(prior[0])
+                if job.spec.provider != provider or job.spec.purpose != "refresh":
+                    raise ReviewUnavailable("operation_provider_mismatch")
+                return job, False
+            row = database.execute("""SELECT payload::text FROM product_feedback_configuration
+                WHERE workspace_id=%s AND provider=%s""", (workspace, provider)).fetchone()
+            if row is None:
+                raise ReviewUnavailable("Save this provider's account, filters and repertoires in Games Settings before refreshing.", 422)
+            configuration = SyncConfiguration.model_validate_json(row[0])
+            active = database.execute("""SELECT payload::text FROM product_feedback_jobs
+                WHERE payload->'spec'->>'workspace_id'=%s AND payload->'spec'->>'provider'=%s
+                  AND payload->'spec'->>'purpose'='refresh'
+                  AND (payload->'spec'->>'configuration_revision')::bigint=%s
+                  AND status IN ('queued','running','retryable') ORDER BY job_id LIMIT 1""",
+                (workspace, provider, configuration.revision)).fetchone()
+            if active:
+                job = JobState.model_validate_json(active[0])
+                created = False
+            else:
+                checkpoint = database.execute("""SELECT payload::text FROM product_feedback_jobs
+                    WHERE payload->'spec'->>'workspace_id'=%s AND payload->'spec'->>'provider'=%s
+                      AND status='complete' AND payload->>'window_complete'='true'
+                      AND (starts_with(job_id,%s) OR (payload->'spec'->>'purpose'='refresh'
+                        AND (payload->'spec'->>'configuration_revision')::bigint=%s))
+                    ORDER BY (payload->'spec'->'window'->>'end_at')::timestamptz DESC LIMIT 1""",
+                    (workspace, provider, f"following:{provider}:{configuration.revision}:",
+                     configuration.revision)).fetchone()
+                spec = build_job(configuration, JobState.model_validate_json(checkpoint[0]) if checkpoint else None)
+                @contextmanager
+                def borrowed():
+                    yield database
+                job = PostgresGamesStore(borrowed).enqueue(spec)
+                created = True
+            database.execute("""INSERT INTO product_feedback_sync_requests
+                (workspace_id,operation_id,provider,job_id,requested_at)
+                VALUES(%s,%s,%s,%s,extract(epoch FROM clock_timestamp()))""",
+                (workspace, operation_id, provider, job.spec.job_id))
+            return job, created
 
     @staticmethod
     def _stream_job(database, configuration, purpose):

@@ -38,8 +38,13 @@ seam before it can share the atomic page commit; no pre-checkpoint mirror is
 written merely to make a game-specific source capture possible.
 
 `DedicatedGamesConnections` owns at most one open connection per process,
-250 ms acquisition wait, 2 s connect timeout, and PostgreSQL 250 ms transaction /
-statement plus 100 ms lock limits. Connections close on every exit. HTTP/chess
+250 ms acquisition wait and 2 s connect timeout. Ordinary Games transactions
+retain PostgreSQL 250 ms transaction/statement and 100 ms lock limits. The explicit
+`connections(repertoire_snapshot=True)` profile always sets the transaction read-only,
+removes its transaction/statement deadlines, and retains the lock limit. Only
+whole-repertoire reads in the worker and status composition use that profile;
+configuration, persistence and Study operations keep their existing limits.
+Connections close on every exit. HTTP/chess
 work runs before database sections; no foreground Study pool is borrowed. The
 retained backend capture API still uses its existing bounded background reader;
 this scoped legacy read dependency is disclosed, not a second authority. Host
@@ -217,7 +222,7 @@ flowchart LR
   Games --> Boundary["Retained global first boundary / no election during reads"]
   Boundary --> JSON
   Reader --> Legacy["Retained Games library / separate count"]
-  CLI -->|full report only| Repertoire["Existing bounded Repertoire read + public projection"]
+  CLI -->|full report only| Repertoire["Read-only repertoire snapshot profile + public projection"]
   Reader --> Port["Injected public receipt status capability"]
   Port --> Receipt["CurrentStudyReceiptReads / receiving-owner read"]
   Receipt --> Observation["Study-owned typed queue and actual issuance observations"]
@@ -284,3 +289,35 @@ Recent summaries map stored `chess.com` to public `chesscom`. Source detail and
 canonical identity lookups accept both stored aliases, retain workspace fences
 and reject ambiguous rows. These are read projections: canonical IDs, digests,
 original PGNs and historical source metadata retain their stored spelling.
+
+## On-demand refresh requests
+
+No schema migration is required. Existing `product_feedback_sync_requests`
+records map each original operation ID to its exact `product_feedback_jobs` row;
+multiple request aliases can reference one active refresh. Job JSON adds optional
+`spec.purpose` (default `sync`) and `spec.configuration_revision` (default null).
+Existing jobs deserialize unchanged. Only complete same-revision forward/refresh
+windows establish a refresh checkpoint; ordinary manual/reconciliation jobs do not.
+
+The Games configuration advisory lock serializes scope reads, checkpoint selection,
+job creation and alias insertion. Application policy supplies the pure window/job
+builder. The command composition stages work through the durable task owner's
+idempotent ensure operation in the same outer transaction. Games does not mutate
+or query the task owner's tables. Its exact-job reader remains read-only.
+
+```mermaid
+erDiagram
+  product_feedback_configuration ||--o{ product_feedback_jobs : "saved scope and revision"
+  product_feedback_sync_requests }o--|| product_feedback_jobs : "exact job FK; coalesced aliases"
+  product_feedback_jobs ||--o{ product_feedback_pages : "atomic source and checkpoint"
+  product_feedback_jobs ||--o| background_tasks : "logical job ID; task owner writes"
+```
+
+Configuration/job and job/task edges above are logical relationships; request/job and page/job are physical foreign keys.
+
+Claiming first takes a nonwaiting provider/account advisory lock, then the selected
+job row. Active job leases and future retry times block that account on either
+execution path. The short transaction ends before HTTP; the durable job lease
+covers the page. Generic claims exclude refresh jobs; a requested claim targets
+its exact job. Existing version fences govern page publication and crash recovery.
+Continuous next-run times and stream selection remain separate.

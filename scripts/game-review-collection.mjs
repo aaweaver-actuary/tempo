@@ -270,8 +270,8 @@ export async function operateCollection(operation, { apply = false, inspect, loc
   } finally { releaseLock(); }
 }
 
-function command(program, args) {
-  const result = spawnSync(program, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
+function command(program, args, {timeout = 30000} = {}) {
+  const result = spawnSync(program, args, { encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 });
   if (result.error || result.status !== 0) {
     const error = new Error(program + ' inspection/action failed');
     error.failure = result.error?.code === 'ETIMEDOUT' ? 'timeout' : result.error || !Number.isInteger(result.status) ? 'process_error' : 'nonzero_exit';
@@ -364,7 +364,7 @@ export async function main(
   if (target.version !== 1) throw new Error('Unsupported managed registration; preserve the installed authority');
   const stateDirectory = join(process.env.TEMPO_CLI_STATE_DIR ?? join(homedir(), '.local/share/tempo'), targetKey(target));
   const receiptPath = join(stateDirectory, 'deployment.json');
-  const docker = args => runCommand('docker', ['--context', target.context, ...args]);
+  const docker = (args, settings) => runCommand('docker', ['--context', target.context, ...args], settings);
   let compose, snapshot, last;
   const operationId = randomUUID();
   const inspect = async () => {
@@ -374,7 +374,7 @@ export async function main(
     if (!release.composeFiles?.length || !release.imageOverride) throw new Error('Frozen managed release receipt required');
     const prefix = ['compose', '--project-directory', target.root, '--project-name', target.project,
       '--env-file', target.envFile, ...release.composeFiles.flatMap(file => ['-f', file]), '-f', release.imageOverride, '--profile', 'maintenance', '--profile', 'games-feedback'];
-    const baseCompose = args => docker([...prefix, ...args]);
+    const baseCompose = (args, settings) => docker([...prefix, ...args], settings);
     const baseConfiguration = JSON.parse(baseCompose(['config', '--format', 'json']));
     let modeOverride = null;
     if (release.gamesMode !== undefined) {
@@ -386,7 +386,7 @@ export async function main(
       if (!isDeepStrictEqual(jsonFile(saved.override), expected)) throw new Error('Managed mode override differs from its finite supported command');
       modeOverride = saved.override;
     }
-    compose = args => docker([...prefix, ...(modeOverride ? ['-f', modeOverride] : []), ...args]);
+    compose = (args, settings) => docker([...prefix, ...(modeOverride ? ['-f', modeOverride] : []), ...args], settings);
     const configuration = JSON.parse(compose(['config', '--format', 'json']));
     validateTarget(configuration, target);
     const maintenance = readCollectionMaintenance({
@@ -416,7 +416,7 @@ export async function main(
     if (apiRevisionVerified) {
       const readerCommand = ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status'];
       identityProbe = readProbe(() => compose([...readerCommand, '--identity-only']));
-      fullReaderProbe = readProbe(() => compose([...readerCommand, '--workspace', 'legacy', '--limit', '20']));
+      fullReaderProbe = readProbe(() => compose([...readerCommand, '--workspace', 'legacy', '--limit', '20'], {timeout: 0}));
       report = fullReaderProbe.evidence;
       if (release.schema >= 56) {
         try {

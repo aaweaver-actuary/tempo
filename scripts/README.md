@@ -340,8 +340,9 @@ node /absolute/qualified/source/scripts/game-review-collection.mjs disable --can
 Plan/status first run `game_collection_status --identity-only`, then the full
 reader, through the verified installed API's reader profile. The two commands
 retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`, and
-`json_status`). The existing 30,000 ms timeout and 4 MiB subprocess bound apply
-independently to each command. A full-reader timeout does not erase independently
+`json_status`). Identity and other operator commands retain the existing 30,000 ms timeout.
+The full snapshot report has no fixed subprocess deadline; both reader commands
+retain the 4 MiB subprocess output bound. A full-reader failure does not erase independently
 observed schema, but still blocks enable. Complete JSON from a nonzero exit remains
 diagnostic evidence, never a successful probe. Malformed/truncated output is not
 accepted. Conflicting schema observations block explicitly.

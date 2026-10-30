@@ -18,7 +18,7 @@ composition supplies actual routes. Shared wire values and validators come from
 and navigation intents. Read requests never sync, deliver feedback, or edit content.
 
 The feature owns request cancellation, selected game, board cursor, displayed
-receipts and in-memory operation identities. Provider/coordinator/Study owners
+receipts and feedback operation identities. Refresh identities also use the existing browser adapter as described below. Provider/coordinator/Study owners
 own durable operations and learning effects. Requests abort on unmount; selection
 replaces the detail generation even if a transport ignores cancellation. A retry
 reuses its operation identity, and a synchronous in-flight guard prevents duplicate
@@ -50,7 +50,7 @@ card-creation, SQL, browser-storage or engine capability.
 flowchart LR
   Composition["#491 composition: mount + endpoints"] --> View["GameReviewView: local state"]
   Composition --> HTTP["api.ts: injected fetch adapter"]
-  View --> Port["GameReviewClient: read / explicit sync / retry"]
+  View --> Port["GameReviewClient: read / explicit refresh / saved-range sync / retry"]
   HTTP -. implements .-> Port
   HTTP --> DTO["#482 factual values + LearningReceipt / EncounterReceipt union"]
   View --> Board["@tempo/board-ui: supplied read-only FEN"]
@@ -61,8 +61,9 @@ flowchart LR
 
 No Study/Tactics implementation is imported or called. Shared React/board/chess.js
 and HTTP resources remain in the host browser; installed process/resource isolation
-is unverified here. The feature owns and cancels only its requests. No polling,
-document hotkeys, background workers, timers or new state manager are installed.
+is unverified here. The feature owns and cancels only its requests. Refresh
+polling is described below; no document hotkeys, browser workers or new state
+manager are installed.
 
 ## Reuse
 
@@ -118,3 +119,19 @@ The focused test is discovered by the existing unit glob. #491 coordinates the
 central regression inventory entry with #488's current `tests/REGRESSIONS.md`
 reservation. This component check does not establish hosted merge qualification,
 pixel layout, installed endpoints, live imports or receiving-owner persistence.
+
+## Refresh now
+
+Games uses `POST /api/product/game-review/refresh` with `{provider, operation_id}`
+and reads `GET /api/product/game-review/refresh/{operation_id}`. The configured
+fixed-range `/sync` action remains in Settings. The read-only list/status refresh
+button starts no acquisition.
+
+`use-game-refresh.ts` retains one original request and accepted job per provider
+through the existing browser adapter, scoped to the Games API URL and workspace.
+It polls only pending requests every two seconds while visible, recovers at
+visibility/online changes, and cancels requests/timers on unmount. Completion
+reloads summaries without replacing an unchanged selection or board cursor.
+Uncertain responses retain the original identity. A confirmed rejected command
+or terminal job releases it for a new explicit refresh. Pending command receipts,
+provider retries and actual completed acquisition remain distinct states.

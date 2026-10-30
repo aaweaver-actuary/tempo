@@ -184,6 +184,37 @@ def test_page_and_checkpoint_commit_together():
     assert len(h.store.pages) == 1
 
 
+@pytest.mark.parametrize("count", [10, 17])
+def test_capture_attempts_every_selected_repertoire_and_retains_last_read_failure(count):
+    h = harness(kinds=())
+    selected = [f"repertoire-{index}" for index in range(count)]
+    value = spec().model_dump(mode="json")
+    value["repertoire_ids"] = selected
+    request = JobSpec.model_validate_json(json.dumps(value))
+    reads = []
+
+    def snapshot(repertoire_id):
+        reads.append(repertoire_id)
+        if repertoire_id == selected[-1]:
+            raise ValueError("repertoire_read_unavailable")
+        payload = json.loads((FIXTURES / "snapshot.json").read_text())["payload"]
+        payload["membership"]["scope_repertoire_ids"] = [repertoire_id]
+        for route in payload["membership"]["routes"]:
+            route["repertoire_id"] = repertoire_id
+        for mapping in payload["decision_presentations"]:
+            mapping["repertoire_id"] = repertoire_id
+        return RepertoireSnapshot.model_validate_json(json.dumps(payload))
+
+    h.coordinator.snapshots = SimpleNamespace(snapshot=snapshot)
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    assert reads == selected
+    assert h.store.load_job(request.job_id).spec.repertoire_ids == tuple(selected)
+    source, = h.store.sources.values()
+    assert source.diagnostic == "comparison_unavailable:" + json.dumps([selected[-1]], separators=(",", ":"))
+    assert not h.store.deliveries and not h.receiver.calls
+
+
 def test_crash_before_checkpoint_replays_without_duplicates():
     h = harness()
     h.store.enqueue(spec())

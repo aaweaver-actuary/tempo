@@ -124,6 +124,7 @@ _CONTROL_BACKGROUND_COMMANDS = frozenset({
     'games.analysis.finalize.admit',
 })
 _SUPPORTED_BACKGROUND_KINDS = (
+    "product_game_refresh",
     "daily_queue",
     "defensive_rubric_audit",
     "defensive_admission",
@@ -432,7 +433,12 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
 def _execute_claimed_background_slice(
     claimed_task: dict[str, Any], submitted_at: float | None, *, queue_refresh_wake: bool = False,
 ) -> bool:
+    def refresh_slice(task):
+        # Essential Study slices never import or construct the optional producer.
+        from .product_composition.game_refresh import execute_refresh_slice
+        return execute_refresh_slice(task)
     background_handlers = {
+        "product_game_refresh": refresh_slice,
         "daily_queue": execute_postgres_queue_refresh_slice,
         "defensive_rubric_audit": execute_defense_rubric_audit_slice,
         "defensive_admission": execute_defense_admission_slice,
@@ -484,6 +490,7 @@ def _execute_claimed_background_slice(
                 return False
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
+                "product_game_refresh",
                 "next_opponent_profile", "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
                 "game_derivation_compare", "game_derivation_findings",
                 "game_derivation_misses",

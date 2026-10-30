@@ -17,8 +17,9 @@ class JobSpec(Value):
     provider: Literal["lichess", "chesscom"]
     account: str
     window: GameWindow
-    repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=8)
+    repertoire_ids: tuple[str, ...] = Field(min_length=1)
     filters: tuple[tuple[str, str], ...] = ()
+    purpose: Literal["sync", "refresh"] = "sync"
     configuration_revision: int | None = Field(default=None, ge=1)
     stream: Literal["forward", "reconciliation", "manual"] = "manual"
 
@@ -191,7 +192,7 @@ class GamesStore(Protocol):
     and publishes all facts/checkpoint atomically. No external code runs inside it.
     """
     def enqueue(self, spec: JobSpec) -> JobState: ...
-    def claim_job(self, now: float, lease_until: float) -> JobState | None: ...
+    def claim_job(self, now: float, lease_until: float, *, job_id: str | None = None) -> JobState | None: ...
     def load_job(self, job_id: str) -> JobState | None: ...
     def save_job(self, job: JobState) -> None: ...
     def source(self, source_key: str) -> SourceState | None: ...

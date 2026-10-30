@@ -8,7 +8,7 @@ import json
 from app.repertoire import project_published_repertoire
 from app.games.feedback.review import ReviewUnavailable
 from app.contracts.product_v02.learning import EncounterFeedbackPort
-from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
+from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
 from tempo_legacy_database.adapters.games.product_review import (
     DedicatedGamesConnections, PostgresReviewStore,
 )
@@ -62,9 +62,8 @@ class CurrentRepertoireSnapshots:
         self.connections = connections
 
     def snapshot(self, repertoire_id):
-        with self.connections() as database:
-            encoded = read_repertoire_json(database, repertoire_id)
-        facts = json.loads(encoded)
+        with self.connections(repertoire_snapshot=True) as database:
+            facts = read_repertoire(database, repertoire_id)
         return project_published_repertoire(facts)
 
 

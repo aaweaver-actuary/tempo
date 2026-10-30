@@ -60,21 +60,19 @@ def _bound_diagnostic(value):
 
 def _repertoire_readiness(connections, repertoire_id):
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
-        read_repertoire_json, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_ROW_BYTES, MAX_SNAPSHOT_BYTES)
+        read_repertoire, MAX_SOURCE_ROWS, MAX_ROW_BYTES)
     from app.repertoire import project_published_repertoire, RepertoireSnapshotBoundExceeded
     result = {}
     try:
-        with connections() as database:
-            encoded = read_repertoire_json(database, repertoire_id)
-        facts = json.loads(encoded)
+        with connections(repertoire_snapshot=True) as database:
+            facts = read_repertoire(database, repertoire_id)
         result = dict(name=facts["repertoire"]["name"],
             learner_colors=sorted({row["trained_color"] for row in facts["lines"]}),
             publication_state=facts["repertoire"]["graph_state"],
             publication_revision=facts["repertoire"]["graph_generation"],
             source_rows=len(facts["lines"]), graph_rows=len(facts["graphs"]),
-            source_bytes=len(encoded.encode()),
-            limits=dict(source_rows=MAX_SOURCE_ROWS, graph_rows=MAX_GRAPH_ROWS,
-                        row_bytes=MAX_ROW_BYTES, snapshot_bytes=MAX_SNAPSHOT_BYTES))
+            source_bytes=len(json.dumps(facts, ensure_ascii=False).encode()),
+            limits=dict(source_rows=MAX_SOURCE_ROWS, row_bytes=MAX_ROW_BYTES))
         # Pure projection runs after the bounded reader transaction is released.
         snapshot = project_published_repertoire(facts)
     except RepertoireSnapshotBoundExceeded as error:

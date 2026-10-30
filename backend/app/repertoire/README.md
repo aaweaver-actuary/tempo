@@ -175,26 +175,11 @@ when conflicted. No schema or stored relationship changes are introduced.
   authority identity. No imported game, integrity certificate, review, schedule
   or queue is queried. Empty/mixed learner color and nonempty canonical-prefix
   sources fail explicitly instead of inventing factual values.
-- Each source category is bounded to 10,000 rows; current graph bindings to
-  20,000. One extra sentinel row detects overflow. Raw row text is bounded to
-  64 KiB before JSON aggregation. For a complete count/row-bounded sample, the
-  byte budget counts each row's actual PostgreSQL JSON text, two bytes per array
-  element and a fixed 1024-byte wrapper allowance; it does not multiply all
-  ordinary text by worst-case sixfold escaping. Samples that already overflow a
-  count/raw-row limit retain the earlier coarse diagnostic without constructing
-  JSON rows. The final encoded-size check still enforces the unchanged 32 MiB
-  bound. All source fields, one-statement MVCC semantics and comparison digests
-  remain unchanged; this accounting correction requires no paging or cache.
-  The same SELECT returns bounded facts as raw JSON text alongside its numeric
-  envelope. The reader checks that text's exact UTF-8 length before decoding,
-  avoiding a second full Python serialization inside the borrowed transaction.
-  Existing scripted envelopes remain readable and callers receive the same dict.
-  Count/row-bounded shapes whose original conservative upper estimate fits two
-  final 32 MiB representations reuse their JSON rows only within that SELECT;
-  this avoids converting every row twice for budget and aggregation. Larger
-  shapes use the nonmaterialized size pass. No retained cache or byte/row limit
-  is raised, and the final capture still must fit one 32 MiB representation.
-  Pure repertoire projection also caps
+- Lines, cards and memberships are bounded to 10,000 rows with one extra
+  sentinel row detecting overflow. All current graph bindings are retained,
+  without a graph-count ceiling. Raw row text is bounded to
+  64 KiB before JSON aggregation. Whole-repertoire snapshots have no aggregate
+  byte ceiling; the conservative size estimate is informational. Pure repertoire projection still caps
   aggregate authored moves at 100,000. A proved budget refusal raises public
   `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged
   string `repertoire_snapshot_exceeds_bound`; it never certifies a bounded prefix.
@@ -210,9 +195,9 @@ when conflicted. No schema or stored relationship changes are introduced.
   exactly one matching executable slice. No cached boards or cross-call reuse
   are retained; chronology, unavailable cards, conflicts and mapping identity
   keep their existing semantics.
-- Games `CurrentRepertoireSnapshots` uses the SQL owner's
-  `read_repertoire_json(database, repertoire_id)` to retain eager bounded raw
-  JSON inside its existing reader context, exits that context, then decodes and calls public
+- Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
+  read-only `repertoire_snapshot=True` connection context with no transaction
+  or statement deadline, exits that context, then calls public
   `project_published_repertoire`. Chess replay/mapping construction runs after
   the transaction closes. Status readiness follows the same path. The existing
   `read_repertoire` dictionary wrapper and other borrowed-transaction callers retain
@@ -236,7 +221,7 @@ flowchart LR
   Reader --> Select["One bounded parameter-bound SELECT\nselected repertoire MVCC view"]
   Select --> Existing[("Existing repertoire lines\ncards / memberships / current graph")]
   Reader --> Project["Repertoire project_repertoire\nexisting T01 snapshot"]
-  Games["Games CurrentRepertoireSnapshots / status readiness"] --> ReadFacts["read_repertoire_json inside bounded DB context"]
+  Games["Games CurrentRepertoireSnapshots"] --> ReadFacts["read_repertoire inside read-only snapshot context\nno quarter-second deadline"]
   ReadFacts --> Select
   ReadFacts --> Closed["Exit DB context; bounded eager JSON retained"]
   Closed --> Decode["Decode complete owner facts"]

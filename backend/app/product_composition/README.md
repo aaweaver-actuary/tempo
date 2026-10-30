@@ -410,3 +410,69 @@ outbox before an already-ready live target. Full preparation finishes before the
 command writer, and a fresh trusted boot identity is captured at its end. The
 prepared wrapper applies only after the gateway fence. Accepted Study preparation
 uses bounded foreground reads and continues independently of Games mode/process.
+
+## Explicit on-demand Games refresh
+
+POST `/api/product/game-review/refresh` accepts `provider` (`lichess` or `chesscom`)
+and an original `operation_id` (at most 128 characters for command dispatch).
+The existing gateway returns either its 202 pending operation envelope/Location,
+or a completed command result containing a queued acquisition job. Resolve a
+202 at the Games API origin through the original operation. The command finishing
+only confirms job admission. GET `/api/product/game-review/refresh/{operation_id}`
+returns the current exact requested job, including coalesced aliases, UTC window,
+`queued/running/retryable/failed/quarantined/complete`, pages, retry epoch and error.
+Missing requests return 404; absent saved provider configuration returns 422.
+
+The first durable command execution freezes the cutoff. It selects the latest
+complete continuous-forward or refresh checkpoint for the current configuration
+revision, rechecks two days clipped to the saved start, and otherwise begins at
+the saved start. Fixed-range manual imports, reconciliation and incomplete jobs
+are not refresh checkpoints. Fresh requests coalesce onto an outstanding refresh;
+operation replay retains the original cutoff. Configuration/request/job and the
+existing durable task/operation receipt share the command transaction.
+
+The `product_game_refresh` task runs one bounded page in the existing background
+Celery worker, using the current acquisition/comparison/canonical commit owners.
+It targets its job; the continuous worker does not claim refresh jobs. Both claim
+paths serialize per provider/account, retain active leases and shared retry delays,
+and release database transactions before HTTP. The task retains continuations
+across process loss and defers through the existing durable task owner. Repeated
+alias requests never replace an active task generation/lease. Task failure is
+reported separately from successfully admitted work.
+
+This path does not require `TEMPO_PRODUCT_GAME_SYNC_ENABLED`, change recurrence,
+move forward-stream state/next-run time or run Study delivery. Existing foreground,
+Study-only and maintenance admission still apply. Default Compose shares the host,
+PostgreSQL and Redis; the background service has concurrency 1 and a 448 MiB container cap, while an enabled collector retains its separate 256 MiB/96-PID limits.
+There is no new service, CPU reservation or claimed host isolation. Provider pages
+retain their 30-second total HTTP budget and existing record/byte/position bounds.
+A provider that has not published a game cannot be forced to return it.
+
+```mermaid
+sequenceDiagram
+  participant UI as Games / debugging client
+  participant API as Reader API / command gateway
+  participant Command as Existing command worker
+  participant Games as Games job and request owner
+  participant Tasks as Durable task owner
+  participant Worker as Existing background worker
+  participant Provider as Chess.com or Lichess
+  UI->>API: refresh(provider, original operation ID)
+  API->>Command: Durable command
+  Command->>Games: Lock configuration; freeze/coalesce job and alias
+  Command->>Tasks: Ensure one requested task
+  Note over Command,Tasks: Job, alias, task and command receipt commit together
+  API-->>UI: Command pending or admitted exact job
+  Worker->>Tasks: Claim bounded task; honor foreground and pause
+  Worker->>Games: Claim exact job; honor account lease and retry delay
+  Worker->>Provider: One bounded page without a DB transaction
+  Worker->>Games: Atomic canonical source, capture, pending outbox and checkpoint
+  Worker->>Tasks: Complete or retain next page / retry time
+  UI->>API: Read original refresh request; poll while visible
+  API-->>UI: Exact job progress; completion reloads summaries
+```
+
+Focused regressions: `test_product_game_refresh.py`,
+`test_product_game_refresh_postgres.py`, `product-game-refresh.test.tsx`, and
+`game-refresh.spec.ts`. Native provider transport is synthetic; this is not an
+installation or an authorized live provider run.

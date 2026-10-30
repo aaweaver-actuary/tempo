@@ -5,10 +5,11 @@ import { Board } from "@tempo/board-ui";
 // The package's exported stylesheet; root package registration belongs to #491.
 import "../../../packages/board-ui/styles/board.css";
 import { Button } from "../../components/buttons/BaseButton";
-import type { Finding, GameDetail, GameSummary, ProviderSyncStatus, RecentGames } from "../product-api/contracts";
+import type { Finding, GameDetail, GameSummary, RecentGames } from "../product-api/contracts";
 import type { GameReviewClient } from "./api";
 import { boardPosition, findingLabels, gamePositions, OperationKeys, OwnedRequests, receiptLabel } from "./state";
 import "./game-review.css";
+import { useGameRefresh } from "./use-game-refresh";
 
 export type GapReviewIntent = Pick<Finding, "provider" | "game_id" | "source_revision" | "repertoire_id" | "repertoire_revision" | "position_key" | "ply"> & { kind: "review_repertoire_gap" };
 export interface GameReviewViewProps {
@@ -39,15 +40,13 @@ function receiptFor(receipts: GameDetail["receipts"], finding: Finding) {
 export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewViewProps) {
   const requests = useRef(new OwnedRequests());
   const operations = useRef(new OperationKeys());
-  const syncBusy = useRef(new Set<string>());
   const feedbackBusy = useRef(false);
   const [recent, setRecent] = useState<Load<RecentGames>>({ ...emptyLoad<RecentGames>(), loading: true });
   const [selected, setSelected] = useState<GameSummary | null>(null);
   const [detail, setDetail] = useState<Load<GameDetail> & { identity?: string }>(emptyLoad);
-  const [sync, setSync] = useState<readonly ProviderSyncStatus[]>([]);
-  const [syncSubmitting, setSyncSubmitting] = useState(0);
   const [reload, setReload] = useState(0);
   const [detailReload, setDetailReload] = useState(0);
+  const refresh = useGameRefresh(api, () => setReload(value => value + 1));
   const [ply, setPly] = useState(0);
   const [feedback, setFeedback] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const selectionIdentity = selected ? JSON.stringify([gameKey(selected), repertoireId ?? null]) : "";
@@ -67,7 +66,6 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
     }).then(data => {
       if (!data || !owned.current()) return;
       setRecent({ data, loading: false, error: null });
-      setSync(data.sync);
       setSelected(previous => {
         if (!previous) return null;
         const current = data.games.find(game => game.provider === previous.provider && game.game_id === previous.game_id);
@@ -114,31 +112,6 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
   const positions = useMemo(() => currentDetail ? gamePositions(currentDetail.starting_fen, currentDetail.moves) : [], [currentDetail]);
   const cursor = Math.max(0, Math.min(ply, positions.length - 1));
 
-  async function syncProvider(provider: GameSummary["provider"]) {
-    const scope = `sync:${provider}`;
-    const previous = sync.find(status => status.provider === provider);
-    if (syncBusy.current.has(scope) || previous?.status === "pending") return;
-    syncBusy.current.add(scope);
-    setSyncSubmitting(value => value + 1);
-    requests.current.cancel("recent");
-    setRecent(value => ({ ...value, loading: false }));
-    const operation_id = operations.current.get(scope, previous?.status === "failed" ? previous.operation_id : null);
-    const owned = requests.current.start(scope);
-    const update = (status: ProviderSyncStatus) => setSync(values => [...values.filter(item => item.provider !== provider), status]);
-    update({ provider, status: "pending", operation_id, error: null });
-    try {
-      const status = await api.sync({ provider, operation_id, signal: owned.signal });
-      if (!owned.current()) return;
-      if (status.provider !== provider || status.operation_id !== operation_id) throw new Error("Sync receipt does not match the original operation.");
-      update(status);
-      if (status.status === "complete") { operations.current.complete(scope); setReload(value => value + 1); }
-    } catch (error) {
-      if (owned.current()) update({ provider, status: "failed", operation_id, error: errorMessage(error) });
-    } finally {
-      if (owned.current()) { syncBusy.current.delete(scope); setSyncSubmitting(value => value - 1); owned.finish(); }
-    }
-  }
-
   async function retryFeedback(finding: Finding) {
     if (feedbackBusy.current || finding.kind !== "confirmed_miss") return;
     feedbackBusy.current = true;
@@ -169,15 +142,21 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
 
   return <section className="game-review" aria-label="Game Review">
     <header className="game-review-header"><div><h1>Game review</h1><p className="game-review-muted">Review original games and repertoire findings.</p></div>
-      <Button onClick={() => setReload(value => value + 1)} pending={recent.loading || syncSubmitting > 0}>Refresh games and status</Button>
+      <Button onClick={() => setReload(value => value + 1)} pending={recent.loading}>Refresh games and status</Button>
     </header>
     <div className="game-review-sync" aria-label="Provider synchronization">
       {(["lichess", "chesscom"] as const).map(provider => {
-        const status = sync.find(item => item.provider === provider);
-        return <div key={provider}><p role="status">{providerLabel(provider)} sync: {status?.status ?? "unknown"}</p>
-          {status?.error && <p role="alert" className="game-review-error">{status.error}</p>}
-          <Button disabled={!recent.data} pending={status?.status === "pending"} onClick={() => void syncProvider(provider)}>
-            {status?.status === "failed" ? "Retry" : "Sync"} {providerLabel(provider)}
+        const current = refresh.progress[provider];
+        const status = current.job;
+        const label = status?.status === "running" ? "Fetching" : status?.status === "retryable" ? "Retrying"
+          : status?.status === "complete" ? "Completed" : status?.status === "failed" || status?.status === "quarantined" ? "Failed"
+          : current.pending ? "Queued" : "Ready";
+        return <div key={provider}><p role="status">{providerLabel(provider)} refresh: {label}</p>
+          {status && <p className="game-review-muted">{status.window.start_at} – {status.window.end_at} · {status.pages_committed} pages</p>}
+          {status?.status === "retryable" && status.next_attempt_at > 0 && <p>Next attempt: {new Date(status.next_attempt_at * 1000).toISOString()}</p>}
+          {(current.error || status?.error) && <p role="alert" className="game-review-error">{current.error ?? status?.error}</p>}
+          <Button disabled={!recent.data} pending={current.pending} onClick={() => refresh.refresh(provider)}>
+            Refresh {providerLabel(provider)} now
           </Button></div>;
       })}
     </div>
@@ -186,7 +165,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
     {recent.data && recent.data.games.length === 0 && <p>No imported games yet. Use a provider sync when ready.</p>}
     <div className="game-review-layout"><aside aria-label="Recent games"><h2>Recent games</h2><ul className="game-review-games">
       {recent.data?.games.map(game => <li key={gameKey(game)}><Button className="game-review-game" aria-pressed={selected !== null && gameKey(selected) === gameKey(game)} onClick={() => setSelected(game)}>
-        <strong>{providerLabel(game.provider)} · {game.game_id}</strong><span>{gameTime(game)}</span><span>Played as {game.player_color}</span><span>Sync: {sync.find(status => status.provider === game.provider)?.status ?? "unknown"}</span>
+        <strong>{providerLabel(game.provider)} · {game.game_id}</strong><span>{gameTime(game)}</span><span>Played as {game.player_color}</span><span>Sync: {recent.data?.sync.find(status => status.provider === game.provider)?.status ?? "unknown"}</span>
       </Button></li>)}
     </ul></aside><article className="game-review-detail" aria-label="Selected game">
       {!selected && <p>Select a game to review its original move history.</p>}

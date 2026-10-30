@@ -68,7 +68,7 @@ studyIntentTitles.push(
 );
 export const priorityTitles = ["study priority keeps native study input below the declared latency budget in idle and loaded runs", "study priority prepared next appears within the declared budget after truthful confirmation", "study priority cancels a running browser worker during a held drag and resumes useful work", "study priority repeated cancellation keeps essential queue work responsive"];
 export function supportedIdentities() {
-  return [...priorityTitles.map(title => `chromium|tests/controlled-browser/priority.spec.ts|${title}`), ...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`), ...studyIntentTitles.map(title => `chromium|tests/controlled-browser/study-intents.spec.ts|${title}`)];
+  return ["chromium|tests/controlled-browser/game-refresh.spec.ts|Games refresh fetches now and updates the list without moving the selected game", ...priorityTitles.map(title => `chromium|tests/controlled-browser/priority.spec.ts|${title}`), ...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`), ...studyIntentTitles.map(title => `chromium|tests/controlled-browser/study-intents.spec.ts|${title}`)];
 }
 export function reportIdentities(report, executed = false) {
   if (!report || !Array.isArray(report.suites) || !Array.isArray(report.errors) || report.errors.length) throw new Error("Invalid Playwright report/errors");
@@ -78,7 +78,7 @@ export function reportIdentities(report, executed = false) {
     for (const spec of suite.specs ?? []) {
       if (typeof spec.title !== "string" || typeof spec.file !== "string" || !Array.isArray(spec.tests) || !spec.tests.length) throw new Error("Invalid Playwright spec");
       const file = spec.file.replaceAll("\\", "/").replace(/^tests\/controlled-browser\//, "");
-      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts", "priority.spec.ts"].includes(file)) throw new Error("Unexpected controlled file: " + spec.file);
+      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts", "priority.spec.ts", "game-refresh.spec.ts"].includes(file)) throw new Error("Unexpected controlled file: " + spec.file);
       for (const test of spec.tests) {
         if (typeof test.projectName !== "string") throw new Error("Missing Playwright project identity");
         actual.push(`${test.projectName}|tests/controlled-browser/${file}|${spec.title}`);
@@ -116,7 +116,7 @@ export function parseSelection(args) {
       projects.push(project);
     } else {
       const file = argument.replace(/^tests\/controlled-browser\//, "");
-      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts", "priority.spec.ts"].includes(file) || files.includes(file)) throw new Error("Missing/unknown/duplicate controlled file: " + argument);
+      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts", "priority.spec.ts", "game-refresh.spec.ts"].includes(file) || files.includes(file)) throw new Error("Missing/unknown/duplicate controlled file: " + argument);
       files.push(file);
     }
   }

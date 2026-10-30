@@ -47,6 +47,13 @@ work. Live collection requires Andy's separate explicit switch-on instruction.
 The [collection operator](scripts/README.md#games-collection-operator) reports
 installed identity and missing inputs before enabling only its own worker.
 
+Explicit **Refresh now** requests fetch Chess.com or Lichess games through the
+current time using saved scope and the last completed checkpoint, with the
+existing two-day lookback. They run once on the existing background worker even
+when recurring collection is off. Exact-job progress and reload recovery belong
+in Games. This explicit action does not enable recurrence or Study delivery;
+foreground priority, Study-only pause and provider retry delays still apply.
+
 
 ### G01 — Select one first repertoire departure
 

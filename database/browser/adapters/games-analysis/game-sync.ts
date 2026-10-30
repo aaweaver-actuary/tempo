@@ -25,3 +25,14 @@ export function storePendingProductGameSync(scope: string, pending: object): voi
 export function clearPendingProductGameSync(scope: string): void {
   localStorage.removeItem(productPendingKey(scope));
 }
+
+const refreshKey = (scope: string, provider: string) => `tempo-pending-game-refresh-v1:${encodeURIComponent(scope)}:${provider}`;
+export function readPendingGameRefresh(scope: string, provider: string): string | null {
+  return localStorage.getItem(refreshKey(scope, provider));
+}
+export function storePendingGameRefresh(scope: string, provider: string, pending: object): void {
+  localStorage.setItem(refreshKey(scope, provider), JSON.stringify(pending));
+}
+export function clearPendingGameRefresh(scope: string, provider: string): void {
+  localStorage.removeItem(refreshKey(scope, provider));
+}

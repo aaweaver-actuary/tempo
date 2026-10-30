@@ -27,7 +27,7 @@ class SyncConfiguration(Value):
     provider: Provider
     account: Identifier
     window: GameWindow
-    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=8)
+    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1)
     speeds: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = Field(min_length=1, max_length=4)
     rated: bool | None
     interval_seconds: int | None = Field(ge=60, le=86400)
@@ -50,6 +50,9 @@ class ReviewStore(Protocol):
     def deliveries(self, source_key: str) -> tuple[Delivery, ...]: ...
     def last_job(self, workspace: str, provider: Provider) -> JobState | None: ...
     def enqueue(self, configuration: SyncConfiguration, job: JobSpec, now: float) -> JobState: ...
+    def enqueue_refresh(self, workspace: str, provider: Provider, operation_id: str,
+                        build_job: Callable) -> tuple[JobState, bool]: ...
+    def refresh_job(self, workspace: str, operation_id: str) -> JobState | None: ...
     def due_configuration(self, workspace: str, now: float) -> SyncConfiguration | None: ...
     def due_configurations(self, workspace: str, now: float) -> tuple[SyncConfiguration, ...]: ...
     def request_retry(self, workspace: str, source: SourceState, finding: Finding, operation_id: str,
@@ -129,6 +132,24 @@ class GameReview:
             raise ReviewUnavailable("explicit_sync_configuration_required", 422)
         job = self.build_job(configuration, operation_id)
         return sync_status(provider, self.store.enqueue(configuration, job, self.now()))
+
+    def refresh(self, *, provider: Provider, operation_id: str):
+        from .refresh import refresh_job, refresh_status
+        def build_refresh(configuration, checkpoint):
+            try:
+                return refresh_job(configuration, checkpoint, self.now(), operation_id, self.build_job)
+            except ValueError as error:
+                raise ReviewUnavailable(str(error), 422) from error
+        job, created = self.store.enqueue_refresh(self.workspace, provider, operation_id,
+                                                 build_refresh)
+        return refresh_status(operation_id, job), created
+
+    def refresh_status(self, operation_id: str):
+        from .refresh import refresh_status
+        job = self.store.refresh_job(self.workspace, operation_id)
+        if job is None:
+            raise ReviewUnavailable("refresh_request_not_found", 404)
+        return refresh_status(operation_id, job)
 
     def enqueue_due(self) -> bool:
         configuration = self.store.due_configuration(self.workspace, self.now())

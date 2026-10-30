@@ -28,7 +28,7 @@ class HistorySelection(Value):
     provider: Literal["lichess", "chesscom"]
     account: Identifier
     window: GameWindow
-    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=8)
+    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1)
     speeds: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = Field(min_length=1, max_length=4)
     rated: bool | None
     maximum_games: int = Field(default=25, ge=1, le=100)
