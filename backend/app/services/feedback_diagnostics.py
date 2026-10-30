@@ -103,7 +103,15 @@ def diagnose_feedback(function):
                 return function(*args, **kwargs)
         record = {'stage':'claim', 'stage_started':time.perf_counter(), 'stages_ms':{}}
         record['operation'] = function.__name__
-        sql = {'sql_count':0, 'sql_ms':0, 'connections':[]}
+        # A foreground command already owns this context. Reuse its counters so
+        # the command's full SQL cost still includes preparation, while this
+        # diagnostic reports only its own count/time/connection deltas.
+        sql = _training_timing.get()
+        if sql is None:
+            sql = {'sql_count':0, 'sql_ms':0, 'connections':[]}
+        before_count, before_ms = sql.get('sql_count', 0), sql.get('sql_ms', 0)
+        before_connections = len(sql.get('connections', ()))
+        before_slow_sql = len(sql.get('slow_sql', ()))
         token = _current.set(record)
         timing_token = _training_timing.set(sql)
         try:
@@ -119,8 +127,10 @@ def diagnose_feedback(function):
         finally:
             feedback_stage('finished')
             record.pop('stage_started')
-            record.update(sql_count=sql['sql_count'], sql_ms=round(sql['sql_ms'],3),
-                          slow_sql=sql.get('slow_sql', []), connections=sql['connections'][:16])
+            record.update(sql_count=sql.get('sql_count', 0)-before_count,
+                          sql_ms=round(sql.get('sql_ms', 0)-before_ms,3),
+                          slow_sql=sql.get('slow_sql', [])[before_slow_sql:],
+                          connections=sql.get('connections', [])[before_connections:before_connections+16])
             _training_timing.reset(timing_token)
             _current.reset(token)
             _logger.info('study_feedback_diagnostic %s', json.dumps(record, sort_keys=True))

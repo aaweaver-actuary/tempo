@@ -86,6 +86,29 @@ def test_nested_preparation_trace_keeps_one_sweep_and_restores_existing_timing(c
     assert record['spans']['inner']['count'] == 1
 
 
+def test_preparation_sql_remains_in_outer_command_total_and_reports_local_delta(caplog):
+    caplog.set_level(logging.INFO, logger='tempo.study.feedback')
+    outer = {'sql_count': 2, 'sql_ms': 3.5, 'connections': [{'read_only': True}]}
+    token = diagnostics._training_timing.set(outer)
+    @diagnostics.diagnose_feedback
+    def prepare():
+        timing = diagnostics._training_timing.get()
+        timing['sql_count'] += 5
+        timing['sql_ms'] += 7.5
+        timing['connections'].append({'read_only': True, 'committed': True})
+        return True
+    try:
+        assert prepare() is True
+        assert diagnostics._training_timing.get() is outer
+        assert outer['sql_count'] == 7 and outer['sql_ms'] == 11
+        assert len(outer['connections']) == 2
+    finally:
+        diagnostics._training_timing.reset(token)
+    record, = records(caplog)
+    assert record['sql_count'] == 5 and record['sql_ms'] == 7.5
+    assert record['connections'] == [{'read_only': True, 'committed': True}]
+
+
 def test_native_preparation_trace_localizes_capture_failure_and_retains_both_owners(
         native_handoff, monkeypatch, caplog):
     """Injected owner failure after real full-scope publication qualification."""
