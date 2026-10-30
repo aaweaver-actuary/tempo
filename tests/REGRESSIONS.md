@@ -6355,3 +6355,14 @@ The three native intake/deferred-priority cases retain original human history,
 protected attempts and rollback while qualifying the real current Again effect.
 Parameterized runner discovery validates exact collected IDs; fairness assertions
 retain prior global service cursors and assert precise subsequent turns.
+
+The executable recovery workload is owned by
+`backend/tests/test_study_recovery_acceptance.py` in `study-game-priority`: exact
+route/graph counts with explicit payload deltas, real opening-frontier geometry,
+complete-scope standard-root target selection, legal short cards, and explicit
+fixture profile allocation. The separate `study-recovery` shared suite selects
+`test_packaged_study_recovery_thirty_consecutive_transitions[study-only-on]` and
+`[study-only-off]` in
+`database/tests/games_collection/test_study_recovery_packaged.py`. Its browser
+recorder is `tests/browser/study-recovery.spec.ts`. Listing/collection and fixture
+validation do not establish either measured run or the remaining fault matrix.
