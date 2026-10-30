@@ -5687,6 +5687,14 @@ guards plus native `test_native_shared_mode_fence_prevents_disable_commit_until_
 `test_native_same_hostname_new_boot_nonce_denies_stale_verified_intent` and
 `test_native_original_effect_control_lookup_uses_its_narrow_index`. These reuse
 the existing task-owned PostgreSQL fixture and unchanged 250ms/100ms bounds.
+`test_failed_optional_identity_initialization_keeps_backend_startup_and_denies_stale_file`
+executes the actual entrypoint failure branch and rejects an old nonce retained
+across a changed PID1 start. The borrowed read hint's no-row-lock/no-commit and
+missing-schema/payload rollback boundaries are covered by
+`test_native_borrowed_mode_hint_uses_no_connection_or_row_fence` and
+`test_native_borrowed_mode_hint_isolates_optional_schema_and_payload_failure`.
+The existing failed-clear operator regression also recovers with the worker
+already stopped and reports the newly committed inactive state truthfully.
 The #624 owner supplies the single composed packaged image/process/role proof;
 local source/native evidence does not establish installation or activation.
 

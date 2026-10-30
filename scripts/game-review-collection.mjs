@@ -260,9 +260,9 @@ export async function operateCollection(operation, { apply = false, inspect, loc
     } else if (operation === 'disable') {
       if (!state.stopSafe) throw new Error('Collector identity/ownership unverified; no service stopped');
       let admissionError;
-      try { await deactivate?.(state, 'inactive'); } catch (error) { admissionError = error; }
+      try { changed = Boolean(await deactivate?.(state, 'inactive')); } catch (error) { admissionError = error; }
       if (state.running) await stop(state);
-      changed = state.running;
+      changed = state.running || changed;
       if (admissionError) throw new Error('Owned collector stopped, but feedback admission was not confirmed inactive; inspect status and repeat disable --apply after restoring the managed writer');
     }
     const finalState = changed ? await inspect() : state;

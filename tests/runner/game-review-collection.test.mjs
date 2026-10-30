@@ -559,6 +559,13 @@ test('failed feedback admission clear stops only the optional worker and reports
   assert.ok(fixture.inventory.filter(container => container.Config.Labels['com.docker.compose.service'] !== serviceName).every(container => container.State.Running));
   const status = await fixture.invoke('status', {mode: 'feedback'});
   assert.equal(status.running, false); assert.equal(status.managed_mode.verified_for_current_runtime, false);
+  delete fixture.input.failModeRecord;
+  const recovered = await fixture.invoke('disable', {mode: 'feedback'});
+  assert.equal(recovered.changed, true); assert.equal(recovered.managed_mode.phase, 'inactive');
+  const stopped = fixture.actionCalls('stop').length;
+  const repeated = await fixture.invoke('disable', {mode: 'feedback'});
+  assert.equal(repeated.changed, false); assert.equal(repeated.managed_mode.phase, 'inactive');
+  assert.equal(fixture.actionCalls('stop').length, stopped);
 });
 
 test('unverified API or foreground boot and edited mode override cannot activate feedback', async t => {

@@ -413,7 +413,10 @@ cannot fence an arbitrary external process created after its inspection.
 
 The Games-owned workspace intent records the managed operation, generation,
 release/image/configuration identity and verified API, foreground-worker and
-collector identities. Each container start creates a fresh boot nonce. Trusted
+collector identities. Each container start creates a fresh boot nonce bound to
+the actual Linux kernel boot/PID1 start token. Optional identity initialization
+failure still executes the ordinary backend; an old retained file fails the
+current start-token check. Trusted
 preparation rereads this identity outside the writer; the same borrowed Study
 writer then takes a nonblocking shared intent-row fence before new handoff.
 Disable/transition updates that row exclusively, so a stale precheck cannot commit
@@ -431,6 +434,9 @@ issuance/ordinal and settlement. Queue presence alone is not issuance; historica
 priority `applied_at` is not an Again review. Original determination age and actual
 issued-generation counts survive retries and current-presentation remapping.
 Unavailable owner observations remain unavailable rather than becoming zero.
+Selected older games retain nullable source occurrence and its precision;
+individual original commands retain their nullable occurrence separately from
+detection and determination.
 
 Implemented source, proposed/unmerged integration; installed isolation remains
 unverified until the exact release is inspected and accepted.

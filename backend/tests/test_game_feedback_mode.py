@@ -6,7 +6,9 @@ worker launch, provider request or Study history mutation is performed.
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import uuid
 
@@ -25,7 +27,8 @@ from app.games.feedback.interfaces.managed_mode import ManagedGamesModeIntent, M
 from app.product_composition.game_feedback_mode import main
 from app.product_composition.managed_runtime import current_managed_runtime_identity, initialize_runtime_identity
 from tempo_legacy_database.adapters.games.managed_mode import (
-    ManagedGamesModeStore, feedback_handoff_admitted, fence_feedback_handoff, read_feedback_mode,
+    ManagedGamesModeStore, feedback_handoff_admitted, feedback_handoff_admitted_in_transaction,
+    fence_feedback_handoff, read_feedback_mode,
 )
 from test_product_game_lapse_postgres import owned_postgres
 
@@ -52,7 +55,9 @@ def test_only_verified_feedback_admits_actual_bound_runtime(mode, phase, admitte
     assert not value.admits("9" * 12 + ":" + "2" * 32)  # Foreign command worker is not the verified one.
 
 
-def test_same_container_restart_cannot_reuse_stale_intent_after_failed_clear(tmp_path):
+def test_same_container_restart_cannot_reuse_stale_intent_after_failed_clear(tmp_path, monkeypatch):
+    from app.product_composition import managed_runtime
+    monkeypatch.setattr(managed_runtime, "_current_boot_process", lambda: "a" * 32 + ":100")
     path = tmp_path / "runtime.json"
     first = initialize_runtime_identity(path, hostname="b" * 12)
     payload = intent().model_dump(mode="json")
@@ -65,6 +70,43 @@ def test_same_container_restart_cannot_reuse_stale_intent_after_failed_clear(tmp
     assert not old_intent.admits(current_managed_runtime_identity(path, hostname="b" * 12))
     path.unlink()
     assert current_managed_runtime_identity(path, hostname="b" * 12) is None
+
+
+def test_failed_optional_identity_initialization_keeps_backend_startup_and_denies_stale_file(tmp_path, monkeypatch):
+    from app.product_composition import managed_runtime
+    path = tmp_path / "runtime.json"
+    monkeypatch.setattr(managed_runtime, "_current_boot_process", lambda: "a" * 32 + ":100")
+    initialize_runtime_identity(path, hostname="b" * 12)
+    original = path.read_text()
+    monkeypatch.setattr(managed_runtime, "_current_boot_process", lambda: "a" * 32 + ":200")
+    def unavailable(*args, **kwargs):
+        raise PermissionError("synthetic_read_only_identity_path")
+    monkeypatch.setattr(managed_runtime.os, "replace", unavailable)
+    with pytest.raises(PermissionError):
+        initialize_runtime_identity(path, hostname="b" * 12)
+    assert path.read_text() == original
+    assert current_managed_runtime_identity(path, hostname="b" * 12) is None
+    monkeypatch.setattr(managed_runtime, "_current_boot_process", lambda: None)
+    assert current_managed_runtime_identity(path, hostname="b" * 12) is None
+    executable = tmp_path / "python"
+    executable.write_text("#!/bin/sh\nexit 2\n")
+    executable.chmod(0o700)
+    started = subprocess.run(["/bin/sh", str(ROOT / "backend/managed-runtime-entrypoint.sh"),
+        "/bin/sh", "-c", "printf backend-started"], env=dict(os.environ, PATH=str(tmp_path)),
+        capture_output=True, text=True, check=False)
+    assert started.returncode == 0 and started.stdout == "backend-started"
+
+
+def test_boot_process_read_is_bounded_and_rejects_unreadable_or_malformed_proc(monkeypatch):
+    from io import StringIO
+    from app.product_composition import managed_runtime
+    def read(path):
+        return StringIO("a" * 32 if str(path).endswith("boot_id") else
+            "1 (backend (worker)) " + " ".join(["S"] + ["0"] * 18 + ["12345"]))
+    monkeypatch.setattr(managed_runtime.Path, "open", read)
+    assert managed_runtime._current_boot_process() == "a" * 32 + ":12345"
+    monkeypatch.setattr(managed_runtime.Path, "open", lambda path: StringIO("unavailable"))
+    assert managed_runtime._current_boot_process() is None
 
 
 @pytest.mark.parametrize("fault", ["missing_command_worker", "wrong_container", "wrong_worker_image", "inactive_verified", "duplicate_service"])
@@ -197,6 +239,38 @@ def test_native_transition_wins_over_stale_outside_admission_snapshot(mode_case)
     assert not feedback_handoff_admitted(workspace, connections, runtime_id=RUNTIME)
     with pytest.raises(ValueError, match="generation_changed"):
         store.record(intent(workspace, generation=2), expected_generation=1)
+
+
+def test_native_borrowed_mode_hint_uses_no_connection_or_row_fence(mode_case):
+    workspace, connections, store, value, transaction = mode_case
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        before = database.execute_native("SELECT pg_backend_pid(),pg_current_xact_id()").fetchone()
+        assert feedback_handoff_admitted_in_transaction(database, workspace, runtime_id=RUNTIME)
+        # The exclusive update commits while this caller stays open: a hint has
+        # no row fence and never borrows another connection.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            disabled = intent(workspace, generation=2, phase="inactive")
+            assert pool.submit(store.record, disabled, expected_generation=1).result(timeout=1) == disabled
+        assert not feedback_handoff_admitted_in_transaction(database, workspace, runtime_id=RUNTIME)
+        after = database.execute_native("SELECT pg_backend_pid(),pg_current_xact_id()").fetchone()
+        assert (after[0], after[1]) == (before[0], before[1])
+        assert database.raw.info.transaction_status.name == "INTRANS"
+
+
+def test_native_borrowed_mode_hint_isolates_optional_schema_and_payload_failure(mode_case):
+    workspace, connections, store, value, transaction = mode_case
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        database.execute_native("SET LOCAL search_path=pg_catalog")
+        assert not feedback_handoff_admitted_in_transaction(database, workspace, runtime_id=RUNTIME)
+        assert database.execute_native("SELECT 1").fetchone()[0] == 1
+        database.execute_native("SET LOCAL search_path=public")
+        assert feedback_handoff_admitted_in_transaction(database, workspace, runtime_id=RUNTIME)
+        database.execute_native("UPDATE product_feedback_managed_mode SET payload='{}'::jsonb WHERE workspace_id=%s", (workspace,))
+        assert not feedback_handoff_admitted_in_transaction(database, workspace, runtime_id=RUNTIME)
+        assert database.execute_native("SELECT 1").fetchone()[0] == 1
+        assert database.raw.info.transaction_status.name == "INTRANS"
 
 
 def test_native_mode_status_is_read_only_and_cannot_lend_write_authority(mode_case):

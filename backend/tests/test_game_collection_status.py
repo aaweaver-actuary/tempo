@@ -280,6 +280,9 @@ def test_missing_receipt_is_undelivered_without_collection_failure(stored):
     assert report["collection"]["availability"]=="available"
     assert report["delivery"]["pending_undelivered_effects"]==1
     assert report["selected_game"]["receipts"][0]["diagnostic"]=="not_delivered"
+    assert report["selected_game"]["played_at"] == stored.source["original"]["played_at"]
+    assert report["selected_game"]["time_precision"] == stored.source["original"]["time_precision"]
+    assert report["selected_game"]["receipts"][0]["occurred_at"] == delivery["encounter"]["occurred_at"]
 
 
 def test_control_of_original_encounter_reads_encounter_receipt(stored):

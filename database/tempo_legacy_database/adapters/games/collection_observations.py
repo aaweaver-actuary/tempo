@@ -346,6 +346,8 @@ class CollectionObservations:
                 payload->>'diagnostic' diagnostic,payload->'quarantined' quarantined,
                 payload->'original'->'source_revision' source_revision,
                 payload->'normalized'->'source_revision' canonical_source_revision,
+                payload->'original'->>'played_at' played_at,
+                payload->'original'->>'time_precision' time_precision,
                 payload->'normalized'->>'game_id' canonical_game_id,
                 payload->'normalized'->>'learner_color' learner_color,
                 payload->'first_departure' first_departure,
@@ -406,6 +408,7 @@ class CollectionObservations:
                         "diagnostic": delivery.qualification_reason,
                         "retryable": delivery.qualification_retryable,
                         "determined_at": delivery.determined_at, "stream": delivery.stream},
+                    "occurred_at": delivery.command.model_dump(mode="json").get("occurred_at"),
                     "receipt": receipt.model_dump(mode="json") if receipt else None,
                     "progress": study_receipt_progress(receipt, observation),
                     "diagnostic": diagnostic})

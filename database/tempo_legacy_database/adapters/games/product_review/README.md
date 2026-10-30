@@ -165,7 +165,8 @@ operational state, not a command failure. Argument errors also exit 2.
   this workflow. Invalid unnormalized captures have no trustworthy workspace/game
   attribution and are not counted as acquired normalized games.
 - `selected_game`: raw/canonical revisions, canonical ID, learner color, retained
-  findings and per-repertoire first-departure/first-own-miss summaries. This is
+  findings, nullable original `played_at`/`time_precision`, each original
+  delivery's nullable `occurred_at`, and per-repertoire first-departure/first-own-miss summaries. This is
   precisely [Agent B's retained-finding rule](https://github.com/aaweaver-actuary/tempo/blob/a8d74f077a3ea2e4fe49144d0c4f1abd9aa52bd2/backend/app/games/feedback/README.md#durable-factual-comparison-and-consumer-handoff--task-b)
   (`a8d74f07`, PR #600), not a second classifier. Correct covered encounters and
   correct physical-mapping ambiguity are not departures; later authorized
@@ -189,6 +190,10 @@ operational state, not a command failure. Argument errors also exit 2.
   intended authority; only the operator's independent process inspection establishes
   observed running mode. Unreadable/missing mode denies new feedback handoff while
   ordinary Study and accepted obligations remain independent.
+  The public `feedback_handoff_admitted_in_transaction` is only a bounded hint
+  for an already borrowed reader/writer. It uses no filesystem, new connection
+  or row lock; a nested savepoint isolates a missing/denied optional mode read
+  from ordinary Study. New acceptance still takes the separate shared row fence.
 - `feedback_capabilities`: typed optional composition declarations for the
   first-departure policy and receipt interface. Missing, malformed or false
   capabilities block feedback mode. The #624 composition owner binds them to the

@@ -49,6 +49,29 @@ def feedback_handoff_admitted(workspace: str, connections, *, runtime_id: str | 
         return False
 
 
+def feedback_handoff_admitted_in_transaction(database, workspace: str, *, runtime_id: str | None = None) -> bool:
+    """Bounded hint in a borrowed reader/writer; no row fence or new connection.
+
+    The trusted composition captures runtime identity before entering the writer.
+    An absent/denied optional schema read rolls back only this savepoint, preserving
+    ordinary Study. NEW acceptance still needs the separate real shared row fence.
+    """
+    raw = getattr(database, "raw", database)
+    if runtime_id is None or raw.info.transaction_status.name != "INTRANS":
+        return False
+    execute = getattr(database, "execute_native", None) or database.execute
+    # psycopg nests this transaction as a savepoint in the already active caller;
+    # exit releases/rolls back that savepoint, never commits the borrowed writer.
+    try:
+        with raw.transaction():
+            row = execute("SELECT payload::text,generation,mode,phase FROM product_feedback_managed_mode WHERE workspace_id=%s",
+                          (workspace,)).fetchone()
+            intent = _intent(row, workspace)
+            return intent is not None and intent.admits(runtime_id)
+    except Exception:
+        return False
+
+
 def fence_feedback_handoff(database, workspace: str, *, runtime_id: str | None = None) -> ManagedGamesModeIntent:
     """Public Games capability called first by qualified NEW handoff composition.
 

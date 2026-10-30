@@ -17,7 +17,10 @@ The payload is the frozen public
 schema version, workspace/generation/mode/phase, operation ID, exact release revision,
 collector image, configuration/target fingerprints, update/verification times and
 verified runtimes. Each runtime binds service, full container ID, hostname prefix,
-fresh boot nonce and immutable image. Active feedback requires all three actual
+fresh boot nonce and immutable image. The internal nonce file is validated against
+the current Linux kernel boot/PID1 start before trusted preparation reads it;
+failed initialization does not block ordinary backend startup or revive an old
+same-hostname identity. Active feedback requires all three actual
 caller roles (API reader, foreground-worker and optional Games worker). Empty or
 recreated identities cannot authorize new handoff. The row is an operation/release
 mirror; it stores no event or scheduling ledger.

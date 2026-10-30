@@ -16,7 +16,7 @@ remains enabled; switching to the legacy lapse-producing path is not collection.
 CLI contract (source interfaces, not activation instructions):
 
 ```text
-python -m app.product_composition.game_sync_current --collect-only [--workspace legacy]
+python -m app.product_composition.game_sync_current [--collect-only | --feedback] [--workspace legacy]
     [--once --max-units N]
     [--follow --overlap-seconds O [--reconcile-interval-seconds R]]
 ```
@@ -25,8 +25,12 @@ python -m app.product_composition.game_sync_current --collect-only [--workspace 
 exits on idle, even with pending deliveries. Existing write-DSN and explicit
 `TEMPO_PRODUCT_GAME_SYNC_ENABLED=1` requirements remain. `--help` is inert;
 `--preview` uses only the read-only profile and starts no provider or worker.
-Omission of `--collect-only` retains delivery-enabled compatibility and requires
-the real receiver. The composition option is `delivery_enabled: bool = True`.
+Omitting both mode flags keeps delivery disabled. Explicit `--feedback` requires
+the qualified first-departure composition before constructing the real receiver;
+the supported live transition uses the verified managed operator. Deleting
+`--collect-only` or changing an environment variable cannot activate feedback.
+The lower-level explicit composition option remains `delivery_enabled: bool = True`;
+the CLI supplies it only from the finite feedback choice.
 
 `--reconcile-interval-seconds R` requires `--follow` and an integer at least 60.
 It forwards `reconciliation_interval_seconds` only when supplied. Task D owns
