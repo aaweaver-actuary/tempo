@@ -222,6 +222,87 @@
       "updates": {
         "progress.settlement.attempt.issued_at": "2026-10-26T12:03:00Z"
       }
+    },
+    {
+      "name": "remapped_settlement_cannot_reuse_old_target_attempt",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.settlement.attempt": {
+          "queue_entry_id": 501,
+          "card_id": "existing-physical-card",
+          "card_revision": 1,
+          "issuance_sequence": 101,
+          "issued_at": "2026-10-26T12:02:00Z"
+        }
+      }
+    },
+    {
+      "name": "remapping_history_cannot_backdate_original_fence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.established_at": "2026-10-26T12:00:00Z"
+      }
+    },
+    {
+      "name": "remapping_history_frontier_cannot_move_backwards",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.after_issuance_sequence": 104
+      }
+    },
+    {
+      "name": "remapping_history_time_cannot_move_backwards",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.established_at": "2026-10-26T12:04:00Z"
+      }
+    },
+    {
+      "name": "retired_target_cannot_invent_later_first_issuance_sequence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.first_issued.issuance_sequence": 104
+      }
+    },
+    {
+      "name": "retired_target_cannot_invent_later_first_issuance_time",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.first_issued.issued_at": "2026-10-26T12:04:00Z"
+      }
+    },
+    {
+      "name": "remapping_cannot_duplicate_same_target_fence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.target": {
+          "card_id": "current-composite-b",
+          "card_revision": 2
+        }
+      }
+    },
+    {
+      "name": "prior_history_requires_actual_application",
+      "fixture": "protected-target-pending-reset",
+      "updates": {
+        "progress.prior_remediation_fences": [
+          {
+            "target": {
+              "card_id": "existing-physical-card",
+              "card_revision": 1
+            },
+            "after_issuance_sequence": 100,
+            "established_at": "2026-10-26T12:01:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty_prior_fences_must_remain_omitted",
+      "fixture": "introduced-again-applied",
+      "updates": {
+        "progress.prior_remediation_fences": []
+      }
     }
   ]
 }

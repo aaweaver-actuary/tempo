@@ -177,6 +177,8 @@ class EncounterProgress(Value):
     schedule_applied_at: UtcTimestamp | None
     introduction_applied_at: UtcTimestamp | None
     remediation_fence: RemediationFence | None
+    prior_remediation_fences: tuple[RemediationFence, ...] = Field(
+        default=(), min_length=1, exclude_if=lambda value: not value)
     first_issued: IssuedAttemptEvidence | None
     first_issued_ordinal: int | None = Field(ge=1, le=2**53 - 1)
     settlement: EncounterSettlement | None
@@ -195,9 +197,29 @@ class EncounterProgress(Value):
                     or datetime.fromisoformat(self.remediation_fence.established_at.replace("Z", "+00:00")) <
                        datetime.fromisoformat(application.replace("Z", "+00:00"))):
                 raise ValueError("remediation fence must bind the actual target and application boundary")
+        if self.prior_remediation_fences and self.remediation_fence is None:
+            raise ValueError("prior remediation fences need an actual current application fence")
+        fences = self.prior_remediation_fences + ((self.remediation_fence,) if self.remediation_fence else ())
+        for previous, current in zip(fences, fences[1:]):
+            if (previous.target == current.target or previous.after_issuance_sequence > current.after_issuance_sequence
+                    or datetime.fromisoformat(previous.established_at.replace("Z", "+00:00")) >
+                       datetime.fromisoformat(current.established_at.replace("Z", "+00:00"))):
+                raise ValueError("owner-issued remapping retains distinct targets and monotonic real issuance fences")
+        if fences and application is not None and (
+                datetime.fromisoformat(fences[0].established_at.replace("Z", "+00:00")) <
+                datetime.fromisoformat(application.replace("Z", "+00:00"))):
+            raise ValueError("original remediation fence cannot precede the actual application")
         if (self.first_issued is None) != (self.first_issued_ordinal is None):
             raise ValueError("actual first issuance and its measured ordinal must be supplied together")
-        if self.first_issued is not None and (self.remediation_fence is None or not self.remediation_fence.precedes(self.first_issued)):
+        def issued_in_fence_window(index):
+            fence = fences[index]
+            if not fence.precedes(self.first_issued):
+                return False
+            following = fences[index + 1] if index + 1 < len(fences) else None
+            return following is None or (self.first_issued.issuance_sequence <= following.after_issuance_sequence
+                and datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00")) <=
+                    datetime.fromisoformat(following.established_at.replace("Z", "+00:00")))
+        if self.first_issued is not None and not any(issued_in_fence_window(index) for index in range(len(fences))):
             raise ValueError("first remedial issuance must be a genuine post-application target generation")
         if self.first_issued is not None and (
                 datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00")) <
@@ -268,12 +290,13 @@ class EncounterReceipt(LearningReceipt):
     deferred_reason: Literal["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"] | None
     progress: EncounterProgress | None = Field(default=None, exclude_if=lambda value: value is None)
 
-    @model_validator(mode="before")
+    @field_validator("progress", mode="before")
     @classmethod
-    def optional_progress_is_omitted_not_null(cls, value):
-        if isinstance(value, dict) and "progress" in value and value["progress"] is None:
+    def independent_progress_is_omitted_not_null(cls, value):
+        if value is None:
             raise ValueError("legacy receipt omits progress; new policy requires actual progress")
-        return value
+        payload = value.model_dump(mode="json") if isinstance(value, EncounterProgress) else value
+        return EncounterProgress.model_validate_json(json.dumps(payload))
 
     @model_validator(mode="after")
     def truthful_disposition_and_deferral(self):

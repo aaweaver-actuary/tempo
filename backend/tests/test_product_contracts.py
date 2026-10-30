@@ -443,3 +443,19 @@ def test_priority_receipt_remains_legacy_and_new_pending_does_not_claim_applicat
     pending = EncounterReceipt.model_validate_json(json.dumps(json.loads((FIRST_DEPARTURE / "protected-target-pending-reset.json").read_text())["payload"]))
     assert pending.progress.scheduling_review_id is None
     assert pending.progress.remediation_fence is None and pending.admission_status == "pending"
+
+
+@pytest.mark.parametrize("name", ["remapped-again-preserves-first-service", "remapped-introduction-has-no-again", "repeated-remapping-retains-original-application"])
+def test_remapped_receipt_keeps_actual_application_first_service_and_current_settlement(name):
+    payload = json.loads((FIRST_DEPARTURE / f"{name}.json").read_text())["payload"]
+    value = EncounterReceipt.model_validate_json(json.dumps(payload))
+    progress = value.progress
+    assert progress.prior_remediation_fences[0].target.card_id == "existing-physical-card"
+    assert progress.target.card_id == progress.settlement.attempt.card_id
+    assert progress.first_issued.card_id == "existing-physical-card"
+    assert progress.first_issued_ordinal == 1
+    assert progress.determined_at == "2026-10-26T12:00:01Z"
+    assert progress.scheduling_review_id == (None if value.disposition == "first_introduction" else 41)
+    detail = fixture("game-detail")
+    detail.update(game_id=value.key.game_id, provider=value.key.provider, source_revision=value.source_revision, findings=[], receipts=[payload])
+    assert json.loads(GameDetail.model_validate_json(json.dumps(detail)).model_dump_json())["receipts"] == [payload]

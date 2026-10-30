@@ -1,0 +1,84 @@
+{
+  "model": "EncounterReceipt",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source_revision": 1,
+    "status": "settled",
+    "outcome": "accepted",
+    "owner_receipt_id": "synthetic-study-encounter-receipt",
+    "admitted_at": "2026-10-26T12:01:00Z",
+    "available_by": null,
+    "applied_at": "2026-10-26T12:01:00Z",
+    "reason": null,
+    "interface_version": "0.2.2",
+    "detected_at": "2026-10-26T12:00:00Z",
+    "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "observation": "missed",
+    "observation_recorded": true,
+    "disposition": "introduced_again",
+    "admission_status": "settled",
+    "deferred_reason": null,
+    "progress": {
+      "policy_version": "first_departure_v1",
+      "determined_at": "2026-10-26T12:00:01Z",
+      "stream": "forward",
+      "target": {
+        "card_id": "current-composite-c",
+        "card_revision": 3
+      },
+      "scheduling_review_id": 41,
+      "schedule_applied_at": "2026-10-26T12:01:00Z",
+      "introduction_applied_at": null,
+      "remediation_fence": {
+        "target": {
+          "card_id": "current-composite-c",
+          "card_revision": 3
+        },
+        "after_issuance_sequence": 105,
+        "established_at": "2026-10-26T12:05:00Z"
+      },
+      "first_issued": {
+        "queue_entry_id": 501,
+        "card_id": "existing-physical-card",
+        "card_revision": 1,
+        "issuance_sequence": 101,
+        "issued_at": "2026-10-26T12:02:00Z"
+      },
+      "first_issued_ordinal": 1,
+      "settlement": {
+        "review_id": 44,
+        "attempt": {
+          "queue_entry_id": 503,
+          "card_id": "current-composite-c",
+          "card_revision": 3,
+          "issuance_sequence": 106,
+          "issued_at": "2026-10-26T12:06:00Z"
+        }
+      },
+      "prior_remediation_fences": [
+        {
+          "target": {
+            "card_id": "existing-physical-card",
+            "card_revision": 1
+          },
+          "after_issuance_sequence": 100,
+          "established_at": "2026-10-26T12:01:00Z"
+        },
+        {
+          "target": {
+            "card_id": "current-composite-b",
+            "card_revision": 2
+          },
+          "after_issuance_sequence": 103,
+          "established_at": "2026-10-26T12:03:00Z"
+        }
+      ]
+    }
+  }
+}
