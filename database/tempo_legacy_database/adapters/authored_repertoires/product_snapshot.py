@@ -13,7 +13,7 @@ MAX_ROW_BYTES = 65536
 # Raw text is bounded before JSON aggregation. Six bytes per source byte covers
 # JSON escaping; 512 bytes per row covers fixed keys/scalars/array punctuation.
 # A row-count sentinel prevents a bounded prefix from claiming completeness.
-STATEMENT = """
+_SOURCE_CTES = """
 WITH limits AS (
     SELECT %s::text repertoire_id, %s::int source_limit,
            %s::bigint row_byte_limit
@@ -75,7 +75,9 @@ WITH limits AS (
         AND b.largest_row<=l.row_byte_limit bounded
     FROM budget b CROSS JOIN limits l
 )
-SELECT jsonb_build_object(
+"""
+
+STATEMENT = _SOURCE_CTES + """SELECT jsonb_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
@@ -88,6 +90,27 @@ SELECT jsonb_build_object(
     ) ELSE NULL END
 ) snapshot FROM allowed
 """
+
+
+def _refuse_unbounded_source(document):
+    from app.repertoire import RepertoireSnapshotBoundExceeded
+    counts = (("line_count", "source_rows", MAX_SOURCE_ROWS),
+              ("card_count", "card_rows", MAX_SOURCE_ROWS),
+              ("membership_count", "membership_rows", MAX_SOURCE_ROWS))
+    fields = [key for key, _, _ in counts] + ["estimated_bytes", "largest_row"]
+    if (any(type(document.get(key)) is not int or document[key] < 0 for key in fields)
+            or any(document[key] > limit + 1 for key, _, limit in counts)):
+        raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+    complete = all(document[key] <= limit for key, _, limit in counts)
+    violations = [dict(dimension=dimension, observed=document[key], limit=limit, observation="lower_bound")
+                  for key, dimension, limit in counts if document[key] > limit]
+    for key, dimension, limit, observation in (
+            ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),):
+        if document[key] > limit:
+            violations.append(dict(dimension=dimension, observed=document[key], limit=limit, observation=observation))
+    if not violations:
+        raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+    raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
 
 
 def read_repertoire(database, repertoire_id: str) -> dict:
@@ -105,24 +128,7 @@ def read_repertoire(database, repertoire_id: str) -> dict:
     if not document["exists"]:
         raise ValueError("repertoire_not_found")
     if not document["bounded"]:
-        from app.repertoire import RepertoireSnapshotBoundExceeded
-        counts = (("line_count", "source_rows", MAX_SOURCE_ROWS),
-                  ("card_count", "card_rows", MAX_SOURCE_ROWS),
-                  ("membership_count", "membership_rows", MAX_SOURCE_ROWS))
-        fields = [key for key, _, _ in counts] + ["estimated_bytes", "largest_row"]
-        if (any(type(document.get(key)) is not int or document[key] < 0 for key in fields)
-                or any(document[key] > limit + 1 for key, _, limit in counts)):
-            raise ValueError("invalid_repertoire_snapshot_bound_metadata")
-        complete = all(document[key] <= limit for key, _, limit in counts)
-        violations = [dict(dimension=dimension, observed=document[key], limit=limit, observation="lower_bound")
-                      for key, dimension, limit in counts if document[key] > limit]
-        for key, dimension, limit, observation in (
-                ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),):
-            if document[key] > limit:
-                violations.append(dict(dimension=dimension, observed=document[key], limit=limit, observation=observation))
-        if not violations:
-            raise ValueError("invalid_repertoire_snapshot_bound_metadata")
-        raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
+        _refuse_unbounded_source(document)
     facts = document["facts"]
     return facts
 
@@ -141,3 +147,156 @@ def current_published_snapshot(database, repertoire_id: str):
     """
     from app.repertoire.snapshot import project_published_repertoire
     return project_published_repertoire(read_repertoire(database, repertoire_id))
+
+
+# These game-bound reads preserve the original full-source count/row-byte
+# refusals. Only physical facts outside the proven candidate route set are
+# omitted; complete authored lines remain a separate mandatory owner input.
+MAX_CANDIDATE_GRAPHS = 100000
+_HEADER_FIELDS = ('id', 'scope_source_revision', 'canonical_prefix_revision',
+                  'canonical_prefix_moves_json', 'graph_generation', 'graph_state', 'workspace_id')
+
+_AUTHORED_STATEMENT = _SOURCE_CTES + """SELECT jsonb_build_object(
+    'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
+    'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
+    'graph_count',graph_count,'largest_row',largest_row,
+    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
+        'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
+        'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
+        'card_count',card_count,'membership_count',membership_count,'graph_count',graph_count
+    ) ELSE NULL END
+) snapshot FROM allowed
+"""
+
+_CANDIDATE_STATEMENT = _SOURCE_CTES + """, requested AS (
+    SELECT unnest(%s::text[]) line_id
+), candidate_graphs AS MATERIALIZED (
+    SELECT g.* FROM graphs g JOIN requested wanted ON wanted.line_id=g.line_id
+    ORDER BY g.line_id,g.decision_index LIMIT %s
+), candidate_cards AS MATERIALIZED (
+    SELECT c.* FROM cards c WHERE EXISTS(
+        SELECT 1 FROM candidate_graphs g WHERE g.card_id=c.id)
+), candidate_memberships AS MATERIALIZED (
+    SELECT m.* FROM memberships m WHERE EXISTS(
+        SELECT 1 FROM candidate_graphs g WHERE g.card_id=m.card_id)
+), candidate_budget AS (
+    SELECT count(*) candidate_graph_count,
+        (SELECT count(*) FROM requested wanted JOIN lines source ON source.id=wanted.line_id) requested_line_count
+    FROM candidate_graphs
+)
+SELECT jsonb_build_object(
+    'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
+    'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
+    'graph_count',graph_count,'largest_row',largest_row,
+    'candidate_graph_count',candidate_graph_count,'requested_line_count',requested_line_count,
+    'facts',CASE WHEN bounded AND repertoire_count=1 AND candidate_graph_count<%s THEN jsonb_build_object(
+        'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
+        'route_ids',coalesce((SELECT jsonb_agg(line_id ORDER BY line_id) FROM requested),'[]'::jsonb),
+        'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM candidate_cards c),'[]'::jsonb),
+        'memberships',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY card_id) FROM candidate_memberships m),'[]'::jsonb),
+        'graphs',coalesce((SELECT jsonb_agg(to_jsonb(g) ORDER BY line_id,decision_index) FROM candidate_graphs g),'[]'::jsonb)
+    ) ELSE NULL END
+) snapshot FROM allowed CROSS JOIN candidate_budget
+"""
+
+
+def _read_game_bound_document(database, statement, parameters):
+    execute = getattr(database, 'execute_native', None) or database.execute
+    row = execute(statement, parameters).fetchone()
+    try:
+        document = row['snapshot']
+    except TypeError:
+        document = row[0]
+    if isinstance(document, str):
+        document = json.loads(document)
+    if not document['exists']:
+        raise ValueError('repertoire_not_found')
+    if not document['bounded']:
+        _refuse_unbounded_source(document)
+    return document
+
+
+def read_authored_scope(database, repertoire_id: str) -> dict:
+    """One MVCC view of every authored line and the unchanged full-source bounds.
+
+    This is not a complete physical publication. Its consumer must derive an
+    exact game boundary and obtain the separately complete candidate relation.
+    No connection or transaction is owned or kept open by this adapter.
+    """
+    if not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200:
+        raise ValueError('invalid_repertoire_scope')
+    document = _read_game_bound_document(database, _AUTHORED_STATEMENT,
+        (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES))
+    return document['facts']
+
+
+def _candidate_routes(route_ids):
+    if (not isinstance(route_ids, (tuple, list)) or len(route_ids) > MAX_SOURCE_ROWS
+            or any(not isinstance(value, str) or not value or len(value) > 200 for value in route_ids)
+            or len(set(route_ids)) != len(route_ids)):
+        raise ValueError('invalid_candidate_route_scope')
+    return tuple(sorted(route_ids))
+
+
+def _same_header(actual, expected):
+    return all(field in actual and field in expected and actual[field] == expected[field]
+               for field in _HEADER_FIELDS)
+
+
+def read_candidate_bindings(database, *, repertoire_id: str, expected_header: dict,
+                            route_ids: tuple[str, ...]) -> dict:
+    """Complete physical source for all derived surviving routes, in one MVCC view.
+
+    Stored FEN hints never filter this relation. Graph rows survive missing or
+    nonmember physical cards, making that absence observable to the Repertoire
+    owner. No caller readiness assertion or SQL-generated mapping is accepted.
+    """
+    if (not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200
+            or not isinstance(expected_header, dict) or expected_header.get('id') != repertoire_id):
+        raise ValueError('invalid_repertoire_scope')
+    routes = _candidate_routes(route_ids)
+    document = _read_game_bound_document(database, _CANDIDATE_STATEMENT,
+        (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES, list(routes),
+         MAX_CANDIDATE_GRAPHS + 1, MAX_CANDIDATE_GRAPHS + 1))
+    if document.get('requested_line_count') != len(routes):
+        raise ValueError('first_departure_candidate_routes_changed')
+    observed = document.get('candidate_graph_count')
+    if type(observed) is not int or not 0 <= observed <= MAX_CANDIDATE_GRAPHS + 1:
+        raise ValueError('invalid_repertoire_snapshot_bound_metadata')
+    if observed > MAX_CANDIDATE_GRAPHS:
+        from app.repertoire import RepertoireSnapshotBoundExceeded
+        raise RepertoireSnapshotBoundExceeded(stage='read', sample_complete=False,
+            violations=[dict(dimension='graph_rows', observed=observed,
+                limit=MAX_CANDIDATE_GRAPHS, observation='lower_bound')])
+    facts = document['facts']
+    if (facts is None or not _same_header(facts['repertoire'], expected_header)
+            or facts['repertoire'].get('graph_state') != 'ready'):
+        raise ValueError('first_departure_selected_publication_changed')
+    return facts
+
+
+def fence_candidate_bindings(database, expected: dict) -> None:
+    """Linearize complete candidate freshness in the caller's short writer.
+
+    Caller has already fenced all selected headers and holds the existing graph
+    shared advisory locks. The exact relation read below detects added/removed
+    graph, physical, membership and availability facts at its MVCC snapshot.
+    Integrity publication has no global advisory exclusion: a later commit may
+    order after this freshness point. The selected target's existing locked
+    current-owner validation and atomic effect remain mandatory afterward.
+    """
+    if database.read_only or database.raw.info.transaction_status.name != 'INTRANS':
+        raise ValueError('borrowed_owner_writer_transaction_required')
+    if not isinstance(expected, dict) or not isinstance(expected.get('repertoire'), dict):
+        raise ValueError('invalid_candidate_route_scope')
+    routes = _candidate_routes(expected.get('route_ids'))
+    current = read_candidate_bindings(database, repertoire_id=expected['repertoire']['id'],
+        expected_header=expected['repertoire'], route_ids=routes)
+    # Compare canonical values rather than SQL text or unstable query row order.
+    # Names are not a source/policy fence, matching _fence_selected_publication.
+    def identity(facts):
+        return dict(repertoire={key:facts['repertoire'][key] for key in _HEADER_FIELDS},
+            route_ids=facts['route_ids'], cards=facts['cards'],
+            memberships=facts['memberships'], graphs=facts['graphs'])
+    if identity(current) != identity(expected):
+        raise ValueError('first_departure_candidate_bindings_changed')
