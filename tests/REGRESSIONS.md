@@ -5961,9 +5961,9 @@ reuse the explicit task-owned native snapshot fixture and preserve the productio
 32 MiB/count/row limits. Existing owning cases retain one-MVCC-view consistency,
 source/revision changes, conflicts, unavailable physical references, rollback,
 sentinel overflow and parameter-bound selection.
-`backend/tests/test_product_snapshot.py::test_bounded_wire_json_preserves_facts_and_exact_size_before_decoding`
+`backend/tests/test_product_snapshot.py::test_snapshot_mapping_and_text_envelopes_preserve_facts_and_typed_bounds`
 retains the returned facts and exact 32 MiB refusal for the raw-wire path.
-`test_raw_snapshot_port_is_eager_bounded_and_does_not_decode_in_reader` owns
+`test_snapshot_mapping_port_is_eager_and_projects_after_reader_exit` owns
 the eager raw capability. Existing
 `test_product_game_sync_integration.py::test_current_snapshot_projection_begins_after_connection_exit`
 now also proves decoding occurs after the connection exits, on success and
@@ -5980,8 +5980,8 @@ discarded preparation changes no rows; a later gateway failure or acknowledgment
 failure rolls back both owners; success retains one original effect/receipt.
 `test_native_prepared_handoff_rechecks_actual_boot_mode_source_and_control`
 checks the four current admission/control races.
-`test_qualification_decodes_complete_publication_after_reader_exit` guards the
-#616 raw-read adoption. `test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox`
+`test_qualification_projects_complete_publication_after_reader_exit` guards the
+#616 released mapping-reader adoption. `test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox`
 and `test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle`
 guard candidate precedence and retained recovery time without a quiet-window wait.
 `test_game_review_qualified_legacy_lapse_keeps_current_progress_receipt` verifies
@@ -6295,3 +6295,9 @@ correction after live Docker OOM/exit-137 events at the former 256 MiB setting.
 The overlay, optional/development inventory, runtime ownership check and packaged
 fixture agree on 512 MiB. CPU policy, PID limit and all Study allocations remain
 unchanged; the guard still rejects a mismatched allocation.
+
+The changed full-repertoire source profile is covered by
+`test_native_unreserved_snapshot_read_profile_refuses_writes_and_keeps_background_budget`
+in `backend/tests/test_product_game_review_commands_postgres.py`: actual PostgreSQL
+read-only enforcement and source-read settings remain separate from the unchanged
+short reserved background budget. The owning qualifier selects this named case.

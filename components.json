@@ -1959,7 +1959,10 @@
         "backend/tests/test_study_attempt_issuance_postgres.py",
         "backend/tests/test_prepared_review_continuation.py",
         "backend/tests/test_product_game_sync_integration.py",
-        "contracts/product-v02/fixtures/first-departure"
+        "contracts/product-v02/fixtures/first-departure",
+        "database/tempo_legacy_database/connections.py",
+        "database/tempo_legacy_database/adapters/postgres_store.py",
+        "backend/tests/test_product_game_review_commands_postgres.py"
       ]
     },
     {
@@ -2010,7 +2013,10 @@
         "Dockerfile.web",
         "nginx.conf",
         ".dockerignore",
-        "config/resource-budgets.json"
+        "config/resource-budgets.json",
+        "database/tempo_legacy_database/connections.py",
+        "database/tempo_legacy_database/adapters/postgres_store.py",
+        "backend/tests/test_product_game_review_commands_postgres.py"
       ]
     }
   ]
