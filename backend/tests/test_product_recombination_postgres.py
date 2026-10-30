@@ -29,6 +29,7 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection, te
 from tempo_legacy_database.adapters.study.recombination import PostgresRecombinationStore, SCHEMA, _event, _json
 from test_product_recombination_application import StudyFixture, earn, fixture
 from test_product_recombination_policy import FrozenRoute, REVIEW_TIME, review
+from test_product_game_lapse_postgres import owned_postgres
 
 
 def decode_current(payload):
@@ -356,6 +357,179 @@ def current_owner_transaction(monkeypatch):
 def seed_current_owner(database):
     from fixtures.product_recombination import seed_current_owner as seed
     return seed(database)
+
+
+@pytest.fixture
+def feedback_lineage_owner(owned_postgres,monkeypatch):
+    """Reuse the existing owned server and actual current-owner schema fixture."""
+    with owned_postgres() as database:
+        options=psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
+        options['password']=database.raw.pgconn.password.decode()
+    name='tempo_task503_lineage_'+uuid4().hex
+    with psycopg.connect(**options,autocommit=True) as raw:
+        raw.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+    monkeypatch.setenv('TEMPO_RECOMBINATION_TEST_DSN',psycopg.conninfo.make_conninfo(**(options|dict(dbname=name))))
+    current=current_owner_transaction.__wrapped__(monkeypatch)
+    try:
+        yield next(current)
+    finally:
+        try:
+            next(current)
+        except StopIteration:
+            pass
+        with psycopg.connect(**options,autocommit=True) as raw:
+            raw.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+
+
+def feedback_lineage_fixture(transaction,monkeypatch,*,split=False,graph_spacing=False):
+    """Earn the generated presentation through the existing real join/split path."""
+    from app.contracts.product_v02.repertoire import DecisionPresentation
+    from tempo_evidence_math import opening_position_key
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    from tempo_legacy_database.adapters.study.recombination import accept_current_split
+    if graph_spacing:
+        with transaction() as database:
+            database.execute_native("UPDATE opening_graph_steps SET moves_json=%s WHERE card_id='A'",
+                (json.dumps(['e2e4'],indent=1),))
+    for identifier in ('A','C','B'):
+        for _ in range(3):
+            with transaction() as database:
+                result,_=ordinary_current_review(database,identifier,monkeypatch)
+    combined=result['recombination']['resulting_presentation_id']
+    if split:
+        with transaction() as database:
+            # Existing owner command requires genuine recent failures.
+            for _ in range(3):
+                ordinary_current_review(database,combined,monkeypatch,outcome='again')
+            result=accept_current_split(database,combined,1)
+            assert result['applied']
+    with transaction() as database:
+        options=psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
+        options['password']=database.raw.pgconn.password.decode()
+        database.execute_native("UPDATE cards SET superseded_by=%s WHERE id='A'",(combined,))
+    original=DecisionPresentation(decision_id=decision_identity('A',0,[]),repertoire_id='r11-repertoire',
+        position_key=opening_position_key(chess.STARTING_FEN),selected_response_uci='e2e4',
+        presentation_id='A',presentation_revision=1,repertoire_revision=1,
+        introduction='introduced',introduced_at=None,available=False,route_id='r11-route',route_ply=0)
+    active=[0]
+    @contextmanager
+    def read_connection():
+        with psycopg.connect(**options,row_factory=tempo_row_factory) as raw:
+            raw.execute('SET TRANSACTION READ ONLY')
+            raw.execute("SET LOCAL transaction_timeout='250ms'")
+            raw.execute("SET LOCAL statement_timeout='250ms'")
+            raw.execute("SET LOCAL lock_timeout='100ms'")
+            active[0]+=1
+            try:
+                yield PostgresConnection(raw)
+            finally:
+                active[0]-=1
+    return original,read_connection,active
+
+
+@pytest.mark.parametrize('split,graph_spacing',[(False,False),(True,False),(False,True)])
+def test_feedback_current_target_uses_actual_join_split_and_closed_preparation(feedback_lineage_owner,monkeypatch,split,graph_spacing):
+    import tempo_legacy_database.adapters.study.recombination as owner
+    transaction=feedback_lineage_owner
+    original,read_connection,active=feedback_lineage_fixture(transaction,monkeypatch,split=split,graph_spacing=graph_spacing)
+    board=owner.chess.Board
+    def closed_board(*args,**kwargs):
+        assert active[0]==0,'chess preparation retained a connection'
+        return board(*args,**kwargs)
+    monkeypatch.setattr(owner.chess,'Board',closed_board)
+    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
+    assert prepared.current.presentation_id!='A' and prepared.current.decision_id==original.decision_id
+    assert prepared.current.available and prepared.current.introduction=='introduced'
+    assert prepared.original==original
+    def forbidden(*args,**kwargs):
+        raise AssertionError('writer replayed executable preparation')
+    monkeypatch.setattr(owner.chess,'Board',forbidden)
+    monkeypatch.setattr(owner.CurrentStudyRecombination,'try_current',forbidden)
+    with transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        database.execute_native("SET LOCAL statement_timeout='250ms'")
+        database.execute_native("SET LOCAL lock_timeout='100ms'")
+        # Scheduling state belongs to application time, not authored identity.
+        database.execute_native('UPDATE cards SET repetitions=repetitions+1 WHERE id=%s',
+            (prepared.current.presentation_id,))
+        target=owner.fence_game_feedback_target(database,prepared)
+        assert target==prepared.current
+
+
+@pytest.mark.parametrize('change',['source','mapping','definition','blocked','receipt','membership','integrity'])
+def test_feedback_current_target_rejects_changed_authority(feedback_lineage_owner,monkeypatch,change):
+    import tempo_legacy_database.adapters.study.recombination as owner
+    transaction=feedback_lineage_owner
+    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
+    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
+    with transaction() as database:
+        if change=='source':
+            database.execute_native("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=%s",(original.repertoire_id,))
+        elif change=='mapping':
+            database.execute_native('DELETE FROM study_recombination_current WHERE route_id=%s AND decision_id=%s',
+                (original.route_id,original.decision_id))
+        elif change=='definition':
+            database.execute_native('UPDATE cards SET revision=revision+1 WHERE id=%s',(prepared.current.presentation_id,))
+        elif change=='blocked':
+            database.execute_native('UPDATE cards SET pending_validation=1 WHERE id=%s',(prepared.current.presentation_id,))
+        elif change=='membership':
+            database.execute_native('DELETE FROM repertoire_cards WHERE card_id=%s',(prepared.current.presentation_id,))
+        elif change=='integrity':
+            database.execute_native("UPDATE repertoire_integrity_state SET status='unchecked' WHERE repertoire_id=%s",(original.repertoire_id,))
+        else:
+            database.execute_native("UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"held\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
+                (prepared.current.presentation_id,))
+    with transaction() as database:
+        with pytest.raises(ValueError):
+            owner.fence_game_feedback_target(database,prepared)
+
+
+def test_feedback_current_target_keeps_null_deadline_obligation(feedback_lineage_owner):
+    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination
+    transaction=feedback_lineage_owner
+    with transaction() as database:
+        logical,_=seed_rollover_obligation(database,'A','r11-repertoire')
+        determined=REVIEW_TIME-timedelta(days=7)
+        database.execute_native("""UPDATE study_game_feedback SET available_by=NULL,
+            payload_json=jsonb_build_object('owner',jsonb_build_object('progress',jsonb_build_object('determined_at',%s::text)))::text
+            WHERE effect_key=%s""",(determined.isoformat(),logical))
+        current=CurrentStudyRecombination(database).try_current('r11-route')
+        assert current is not None
+        owed=next(item for item in current.obligations if item.logical_id==logical)
+        assert owed.available_by==determined
+
+
+def test_feedback_current_target_never_guesses_original_occurrence_or_waits_for_route(feedback_lineage_owner,monkeypatch):
+    import tempo_legacy_database.adapters.study.recombination as owner
+    transaction=feedback_lineage_owner
+    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
+    for changes in (dict(route_ply=2),dict(selected_response_uci='d2d4'),dict(presentation_revision=2),dict(presentation_id='B')):
+        with pytest.raises(ValueError):
+            owner.prepare_game_feedback_target(original.model_copy(update=changes),read_connection=read_connection)
+    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
+    with transaction() as busy:
+        assert owner.PostgresRecombinationStore(busy).try_lock_route(original.route_id)
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL statement_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            with pytest.raises(ValueError,match='feedback_target_route_busy'):
+                owner.fence_game_feedback_target(database,prepared)
+    with transaction() as database:
+        database.execute_native("UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"ineligible\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
+            (prepared.current.presentation_id,))
+    with pytest.raises(ValueError,match='feedback_target_applied_receipt_unproved'):
+        owner.prepare_game_feedback_target(original,read_connection=read_connection)
+
+
+def test_feedback_current_target_lineage_does_not_bypass_original_control(feedback_lineage_owner,monkeypatch):
+    import tempo_legacy_database.adapters.study.recombination as owner
+    transaction=feedback_lineage_owner
+    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
+    with transaction() as database:
+        database.execute_native("UPDATE cards SET pending_validation=1 WHERE id='A'")
+    with pytest.raises(ValueError):
+        owner.prepare_game_feedback_target(original,read_connection=read_connection)
 
 
 def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None, prepared_recombination=None):

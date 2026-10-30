@@ -19,6 +19,7 @@ from tempo_game_evidence_contracts.legacy import decision_identity, fingerprint
 from tempo_game_evidence_contracts.legacy_scope import LegacyIntegrityCertificate
 
 from app.contracts.product_v02.presentation import DecisionComponent, OpponentCue, Presentation, PresentationChangeReceipt
+from app.contracts.product_v02.repertoire import DecisionPresentation
 from app.study.recombination.models import CleanStreak, JoinMember, ReviewEvent, RouteContext, RouteUse
 from app.study.recombination.ports import CurrentRoute, Obligation
 
@@ -202,7 +203,8 @@ class PostgresRecombinationStore:
 
 
 def installed(database):
-    return isinstance(getattr(database, "raw", None), psycopg.Connection) and database.execute_native(
+    return (isinstance(getattr(database, "raw", None), psycopg.Connection)
+            or isinstance(database, _ClosedRecombinationReads)) and database.execute_native(
         "SELECT to_regclass('study_recombination_current') IS NOT NULL").fetchone()[0]
 
 
@@ -269,6 +271,28 @@ class PreparedRecombination:
     route_id: str | None = None
     source_json: str | None = None
     reason: str | None = None
+
+
+class _ReadRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _ClosedRecombinationReads:
+    """Existing owner reads, closed before the reused executable policy runs."""
+    def __init__(self, read_connection):
+        self.read_connection = read_connection
+
+    def execute_native(self, statement, parameters=()):
+        with self.read_connection() as database:
+            rows = database.execute_native(statement, parameters).fetchall()
+        return _ReadRows(rows)
 
 
 def _source_header(database, repertoire_id, *, fence=False):
@@ -453,9 +477,10 @@ class CurrentStudyRecombination:
     The retained queue cannot represent ambiguous shared occurrences: those
     members are unavailable for regrouping and retain their normal Study uses.
     """
-    def __init__(self, database, *, clock=None, prepared=None):
+    def __init__(self, database, *, clock=None, prepared=None, _preparing=False):
         self.database = database
         self.prepared = prepared
+        self._preparing = _preparing
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         name = database.execute_native("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
         self.zone = datetime.now().astimezone().tzinfo if name == "local" else ZoneInfo(name)
@@ -545,9 +570,10 @@ class CurrentStudyRecombination:
         lines = self.database.execute_native("""SELECT id,repertoire_id,trained_color,
             CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN start_fen END start_fen,
             CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN moves_json END moves_json
-            FROM repertoire_lines WHERE repertoire_id=%s AND id=ANY(%s) ORDER BY id FOR SHARE SKIP LOCKED""",
+            FROM repertoire_lines WHERE repertoire_id=%s AND id=ANY(%s) ORDER BY id"""
+            + ('' if self._preparing else ' FOR SHARE SKIP LOCKED'),
             (repertoire_id,[row['id'] for row in document['lines']])).fetchall()
-        graphs = _target_graphs(self.database,repertoire_id,header['graph_generation'],route_id,fence=True)
+        graphs = _target_graphs(self.database,repertoire_id,header['graph_generation'],route_id,fence=not self._preparing)
         if len(lines)!=len(document['lines']) or len(graphs)!=len(document['graphs']):
             counts = self.database.execute_native("""SELECT
                 (SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s AND id=ANY(%s)),
@@ -562,15 +588,16 @@ class CurrentStudyRecombination:
 
     def _read_current(self, route_id, *, only_presentation_id=None):
         database = self.database
-        PostgresRecombinationStore(database)._writer()
+        if not self._preparing:
+            PostgresRecombinationStore(database)._writer()
         route_row = database.execute_native("SELECT repertoire_id FROM repertoire_lines WHERE id=%s", (route_id,)).fetchone()
         if not route_row:
             return self._hold("route_missing")
         repertoire_id = route_row[0]
-        if not database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+        if not self._preparing and not database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
                 ("tempo:opening-graph:" + repertoire_id,)).fetchone()[0]:
             return self._hold("current_graph_busy")
-        header = _source_header(database,repertoire_id,fence=True)
+        header = _source_header(database,repertoire_id,fence=not self._preparing)
         if not header or header["graph_state"] != "ready":
             return self._hold("current_publication_unavailable")
         try:
@@ -593,12 +620,14 @@ class CurrentStudyRecombination:
             lines = database.execute_native("""SELECT id,repertoire_id,trained_color,
                 CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN start_fen END start_fen,
                 CASE WHEN octet_length(concat_ws('',start_fen,moves_json))<=65536 THEN moves_json END moves_json
-                FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 65 FOR SHARE SKIP LOCKED""", (repertoire_id,)).fetchall()
+                FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 65"""
+                + ('' if self._preparing else ' FOR SHARE SKIP LOCKED'), (repertoire_id,)).fetchall()
             graphs = database.execute_native("""SELECT line_id,card_id,
                 CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN starting_fen END starting_fen,
                 CASE WHEN octet_length(concat_ws('',starting_fen,moves_json))<=65536 THEN moves_json END moves_json,trained_color
                 FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s
-                ORDER BY line_id,decision_index LIMIT 257 FOR SHARE SKIP LOCKED""", (repertoire_id,header["graph_generation"])).fetchall()
+                ORDER BY line_id,decision_index LIMIT 257"""
+                + ('' if self._preparing else ' FOR SHARE SKIP LOCKED'), (repertoire_id,header["graph_generation"])).fetchall()
             if not lines or len(lines)>64 or not graphs or len(graphs)>256:
                 return self._hold("current_route_scope_unavailable_or_exceeds_bound")
             expected = database.execute_native("SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s", (repertoire_id,)).fetchone()[0]
@@ -645,10 +674,11 @@ class CurrentStudyRecombination:
             return self._hold("member_scope_exceeds_bound")
         cards = {}
         for identifier in identifiers:
-            if not database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
+            if not self._preparing and not database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
                     ("tempo:card-edit:" + identifier,)).fetchone()[0]:
                 return self._hold("current_card_busy")
-            card = database.execute_native("SELECT * FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED", (identifier,)).fetchone()
+            card = database.execute_native("SELECT * FROM cards WHERE id=%s"
+                + ('' if self._preparing else ' FOR UPDATE SKIP LOCKED'), (identifier,)).fetchone()
             if not card:
                 return self._hold("current_card_busy_or_missing")
             cards[identifier] = card
@@ -724,11 +754,17 @@ class CurrentStudyRecombination:
                 (use,),card["start_fen"],frames[stop],moves,available,bool(active),bool(pending)))
             dues.append((identifier,datetime.fromisoformat(card["due_date"][:10]).replace(tzinfo=self.zone)))
         decision_ids = [c.decision_id for m in members for c in m.presentation.components]
-        owed = database.execute_native("""SELECT effect_key,decision_id,available_by FROM study_game_feedback
+        owed = database.execute_native("""SELECT effect_key,decision_id,
+            COALESCE(available_by,
+                (payload_json::jsonb->'owner'->'progress'->>'determined_at')::timestamptz,
+                (payload_json::jsonb->'owner'->'qualification'->>'determined_at')::timestamptz,
+                received_at) owed_at FROM study_game_feedback
             WHERE decision_id=ANY(%s) AND status IN ('pending','applied') ORDER BY effect_key LIMIT 129""", (decision_ids,)).fetchall()
         if len(owed)>128:
             return self._hold("obligation_scope_exceeds_bound")
-        obligations = tuple(Obligation(row[0],row[1],row[2]) for row in owed if row[2] is not None)
+        # The compatibility field carries owed ordering for ordinal-policy
+        # effects, not a fresh wall-clock promise or an expiration time.
+        obligations = tuple(Obligation(row[0],row[1],row[2]) for row in owed)
         version = database.execute_native("SELECT count(*)+1 FROM study_recombination_changes WHERE change_json->>'route_id'=%s", (route_id,)).fetchone()[0]
         self.current = CurrentRoute(RouteContext(route,int(header["graph_generation"]),"standard",True,True,int(version),"pending","pending",
             authored_routes=routes),tuple(members),tuple(dues),obligations)
@@ -850,6 +886,208 @@ def current_presentation_available(database, presentation_id):
         return True
     current = CurrentStudyRecombination(database).try_current(row[0],only_presentation_id=presentation_id)
     return current is not None and any(m.presentation.presentation_id==presentation_id and m.available for m in current.members)
+
+
+@dataclass(frozen=True)
+class PreparedFeedbackTarget:
+    """Ephemeral Study authority, never a replacement Games command or key."""
+    original: DecisionPresentation
+    current: DecisionPresentation
+    source: PreparedRecombination
+    binding_json: str
+
+
+_FEEDBACK_CARD_DEFINITION = ("id", "revision", "start_fen", "moves_json", "trained_color",
+    "content_type", "repertoire_id", "archived", "pending_validation", "superseded_by")
+
+
+def _feedback_card(database, identifier, *, fence=False):
+    return database.execute_native('SELECT '+','.join(_FEEDBACK_CARD_DEFINITION)+',introduced_at FROM cards WHERE id=%s'
+        + (' FOR UPDATE SKIP LOCKED' if fence else ''), (identifier,)).fetchone()
+
+
+def _feedback_record(database, identifier, *, fence=False):
+    return database.execute_native("""SELECT p.result_json,c.change_json,c.receipt_json
+        FROM study_recombination_presentations p JOIN study_recombination_changes c USING(command_id)
+        WHERE p.presentation_id=%s""" + (' FOR SHARE OF p,c SKIP LOCKED' if fence else ''),
+        (identifier,)).fetchone()
+
+
+def _feedback_mapping(database, route_id, components, *, fence=False):
+    return database.execute_native("""SELECT decision_id,presentation_id FROM study_recombination_current
+        WHERE route_id=%s AND decision_id=ANY(%s) ORDER BY decision_id"""
+        + (' FOR SHARE SKIP LOCKED' if fence else ''),
+        (route_id,[component.decision_id for component in components])).fetchall()
+
+
+def _feedback_definition(card):
+    return {key:card[key] for key in _FEEDBACK_CARD_DEFINITION}
+
+
+def _feedback_blocked(database,original,target):
+    identifiers=sorted({original.presentation_id,target.presentation_id})
+    return database.execute_native('''SELECT 1 FROM deleted_cards WHERE card_id=ANY(%s) UNION ALL
+        SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=ANY(%s) AND repertoire_id=%s LIMIT 1''',
+        (identifiers,identifiers,original.repertoire_id)).fetchone() is not None
+
+
+def _feedback_receipt(record, source):
+    receipt = PresentationChangeReceipt.model_validate_json(_json(record['receipt_json']))
+    change = record['change_json']
+    document = json.loads(source.source_json)
+    if (receipt.status!='applied' or receipt.plan_id!=change['command_id']
+            or receipt.owner_receipt_id!='recombination:'+change['command_id']
+            or change['source_revision']!=document['source_revision']
+            or sum(result==record['result_json'] for result in change['results'])!=1):
+        raise ValueError('feedback_target_applied_receipt_unproved')
+
+
+def _feedback_original_component(database,original,card,source):
+    """Original physical occurrence must also belong to this owner's proof."""
+    record = _feedback_record(database,original.presentation_id)
+    if record is not None:
+        _feedback_receipt(record,source)
+        result = record['result_json']
+        presentation = Presentation.model_validate_json(_json(result['presentation']))
+        matches = [component for component in presentation.components if component.decision_id==original.decision_id]
+        if (presentation.route_id!=original.route_id or presentation.repertoire_id!=original.repertoire_id
+                or presentation.learner_color!=card['trained_color']
+                or presentation.revision!=card['revision'] or result['starting_fen']!=card['start_fen']
+                or tuple(result['moves'])!=tuple(json.loads(card['moves_json'])) or len(matches)!=1
+                or (matches[0].position_key,matches[0].response_uci)!=(original.position_key,original.selected_response_uci)):
+            raise ValueError('feedback_target_original_definition_unproved')
+        return
+    graphs = json.loads(source.source_json)['graphs']
+    moves = tuple(json.loads(card['moves_json']))
+    matches = [row for row in graphs if row['card_id']==card['id'] and row['starting_fen']==card['start_fen']
+        and tuple(json.loads(row['moves_json']))==moves and row['trained_color']==card['trained_color']]
+    if len(matches)!=1:
+        raise ValueError('feedback_target_original_definition_unproved')
+    board = chess.Board(card['start_fen'])
+    for offset,move in enumerate(moves):
+        if (decision_identity(card['id'],offset,moves[:offset])==original.decision_id
+                and board.turn==(card['trained_color']=='white')
+                and opening_position_key(board.fen())==original.position_key and move==original.selected_response_uci):
+            return
+        board.push_uci(move)
+    raise ValueError('feedback_target_original_definition_unproved')
+
+
+def prepare_game_feedback_target(original: DecisionPresentation, *, read_connection=None):
+    """Resolve explicit existing lineage with no connection during chess work.
+
+    No lineage returns None. Existing but stale/ambiguous authority is a finite
+    hold, never permission to fall back to the retired physical target. Reads
+    use the supplied owner lifecycle; the prepared object is server-only.
+    """
+    if original.route_id is None:
+        return None
+    if read_connection is None:
+        from tempo_legacy_database.connections import read_connection
+    database = _ClosedRecombinationReads(read_connection)
+    if not installed(database):
+        return None
+    identifier = PostgresRecombinationStore(database).current_presentation(original.route_id,original.decision_id)
+    if identifier is None:
+        return None
+    source = _prepare_recombination_source(database,original.presentation_id)
+    if source.reason or source.route_id!=original.route_id or not source.source_json:
+        raise ValueError('feedback_target_source_unavailable')
+    boundary = CurrentStudyRecombination(database,prepared=source,_preparing=True)
+    current = boundary.try_current(original.route_id,only_presentation_id=identifier)
+    if current is None:
+        raise ValueError('feedback_target_'+boundary.reason)
+    members = [member for member in current.members if member.presentation.presentation_id==identifier]
+    if len(members)!=1 or not members[0].available:
+        raise ValueError('feedback_target_current_unavailable')
+    member = members[0]
+    components = [component for component in member.presentation.components if component.decision_id==original.decision_id]
+    if (len(components)!=1 or len(member.route_uses)!=1
+            or (components[0].position_key,components[0].response_uci)!=(original.position_key,original.selected_response_uci)
+            or (member.presentation.repertoire_id,member.presentation.repertoire_revision)!=(original.repertoire_id,original.repertoire_revision)):
+        raise ValueError('feedback_target_original_decision_changed')
+    use = member.route_uses[0]
+    # The original zero-based authored occurrence is required; position alone
+    # cannot pick one of several transposed/repeated route occurrences.
+    if use.route_id!=original.route_id or not use.start_ply<=original.route_ply<use.stop_ply:
+        raise ValueError('feedback_target_original_occurrence_changed')
+    board = chess.Board(member.starting_fen)
+    offset = original.route_ply-use.start_ply
+    for move in member.moves[:offset]:
+        board.push_uci(move)
+    if (opening_position_key(board.fen())!=original.position_key
+            or member.moves[offset]!=original.selected_response_uci
+            or board.turn!=(member.presentation.learner_color=='white')):
+        raise ValueError('feedback_target_original_occurrence_changed')
+    card = _feedback_card(database,identifier)
+    original_card = _feedback_card(database,original.presentation_id)
+    record = _feedback_record(database,identifier)
+    mapping = _feedback_mapping(database,original.route_id,member.presentation.components)
+    if (not card or not original_card or not record
+            or original_card['revision']!=original.presentation_revision
+            or len(mapping)!=len(member.presentation.components)
+            or any(row['presentation_id']!=identifier for row in mapping)):
+        raise ValueError('feedback_target_mapping_changed')
+    _feedback_receipt(record,source)
+    _feedback_original_component(database,original,original_card,source)
+    if (original_card['archived'] or original_card['pending_validation']
+            or original_card['content_type']!='opening' or _feedback_blocked(database,original,original)):
+        raise ValueError('feedback_target_original_unavailable')
+    target = original.model_copy(update=dict(presentation_id=identifier,presentation_revision=int(card['revision']),
+        available=True,introduction='introduced' if card['introduced_at'] else 'unintroduced',
+        introduced_at=None,introduction_matches_current_content=bool(card['introduced_at']),
+        introduced_before_game=None,introduction_game=None))
+    binding = dict(record=dict(record),card=_feedback_definition(card),original=_feedback_definition(original_card),
+        mapping=[dict(row) for row in mapping])
+    return PreparedFeedbackTarget(original,target,source,_json(binding))
+
+
+def fence_game_feedback_target(database, prepared: PreparedFeedbackTarget):
+    """Bounded current owner checks only; never chess replay or projection."""
+    if not isinstance(prepared,PreparedFeedbackTarget):
+        raise ValueError('feedback_target_preparation_required')
+    original, target = prepared.original,prepared.current
+    store = PostgresRecombinationStore(database)
+    if not store.try_lock_route(original.route_id):
+        raise ValueError('feedback_target_route_busy')
+    if not database.execute_native('SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))',
+            ('tempo:opening-graph:'+original.repertoire_id,)).fetchone()[0]:
+        raise ValueError('feedback_target_source_busy')
+    header = _source_header(database,original.repertoire_id,fence=True)
+    _current_certificate(header,original.repertoire_id)
+    # Reuse the existing complete captured-source fence, without constructing
+    # CurrentStudyRecombination (which also reconstructs executable routes).
+    boundary = object.__new__(CurrentStudyRecombination)
+    boundary.database,boundary.prepared,boundary._preparing = database,prepared.source,False
+    boundary._captured_source(original.route_id,original.repertoire_id,header)
+    expected = json.loads(prepared.binding_json)
+    cards = {}
+    for identifier in sorted({original.presentation_id,target.presentation_id}):
+        if not database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                ('tempo:card-edit:'+identifier,)).fetchone()[0]:
+            raise ValueError('feedback_target_card_busy')
+        card = _feedback_card(database,identifier,fence=True)
+        if not card:
+            raise ValueError('feedback_target_card_busy_or_missing')
+        cards[identifier] = card
+    record = _feedback_record(database,target.presentation_id,fence=True)
+    if not record or dict(record)!=expected['record']:
+        raise ValueError('feedback_target_receipt_changed')
+    _feedback_receipt(record,prepared.source)
+    presentation = Presentation.model_validate_json(_json(record['result_json']['presentation']))
+    mapping = _feedback_mapping(database,original.route_id,presentation.components,fence=True)
+    if ([dict(row) for row in mapping]!=expected['mapping']
+            or _feedback_definition(cards[target.presentation_id])!=expected['card']
+            or _feedback_definition(cards[original.presentation_id])!=expected['original']):
+        raise ValueError('feedback_target_definition_changed')
+    memberships = database.execute_native('SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id FOR SHARE SKIP LOCKED',
+        (target.presentation_id,)).fetchall()
+    blocked = _feedback_blocked(database,original,target)
+    if len(memberships)!=1 or memberships[0][0]!=target.repertoire_id or blocked:
+        raise ValueError('feedback_target_membership_or_integrity_changed')
+    card = cards[target.presentation_id]
+    return target.model_copy(update=dict(introduction='introduced' if card['introduced_at'] else 'unintroduced',
+        introduction_matches_current_content=bool(card['introduced_at'])))
 
 
 def is_current_occurrence(database,occurrence):
