@@ -1,3 +1,12 @@
+## Lichess export application identification
+
+`backend/tests/test_product_continuous_sync.py::test_lichess_export_identifies_tempo_to_provider`
+requires the real export adapter to identify Tempo to Lichess, preserving the
+NDJSON, identity-encoding and configured filter headers/parameters in one bounded
+request. Without the identifying User-Agent, real exports returned 404 while
+the approved profile resolved. A single diagnostic with Tempo identification
+returned 200; no durable jobs or sources were written by that diagnostic.
+
 ## T18 bounded proposal policy
 
 `backend/tests/test_product_proposals.py` owns the pure proposal regressions:
