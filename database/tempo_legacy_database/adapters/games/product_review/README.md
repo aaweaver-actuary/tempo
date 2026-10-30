@@ -38,8 +38,13 @@ seam before it can share the atomic page commit; no pre-checkpoint mirror is
 written merely to make a game-specific source capture possible.
 
 `DedicatedGamesConnections` owns at most one open connection per process,
-250 ms acquisition wait, 2 s connect timeout, and PostgreSQL 250 ms transaction /
-statement plus 100 ms lock limits. Connections close on every exit. HTTP/chess
+250 ms acquisition wait and 2 s connect timeout. Ordinary Games transactions
+retain PostgreSQL 250 ms transaction/statement and 100 ms lock limits. The explicit
+`connections(repertoire_snapshot=True)` profile always sets the transaction read-only,
+removes its transaction/statement deadlines, and retains the lock limit. Only
+whole-repertoire reads in the worker and status composition use that profile;
+configuration, persistence and Study operations keep their existing limits.
+Connections close on every exit. HTTP/chess
 work runs before database sections; no foreground Study pool is borrowed. The
 retained backend capture API still uses its existing bounded background reader;
 this scoped legacy read dependency is disclosed, not a second authority. Host
@@ -193,7 +198,7 @@ flowchart LR
   Identity --> Schema["Actual role / read-only setting / schema"]
   Reader --> Games["Existing Games jobs, configuration, sources, deliveries"]
   Reader --> Legacy["Retained Games library / separate count"]
-  CLI -->|full report only| Repertoire["Existing bounded Repertoire read + public projection"]
+  CLI -->|full report only| Repertoire["Read-only repertoire snapshot profile + public projection"]
   Reader --> Port["Injected public receipt status capability"]
   Port --> Receipt["CurrentStudyReceiptReads / receiving-owner read"]
   Reader --> JSON["Bounded observations / explicit uncertainty"]

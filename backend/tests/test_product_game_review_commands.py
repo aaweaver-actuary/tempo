@@ -21,7 +21,45 @@ def configuration():
         interval_seconds=60, revision=1)))
 
 
-def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch):
+def test_repertoire_snapshot_connection_is_read_only_without_short_deadline(monkeypatch):
+    from contextlib import contextmanager
+    import psycopg
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+
+    calls = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            calls.append("closed")
+
+        @contextmanager
+        def transaction(self):
+            yield
+
+        def execute(self, statement):
+            calls.append(statement)
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: Connection())
+    connections = DedicatedGamesConnections("unused")
+    with connections(repertoire_snapshot=True):
+        assert calls[0] == "SET TRANSACTION READ ONLY"
+        assert "set_config('transaction_timeout','0'" in calls[1]
+        assert "set_config('statement_timeout','0'" in calls[1]
+        assert "set_config('lock_timeout','100ms'" in calls[1]
+    assert calls[-1] == "closed"
+    calls.clear()
+    with connections():
+        assert "set_config('transaction_timeout','250ms'" in calls[0]
+        assert "set_config('statement_timeout','250ms'" in calls[0]
+        assert "SET TRANSACTION READ ONLY" not in calls
+    assert calls[-1] == "closed"
+
+
+@pytest.mark.parametrize("count", [1, 10, 17])
+def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch, count):
     from app import command_dispatch
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
     operations = CurrentGameReviewOperations()
@@ -34,6 +72,7 @@ def test_reader_http_dispatches_original_configure_and_run_identity_without_writ
     app=FastAPI();app.include_router(create_game_review_router(operations))
     with TestClient(app) as client:
         body=dict(configuration=configuration().model_dump(mode="json"),expected_revision=0)
+        body["configuration"]["repertoire_ids"] = [f"repertoire-{index}" for index in range(count)]
         for _ in range(2):
             response=client.post("/api/product/game-review/configuration",json=body,
                                  headers={"Idempotency-Key":"same-save"})
@@ -91,6 +130,21 @@ def write_request(*, end_at, interval=300):
     value["window"]["end_at"] = end_at
     value["interval_seconds"] = interval
     return dict(configuration=value, expected_revision=0)
+
+
+@pytest.mark.parametrize("count", [10, 17])
+def test_configuration_and_acquisition_job_preserve_all_selected_repertoires(configuration_writer, count):
+    from app.product_composition.game_review import configured_job
+
+    store, _, write = configuration_writer
+    request = write_request(end_at="2026-10-26T00:00:00Z")
+    selected = [f"repertoire-{index}" for index in range(count)]
+    request["configuration"]["repertoire_ids"] = selected
+    assert write(request)["repertoire_ids"] == selected
+    assert list(store.saved.repertoire_ids) == selected
+    job = configured_job(store.saved, "all-selected-job")
+    assert list(job.repertoire_ids) == selected
+    assert type(job).model_validate_json(job.model_dump_json()).repertoire_ids == tuple(selected)
 
 
 @pytest.mark.parametrize("end_at", ["2026-10-25T00:01:00Z", "2026-10-26T00:00:00Z"])

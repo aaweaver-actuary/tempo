@@ -27,7 +27,7 @@ class SyncConfiguration(Value):
     provider: Provider
     account: Identifier
     window: GameWindow
-    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=8)
+    repertoire_ids: tuple[Identifier, ...] = Field(min_length=1)
     speeds: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = Field(min_length=1, max_length=4)
     rated: bool | None
     interval_seconds: int | None = Field(ge=60, le=86400)

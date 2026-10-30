@@ -175,10 +175,11 @@ when conflicted. No schema or stored relationship changes are introduced.
   authority identity. No imported game, integrity certificate, review, schedule
   or queue is queried. Empty/mixed learner color and nonempty canonical-prefix
   sources fail explicitly instead of inventing factual values.
-- Each source category is bounded to 10,000 rows; current graph bindings to
-  20,000. One extra sentinel row detects overflow. Raw row text is bounded to
-  64 KiB before JSON aggregation. A conservative JSON-escape estimate and final
-  encoded-size check enforce 32 MiB. Pure repertoire projection also caps
+- Lines, cards and memberships are bounded to 10,000 rows with one extra
+  sentinel row detecting overflow. All current graph bindings are retained,
+  without a graph-count ceiling. Raw row text is bounded to
+  64 KiB before JSON aggregation. Whole-repertoire snapshots have no aggregate
+  byte ceiling; the conservative size estimate is informational. Pure repertoire projection still caps
   aggregate authored moves at 100,000. A proved budget refusal raises public
   `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged
   string `repertoire_snapshot_exceeds_bound`; it never certifies a bounded prefix.
@@ -195,7 +196,8 @@ when conflicted. No schema or stored relationship changes are introduced.
   are retained; chronology, unavailable cards, conflicts and mapping identity
   keep their existing semantics.
 - Games `CurrentRepertoireSnapshots` reads eager owner facts inside its existing
-  bounded connection context, exits that context, then calls public
+  read-only `repertoire_snapshot=True` connection context with no transaction
+  or statement deadline, exits that context, then calls public
   `project_published_repertoire`. Chess replay/mapping construction runs after
   the transaction closes. Other borrowed-transaction snapshot callers retain
   their existing transaction ownership.
@@ -218,7 +220,7 @@ flowchart LR
   Reader --> Select["One bounded parameter-bound SELECT\nselected repertoire MVCC view"]
   Select --> Existing[("Existing repertoire lines\ncards / memberships / current graph")]
   Reader --> Project["Repertoire project_repertoire\nexisting T01 snapshot"]
-  Games["Games CurrentRepertoireSnapshots"] --> ReadFacts["read_repertoire inside bounded DB context"]
+  Games["Games CurrentRepertoireSnapshots"] --> ReadFacts["read_repertoire inside read-only snapshot context\nno quarter-second deadline"]
   ReadFacts --> Select
   ReadFacts --> Closed["Exit DB context; eager facts retained"]
   Closed --> Published["Pure project_published_repertoire; local route index"]

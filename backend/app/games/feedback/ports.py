@@ -17,7 +17,7 @@ class JobSpec(Value):
     provider: Literal["lichess", "chesscom"]
     account: str
     window: GameWindow
-    repertoire_ids: tuple[str, ...] = Field(min_length=1, max_length=8)
+    repertoire_ids: tuple[str, ...] = Field(min_length=1)
     filters: tuple[tuple[str, str], ...] = ()
     purpose: Literal["sync", "refresh"] = "sync"
     configuration_revision: int | None = Field(default=None, ge=1)

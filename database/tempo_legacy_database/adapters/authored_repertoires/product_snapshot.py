@@ -8,17 +8,15 @@ from __future__ import annotations
 import json
 
 MAX_SOURCE_ROWS = 10000
-MAX_GRAPH_ROWS = 20000
 MAX_ROW_BYTES = 65536
-MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
 # Raw text is bounded before JSON aggregation. Six bytes per source byte covers
 # JSON escaping; 512 bytes per row covers fixed keys/scalars/array punctuation.
 # A row-count sentinel prevents a bounded prefix from claiming completeness.
 STATEMENT = """
 WITH limits AS (
-    SELECT %s::text repertoire_id, %s::int source_limit, %s::int graph_limit,
-           %s::bigint byte_limit, %s::bigint row_byte_limit
+    SELECT %s::text repertoire_id, %s::int source_limit,
+           %s::bigint row_byte_limit
 ), repertoire AS MATERIALIZED (
     SELECT r.id,r.name,r.scope_source_revision,r.canonical_prefix_revision,
            r.canonical_prefix_moves_json,p.generation graph_generation,p.state graph_state,
@@ -50,7 +48,7 @@ WITH limits AS (
            g.starting_fen,g.moves_json,g.trained_color
     FROM opening_graph_steps g JOIN repertoire r
       ON r.id=g.repertoire_id AND r.graph_generation=g.generation AND r.graph_state='ready'
-    ORDER BY g.line_id,g.decision_index LIMIT (SELECT graph_limit+1 FROM limits)
+    ORDER BY g.line_id,g.decision_index
 ), sizes AS (
     SELECT 'repertoire' kind,octet_length(concat_ws('',id,name,scope_source_revision,
         canonical_prefix_revision,canonical_prefix_moves_json,graph_generation,graph_state,workspace_id)) bytes
@@ -73,8 +71,8 @@ WITH limits AS (
     FROM sizes
 ), allowed AS (
     SELECT b.*,b.line_count<=l.source_limit AND b.card_count<=l.source_limit
-        AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
-        AND b.estimated_bytes<=l.byte_limit AND b.largest_row<=l.row_byte_limit bounded
+        AND b.membership_count<=l.source_limit
+        AND b.largest_row<=l.row_byte_limit bounded
     FROM budget b CROSS JOIN limits l
 )
 SELECT jsonb_build_object(
@@ -97,8 +95,7 @@ def read_repertoire(database, repertoire_id: str) -> dict:
     if not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200:
         raise ValueError("invalid_repertoire_scope")
     execute = getattr(database, "execute_native", None) or database.execute
-    row = execute(STATEMENT, (repertoire_id, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS,
-                             MAX_SNAPSHOT_BYTES, MAX_ROW_BYTES)).fetchone()
+    row = execute(STATEMENT, (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES)).fetchone()
     try:
         document = row["snapshot"]
     except TypeError:
@@ -111,8 +108,7 @@ def read_repertoire(database, repertoire_id: str) -> dict:
         from app.repertoire import RepertoireSnapshotBoundExceeded
         counts = (("line_count", "source_rows", MAX_SOURCE_ROWS),
                   ("card_count", "card_rows", MAX_SOURCE_ROWS),
-                  ("membership_count", "membership_rows", MAX_SOURCE_ROWS),
-                  ("graph_count", "graph_rows", MAX_GRAPH_ROWS))
+                  ("membership_count", "membership_rows", MAX_SOURCE_ROWS))
         fields = [key for key, _, _ in counts] + ["estimated_bytes", "largest_row"]
         if (any(type(document.get(key)) is not int or document[key] < 0 for key in fields)
                 or any(document[key] > limit + 1 for key, _, limit in counts)):
@@ -121,19 +117,13 @@ def read_repertoire(database, repertoire_id: str) -> dict:
         violations = [dict(dimension=dimension, observed=document[key], limit=limit, observation="lower_bound")
                       for key, dimension, limit in counts if document[key] > limit]
         for key, dimension, limit, observation in (
-                ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),
-                ("estimated_bytes", "estimated_snapshot_bytes", MAX_SNAPSHOT_BYTES, "conservative_estimate")):
+                ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),):
             if document[key] > limit:
                 violations.append(dict(dimension=dimension, observed=document[key], limit=limit, observation=observation))
         if not violations:
             raise ValueError("invalid_repertoire_snapshot_bound_metadata")
         raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
     facts = document["facts"]
-    encoded_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
-    if encoded_bytes > MAX_SNAPSHOT_BYTES:
-        from app.repertoire import RepertoireSnapshotBoundExceeded
-        raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[
-            dict(dimension="snapshot_bytes", observed=encoded_bytes, limit=MAX_SNAPSHOT_BYTES, observation="exact")])
     return facts
 
 

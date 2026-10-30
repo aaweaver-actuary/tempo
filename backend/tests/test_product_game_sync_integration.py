@@ -777,7 +777,8 @@ def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, f
     facts = repertoire_facts()
     if fails: facts["repertoire"]["graph_state"] = "failed"
     @contextmanager
-    def connections():
+    def connections(*, repertoire_snapshot=False):
+        assert repertoire_snapshot is True
         events.append("enter")
         try:
             yield EnvelopeReader(snapshot_envelope(bounded=True, facts=facts))
