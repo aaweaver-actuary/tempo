@@ -5785,3 +5785,11 @@ loaders and source symlink escapes are rejected; the bundled remediation import
 requires its exact declared distribution; actual centralized wheel/sdist hooks
 retain their existing membership. It runs through the ordinary component-build
 Node test discovery. No runtime source, packaging input or gate is removed.
+
+
+H’s `boundaries.test.mjs` regressions retain both relocated Content suites’ exact
+input identities and compare the three existing package-root export registrations
+with their owners; Game Evidence’s pure interface remains explicitly narrower.
+I’s regular `runners tempo-cli.test` lane owns the original-fence, original-deadline
+and advancing-main automatic-start relaunch regressions and six negative release
+verification cases. The shared CLI fixture and operator suite are unchanged.

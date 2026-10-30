@@ -80,9 +80,9 @@ match the newly inspected resolved configuration. No installation was attempted
 through bypasses; the candidate is unmerged and required qualification is not green.
 
 Fresh private reader evidence confirms both new collection configurations absent,
-zero collection games and 2,178 separate retained legacy games. Missing inputs
-remain account binding, seed window/precision, repertoire IDs, speeds, rated
-policy, recurrence, overlap and reconciliation cadence. Legacy saved accounts are
+zero collection games and 2,178 separate retained legacy games. This was G’s historical readiness snapshot. J’s later private packet records
+approved launch choices; they remain unsaved and must be applied only by the
+authorized installation/activation owner. Legacy saved accounts are
 preserved separately; selected-repertoire compatibility is not inferred.
 
 Installed host/container inventory found no running provider collector. Existing
@@ -104,7 +104,7 @@ recreated merely to remove a quota.
 
 Remaining: resolve actual required-check blockers and obtain authorized main
 integration, install the qualified source through the managed release transition
-with collection OFF, supply explicit launch inputs, then repeat the read-only
+with collection OFF, apply J’s approved launch inputs at the authorized checkpoint, then repeat the read-only
 installed identity/configuration/producer checks. Andy's separate switch-on
 instruction remains required. No #594/#595 settlement, ranking, engine, coaching
 or UI expansion is included.
@@ -143,3 +143,86 @@ The original 822-game/image evidence above is reused, not relabeled or rerun:
 no packaged production input changed in this host-operator repair. #607/#608
 remain separate qualification issues, and parent #611 merge qualification remains
 subject to its applicable required checks. Not installed or activated.
+
+
+## Task K — inactive source qualification checkpoint
+
+Base main: `c63c894733dd7b358e4a734ba91244fd49727489`. The existing #611 head
+`2364dcf3eb4b217cd46248a95b3333cca5a6fe64` includes #612 by ancestry;
+its maintenance/schema guards were preserved. K integrated only H’s reviewed
+patches `fe709c66d8b55b662ce54696ee252985e096d290`,
+`872cad7cd88f47b6abfae6e52820a792ad5c6479`,
+`64143c3882c747ab646fa618f8441b29e8559c1f` and I’s patch
+`2650632468e1eec25bbad8a0f35593b22b2f0ea3`. Integrated commits are
+`e5b75af0`, `17faf9ae`, `c4ed4f67` (H) and `56788e1d` (I).
+
+H rebases the two relocated Content suite registrations without dropping any
+input and records existing public package-root exports. Game Evidence’s narrower
+pure interface remains unchanged. I repairs only the synthetic relaunch hook in
+`tests/runner/tempo-cli.test.mjs`; the shared fixture is unchanged.
+
+The first checker failure after locked Workbench prerequisites exposed an audit
+mismatch: centralized database sdist-only tests/tooling were treated as wheel
+runtime, and the declared remediation distribution’s bundled database namespace
+was not recognized. K’s separate `a570a0d0` repair follows the existing wheel hooks,
+retains all build-input/path/symlink validation and runtime import/loader auditing,
+and admits that namespace only with its exact declared distribution. Two intended
+regressions failed before the repair. Subsequent stale export registrations were
+returned to H rather than changing application APIs. Missing local Maia and
+workspace prerequisites were environment setup failures, retained separately.
+
+Verified bounded results:
+
+- Full manifest validation, including shared suites: passed.
+- `TEMPO_COMPONENT_PYTHON=/Users/andy/.local/bin/python3.12 node --test --test-concurrency=1 tools/component-build/tests/boundaries.test.mjs tools/component-build/tests/python-package-inputs.test.mjs`: 74 passed, zero failures/skips/TODOs (70 H boundary cases plus four packaging cases).
+- Registered CLI selection: three named automatic-start relaunch cases passed;
+  six negative-evidence cases passed; whole `runners tempo-cli.test` lane:
+  211 passed, zero failures/skips/TODOs. Exact patterns/logs are retained in
+  `/private/tmp/tempo-task-k-evidence`.
+
+The 822-game proof is reused: Dockerfile, context policy and every COPY input are
+unchanged from `bb7a4879fa217d56fe069d265421d8553d7e07f7`. The operator’s 74-case
+proof is reused because its source, tests, shared fixture and dependencies are
+unchanged from `2364dcf3`. These receipts do not waive any configured selection.
+The old image remains behavioral evidence, never a relabeled final release.
+
+Hosted qualification is unresolved. Repository Actions permissions report
+`enabled:false`; the workflow itself is active. No repository setting, workflow
+selector or gate was changed. The declared selector requires FULL, so missing
+runs/jobs are not passing qualification. Local Node 26.12.0/Python 3.12.12 evidence
+is not the hosted toolchain or exact-main installer proof.
+
+#608 is repaired in this candidate, pending hosted qualification. #607’s relocated
+registrations and existing-export rows are repaired, but full checker closure is
+still unresolved: after scoped prerequisites it fails
+`Consumer bypasses public package: app/features/game-review/GameReviewView.tsx`
+on the main-identical relative Board UI stylesheet import. The package already
+exports `./styles.css`, while root adoption is incomplete. H confirmed the same bypass in `app/components/PositionViewer.tsx` and that the
+assembly maps only the renderer, not the exported stylesheet. The bounded repair
+belongs to the root frontend assembly owner: support the existing public CSS
+export in the assembly, replace both relative imports, and retain named consumer
+regressions. No package adoption framework or weaker guard is justified. H made
+no further source edit; no broad qualification retry was attempted. Neither issue is prematurely closed. No production API, schema,
+package membership or application lifecycle changed in K. Architecture impact:
+none for these registration/checker/fixture repairs; #612’s lifecycle drawing is
+retained. No new ER relationship is introduced.
+
+J’s private packet remains `/private/tmp/tempo-task-g-private/J_private_launch_packet.md`
+with file mode 0600 and directory mode 0700. Approved private choices are not
+published or requested again. Unsaved settings, installed-reader identity,
+effective CPU/memory/PID settings, competing producers and admission readiness
+remain later L/M checks. K performed no live or Docker operation.
+
+Pending: complete the bounded frontend public-stylesheet assembly repair, restore
+authorized hosted verification, require the pinned ready #611
+head/base and FULL quality/merge-gate success, then obtain Andy’s authorized merge.
+After merge read actual main SHA M, verify intended ancestry/diff, and assess its
+normal main-push run. If absent, dispatch `gh workflow run pages.yml --ref main`
+with default non-diagnostic inputs and verify that run selects M. The existing
+installer must report `verified` for M with all nine jobs: plan, frontend, backend,
+build, PostgreSQL, lifecycle, browser, visual and quality. PR-head or synthetic
+integration evidence cannot replace M.
+
+L must use an exact-M checkout and the existing registration; supported later
+invocation is `node <exact-M-checkout>/scripts/tempo-cli.mjs start --config /Users/andy/.config/tempo/config.json --no-open`.
+K does not execute it. No install-ready main revision exists at this checkpoint.
