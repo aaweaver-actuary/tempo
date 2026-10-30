@@ -250,7 +250,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
             admin.execute(sql.SQL('DROP DATABASE IF EXISTS {}').format(sql.Identifier(fixture_database)))
 
 
-def test_postgres_queue_publication_with_historical_and_null_evidence(database_url):
+def test_postgres_queue_publication_with_historical_and_null_evidence(database_url, *, frozen=False):
     """Full publication stays within 250 ms without weakening its state fences.
 
     The current-day queue estimate is deliberately stale. Historical evidence
@@ -260,6 +260,8 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
     import hashlib
     import time
     from app.services import queue_ordering
+    from app.services import frozen_opening_order
+    from app.study.openings.frozen_math import content_fingerprint
     from app.services import postgres_queue_refresh as refresh
     from tempo_legacy_database.adapters.queue_refresh import presentation as storage
     from database.tooling.apply_postgres_migrations import apply_migrations
@@ -273,7 +275,8 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
     marker = 'tempo:new-first-publication:' + name
     fixture_dsn = psycopg.conninfo.make_conninfo(**{**info, 'dbname': name})
     report = dict(database=name,queue_rows=575,historical_evidence_rows=5312,
-                  transaction_limit_ms=250,cleanup_verified=False,
+                  transaction_limit_ms=250,cleanup_verified=False,frozen_enabled=frozen,
+                  frozen_predicate_source_sha256=hashlib.sha256(Path(__import__('tempo_legacy_database.adapters.frozen_order',fromlist=['__file__']).__file__).read_bytes()).hexdigest(),
                   production_source_sha256=hashlib.sha256(Path(storage.__file__).read_bytes()).hexdigest())
     created = False
     scope = ExitStack()
@@ -317,7 +320,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                   json_build_object('synthetic',(SELECT string_agg(md5(n::text||':'||b::text),'') FROM generate_series(17,46) b))::text,
                   %s,'UTC',CASE WHEN n=1 THEN NULL ELSE -n END,'complete'
                 FROM generate_series(1,5312) n CROSS JOIN LATERAL
-                  (SELECT id,card_id,revision FROM opening_evidence_presentations ORDER BY id LIMIT 1) p""",(now,))
+                  (SELECT id,card_id,revision FROM opening_evidence_presentations WHERE card_id='card-0504' ORDER BY id LIMIT 1) p""",(now,))
             db.execute_native("""INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,
                   repertoire_id,card_id,card_revision,trained_color,context_json,manifest_json,started_at,
                   study_timezone,queue_entry_id,state)
@@ -325,10 +328,40 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                   %s,'UTC',q.id,'complete'
                 FROM opening_evidence_presentations p CROSS JOIN daily_queue q
                 WHERE p.card_id='card-0505' AND q.card_id=p.card_id""",(now,))
+            if frozen:
+                # Active frozen eligibility must inspect genuine legacy/exposure
+                # facts, rather than short-circuiting on an absent activation.
+                db.execute_native("UPDATE cards SET content_type='opening'")
+                db.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) SELECT 'proof',id FROM cards")
+                db.execute_native("UPDATE queue_attempt_origins SET legacy=1 WHERE card_id<'card-0550'")
+                db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='card-0506'")
+                db.execute_native("UPDATE daily_queue SET admission_kind='explicit' WHERE card_id='card-0507'")
+                db.execute_native("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('card-0509','correct',%s,0,1)",(now,))
+                # Capture all definitions and memberships through the real owner.
+                cards=[dict(row) for row in db.execute_native('SELECT * FROM cards ORDER BY id DESC')]
+                ranks=[dict(row,rank=ordinal,fingerprint=content_fingerprint(row,['proof']),memberships=['proof'])
+                       for ordinal,row in enumerate(cards,1)]
+                publication=dict(run_id=name+'-frozen',checksum=name,ranks=ranks)
+                frozen_opening_order.stage_run(db,publication,now)
+                frozen_opening_order.stage_ranks(db,publication,ranks)
+                assert frozen_opening_order.activate_run(db,publication)
+                # Two unexposed, nonlegacy controls isolate definition/member fences.
+                db.execute_native("UPDATE queue_attempt_origins SET legacy=0 WHERE card_id IN ('card-0510','card-0511')")
+                db.execute_native("UPDATE cards SET moves_json='[\"d2d4\"]' WHERE id='card-0510'")
+                db.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('proof-added','Added membership','synthetic',%s)",(now,))
+                db.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('proof-added','card-0511')")
         with postgres_store.connection(read_only=True) as db:
             rows = refresh.queue_application.presentation_rows(db,day)
             protected = queue_ordering._protected_queue_ids(rows)
-            assert len(rows)==575 and len(protected)==3, (len(rows),len(protected))
+            assert len(rows)==575
+            if frozen:
+                eligible={row['card_id'] for row in rows if row['eligible']}
+                assert {'card-0000','card-0504','card-0505','card-0506','card-0507','card-0509','card-0550'} <= eligible
+                assert not {'card-0508','card-0510','card-0511','card-0512'} & eligible
+                assert len(eligible)==534, len(eligible)
+                assert {'card-0504','card-0505','card-0506','card-0507','card-0508','card-0510','card-0511'} <= {row['card_id'] for row in rows if row['id'] in protected}
+            else:
+                assert len(protected)==3, len(protected)
             positions = {r['id']:r['position'] for r in rows if r['id'] in protected}
             history = [tuple(r) for r in db.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()]
             origins = [tuple(r) for r in db.execute_native('SELECT * FROM queue_attempt_origins ORDER BY queue_entry_id,card_id,revision').fetchall()]
@@ -363,8 +396,12 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
             assert [tuple(r) for r in db.execute_native('SELECT * FROM queue_attempt_origins ORDER BY queue_entry_id,card_id,revision').fetchall()]==origins
             assert db.execute('SELECT membership_hash FROM daily_queue_days').fetchone()[0].startswith(queue_ordering.PRESENTATION_VERSION+':')
             movable=[r for r in sorted(after,key=lambda r:(r['position'],r['id'])) if r['id'] not in protected]
-            assert all(r['admission_kind']=='new' and r['content_type']=='opening' for r in movable[:69])
-            assert all(not(r['admission_kind']=='new' and r['content_type']=='opening') for r in movable[69:])
+            opening_count=25 if frozen else 69
+            assert all(r['admission_kind']=='new' and r['content_type']=='opening' for r in movable[:opening_count])
+            assert all(not(r['admission_kind']=='new' and r['content_type']=='opening') for r in movable[opening_count:])
+            if frozen:
+                assert [row['card_id'] for row in movable[:opening_count]]==[f'card-{index:04d}' for index in range(574,549,-1)]
+                assert {row['card_id'] for row in after if row['eligible']}==eligible
         replay=refresh._prepare_queue_randomization(day)
         assert replay['entries'] is None
         with postgres_store.connection(background=True) as db:
@@ -384,9 +421,14 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                 assert admin.execute('SELECT 1 FROM pg_database WHERE datname=%s',(name,)).fetchone() is None
         report['cleanup_verified']=True
         print('PUBLICATION_PROTECTION',json.dumps(report,sort_keys=True),flush=True)
-    print('PASS test_postgres_queue_publication_with_historical_and_null_evidence', flush=True)
+    print('PASS test_postgres_frozen_queue_publication_with_historical_and_null_evidence' if frozen else 'PASS test_postgres_queue_publication_with_historical_and_null_evidence', flush=True)
+
+
+def test_postgres_frozen_queue_publication_with_historical_and_null_evidence(database_url):
+    test_postgres_queue_publication_with_historical_and_null_evidence(database_url,frozen=True)
 
 
 if __name__ == '__main__':
     test_postgres_queue_publication_with_historical_and_null_evidence('postgresql://postgres@postgres:5432/tempo')
+    test_postgres_frozen_queue_publication_with_historical_and_null_evidence('postgresql://postgres@postgres:5432/tempo')
     test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound('postgresql://postgres@postgres:5432/tempo')
