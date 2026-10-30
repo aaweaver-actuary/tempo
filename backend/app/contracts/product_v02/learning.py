@@ -296,7 +296,10 @@ class EncounterReceipt(LearningReceipt):
             application = progress.schedule_applied_at if self.disposition == "introduced_again" else progress.introduction_applied_at
             if application is None or progress.remediation_fence is None:
                 raise ValueError("available consequence needs actual scheduling/admission evidence")
-        if (self.status == "settled" or self.admission_status == "settled") != (progress.settlement is not None):
+        if ((self.admission_status == "settled") != (progress.settlement is not None)
+                or (progress.settlement is not None and self.status != "settled")
+                or (self.status == "settled" and progress.settlement is None
+                    and self.outcome not in {"withdrawn", "historical_preserved"})):
             raise ValueError("settled consequence requires its genuine post-application completion receipt")
         return self
 

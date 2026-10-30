@@ -16,8 +16,8 @@ sys.path.insert(0, str(ROOT / "contracts/game-evidence/src"))
 sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 sys.path.insert(0, str(ROOT / "packages/evidence-math/src"))
 sys.path.insert(0, str(ROOT / "contracts/analysis-jobs/src"))
-from app.contracts.product_v02.games import Finding, GamePage, GameSummary, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
+from app.contracts.product_v02.games import Finding, FirstDepartureSelection, GamePage, GameSummary, ProviderSyncStatus, RecentGames
+from app.contracts.product_v02.learning import FirstDepartureWitness, GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.contracts.product_v02.presentation import GameDetail
 from app.contracts.product_v02.analysis import ProbabilityEvidence, EngineEvidence, Proposal, ProposalDecision, RankingInput, RankingOutput
@@ -27,6 +27,7 @@ from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 FIXTURES = ROOT / "contracts/product-v02/fixtures"
 MODELS = {model.__name__: model for model in (Finding, GamePage, RepertoireSnapshot, GameEffectControl, GameLapse, LearningReceipt, GameSummary, ProviderSyncStatus, RecentGames, GameDetail)}
 MODELS.update({model.__name__: model for model in (ProbabilityEvidence, EngineEvidence, Proposal, ProposalDecision, RankingInput, RankingOutput, Presentation, JoinPlan)})
+MODELS.update({model.__name__: model for model in (FirstDepartureSelection, FirstDepartureWitness, GameEncounter, EncounterReceipt)})
 
 
 def fixture(name):
@@ -390,3 +391,55 @@ def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(s
     receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
     assert receipt.admission_status == "pending" and receipt.available_by is None
     assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
+
+
+FIRST_DEPARTURE = FIXTURES / "first-departure"
+
+
+@pytest.mark.parametrize("path", sorted(path for path in FIRST_DEPARTURE.glob("*.json") if path.name != "rejections.json"), ids=lambda path: path.stem)
+def test_first_departure_shared_values_and_actual_legacy_receipt_round_trip(path):
+    document = json.loads(path.read_text())
+    value = MODELS[document["model"]].model_validate_json(json.dumps(document["payload"]))
+    assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("case", json.loads((FIRST_DEPARTURE / "rejections.json").read_text())["cases"], ids=lambda case: case["name"])
+def test_first_departure_python_and_typescript_reject_the_same_contradictions(case):
+    document = json.loads((FIRST_DEPARTURE / f'{case["fixture"]}.json').read_text())
+    payload = document["payload"]
+    for path, replacement in case["updates"].items():
+        current = payload
+        parts = path.split(".")
+        for part in parts[:-1]:
+            current = current[int(part)] if isinstance(current, list) else current[part]
+        current[int(parts[-1]) if isinstance(current, list) else parts[-1]] = replacement
+    with pytest.raises(ValidationError):
+        MODELS[document["model"]].model_validate_json(json.dumps(payload))
+
+
+def test_qualified_witness_binds_original_command_without_new_effect_identity():
+    witness_payload = json.loads((FIRST_DEPARTURE / "own-introduced.json").read_text())["payload"]
+    witness = FirstDepartureWitness.model_validate_json(json.dumps(witness_payload))
+    command_payload = encounter_fixture("unintroduced-missed")
+    original = GameEncounter.model_validate_json(json.dumps(command_payload))
+    assert witness.matches(original)  # Study chooses current disposition; chronology is not authority.
+    original_bytes = original.model_dump_json()
+    witness_payload.update(configuration_revision=8, stream="reconciliation")
+    witness_payload["selection"]["selected_scope"][0]["snapshot_id"] = "recomparison-2"
+    later = FirstDepartureWitness.model_validate_json(json.dumps(witness_payload))
+    assert later.matches(original)
+    assert original.model_dump_json() == original_bytes
+    assert original.key.logical_id() == GameEffectControl(key=original.key, source_revision=2, action="hold", reason="reanalysis").key.logical_id()
+    for field, value in (("game_id", "another-genuine-game"), ("occurrence_ply", 3)):
+        assert original.key.model_copy(update={field: value}).logical_id() != original.key.logical_id()
+    assert not witness.matches(original.model_copy(update={"played_uci": "c2c4"}))
+    assert not witness.matches(GameEncounter.model_validate_json(json.dumps(encounter_fixture("unintroduced-correct"))))
+
+
+def test_priority_receipt_remains_legacy_and_new_pending_does_not_claim_application():
+    legacy = EncounterReceipt.model_validate_json(json.dumps(encounter_fixture("historical-review-priority")))
+    assert legacy.applied_at is not None and legacy.progress is None
+    assert "progress" not in legacy.model_dump(mode="json")
+    pending = EncounterReceipt.model_validate_json(json.dumps(json.loads((FIRST_DEPARTURE / "protected-target-pending-reset.json").read_text())["payload"]))
+    assert pending.progress.scheduling_review_id is None
+    assert pending.progress.remediation_fence is None and pending.admission_status == "pending"
