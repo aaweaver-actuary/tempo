@@ -1,0 +1,66 @@
+{
+  "model": "EncounterReceipt",
+  "payload": {
+    "key": {
+      "workspace_id": "fixture",
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "decision_id": "existing-decision",
+      "occurrence_ply": 1
+    },
+    "source_revision": 1,
+    "status": "settled",
+    "outcome": "accepted",
+    "owner_receipt_id": "synthetic-study-encounter-receipt",
+    "admitted_at": "2026-10-26T12:01:00Z",
+    "available_by": null,
+    "applied_at": "2026-10-26T12:01:00Z",
+    "reason": null,
+    "interface_version": "0.2.2",
+    "detected_at": "2026-10-26T12:00:00Z",
+    "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "observation": "missed",
+    "observation_recorded": true,
+    "disposition": "first_introduction",
+    "admission_status": "settled",
+    "deferred_reason": null,
+    "progress": {
+      "policy_version": "first_departure_v1",
+      "determined_at": "2026-10-26T12:00:01Z",
+      "stream": "forward",
+      "target": {
+        "card_id": "existing-physical-card",
+        "card_revision": 1
+      },
+      "scheduling_review_id": null,
+      "schedule_applied_at": null,
+      "introduction_applied_at": "2026-10-26T12:01:00Z",
+      "remediation_fence": {
+        "target": {
+          "card_id": "existing-physical-card",
+          "card_revision": 1
+        },
+        "after_issuance_sequence": 100,
+        "established_at": "2026-10-26T12:01:00Z"
+      },
+      "first_issued": {
+        "queue_entry_id": 501,
+        "card_id": "existing-physical-card",
+        "card_revision": 1,
+        "issuance_sequence": 103,
+        "issued_at": "2026-10-26T12:02:00Z"
+      },
+      "first_issued_ordinal": 3,
+      "settlement": {
+        "review_id": 42,
+        "attempt": {
+          "queue_entry_id": 501,
+          "card_id": "existing-physical-card",
+          "card_revision": 1,
+          "issuance_sequence": 103,
+          "issued_at": "2026-10-26T12:02:00Z"
+        }
+      }
+    }
+  }
+}

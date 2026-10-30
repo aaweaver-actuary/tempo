@@ -1,0 +1,56 @@
+{
+  "model": "FirstDepartureSelection",
+  "payload": {
+    "policy_version": "first_departure_v1",
+    "workspace_id": "fixture",
+    "source": {
+      "provider": "lichess",
+      "game_id": "synthetic-unintroduced-missed",
+      "source_revision": 1,
+      "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "learner_color": "white",
+    "selected_scope": [
+      {
+        "repertoire_id": "white",
+        "learner_color": "white",
+        "snapshot_id": "snapshot-white",
+        "source_revision": "source-white-1",
+        "revision": 1,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "complete": true,
+        "available": true
+      },
+      {
+        "repertoire_id": "unavailable-selected",
+        "learner_color": null,
+        "snapshot_id": null,
+        "source_revision": null,
+        "revision": null,
+        "digest": null,
+        "complete": false,
+        "available": false
+      }
+    ],
+    "status": "unresolved",
+    "ply": 1,
+    "actor": "learner",
+    "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+    "played_uci": "d2d4",
+    "expected_uci": [
+      "e2e4"
+    ],
+    "decision": null,
+    "surviving_routes": [
+      {
+        "repertoire_id": "white",
+        "route_id": "route-a",
+        "route_ply": 0,
+        "policy_id": "policy-white",
+        "source_revision": "source-white-1",
+        "at_deliberate_end": false
+      }
+    ],
+    "diagnostic": "selected_scope_unavailable"
+  }
+}
