@@ -7,7 +7,7 @@ from tempo_learning_remediation import RemediationError
 from tempo_legacy_database.connections import background_read_connection, connection
 from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
 from tempo_legacy_database.adapters.study.game_feedback import (
-    PostgresGameFeedbackStore, installed, next_feedback_preparation,
+    PostgresGameFeedbackStore, feedback_preparation_admitted, installed, next_feedback_preparation,
 )
 from tempo_legacy_database.adapters.study.game_feedback_authority import (
     CurrentDecisionUnavailable, current_owner_encounter_feedback,
@@ -82,9 +82,10 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
         return PreparedFeedbackEffect(observed, reason='first_departure_qualification_unavailable')
 
 
-def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admitted):
+def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admitted, task_id=None):
     """One bounded writer. Caller supplies actual operation/task admission."""
-    if type(operation_admitted) is not bool or not operation_admitted:
+    if (type(operation_admitted) is not bool or not operation_admitted
+            or not feedback_preparation_admitted(database,lock=True,task_id=task_id)):
         raise CurrentDecisionUnavailable('feedback_operation_not_admitted')
     observed = prepared.observed
     if prepared.reason:
@@ -171,7 +172,8 @@ def execute_feedback_sweep(task, *, read=background_read_connection, write=None,
         if observed is None:
             complete_task_slice_in_transaction(database, task)
             return True
-        receipt = apply_prepared_feedback_effect(database,prepared,clock=clock,operation_admitted=slice_admitted)
+        receipt = apply_prepared_feedback_effect(database,prepared,clock=clock,
+            operation_admitted=slice_admitted,task_id=task['id'])
         due_refresh_needed = receipt is not None and receipt.reason == 'due_queue_refresh_pending'
         advance_task_slice_in_transaction(database, task, next_phase="scan",
             next_payload={"after": effect_id(observed.key), "hold_reason": prepared.reason})

@@ -411,9 +411,35 @@ def record_feedback_issuance(database, entry_id, card_id, revision):
             store.save(replace(effect, progress=progress), instant(issued.issued_at))
 
 
+def feedback_preparation_admitted(database, *, lock=False, task_id=None):
+    """Read the existing durable sweep's actual manual pause control.
+
+    A writer locks the same task row that the control owner locks before pause,
+    so a pause racing preparation cannot be ignored. There is no new global
+    Study-pause setting and ordinary allowance is not consulted here.
+    """
+    if not installed(database):
+        return False
+    if task_id is None:
+        task = database.execute("SELECT id FROM background_tasks WHERE kind=? AND deduplication_key=?",
+                                ('study_game_feedback','current')).fetchone()
+        if task is None:
+            return True
+        task_id = task[0]
+    if lock:
+        task = database.execute_native("SELECT id FROM background_tasks WHERE id=%s FOR SHARE SKIP LOCKED",
+                                       (task_id,)).fetchone()
+        if task is None:
+            return False
+    from tempo_legacy_database.adapters.controls.claim_sql import claimable
+    row = database.execute('SELECT ' + claimable('durable','task.id') +
+        ' FROM background_tasks task WHERE task.id=?', (task_id,)).fetchone()
+    return bool(row and row[0])
+
+
 def next_feedback_preparation(database, day):
     """One qualified local obligation that needs preparation or queue recovery."""
-    if not installed(database):
+    if not installed(database) or not feedback_preparation_admitted(database):
         return None
     row = database.execute_native("""SELECT effect.* FROM study_game_feedback effect
         JOIN cards card ON card.id=COALESCE(
