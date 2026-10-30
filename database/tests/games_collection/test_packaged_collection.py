@@ -317,6 +317,12 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     def docker(*arguments, check=True, input=None):
         result = subprocess.run(['docker',*arguments],input=input,capture_output=True,text=True,timeout=45)
         if check:
+            if result.returncode:
+                diagnostic = result.stderr
+                for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+                    diagnostic = diagnostic.replace(private,'<redacted>')
+                report.setdefault('first_command_failure',dict(stage=stage,returncode=result.returncode,
+                    stderr=diagnostic.encode('utf8')[-4096:].decode('utf8',errors='replace')))
             assert result.returncode == 0, 'packaged_feedback_docker_'+stage
         return result
 
