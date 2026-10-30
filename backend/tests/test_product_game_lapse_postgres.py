@@ -46,7 +46,11 @@ def docker(*args, check=True):
 
 
 @pytest.fixture(scope="module")
-def owned_postgres(tmp_path_factory):
+def owned_postgres(tmp_path_factory, *, additional_ports=()):
+    # The packaged browser journey reuses this exact owned network namespace;
+    # only its existing web service may request an extra loopback-only port.
+    assert additional_ports in ((),(80,))
+    published = [value for port in additional_ports for value in ('--publish',f'127.0.0.1::{port}')]
     identity = "tempo-game-feedback-" + uuid.uuid4().hex
     container = identity + "-postgres"
     password = secrets.token_urlsafe(32)
@@ -63,7 +67,7 @@ def owned_postgres(tmp_path_factory):
         report["container_id"] = docker("run", "--detach", "--name", container,
             "--label", "tempo.owner=" + identity, "--label", "tempo.disposable=true",
             "--memory", "384m", "--memory-swap", "384m", "--pids-limit", "128",
-            "--tmpfs", "/var/lib/postgresql:rw,size=512m", "--publish", "127.0.0.1::5432",
+            "--tmpfs", "/var/lib/postgresql:rw,size=512m", "--publish", "127.0.0.1::5432", *published,
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
             "-c", "max_connections=16").stdout.strip()
         inventory = json.loads(docker("inspect", container).stdout)[0]
@@ -71,6 +75,7 @@ def owned_postgres(tmp_path_factory):
         report["tmpfs"] = inventory["HostConfig"]["Tmpfs"]
         report["memory_bytes"] = inventory["HostConfig"]["Memory"]
         report["pids_limit"] = inventory["HostConfig"]["PidsLimit"]
+        report["published_ports"] = inventory["NetworkSettings"]["Ports"]
         assert inventory["HostConfig"]["Tmpfs"] == {"/var/lib/postgresql": "rw,size=512m"}
         assert report["memory_bytes"] == 384 * 1024 * 1024 and report["pids_limit"] == 128
         binding = inventory["NetworkSettings"]["Ports"]["5432/tcp"][0]
