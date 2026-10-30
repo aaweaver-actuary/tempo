@@ -6,6 +6,15 @@ from tempo_legacy_database.adapters import frozen_order, postgres_store
 from . import availability
 
 
+def _interactive_read_profile(database):
+    if isinstance(database, postgres_store.PostgresConnection):
+        # Expanded freshness/protection predicates can cross PostgreSQL's JIT
+        # thresholds even for a short queue window. Compilation belongs to no
+        # card's work and can dominate this interactive read. Keep all SQL and
+        # its authority checks, disabling compilation only in this transaction.
+        database.execute_native("SELECT set_config('jit', 'off', true)")
+
+
 def issued_head(database, entry_id, card_id, revision):
     return database.execute(
         "SELECT issued_as_head FROM queue_attempt_origins "
@@ -41,6 +50,7 @@ def queue_diagnostics(database, day: str):
 
 
 def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
+    _interactive_read_profile(database)
     queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
                                   (SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=c.id AND invalidated_at IS NULL) latest_review_id,
                                   q.gameplay_priority_reason,q.admission_kind,
@@ -163,6 +173,7 @@ def encounter_rows(database, fen_key_batch, badge_cutoff):
 
 
 def available_count(database, day: str, *, miss_reason: str):
+    _interactive_read_profile(database)
     return database.execute(
         "SELECT COUNT(*) FROM (" + availability.available_attempt_sql(miss_reason) + ") eligible_queue",
         (day,),
