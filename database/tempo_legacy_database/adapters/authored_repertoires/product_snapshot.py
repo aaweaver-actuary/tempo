@@ -73,18 +73,35 @@ WITH limits AS (
            coalesce(sum(bytes*6+512),0)+1024 coarse_estimated_bytes,
            coalesce(max(bytes),0) largest_row
     FROM sizes
+), reuse AS MATERIALIZED (
+    -- A statement-local serialized scratch set is bounded by the existing
+    -- conservative estimate to two final representations. Larger shapes keep
+    -- streaming the size pass, rather than allocating an unbounded row cache.
+    SELECT b.line_count<=l.source_limit AND b.card_count<=l.source_limit
+        AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
+        AND b.largest_row<=l.row_byte_limit AND b.coarse_estimated_bytes<=2*l.byte_limit allowed
+    FROM budget b CROSS JOIN limits l
+), json_rows AS MATERIALIZED (
+    SELECT 'repertoire' kind,to_jsonb(r) body FROM repertoire r CROSS JOIN reuse WHERE reuse.allowed
+    UNION ALL SELECT 'lines',to_jsonb(s) FROM lines s CROSS JOIN reuse WHERE reuse.allowed
+    UNION ALL SELECT 'cards',to_jsonb(c) FROM cards c CROSS JOIN reuse WHERE reuse.allowed
+    UNION ALL SELECT 'memberships',to_jsonb(m) FROM memberships m CROSS JOIN reuse WHERE reuse.allowed
+    UNION ALL SELECT 'graphs',to_jsonb(g) FROM graphs g CROSS JOIN reuse WHERE reuse.allowed
 ), serialized_budget AS (
-    SELECT b.*,CASE WHEN b.line_count<=l.source_limit AND b.card_count<=l.source_limit
+    SELECT b.*,reuse.allowed reuse_rows,CASE WHEN b.line_count<=l.source_limit AND b.card_count<=l.source_limit
         AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
         AND b.largest_row<=l.row_byte_limit THEN
+          CASE WHEN reuse.allowed THEN 1024+coalesce((SELECT sum(octet_length(body::text)
+              +CASE WHEN kind='repertoire' THEN 0 ELSE 2 END) FROM json_rows),0) ELSE
           1024
           +coalesce((SELECT sum(octet_length(to_jsonb(r)::text)) FROM repertoire r),0)
           +coalesce((SELECT sum(octet_length(to_jsonb(s)::text)+2) FROM lines s),0)
           +coalesce((SELECT sum(octet_length(to_jsonb(c)::text)+2) FROM cards c),0)
           +coalesce((SELECT sum(octet_length(to_jsonb(m)::text)+2) FROM memberships m),0)
           +coalesce((SELECT sum(octet_length(to_jsonb(g)::text)+2) FROM graphs g),0)
+          END
         ELSE b.coarse_estimated_bytes END estimated_bytes
-    FROM budget b CROSS JOIN limits l
+    FROM budget b CROSS JOIN limits l CROSS JOIN reuse
 ), allowed AS (
     SELECT b.*,b.line_count<=l.source_limit AND b.card_count<=l.source_limit
         AND b.membership_count<=l.source_limit AND b.graph_count<=l.graph_limit
@@ -97,13 +114,19 @@ SELECT jsonb_build_object(
     'graph_count',graph_count,'largest_row',largest_row,
     'facts',NULL
 ) snapshot,
-CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
+CASE WHEN bounded AND repertoire_count=1 THEN (CASE WHEN reuse_rows THEN jsonb_build_object(
+        'repertoire',(SELECT body FROM json_rows WHERE kind='repertoire'),
+        'lines',coalesce((SELECT jsonb_agg(body ORDER BY body->>'id') FROM json_rows WHERE kind='lines'),'[]'::jsonb),
+        'cards',coalesce((SELECT jsonb_agg(body ORDER BY body->>'id') FROM json_rows WHERE kind='cards'),'[]'::jsonb),
+        'memberships',coalesce((SELECT jsonb_agg(body ORDER BY body->>'card_id') FROM json_rows WHERE kind='memberships'),'[]'::jsonb),
+        'graphs',coalesce((SELECT jsonb_agg(body ORDER BY body->>'line_id',(body->>'decision_index')::bigint) FROM json_rows WHERE kind='graphs'),'[]'::jsonb)
+    ) ELSE jsonb_build_object(
         'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
         'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
         'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM cards c),'[]'::jsonb),
         'memberships',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY card_id) FROM memberships m),'[]'::jsonb),
         'graphs',coalesce((SELECT jsonb_agg(to_jsonb(g) ORDER BY line_id,decision_index) FROM graphs g),'[]'::jsonb)
-    )::text ELSE NULL END facts_json
+    ) END)::text ELSE NULL END facts_json
 FROM allowed
 """
 

@@ -189,6 +189,11 @@ when conflicted. No schema or stored relationship changes are introduced.
   envelope. The reader checks that text's exact UTF-8 length before decoding,
   avoiding a second full Python serialization inside the borrowed transaction.
   Existing scripted envelopes remain readable and callers receive the same dict.
+  Count/row-bounded shapes whose original conservative upper estimate fits two
+  final 32 MiB representations reuse their JSON rows only within that SELECT;
+  this avoids converting every row twice for budget and aggregation. Larger
+  shapes use the nonmaterialized size pass. No retained cache or byte/row limit
+  is raised, and the final capture still must fit one 32 MiB representation.
   Pure repertoire projection also caps
   aggregate authored moves at 100,000. A proved budget refusal raises public
   `app.repertoire.RepertoireSnapshotBoundExceeded(ValueError)` with the unchanged
