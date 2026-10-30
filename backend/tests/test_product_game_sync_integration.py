@@ -763,3 +763,34 @@ def test_preview_agrees_with_continuous_after_interleaved_manual_request(monkeyp
     assert preview["next_window"] == store.enqueued[-1].window.model_dump(mode="json")
     assert preview["previous"]["spec"]["job_id"].startswith("following:")
     assert store.jobs[manual.job_id].status == "quarantined"
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, fails):
+    from contextlib import contextmanager
+    import app.product_composition.game_sync_current as composition
+    from app.repertoire import project_published_repertoire
+    from test_product_snapshot import repertoire_facts, EnvelopeReader, snapshot_envelope
+    events = []
+    facts = repertoire_facts()
+    if fails: facts["repertoire"]["graph_state"] = "failed"
+    @contextmanager
+    def connections():
+        events.append("enter")
+        try:
+            yield EnvelopeReader(snapshot_envelope(bounded=True, facts=facts))
+        finally:
+            events.append("exit")
+    def observed_projection(value):
+        assert events == ["enter", "exit"]
+        events.append("projection")
+        return project_published_repertoire(value)
+    monkeypatch.setattr(composition, "project_published_repertoire", observed_projection)
+    worker = composition.CurrentRepertoireSnapshots(connections)
+    if fails:
+        with pytest.raises(ValueError, match="repertoire_publication_unavailable"):
+            worker.snapshot("rep")
+    else:
+        result = worker.snapshot("rep")
+        assert result.membership.complete and result.membership.revision == 3
+    assert events == ["enter", "exit", "projection"]

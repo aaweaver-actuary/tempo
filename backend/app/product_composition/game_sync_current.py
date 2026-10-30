@@ -3,9 +3,10 @@
 Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
+from app.repertoire import project_published_repertoire
 from app.games.feedback.review import ReviewUnavailable
 from app.contracts.product_v02.learning import EncounterFeedbackPort
-from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_published_snapshot
+from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
 from tempo_legacy_database.adapters.games.product_review import (
     DedicatedGamesConnections, PostgresReviewStore,
 )
@@ -59,7 +60,8 @@ class CurrentRepertoireSnapshots:
 
     def snapshot(self, repertoire_id):
         with self.connections() as database:
-            return current_published_snapshot(database, repertoire_id)
+            facts = read_repertoire(database, repertoire_id)
+        return project_published_repertoire(facts)
 
 
 def create_current_game_sync(*, workspace, connections, clock=None,
