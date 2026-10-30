@@ -27,7 +27,8 @@ flowchart LR
 Historical jobs use `purpose=history`, exact-job claims and manual provenance.
 They cannot become automatic network jobs or Refresh-now checkpoints. Import
 defers repertoire reads and own-miss command generation; existing correction
-quarantine/control behavior remains. Replay reads the exact original provider
+quarantine/control behavior remains. Unchanged previously compared sources retain
+their existing findings and first departure during collection. Replay reads the exact original provider
 page subtype and cursor, preserving metadata and canonical source identity.
 It commits comparisons through the existing Games page transaction, then delivers
 only outbox entries attached to the imported source set after the full traversal.

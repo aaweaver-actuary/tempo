@@ -370,7 +370,7 @@ def main(compare=False, argv=None):
                         intake=intake, clock=clock, spec=manifest.job(configuration))
                 runtime = create_game_sync(policies=(configuration_policy(configuration),), store=store,
                     snapshots=DeferredSnapshots(), learning=None, clock=clock, source_identity=store,
-                    encounter_feedback=True, delivery_enabled=False)
+                    encounter_feedback=True, delivery_enabled=False, preserve_existing_comparison=True)
                 owned.append(runtime)
                 return runtime.runner
 

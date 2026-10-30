@@ -27,6 +27,8 @@ establish A07 product acceptance. See the [owner interface and examples](../back
 scope, manifest integrity, paginated HTTP-to-saved-page import, exact-cursor
 resume, rate-limit retention, offline global first-departure replay, opponent-first
 suppression, unavailable-scope recheck and qualified acknowledgment replay.
+Overlapping collection preserves an unchanged game's existing comparison and
+delivery while still quarantining changed source evidence.
 Its native case uses the existing labelled disposable PostgreSQL fixture to
 prove canonical source publication, original-page readback, historical-job claim
 isolation, unchanged Refresh/forward settings and no Study writes during collection.

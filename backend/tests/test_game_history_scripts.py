@@ -66,7 +66,7 @@ def collect(store, configuration, manifest, review, *, records=None, maximum_uni
     def factory(configuration):
         runtime = create_game_sync(policies=(configuration_policy(configuration),), store=store,
             snapshots=DeferredSnapshots(), clock=FakeClock(), delivery_enabled=False,
-            source_identity=store, encounter_feedback=True,
+            source_identity=store, encounter_feedback=True, preserve_existing_comparison=True,
             transport_factory=lambda: transport or httpx.MockTransport(lambda request: httpx.Response(200,
                 content="\n".join(json.dumps(row) for row in records),
                 headers={"Content-Type": "application/x-ndjson"})))
@@ -207,6 +207,33 @@ def test_missing_scope_retains_games_and_can_be_rechecked():
     assert len(store.deliveries) == 1
 
 
+def test_historical_collection_preserves_existing_game_comparison_and_delivery():
+    store, configuration, manifest, review = setup_scope()
+    collect(store, configuration, manifest, review)
+    compare(store, configuration, manifest, review)
+    key, original = next(iter(store.sources.items()))
+    delivery, = store.deliveries.values()
+    assert original.first_departure.status == "own_actionable"
+    other = new_manifest("fixture", (configuration,), now=datetime(2026, 10, 30, tzinfo=timezone.utc))
+    collect(store, configuration, other, review)
+    current = store.sources[key]
+    assert current.model_dump(exclude={"version"}) == original.model_dump(exclude={"version"})
+    assert store.delivery(delivery.operation_id) == delivery
+
+
+def test_historical_collection_still_quarantines_changed_existing_game():
+    store, configuration, manifest, review = setup_scope()
+    collect(store, configuration, manifest, review)
+    compare(store, configuration, manifest, review)
+    key, original = next(iter(store.sources.items()))
+    other = new_manifest("fixture", (configuration,), now=datetime(2026, 10, 30, tzinfo=timezone.utc))
+    collect(store, configuration, other, review, records=rows(("e4",)))
+    assert store.sources[key].quarantined
+    assert store.sources[key].normalized == original.normalized
+    assert any(item.control is not None for item in store.deliveries.values())
+    assert not report(store, review, other)["complete"]
+
+
 @pytest.mark.parametrize("lose_ack", [False, True])
 def test_qualified_historical_acceptance_is_once_and_pending_is_not_issuance(lose_ack):
     from test_product_delivery_qualification import QualifiedReceiver
@@ -290,6 +317,12 @@ def test_native_historical_import_saved_page_replay_and_checkpoint_isolation(own
     result = report(restored, review, manifest, compare=True)
     assert result["selections"] == {"own_actionable": 1, "opponent_gap": 1}
     assert result["delivery_states"] == {"pending": 1}
+    from app.games.feedback.interfaces import stable_id
+    source_key = stable_id("fixture", "lichess", "game-0")
+    original = restored.source(source_key)
+    repeated = new_manifest("fixture", (configuration,), now=datetime(2026, 10, 30, tzinfo=timezone.utc))
+    collect(restored, configuration, repeated, review, records=rows(("d4", "e4 c5 2. d4")))
+    assert restored.source(source_key).model_dump(exclude={"version"}) == original.model_dump(exclude={"version"})
     with connections() as database:
         assert tuple(database.execute("SELECT (SELECT count(*) FROM reviews), (SELECT count(*) FROM study_game_feedback)").fetchone()) == before
         assert database.execute("SELECT count(*) FROM product_feedback_sync_requests").fetchone()[0] == 0
