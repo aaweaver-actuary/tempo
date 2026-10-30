@@ -59,8 +59,19 @@ try:
         sys.argv = ['worker', '--collect-only', '--follow', '--overlap-seconds', '0',
             '--reconcile-interval-seconds', '600', '--once', '--max-units', '50']
         current.main()
+    elif sys.argv[1] == 'preview':
+        from app.product_composition import game_sync_current as current
+        sys.argv = ['preview', '--preview', '--follow', '--overlap-seconds', '0']
+        current.main()
     else:
         from app.product_composition.game_collection_status import main
-        raise SystemExit(main(['--workspace', 'legacy', '--limit', '20', '--private']))
+        arguments = ['--workspace', 'legacy', '--limit', '20']
+        if sys.argv[1] == 'identity-writer':
+            os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+        if sys.argv[1] in ('identity', 'identity-writer'):
+            arguments.append('--identity-only')
+        elif sys.argv[1] == 'status':
+            arguments.append('--private')
+        raise SystemExit(main(arguments))
 finally:
     server.shutdown(); server.server_close()
