@@ -104,31 +104,22 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
     black_miss = '[White "Opponent"]\n[Black "Learner"]\n[Result "1-0"]\n\n1. e4 c5 1-0\n'
     opponent_gap = black_miss.replace('e4 c5', 'd4 d5')
     black_repertoire = 'black-source'
-    bounded_repertoire = 'synthetic-estimated-byte-bound'
+    bounded_repertoire = 'synthetic-row-byte-bound'
     def publish_black():
         with connections() as db:
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Black source','fixture','2026-09-01')", (black_repertoire,))
             db.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('black-route',%s,'Black route','black',%s,%s,'2026-09-01')", (black_repertoire, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', json.dumps(['e2e4','e7e5','g1f3','b8c6'])))
             db.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready','2026-09-01')", (black_repertoire,))
     publish_black()
-    # A real owning SQL estimate refusal, matching the PM-reported dimension.
-    # Each row is below 64 KiB and counts are below their sentinels. Padding is
-    # synthetic authored metadata, never a seeded finding or injected exception.
-    with connections() as db:
-        db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Bound fixture','fixture','2026-09-01')", (bounded_repertoire,))
-        db.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready','2026-09-01')", (bounded_repertoire,))
-        with db.cursor() as cursor:
-            cursor.executemany("""INSERT INTO repertoire_lines
-                (id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-                VALUES(%s,%s,%s,'white',%s,'["e2e4"]','2026-09-01')""",
-                [(f'bound-route-{index:04d}', bounded_repertoire, 'Synthetic padding ' + 'x' * 6000,
-                  captured['game']['start_fen']) for index in range(1000)])
+    # The initial selected scope is complete. Only after it produces genuine
+    # pending commands do we add a third scope with a real owner row-byte
+    # refusal. #631 intentionally removed aggregate snapshot byte caps.
     review = PostgresReviewStore(connections)
     configs = []
     for provider in ('lichess','chesscom'):
         config = SyncConfiguration(workspace_id='legacy',provider=provider,account='Learner',
             window=dict(start_at='2026-09-30T12:00:00Z',end_at='2026-10-01T12:00:00Z',precision='second'),
-            repertoire_ids=(repertoire,black_repertoire,bounded_repertoire),speeds=('rapid',),rated=True,interval_seconds=60,revision=1)
+            repertoire_ids=(repertoire,black_repertoire),speeds=('rapid',),rated=True,interval_seconds=60,revision=1)
         review.configure(config, 0); configs.append(config)
     inputs = dict(now=now, lichess=[], chesscom={'09':[], '10':[]})
     for index in range(410):
@@ -174,7 +165,7 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
             absent = subprocess.run(['docker','inspect',name],capture_output=True,text=True)
             assert absent.returncode != 0 and 'no such' in absent.stderr.lower()
 
-    def evaluate(report, identity, preview, allowances, *, expected_schema=54):
+    def evaluate(report, identity, preview, allowances, *, expected_schema=56):
         # Actual operator policy consumes authentic packaged reader output.
         # Only frozen-release/process metadata is synthetic here; installed
         # Docker/Compose orchestration remains a separate acceptance boundary.
@@ -212,7 +203,8 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         return value
 
     try:
-        # Both healthy repertoires compare; the real selected bound stays unresolved.
+        # Complete selected scope creates commands through real comparison.
+        # Collection-only leaves those genuine commands pending.
         run('worker')
         store = PostgresCanonicalGamesStore(connections)
         # A pre-existing uncertain attempt must be preserved byte-for-byte.
@@ -221,14 +213,39 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         store.save_delivery(pending.model_copy(update=dict(attempts=3, next_attempt_at=now+99999,
             error='synthetic_uncertain_acknowledgment')))
         with connections() as db:
+            initial_sources = [row[0] for row in db.execute('SELECT payload FROM product_feedback_sources')]
+            assert len(initial_sources)==820 and all(source['diagnostic'] is None for source in initial_sources)
+            assert any(source['first_departure']['status']=='own_actionable'
+                and all(scope['complete'] and scope['available'] for scope in source['first_departure']['selected_scope'])
+                for source in initial_sources if source.get('first_departure'))
+            original_deliveries = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')]
+            assert original_deliveries and all(row['state']=='pending' for row in original_deliveries)
+            initial_jobs = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_jobs t ORDER BY job_id')]
+            assert all(row['status']=='complete' for row in initial_jobs)
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Bound fixture','fixture','2026-09-01')", (bounded_repertoire,))
+            db.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready','2026-09-01')", (bounded_repertoire,))
+            db.execute("""INSERT INTO repertoire_lines
+                (id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+                VALUES('bound-route-0000',%s,%s,'white',%s,'["e2e4"]','2026-09-01')""",
+                (bounded_repertoire,'Synthetic oversized row '+'x'*65537,captured['game']['start_fen']))
+        configs = [config.model_copy(update=dict(revision=2,
+            repertoire_ids=(repertoire,black_repertoire,bounded_repertoire))) for config in configs]
+        for config in configs:
+            review.configure(config,1)
+        inputs['now'] += 61
+        run('worker')
+        with connections() as db:
             sources = [r[0] for r in db.execute('SELECT payload FROM product_feedback_sources')]
             assert len(sources) == 820 and any(s['diagnostic'] for s in sources)
             assert {'chesscom' if s['normalized']['source_id']=='chess.com' else
                     s['normalized']['source_id'] for s in sources} == {'lichess','chesscom'}
             assert {f['repertoire_id'] for s in sources for f in s['findings']} >= {repertoire,black_repertoire}
             assert any(bounded_repertoire in s['diagnostic'] for s in sources if s['diagnostic'])
-            original_deliveries = [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')]
-            assert original_deliveries and all(row['state']=='pending' for row in original_deliveries)
+            # Incomplete selected scope may retain diagnostics and original
+            # obligations, but cannot manufacture any new command or retry.
+            assert [row[0] for row in db.execute('SELECT to_jsonb(t) FROM product_feedback_deliveries t ORDER BY operation_id')] == original_deliveries
+            for prior in initial_jobs:
+                assert db.execute('SELECT to_jsonb(t) FROM product_feedback_jobs t WHERE job_id=%s',(prior['job_id'],)).fetchone()[0]==prior
         assert study_rows() == before
         private_partial = run('status')
         public_partial = run('status-public')
@@ -237,15 +254,15 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         tokens = set()
         for private, public in zip(private_partial['providers']['items'],public_partial['providers']['items']):
             assert private['provider'] == public['provider']
-            assert private['configuration']['revision'] == public['configuration']['revision'] == 1
+            assert private['configuration']['revision'] == public['configuration']['revision'] == 2
             assert private['selected_repertoire_count'] == public['selected_repertoire_count'] == 3
             assert private['configuration']['repertoire_ids'] == [repertoire,black_repertoire,bounded_repertoire]
             index = next(i for i,row in enumerate(private['repertoire_readiness']) if row['repertoire_id']==bounded_repertoire)
             row = public['repertoire_readiness'][index]
             assert row['availability']=='unavailable' and row['diagnostic']=='repertoire_snapshot_exceeds_bound'
             assert row['bound']['stage']=='read' and row['bound']['sample_complete'] is True
-            assert [v['dimension'] for v in row['bound']['violations']] == ['estimated_snapshot_bytes']
-            assert row['bound']['violations'][0]['observation']=='conservative_estimate'
+            assert [v['dimension'] for v in row['bound']['violations']] == ['row_bytes']
+            assert row['bound']['violations'][0]['observation']=='exact'
             tokens.add(row['repertoire_id'])
         assert len(tokens)==1
         token = tokens.pop()
@@ -269,12 +286,11 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         wrong_role = run('identity-writer')
         assert wrong_role['identity']['reader_role']=='tempo_writer'
         assert 'reader_permission_unverified' in evaluate(public_partial,wrong_role,preview,[token])['launch_blockers']
-        assert 'collection_schema_mismatch' in evaluate(public_partial,identity,preview,[token],expected_schema=55)['launch_blockers']
+        assert 'collection_schema_mismatch' in evaluate(public_partial,identity,preview,[token],expected_schema=57)['launch_blockers']
         assert all(r['elapsed_seconds'] <= 25 for r in receipts if r['mode'] in ('status','status-public'))
         # Repair only generated fixture metadata. All production limits and the
         # real reader/projection stay unchanged, with no successful facts seeded.
         with connections() as db:
-            db.execute("DELETE FROM repertoire_lines WHERE repertoire_id=%s AND id<>'bound-route-0000'", (bounded_repertoire,))
             db.execute("UPDATE repertoire_lines SET name='Repaired synthetic route' WHERE repertoire_id=%s", (bounded_repertoire,))
         # Older games become visible after forward coverage passed their time.
         late = dict(inputs['lichess'][0], id='latevisible')
@@ -337,7 +353,7 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         (evidence/'packaged.json').write_text(json.dumps(dict(candidate=revision,image=image,schema=schema,
             fixture_container=pg['Id'],jobs=jobs,counts=counts,receipts=receipts,
             operator_evaluations=operator_receipts,
-            bound_fixture='complete-sample conservative estimated_snapshot_bytes; matches PM-reported dimension, not a fresh private measurement',
+            bound_fixture='complete source sample; one synthetic authored row exceeds the retained 64 KiB row safety guard; aggregate snapshot bytes remain unrestricted',
             production_source_overlay=False,seeded_successful_findings=False),indent=2))
 
 
