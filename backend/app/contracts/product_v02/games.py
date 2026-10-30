@@ -224,6 +224,11 @@ class FirstDepartureSelection(Value):
             raise ValueError("opponent gap cannot authorize a learner effect")
         if self.status in {"own_actionable", "own_unmapped", "opponent_gap"} and self.played_uci in self.expected_uci:
             raise ValueError("a departure cannot be a supported expected alternative")
+        if self.status == "coverage_end" and (self.expected_uci or not self.surviving_routes
+                or not all(item.at_deliberate_end for item in self.surviving_routes)):
+            raise ValueError("coverage end requires all surviving authored routes deliberately ended and no expected move")
+        if self.status == "missing_own_continuation" and self.expected_uci:
+            raise ValueError("missing own continuation cannot invent an expected response")
         routes = {(item.repertoire_id, item.route_id, item.route_ply, item.policy_id) for item in self.surviving_routes}
         if len(routes) != len(self.surviving_routes):
             raise ValueError("surviving route occurrences must be distinct")
