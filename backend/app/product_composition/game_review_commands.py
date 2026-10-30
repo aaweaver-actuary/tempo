@@ -107,7 +107,8 @@ def retry(database, prepared):
         fence_feedback_handoff(database,work.delivery.command.key.workspace_id,runtime_id=prepared.current_runtime_id)
         work.provider_feedback.qualification_fence(database,work.delivery.command,work.delivery.qualification)
         review = command_review(database,workspace=work.delivery.command.key.workspace_id)
-        delivery = review.store.request_retry(review.workspace,prepared.source,request.finding,request.operation_id)
+        delivery = review.store.request_retry(review.workspace,prepared.source,request.finding,request.operation_id,
+            delivery_id=work.original_delivery.operation_id)
         if delivery.state != "acknowledged":
             result = apply_prepared_determined_feedback(database,work,clock=clock,
                 current_runtime_id=prepared.current_runtime_id)

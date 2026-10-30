@@ -687,7 +687,15 @@ def test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receip
     monkeypatch.setattr(gateway,"_handlers",{})
     monkeypatch.setattr(gateway,"_preparers",{})
     monkeypatch.setattr(gateway,"_writer_connection",lambda background:case.case.transaction())
-    gateway.register_command("product_games.retry_feedback",commands.retry,prepare=prepare)
+    def bounded_retry(database,prepared):
+        actual_execute = database.raw.execute
+        def bounded_execute(statement,*args,**kwargs):
+            sql = str(statement)
+            assert not ("product_feedback_deliveries" in sql and "WHERE source_key=" in sql), "retry writer rescanned retained source deliveries"
+            return actual_execute(statement,*args,**kwargs)
+        monkeypatch.setattr(database.raw,"execute",bounded_execute)
+        return commands.retry(database,prepared)
+    gateway.register_command("product_games.retry_feedback",bounded_retry,prepare=prepare)
     first = gateway.execute_command(operation,"product_games.retry_feedback",payload)
     assert first is not None and first["interface_version"] == "0.2.2"
     assert first == gateway.execute_command(operation,"product_games.retry_feedback",payload)

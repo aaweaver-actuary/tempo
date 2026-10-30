@@ -5983,7 +5983,9 @@ the retained-qualification fixture; their old bytes are never rewritten.
   source, position and played-response correspondence remain required.
 - `test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receipt`
   and its pure nonselected-original rejection guard the existing public retry
-  endpoint. The fallback receiver rejects an unavailable qualified capability.
+  endpoint. Its writer trace also rejects a source-wide retained-delivery scan;
+  retry bookkeeping binds the exact primary key selected during pure preparation.
+  The fallback receiver rejects an unavailable qualified capability.
 - `test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset`
   reuses the actual legacy owner settlement and proves same-key acknowledgment
   without fabricated progress or another scheduling review.
