@@ -621,7 +621,7 @@ test("shared subsystem sources select complete consumer families without unrelat
     ["app/lib/opening-evidence-review.ts", ["defense", "training"]],
     ["app/domain/study-exercises.ts", ["studies", "training"]],
     ["backend/app/services/study_grading.py", ["studies", "training"]],
-    ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
+    ["backend/app/chess/opening_segments.py", ["repertoire", "training"]],
   ];
   for (const [sourcePath, expectedFamilies] of examples) {
     const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });

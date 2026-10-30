@@ -1175,7 +1175,7 @@ Append every new reported issue and its test names here. Current entries identif
 | Nested workspaces clip desktop content | `desktop workspace panels do not clip controls or content` |
 | Board toolbar placement varies between modes | `board controls retain consistent placement across workspaces` |
 | Application navigation recreates the board | `application navigation retains one Chessground instance` |
-| Service failures masquerade as empty data | `failed initial loads never display empty records or zero statistics` |
+| Unavailable authoritative Settings enable saving fallback defaults | `failed settings reads cannot overwrite authoritative settings with defaults` |
 | Split resizing loses preference or changes other workspaces | `shared split supports keyboard reset and persistence without changing workspace preference` |
 | Responsive navigation and task tabs break across browser engines | `critical navigation, board input, split and dialogs work across browser engines` |
 | Inaccessible controls and page overflow | `workspace accessibility and reflow` (phone and desktop) |
@@ -1646,6 +1646,8 @@ PR #50 durable preference compatibility: `test_preference_dispatch_preserves_leg
 PR #50 current-main migration reconciliation: `test_segmentation_migration_has_unique_number_and_matches_schema_readiness` rejects duplicate migration numbers, readiness drift and a segmentation filename/recorded-version mismatch. Main added migrations 21–23 while this unpublished preview migration still used 21; integration run 36897266117 failed readiness (`24 != 23`). The new regression reproduced the duplicate number locally. Segmentation now uses migration 24; existing startup-readiness and disposable upgrade/restore checks remain required.
 
 ## CI reliability maintenance
+
+- `non-persistence backend ownership accepts only services and the two moved providers` — `tests/runner/ci-reliability.test.mjs`: narrowly mapped non-persistence backend sources are restricted to legitimate service owners and the two explicitly moved providers.
 
 CI reliability maintenance: `tests/runner/ci-reliability.test.mjs` (invoked by `tests/unit/ci-reliability-regressions.test.ts`) covers `core and required integration failures block quality`, `missing cancelled and unexpectedly skipped required work cannot pass quality`, `absent required command and selected test results cannot pass quality`, `explicit inapplicability is accepted and reported but unexpected skips fail`, `quarantined harness failures remain visible with required replacement coverage`, `rename deletion unknown paths and missing history select conservative coverage`, `new unclassified specs fail planning and every test has nightly and release coverage`, `leaf source selection includes complete families and rendering selects pinned checks`, `split complete coverage preserves every PostgreSQL product scenario`, `deployment requires complete verification and scheduled or verification-only runs cannot deploy`, `failed-layer rerun leaves successful unrelated jobs intact and diagnostic retry cannot green the gate`, `actual browser collection grep selects exactly the planned tests`, and `diagnostic artifact failure still cleans owned resources and preserves both failures`. `split complete verification matches the existing full command inventory` in `tests/unit/test-plan-regressions.test.ts` protects the decomposition boundary. The unresolved initial phone/Study visibility signature remains required coverage; no active quarantine or automatic retry is installed.
 
@@ -3101,7 +3103,7 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `every current browser spec belongs to exactly one complete family`
 - `reviewed source mappings reject missing families and duplicate or ambiguous paths`
 - `demoted critical cases remain required by their complete browser families`
-- `ordinary prose and standalone core tests select only six global browser smoke cases`
+- `ordinary prose and standalone core tests select only five global browser smoke cases` — `tests/runner/ci-reliability.test.mjs`: ordinary prose and standalone core-test edits retain five global critical browser cases without selecting optional families.
 - `mapped leaf changes retain critical plus their family with regression additions`
 - `shared subsystem sources select complete consumer families without unrelated families`
 - `cross-cutting browser infrastructure and uncertain inputs require the complete matrix`

@@ -6947,14 +6947,17 @@
     "services/learning/runtime/tests/test_publications.py",
     "tests/browser/visual-baselines/training-feedback-phone.png",
     "tools/analysis-restoration/a_bridge/REGRESSIONS.md",
-    "tools/analysis-restoration/a_bridge/tests/test_schema_bindings.py"
+    "tools/analysis-restoration/a_bridge/tests/test_schema_bindings.py",
+    "docs/testing.md",
+    "tests/browser/held-drag.spec.ts",
+    "tests/browser/held-drag-fixtures.ts"
   ],
   "deployment_status": "Uninstalled; explicit owner migrations with writers stopped required. Cold browser backup mirrors sanitize only on validated import/restore; serving queues and pending commands sanitize independently.",
   "qualification_limitations": [
     "https://github.com/aaweaver-actuary/tempo/issues/609",
-    "All four missing browser specs are registered once. The inventory owner executed 45 cases: 34 passed and 11 failed; remaining missing critical recovery coverage, regression registration and source mapping are tracked in issue #609 without weakening gates.",
-    "Hosted qualification is determined by the current ready-PR Verify Tempo run for PR #610; local validation alone does not establish merge readiness.",
-    "Held-drag diagnostic completed 0/60 combinations and timed out at 600000 ms waiting for the unavailable Discoveries button. GitHub Actions is disabled for this repository; qualification remains blocked (issue #609).",
+    "Final qualification repair replaces the obsolete critical identity with current fail-closed Settings coverage, registers both current CI regression names, and corrects the stale opening-segmentation example. CI reliability: 45 passed, zero failed/skipped; TypeScript check passed.",
+    "Retired Discoveries preview workload and held-drag scenario are removed. Supported pinned Linux arm64 performance verification passed all three tests, including 48 held-drag runs, eight summaries and six runs per workload/capture pair across three repetitions and both cache states. This versioned matrix is not performance-equivalent to the historical 60-run benchmark.",
+    "Hosted qualification requires the current ready-PR Verify Tempo run for PR #610. Repository Actions was observed disabled; local validation alone does not establish merge readiness.",
     "Cold browser backup mirrors sanitize on explicit validated import/restore, not during ordinary Study startup."
   ]
 }

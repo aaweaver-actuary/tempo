@@ -85,32 +85,3 @@ export async function heldDrag(page: Page, during?: (step: number) => Promise<vo
     if (release) await page.mouse.up();
   }
 }
-
-export async function installHeldDiscovery(page: Page) {
-  const discoveries = [{ id: "held-preview", repertoire_id: "visual-repertoire", kind: "missing_response", status: "active",
-    fen_key: heldDragStartFen.split(" ").slice(0, 4).join(" "), fen: heldDragStartFen,
-    decision_fen: heldDragStartFen, decision_start_fen: heldDragStartFen, decision_route_uci: [],
-    accepted_moves_uci: [], card_id: null, opponent_move_uci: null, trained_color: "white", score: 1,
-    evidence: { supporting_games: 4 }, evidence_fingerprint: "held-v1", seen_at: "2026-09-18T00:00:00Z",
-    snoozed_until: null, admission_state: null, admitted_card_id: null, unread: false, source_games: [], routes: [],
-    created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" }];
-  let release: (() => void) | undefined;
-  let started = false;
-  let completed = false;
-  const responseHold = new Promise<void>(resolve => { release = resolve; });
-  await page.route("**/api/discoveries?**", route => route.fulfill({ json: {
-    discoveries, total: 1, next_offset: null, unread_count: 0,
-  } }));
-  await page.route("**/api/discoveries/*/recommendations", async route => {
-    started = true;
-    await responseHold;
-    await route.fulfill({ json: { state: "ready", opportunity_id: "held-preview", repertoire_id: "visual-repertoire",
-      evidence_fingerprint: "held-v1", starting_fen: heldDragStartFen, accepted_moves_uci: [],
-      candidates: [{ move_uci: "e2e4", score: { cp: 25, mate: null }, loss_cp: 0, similarity: "same",
-        repertoire_line_count: 1, exact_transposition: false, example_line_id: "held-line", example_line_name: "Held line",
-        preview_moves_uci: ["e2e4", "e7e5", "g1f3"], engine_version: "fixture", network_version: "fixture",
-        depth: 12, report_id: "held-report", source_game_id: "held-game", source_ply: 0 }] } });
-    completed = true;
-  });
-  return { release: () => release?.(), started: () => started, completed: () => completed };
-}
