@@ -17,6 +17,7 @@ REQUIRED = (
     "backend/tests/test_next_card_preparation_selection.py",
     "backend/tests/test_study_qualification_leaf.py",
     "backend/tests/test_study_recovery_acceptance.py",
+    "backend/tests/test_game_bound_repertoire_preparation.py",
     "backend/tests/test_study_feedback_preparation_trace.py",
     "backend/tests/test_queue_projection_postgres.py",
     "backend/tests/test_product_game_bound_snapshot_postgres.py",

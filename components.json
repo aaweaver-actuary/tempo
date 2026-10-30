@@ -1974,6 +1974,7 @@
         "packages/game-review-contracts",
         "backend/tests/fixtures/study_recovery_content.py",
         "backend/tests/test_product_game_bound_snapshot_postgres.py",
+        "backend/tests/test_game_bound_repertoire_preparation.py",
         "backend/tests/test_study_recovery_acceptance.py"
       ]
     },
@@ -2091,7 +2092,8 @@
         "database/tests/games_collection",
         "tests/browser/study-recovery.spec.ts",
         "backend/tests/fixtures/study_recovery_content.py",
-        "backend/tests/test_product_game_bound_snapshot_postgres.py"
+        "backend/tests/test_product_game_bound_snapshot_postgres.py",
+        "backend/tests/test_game_bound_repertoire_preparation.py"
       ]
     }
   ]

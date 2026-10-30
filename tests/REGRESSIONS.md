@@ -6342,11 +6342,12 @@ preserve all result and protection semantics and prove transaction-local JIT
 configuration restores at the next transaction. No acquisition deadline, source
 filter, priority rule or resource limit is relaxed.
 
-The explicit `study-recovery` PostgreSQL fixture profile is allowlisted and keeps
-the default native fixture unchanged; `backend/tests/test_study_recovery_acceptance.py`
-owns its allocation-contract guard. The recovery profile is not a pass on the
-default 384 MiB/tmpfs stress fixture; its disk-backed 1 GiB allocation and exact
-container/volume cleanup are separately recorded by the assembled run.
+The explicit diagnostic `study-recovery` PostgreSQL fixture uses disk-backed
+1 GiB; the separate `study-recovery-assembly` profile uses disk-backed 384 MiB
+and keeps the complete assembly within the existing 2 GiB managed budget.
+`backend/tests/test_study_recovery_acceptance.py` owns the allocation guards.
+The default native 384 MiB/tmpfs fixture remains unchanged. Actual memory,
+container/volume absence and measured assembly results remain separate receipts.
 
 The accepted-qualification import repair is covered by
 `backend/tests/test_study_qualification_leaf.py::test_retained_qualification_leaf_preserves_frozen_delivery_identities`
