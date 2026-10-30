@@ -21,7 +21,8 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@tempo/board-ui": ["./packages/board-ui/src/index.ts"]
+      "@tempo/board-ui": ["./packages/board-ui/src/index.ts"],
+      "@tempo/board-ui/styles.css": ["./packages/board-ui/styles/board.css"]
     }
   },
   "include": [

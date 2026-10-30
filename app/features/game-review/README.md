@@ -107,8 +107,8 @@ manager are installed.
 
 ## Reuse
 
-Reuse the public `@tempo/board-ui` renderer and its exported stylesheet (via its
-repository path until the integration owner registers the package), shared `Button`, and the pure
+Reuse the public `@tempo/board-ui` renderer and its exported `@tempo/board-ui/styles.css`
+stylesheet through the root's exact public aliases, shared `Button`, and the pure
 `positionsFromMoves` helper. Validate complete replay rather than silently showing
 a truncated history. The board uses full original FENs with move clocks and has
 no legal-move editing, drawing, hint or Study answer state. Arrow/Home/End handling

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Board } from "@tempo/board-ui";
 // The package's exported stylesheet; root package registration belongs to #491.
-import "../../../packages/board-ui/styles/board.css";
+import "@tempo/board-ui/styles.css";
 import { Button } from "../../components/buttons/BaseButton";
 import type { Finding, GameDetail, GameSummary, RecentGames } from "../product-api/contracts";
 import type { GameReviewClient } from "./api";

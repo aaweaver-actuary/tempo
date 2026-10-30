@@ -365,7 +365,7 @@ it("validates wire responses and sends explicit mutation identities through inje
 });
 
 it("keeps the new feature dependency boundary independent from Study/Tactics controllers and storage", () => {
-  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "../../../packages/board-ui/styles/board.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css", "./use-game-refresh", "../../lib/operation-status", "../../../database/browser/adapters/games-analysis/game-sync"]);
+  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "@tempo/board-ui/styles.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css", "./use-game-refresh", "../../lib/operation-status", "../../../database/browser/adapters/games-analysis/game-sync"]);
   for (const name of ["GameReviewView.tsx", "state.ts", "api.ts", "use-game-refresh.ts"]) {
     const source = readFileSync(resolve("app/features/game-review", name), "utf8");
     const imports = [...source.matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)].map(match => match[1]);

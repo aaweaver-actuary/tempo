@@ -492,3 +492,21 @@ test("Python normalized distribution dependencies select their real component pr
   for (const owner of ["learning", "learning-review-application", "scheduling", "chess-core", "content-publication-contracts", "game-evidence-contracts"])
     assert.ok(selected.some(component => component.id === owner), "Missing declared producer: " + owner);
 });
+
+test("root Board UI public stylesheet resolves in the real Vite assembly without admitting private subpaths", async () => {
+  const { createServer } = await import("vite");
+  const server = await createServer({ configFile: false, root: repository,
+    resolve: { tsconfigPaths: true }, server: { watch: null },
+    optimizeDeps: { noDiscovery: true, include: [] } });
+  try {
+    const metadata = JSON.parse(readFileSync(resolve(repository, "packages/board-ui/package.json")));
+    const expected = resolve(repository, "packages/board-ui", metadata.exports["./styles.css"]);
+    for (const consumer of ["app/features/game-review/GameReviewView.tsx", "app/features/repertoire-review/PositionViewer.tsx"]) {
+      const importer = resolve(repository, consumer);
+      const result = await server.environments.client.pluginContainer.resolveId("@tempo/board-ui/styles.css", importer);
+      assert.equal(result?.id, expected);
+      assert.ok(readFileSync(importer, "utf8").includes('import "@tempo/board-ui/styles.css"'));
+      assert.equal(await server.environments.client.pluginContainer.resolveId("@tempo/board-ui/private.css", importer), null);
+    }
+  } finally { await server.close(); }
+});

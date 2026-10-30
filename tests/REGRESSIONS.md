@@ -6048,6 +6048,10 @@ the two declared preparation value/port exports.
 
 #624's assembled owner regressions now include:
 
+- `root Board UI public stylesheet resolves in the real Vite assembly without admitting private subpaths`
+  in `tools/component-build/tests/boundaries.test.mjs` resolves the exact exported
+  stylesheet for Games and Repertoire Review while private subpaths stay unavailable.
+
 - `test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock`
   in `backend/tests/test_product_delivery_qualification.py` keeps unchanged games
   inspectable through direct, covered and unresolved scope changes, holds the old
