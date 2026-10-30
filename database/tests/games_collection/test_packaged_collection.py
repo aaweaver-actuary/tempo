@@ -227,6 +227,7 @@ def feedback_case(feedback_postgres):
 def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
+    from app.games.feedback.ports import Delivery
     import shutil
 
     image, revision = _candidate_image()
@@ -236,7 +237,8 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
         admin_dsn = make_conninfo(info.dsn, password=info.password)
         port, database_name = info.port, info.dbname
         assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 56
-        database.execute_native("UPDATE settings SET timezone='UTC',new_cards_per_day=0,study_only_mode=0 WHERE id=1")
+        database.execute_native("UPDATE settings SET timezone='UTC',new_cards_per_day=0,study_only_mode=1 WHERE id=1")
+        assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==(0,1)
     manifests = [json.loads(path.read_text()) for path in (ROOT/'test-results/game-feedback-native').glob('*/fixture.json')]
     matches = [item for item in manifests if item.get('port') == port and not item.get('cleanup_verified')]
     assert len(matches) == 1
@@ -443,7 +445,10 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             assert len(rows)<=1, 'packaged_feedback_duplicate_original_effect'
             return rows[0] if rows else None
         delivery = wait_for(actual_delivery,'packaged_feedback_original_delivery_missing')
-        operation_id, original = delivery[0], delivery[1]['command']
+        original_delivery = Delivery.model_validate_json(json.dumps(delivery[1]))
+        assert original_delivery.command_kind=='encounter'
+        operation_id, original = delivery[0], original_delivery.command.model_dump(mode='json')
+        assert original_delivery.operation_id==operation_id and delivery[1]['encounter']==original
         assert original['observation']=='missed' and original['played_uci']=='d2d4' and original['expected_uci']=='e2e4'
         stage = 'canonical_introduction'
         for _unit in range(8):
@@ -465,7 +470,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         with case.transaction() as database:
             assert tuple(database.execute_native("""SELECT queue_entry_id,card_id,revision,issuance_sequence,issued_at
                 FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=%s""",protected_origin[:3]).fetchone())==protected_origin
-            assert database.execute_native('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]==0
+            assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==(0,1)
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
         assert wait_for(queue,'packaged_feedback_current_board_missing')['cards'][0]['queue_entry_id']==protected['queue_entry_id']
         stage = 'ordinary_review_and_issuance'
@@ -507,7 +512,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         with case.transaction() as database:
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'study\'',(target_id,)).fetchone()[0]==1
             assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind=\'game_lapse\'',(target_id,)).fetchone()[0]==0
-            assert database.execute_native("SELECT payload->'command' FROM product_feedback_deliveries WHERE operation_id=%s",(operation_id,)).fetchone()[0]==original
+            assert database.execute_native("SELECT payload->'encounter' FROM product_feedback_deliveries WHERE operation_id=%s",(operation_id,)).fetchone()[0]==original
             report['actual_issuances_after_determination'] = database.execute_native("""SELECT COUNT(*) FROM queue_attempt_origins
                 WHERE issued_as_head=1 AND issued_at>%s AND issuance_sequence IS NOT NULL""",
                 (issued['progress']['determined_at'],)).fetchone()[0]
