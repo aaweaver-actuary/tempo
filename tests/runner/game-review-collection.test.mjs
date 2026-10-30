@@ -366,8 +366,8 @@ function collectionMainFixture(t, {running = false, observedSchema = 54} = {}) {
   const composePrefix = ['compose', '--project-directory', fixture.target.root, '--project-name', fixture.target.project,
     '--env-file', fixture.target.envFile, ...fixture.target.composeFiles.flatMap(file => ['-f', file]), '-f', imageOverride,
     '--profile', 'maintenance', '--profile', 'games-feedback'];
-  const runCommand = (program, args) => {
-    calls.push({program, args: [...args]});
+  const runCommand = (program, args, settings = {}) => {
+    calls.push({program, args: [...args], settings});
     if (program === 'ps' && same(args, ['-axo', 'command='])) return '';
     if (program === 'docker' && same(args.slice(0, 2), ['--context', fixture.target.context])) {
       const action = args.slice(2);
@@ -433,6 +433,18 @@ test('collection main blocks persisted pending migration before compose up', asy
   assert.equal(fixture.actionCalls('stop').length, 0);
   assert.deepEqual(fixture.lockObservations, [true]);
   assert.deepEqual(maintenanceBytes(fixture.stateDirectory), before);
+});
+
+test('collection full snapshot read has no fixed subprocess deadline while other commands remain bounded', async t => {
+  const fixture = collectionMainFixture(t);
+  await fixture.invoke('plan');
+  const reads = fixture.calls.filter(call => call.args.includes('app.product_composition.game_collection_status'));
+  assert.equal(reads.length, 2);
+  const identity = reads.find(call => call.args.includes('--identity-only'));
+  const full = reads.find(call => !call.args.includes('--identity-only'));
+  assert.equal(identity.settings.timeout ?? 30000, 30000);
+  assert.equal(full.settings.timeout, 0);
+  assert.equal(fixture.calls.filter(call => call.settings.timeout === 0).length, 1);
 });
 
 test('collection main blocks observed schema mismatch before compose up', async t => {

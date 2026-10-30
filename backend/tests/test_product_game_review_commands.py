@@ -21,6 +21,43 @@ def configuration():
         interval_seconds=60, revision=1)))
 
 
+def test_repertoire_snapshot_connection_is_read_only_without_short_deadline(monkeypatch):
+    from contextlib import contextmanager
+    import psycopg
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+
+    calls = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            calls.append("closed")
+
+        @contextmanager
+        def transaction(self):
+            yield
+
+        def execute(self, statement):
+            calls.append(statement)
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: Connection())
+    connections = DedicatedGamesConnections("unused")
+    with connections(repertoire_snapshot=True):
+        assert calls[0] == "SET TRANSACTION READ ONLY"
+        assert "set_config('transaction_timeout','0'" in calls[1]
+        assert "set_config('statement_timeout','0'" in calls[1]
+        assert "set_config('lock_timeout','100ms'" in calls[1]
+    assert calls[-1] == "closed"
+    calls.clear()
+    with connections():
+        assert "set_config('transaction_timeout','250ms'" in calls[0]
+        assert "set_config('statement_timeout','250ms'" in calls[0]
+        assert "SET TRANSACTION READ ONLY" not in calls
+    assert calls[-1] == "closed"
+
+
 @pytest.mark.parametrize("count", [1, 10, 17])
 def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch, count):
     from app import command_dispatch

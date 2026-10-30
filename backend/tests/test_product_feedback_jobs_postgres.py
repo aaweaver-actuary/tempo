@@ -361,27 +361,72 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
 
 
 
-def test_native_snapshot_bound_envelope_withholds_facts_and_reports_source_sentinel(owned_postgres):
+def test_native_snapshot_bound_envelope_withholds_facts_and_reports_source_sentinel(owned_postgres, monkeypatch):
     from app.repertoire import RepertoireSnapshotBoundExceeded
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
-        STATEMENT, read_repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS, MAX_SNAPSHOT_BYTES, MAX_ROW_BYTES,
+        STATEMENT, read_repertoire, MAX_SOURCE_ROWS, MAX_ROW_BYTES,
     )
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    # Exercise the unchanged sentinel SQL without a quadratic trigger-heavy fixture.
+    monkeypatch.setattr(product_snapshot, "MAX_SOURCE_ROWS", 2)
+    MAX_SOURCE_ROWS = 2
     repertoire = "snapshot-bound-" + uuid.uuid4().hex
     with owned_postgres() as database:
         database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Synthetic','fixture','2026-10-26')", (repertoire,))
         database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
             SELECT %s || '-' || n::text,%s,'Synthetic','white',%s,'["e2e4"]','2026-10-26'
-            FROM generate_series(1,10002) n""", (repertoire, repertoire,
+            FROM generate_series(1,4) n""", (repertoire, repertoire,
                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
-        envelope = database.execute_native(STATEMENT, (repertoire, MAX_SOURCE_ROWS, MAX_GRAPH_ROWS,
-            MAX_SNAPSHOT_BYTES, MAX_ROW_BYTES)).fetchone()["snapshot"]
+        envelope = database.execute_native(STATEMENT, (repertoire, MAX_SOURCE_ROWS, MAX_ROW_BYTES)).fetchone()["snapshot"]
         assert envelope["exists"] and not envelope["bounded"] and envelope["facts"] is None
-        assert envelope["line_count"] == 10001  # Real total is larger than the sentinel.
+        assert envelope["line_count"] == 3  # Real total is larger than the sentinel.
         assert all(envelope[key] == 0 for key in ("card_count", "membership_count", "graph_count"))
         assert 0 < envelope["largest_row"] <= MAX_ROW_BYTES
-        assert 0 < envelope["estimated_bytes"] <= MAX_SNAPSHOT_BYTES
+        assert envelope["estimated_bytes"] > 0
         with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
             read_repertoire(database, repertoire)
         assert caught.value.diagnostic() == dict(code="repertoire_snapshot_exceeds_bound", stage="read",
-            sample_complete=False, violations=[dict(dimension="source_rows", observed=10001,
-                                                    limit=10000, observation="lower_bound")])
+            sample_complete=False, violations=[dict(dimension="source_rows", observed=3,
+                                                    limit=2, observation="lower_bound")])
+
+
+def test_native_snapshot_read_accepts_estimate_above_old_byte_cap(owned_postgres):
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    repertoire = "snapshot-large-" + uuid.uuid4().hex
+    with owned_postgres() as database:
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Synthetic','fixture','2026-10-26')", (repertoire,))
+        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            SELECT %s || '-' || n::text,%s,repeat('route',1200),'white',%s,'["e2e4"]','2026-10-26'
+            FROM generate_series(1,1000) n""", (repertoire, repertoire,
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
+        facts = read_repertoire(database, repertoire)
+        assert len(facts["lines"]) == 1000
+        assert all(len(line["name"]) == 6000 for line in facts["lines"])
+        assert {line["id"] for line in facts["lines"]} == {repertoire + "-" + str(i) for i in range(1, 1001)}
+
+
+def test_native_repertoire_snapshot_profile_outlives_quarter_second_and_rejects_writes(owned_postgres, tmp_path):
+    from psycopg.conninfo import make_conninfo
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+    passfile = tmp_path / "snapshot.pgpass"
+    try:
+        with owned_postgres() as database:
+            info = database.raw.info
+            passfile.write_text(":".join((info.host, str(info.port), info.dbname, info.user, info.password)) + "\n")
+            passfile.chmod(0o600)
+            dsn = make_conninfo(info.dsn, passfile=str(passfile))
+        connections = DedicatedGamesConnections(dsn)
+        with connections(repertoire_snapshot=True) as database:
+            assert database.execute("SHOW transaction_read_only").fetchone()[0] == "on"
+            assert database.execute("SHOW transaction_timeout").fetchone()[0] == "0"
+            assert database.execute("SHOW statement_timeout").fetchone()[0] == "0"
+            database.execute("SELECT pg_sleep(0.3)")
+            assert database.execute("SELECT 1").fetchone()[0] == 1
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            with connections(repertoire_snapshot=True) as database:
+                database.execute("CREATE TABLE snapshot_write_must_fail(id integer)")
+        with connections() as database:
+            assert database.execute("SHOW transaction_timeout").fetchone()[0] == "250ms"
+            assert database.execute("SHOW statement_timeout").fetchone()[0] == "250ms"
+    finally:
+        passfile.unlink(missing_ok=True)

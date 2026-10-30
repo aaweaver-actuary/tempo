@@ -364,7 +364,8 @@ def test_owner_typed_bound_from_read_or_projection_preserves_numeric_diagnostic(
     entered = False
 
     @contextmanager
-    def connections():
+    def connections(*, repertoire_snapshot=False):
+        assert repertoire_snapshot is True
         nonlocal entered
         entered = True
         try:

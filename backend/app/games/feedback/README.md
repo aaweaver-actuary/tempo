@@ -234,7 +234,9 @@ these synthetic cases. Shared regression registration is handed to Agent G.
 accepts a dedicated `connections()` context factory yielding raw tuple-row
 PostgreSQL connections. It opens no pool, reads no environment/settings and has
 no production schema initializer. Each method commits/rolls back and releases its
-connection before returning. Lock and statement timeouts are 100 ms / 250 ms.
+connection before returning. Ordinary Games lock and statement timeouts are
+100 ms / 250 ms. Whole-repertoire snapshot reads use a separate read-only
+profile without transaction/statement deadlines or a total snapshot-byte cap.
 Failures remain retryable without losing a checkpoint. Page sizes default to
 100 records / 8 MiB total raw PGN / 10,000 replay positions. The configured scope
 may include all user repertoires; no repertoire-count cap filters that scope or
