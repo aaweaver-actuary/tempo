@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
-from app.contracts.product_v02 import UtcTimestamp, Value
+from app.contracts.product_v02 import Digest, UtcTimestamp, Value
 from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection, GamePage, GameRecord, GameRejection, GameWindow
 from app.contracts.product_v02.learning import EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
@@ -26,6 +26,16 @@ class JobSpec(Value):
     stream: Literal["forward", "reconciliation", "manual"] = "manual"
 
 
+class HistoryProviderLimitRecovery(Value):
+    reason: Literal["lichess_response_limit"]
+    prior_version: int = Field(ge=1)
+    prior_attempts: int = Field(ge=1)
+    pages_committed: int = Field(ge=1)
+    continuation_digest: Digest
+    last_checkpoint_at: UtcTimestamp
+    recorded_at: UtcTimestamp
+
+
 class JobState(Value):
     spec: JobSpec
     version: int = 0
@@ -39,6 +49,8 @@ class JobState(Value):
     attempts: int = 0
     error: str | None = None
     rejections: tuple[GameRejection, ...] = ()
+    history_recoveries: tuple[HistoryProviderLimitRecovery, ...] = Field(
+        default=(), max_length=8, exclude_if=lambda value: not value)
 
 
 class SourceState(Value):

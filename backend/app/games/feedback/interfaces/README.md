@@ -24,6 +24,11 @@ millisecond instant belongs to the exact second recorded by legacy PGN
 that explicitly injected owner capability proves compatibility; the original
 provider timestamp and capture stay unchanged.
 
+`HistoryProviderLimitRecovery` records an explicit historical Lichess
+response-limit retry: the prior job version, attempts, page count, original
+checkpoint time, failed-cursor digest and recovery time. `JobState` retains these
+receipts through later checkpoints; ordinary jobs omit an empty receipt list.
+
 `select_first_boundary(game, snapshots=..., source=...,
 selected_repertoire_ids=..., unavailable_repertoire_ids=...)` consumes only
 supplied canonical history and authored snapshots, returning the shared

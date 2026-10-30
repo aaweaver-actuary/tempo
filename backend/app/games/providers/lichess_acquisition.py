@@ -19,6 +19,7 @@ from ..ingestion.normalizer import RejectedGame, normalize_provider_pgn
 
 MAX_PAGE_SIZE = 1000
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_RESPONSE_ROWS = 10000
 _NAME = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
 _SPEEDS = frozenset({"bullet", "blitz", "rapid", "classical"})
 FailureKind = Literal[
@@ -189,17 +190,38 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
     body = await _read(client, account, params, timeout=timeout_seconds,
                        max_bytes=max_response_bytes, check_cancel=check_cancel,
                        continuation=continuation)
+    lines = body.splitlines()
+    if len(lines) > MAX_RESPONSE_ROWS:
+        raise LichessAcquisitionError("response_limit", continuation=continuation)
     try:
-        rows = [json.loads(line) for line in body.splitlines() if line.strip()]
+        rows = [json.loads(line) for line in lines if line.strip()]
     except (ValueError, UnicodeError):
         raise LichessAcquisitionError("invalid_response", continuation=continuation) from None
     if len(rows) > limit:
-        raise LichessAcquisitionError("response_limit", continuation=continuation)
+        # Lichess can send more than its requested max. Validate the whole
+        # bounded response before consuming a page, so a hidden out-of-order or
+        # conflicting tail cannot be skipped by the timestamp cursor.
+        last_timestamp, response_ids = since, {}
+        for row in rows:
+            check_cancel()
+            if (not isinstance(row,dict) or not isinstance(row.get("id"),str)
+                    or not _NAME.fullmatch(row["id"]) or type(row.get("createdAt")) is not int
+                    or not last_timestamp <= row["createdAt"] < end):
+                raise LichessAcquisitionError("invalid_response", continuation=continuation)
+            try:
+                digest = _digest(_json(row))
+            except (ValueError,TypeError):
+                raise LichessAcquisitionError("invalid_response", continuation=continuation) from None
+            if row["id"] in response_ids and response_ids[row["id"]] != digest:
+                raise LichessAcquisitionError("changed_boundary", continuation=continuation)
+            response_ids[row["id"]] = digest
+            last_timestamp = row["createdAt"]
     records, rejections = [], []
     previous, page_ids = since, {}
     boundary = dict(seen)
     pgn_bytes = positions = wire_bytes = 0
     budget_stopped = False
+    consumed = 0
     for row in rows:
         check_cancel()
         if (not isinstance(row, dict) or not isinstance(row.get("id"), str)
@@ -214,14 +236,21 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
         if game_id in page_ids:
             if page_ids[game_id] != row_digest:
                 raise LichessAcquisitionError("changed_boundary", continuation=continuation)
+            if consumed >= max_page_records:
+                budget_stopped = True
+                break
             rejections.append(GameRejection(source_game_id=game_id,
                 source_revision=source_revision, reason="duplicate_source_id"))
+            consumed += 1
             continue
         page_ids[game_id] = row_digest
         if timestamp == since and game_id in seen:
             if seen[game_id] != row_digest:
                 raise LichessAcquisitionError("changed_boundary", continuation=continuation)
             continue
+        if consumed >= max_page_records:
+            budget_stopped = True
+            break
         reason = None
         if type(row.get("rated")) is not bool or not isinstance(row.get("speed"), str):
             reason = "invalid_filter_metadata"
@@ -272,11 +301,12 @@ async def fetch_lichess_page(*, account: str, window: GameWindow,
                 break  # Do not consume this timestamp/ID until its page is committed.
             records.append(candidate)
             pgn_bytes, positions, wire_bytes = pgn_bytes + size, positions + moves, wire_bytes + wire
+        consumed += 1
         if timestamp != previous:
             boundary = {}
         previous = timestamp
         boundary[game_id] = row_digest
-    saturated = budget_stopped or len(rows) == limit
+    saturated = budget_stopped or len(rows) >= limit
     if saturated and len(boundary) > MAX_PAGE_SIZE:
         raise LichessAcquisitionError("ambiguous_boundary", continuation=continuation)
     next_token = _cursor(key, previous, boundary) if saturated else None

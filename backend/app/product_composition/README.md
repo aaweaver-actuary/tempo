@@ -13,6 +13,8 @@ flowchart LR
   Manifest["Frozen local run manifest<br/>accounts, filters, window, selected repertoires"] --> Import["Finite history import"]
   Import --> Providers["Existing bounded provider adapters"]
   Providers --> Commit["Games canonical page commit<br/>sources, original pages, captures, cursor"]
+  Providers --> Oversized["Over-limit response<br/>validate full ordering and bounded page"]
+  Oversized --> Commit
   Commit --> Recovery["Explicit precision recovery<br/>owner revalidates held source and saved page"]
   Recovery --> Commit
   Commit --> Replay["Offline history comparison<br/>requires complete import"]
@@ -45,6 +47,12 @@ canonical game and absence of deliveries for each source before recording a new
 resolution capture. It preserves the original quarantine capture. The original
 page is replayed once with the same page key before provider pagination resumes;
 unproved or changed sources remain quarantined.
+An explicit provider-limit retry fences the same saved configuration, failed
+job, exact prior checkpoint and absence of a committed page at the failed
+cursor. It retains a typed failure receipt on the job before requeueing. A
+saved-page replay may increment the commit counter without adding a page;
+status treats a missing pending cursor as incomplete and still rejects an
+ambiguous page or a missing page for a completed job.
 Provider I/O/replay never enters Study's short writer. Background admission,
 full pause, source quarantine, configuration fences and active managed feedback
 identity retain their existing owners. These scripts do not activate a service,

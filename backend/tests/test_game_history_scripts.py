@@ -32,7 +32,10 @@ class HistoryStore(MemoryStore):
         return self.load_job(job_id)
 
     def retained_page(self, job_id, continuation):
-        return self.pages[job_id, continuation]
+        try:
+            return self.pages[job_id, continuation]
+        except KeyError:
+            raise ValueError("historical_page_missing") from None
 
     def bind_source(self, game, **kwargs):
         return game

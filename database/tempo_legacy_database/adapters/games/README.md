@@ -73,3 +73,9 @@ the quarantined job, original page, initial source/capture, existing game and
 empty outbox, then appends a resolution capture and updates that source. The
 job can resume only when every source in that saved page is available and its
 original serialized page key is verified. Other quarantine cases stay held.
+
+For a historical Lichess response-limit failure, the Games owner can requeue
+only the exact unchanged failed job when its saved configuration and prior
+page are fenced and no page has committed at the failed input cursor. A typed
+receipt of the original failure and cursor digest remains in the job payload.
+This does not change any game source, capture, page or Study state.

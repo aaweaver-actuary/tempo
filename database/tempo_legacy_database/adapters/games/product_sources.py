@@ -13,7 +13,7 @@ import chess.pgn
 
 from tempo_game_evidence_contracts.legacy import fingerprint
 
-from app.games.feedback.ports import Capture, ConcurrentUpdate, JobState, SourceState, stable_id
+from app.games.feedback.ports import Capture, ConcurrentUpdate, HistoryProviderLimitRecovery, JobState, SourceState, stable_id
 from app.games.feedback.review import SyncConfiguration
 from app.games.ingestion.normalizer import normalize_provider_pgn
 from ..postgres_store import PostgresConnection
@@ -289,6 +289,48 @@ class PostgresCanonicalGamesStore(PostgresGamesStore):
             resumed = job.model_copy(update={"status":"queued", "error":"history_precision_replay_saved_page", "lease_until":0})
             self._save_job(raw, resumed)
             return len(records)
+
+    def resume_history_provider_limit(self, *, expected, configuration, recorded_at):
+        """Requeue one failed history cursor after the provider-limit repair.
+
+        The failure is retained on the job as a bounded immutable receipt. An
+        exact unchanged completed predecessor and no committed input at the
+        failed cursor are required; no source or page is rewritten.
+        """
+        spec = expected.spec
+        if (spec.provider != "lichess" or spec.purpose != "history" or spec.stream != "manual"
+                or expected.status != "failed" or expected.error != "lichess_response_limit"
+                or expected.continuation is None or expected.last_checkpoint_at is None
+                or expected.pages_committed < 1 or len(expected.history_recoveries) >= 8):
+            raise ValueError("history_provider_limit_failure_required")
+        with self._transaction() as raw:
+            _fence_history_configuration(raw, spec, configuration)
+            rows = raw.execute("SELECT payload::text FROM product_feedback_jobs WHERE job_id=%s FOR UPDATE",(spec.job_id,)).fetchall()
+            current = JobState.model_validate_json(rows[0][0]) if len(rows)==1 else None
+            if current != expected:
+                raise ValueError("history_provider_limit_job_changed")
+            previous = raw.execute("""SELECT page_json::text FROM product_feedback_pages
+                WHERE job_id=%s AND page_json->>'continuation'=%s FOR SHARE""",
+                (spec.job_id, current.continuation)).fetchall()
+            if len(previous) != 1:
+                raise ValueError("history_provider_limit_checkpoint_unavailable")
+            page = json.loads(previous[0][0])
+            if (page.get("provider") != spec.provider or page.get("account") != spec.account
+                    or page.get("window") != spec.window.model_dump(mode="json")
+                    or page.get("complete") is not False):
+                raise ValueError("history_provider_limit_checkpoint_mismatch")
+            pending = raw.execute("""SELECT 1 FROM product_feedback_pages
+                WHERE job_id=%s AND input_continuation=%s LIMIT 1""",(spec.job_id,current.continuation)).fetchone()
+            if pending is not None:
+                raise ValueError("history_provider_limit_cursor_already_committed")
+            receipt = HistoryProviderLimitRecovery(reason="lichess_response_limit", prior_version=current.version,
+                prior_attempts=current.attempts, pages_committed=current.pages_committed,
+                continuation_digest=hashlib.sha256(current.continuation.encode()).hexdigest(),
+                last_checkpoint_at=current.last_checkpoint_at, recorded_at=recorded_at)
+            resumed=current.model_copy(update={"status":"queued","error":"history_provider_limit_requeued",
+                "next_attempt_at":0,"lease_until":0,"history_recoveries":current.history_recoveries+(receipt,)})
+            self._save_job(raw,resumed)
+            return receipt
 
     def commit_page(self, commit):
         # Provider subtype provenance is retained by the capture, even when the
