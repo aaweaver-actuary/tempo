@@ -21,7 +21,10 @@ import psycopg
 from psycopg import sql
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
-from app import main, review_commands
+from app import main, queue_commands, review_commands
+from app.services.queue_ordering import PRESENTATION_VERSION
+from app.services.real_game_feedback import MISS_REASON
+from tempo_legacy_database.adapters.http_composition.queue_projection import queue_rows
 from tempo_legacy_database.adapters import postgres_store
 from app.contracts.transport.study import ReviewRequest
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
@@ -48,6 +51,37 @@ def seed(database, identifier, today):
                          (identifier, identifier, index, card_id, parent_id, decision_fen, starting_fen, json.dumps(moves), 'prefix' if index == 0 else 'decision', json.dumps([decision_fen])))
     root_entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,0,'new',?) RETURNING id", (today, root_id, identifier)).fetchone()[0]
     return root_id, child_id, grandchild_id, root_entry
+
+
+def seed_ready_v3_day(database, identifier, today, root_entry):
+    """Real old ready projection, >20 reviews and retained attempt/retry slots."""
+    import hashlib
+    repertoire = identifier + '-ordinary'
+    database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,'Ordinary review sentinels','synthetic',?,0)", (repertoire, today))
+    for index in range(24):
+        card_id = repertoire + f'-{index:02d}'
+        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,content_type,trained_color,canonical_route_source) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'2000-01-01','opening','white',0)",
+                         (card_id, repertoire, chess.STARTING_FEN, today))
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0)', (repertoire, card_id))
+        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'correct','2000-01-01T00:00:00+00:00',0,1,'study')", (card_id,))
+        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,attempt_state,admission_kind,admission_repertoire_id) VALUES(?,?,?,?,?,'review',?)",
+                         (today, card_id, index, 1 if index == 9 else 0, 'guided' if index == 9 else 'clean', repertoire))
+    database.execute('UPDATE daily_queue SET position=24 WHERE id=?', (root_entry,))
+    database.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id IN (SELECT id FROM daily_queue WHERE queue_date=? AND position=3)", (today,))
+    members = [tuple(row) for row in database.execute("SELECT id,card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY id", (today,))]
+    fingerprint = 'queue-presentation-v3:' + hashlib.sha256(json.dumps(members, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    database.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,42,?,?) ON CONFLICT(queue_date) DO UPDATE SET seed=42,membership_hash=excluded.membership_hash", (today, fingerprint, today))
+    database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(?,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
+    return repertoire
+
+
+def protected_positions(database, today):
+    return [tuple(row) for row in database.execute(
+        "SELECT q.id,q.card_id,q.cycle,q.position FROM daily_queue q WHERE q.queue_date=? AND q.status='queued' AND (q.cycle>0 OR EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id AND o.issued_as_head=1)) ORDER BY q.id", (today,))]
+
+
+def snapshot(database, table, *, order='id'):
+    return [dict(row) for row in database.execute(f'SELECT * FROM {table} ORDER BY {order}')]
 
 
 def drain_queue_refresh(*, restart=False):
@@ -129,6 +163,31 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 root_id, child_id, grandchild_id, root_entry = seed(database, identifier, today)
                 main._unlock_eligible_opening_cards(database, today, after_card_id='', batch_size=8)
                 assert database.execute('SELECT state FROM cards WHERE id=?', (child_id,)).fetchone()[0] == 'locked'
+                ordinary_repertoire = seed_ready_v3_day(database, identifier, today, root_entry)
+                identities = [tuple(row) for row in database.execute('SELECT id,card_id,cycle FROM daily_queue ORDER BY id')]
+                before_cards = snapshot(database, 'cards')
+                before_reviews = snapshot(database, 'reviews')
+                before_origins = snapshot(database, 'queue_attempt_origins', order='queue_entry_id')
+                before_protected = protected_positions(database, today)
+                assert database.execute('SELECT position FROM daily_queue WHERE id=?', (root_entry,)).fetchone()[0] == 24
+                requested = queue_commands.ensure_current_queue(database, {'queue_date': today})
+                assert requested['refresh_pending'] is True, 'A nonempty ready v3 day must request normal refresh'
+            drain_queue_refresh()
+            with postgres_store.connection() as database:
+                assert [tuple(row) for row in database.execute('SELECT id,card_id,cycle FROM daily_queue ORDER BY id')] == identities
+                assert snapshot(database, 'cards') == before_cards
+                assert snapshot(database, 'reviews') == before_reviews
+                assert snapshot(database, 'queue_attempt_origins', order='queue_entry_id') == before_origins
+                assert protected_positions(database, today) == before_protected
+                complete = queue_rows(database, today, None, miss_reason=MISS_REASON)
+                window = queue_rows(database, today, 20, miss_reason=MISS_REASON)
+                assert len(complete) == 25 and len(window) == 20
+                assert [row['queue_entry_id'] for row in window] == [row['queue_entry_id'] for row in complete[:20]]
+                assert complete[0]['queue_entry_id'] == root_entry
+                assert database.execute('SELECT membership_hash FROM daily_queue_days WHERE queue_date=?', (today,)).fetchone()[0].startswith(PRESENTATION_VERSION + ':')
+                completed_task = snapshot(database, 'background_tasks')
+                assert queue_commands.ensure_current_queue(database, {'queue_date': today}) == {'queue_date': today, 'refresh_pending': False}
+                assert snapshot(database, 'background_tasks') == completed_task
             request = ReviewRequest(queue_entry_id=root_entry, outcome=outcome, guided=guided,
                                     attempt_id=identifier+'-attempt', expected_revision=1)
             payload = {'card_id': root_id, 'review': request.model_dump(mode='json')}
@@ -146,6 +205,9 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 assert result['state'] == 'learning'
                 generation = database.execute("SELECT generation FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()[0]
                 preserved_ids = [row[0] for row in database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
+                before_child_protected = protected_positions(database, today)
+                protected_ids = {row[0] for row in before_child_protected}
+                ordinary_ids = [row[0] for row in database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND admission_repertoire_id=? AND status='queued' ORDER BY position,id", (today, ordinary_repertoire)) if row[0] not in protected_ids]
             postgres_store.close_pools()
             with postgres_store.connection() as database:
                 assert review_commands.submit_review(database, payload) == result
@@ -156,10 +218,13 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 assert database.execute('SELECT state FROM cards WHERE id=?', (grandchild_id,)).fetchone()[0] == 'locked'
                 assert database.execute('SELECT state FROM cards WHERE id=?', (root_id,)).fetchone()[0] == 'learning'
                 queued_ids = [row[0] for row in database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
-                assert [entry for entry in queued_ids if entry in preserved_ids] == preserved_ids
-                assert queued_ids[:len(preserved_ids)] == preserved_ids
+                assert protected_positions(database, today) == before_child_protected
                 child_entry = database.execute('SELECT id FROM daily_queue WHERE card_id=? AND cycle=0', (child_id,)).fetchone()[0]
+                assert set(queued_ids) == set(preserved_ids) | {child_entry}
                 assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND cycle=0', (child_id,)).fetchone()[0] == 1
+                assert [entry for entry in queued_ids if entry in ordinary_ids] == ordinary_ids
+                assert all(queued_ids.index(child_entry) < queued_ids.index(entry) for entry in ordinary_ids)
+                assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (root_id,)).fetchone()[0] == 1
                 child_request = ReviewRequest(queue_entry_id=child_entry, outcome='again', attempt_id=identifier+'-child-attempt', expected_revision=1)
                 review_commands.submit_review(database, {'card_id': child_id, 'review': child_request.model_dump(mode='json')})
             drain_queue_refresh()
@@ -167,6 +232,8 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 assert database.execute('SELECT state FROM cards WHERE id=?', (grandchild_id,)).fetchone()[0] == 'new'
                 assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?', (grandchild_id,)).fetchone()[0] == 0
                 assert database.execute('SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND introduced_at=?', (identifier, today)).fetchone()[0] == 2
+                database.execute('DELETE FROM cards WHERE repertoire_id=?', (ordinary_repertoire,))
+                database.execute('DELETE FROM repertoires WHERE id=?', (ordinary_repertoire,))
                 database.execute('DELETE FROM cards WHERE repertoire_id=?', (identifier,))
                 database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
         print('PASS test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound')
