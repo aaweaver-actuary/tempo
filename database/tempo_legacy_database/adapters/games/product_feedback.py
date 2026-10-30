@@ -71,17 +71,45 @@ class PostgresGamesStore:
             row = database.execute("SELECT payload::text FROM product_feedback_jobs WHERE job_id=%s", (job_id,)).fetchone()
             return JobState.model_validate_json(row[0]) if row else None
 
-    def claim_job(self, now: float, lease_until: float) -> JobState | None:
+    def claim_job(self, now: float, lease_until: float, *, job_id: str | None = None) -> JobState | None:
         with self._transaction() as database:
-            row = database.execute("""SELECT payload::text FROM product_feedback_jobs
-                WHERE (status IN ('queued','retryable') AND next_attempt_at<=%s)
-                   OR (status='running' AND lease_until<=%s)
-                ORDER BY attempts,next_attempt_at,job_id LIMIT 1 FOR UPDATE SKIP LOCKED""", (now, now)).fetchone()
-            if row is None:
-                return None
-            old = JobState.model_validate_json(row[0])
-            claimed = old.model_copy(update={"status": "running", "lease_until": lease_until, "attempts": old.attempts + 1})
-            return self._save_job(database, claimed)
+            # Account admission precedes row locks everywhere. A nonwaiting
+            # transaction lock closes the cross-process different-job claim race.
+            scope = ("job_id=%s" if job_id is not None else
+                     "payload->'spec'->>'purpose' IS DISTINCT FROM 'refresh'")
+            rows = database.execute(f"""SELECT payload FROM (
+                SELECT DISTINCT ON (payload->'spec'->>'provider',lower(payload->'spec'->>'account'))
+                    payload::text AS payload,attempts,next_attempt_at,job_id
+                FROM product_feedback_jobs
+                WHERE ({scope}) AND ((status IN ('queued','retryable') AND next_attempt_at<=%s)
+                   OR (status='running' AND lease_until<=%s))
+                ORDER BY payload->'spec'->>'provider',lower(payload->'spec'->>'account'),attempts,next_attempt_at,job_id
+                ) candidates ORDER BY attempts,next_attempt_at,job_id LIMIT 8""",
+                ((job_id, now, now) if job_id is not None else (now, now))).fetchall()
+            for row in rows:
+                candidate = JobState.model_validate_json(row[0])
+                spec = candidate.spec
+                key = f"tempo:product-acquisition:{spec.provider}:{spec.account.casefold()}"
+                if not database.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", (key,)).fetchone()[0]:
+                    continue
+                blocked = database.execute("""SELECT 1 FROM product_feedback_jobs
+                    WHERE payload->'spec'->>'provider'=%s
+                      AND lower(payload->'spec'->>'account')=%s AND job_id<>%s
+                      AND ((status='running' AND lease_until>%s)
+                        OR (status='retryable' AND next_attempt_at>%s)) LIMIT 1""",
+                    (spec.provider, spec.account.casefold(), spec.job_id, now, now)).fetchone()
+                if blocked:
+                    continue
+                row = database.execute("""SELECT payload::text FROM product_feedback_jobs
+                    WHERE job_id=%s AND ((status IN ('queued','retryable') AND next_attempt_at<=%s)
+                      OR (status='running' AND lease_until<=%s)) FOR UPDATE SKIP LOCKED""",
+                    (spec.job_id, now, now)).fetchone()
+                if row is not None:
+                    old = JobState.model_validate_json(row[0])
+                    claimed = old.model_copy(update={"status": "running", "lease_until": lease_until,
+                                                     "attempts": old.attempts + 1})
+                    return self._save_job(database, claimed)
+            return None
 
     @staticmethod
     def _save_job(database, job: JobState) -> JobState:

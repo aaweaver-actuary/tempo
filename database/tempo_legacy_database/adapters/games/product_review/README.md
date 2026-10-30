@@ -253,3 +253,35 @@ Recent summaries map stored `chess.com` to public `chesscom`. Source detail and
 canonical identity lookups accept both stored aliases, retain workspace fences
 and reject ambiguous rows. These are read projections: canonical IDs, digests,
 original PGNs and historical source metadata retain their stored spelling.
+
+## On-demand refresh requests
+
+No schema migration is required. Existing `product_feedback_sync_requests`
+records map each original operation ID to its exact `product_feedback_jobs` row;
+multiple request aliases can reference one active refresh. Job JSON adds optional
+`spec.purpose` (default `sync`) and `spec.configuration_revision` (default null).
+Existing jobs deserialize unchanged. Only complete same-revision forward/refresh
+windows establish a refresh checkpoint; ordinary manual/reconciliation jobs do not.
+
+The Games configuration advisory lock serializes scope reads, checkpoint selection,
+job creation and alias insertion. Application policy supplies the pure window/job
+builder. The command composition stages work through the durable task owner's
+idempotent ensure operation in the same outer transaction. Games does not mutate
+or query the task owner's tables. Its exact-job reader remains read-only.
+
+```mermaid
+erDiagram
+  product_feedback_configuration ||--o{ product_feedback_jobs : "saved scope and revision"
+  product_feedback_sync_requests }o--|| product_feedback_jobs : "exact job FK; coalesced aliases"
+  product_feedback_jobs ||--o{ product_feedback_pages : "atomic source and checkpoint"
+  product_feedback_jobs ||--o| background_tasks : "logical job ID; task owner writes"
+```
+
+Configuration/job and job/task edges above are logical relationships; request/job and page/job are physical foreign keys.
+
+Claiming first takes a nonwaiting provider/account advisory lock, then the selected
+job row. Active job leases and future retry times block that account on either
+execution path. The short transaction ends before HTTP; the durable job lease
+covers the page. Generic claims exclude refresh jobs; a requested claim targets
+its exact job. Existing version fences govern page publication and crash recovery.
+Continuous next-run times and stream selection remain separate.

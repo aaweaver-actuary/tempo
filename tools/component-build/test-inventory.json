@@ -92,6 +92,7 @@
       "tests/unit/product-game-review-api-receipts.test.tsx",
       "tests/unit/product-game-review-composition.test.tsx",
       "tests/unit/product-game-review.test.tsx",
+      "tests/unit/product-game-refresh.test.tsx",
       "tests/unit/product-game-sync-settings.test.tsx",
       "tests/unit/product-repertoire-integration.test.ts",
       "tests/unit/product-repertoire-review.test.tsx",

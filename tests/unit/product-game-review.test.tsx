@@ -44,11 +44,16 @@ function encounterReceipt(overrides: Partial<EncounterReceipt> = {}, target = fi
 function detail(overrides: Partial<GameDetail> = {}): GameDetail {
   return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings: [finding("confirmed_miss")], receipts: [], ...overrides });
 }
+function refreshStatus(provider: "lichess" | "chesscom", operation_id: string) {
+  return { provider, operation_id, job_id: `job:${operation_id}`, window: { start_at: "2026-10-25T00:00:00Z", end_at: "2026-10-30T12:00:00Z", precision: "millisecond" as const }, status: "queued" as const, pages_committed: 0, next_attempt_at: 0, error: null };
+}
 function fakeApi(overrides: Partial<GameReviewClient> = {}): GameReviewClient {
   return {
     recentGames: vi.fn(async () => ({ games: [firstSummary, secondSummary], sync: idleSync })),
     gameDetail: vi.fn(async () => detail()),
     sync: vi.fn<GameReviewClient["sync"]>(async ({ provider, operation_id }) => ({ provider, operation_id, status: "pending", error: null })),
+    refresh: vi.fn<GameReviewClient["refresh"]>(async ({ provider, operation_id }) => refreshStatus(provider, operation_id)),
+    refreshStatus: vi.fn<GameReviewClient["refreshStatus"]>(async ({ operation_id }) => refreshStatus("lichess", operation_id)),
     retryFeedback: vi.fn(async () => receipt()), ...overrides,
   };
 }
@@ -213,18 +218,20 @@ it("renders the shared encounter/legacy receipt union from the HTTP detail read"
   expect(fetchRequest.mock.calls.every(([, options]) => options?.method === "GET")).toBe(true);
 });
 
-it("preserves provider operation identity on retry and isolates failure from Study", async () => {
-  const pending = deferred<Awaited<ReturnType<GameReviewClient["sync"]>>>();
-  const api = fakeApi({ sync: vi.fn().mockImplementationOnce(() => pending.promise).mockImplementation(async ({ provider, operation_id }) => ({ provider, operation_id, status: "pending", error: null })) });
+it("preserves refresh operation identity on an uncertain retry and isolates failure from Study", async () => {
+  const pending = deferred<Awaited<ReturnType<GameReviewClient["refresh"]>>>();
+  const api = fakeApi({ refresh: vi.fn().mockImplementationOnce(() => pending.promise).mockImplementation(async ({ provider, operation_id }) => refreshStatus(provider, operation_id)) });
   const studyBefore = useTrainingStore.getState();
   render(<GameReviewView api={api} />); await screen.findByRole("button", { name: /Lichess ·/ });
-  const button = screen.getByRole("button", { name: "Sync Lichess" });
+  const button = screen.getByRole("button", { name: "Refresh Lichess now" });
   act(() => { button.click(); button.click(); });
-  expect(api.sync).toHaveBeenCalledTimes(1);
+  expect(api.refresh).toHaveBeenCalledTimes(1);
   await act(async () => pending.reject(new Error("Provider down")));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry Lichess" }));
-  await waitFor(() => expect(api.sync).toHaveBeenCalledTimes(2));
-  expect(vi.mocked(api.sync).mock.calls[0][0].operation_id).toBe(vi.mocked(api.sync).mock.calls[1][0].operation_id);
+  expect(await screen.findByText("Provider down")).toBeTruthy();
+  fireEvent(window, new Event("online"));
+  await waitFor(() => expect(api.refresh).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.refresh).mock.calls[0][0].operation_id).toBe(vi.mocked(api.refresh).mock.calls[1][0].operation_id);
+  expect(api.sync).not.toHaveBeenCalled();
   expect(useTrainingStore.getState()).toBe(studyBefore);
 });
 
@@ -258,12 +265,13 @@ it("refreshing to a newer game revision replaces the selection and fences obsole
   expect(boards.at(-1)?.positionIdentity).toContain("2");
 });
 
-it("reuses an original failed provider operation supplied by the receiving owner", async () => {
+it("starts a new refresh independently of an unrelated saved-range failure", async () => {
   const api = fakeApi({ recentGames: vi.fn<GameReviewClient["recentGames"]>(async () => ({ games: [firstSummary], sync: [{ provider: "lichess", status: "failed", operation_id: "original-provider-operation", error: "Try again" }] })) });
   render(<GameReviewView api={api} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Retry Lichess" }));
-  await waitFor(() => expect(api.sync).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(api.sync).mock.calls[0][0].operation_id).toBe("original-provider-operation");
+  fireEvent.click(await screen.findByRole("button", { name: "Refresh Lichess now" }));
+  await waitFor(() => expect(api.refresh).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.refresh).mock.calls[0][0].operation_id).not.toBe("original-provider-operation");
+  expect(api.sync).not.toHaveBeenCalled();
 });
 
 it("ignores a late feedback receipt from the previous selected game", async () => {
@@ -294,15 +302,15 @@ it("fences late detail after repertoire selection and aborts all owned work on u
 });
 
 it("cancels sync and feedback on unmount and ignores late owner receipts", async () => {
-  const sync = deferred<Awaited<ReturnType<GameReviewClient["sync"]>>>(); const feedback = deferred<LearningReceipt>();
-  const api = fakeApi({ sync: vi.fn(() => sync.promise), retryFeedback: vi.fn(() => feedback.promise) });
+  const sync = deferred<Awaited<ReturnType<GameReviewClient["refresh"]>>>(); const feedback = deferred<LearningReceipt>();
+  const api = fakeApi({ refresh: vi.fn(() => sync.promise), retryFeedback: vi.fn(() => feedback.promise) });
   const view = render(<GameReviewView api={api} />); await selectFirst(); await readyBoard();
-  fireEvent.click(screen.getByRole("button", { name: "Sync Lichess" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Lichess now" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry feedback at ply 1" }));
   view.unmount();
-  expect(vi.mocked(api.sync).mock.calls[0][0].signal!.aborted).toBe(true);
+  expect(vi.mocked(api.refresh).mock.calls[0][0].signal!.aborted).toBe(true);
   expect(vi.mocked(api.retryFeedback).mock.calls[0][0].signal!.aborted).toBe(true);
-  await act(async () => { feedback.resolve(receipt()); sync.resolve({ provider: "lichess", operation_id: "late", status: "complete", error: null }); });
+  await act(async () => { feedback.resolve(receipt()); sync.resolve({ ...refreshStatus("lichess", "late"), status: "complete" }); });
   expect(document.querySelector("cg-board")).toBeNull();
 });
 
@@ -343,8 +351,8 @@ it("validates wire responses and sends explicit mutation identities through inje
 });
 
 it("keeps the new feature dependency boundary independent from Study/Tactics controllers and storage", () => {
-  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "../../../packages/board-ui/styles/board.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css"]);
-  for (const name of ["GameReviewView.tsx", "state.ts", "api.ts"]) {
+  const allowed = new Set(["react", "chess.js", "@tempo/board-ui", "../../../packages/board-ui/styles/board.css", "../../components/buttons/BaseButton", "../../hooks/use-board-history", "../product-api/contracts", "./api", "./state", "./game-review.css", "./use-game-refresh", "../../lib/operation-status", "../../../database/browser/adapters/games-analysis/game-sync"]);
+  for (const name of ["GameReviewView.tsx", "state.ts", "api.ts", "use-game-refresh.ts"]) {
     const source = readFileSync(resolve("app/features/game-review", name), "utf8");
     const imports = [...source.matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)].map(match => match[1]);
     expect(imports.filter(path => !allowed.has(path))).toEqual([]);

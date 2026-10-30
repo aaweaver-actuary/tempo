@@ -84,3 +84,12 @@ The [Study connection inspector](../../study-connection-storage.ts) is unchanged
 its existing retained-practice key selection does not cover these optional keys.
 This retirement does not inspect or certify their settlement. No live browser
 data or server history was inspected or changed.
+
+## On-demand Games refresh recovery
+
+`game-sync.ts` also owns `tempo-pending-game-refresh-v1:<encoded scope>:<provider>`.
+The scope includes the full Games refresh API URL and workspace. The UI persists
+`{provider, operation_id, job_id?}` before sending a refresh, then retains the exact
+accepted job ID through uncertain responses, unmount and reload. Each provider has
+its own record. Only a confirmed rejection or terminal exact-job result clears it;
+reading an unrelated latest sync never settles the request.

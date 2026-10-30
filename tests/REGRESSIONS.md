@@ -5897,6 +5897,35 @@ No budget/deadline, schema, Study delivery authority, provider concurrency or
 foreground guard changes. #616 full-size support and #617 cross-page reuse remain
 separate; a current report does not establish deployed or percentile latency.
 
+## On-demand Chess.com / Lichess refresh
+
+Owning backend suites: `backend/tests/test_product_game_refresh.py` and
+`backend/tests/test_product_game_refresh_postgres.py`.
+
+- `test_refresh_catches_up_to_now_without_waiting_for_interval`
+- `test_refresh_future_seed_is_actionable_instead_of_an_inverted_window`
+- `test_refresh_http_dispatches_original_identity_and_reads_exact_job_without_writer`
+- `test_refresh_background_registration_preserves_study_only_and_foreground_deferral`
+- `test_native_refresh_replay_coalescing_exact_status_and_unchanged_schedule`
+- `test_native_refresh_checkpoint_ignores_unfinished_manual_and_other_revision`
+- `test_native_refresh_job_leases_serialize_manual_and_automatic_and_keep_backoff`
+- `test_native_refresh_command_job_task_and_receipt_rollback_together`
+- `test_native_held_provider_does_not_hide_other_provider_work`
+- `test_native_one_off_fetch_runs_with_collector_off_and_preserves_study`
+
+Owning frontend suite: `tests/unit/product-game-refresh.test.tsx` covers exact-job
+polling/list updates with preserved board position, reload recovery, independent
+provider failure, hidden polling, late responses after unmount, and corrected
+configuration after a definitive rejection, and protection of a newer tab's journal. Existing Games regressions now assert
+that an uncertain refresh retains its own operation while unrelated saved-range
+failures do not supply its identity. The dependency guard includes the refresh hook
+and permits only its explicit browser adapter and receipt reader.
+
+Controlled browser: `tests/controlled-browser/game-refresh.spec.ts` —
+`Games refresh fetches now and updates the list without moving the selected game`.
+The runner's prerequisite build uses the existing relocated `database/browser-intents`
+owner instead of the removed `packages/browser-intents` path. Existing pilot
+identities and asset/traffic/cleanup safeguards remain required.
 
 ## Whole-repertoire snapshot limits removed by explicit product request
 
