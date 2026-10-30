@@ -176,6 +176,7 @@ class Coordinator:
             key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
             previous = self.store.source(key)
             normalized, findings, encounters, diagnostic = None, (), (), None
+            comparison_record = record
             first_departure = None
             compatible = ()
             unresolved = set(unavailable_snapshots)
@@ -195,7 +196,12 @@ class Coordinator:
                     def instant(value):
                         return None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
                     if instant(normalized.played_at) != instant(verified.played_at):
-                        raise ValueError("canonical source differs from verified occurrence")
+                        proof = getattr(self.source_identity, "occurrence_compatible", None)
+                        if not callable(proof) or not proof(verified, normalized, record=record, spec=spec):
+                            raise ValueError("canonical source differs from verified occurrence")
+                        # Canonical source remains second-precision; the raw
+                        # millisecond provider record stays unchanged in Capture.
+                        comparison_record = record.model_copy(update={"time_precision": "second"})
                 positions += len(normalized.moves)
                 if positions > self.max_page_positions:
                     raise AcquisitionFailure("page_position_budget_exceeded", retryable=False)
@@ -208,7 +214,7 @@ class Coordinator:
                 for snapshot in compatible:
                     repertoire_ids = set(snapshot.membership.scope_repertoire_ids)
                     try:
-                        result = tuple(self.comparer.compare(normalized, snapshot, record=record, spec=spec))
+                        result = tuple(self.comparer.compare(normalized, snapshot, record=comparison_record, spec=spec))
                     except Exception:
                         unresolved.update(repertoire_ids)
                         continue

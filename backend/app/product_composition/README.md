@@ -13,6 +13,8 @@ flowchart LR
   Manifest["Frozen local run manifest<br/>accounts, filters, window, selected repertoires"] --> Import["Finite history import"]
   Import --> Providers["Existing bounded provider adapters"]
   Providers --> Commit["Games canonical page commit<br/>sources, original pages, captures, cursor"]
+  Commit --> Recovery["Explicit precision recovery<br/>owner revalidates held source and saved page"]
+  Recovery --> Commit
   Commit --> Replay["Offline history comparison<br/>requires complete import"]
   Manifest --> Replay
   Scope["Current complete authored scope<br/>and current target preparation"] --> Replay
@@ -36,6 +38,13 @@ Original commands, owner receipts and determination clocks survive retries.
 
 Missing scope remains unresolved; a later invocation can revisit a completed
 unresolved traversal. Opponent-first games produce no own-miss consequence.
+An explicit precision recovery handles only a quarantined first Lichess history
+page whose legacy PGN UTC-second matches the provider millisecond instant. Games
+storage locks and revalidates the original page, source version, sole capture,
+canonical game and absence of deliveries for each source before recording a new
+resolution capture. It preserves the original quarantine capture. The original
+page is replayed once with the same page key before provider pagination resumes;
+unproved or changed sources remain quarantined.
 Provider I/O/replay never enters Study's short writer. Background admission,
 full pause, source quarantine, configuration fences and active managed feedback
 identity retain their existing owners. These scripts do not activate a service,

@@ -29,6 +29,11 @@ resume, rate-limit retention, offline global first-departure replay, opponent-fi
 suppression, unavailable-scope recheck and qualified acknowledgment replay.
 Overlapping collection preserves an unchanged game's existing comparison and
 delivery while still quarantining changed source evidence.
+`backend/tests/test_historical_time_precision.py` owns the legacy Lichess
+UTC-second proof and the explicit effect-free initial-page recovery: mismatches
+and prior deliveries remain held; original captures and canonical rows survive;
+an interrupted 95-of-100 recovery resumes; and the exact saved page advances
+without provider refetch. Its PostgreSQL fixture is task-owned and disposable.
 Its native case uses the existing labelled disposable PostgreSQL fixture to
 prove canonical source publication, original-page readback, historical-job claim
 isolation, unchanged Refresh/forward settings and no Study writes during collection.
