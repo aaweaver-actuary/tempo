@@ -40,7 +40,7 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
     monkeypatch.setattr(issuance,'stamp_issued_head',
         lambda database,entry,card,revision:actual_stamp(database,entry,card,revision,now=timeline[0]))
     if hasattr(queue_commands,'current_study_day'):
-        monkeypatch.setattr(queue_commands,'current_study_day',lambda *args,**kwargs:NOW.date())
+        monkeypatch.setattr(queue_commands,'current_study_day',lambda *args,**kwargs:NOW.date().isoformat())
     with retained_history_case(owned_postgres,state=state,ordinary_limit=0,study_only=True) as case:
         @contextmanager
         def raw_reads():
@@ -114,6 +114,100 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
                 database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
                 database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
                     (config.workspace_id,config.provider))
+
+
+def test_native_already_issued_target_saves_before_reset_and_only_fresh_generation_settles(
+    owned_postgres,monkeypatch,
+):
+    """Actual issuance/review/store race; complete source fences are proved above."""
+    from datetime import timedelta
+    from fsrs import Card
+    from app import queue_commands
+    from app.services.queue_application import seed_queue
+    from app.study.encounter_feedback import EncounterFeedback
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.study import issuance
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.http_composition.practice import review_count
+    from tempo_legacy_database.adapters.foreground_controls.prefix_splits import latest_failed_study_review_id
+    from test_product_game_lapse import NOW,qualification_for
+    monkeypatch.setattr(postgres_store,'configured',lambda:True)
+    monkeypatch.setattr(queue_commands,'current_study_day',lambda *args,**kwargs:NOW.date().isoformat())
+    timeline = [NOW-timedelta(minutes=3)]
+    stamp = issuance.stamp_issued_head
+    monkeypatch.setattr(issuance,'stamp_issued_head',
+        lambda database,entry,card,revision:stamp(database,entry,card,revision,now=timeline[0]))
+    with retained_history_case(owned_postgres,state='introduced') as case:
+        with case.transaction() as database:
+            # Seed an ordinary due target through the canonical queue owner.
+            row = database.execute_native('SELECT fsrs_card_json FROM cards WHERE id=%s',(case.card_id,)).fetchone()
+            due = Card.from_json(row[0]); due.due = NOW
+            database.execute_native('UPDATE cards SET due_date=%s,fsrs_card_json=%s WHERE id=%s',
+                (NOW.date().isoformat(),due.to_json(),case.card_id))
+            protected = _issue(database,case.protected_id)
+            _ordinary_review(database,case.protected_id,protected,'pre-race-protected:'+case.card_id,
+                             observed_at=NOW-timedelta(minutes=2))
+            seed_queue(database,NOW.date().isoformat())
+        timeline[0] = NOW-timedelta(minutes=1)
+        with case.transaction() as database:
+            active = _issue(database,case.card_id)
+            origin = issuance.attempt_issuance(database,active,case.card_id,1)
+            assert origin is not None
+        command = case.command(case.capture(case.game_ids[0]))
+        witness = qualification_for(command)
+        class Current:
+            def current_qualified(self, original, qualification):
+                assert qualification.matches(original)
+                return (qualification.selection.decision,)
+        def owner(database,now):
+            return EncounterFeedback(PostgresGameFeedbackStore(database),Current(),clock=lambda:now,
+                introductions=None,introduction_policy=None)
+        with case.transaction() as database:
+            accepted = owner(database,NOW).accept_qualified(command,qualification=witness)
+            pending = owner(database,NOW).refresh_encounter(command.key)
+            assert accepted.disposition == 'introduced_again' and pending.reason == 'active_attempt'
+            assert pending.progress.scheduling_review_id is None
+        finished_at = NOW+timedelta(minutes=1)
+        with case.transaction() as database:
+            original_result = _ordinary_review(database,case.card_id,active,'active-target:'+case.card_id,
+                                                observed_at=finished_at)
+            pending = PostgresGameFeedbackStore(database).get(command.key)
+            assert pending.status == 'pending' and pending.settlement_review_id is None
+            assert pending.review_id is None
+            human_before = review_count(database,NOW.date().isoformat())
+        reset_at = finished_at+timedelta(minutes=1)
+        with case.transaction() as database:
+            reset = owner(database,reset_at).refresh_encounter(command.key)
+            assert reset.progress.scheduling_review_id is not None
+            assert reset.progress.remediation_fence.after_issuance_sequence >= origin.issuance_sequence
+            assert review_count(database,NOW.date().isoformat()) == human_before
+            assert latest_failed_study_review_id(database,case.card_id) == reset.progress.scheduling_review_id
+            schedule = tuple(database.execute_native('SELECT due_date,interval_days,fsrs_card_json '
+                'FROM cards WHERE id=%s',(case.card_id,)).fetchone())
+        with case.transaction() as database:
+            replay = _ordinary_review(database,case.card_id,active,'active-target:'+case.card_id,
+                                       observed_at=finished_at)
+            assert replay['review_id'] == original_result['review_id']
+            assert tuple(database.execute_native('SELECT due_date,interval_days,fsrs_card_json '
+                'FROM cards WHERE id=%s',(case.card_id,)).fetchone()) == schedule
+            assert PostgresGameFeedbackStore(database).get(command.key).status == 'applied'
+        timeline[0] = reset_at+timedelta(minutes=1)
+        with case.transaction() as database:
+            fresh = _issue(database,case.card_id)
+            assert fresh != active
+            actual = issuance.attempt_issuance(database,fresh,case.card_id,1)
+            assert actual.issuance_sequence > reset.progress.remediation_fence.after_issuance_sequence
+            remedied = _ordinary_review(database,case.card_id,fresh,'fresh-target:'+case.card_id,
+                                        observed_at=timeline[0]+timedelta(minutes=1))
+        with case.transaction() as database:
+            effect = PostgresGameFeedbackStore(database).get(command.key)
+            assert effect.status == 'settled' and effect.settlement_review_id == remedied['review_id']
+            assert effect.progress.settlement.attempt.queue_entry_id == fresh
+            assert effect.progress.first_issued_ordinal == 1
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                (case.card_id,)).fetchone()[0] == 1
+            assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
+                (case.card_id,)).fetchone()[0] == 2
 
 
 def _study_refresh(case, capture, snapshot, command):

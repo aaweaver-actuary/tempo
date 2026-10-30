@@ -94,6 +94,35 @@ is established by this component proof.
 
 ## T06 Study-owned game lapse and durable withdrawal fence
 
+### Qualified first-departure Again and settlement (#620)
+
+`backend/tests/test_product_game_lapse.py` owns
+`test_introduced_first_departure_matches_study_again` (normal/light/hard),
+`test_encounter_retry_has_one_scheduling_receipt`,
+`test_distinct_games_are_distinct_failures`,
+`test_priority_applied_is_not_schedule_applied`,
+`test_issued_target_completion_cannot_settle_pending_reset`,
+`test_settlement_is_disposition_specific`,
+`test_replay_and_unrelated_completion_cannot_settle`,
+`test_earlier_clean_review_does_not_waive_new_acceptance`,
+`test_unqualified_old_command_cannot_authorize_new_reset_or_introduction`, and
+`test_study_day_matches_ordinary_review`. Correct unseen play is frequency evidence
+without an urgent introduction; the same original unseen occurrence retains its
+introduction intent after an ordinary introduction race.
+
+`backend/tests/test_product_game_lapse_postgres.py` owns
+`test_native_introduced_first_departure_has_one_actual_again_receipt`,
+`test_native_qualified_schedule_receipt_failure_rolls_back`, and
+`test_native_timestamp_only_review_cannot_settle_without_real_issuance`.
+`backend/tests/test_product_encounter_integration.py` owns
+`test_qualified_global_publication_reaches_exact_study_consequence_and_real_settlement`
+(actual publication/source/configuration fences, introduced/unseen outcomes,
+ordinary issue/save/replay/settlement) and
+`test_native_already_issued_target_saves_before_reset_and_only_fresh_generation_settles`
+(preserved pre-reset save/replay, one subsequent Again, actual fresh issuance,
+human review count and shorter-prefix failure identity). These use the existing
+disposable PostgreSQL owner and do not certify installed provider activation.
+
 `backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:
 `test_game_lapse_matches_again_transition`,
 `test_duplicate_delivery_has_one_effect_and_original_deadline`,

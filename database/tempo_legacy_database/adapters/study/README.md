@@ -54,13 +54,18 @@ text in storage and positive integer values at the public boundary.
 The additive next-release encounter uses the same schema051 row. `payload_json`
 is either the unchanged shared `GameLapse`, or an envelope with `kind=encounter`,
 immutable shared `GameEncounter` in `command`, and small `owner` admission facts.
+Old raw `GameLapse` JSON remains readable. A lapse needing owner facts uses an
+equivalent `kind=lapse` envelope retaining its original command JSON bytes.
 On conflict, SQL can update only the envelope's `owner` section; original command,
 semantic hash, detection, target and logical identity remain unchanged. There is
-no new table or DDL here. An applied encounter has no fabricated review ID;
-`applied_at` records actual queue/introduction priority, while observation and
-miss/frequency provenance remain distinguishable in the original command.
+no new effect table or DDL here. Qualified `introduced_again` records the actual
+existing `game_lapse` scheduling review ID and application time. First introduction
+has no scheduling review. Old priority `applied_at` alone proves neither Again
+nor admission. The owner JSON keeps separate qualification, immutable accepted
+disposition, current target, actual application/issuance/settlement progress and
+bounded preparation retry time. Original occurrence/source facts stay unchanged.
 
-`current_owner_encounter_feedback` adds priority-only validation. It permits only
+`current_owner_encounter_feedback` adds qualified target validation. It permits only
 the current introduction field to race delivery while preserving all existing
 definition/source/membership fences. Its injected #495 introduction capability
 retains the sole canonical writer and reads existing canonical introduction facts;
@@ -107,7 +112,7 @@ erDiagram
         text status "pending held applied settled"
         text reason "nullable"
         timestamptz applied_at "nullable"
-        bigint review_id "nullable logical game review; no fake encounter review"
+        bigint review_id "actual Again scheduling review; null for first introduction"
         timestamptz settled_at "nullable"
         bigint settlement_review_id "nullable logical Study review"
         text hold_revision "nullable"
