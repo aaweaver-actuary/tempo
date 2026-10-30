@@ -66,7 +66,10 @@ canonical-source revision numbers are separate domains. Physical card coincidenc
 never links a receipt; ambiguous original-effect receipts remain unknown. An owner
 remap displays its current target while retaining the original presentation link.
 Only actual progress fields establish Again, canonical introduction, issuance and
-genuine review settlement. Legacy applied receipts retain their original labels.
+genuine review settlement. A historic first issuance on an earlier presentation
+does not mark the current target issued: card/revision, issuance sequence and
+time must satisfy its current remediation fence. Genuine settlement likewise
+uses the compatible current-fence completion attempt. Legacy applied receipts retain their original labels.
 
 The legacy retry action requires an exact matching own-actionable original finding
 and a compatible legacy pending receipt (or no receipt). The registered writer

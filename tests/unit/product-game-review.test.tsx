@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { BoardProps } from "@tempo/board-ui";
 import { GameReviewView } from "../../app/features/game-review/GameReviewView";
 import { createGameReviewApi, type GameReviewClient } from "../../app/features/game-review/api";
-import { boardPosition, departureMove, departureProgress, departureReceipt, findingLabels, gamePositions, receiptLabel } from "../../app/features/game-review/state";
+import { boardPosition, departureMove, departureProgress, departureProgressStage, departureReceipt, findingLabels, gamePositions, receiptLabel } from "../../app/features/game-review/state";
 import { FindingSchema, GameDetailSchema, LearningReceiptSchema, EncounterReceiptSchema, type Finding, type GameDetail, type LearningReceipt, type EncounterReceipt } from "../../app/features/product-api/contracts";
 import confirmedFixture from "../../contracts/product-v02/fixtures/confirmed-introduced-miss.json";
 import heldFixture from "../../contracts/product-v02/fixtures/held-receipt.json";
@@ -482,4 +482,35 @@ it("shows actual application, issuance and genuine settlement separately and fol
   expect(departureReceipt({ ...value, receipts: [unrelated] })).toBeUndefined();
   const ambiguous = { ...remapped, owner_receipt_id: "different-original-effect" };
   expect(departureReceipt({ ...value, receipts: [remapped, ambiguous] })).toBeUndefined();
+});
+
+
+it.each([
+  { card_id: "remapped-card", card_revision: 2 },
+  { card_id: "existing-physical-card", card_revision: 2 },
+])("does not claim current target issuance from a historical first service after remapping to $card_id revision $card_revision", async target => {
+  const value = sharedDetail("own_actionable");
+  const original = departureReceipt(value)!;
+  if (!("admission_status" in original) || !original.progress || !original.progress.remediation_fence) throw new Error("shared progress fixture required");
+  const historical = { queue_entry_id: 101, card_id: original.progress.target.card_id, card_revision: original.progress.target.card_revision,
+    issuance_sequence: 101, issued_at: "2026-10-26T12:02:00Z" };
+  const remapped = EncounterReceiptSchema.parse({ ...original, progress: { ...original.progress,
+    target, prior_remediation_fences: [original.progress.remediation_fence],
+    remediation_fence: { target, after_issuance_sequence: 105, established_at: "2026-10-26T12:04:00Z" },
+    first_issued: historical, first_issued_ordinal: 1 } });
+  const detail = { ...value, receipts: [remapped] };
+  expect(departureReceipt(detail)).toBe(remapped);
+  expect(departureProgressStage(remapped)).toBe("again_applied");
+  expect(departureProgress(remapped)).toBe("Again applied · First issued on an earlier presentation; current target awaits a new Study issuance");
+  render(<GameReviewView api={apiForShared(detail)} />); await selectFirst(); await readyBoard();
+  const primary = screen.getByTestId("first-departure-summary");
+  expect(primary.dataset.progressStage).toBe("again_applied");
+  expect(primary.textContent).toContain(`Study target: ${target.card_id}`);
+  expect(primary.textContent).toContain("current target awaits a new Study issuance");
+  expect(primary.textContent).not.toContain("Issued for Study");
+  const settled = EncounterReceiptSchema.parse({ ...remapped, status: "settled", admission_status: "settled",
+    progress: { ...remapped.progress, settlement: { review_id: 42, attempt: { ...historical, queue_entry_id: 102,
+      ...target, issuance_sequence: 106, issued_at: "2026-10-26T12:05:00Z" } } } });
+  expect(departureProgressStage(settled)).toBe("settled");
+  expect(departureProgress(settled)).toBe("Again applied · Settled after a genuine Study review");
 });

@@ -77,12 +77,23 @@ export function isEncounterReceipt(receipt: GameDetail["receipts"][number] | und
   return receipt !== undefined && "admission_status" in receipt;
 }
 
+/** A retained first issuance may belong to a presentation replaced by a later fence. */
+function issuedForCurrentTarget(progress: NonNullable<EncounterReceipt["progress"]>,
+  attempt: NonNullable<EncounterReceipt["progress"]>["first_issued"]): boolean {
+  const fence = progress.remediation_fence;
+  return attempt !== null && fence !== null
+    && attempt.card_id === progress.target.card_id && attempt.card_revision === progress.target.card_revision
+    && attempt.card_id === fence.target.card_id && attempt.card_revision === fence.target.card_revision
+    && attempt.issuance_sequence > fence.after_issuance_sequence
+    && Date.parse(attempt.issued_at) >= Date.parse(fence.established_at);
+}
+
 export function departureProgressStage(receipt: GameDetail["receipts"][number] | undefined): string {
   if (!receipt) return "unknown";
   if (!isEncounterReceipt(receipt) || !receipt.progress) return "legacy";
   if (receipt.status === "held" || ["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome)) return "held";
-  if (receipt.progress.settlement) return "settled";
-  if (receipt.progress.first_issued) return "issued";
+  if (receipt.progress.settlement && issuedForCurrentTarget(receipt.progress, receipt.progress.settlement.attempt)) return "settled";
+  if (issuedForCurrentTarget(receipt.progress, receipt.progress.first_issued)) return "issued";
   if (receipt.progress.schedule_applied_at) return "again_applied";
   if (receipt.progress.introduction_applied_at) return "introduced";
   return "accepted";
@@ -96,8 +107,9 @@ export function departureProgress(receipt: GameDetail["receipts"][number] | unde
   if (held) return `Study feedback held: ${receipt.reason ?? receipt.outcome.replaceAll("_", " ")}`;
   const application = progress.scheduling_review_id !== null && progress.schedule_applied_at !== null
     ? "Again applied" : progress.introduction_applied_at !== null ? "Canonical first introduction applied" : null;
-  if (progress.settlement) return `${application} · Settled after a genuine Study review`;
-  if (progress.first_issued) return `${application} · Issued for Study (new issuance ${progress.first_issued_ordinal})`;
+  if (progress.settlement && issuedForCurrentTarget(progress, progress.settlement.attempt)) return `${application} · Settled after a genuine Study review`;
+  if (issuedForCurrentTarget(progress, progress.first_issued)) return `${application} · Issued for Study (new issuance ${progress.first_issued_ordinal})`;
+  if (application && progress.first_issued) return `${application} · First issued on an earlier presentation; current target awaits a new Study issuance`;
   if (application) return `${application} · Awaiting a new Study issuance`;
   return `Accepted · ${receipt.disposition === "introduced_again" ? "Again" : "First introduction"} pending${receipt.reason ? `: ${receipt.reason.replaceAll("_", " ")}` : ""}`;
 }
