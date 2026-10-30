@@ -6314,3 +6314,35 @@ The changed full-repertoire source profile is covered by
 in `backend/tests/test_product_game_review_commands_postgres.py`: actual PostgreSQL
 read-only enforcement and source-read settings remain separate from the unchanged
 short reserved background budget. The owning qualifier selects this named case.
+
+
+## Study preparation and retry recovery (2026-10-30)
+
+The current v1 recovery candidate preserves saved reviews, original operation
+identity, complete source authority, protected attempts and short writers.
+Component proofs below are not the assembled 30-transition-per-mode acceptance
+or installed genuine-use evidence. New backend cases are discoverable in the
+existing `study-game-priority` selection; frontend cases retain the regular unit suite.
+
+- `backend/tests/test_next_card_preparation_selection.py`: `test_accepted_work_is_selected_before_local_handoff_preparation`, `test_later_optional_delivery_is_not_prepared_before_earlier_accepted_work`, `test_preparation_receipt_reports_retained_hold_honestly`, `test_unqualified_retained_work_keeps_its_original_historical_priority`.
+- `backend/tests/test_product_first_boundary.py`: `test_first_boundary_keeps_global_and_exact_occurrence_targets_in_same_position`.
+- `backend/tests/test_product_game_lapse.py`: `test_qualified_owner_rejects_producer_shaped_prepared_publication`.
+- `backend/tests/test_product_snapshot.py`: `test_prepared_publication_owns_complete_facts_and_cannot_accept_caller_snapshot`, `test_snapshot_replay_reuse_preserves_legal_en_passant_and_castling_identity`, `test_snapshot_shared_executable_replay_scales_with_content_not_graph_uses`.
+- `backend/tests/test_queue_projection_postgres.py`: `test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transaction`.
+- `backend/tests/test_study_feedback_preparation_trace.py`: `test_feedback_trace_redacts_unrecognized_reason_status_and_sqlstate`, `test_feedback_trace_retains_safe_inner_reason_without_payload_or_result`, `test_native_preparation_trace_localizes_capture_failure_and_retains_both_owners`, `test_nested_preparation_trace_keeps_one_sweep_and_restores_existing_timing`, `test_preparation_sql_remains_in_outer_command_total_and_reports_local_delta`.
+- `tests/unit/next-card-preparation-regressions.test.ts`: `preparation_authority_change_retains_old_command_without_delivering_to_new_authority`, `preparation_claims_coordinate_two_contexts_and_aborted_delivery_releases_original_claim`, `preparation_identity_reservation_survives_failed_record_retention_without_untracked_post`, `preparation_invalid_terminal_response_stays_unresolved_and_recovers_its_original_receipt`, `preparation_missing_receipt_resends_only_original_identity_and_rejects_mismatched_receipt`, `preparation_reload_recovers_same_immutable_request_and_retains_unrelated_intents`, `preparation_simultaneous_contexts_reserve_one_operation_before_first_post`, `preparation_terminal_pending_requires_paced_explicit_retry_and_progress_permits_next_unit`.
+- `tests/unit/prepared-review-continuation-regressions.test.ts`: `next_card_preparation_lost_response_recovers_original_operation_across_acquisitions`, `next_card_preparation_terminal_no_progress_never_rotates_ids_automatically`.
+- `tests/unit/review-attempt-confirmation-regressions.test.tsx`: `preparation_deadline_automatic_and_manual_acquisitions_recover_original_operation`, `preparation_manual_queue_retry_starts_later_unit_without_resubmitting_saved_review`.
+
+Complete-publication owner tests also exercise both raw facts and Repertoire-owned
+prepared capabilities across ten selected repertoires; they independently reject
+changed source and producer-shaped fake preparation. The queue-read native cases
+preserve all result and protection semantics and prove transaction-local JIT
+configuration restores at the next transaction. No acquisition deadline, source
+filter, priority rule or resource limit is relaxed.
+
+The explicit `study-recovery` PostgreSQL fixture profile is allowlisted and keeps
+the default native fixture unchanged; `backend/tests/test_study_recovery_acceptance.py`
+owns its allocation-contract guard. The recovery profile is not a pass on the
+default 384 MiB/tmpfs stress fixture; its disk-backed 1 GiB allocation and exact
+container/volume cleanup are separately recorded by the assembled run.

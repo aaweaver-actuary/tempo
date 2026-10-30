@@ -86,6 +86,7 @@
       "tests/unit/prefix-diagnostics-regressions.test.tsx",
       "tests/unit/prefix-split-pending-regressions.test.ts",
       "tests/unit/prefix-split-training-regressions.test.tsx",
+      "tests/unit/next-card-preparation-regressions.test.ts",
       "tests/unit/prepared-queue-readiness-regressions.test.ts",
       "tests/unit/prepared-review-continuation-regressions.test.ts",
       "tests/unit/product-contracts.test.ts",

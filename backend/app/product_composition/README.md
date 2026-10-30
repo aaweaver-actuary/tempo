@@ -431,7 +431,9 @@ separate operator gates.
 flowchart LR
   Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
   Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
-  Pending --> Prepare["Explicit prepare-next: unreserved read-only publication; close read before replay / current owner target"]
+  Pending --> Select["Read accepted Study responsibility and original priority"]
+  Select --> Choice["Compare cheap local delivery metadata; controls first"]
+  Choice --> Prepare["Prepare selected winner only: unreserved publication read; close before projection / current owner target"]
   Prepare --> Fence["Gateway request hash / attempt token / receipt"]
   Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
   Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
@@ -444,12 +446,23 @@ optional schema failure. Controls precede both accepted Study and new source
 FIFO; candidate-aware source observation cannot drain an entire historical
 outbox before an already-ready live target. Full preparation finishes before the
 command writer, and a fresh trusted boot identity is captured at its end. The
-prepared wrapper applies only after the gateway fence. Accepted Study preparation
-uses bounded foreground reads and continues independently of Games mode/process.
+prepared wrapper applies only after the gateway fence. The recovery candidate
+selects accepted Study work before invoking optional handoff, passing its original
+priority as a cutoff to the local metadata selector. Controls retain precedence;
+a later optional delivery is not projected or captured before earlier accepted
+work. Retained unqualified work keeps its historical priority fallback. Recoverable
+preparation holds report `pending:true` and their owner reason rather than a
+false no-work result. Accepted Study preparation uses bounded foreground reads
+and continues independently of Games mode/process.
 
 Qualification consumes Repertoire's released `read_repertoire` mapping port;
 the removed raw-JSON reader is not a compatibility dependency. Projection and
-chess replay run only after the source context exits. Dedicated Games reads use
+chess replay run only after the source context exits. A Repertoire-owned
+`PreparedPublishedRepertoire` constructs its immutable snapshot from detached full
+publication facts once per operation. Study independently reselects the boundary
+and retains all current writer fences while reusing that owner projection; it
+cannot accept a caller-provided snapshot or readiness assertion. Exact executable
+replay is reused only within one projection invocation. Dedicated Games reads use
 their existing `repertoire_snapshot=True` profile. Explicit foreground
 prepare-next and retry forward that profile through the existing unreserved
 `read_connection` and reader pool: READ ONLY, no whole-snapshot transaction or

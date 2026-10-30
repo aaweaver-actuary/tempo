@@ -14,6 +14,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[3]
 REQUIRED = (
     "backend/tests/test_study_priority_interface.py",
+    "backend/tests/test_next_card_preparation_selection.py",
+    "backend/tests/test_study_feedback_preparation_trace.py",
+    "backend/tests/test_queue_projection_postgres.py",
+    "backend/tests/test_product_snapshot.py",
+    "backend/tests/test_product_game_lapse.py::test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope",
+    "backend/tests/test_product_game_lapse.py::test_qualified_owner_rejects_producer_shaped_prepared_publication",
     "backend/tests/test_product_contracts.py::test_new_product_boundaries_do_not_import_composition_or_private_siblings",
     "backend/tests/test_study_encounter_intake_boundary.py::test_intake_never_calls_queue_and_commits_once_when_refresh_fails",
     "backend/tests/test_study_encounter_intake_boundary.py::test_study_refresh_without_games_consumes_accepted_priority",

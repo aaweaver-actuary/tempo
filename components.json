@@ -1962,7 +1962,14 @@
         "contracts/product-v02/fixtures/first-departure",
         "database/tempo_legacy_database/connections.py",
         "database/tempo_legacy_database/adapters/postgres_store.py",
-        "backend/tests/test_product_game_review_commands_postgres.py"
+        "backend/tests/test_product_game_review_commands_postgres.py",
+        "backend/app/repertoire",
+        "database/tempo_legacy_database/adapters/http_composition/queue_projection.py",
+        "database/tempo_legacy_database/adapters/http_composition/availability.py",
+        "backend/tests/test_product_snapshot.py",
+        "backend/tests/test_next_card_preparation_selection.py",
+        "backend/tests/test_study_feedback_preparation_trace.py",
+        "backend/tests/test_queue_projection_postgres.py"
       ]
     },
     {
@@ -1985,6 +1992,7 @@
         "database/tests/games_collection/test_packaged_collection.py",
         "backend/tests/fixtures/product_collection_packaged.py",
         "backend/tests/test_product_game_lapse_postgres.py",
+        "backend/tests/test_study_recovery_acceptance.py",
         "backend/tests/test_product_game_lapse.py",
         "contracts/product-v02/fixtures",
         "backend/app/product_composition/game_review.py",
