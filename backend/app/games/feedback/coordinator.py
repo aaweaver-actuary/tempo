@@ -6,14 +6,14 @@ import json
 from datetime import datetime
 from typing import Iterable, Mapping
 
-from tempo_game_classification import resolve_equivalent_mapping
-
-from app.contracts.product_v02.games import CanonicalGame, Finding
-from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
+from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection
+from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEffectKey, GameEncounter, GameLapse, LearningFeedbackPort
 from app.contracts.product_v02.repertoire import IntroductionGameScope, RepertoireSnapshot, RepertoireSnapshotPort
 
-from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery,
+from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier, FirstBoundaryPreparation,
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
+from .first_boundary import select_first_boundary
+from .qualification import acknowledge_qualified_delivery, selection_supports_original
 
 
 def stable_id(*parts: object) -> str:
@@ -26,13 +26,6 @@ _SAFE_REJECTIONS = {
     "chesscom": frozenset({"outside_window", "time_control_filtered", "rated_filtered",
                            "unsupported_variant", "duplicate_source_id", "unfinished_game"}),
 }
-_FACTUAL_NON_LAPSE_DIAGNOSTICS = frozenset({
-    "introduction_evidence_unavailable", "game_occurrence_time_not_exact",
-    "chronology_requires_timezone", "conflicting_introduction_chronology",
-    "introduced_content_identity_unproved",
-})
-
-
 def _comparison_revision(snapshots: tuple[RepertoireSnapshot, ...], unavailable: Iterable[str]) -> str:
     """Capture clocks are provenance, not new material comparison facts."""
     documents = []
@@ -47,7 +40,7 @@ def _comparison_revision(snapshots: tuple[RepertoireSnapshot, ...], unavailable:
                              (document, "decision_presentations")):
             owner[field].sort(key=lambda value: json.dumps(value, sort_keys=True))
         documents.append(json.dumps(document, sort_keys=True, separators=(",", ":")))
-    return stable_id("comparison-facts-v1", sorted(set(documents)), sorted(unavailable))
+    return stable_id("comparison-facts-v2-first-departure", sorted(set(documents)), sorted(unavailable))
 
 
 def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
@@ -73,8 +66,10 @@ def encounter_observation(encounter: GameEncounter) -> tuple:
 def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
                        snapshots: tuple[RepertoireSnapshot, ...], source: IntroductionGameScope,
                        detected_at: str, occurred_at: str | None,
-                       payload_digest: str | None = None) -> tuple[GameEncounter, ...]:
-    """Pure shared-command projection for imported canonical history or new pages.
+                       payload_digest: str | None = None,
+                       selected_repertoire_ids: Iterable[str] | None = None,
+                       unavailable_repertoire_ids: Iterable[str] = ()) -> tuple[GameEncounter, ...]:
+    """Project only the exact first learner departure; findings stay diagnostic.
 
     Original occurrence/detection/source facts are explicit; no PGN, acquisition,
     clock, store, receipt or admission policy is consulted. An empty result is not
@@ -85,7 +80,6 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
         raise ValueError("encounter source differs from canonical game")
     if any(snapshot.membership.workspace_id != game.workspace_id for snapshot in snapshots):
         raise ValueError("encounter snapshot workspace differs from canonical game")
-    candidates = []
     for finding in findings:
         if (finding.provider, finding.game_id, finding.source_revision, finding.source_digest) != (
                 source.provider, source.game_id, source.source_revision, source.source_digest):
@@ -93,48 +87,33 @@ def project_encounters(game: CanonicalGame, *, findings: tuple[Finding, ...],
         if not any(finding.repertoire_id in snapshot.membership.scope_repertoire_ids
                    and finding.repertoire_revision == snapshot.membership.revision for snapshot in snapshots):
             raise ValueError("encounter finding is outside supplied snapshot scope")
-        # Historical lapse proof is separate from a current exact authored fact.
-        factual_non_lapse = (finding.kind == "known_unavailable"
-            and finding.diagnostic in _FACTUAL_NON_LAPSE_DIAGNOSTICS)
-        if ((finding.kind not in {"known_unintroduced", "confirmed_miss"} and not factual_non_lapse)
-                or finding.membership != "present" or len(finding.expected_uci) != 1):
-            continue
-        applicable = tuple(snapshot for snapshot in snapshots
-            if finding.repertoire_id in snapshot.membership.scope_repertoire_ids
-            and finding.repertoire_revision == snapshot.membership.revision)
-        if any(not snapshot.membership.complete or not snapshot.membership.available
-               or snapshot.learner_color != game.learner_color or snapshot.variant != "standard"
-               for snapshot in applicable):
-            continue
-        # Resolve all exact-position alternatives before checking the finding's
-        # claimed target. Filtering by its card first would hide a conflicting alias.
-        mappings = {mapping.model_dump_json(): mapping for snapshot in applicable
-            for mapping in snapshot.decision_presentations
-            if (mapping.repertoire_id, mapping.repertoire_revision, mapping.position_key) == (
-                finding.repertoire_id, finding.repertoire_revision, finding.position_key)}
-        decision = resolve_equivalent_mapping(mappings.values())
-        if decision is None or not decision.available:
-            continue
-        if (decision.decision_id, decision.presentation_id, decision.presentation_revision,
-                decision.selected_response_uci) != (finding.decision_id, finding.presentation_id,
-                finding.presentation_revision, finding.expected_uci[0]):
-            continue
         if finding.ply > len(game.moves) or finding.played_uci != game.moves[finding.ply - 1]:
             raise ValueError("encounter played move differs from captured game")
-        candidates.append(GameEncounter(key=GameEffectKey(workspace_id=game.workspace_id,
-            provider=source.provider, game_id=game.game_id, decision_id=decision.decision_id,
-            occurrence_ply=finding.ply), source=source, decision=decision,
-            expected_uci=finding.expected_uci[0], played_uci=finding.played_uci,
-            observation="matched" if finding.played_uci == finding.expected_uci[0] else "missed",
-            detected_at=detected_at, occurred_at=occurred_at,
-            payload_digest=source.source_digest if payload_digest is None else payload_digest))
-    # Repeated equivalent facts share one logical occurrence. Conflicting facts
-    # retain their findings but cannot choose a command through row ordering.
-    grouped = {}
-    for command in candidates:
-        grouped.setdefault(command.key.logical_id(), []).append(command)
-    return tuple(commands[0] for _, commands in sorted(grouped.items())
-                 if len({command.model_dump_json() for command in commands}) == 1)
+    try:
+        selection = select_first_boundary(game, snapshots=snapshots, source=source,
+            selected_repertoire_ids=selected_repertoire_ids,
+            unavailable_repertoire_ids=unavailable_repertoire_ids)
+    except ValueError:
+        return ()  # Malformed authored facts cannot authorize an owner command.
+    return _encounter_for_selection(selection, detected_at=detected_at,
+        occurred_at=occurred_at, payload_digest=payload_digest)
+
+
+def _encounter_for_selection(selection: FirstDepartureSelection, *, detected_at: str,
+                             occurred_at: str | None, payload_digest: str | None) -> tuple[GameEncounter, ...]:
+    if selection.status != "own_actionable":
+        return ()
+    decision, source = selection.decision, selection.source
+    if decision.introduction_game is not None and decision.introduction_game != source:
+        # A new command cannot assert another game's chronology. Keep the
+        # captured selection intact and omit only this inapplicable old proof.
+        decision = decision.model_copy(update={"introduced_before_game": None, "introduction_game": None})
+    return (GameEncounter(key=GameEffectKey(workspace_id=selection.workspace_id,
+        provider=source.provider, game_id=source.game_id, decision_id=decision.decision_id,
+        occurrence_ply=selection.ply), source=source, decision=decision,
+        expected_uci=selection.expected_uci[0], played_uci=selection.played_uci, observation="missed",
+        detected_at=detected_at, occurred_at=occurred_at,
+        payload_digest=source.source_digest if payload_digest is None else payload_digest),)
 
 
 class Coordinator:
@@ -142,6 +121,9 @@ class Coordinator:
                  comparer: Comparer, snapshots: RepertoireSnapshotPort, store: GamesStore,
                  learning: LearningFeedbackPort | EncounterFeedbackPort | None, clock: Clock,
                  source_identity: SourceIdentity | None = None,
+                 qualifier: DeliveryQualifier | None = None,
+                 first_boundary_preparation: FirstBoundaryPreparation | None = None,
+                 effect_identity=None,
                  encounter_feedback: bool = False, max_page_records: int = 100,
                  max_page_bytes: int = 8 * 1024 * 1024, max_page_positions: int = 10000):
         if not 1 <= max_page_records <= 1000 or not 1 <= max_page_bytes <= 8 * 1024 * 1024:
@@ -152,6 +134,9 @@ class Coordinator:
         self.max_page_positions = max_page_positions
         self.providers, self.normalizer, self.comparer = providers, normalizer, comparer
         self.source_identity = source_identity
+        self.qualifier = qualifier
+        self.effect_identity = effect_identity
+        self.first_boundary_preparation = first_boundary_preparation
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
@@ -207,6 +192,7 @@ class Coordinator:
             key = stable_id(spec.workspace_id, spec.provider, record.source_game_id)
             previous = self.store.source(key)
             normalized, findings, encounters, diagnostic = None, (), (), None
+            first_departure = None
             compatible = ()
             unresolved = set(unavailable_snapshots)
             integrity_error = snapshot_integrity_error
@@ -261,14 +247,26 @@ class Coordinator:
                         integrity_error = True
                 findings = tuple(sorted(set(compared_findings),
                     key=lambda finding: (finding.ply, finding.repertoire_id, finding.model_dump_json())))
-                if self.encounter_feedback and not integrity_error:
+                if not integrity_error:
                     try:
-                        encounters = project_encounters(normalized, findings=findings, snapshots=compatible,
+                        first_departure = select_first_boundary(normalized, snapshots=snapshots,
                             source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
                                 source_revision=normalized.source_revision, source_digest=normalized.source_digest),
-                            detected_at=self.clock.utc_now(), occurred_at=(normalized.played_at
-                                if record.time_precision in {"second", "millisecond"} else None),
-                            payload_digest=normalized.source_digest)
+                            selected_repertoire_ids=spec.repertoire_ids, unavailable_repertoire_ids=unresolved)
+                        if self.first_boundary_preparation is not None and first_departure.status == "own_unmapped":
+                            prepared = self.first_boundary_preparation(normalized,snapshots=snapshots,
+                                selection=first_departure)
+                            first_departure = select_first_boundary(normalized,snapshots=prepared.snapshots,
+                                source=first_departure.source,selected_repertoire_ids=spec.repertoire_ids,
+                                unavailable_repertoire_ids=unresolved)
+                            compatible = tuple(snapshot for snapshot in prepared.snapshots
+                                if snapshot.learner_color == normalized.learner_color)
+                            if prepared.diagnostic is not None and first_departure.status == "own_unmapped":
+                                first_departure = first_departure.model_copy(update={"diagnostic":prepared.diagnostic})
+                        if self.encounter_feedback:
+                            encounters = _encounter_for_selection(first_departure, detected_at=self.clock.utc_now(),
+                                occurred_at=(normalized.played_at if record.time_precision in {"second", "millisecond"} else None),
+                                payload_digest=normalized.source_digest)
                     except ValueError:
                         integrity_error = True
             if integrity_error:
@@ -287,17 +285,40 @@ class Coordinator:
                     previous.normalized.source_digest) != (normalized.game_id,
                     normalized.source_revision, normalized.source_digest)
             held = changed or bool(previous and previous.quarantined) or integrity_error
+            determined_at = previous.determined_at if previous else None
+            if (previous is not None and first_departure is not None
+                    and first_departure.status == "own_actionable" and not held):
+                original = next((effect for effect in previous.effects
+                    if selection_supports_original(first_departure, effect)), None)
+                retained = (self.store.delivery(delivery_for(key, original).operation_id)
+                    if original is not None else None)
+                # A source can pass through covered/unavailable comparisons or
+                # other occurrences. The original delivery owns each clock.
+                determined_at = retained.determined_at if retained is not None else None
+                if (determined_at is None and previous.first_departure is not None
+                        and previous.first_departure.status == "own_actionable"
+                        and previous.first_departure.source == first_departure.source
+                        and previous.first_departure.ply == first_departure.ply
+                        and previous.first_departure.decision.decision_id == first_departure.decision.decision_id
+                        and previous.first_departure.expected_uci == first_departure.expected_uci
+                        and previous.first_departure.played_uci == first_departure.played_uci):
+                    determined_at = previous.determined_at
             effects = list(previous.effects) if previous else []
-            confirmed = {(f.decision_id, f.ply) for f in findings if f.kind == "confirmed_miss"}
             observations = {}
             for item in encounters:
                 observations.setdefault(item.key.logical_id(), set()).add(encounter_observation(item))
-            compared_repertoires = {repertoire for snapshot in compatible
-                for repertoire in snapshot.membership.scope_repertoire_ids} - unresolved
+            conclusive = (first_departure is not None and first_departure.selected_scope
+                and all(scope.complete and scope.available for scope in first_departure.selected_scope)
+                and first_departure.status not in {"unresolved","own_unmapped"})
             for effect in effects:
-                if isinstance(effect, GameLapse):
-                    still_supported = (effect.finding.repertoire_id not in compared_repertoires
-                        or (effect.key.decision_id, effect.key.occurrence_ply) in confirmed)
+                if conclusive:
+                    # Global positive proof may disqualify an old accepted
+                    # effect even when it emits no replacement encounter.
+                    still_supported = selection_supports_original(first_departure,effect)
+                elif isinstance(effect, GameLapse):
+                    # Missing/ambiguous comparison is a hold, not positive
+                    # disqualification of an already accepted original lapse.
+                    still_supported = True
                 else:
                     current = observations.get(effect.key.logical_id())
                     # Later admission/learning or missing proof cannot erase history.
@@ -307,13 +328,23 @@ class Coordinator:
                     command = GameEffectControl(key=effect.key, source_revision=source_revision(effect),
                         action="hold", reason="source_corrected" if changed else "reanalysis")
                     deliveries.append(delivery_for(key, command))
-                    held = True
+                    # A conclusive scope reanalysis holds the obsolete effect,
+                    # not the unchanged source or a different selected occurrence.
             if not held:
                 prior_plies = {effect.key.occurrence_ply for effect in effects}
                 occupied_keys = {(effect.key.decision_id, effect.key.occurrence_ply) for effect in effects}
                 # Encounter intake receives facts; Study owns even a confirmed miss's disposition.
                 for finding in findings:
                     if self.encounter_feedback or finding.kind != "confirmed_miss" or (finding.decision_id, finding.ply) in occupied_keys or finding.ply in prior_plies:
+                        continue
+                    if first_departure is None or first_departure.status != "own_actionable":
+                        continue
+                    selected = first_departure.decision
+                    if (finding.ply, finding.position_key, finding.expected_uci, finding.played_uci,
+                            finding.decision_id, finding.presentation_id, finding.presentation_revision) != (
+                            first_departure.ply, first_departure.position_key, first_departure.expected_uci,
+                            first_departure.played_uci, selected.decision_id, selected.presentation_id,
+                            selected.presentation_revision):
                         continue
                     effect_key = GameEffectKey(workspace_id=spec.workspace_id, provider=spec.provider,
                         game_id=finding.game_id, decision_id=finding.decision_id, occurrence_ply=finding.ply)
@@ -331,13 +362,20 @@ class Coordinator:
                     deliveries.append(delivery_for(key, encounter))
             if held and not integrity_error:
                 diagnostic = "changed_source_requires_D08_resolution"
+            if (not held and first_departure is not None and first_departure.status == "own_actionable"
+                    and determined_at is None):
+                determined_at = self.clock.utc_now()
             sources.append(SourceState(source_key=key, version=previous.version if previous else 0,
                 original=previous.original if previous else record,
                 record_fingerprint=previous.record_fingerprint if previous else fingerprint,
                 normalized=previous.normalized if changed else normalized, findings=findings,
-                comparison_revision=comparison_revision, effects=tuple(effects), encounters=encounters, quarantined=held, diagnostic=diagnostic))
+                comparison_revision=comparison_revision, effects=tuple(effects), encounters=encounters,
+                first_departure=previous.first_departure if changed else first_departure,
+                determined_at=determined_at, quarantined=held, diagnostic=diagnostic))
             captures.append(Capture(source_key=key, account=spec.account, record=record, provider_record_json=record.model_dump_json(), normalized=normalized,
-                findings=findings, encounters=encounters, comparison_revision=comparison_revision, diagnostic=diagnostic))
+                findings=findings, encounters=encounters, first_departure=first_departure,
+                determined_at=None if changed else determined_at,
+                comparison_revision=comparison_revision, diagnostic=diagnostic))
             quarantined = quarantined or held
         resumable = page.continuation is not None and page.continuation != job.continuation
         safe = not boundary and (page.complete or resumable)
@@ -353,15 +391,59 @@ class Coordinator:
             "window_complete": complete, "last_checkpoint_at": self.clock.utc_now() if safe else job.last_checkpoint_at,
             "pages_committed": job.pages_committed + 1, "next_attempt_at": 0, "lease_until": 0,
             "error": error, "rejections": page.rejections})
-        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(deliveries),
+        # A new complete actionable selection is durable at the same checkpoint
+        # as its original command. Remaining local owner preparation may then
+        # progress during foreground practice without repeating provider work.
+        selected_sources = {source.source_key: source for source in sources}
+        prepared_deliveries = []
+        for delivery in deliveries:
+            updates = {"origin_job_id": spec.job_id, "stream": spec.stream,
+                       "configuration_revision": spec.configuration_revision}
+            if self.effect_identity is not None:
+                updates["owner_effect_id"] = self.effect_identity(delivery.command.key)
+            source = selected_sources.get(delivery.source_key)
+            if (delivery.control is None and source is not None and source.first_departure is not None
+                    and source.determined_at is not None
+                    and selection_supports_original(source.first_departure, delivery.command)):
+                updates["determined_at"] = source.determined_at
+            if (delivery.control is None and spec.configuration_revision is not None
+                    and source is not None and source.first_departure is not None
+                    and source.first_departure.status == "own_actionable" and source.determined_at is not None):
+                witness = FirstDepartureWitness(selection=source.first_departure,
+                    configuration_revision=spec.configuration_revision,
+                    determined_at=source.determined_at, stream=spec.stream)
+                if witness.matches(delivery.command):
+                    updates.update(qualification_status="ready", qualification=witness,
+                        determined_at=witness.determined_at)
+            prepared_deliveries.append(delivery.model_copy(update=updates))
+        self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(prepared_deliveries),
             provider_page_json=page_json, input_continuation=job.continuation))
 
     def deliver(self, delivery: Delivery) -> None:
         """Persist the owner receipt; transport success alone is never evidence."""
+        current = self.store.delivery(delivery.operation_id)
+        if current is None or current.state != "pending":
+            return
+        delivery = current
         command = delivery.command
+        serviced = False
         try:
+            if delivery.control is None and self.qualifier is not None:
+                delivery = self.qualifier.prepare(delivery)
+                self.store.save_delivery(delivery,serviced=True)
+                serviced = True
+                current = self.store.delivery(delivery.operation_id)
+                if current.state != "pending" or delivery.qualification_status != "ready":
+                    return
+                # Source/control authority is checked again inside Study's
+                # short writer; this reread alone is not the acceptance fence.
+                delivery = current
             if delivery.control is not None:
                 receipt = self.learning.control_effect(command)
+            elif self.qualifier is not None:
+                receipt = self.learning.accept_qualified(command, qualification=delivery.qualification)
+                self.store.save_delivery(acknowledge_qualified_delivery(delivery, receipt))
+                return
             elif delivery.encounter is not None:
                 receipt = self.learning.accept_encounter(command)
                 if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (
@@ -374,12 +456,17 @@ class Coordinator:
                 raise ValueError("receiver_receipt_identity_mismatch")
             state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
             self.store.save_delivery(delivery.model_copy(update={"state": state, "receipt": receipt,
-                "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}))
+                "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}),serviced=not serviced)
+        except DeliveryDeferred as error:
+            self.store.save_delivery(delivery.model_copy(update={"qualification_status": "held",
+                "qualification_reason": error.reason, "qualification_retryable": error.retryable,
+                "error": error.reason,
+                "next_attempt_at": self.clock.now() + error.retry_after}),serviced=not serviced)
         except Exception as error:
             # A receiver may already have committed. Preserve this exact command.
             delay = max(min(300, 2 ** min(delivery.attempts + 1, 8)), getattr(error, "retry_after", 0))
             self.store.save_delivery(delivery.model_copy(update={"attempts": delivery.attempts + 1,
-                "next_attempt_at": self.clock.now() + delay, "error": "owner_acknowledgment_uncertain"}))
+                "next_attempt_at": self.clock.now() + delay, "error": "owner_acknowledgment_uncertain"}),serviced=not serviced)
 
     def withdraw_source(self, job: JobState, source_key: str) -> None:
         """Durably quarantine an explicitly deleted/excluded source and fence its effects.

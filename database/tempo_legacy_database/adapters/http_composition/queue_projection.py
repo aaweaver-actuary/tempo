@@ -48,7 +48,7 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
                                               AND instr(c.recent_attempts_json,'"again"')>0
                                     THEN COALESCE((SELECT MAX(failed_review.id) FROM reviews failed_review
                                       WHERE failed_review.card_id=c.id AND failed_review.rating='again'
-                                        AND failed_review.source_kind='study'
+                                        AND failed_review.source_kind IN ('study','game_lapse')
                                         AND failed_review.invalidated_at IS NULL),0)
                                     ELSE 0 END latest_failed_review_id,
                                   EXISTS(SELECT 1 FROM reviews study_review
@@ -191,6 +191,14 @@ def available_head(database, current_day: Callable[[], str], *, miss_reason: str
         availability.available_attempt_sql(miss_reason) + " ORDER BY q.position,q.id LIMIT 1",
         (current_day(),),
     ).fetchone()
+
+
+def retained_entry_issued(database, entry_id, original_day, *, miss_reason):
+    return database.execute(availability.available_attempt_sql(miss_reason) + """
+        AND q.id=? AND EXISTS(SELECT 1 FROM queue_attempt_origins origin
+          WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
+            AND origin.revision=c.revision AND origin.issued_as_head=1)""",
+        (original_day, entry_id)).fetchone()
 
 
 def mark_entry_failed(database, entry_id: int):

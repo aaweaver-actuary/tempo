@@ -91,6 +91,42 @@ evidence is retained there. Current focused qualification and exact tested
 revisions are recorded in PR #591; they do not establish installation or the
 complete Games-to-Study journey.
 
+### Retained Game Review selection and progress (#624)
+
+`GameReview.game_detail` returns the persisted global `first_departure`, original
+`determined_at` and opaque `comparison_revision` from Games' `SourceState`.
+The optional `repertoire_id` filters diagnostic findings only. It never narrows
+the retained selected scope or chooses a primary result from those findings.
+The selection's workspace, canonical source revision/digest and game must match
+the retained normalized source; mismatches refuse the read. The outer
+`source_revision` remains raw provider provenance and may differ legitimately.
+
+`comparison_freshness` is `unknown`: retained publication generations alone do
+not prove that the complete source digest, which includes card/learning facts,
+is current. No bounded complete-current witness is persisted for this read.
+GET performs no snapshot projection, provider request, recomparison or write.
+Absent selection remains null, including for empty findings.
+
+`CurrentStudyReceiptReads` uses the existing bounded reader transaction and owner
+status methods. Current or cached original receipts correlate by original effect
+key and command source revision, plus the source digest for encounter receipts.
+A changed physical presentation is retained in the owner's progress; it is not
+used to guess effect identity. Unproved associations are omitted. Existing
+pending, legacy, Again, canonical-introduction, issuance and settlement evidence
+keeps its wire subtype and meaning; cached priority is never upgraded to Again.
+Reader-role and unavailable-owner behavior use the existing read path.
+
+```mermaid
+flowchart LR
+  Browser["Game Review GET / optional diagnostic filter"] --> Read["GameReview.game_detail"]
+  Read --> Games["Games reader: retained canonical history + global selection + provenance"]
+  Read --> Receipts["CurrentStudyReceiptReads: bounded owner status SELECT"]
+  Games --> Bind["Validate canonical source; retain complete selected scope"]
+  Receipts --> Bind
+  Bind --> Detail["GameDetail: first departure + original-effect progress; freshness unknown"]
+  Detail --> Browser
+```
+
 ## Continuous-provider public priority intake (#489 / #491)
 
 The optional Games process receives an `EncounterFeedbackPort` from the
@@ -371,6 +407,60 @@ marker and exact project/service identity, then seeds through the write-owning
 foreground worker; API readback retains reader credentials. Actual browser
 acceptance is reported in the current PR at its tested revision. No live data,
 settings, service operation, installation, deployment or merge occurs here.
+
+### #558 Study sweep preparation and recovery repair
+
+Untested extraction of #580 preparation onto the exact #593 recovery source;
+runtime integration and deployment remain unverified. The independent feedback sweep uses
+the [canonical prepared-introduction sequence](../study/introductions/README.md#prepared-independent-study-sweep--558-repair)
+and [claimed-task connection recovery](../study/README.md#feedback-sweep-connection-recovery-558-repair).
+Queue due-work requests occur after effect locks close and reuse active Learning
+queue generations. Games availability is never a serving prerequisite.
+
+### First-departure foreground handoff (#624)
+
+`feedback_release.register_feedback_next_card_priority` is the explicit API and
+foreground-worker root. Construction starts no provider or Games worker and
+requires no Games readiness. It captures optional local boot identity outside
+writers; absent mode or optional read failure leaves ordinary Study usable.
+`feedback_capabilities` describes the concrete released callable bindings only;
+verified mode, exact image, selected scope, roles and packaged evidence remain
+separate operator gates.
+
+```mermaid
+flowchart LR
+  Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
+  Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
+  Pending --> Prepare["Explicit prepare-next: unreserved read-only publication; close read before replay / current owner target"]
+  Prepare --> Fence["Gateway request hash / attempt token / receipt"]
+  Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
+  Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
+  Accept --> Study["Independent accepted Study preparation / issuance / settlement"]
+```
+
+The head hint uses the existing transaction, without another connection,
+filesystem lookup, projection, row fence or dispatch. A savepoint contains
+optional schema failure. Controls precede both accepted Study and new source
+FIFO; candidate-aware source observation cannot drain an entire historical
+outbox before an already-ready live target. Full preparation finishes before the
+command writer, and a fresh trusted boot identity is captured at its end. The
+prepared wrapper applies only after the gateway fence. Accepted Study preparation
+uses bounded foreground reads and continues independently of Games mode/process.
+
+Qualification consumes Repertoire's released `read_repertoire` mapping port;
+the removed raw-JSON reader is not a compatibility dependency. Projection and
+chess replay run only after the source context exits. Dedicated Games reads use
+their existing `repertoire_snapshot=True` profile. Explicit foreground
+prepare-next and retry forward that profile through the existing unreserved
+`read_connection` and reader pool: READ ONLY, no whole-snapshot transaction or
+statement deadline, and the existing 100ms lock limit. Writers and reserved
+background connections reject that profile; normal readers retain their defaults.
+
+The independent background sweep retains its 250ms database sections and
+foreground-preemptible shared lease. Dense source requalification may therefore
+defer there. Ordinary explicit prepare-next can prepare an already accepted
+obligation without the optional producer, outside the saved-review writer;
+this is not proof that dense background requalification always completes.
 
 ## Explicit on-demand Games refresh
 

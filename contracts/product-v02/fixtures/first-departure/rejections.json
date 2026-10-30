@@ -1,0 +1,308 @@
+{
+  "cases": [
+    {
+      "name": "incomplete_scope_cannot_authorize_reset",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.selected_scope.0.complete": false
+      }
+    },
+    {
+      "name": "ended_competitor_cannot_manufacture_uniqueness",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.surviving_routes.0.at_deliberate_end": true
+      }
+    },
+    {
+      "name": "opponent_cannot_authorize_reset",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.actor": "opponent"
+      }
+    },
+    {
+      "name": "wrong_pre_move_position",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.position_key": "different-position"
+      }
+    },
+    {
+      "name": "unknown_target_cannot_authorize_reset",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.decision": null
+      }
+    },
+    {
+      "name": "route_occurrence_required",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.decision.route_id": null,
+        "selection.decision.route_ply": null
+      }
+    },
+    {
+      "name": "wrong_scope_revision",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.selected_scope.0.revision": 2
+      }
+    },
+    {
+      "name": "priority_timestamp_is_not_again",
+      "fixture": "introduced-again-applied",
+      "updates": {
+        "progress.scheduling_review_id": null,
+        "progress.schedule_applied_at": null,
+        "progress.remediation_fence": null
+      }
+    },
+    {
+      "name": "pending_cannot_claim_introduced",
+      "fixture": "protected-target-pending-reset",
+      "updates": {
+        "disposition": "first_introduction",
+        "admission_status": "available",
+        "deferred_reason": null
+      }
+    },
+    {
+      "name": "first_introduction_cannot_fabricate_again",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.scheduling_review_id": 41,
+        "progress.schedule_applied_at": "2026-10-26T12:01:00Z"
+      }
+    },
+    {
+      "name": "pre_reset_generation_cannot_settle",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issuance_sequence": 100
+      }
+    },
+    {
+      "name": "wrong_physical_target_cannot_settle",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.card_id": "unrelated-card"
+      }
+    },
+    {
+      "name": "pre_reset_issue_time_cannot_settle",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issued_at": "2026-10-26T12:00:00Z"
+      }
+    },
+    {
+      "name": "settled_requires_actual_review",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement": null
+      }
+    },
+    {
+      "name": "old_priority_cannot_claim_new_again",
+      "fixture": "retained-priority-needs-qualification",
+      "updates": {
+        "disposition": "introduced_again"
+      }
+    },
+    {
+      "name": "legacy_receipt_cannot_add_fake_progress",
+      "fixture": "retained-priority-needs-qualification",
+      "updates": {
+        "progress": null
+      }
+    },
+    {
+      "name": "witness_cannot_qualify_opponent_gap",
+      "fixture": "own-introduced",
+      "updates": {
+        "selection.status": "opponent_gap",
+        "selection.actor": "opponent",
+        "selection.decision": null
+      }
+    },
+    {
+      "name": "configuration_revision_must_be_actual",
+      "fixture": "own-introduced",
+      "updates": {
+        "configuration_revision": 0
+      }
+    },
+    {
+      "name": "issuance_cannot_precede_determination",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.determined_at": "2026-10-27T12:00:00Z"
+      }
+    },
+    {
+      "name": "supported_opponent_alternative_is_not_departure",
+      "fixture": "opponent-before-later-own-miss",
+      "updates": {
+        "played_uci": "e7e5"
+      }
+    },
+    {
+      "name": "absent_scope_is_not_covered",
+      "fixture": "covered-authored-alternative",
+      "updates": {
+        "selected_scope": []
+      }
+    },
+    {
+      "name": "microsecond_pre_reset_issue_is_not_remediation",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.remediation_fence.established_at": "2026-10-26T12:01:00.000002Z",
+        "progress.first_issued.issued_at": "2026-10-26T12:01:00.000001Z",
+        "progress.settlement.attempt.issued_at": "2026-10-26T12:01:00.000001Z"
+      }
+    },
+    {
+      "name": "microsecond_fence_cannot_precede_application",
+      "fixture": "introduced-again-applied",
+      "updates": {
+        "progress.schedule_applied_at": "2026-10-26T12:01:00.000002Z",
+        "progress.remediation_fence.established_at": "2026-10-26T12:01:00.000001Z"
+      }
+    },
+    {
+      "name": "coverage_end_cannot_invent_expected_response",
+      "fixture": "coverage-end",
+      "updates": {
+        "expected_uci": [
+          "e2e4"
+        ]
+      }
+    },
+    {
+      "name": "coverage_end_requires_all_surviving_routes_ended",
+      "fixture": "coverage-end",
+      "updates": {
+        "surviving_routes.0.at_deliberate_end": false
+      }
+    },
+    {
+      "name": "coverage_end_requires_actual_ended_route",
+      "fixture": "coverage-end",
+      "updates": {
+        "surviving_routes": []
+      }
+    },
+    {
+      "name": "missing_own_continuation_cannot_invent_expected_response",
+      "fixture": "ambiguous-target",
+      "updates": {
+        "status": "missing_own_continuation"
+      }
+    },
+    {
+      "name": "one_issuance_sequence_has_one_generation",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.queue_entry_id": 999
+      }
+    },
+    {
+      "name": "one_generation_cannot_receive_second_sequence",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issuance_sequence": 104
+      }
+    },
+    {
+      "name": "one_generation_cannot_reset_issuance_time",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issued_at": "2026-10-26T12:03:00Z"
+      }
+    },
+    {
+      "name": "remapped_settlement_cannot_reuse_old_target_attempt",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.settlement.attempt": {
+          "queue_entry_id": 501,
+          "card_id": "existing-physical-card",
+          "card_revision": 1,
+          "issuance_sequence": 101,
+          "issued_at": "2026-10-26T12:02:00Z"
+        }
+      }
+    },
+    {
+      "name": "remapping_history_cannot_backdate_original_fence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.established_at": "2026-10-26T12:00:00Z"
+      }
+    },
+    {
+      "name": "remapping_history_frontier_cannot_move_backwards",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.after_issuance_sequence": 104
+      }
+    },
+    {
+      "name": "remapping_history_time_cannot_move_backwards",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.established_at": "2026-10-26T12:04:00Z"
+      }
+    },
+    {
+      "name": "retired_target_cannot_invent_later_first_issuance_sequence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.first_issued.issuance_sequence": 104
+      }
+    },
+    {
+      "name": "retired_target_cannot_invent_later_first_issuance_time",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.first_issued.issued_at": "2026-10-26T12:04:00Z"
+      }
+    },
+    {
+      "name": "remapping_cannot_duplicate_same_target_fence",
+      "fixture": "remapped-again-preserves-first-service",
+      "updates": {
+        "progress.prior_remediation_fences.0.target": {
+          "card_id": "current-composite-b",
+          "card_revision": 2
+        }
+      }
+    },
+    {
+      "name": "prior_history_requires_actual_application",
+      "fixture": "protected-target-pending-reset",
+      "updates": {
+        "progress.prior_remediation_fences": [
+          {
+            "target": {
+              "card_id": "existing-physical-card",
+              "card_revision": 1
+            },
+            "after_issuance_sequence": 100,
+            "established_at": "2026-10-26T12:01:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty_prior_fences_must_remain_omitted",
+      "fixture": "introduced-again-applied",
+      "updates": {
+        "progress.prior_remediation_fences": []
+      }
+    }
+  ]
+}

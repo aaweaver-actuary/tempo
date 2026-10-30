@@ -168,6 +168,8 @@ async def lifespan(_: FastAPI):
         if os.getenv("TEMPO_DATABASE_WRITE_URL"):
             raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
         initialize()
+        from .product_composition.feedback_release import register_feedback_next_card_priority
+        register_feedback_next_card_priority()
         from .command_dispatch import dispatch_command
 
         startup_queue_request = dispatch_command(
@@ -661,7 +663,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
             and request.method in {"POST", "PUT"})
         product_repertoire_command = is_repertoire_command_path(request.method, path_parts)
-        if not read_only_post and not any((product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
+        next_card_preparation = request.method == 'POST' and path_parts == ['api','queue','prepare-next']
+        if not read_only_post and not any((next_card_preparation, product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -1214,8 +1217,9 @@ register_durable_task_handler("discovery_recommendation", execute_recommendation
 
 
 def _ensure_current_daily_queue() -> None:
-    queue_date = date.today().isoformat()
+    from .queue_commands import current_study_day
     with read_connection() as database:
+        queue_date = current_study_day(database)
         projection = queue_maintenance_storage.queue_projection_state(database, queue_date)
     if projection is None:
         enqueue_daily_queue_refresh(foreground=False)
@@ -1251,7 +1255,9 @@ register_maintenance_handler(_ensure_discovery_admissions)
 
 
 def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
-    queue_date = date.today().isoformat()
+    from .queue_commands import current_study_day
+    with read_connection() as database:
+        queue_date = current_study_day(database)
     task = enqueue_task(
         "daily_queue",
         "current",
@@ -1284,12 +1290,17 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
         with connection() as database:
             queue_projection_storage.begin_head_issuance(database)
             result = issue_queue_head(database, payload)
+    if not isinstance(result, JSONResponse) and result.get('reason') == 'study_feedback_preparation_pending':
+        raise HTTPException(503, {'code':'study_feedback_preparation_pending',
+            'message':'Local Study priority work must prepare before the next new attempt'})
     if isinstance(result, JSONResponse) or not result.get("issued"):
         raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
 
 
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
-    day = date.today().isoformat()
+    from .queue_commands import current_study_day
+    with read_connection() as day_database:
+        day = current_study_day(day_database)
     with read_connection() as db:
         evidence_timezone = queue_projection_storage.evidence_timezone(db)[0] if include_opening_evidence and postgres_store.configured() else None
         projection_row = queue_projection_storage.queue_projection(db, day)
@@ -1323,6 +1334,13 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
     if cards:
         _issue_returned_queue_head(day, cards[0])
+    else:
+        from .services.queue_next_card import pending_next_card_preparation
+        with read_connection() as pending_database:
+            pending_priority = pending_next_card_preparation(pending_database, day)
+        if pending_priority:
+            raise HTTPException(503, {'code':'study_feedback_preparation_pending',
+                'message':'Local Study priority work must prepare before the next new attempt'})
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")
@@ -1355,6 +1373,15 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
 @app.get("/api/queue/today")
 def queue_today(include_opening_evidence: bool = False):
     return _queue_payload(include_opening_evidence=include_opening_evidence)
+
+
+@app.post('/api/queue/prepare-next')
+def prepare_next_queue_head(idempotency_key: str | None = Header(None, alias='Idempotency-Key')):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command('queue.prepare_next', {}, idempotency_key=idempotency_key)
+    from .services.queue_next_card import prepare_next_card_command, prepared_next_card_result
+    return prepared_next_card_result(None, prepare_next_card_command({}))
 
 
 @app.get("/api/queue/prepared")
@@ -1860,13 +1887,22 @@ def requeue(db, day, cid, after, attempt):
 def queue_entry_state(entry_id: int):
     """Read one queue attempt without changing its position or review state."""
     with read_connection() as database:
+        from .queue_commands import current_study_day
+        day = current_study_day(database)
         entry = queue_projection_storage.entry_state(database, entry_id)
-        if not entry or str(entry["queue_date"]) != date.today().isoformat():
+        if not entry:
             return {"state": "unavailable", "attempt_failed": False}
         if entry["status"] != "queued":
             return {"state": "completed" if entry["status"] == "complete" else "unavailable",
                     "attempt_failed": bool(entry["attempt_failed"])}
-        active_entry = queue_projection_storage.available_head(database, lambda: date.today().isoformat(), miss_reason=MISS_REASON)
+        if str(entry['queue_date']) != day:
+            # The original issued board can still save/replay after rollover;
+            # an unissued historical candidate has no such authority.
+            original = queue_projection_storage.retained_entry_issued(database, entry_id,
+                entry['queue_date'], miss_reason=MISS_REASON)
+            return {'state':'queued' if original else 'unavailable',
+                    'attempt_failed':bool(entry['attempt_failed'])}
+        active_entry = queue_projection_storage.available_head(database, lambda: day, miss_reason=MISS_REASON)
     return {"state": "head" if active_entry and active_entry["id"] == entry_id else "queued",
             "attempt_failed": bool(entry["attempt_failed"])}
 
@@ -1896,16 +1932,10 @@ def bury_queue_entry(entry_id: int,
         from .command_dispatch import dispatch_command
         return dispatch_command("queue.bury", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
-    day = date.today().isoformat()
     with connection() as db:
-        from .queue_commands import validate_available_attempt
-        validate_available_attempt(db, entry_id, request.card_id if request else None,
-                                   request.expected_revision if request else None)
-        previous_order = capture_daily_queue_order(db, day)
-        # Retained rows prevent same-day refreshes from readmitting the card.
-        queue_projection_storage.bury_entry(db, day, entry_id)
-        preserve_daily_queue_order(db, day, previous=previous_order)
-    return {"buried": True, "queue_entry_id": entry_id}
+        from .queue_commands import bury_queue_entry as bury_owned_entry
+        return bury_owned_entry(db, {"entry_id":entry_id,
+            **(request.model_dump(exclude_none=True) if request else {})})
 
 
 @app.post("/api/cards/{identifier}/review")

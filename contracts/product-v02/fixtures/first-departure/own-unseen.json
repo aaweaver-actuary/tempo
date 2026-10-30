@@ -1,0 +1,67 @@
+{
+  "model": "FirstDepartureWitness",
+  "payload": {
+    "selection": {
+      "policy_version": "first_departure_v1",
+      "workspace_id": "fixture",
+      "source": {
+        "provider": "lichess",
+        "game_id": "synthetic-unintroduced-missed",
+        "source_revision": 1,
+        "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "learner_color": "white",
+      "selected_scope": [
+        {
+          "repertoire_id": "white",
+          "learner_color": "white",
+          "snapshot_id": "snapshot-white",
+          "source_revision": "source-white-1",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "complete": true,
+          "available": true
+        }
+      ],
+      "status": "own_actionable",
+      "ply": 1,
+      "actor": "learner",
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "played_uci": "d2d4",
+      "expected_uci": [
+        "e2e4"
+      ],
+      "decision": {
+        "decision_id": "existing-decision",
+        "repertoire_id": "white",
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "selected_response_uci": "e2e4",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "repertoire_revision": 1,
+        "introduction": "unintroduced",
+        "introduced_at": null,
+        "available": true,
+        "introduction_matches_current_content": false,
+        "route_id": "route-a",
+        "route_ply": 0,
+        "introduced_before_game": null,
+        "introduction_game": null
+      },
+      "surviving_routes": [
+        {
+          "repertoire_id": "white",
+          "route_id": "route-a",
+          "route_ply": 0,
+          "policy_id": "policy-white",
+          "source_revision": "source-white-1",
+          "at_deliberate_end": false
+        }
+      ],
+      "diagnostic": null
+    },
+    "configuration_revision": 7,
+    "determined_at": "2026-10-26T12:00:01Z",
+    "stream": "forward"
+  }
+}

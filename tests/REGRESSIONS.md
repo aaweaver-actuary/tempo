@@ -103,6 +103,35 @@ is established by this component proof.
 
 ## T06 Study-owned game lapse and durable withdrawal fence
 
+### Qualified first-departure Again and settlement (#620)
+
+`backend/tests/test_product_game_lapse.py` owns
+`test_introduced_first_departure_matches_study_again` (normal/light/hard),
+`test_encounter_retry_has_one_scheduling_receipt`,
+`test_distinct_games_are_distinct_failures`,
+`test_priority_applied_is_not_schedule_applied`,
+`test_issued_target_completion_cannot_settle_pending_reset`,
+`test_settlement_is_disposition_specific`,
+`test_replay_and_unrelated_completion_cannot_settle`,
+`test_earlier_clean_review_does_not_waive_new_acceptance`,
+`test_unqualified_old_command_cannot_authorize_new_reset_or_introduction`, and
+`test_study_day_matches_ordinary_review`. Correct unseen play is frequency evidence
+without an urgent introduction; the same original unseen occurrence retains its
+introduction intent after an ordinary introduction race.
+
+`backend/tests/test_product_game_lapse_postgres.py` owns
+`test_native_introduced_first_departure_has_one_actual_again_receipt`,
+`test_native_qualified_schedule_receipt_failure_rolls_back`, and
+`test_native_timestamp_only_review_cannot_settle_without_real_issuance`.
+`backend/tests/test_product_encounter_integration.py` owns
+`test_qualified_global_publication_reaches_exact_study_consequence_and_real_settlement`
+(actual publication/source/configuration fences, introduced/unseen outcomes,
+ordinary issue/save/replay/settlement) and
+`test_native_already_issued_target_saves_before_reset_and_only_fresh_generation_settles`
+(preserved pre-reset save/replay, one subsequent Again, actual fresh issuance,
+human review count and shorter-prefix failure identity). These use the existing
+disposable PostgreSQL owner and do not certify installed provider activation.
+
 `backend/tests/test_product_game_lapse.py` owns the focused semantic regressions:
 `test_game_lapse_matches_again_transition`,
 `test_duplicate_delivery_has_one_effect_and_original_deadline`,
@@ -5681,6 +5710,32 @@ Finite proof uses deterministic clocks, synthetic HTTP and semantic workflow fak
 
 ## Task G integrated collection release
 
+#623 extends the same operator suite for explicit `collect-only`/`feedback`
+commands, frozen finite overrides, mode-specific scope/capability/CI readiness,
+verified stop-before-start switching, idempotency, lost intent acknowledgments,
+failed clears and ordinary Study lifecycle independence. The actual read-only
+status owner `backend/tests/test_game_collection_status.py` includes
+`test_status_distinguishes_priority_pending_actual_application_queue_and_fresh_issuance`:
+old priority time cannot claim Again, pending queue presence cannot claim issuance,
+and owner remapping retains the original application and first actual service.
+`backend/tests/test_game_feedback_mode.py` owns pure typed mode/boot/capability
+guards plus native `test_native_shared_mode_fence_prevents_disable_commit_until_handoff_finishes`,
+`test_native_transition_wins_over_stale_outside_admission_snapshot`,
+`test_native_mode_status_is_read_only_and_cannot_lend_write_authority`,
+`test_native_same_hostname_new_boot_nonce_denies_stale_verified_intent` and
+`test_native_original_effect_control_lookup_uses_its_narrow_index`. These reuse
+the existing task-owned PostgreSQL fixture and unchanged 250ms/100ms bounds.
+`test_failed_optional_identity_initialization_keeps_backend_startup_and_denies_stale_file`
+executes the actual entrypoint failure branch and rejects an old nonce retained
+across a changed PID1 start. The borrowed read hint's no-row-lock/no-commit and
+missing-schema/payload rollback boundaries are covered by
+`test_native_borrowed_mode_hint_uses_no_connection_or_row_fence` and
+`test_native_borrowed_mode_hint_isolates_optional_schema_and_payload_failure`.
+The existing failed-clear operator regression also recovers with the worker
+already stopped and reports the newly committed inactive state truthfully.
+The #624 owner supplies the single composed packaged image/process/role proof;
+local source/native evidence does not establish installation or activation.
+
 Shared Settings registration belongs to the existing frontend lane (#603).
 `tests/runner/game-review-collection.test.mjs` owns explicit apply, read-only
 inspection, structured readiness, identity/resource checks, competing-runner
@@ -5849,6 +5904,268 @@ I’s regular `runners tempo-cli.test` lane owns the original-fence, original-de
 and advancing-main automatic-start relaunch regressions and six negative release
 verification cases. The shared CLI fixture and operator suite are unchanged.
 
+## Global first-departure selection (#619)
+
+`backend/tests/test_product_first_boundary.py` owns these synthetic legal-history
+regressions, separate from retained per-repertoire/reentry diagnostics:
+
+- `test_first_boundary_accepts_any_surviving_authored_alternative`
+- `test_opponent_first_gap_blocks_later_own_effect_after_reentry`
+- `test_learner_first_miss_emits_one_exact_target`
+- `test_correct_unseen_encounter_has_no_urgent_consequence`
+- `test_interior_card_decision_maps_before_wrong_move`
+- `test_membership_survives_missing_or_ambiguous_physical_mapping`
+- `test_unsupported_alternative_does_not_authorize_ambiguous_target`
+- `test_conflicting_policy_context_is_not_erased_by_equal_physical_mapping`
+- `test_terminal_or_unavailable_scope_cannot_manufacture_uniqueness`
+- `test_ended_competing_route_is_not_discarded_to_manufacture_target`
+- `test_unfinished_competing_route_is_not_discarded_to_manufacture_target`
+- `test_coverage_end_and_missing_own_continuation_are_not_recall_failures`
+- `test_color_and_start_position_define_actor`
+- `test_unknown_introduction_chronology_does_not_block_exact_miss`
+- `test_selection_is_stable_under_scope_order_aliases_and_reimport`
+- `test_alias_chronology_does_not_block_current_physical_target`
+- `test_opposite_color_scope_is_not_assumed_from_a_failed_read`
+- `test_positive_authored_coverage_remains_true_with_incomplete_scope`
+
+`backend/tests/test_game_collection_status.py` owns
+`test_native_first_boundary_capture_is_atomic_and_reader_retains_selected_global_result`
+(disposable PostgreSQL page rollback/durable election/read-only projection) and
+`test_new_selection_redacts_route_scope_and_retains_finite_policy_diagnostics`.
+`test_public_surface_game_ingestion.py` retains identity and inert-import proof
+for the new public selector. Existing projection/capture suites retain immutable
+keys, conflict guards and correct-unseen diagnostic evidence without urgency.
+
+`backend/tests/test_product_feedback_jobs.py` additionally owns
+`test_capture_retains_global_selection_without_per_repertoire_false_effect` and
+`test_old_source_and_capture_json_keep_absent_selection_explicit`.
+
+`backend/tests/test_product_encounter_projection.py` owns
+`test_foreign_historical_chronology_does_not_block_new_current_miss_projection`:
+a new command omits only obsolete chronology scoped to another game while
+retained snapshots/selections and already frozen commands remain intact.
+
+Independent review repairs: `test_recognized_provider_contradiction_cannot_relabel_source_or_effect`
+and `test_provider_alias_and_generic_legacy_source_meanings_are_preserved` in
+`test_product_first_boundary.py`; `test_new_commands_in_either_envelope_respect_opponent_first_boundary`
+in `test_product_feedback_jobs.py`. New legacy lapse envelopes obey the same
+global selection; old frozen commands remain retained for qualification.
+# Game sync retained qualification — #621
+
+`backend/tests/test_product_delivery_qualification.py` owns the mixed frozen
+outbox, opponent-first suppression, legacy-lapse compatibility, unavailable scope,
+source correction, immutable retry/determination, distinct occurrences, lost
+acknowledgment, semantic hold, control race, foreground local progress and
+collection-only/mode-denial regressions. Its native selections prove durable
+live/history turn order across restart/equal clocks, controls after qualification
+and delayed acknowledgment, command immutability, nonretryable holds and the
+bounded truthful qualification inventory. Native cases reuse the existing
+`test_product_game_lapse_postgres.owned_postgres` fixture and require no live DSN.
+
+## Complete snapshot byte accounting (#616)
+
+`backend/tests/test_product_snapshot_postgres.py` owns
+`test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts`
+(plain and escaped/Unicode source text; all fields, mappings and digest retained
+under a deliberately lower fixture cap) and
+`test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow`
+(actual byte refusal and no aggregated facts for an oversized raw row). They
+reuse the explicit task-owned native snapshot fixture and preserve the production
+32 MiB/count/row limits. Existing owning cases retain one-MVCC-view consistency,
+source/revision changes, conflicts, unavailable physical references, rollback,
+sentinel overflow and parameter-bound selection.
+`backend/tests/test_product_snapshot.py::test_snapshot_mapping_and_text_envelopes_preserve_facts_and_typed_bounds`
+retains the returned facts and exact 32 MiB refusal for the raw-wire path.
+`test_snapshot_mapping_port_is_eager_and_projects_after_reader_exit` owns
+the eager raw capability. Existing
+`test_product_game_sync_integration.py::test_current_snapshot_projection_begins_after_connection_exit`
+now also proves decoding occurs after the connection exits, on success and
+publication failure, while retaining the original projection boundary.
+
+Review B's source-clock regression is
+`test_corrected_held_source_cannot_create_or_inherit_determination_clock` in
+`test_product_feedback_jobs.py`; the existing new-selection redaction regression
+also masks `decision.selected_response_uci` and rejects raw move leakage.
+
+The #621 receipt-fenced split is covered by
+`test_native_pure_prepare_and_receipt_fenced_apply_commit_both_owners_atomically`:
+discarded preparation changes no rows; a later gateway failure or acknowledgment
+failure rolls back both owners; success retains one original effect/receipt.
+`test_native_prepared_handoff_rechecks_actual_boot_mode_source_and_control`
+checks the four current admission/control races.
+`test_qualification_projects_complete_publication_after_reader_exit` guards the
+#616 released mapping-reader adoption. `test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox`
+and `test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle`
+guard candidate precedence and retained recovery time without a quiet-window wait.
+`test_game_review_qualified_legacy_lapse_keeps_current_progress_receipt` verifies
+the actual HTTP read/parser retains the current qualified receipt for an original
+legacy envelope, while the adjacent compatibility case preserves old JSON.
+`test_current_target_enrichment_requires_explicit_owner_and_keeps_complete_publication`
+keeps the original decision/source and full authored scope across explicit
+current-presentation binding; missing, stale or identity-changing lineage cannot
+authorize a replacement by itself.
+`test_product_priority_intake_boundary.py` keeps its transport, acknowledgment-loss
+and outage assertions for an actionable miss. The obsolete expectation that a
+fresh matched game emits an owner command is replaced by
+`test_matched_new_capture_commits_source_checkpoint_without_study_effect`, as
+required by #618/#619. Frozen matched commands remain independently covered by
+the retained-qualification fixture; their old bytes are never rewritten.
+
+## First-departure urgent head and actual issuance (#622)
+
+- `backend/tests/test_queue_attempt_issuance.py::test_actual_issuance_generation_is_once_and_prefetch_is_not_counted` and `test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation` retain real authority without inventing historical stamps.
+- `backend/tests/test_study_attempt_issuance_postgres.py` uses the existing disposable owning PostgreSQL fixture. Named cases cover committed ordinal counting across rollback gaps/reload/rollover, unknown legacy issuance, unissued repeat versus issued position guards, and `test_native_pending_reset_saves_current_review_then_issues_urgent_target_first`: one real saved current review, one actual Again, then target authority at ordinal one. Its typed current-decision fixture is a component seam; #624 owns complete provider/source authority assembly.
+- `backend/tests/test_prepared_review_continuation.py::test_ready_local_feedback_declines_ordinary_successor_without_rolling_back_review`, `test_next_card_preparation_is_an_explicit_command_not_a_queue_read`, and `test_current_queue_day_and_review_day_share_configured_timezone` own bounded command/continuation/day behavior.
+- `backend/tests/test_queue_refresh_read_database_split.py::test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority` distinguishes pending/priority-only evidence from ready Study authority; existing reader plumbing retains closed paged reads.
+- `tests/unit/prepared-review-continuation-regressions.test.ts::determined_local_priority_prepares_before_new_head_without_showing_an_ordinary_successor` and `priority_reconciliation_retains_issued_board_and_replaces_only_upcoming_work` own explicit preparation and active-board preservation. Existing offline/replay/prepared-continuation cases remain controls.
+- Pure urgent FIFO and unissued historical-flag regressions are registered in `services/learning/runtime/REGRESSIONS.md`. These source/component checks do not establish installed feedback activation or a provider-to-browser deadline.
+- Review repairs: `test_native_next_card_operation_fence_precedes_all_owner_writes` proves completed/conflicting/stale-operation attempts cause no additional native owner writes, and the same handler savepoint rolls back an injected post-write failure. It uses a task-owned test marker, never fabricated Study history. `test_bury_preserved_issued_board_retires_original_and_holds_current_day` proves actual rollover retirement and today's exclusion. `test_locked_queue_day_is_retained_if_clock_crosses_saved_timezone_midnight` checks the real ordinary adapter against saved timezone at the locked boundary. The native ready-target case also retains a distinct pending historical occurrence without trapping the ready live issuance behind it.
+
+## Qualified Study current presentation and review repairs (#620 / #581)
+
+- `test_native_already_issued_target_saves_before_reset_and_only_fresh_generation_settles` retains the real protected-target save/replay race, exactly one actual Again, modern settling-review invalidation with both receipt representations reopened, and a fresh real generation settling again.
+- `test_native_acknowledged_priority_only_is_qualified_from_foreground_with_existing_queue` retains an actual acknowledged old delivery and existing unissued queue row, qualifies through current source/config/publication facts without pending outbox work, and applies one real reset. Discretionary raw history does not block a ready live candidate.
+- `test_qualified_global_publication_reaches_exact_study_consequence_and_real_settlement` includes the actual saved protected review's durable queue task, genuine claim/checkpoint slices through `reconcile_unseen`, retained zero-allowance canonical introduction, and actual target issue/save/settlement. Queue presence, actual issuance, and progress observation are checked separately.
+- `test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement` uses actual earned join/split state, full publication/source/config qualification and Study's prepared owner binding. The bounded feedback writer forbids executable/`try_current` replay. Its join case also applies the reset to B, records genuine later failed Study reviews and an actual split to C, preserves B's scheduler receipt/first issuance in prior-fence history, and settles only a genuine post-remap generation of C.
+- Specialist current-target cases in `test_product_recombination_postgres.py` cover closed READ ONLY preparation, no-chess 250ms/100ms writer fences, current source/map/definition/receipt/membership/integrity changes, nonblocking busy route, original occurrence/revision/control checks, and null-deadline obligation retention. Both #620 independent reviews cover the complete specialist delta.
+- Existing encounter native fixtures now qualify actionable misses from actual source/config/publication facts. Correct unseen play remains frequency only; ordinary-introduction races preserve the first accepted intent; historical qualified misses preserve human history while applying the real current Again. Alias provenance assertions retain all source routes and the immutable original command.
+
+### #621 independent review repairs
+
+- The borrowed-writer atomicity case rejects any retained delivery `MAX` scan;
+  worker service accounting remains outside Study. The native semantic-turn case
+  proves both ineligible and held qualification spend a fairness turn without a
+  transport attempt.
+- `test_native_continuous_foreground_delivers_control_before_accepted_study_work`
+  covers worker-local and pure gateway control paths using the actual Study owner.
+  The helper's `is_control` root-ordering regression covers precedence over
+  accepted Study preparation.
+- `test_conclusive_reanalysis_controls_accepted_effect_but_missing_proof_preserves_history`
+  distinguishes positive disqualification from missing evidence.
+- `test_changed_authored_response_same_logical_id_controls_original_accepted_effect`
+  proves a stable decision identity cannot hide a changed expected response;
+  source, position and played-response correspondence remain required.
+- `test_native_public_legacy_retry_uses_same_qualified_owner_and_gateway_receipt`
+  and its pure nonselected-original rejection guard the existing public retry
+  endpoint. Its writer trace also rejects a source-wide retained-delivery scan;
+  retry bookkeeping binds the exact primary key selected during pure preparation.
+  The fallback receiver rejects an unavailable qualified capability.
+- `test_settled_legacy_ack_loss_recovers_actual_owner_receipt_without_new_progress_or_reset`
+  reuses the actual legacy owner settlement and proves same-key acknowledgment
+  without fabricated progress or another scheduling review.
+- The adjacent actual-owner historical-held case retains its hold control and
+  saved review while acknowledging the same old receipt. The public retry POST
+  response and strict frontend client each accept both the old base receipt and
+  the qualified progress receipt without stripping fields. Unsafe preparation
+  and a changed boot identity are rejected before any writer opens.
+
+Independent #620 review repairs add:
+
+- `test_settled_encounter_keeps_actual_history_readable_after_source_control_or_conflict` covers both real Again and canonical introduction, followed by hold, withdrawal or semantic conflict. Terminal actual completion and immutable original command remain readable and no consequence repeats.
+- The remapped native settlement journey forbids chess and `try_current` specifically inside the settlement hook at 250ms/100ms. A small receiving-owner header/immutable-receipt digest and exact map/card fence replace its repeated repertoire reconstruction; pre-existing ordinary Study regrouping remains a separate path.
+- `test_native_one_review_settles_one_obligation_and_foreground_consumes_retained_completion` proves the normal review hook updates one same-card obligation and the next explicit owner unit settles the remaining obligation from the exact retained real receipt, without another reset or invented completion.
+- The acknowledged-priority native regression now removes its real configuration to produce an actual qualification hold. Modern urgency disappears, and the same queued target can re-enter foreground preparation after the durable retry boundary. Actual legacy resets alone retain the compatibility fallback.
+
+### #624 prospective current-target assembly
+
+`test_prospective_boundary_preparation_resolves_only_explicit_candidates_and_preserves_complete_scope`
+keeps the full authored frontier across explicit target resolution, including
+unavailable competitors and the complete candidate-bound rejection. The adjacent
+collection-factory case proves this optional Study preparation capability is
+removed when delivery is disabled. The public workflow cold-import guard includes
+the two declared preparation value/port exports.
+
+#624's assembled owner regressions now include:
+
+- `root Board UI public stylesheet resolves in the real Vite assembly without admitting private subpaths`
+  in `tools/component-build/tests/boundaries.test.mjs` resolves the exact exported
+  stylesheet for Games and Repertoire Review while private subpaths stay unavailable.
+
+- `test_corrected_repertoire_scope_recompares_retained_source_without_quarantine_or_old_clock`
+  in `backend/tests/test_product_delivery_qualification.py` keeps unchanged games
+  inspectable through direct, covered and unresolved scope changes, holds the old
+  false effect, emits the legitimate later occurrence and preserves each clock.
+- `test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope`
+  keeps the supporting tenth repertoire in Study preparation and rejects empty
+  or duplicate publication scope.
+- `test_game_detail_authoritative_selection_shared_round_trip`,
+  `test_game_detail_legacy_omissions_remain_unknown_not_covered` and
+  `test_game_detail_rejects_selection_from_contradictory_original_history` in the
+  Python contract suite and corresponding TypeScript `product-contracts` cases
+  share seven-status fixtures while preserving provider/canonical revision domains.
+- `test_game_review_http_returns_retained_global_boundary_independent_of_diagnostic_filter`,
+  `test_game_review_legacy_empty_findings_remain_unknown_without_a_recorded_selection`,
+  `test_game_review_rejects_selection_bound_to_a_different_canonical_source`,
+  `test_game_review_preserves_mixed_receipt_stages_and_original_effect_across_target_remap`
+  and `test_game_review_does_not_associate_same_card_receipt_from_an_unproved_original_source`
+  in `backend/tests/test_product_game_review_receipts.py` cover read-only global
+  projection and original-effect receipt correspondence.
+- `focuses the retained global departure over an earlier irrelevant diagnostic and uses its exact original receipt`,
+  `keeps absent selection and empty diagnostics unknown and opens the normal initial board`,
+  `uses the original Black non-initial FEN for move number, actor and pre-move board`
+  and `shows actual application, issuance and genuine settlement separately and follows an original effect onto a remapped target`
+  in `tests/unit/product-game-review.test.tsx` cover the primary answer and board.
+  Its remap cases require current target/revision/fence evidence instead of
+  treating historical first service as issuance of the current target.
+- `feedback accepts the exact installer no-ci receipt while preserving activation guards`
+  in `tests/runner/game-review-collection.test.mjs` accepts the explicitly approved
+  managed installer receipt without inventing successful GitHub Actions evidence.
+- `test_packaged_feedback_source_reaches_real_study_and_same_key_settlement[unseen]`
+  and `[introduced]` in `database/tests/games_collection/test_packaged_collection.py`
+  use the same role-separated provider/browser runtime for actual introduction
+  versus Again, fresh issuance, natural and settings refresh, real save/replay,
+  Game Review inspection, settlement and completed retained reconciliation.
+  Syntax/collection alone do not establish their execution.
+
+- `test_native_root_observes_source_and_applies_one_unit_only_after_receipt_fence`
+  traverses the registered pure source preparation and same borrowed writer. It
+  forbids filesystem/new-connection work in the writer and contains a missing
+  optional source table without aborting ordinary Study.
+- `test_native_pending_absence_and_cutoff_use_index_among_same_workspace_legacy_history`
+  uses 5,000 due pending legacy records in the same workspace, including ready
+  labels without witnesses. Actual planner EXPLAIN (without forced indexes),
+  migration derivation, retry-after, semantic hold, FIFO cutoff and control
+  precedence are verified; original command bytes stay unchanged.
+- `test_native_new_source_before_prepared_successor_preserves_save_and_issues_target_first`
+  first issues a real protected head, then commits a genuine new provider capture.
+  The saved review remains durable, the speculative ordinary successor receives
+  no issuance, and two explicit bounded units prepare the target at actual first
+  new issuance ordinal one; its real review settles the same effect.
+- The fresh variants of
+  `test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement`
+  capture a NEW game after an actually earned join or split. The prejoin-capture
+  companion retains the earlier command's exact bytes/key/determination through
+  both lineage changes, repeat capture/acceptance and one real reset/settlement.
+- `test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles`
+  earns A/C three reviews and B two, prepares A, then earns B's real joining
+  review. The old preparation cannot apply to retired A even though its old
+  source/card flags remain unchanged. The existing route lock fences indexed
+  lineage absence without writer chess; fresh preparation reaches B once.
+
+`backend/app/study/qualify_priority.py` registers these real finite native cases
+and their affected selector/issuance/compatibility boundaries. The explicit
+`games-collection-release` suite remains the separate pinned-image/provider and
+real-server browser journey; collection, fixture syntax and mocked browser cases
+alone do not establish packaged or browser acceptance.
+
+The `fresh_original_available` join/split variants retain the actual owner's
+unchanged original A flags instead of adding the separate superseded-card fixture
+condition. A new source command keeps its authored A spelling; the independently
+qualified witness and actual Study consequence use the owner-resolved current B.
+Both variants keep the original logical key/bytes/determination and settle once.
+The superseded-card variants remain separate required cases.
+
+`test_native_qualified_unseen_queue_randomization_bounded_and_writer_facts_match`
+compares the actual prepared and borrowed-writer presentation facts after a
+qualified canonical introduction and genuine issuance. It requires one successful
+publication with every existing guard intact. The adjacent
+`test_native_actual_join_target_keeps_bounded_and_native_owed_urgency` uses an
+earned owner join whose current physical target differs from the immutable
+command, and compares both owed-target and ready-urgency readers.
+`test_feedback_priority_paths_survive_bounded_sql_translation` keeps every nested
+JSON key and the scalar SQL-NULL fallback through the actual compatibility
+translator; truncating the ready-priority path must fail the regression.
+
 ### #615 Task P — assembled bound diagnostics and partial comparison
 
 The existing `games-collection-release` selection owns the actual mixed-readiness
@@ -5991,3 +6308,9 @@ correction after live Docker OOM/exit-137 events at the former 256 MiB setting.
 The overlay, optional/development inventory, runtime ownership check and packaged
 fixture agree on 512 MiB. CPU policy, PID limit and all Study allocations remain
 unchanged; the guard still rejects a mismatched allocation.
+
+The changed full-repertoire source profile is covered by
+`test_native_unreserved_snapshot_read_profile_refuses_writes_and_keeps_background_budget`
+in `backend/tests/test_product_game_review_commands_postgres.py`: actual PostgreSQL
+read-only enforcement and source-read settings remain separate from the unchanged
+short reserved background budget. The owning qualifier selects this named case.

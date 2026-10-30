@@ -7,6 +7,7 @@ migration, never an automatic runtime migration or live-schema initializer.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime,timezone
 
 from app.games.feedback.ports import ConcurrentUpdate, Delivery, JobSpec, JobState, PageCommit, SourceState
 
@@ -34,11 +35,139 @@ CREATE TABLE product_feedback_deliveries (
     operation_id TEXT PRIMARY KEY,
     source_key TEXT NOT NULL REFERENCES product_feedback_sources(source_key),
     effect_key TEXT NOT NULL, command_kind TEXT NOT NULL, state TEXT NOT NULL,
-    next_attempt_at DOUBLE PRECISION NOT NULL, payload JSONB NOT NULL
+    next_attempt_at DOUBLE PRECISION NOT NULL, payload JSONB NOT NULL,
+    handoff_priority TEXT
 );
 CREATE INDEX product_feedback_ready_jobs ON product_feedback_jobs(status, next_attempt_at, attempts);
 CREATE INDEX product_feedback_ready_deliveries ON product_feedback_deliveries(state, next_attempt_at);
+CREATE INDEX product_feedback_effect_controls ON product_feedback_deliveries(effect_key)
+    WHERE command_kind='control' AND state IN ('pending','acknowledged');
+CREATE INDEX product_feedback_determined_pending ON product_feedback_deliveries
+    ((COALESCE(payload->'encounter'->'key'->>'workspace_id',payload->'lapse'->'key'->>'workspace_id',
+        payload->'control'->'key'->>'workspace_id')),handoff_priority COLLATE "C",next_attempt_at)
+    WHERE state='pending' AND handoff_priority IS NOT NULL;
 """
+
+
+def fence_qualified_feedback(database, command, qualification, *, expected_configuration,
+                             expected_source, require_active_mode=False, mode_runtime_id=None):
+    """Borrow Study's writer to fence Games-owned facts, without replay or I/O.
+
+    Preparation supplied actual owner reads, not producer labels. Study separately
+    fences every selected publication and the exact current physical target.
+    """
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from app.games.feedback.review import SyncConfiguration, ReviewUnavailable
+    from .authority import acceptance
+
+    def require(condition, reason):
+        if not condition:
+            raise ReviewUnavailable(reason)
+
+    key = command.key
+    if require_active_mode:
+        try:
+            from .managed_mode import fence_feedback_handoff
+        except ImportError as error:
+            raise ReviewUnavailable("verified_feedback_mode_unavailable") from error
+        fence_feedback_handoff(database, key.workspace_id, runtime_id=mode_runtime_id)
+    require(qualification.matches(command), "qualification_original_command_mismatch")
+    require((expected_configuration.workspace_id, expected_configuration.provider,
+             expected_configuration.revision) ==
+            (key.workspace_id, key.provider, qualification.configuration_revision),
+            "qualified_configuration_scope_mismatch")
+    lock = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+        ("tempo:product-sync-config:" + key.workspace_id + ":" + key.provider,)).fetchone()
+    require(lock is not None and lock[0], "qualified_configuration_busy")
+    row = database.execute_native("""SELECT payload::text FROM product_feedback_configuration
+        WHERE workspace_id=%s AND provider=%s FOR SHARE SKIP LOCKED""",
+        (key.workspace_id, key.provider)).fetchone()
+    actual_configuration = SyncConfiguration.model_validate_json(row[0]) if row else None
+    require(actual_configuration == expected_configuration, "qualified_configuration_changed")
+    require(set(item.repertoire_id for item in qualification.selection.selected_scope)
+            <= set(actual_configuration.repertoire_ids), "qualified_selection_scope_changed")
+
+    row = database.execute_native("""SELECT payload::text FROM product_feedback_sources
+        WHERE source_key=%s FOR SHARE SKIP LOCKED""", (expected_source.source_key,)).fetchone()
+    actual_source = SourceState.model_validate_json(row[0]) if row else None
+    require(actual_source is not None and not actual_source.quarantined
+            and actual_source.normalized is not None, "qualified_source_unavailable")
+    require(actual_source.normalized == expected_source.normalized
+            and actual_source.record_fingerprint == expected_source.record_fingerprint,
+            "qualified_source_changed")
+    game = actual_source.normalized
+    provider = "chesscom" if game.source_id == "chess.com" else game.source_id
+    require((game.workspace_id, provider, game.game_id, game.source_revision, game.source_digest) ==
+            (key.workspace_id, key.provider, key.game_id,
+             qualification.selection.source.source_revision, qualification.selection.source.source_digest),
+            "qualified_source_identity_changed")
+    require(any(effect == command for effect in actual_source.effects),
+            "qualified_original_effect_unproved")
+    controls = database.execute_native("""SELECT 1 FROM product_feedback_deliveries
+        WHERE effect_key=%s AND command_kind='control'
+          AND state IN ('pending','acknowledged') LIMIT 1""", (key.logical_id(),)).fetchone()
+    require(controls is None, "qualified_effect_controlled")
+    raw = acceptance.imported_game(database, key.game_id)
+    account = database.execute_native("SELECT username FROM imported_games WHERE id=%s FOR SHARE SKIP LOCKED",
+        (key.game_id,)).fetchone()
+    require(raw is not None and not raw["adaptive_excluded"]
+            and fingerprint(dict(raw)) == game.source_digest
+            and raw["provider_game_id"] == actual_source.original.source_game_id
+            and account is not None and account[0].casefold() == actual_configuration.account.casefold(),
+            "qualified_canonical_source_changed")
+
+
+def _borrowed_writer(database):
+    raw = getattr(database, "raw", database)
+    if (getattr(database, "read_only", False)
+            or raw.info.transaction_status.name != "INTRANS"):
+        raise ValueError("borrowed_owner_writer_transaction_required")
+    return raw
+
+
+def lock_delivery_in_transaction(database, operation_id: str, *, expected=None, service_cursor=False):
+    """Games-owned short row fence in the caller's existing transaction."""
+    raw = _borrowed_writer(database)
+    if service_cursor:
+        locked = raw.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:game-feedback-delivery',0))").fetchone()[0]
+        if not locked:
+            raise ConcurrentUpdate("delivery service cursor busy")
+    row = raw.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s FOR UPDATE NOWAIT",
+        (operation_id,)).fetchone()
+    if row is None:
+        raise ValueError("delivery was not durably captured")
+    actual = Delivery.model_validate_json(row[0])
+    if expected is not None and actual != expected:
+        raise ConcurrentUpdate("prepared delivery changed")
+    return actual
+
+
+def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None, record_service=False):
+    """Persist one outbox result without starting or committing a transaction."""
+    raw = _borrowed_writer(database)
+    previous = lock_delivery_in_transaction(raw, delivery.operation_id, expected=expected,
+        service_cursor=record_service)
+    if previous.command != delivery.command or previous.source_key != delivery.source_key:
+        raise ValueError("captured delivery command cannot be replaced")
+    if delivery.attempts < previous.attempts:
+        raise ConcurrentUpdate("delivery attempt advanced")
+    if previous.determined_at is not None and delivery.determined_at != previous.determined_at:
+        raise ValueError("actionable determination cannot be restarted")
+    if previous.state == "superseded":
+        delivery = delivery.model_copy(update={"state": "superseded"})
+    elif previous.state != "pending":
+        return previous
+    delivery = delivery.model_copy(update={"service_sequence":max(delivery.service_sequence,previous.service_sequence)})
+    if record_service and delivery.control is None:
+        sequence = raw.execute("""SELECT COALESCE(MAX(
+            COALESCE((payload->>'service_sequence')::bigint,0)),0)+1
+            FROM product_feedback_deliveries""").fetchone()[0]
+        delivery = delivery.model_copy(update={"service_sequence": sequence})
+    raw.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb,
+        handoff_priority=%s WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at,
+        delivery.model_dump_json(), handoff_priority_for(delivery),delivery.operation_id))
+    return delivery
 
 
 class PostgresGamesStore:
@@ -161,39 +290,125 @@ class PostgresGamesStore:
                     (capture.source_key, capture.record.source_revision, capture.record.source_digest,
                      capture.comparison_revision, capture.model_dump_json()))
             for delivery in commit.deliveries:
+                delivery = delivery.model_copy(update={
+                    "origin_job_id": delivery.origin_job_id or commit.job.spec.job_id,
+                    "stream": delivery.stream or commit.job.spec.stream,
+                    "configuration_revision": (delivery.configuration_revision
+                        or commit.job.spec.configuration_revision),
+                })
                 command = delivery.command
                 if delivery.control is not None:
                     database.execute("""UPDATE product_feedback_deliveries SET state='superseded',
                         payload=jsonb_set(payload,'{state}','"superseded"'::jsonb)
                         WHERE effect_key=%s AND command_kind IN ('lapse','encounter') AND state='pending'""", (command.key.logical_id(),))
                 database.execute("""INSERT INTO product_feedback_deliveries
-                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
-                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb) ON CONFLICT(operation_id) DO NOTHING""",
+                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload,handoff_priority)
+                    VALUES(%s,%s,%s,%s,'pending',0,%s::jsonb,%s) ON CONFLICT(operation_id) DO NOTHING""",
                     (delivery.operation_id, delivery.source_key, command.key.logical_id(),
-                     delivery.command_kind, delivery.model_dump_json()))
+                     delivery.command_kind, delivery.model_dump_json(),handoff_priority_for(delivery)))
 
     def delivery(self, operation_id: str) -> Delivery | None:
         with self._transaction() as database:
             row = database.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s", (operation_id,)).fetchone()
             return Delivery.model_validate_json(row[0]) if row else None
 
-    def pending_delivery(self, now: float) -> Delivery | None:
+    def pending_delivery(self, now: float, *, ready_only: bool = False,
+                         workspace: str | None = None, priority_order: bool = False) -> Delivery | None:
+        """Controls first, then alternate live and historical ready service.
+
+        The last actual attempt is retained in an existing delivery's JSON. A
+        restart therefore cannot put a whole historical page ahead of live work
+        or reset history's turn. Missing old provenance belongs to history.
+        """
         with self._transaction() as database:
-            row = database.execute("""SELECT payload::text FROM product_feedback_deliveries
-                WHERE state='pending' AND next_attempt_at<=%s
-                ORDER BY CASE command_kind WHEN 'control' THEN 0 ELSE 1 END,next_attempt_at,operation_id LIMIT 1""", (now,)).fetchone()
+            row = database.execute("""WITH last_service AS (
+                SELECT payload->>'stream'='forward' AS was_live
+                FROM product_feedback_deliveries
+                WHERE command_kind<>'control'
+                  AND COALESCE((payload->>'service_sequence')::bigint,0)>0
+                  AND (%s::text IS NULL OR COALESCE(payload->'encounter'->'key'->>'workspace_id',
+                       payload->'lapse'->'key'->>'workspace_id')=%s)
+                ORDER BY (payload->>'service_sequence')::bigint DESC LIMIT 1
+            ) SELECT delivery.payload::text FROM product_feedback_deliveries delivery
+                WHERE delivery.state='pending' AND delivery.next_attempt_at<=%s
+                  AND (delivery.payload->>'qualification_status' IS DISTINCT FROM 'held'
+                       OR COALESCE((delivery.payload->>'qualification_retryable')::boolean,true))
+                  AND (%s::text IS NULL OR COALESCE(delivery.payload->'encounter'->'key'->>'workspace_id',
+                       delivery.payload->'lapse'->'key'->>'workspace_id',
+                       delivery.payload->'control'->'key'->>'workspace_id')=%s)
+                  AND (NOT %s OR delivery.command_kind='control' OR (
+                       delivery.payload->>'qualification_status' IN ('ready','held')
+                       AND delivery.payload->'qualification'<>'null'::jsonb))
+                ORDER BY CASE WHEN command_kind='control' THEN 0
+                    WHEN %s THEN CASE WHEN payload->>'stream'='forward' THEN 1 ELSE 2 END
+                    WHEN COALESCE(payload->>'stream','')='forward'
+                         AND NOT COALESCE((SELECT was_live FROM last_service),false) THEN 1
+                    WHEN COALESCE(payload->>'stream','')<>'forward'
+                         AND COALESCE((SELECT was_live FROM last_service),false) THEN 1
+                    ELSE 2 END,
+                    COALESCE(payload->>'determined_at',payload->'encounter'->>'detected_at',
+                        payload->'lapse'->>'detected_at')::timestamptz NULLS FIRST,
+                    CASE WHEN %s THEN COALESCE(payload->>'owner_effect_id',operation_id) ELSE operation_id END
+                    LIMIT 1""",
+                (workspace, workspace, now, workspace, workspace, ready_only,
+                 priority_order, priority_order)).fetchone()
             return Delivery.model_validate_json(row[0]) if row else None
 
-    def save_delivery(self, delivery: Delivery) -> None:
+    def has_determined_delivery(self, workspace: str, *, before_stream: str | None = None,
+                               before_determined_at: str | None = None,
+                               before_effect_id: str | None = None) -> bool:
+        """Bounded existence observation, with no dispatch or source replay."""
         with self._transaction() as database:
-            row = database.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s FOR UPDATE", (delivery.operation_id,)).fetchone()
-            if row is None:
-                raise ValueError("delivery was not durably captured")
-            previous = Delivery.model_validate_json(row[0])
-            # A delayed sender acknowledgment cannot reactivate a superseded command.
-            if previous.state == "superseded":
-                delivery = delivery.model_copy(update={"state": "superseded"})
-            elif previous.state != "pending":
-                return
-            database.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb
-                WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at, delivery.model_dump_json(), delivery.operation_id))
+            return has_determined_delivery_in_transaction(database, workspace,
+                before_stream=before_stream,before_determined_at=before_determined_at,
+                before_effect_id=before_effect_id)
+
+    def save_delivery(self, delivery: Delivery, *, serviced=False) -> None:
+        with self._transaction() as database:
+            save_delivery_in_transaction(database, delivery, record_service=serviced)
+
+
+def has_determined_delivery_in_transaction(database, workspace: str, *, before_stream=None,
+                                           before_determined_at=None,before_effect_id=None) -> bool:
+    """Observe pending Games facts in the caller's transaction, without mutation.
+
+    No connection, transaction configuration, source replay or row lock is
+    acquired. Optional-schema errors are contained by the composition's savepoint.
+    """
+    execute = getattr(database,"execute_native",None) or database.execute
+    cutoff = (handoff_priority_key(before_stream,before_determined_at,before_effect_id)
+              if before_stream is not None else None)
+    bound = ' AND handoff_priority COLLATE "C" < %s COLLATE "C"' if cutoff is not None else ''
+    return execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
+        WHERE state='pending' AND handoff_priority IS NOT NULL
+          AND next_attempt_at<=extract(epoch FROM statement_timestamp())
+          AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
+              payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s"""
+        + bound + ")",(workspace,cutoff) if cutoff is not None else (workspace,)).fetchone()[0]
+
+
+def handoff_priority_key(stream,determined_at,effect_id):
+    """Canonical derived ordering only; the original clock/key remain unchanged."""
+    parsed = datetime.fromisoformat(determined_at.replace("Z","+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ValueError("handoff priority requires original UTC determination")
+    return ("0:" if stream == "forward" else "1:") + parsed.astimezone(timezone.utc).isoformat(
+        timespec="microseconds") + ":" + (effect_id or "")
+
+
+def handoff_priority_for(delivery):
+    """Small indexed sidecar derived from typed original owner facts at writes.
+
+    Unqualified collection history has no sidecar. A legacy label/clock alone
+    cannot enter the head hint; the actual witness must match the original.
+    """
+    if delivery.state != "pending":
+        return None
+    if delivery.control is not None:
+        return ""
+    witness = delivery.qualification
+    if (witness is None or not witness.matches(delivery.command)
+            or delivery.qualification_status not in {"ready","held"}
+            or (delivery.qualification_status == "held" and not delivery.qualification_retryable)):
+        return None
+    return handoff_priority_key(witness.stream,witness.determined_at,delivery.owner_effect_id)

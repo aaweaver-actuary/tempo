@@ -3,12 +3,13 @@
 These are test facts, not product commands or scheduling policy. The owning
 PostgreSQL fixture supplies the transaction and disposes its capped container.
 """
-from contextlib import contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager,ExitStack
+from dataclasses import dataclass,field
 from datetime import timedelta
 import hashlib
 import json
 import uuid
+from types import SimpleNamespace
 
 import chess
 from fsrs import Card
@@ -16,6 +17,135 @@ from fsrs import Card
 from app.legacy_game_observation import capture_game
 from app.services.postgres_integrity import current_integrity_certificate
 from test_product_game_lapse import NOW
+
+
+@contextmanager
+def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW, stream='forward',
+                              capture_provider_source=False):
+    """Real disposable Games source/config plus closed-read Study preparation.
+
+    Reused by the owning native suites; it does not bypass global selection,
+    source/config fencing, exact target authority or canonical introduction.
+    """
+    from app.contracts.product_v02.games import GameRecord,GameWindow
+    from app.games.feedback.ports import SourceState
+    from app.games.feedback.review import SyncConfiguration
+    from app.product_composition.provider_priority import prepare_feedback_qualification
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.services.encounter_preparation import prepare_encounter_introduction
+    from app.services.queue_priority_promotion import prepare_priority_promotion
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    import chess.pgn
+    game = retained_canonical_game(capture)
+    @contextmanager
+    def raw_reads(*, repertoire_snapshot=False):
+        # Match the source-reader capability without replacing the verified
+        # disposable owner's transaction, limits or source facts.
+        with transaction() as database:
+            yield database.raw
+    with transaction() as database:
+        account = database.execute_native('SELECT username FROM imported_games WHERE id=%s',(game.game_id,)).fetchone()[0]
+        old_config = database.execute_native('SELECT revision,next_run_at,payload::text FROM product_feedback_configuration '
+            'WHERE workspace_id=%s AND provider=%s',(game.workspace_id,command.key.provider)).fetchone()
+    pgn = chess.pgn.Game(); pgn.setup(chess.Board(game.starting_fen))
+    pgn.headers['White' if game.learner_color=='white' else 'Black'] = account
+    pgn.headers['Result'] = capture['game']['result']
+    node = pgn
+    for uci in game.moves:
+        node = node.add_variation(chess.Move.from_uci(uci))
+    text = str(pgn)
+    record = GameRecord(source_game_id=capture['game']['provider_game_id'],source_revision=1,
+        source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,played_at=game.played_at,time_precision='second')
+    source = SourceState(source_key='qualification-fixture:'+uuid.uuid4().hex,version=1,
+        original=record,record_fingerprint=record.source_digest,normalized=game,findings=(),
+        comparison_revision='retained-synthetic-fixture',effects=(command,),
+        encounters=(command,) if hasattr(command,'decision') else ())
+    repertoire_id = command.decision.repertoire_id if hasattr(command,'decision') else command.finding.repertoire_id
+    revision = int(old_config[0])+1 if old_config else 1
+    config = SyncConfiguration(workspace_id=game.workspace_id,provider=command.key.provider,account=account,
+        repertoire_ids=(repertoire_id,),window=GameWindow(start_at=(clock()-timedelta(days=3)).isoformat(),
+            end_at=clock().isoformat(),precision='second'),speeds=('rapid',),rated=None,interval_seconds=None,revision=revision)
+    PostgresReviewStore(raw_reads).configure(config,revision-1)
+    owned_jobs = []
+    try:
+        coordinator,store,spec = None,None,None
+        if capture_provider_source:
+            from functools import partial
+            from app.games.feedback.coordinator import Coordinator,stable_id
+            from app.games.feedback.ports import JobSpec
+            from app.games.providers.lichess_acquisition import LichessSourceRecord,LichessGamePage
+            from app.product_composition.current_first_boundary import prepare_current_first_boundary
+            from app.product_composition.game_sync_current import CurrentRepertoireSnapshots
+            from app.product_composition.game_sync import WorkflowNormalizer,WorkflowComparer
+            from tempo_legacy_database.adapters.games.product_sources import PostgresCanonicalGamesStore
+            assert command.key.provider == 'lichess'
+            provider_record = LichessSourceRecord(**record.model_dump(mode='python'),
+                source_metadata=(('speed','"rapid"'),('rated','false')))
+            page = LichessGamePage(provider='lichess',account=account,window=config.window,records=(provider_record,),
+                rejections=(),continuation=None,complete=True,saturated=False)
+            class Clock:
+                def now(self): return clock().timestamp()
+                def utc_now(self): return clock().isoformat()
+            store = PostgresCanonicalGamesStore(raw_reads)
+            spec = JobSpec(job_id='captured-feedback:'+uuid.uuid4().hex,workspace_id=game.workspace_id,
+                provider='lichess',account=account,window=config.window,repertoire_ids=config.repertoire_ids,
+                configuration_revision=config.revision,stream=stream)
+            coordinator = Coordinator(providers={'lichess':SimpleNamespace(fetch_page=lambda **kwargs:page)},
+                normalizer=WorkflowNormalizer(),comparer=WorkflowComparer(),snapshots=CurrentRepertoireSnapshots(raw_reads),
+                store=store,source_identity=store,learning=None,clock=Clock(),encounter_feedback=True,
+                first_boundary_preparation=partial(prepare_current_first_boundary,connections=raw_reads))
+            owned_jobs.append(spec.job_id)
+            coordinator.capture_page(store.enqueue(spec))
+            source = store.source(stable_id(game.workspace_id,'lichess',provider_record.source_game_id))
+            assert source is not None and not source.quarantined and len(source.effects) == 1, {
+                'diagnostic':source.diagnostic if source else None,
+                'quarantined':source.quarantined if source else None,
+                'selection':source.first_departure.model_dump(mode='json') if source and source.first_departure else None,
+                'findings':[(item.kind,item.diagnostic) for item in source.findings] if source else None}
+            command, = source.effects
+        else:
+            with transaction() as database:
+                database.execute_native('INSERT INTO product_feedback_sources(source_key,version,payload) '
+                    'VALUES(%s,1,%s::jsonb)',(source.source_key,source.model_dump_json()))
+        def prepare(original):
+            return prepare_feedback_qualification(original,read=transaction,
+                capture=lambda repertoire,game_id,plies:capture,clock=clock,
+                determination=source.determined_at or command.detected_at,stream=stream)
+        result = SimpleNamespace(prepare=prepare,source=source,command=command,store=store,configuration=config)
+        def recompare():
+            nonlocal source
+            assert coordinator is not None
+            repeated = spec.model_copy(update={'job_id':'repeated-feedback:'+uuid.uuid4().hex})
+            owned_jobs.append(repeated.job_id)
+            coordinator.capture_page(store.enqueue(repeated))
+            source = store.source(source.source_key)
+            result.source = source
+        result.recompare = recompare
+        def reprepare():
+            prepared = prepare(command)
+            target = prepared.qualification.selection.decision.model_copy(update={
+                'repertoire_revision':prepared.prepared_decisions.authority.scope_source_revision+1})
+            result.prepared = prepared
+            result.prepared_introduction = prepare_encounter_introduction(target,read=transaction,
+                prepared_target=prepared.prepared_decisions.prepared_target(target))
+            result.prepared_priority = prepare_priority_promotion(clock().date().isoformat(),target.presentation_id,read=transaction)
+        result.reprepare = reprepare
+        reprepare()
+        yield result
+    finally:
+        with transaction() as database:
+            database.execute_native('DELETE FROM product_feedback_deliveries WHERE source_key=%s',(source.source_key,))
+            database.execute_native('DELETE FROM product_feedback_captures WHERE source_key=%s',(source.source_key,))
+            database.execute_native('DELETE FROM product_feedback_sources WHERE source_key=%s',(source.source_key,))
+            if owned_jobs:
+                database.execute_native("DELETE FROM product_feedback_pages WHERE job_id=ANY(%s)",(owned_jobs,))
+                database.execute_native("DELETE FROM product_feedback_jobs WHERE job_id=ANY(%s)",(owned_jobs,))
+            database.execute_native('DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
+                (config.workspace_id,config.provider))
+            if old_config:
+                database.execute_native('INSERT INTO product_feedback_configuration '
+                    '(workspace_id,provider,revision,next_run_at,payload) VALUES(%s,%s,%s,%s,%s::jsonb)',
+                    (config.workspace_id,config.provider,old_config[0],old_config[1],old_config[2]))
 
 
 @dataclass(frozen=True)
@@ -26,6 +156,8 @@ class HistoryCase:
     protected_id: str
     game_ids: tuple[str, ...]
     state: str
+    resources: object = field(default_factory=ExitStack,compare=False)
+    qualifications: dict = field(default_factory=dict,compare=False)
 
     def command(self, capture):
         """Shared factual command from actual synthetic owner rows, no effect."""
@@ -172,6 +304,7 @@ def retained_history_case(transaction, *, state, played="d2d4", ordinary_limit=2
                 VALUES(%s,%s,0,'review')""", (NOW.date().isoformat(), protected))
         yield case
     finally:
+        case.resources.close()
         with transaction() as database:
             database.execute_native("DELETE FROM study_game_feedback WHERE card_id=ANY(%s)", ([target, protected],))
             database.execute_native("DELETE FROM imported_games WHERE id=ANY(%s)", (list(games),))

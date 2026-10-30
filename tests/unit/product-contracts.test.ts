@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, GameLapseSchema, GameEffectControlSchema, GameDetailSchema, ProviderSyncStatusSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
+import { FindingSchema, GamePageSchema, RepertoireSnapshotSchema, FirstDepartureWitnessSchema, GameEncounterSchema, EncounterReceiptSchema, GameLapseSchema, GameEffectControlSchema, GameDetailSchema, ProviderSyncStatusSchema, logicalEffectId, PRODUCT_SCHEMAS } from "../../app/features/product-api/contracts";
 import { ProbabilityEvidenceSchema, EngineEvidenceSchema, ProposalSchema, ProposalDecisionSchema, JoinPlanSchema, matchesProposalPreview } from "../../app/features/product-api/contracts";
 
 const directory = resolve("contracts/product-v02/fixtures");
@@ -16,6 +16,38 @@ describe("product v0.2 shared wire", () => {
       expect(JSON.parse(JSON.stringify(schema.parse(payload)))).toEqual(payload);
     });
   }
+  for (const file of readdirSync(resolve(directory, "game-detail")).filter(file => file.endsWith(".json"))) {
+    it(`game_detail_authoritative_selection_shared_round_trip ${file}`, () => {
+      const payload = fixture(`game-detail/${file.slice(0, -5)}`);
+      const detail = GameDetailSchema.parse(payload);
+      expect(JSON.parse(JSON.stringify(detail))).toEqual(payload);
+      expect(detail.first_departure!.source.source_revision).not.toBe(detail.source_revision);
+      if (file === "own_actionable.json") {
+        expect(detail.findings[0].ply).toBe(1);
+        expect(detail.first_departure!.ply).toBe(3);
+        expect(detail.receipts[0]).not.toHaveProperty("interface_version");
+        expect(detail.receipts[1]).toHaveProperty("progress.schedule_applied_at", "2026-10-26T12:01:00Z");
+      }
+    });
+  }
+  it("game_detail_legacy_omissions_remain_unknown_not_covered", () => {
+    const payload = fixture("game-detail");
+    for (const key of ["first_departure", "determined_at", "comparison_revision", "comparison_freshness"]) delete payload[key];
+    payload.findings = [];
+    const detail = GameDetailSchema.parse(payload);
+    expect([detail.first_departure, detail.determined_at, detail.comparison_revision, detail.comparison_freshness]).toEqual([null, null, null, "unknown"]);
+  });
+  it.each(["provider", "game", "color", "ply", "played", "actor"])("game_detail_rejects_selection_from_contradictory_original_history %s", fault => {
+    const payload = fixture("game-detail/own_actionable");
+    const selection = payload.first_departure;
+    if (fault === "provider") selection.source.provider = "chesscom";
+    else if (fault === "game") selection.source.game_id = "different-game";
+    else if (fault === "color") payload.player_color = "black";
+    else if (fault === "ply") selection.ply = 5;
+    else if (fault === "played") payload.moves[2] = "b1c3";
+    else Object.assign(selection, { status: "opponent_gap", actor: "opponent", decision: null });
+    expect(() => GameDetailSchema.parse(payload)).toThrow();
+  });
   it.each([["kind", "guessed_miss"], ["ply", 0], ["ply", true], ["source_revision", 0], ["introduced_before_game", null], ["expected_uci", ["e2e4", "g1f3"]]])("rejects unproved/invalid %s", (field, value) => {
     expect(() => FindingSchema.parse({ ...fixture("confirmed-introduced-miss"), [field as string]: value })).toThrow();
   });
@@ -133,5 +165,51 @@ describe("product v0.2 shared wire", () => {
     const payload = fixture("snapshot-route-game-introduction");
     payload.decision_presentations[0][field as string] = value;
     expect(() => RepertoireSnapshotSchema.parse(payload)).toThrow();
+  });
+});
+
+describe("first-departure policy compatibility", () => {
+  for (const folder of ["encounters", "first-departure"]) {
+    for (const file of readdirSync(resolve(directory, folder)).filter(file => file.endsWith(".json") && file !== "rejections.json")) {
+      it(`round trips Python/TypeScript ${folder}/${file}`, () => {
+        const { model, payload } = JSON.parse(readFileSync(resolve(directory, folder, file), "utf8"));
+        expect(JSON.parse(JSON.stringify(PRODUCT_SCHEMAS[model as keyof typeof PRODUCT_SCHEMAS].parse(payload)))).toEqual(payload);
+      });
+    }
+  }
+  const rejections: { name: string; fixture: string; updates: Record<string, unknown> }[] = JSON.parse(readFileSync(resolve(directory, "first-departure/rejections.json"), "utf8")).cases;
+  it.each(rejections)("rejects shared contradiction $name", ({ fixture: name, updates }) => {
+    const { model, payload } = JSON.parse(readFileSync(resolve(directory, "first-departure", `${name}.json`), "utf8"));
+    for (const [path, replacement] of Object.entries(updates)) {
+      let current = payload;
+      const parts = path.split(".");
+      for (const part of parts.slice(0, -1)) current = current[part];
+      current[parts.at(-1)!] = replacement;
+    }
+    expect(() => PRODUCT_SCHEMAS[model as keyof typeof PRODUCT_SCHEMAS].parse(payload)).toThrow();
+  });
+  it("retains immutable logical identity through qualification and recompared provenance", () => {
+    const command = GameEncounterSchema.parse(JSON.parse(readFileSync(resolve(directory, "encounters/unintroduced-missed.json"), "utf8")).payload);
+    const payload = JSON.parse(readFileSync(resolve(directory, "first-departure/own-introduced.json"), "utf8")).payload;
+    const witness = FirstDepartureWitnessSchema.parse(payload);
+    expect(witness.selection.source).toEqual(command.source);
+    payload.configuration_revision = 8;
+    payload.stream = "reconciliation";
+    payload.selection.selected_scope[0].snapshot_id = "recomparison-2";
+    const later = FirstDepartureWitnessSchema.parse(payload);
+    expect(later.selection.source).toEqual(witness.selection.source);
+    expect(logicalEffectId(command.key)).toBe(logicalEffectId({ ...command.key }));
+    expect(logicalEffectId({ ...command.key, game_id: "another-genuine-game" })).not.toBe(logicalEffectId(command.key));
+    expect(logicalEffectId({ ...command.key, occurrence_ply: 3 })).not.toBe(logicalEffectId(command.key));
+    expect(Object.isFrozen(witness.selection.selected_scope[0])).toBe(true);
+  });
+  it("keeps legacy priority separate from Again and preserves new receipts inside GameDetail", () => {
+    const legacyPayload = JSON.parse(readFileSync(resolve(directory, "encounters/historical-review-priority.json"), "utf8")).payload;
+    const legacy = EncounterReceiptSchema.parse(legacyPayload);
+    expect(legacy.applied_at).not.toBeNull();
+    expect(legacy.progress).toBeUndefined();
+    const currentPayload = JSON.parse(readFileSync(resolve(directory, "first-departure/introduced-again-applied.json"), "utf8")).payload;
+    const detail = GameDetailSchema.parse({ ...fixture("game-detail"), receipts: [legacyPayload, currentPayload] });
+    expect(JSON.parse(JSON.stringify(detail.receipts))).toEqual([legacyPayload, currentPayload]);
   });
 });

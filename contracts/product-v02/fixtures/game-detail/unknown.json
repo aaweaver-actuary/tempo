@@ -1,0 +1,172 @@
+{
+  "model": "GameDetail",
+  "payload": {
+    "provider": "lichess",
+    "game_id": "synthetic-game",
+    "source_revision": 23,
+    "played_at": "2026-10-25T12:00:00Z",
+    "time_precision": "second",
+    "player_color": "white",
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [
+      "d2d4",
+      "d7d5",
+      "c2c4"
+    ],
+    "findings": [
+      {
+        "interface_version": "0.2.0",
+        "kind": "confirmed_miss",
+        "provider": "lichess",
+        "game_id": "synthetic-game",
+        "source_revision": 1,
+        "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ply": 1,
+        "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "expected_uci": [
+          "e2e4"
+        ],
+        "played_uci": "d2d4",
+        "repertoire_id": "white",
+        "repertoire_revision": 1,
+        "decision_id": "existing-decision",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "introduced_before_game": true,
+        "membership": "present",
+        "lapse_eligible": true,
+        "diagnostic": null,
+        "reentry_authority_id": null
+      }
+    ],
+    "receipts": [
+      {
+        "key": {
+          "workspace_id": "fixture",
+          "provider": "lichess",
+          "game_id": "synthetic-game",
+          "decision_id": "existing-decision",
+          "occurrence_ply": 1
+        },
+        "source_revision": 2,
+        "status": "held",
+        "outcome": "accepted",
+        "owner_receipt_id": "study-owner-receipt",
+        "admitted_at": null,
+        "available_by": null,
+        "applied_at": null,
+        "reason": "source_changed_before_original_arrived"
+      },
+      {
+        "key": {
+          "workspace_id": "fixture",
+          "provider": "lichess",
+          "game_id": "synthetic-game",
+          "decision_id": "existing-decision",
+          "occurrence_ply": 3
+        },
+        "source_revision": 7,
+        "status": "applied",
+        "outcome": "accepted",
+        "owner_receipt_id": "synthetic-study-encounter-receipt",
+        "admitted_at": "2026-10-26T12:01:00Z",
+        "available_by": null,
+        "applied_at": "2026-10-26T12:01:00Z",
+        "reason": null,
+        "interface_version": "0.2.2",
+        "detected_at": "2026-10-26T12:00:00Z",
+        "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "observation": "missed",
+        "observation_recorded": true,
+        "disposition": "introduced_again",
+        "admission_status": "available",
+        "deferred_reason": null,
+        "progress": {
+          "policy_version": "first_departure_v1",
+          "determined_at": "2026-10-26T12:00:01Z",
+          "stream": "forward",
+          "target": {
+            "card_id": "existing-physical-card",
+            "card_revision": 1
+          },
+          "scheduling_review_id": 41,
+          "schedule_applied_at": "2026-10-26T12:01:00Z",
+          "introduction_applied_at": null,
+          "remediation_fence": {
+            "target": {
+              "card_id": "existing-physical-card",
+              "card_revision": 1
+            },
+            "after_issuance_sequence": 100,
+            "established_at": "2026-10-26T12:01:00Z"
+          },
+          "first_issued": null,
+          "first_issued_ordinal": null,
+          "settlement": null
+        }
+      }
+    ],
+    "first_departure": {
+      "policy_version": "first_departure_v1",
+      "workspace_id": "fixture",
+      "source": {
+        "provider": "lichess",
+        "game_id": "synthetic-game",
+        "source_revision": 7,
+        "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "learner_color": "white",
+      "selected_scope": [
+        {
+          "repertoire_id": "white",
+          "learner_color": "white",
+          "snapshot_id": "snapshot-white",
+          "source_revision": "source-white-1",
+          "revision": 1,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "complete": true,
+          "available": true
+        }
+      ],
+      "status": "own_actionable",
+      "ply": 3,
+      "actor": "learner",
+      "position_key": "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq -",
+      "played_uci": "c2c4",
+      "expected_uci": [
+        "g1f3"
+      ],
+      "decision": {
+        "decision_id": "existing-decision",
+        "repertoire_id": "white",
+        "position_key": "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq -",
+        "selected_response_uci": "g1f3",
+        "presentation_id": "existing-physical-card",
+        "presentation_revision": 1,
+        "repertoire_revision": 1,
+        "introduction": "introduced",
+        "introduced_at": "2026-10-26T11:00:00Z",
+        "available": true,
+        "introduction_matches_current_content": true,
+        "route_id": "route-a",
+        "route_ply": 2,
+        "introduced_before_game": null,
+        "introduction_game": null
+      },
+      "surviving_routes": [
+        {
+          "repertoire_id": "white",
+          "route_id": "route-a",
+          "route_ply": 2,
+          "policy_id": "policy-white",
+          "source_revision": "source-white-1",
+          "at_deliberate_end": false
+        }
+      ],
+      "diagnostic": null
+    },
+    "determined_at": "2026-10-26T12:00:01Z",
+    "comparison_revision": "comparison-white-7",
+    "comparison_freshness": "unknown"
+  }
+}

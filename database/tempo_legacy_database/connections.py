@@ -140,11 +140,12 @@ def background_connection() -> Iterator[sqlite3.Connection]:
 
 
 @contextmanager
-def read_connection() -> Iterator[sqlite3.Connection]:
+def read_connection(*, repertoire_snapshot: bool = False) -> Iterator[sqlite3.Connection]:
     """Open a query-only connection suitable for request projections."""
 
     if postgres_store.configured():
-        with postgres_store.connection(read_only=True) as database:
+        options = {"repertoire_snapshot": True} if repertoire_snapshot else {}
+        with postgres_store.connection(read_only=True, **options) as database:
             yield database
         return
     database = None

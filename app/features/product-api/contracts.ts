@@ -55,7 +55,97 @@ const RawRepertoireSnapshotSchema = z.strictObject({ interface_version: version,
   }
 });
 
+const RawFirstDepartureScopeSchema = z.strictObject({ repertoire_id: id, learner_color: z.enum(["white", "black"]).nullable(), snapshot_id: id.nullable(), source_revision: id.nullable(), revision: revision.nullable(), digest: digest.nullable(), complete: z.boolean(), available: z.boolean() }).superRefine((value, ctx) => {
+  if (value.available && [value.learner_color, value.snapshot_id, value.source_revision, value.revision, value.digest].some(item => item === null)) ctx.addIssue({ code: "custom", message: "available selected scope requires actual snapshot identity" });
+  if (value.complete && !value.available) ctx.addIssue({ code: "custom", message: "unavailable scope cannot claim completeness" });
+});
+const RawFirstDepartureRouteSchema = z.strictObject({ repertoire_id: id, route_id: id, route_ply: z.number().int().min(0).max(1000), policy_id: id, source_revision: id, at_deliberate_end: z.boolean() });
+const RawFirstDepartureSelectionSchema = z.strictObject({ policy_version: z.literal("first_departure_v1").default("first_departure_v1"), workspace_id: id, source: IntroductionGameScopeSchema, learner_color: z.enum(["white", "black"]), selected_scope: z.array(RawFirstDepartureScopeSchema).max(10000), status: z.enum(["covered", "own_actionable", "own_unmapped", "opponent_gap", "coverage_end", "missing_own_continuation", "unresolved"]), ply: z.number().int().min(1).max(1000).nullable(), actor: z.enum(["learner", "opponent"]).nullable(), position_key: id.nullable(), played_uci: uci.nullable(), expected_uci: z.array(uci), decision: RawDecisionPresentationSchema.nullable(), surviving_routes: z.array(RawFirstDepartureRouteSchema), diagnostic: id.nullable() }).superRefine((value, ctx) => {
+  const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+  const scopes = new Map(value.selected_scope.map(item => [item.repertoire_id, item]));
+  if (scopes.size !== value.selected_scope.length) fail("selected scope identities must be unique");
+  if (value.selected_scope.some(item => item.learner_color !== null && item.learner_color !== value.learner_color)) fail("selected relevant scope must retain learner color");
+  if (new Set(value.expected_uci).size !== value.expected_uci.length) fail("expected alternatives must be distinct");
+  const facts = [value.ply, value.actor, value.position_key, value.played_uci];
+  if (facts.some(item => item !== null) && !facts.every(item => item !== null)) fail("known boundary requires complete pre-move occurrence");
+  if (value.status === "covered" && (facts.some(item => item !== null) || value.decision !== null || value.expected_uci.length)) fail("covered played moves cannot claim departure or target");
+  if (value.status === "covered" && !value.selected_scope.length) fail("absent relevant scope is unresolved, not covered");
+  if (!["covered", "unresolved"].includes(value.status) && value.ply === null) fail("selected boundary must retain occurrence");
+  if (["own_actionable", "own_unmapped", "missing_own_continuation"].includes(value.status) && value.actor !== "learner") fail("learner boundary requires learner actor");
+  if (value.status === "opponent_gap" && value.actor !== "opponent") fail("opponent gap cannot authorize learner effect");
+  if (["own_actionable", "own_unmapped", "opponent_gap"].includes(value.status) && value.expected_uci.includes(value.played_uci!)) fail("departure cannot be a supported expected alternative");
+  if (value.status === "coverage_end" && (value.expected_uci.length || !value.surviving_routes.length || !value.surviving_routes.every(item => item.at_deliberate_end))) fail("coverage end requires all surviving authored routes deliberately ended and no expected move");
+  if (value.status === "missing_own_continuation" && value.expected_uci.length) fail("missing own continuation cannot invent an expected response");
+  if (new Set(value.surviving_routes.map(item => JSON.stringify([item.repertoire_id, item.route_id, item.route_ply, item.policy_id]))).size !== value.surviving_routes.length) fail("surviving route occurrences must be distinct");
+  if (value.surviving_routes.some(item => !scopes.has(item.repertoire_id) || scopes.get(item.repertoire_id)!.source_revision !== item.source_revision)) fail("route must bind selected source revision");
+  if (value.status !== "own_actionable" && value.decision !== null) fail("non-actionable result cannot claim actionable target");
+  if (["own_unmapped", "missing_own_continuation", "unresolved"].includes(value.status) && value.diagnostic === null) fail("non-actionable own boundary needs specific diagnostic");
+  if (value.status === "own_actionable") {
+    const decision = value.decision;
+    if (decision === null || !decision.available || decision.route_id === null || value.expected_uci.length !== 1 || value.expected_uci.includes(value.played_uci!) || value.expected_uci[0] !== decision.selected_response_uci || value.position_key !== decision.position_key) fail("actionable departure requires exact available pre-move target");
+    if (!value.selected_scope.length || value.selected_scope.some(item => !item.complete || !item.available)) fail("incomplete scope cannot authorize Study");
+    if (decision !== null) {
+      const scope = scopes.get(decision.repertoire_id);
+      if (!scope || decision.repertoire_revision !== scope.revision) fail("target must bind selected repertoire revision");
+      if (!value.surviving_routes.length || value.surviving_routes.some(item => item.at_deliberate_end) || !value.surviving_routes.some(item => item.repertoire_id === decision.repertoire_id && item.route_id === decision.route_id && item.route_ply === decision.route_ply)) fail("target needs surviving occurrence without ended competitor");
+    }
+  }
+});
+const RawFirstDepartureWitnessSchema = z.strictObject({ selection: RawFirstDepartureSelectionSchema, configuration_revision: revision, determined_at: utc, stream: z.enum(["forward", "reconciliation", "manual"]) }).refine(value => value.selection.status === "own_actionable", "only exact learner first departure can qualify Study intake");
+const RawEncounterTargetSchema = z.strictObject({ card_id: id, card_revision: revision });
+const RawIssuedAttemptEvidenceSchema = z.strictObject({ queue_entry_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), card_id: id, card_revision: revision, issuance_sequence: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), issued_at: utc });
+const RawRemediationFenceSchema = z.strictObject({ target: RawEncounterTargetSchema, after_issuance_sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), established_at: utc });
+const RawEncounterSettlementSchema = z.strictObject({ review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), attempt: RawIssuedAttemptEvidenceSchema });
+// PostgreSQL/Python preserve microseconds; Date.parse alone truncates them.
+function compareUtc(left: string, right: string): number {
+  const parts = (value: string) => {
+    const fraction = /\.(\d+)/.exec(value)?.[1] ?? "";
+    return [Date.parse(value.replace(/\.\d+(?=Z$|\+00:00$)/, "")), Number((fraction + "000000").slice(0, 6))];
+  };
+  const a = parts(left), b = parts(right);
+  return a[0] - b[0] || a[1] - b[1];
+}
+function followsFence(fence: z.infer<typeof RawRemediationFenceSchema>, attempt: z.infer<typeof RawIssuedAttemptEvidenceSchema>) {
+  return attempt.card_id === fence.target.card_id && attempt.card_revision === fence.target.card_revision && attempt.issuance_sequence > fence.after_issuance_sequence && compareUtc(attempt.issued_at, fence.established_at) >= 0;
+}
+const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("first_departure_v1").default("first_departure_v1"), determined_at: utc, stream: z.enum(["forward", "reconciliation", "manual"]), target: RawEncounterTargetSchema, scheduling_review_id: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), schedule_applied_at: utc.nullable(), introduction_applied_at: utc.nullable(), remediation_fence: RawRemediationFenceSchema.nullable(), prior_remediation_fences: z.array(RawRemediationFenceSchema).min(1).optional(), first_issued: RawIssuedAttemptEvidenceSchema.nullable(), first_issued_ordinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable(), settlement: RawEncounterSettlementSchema.nullable() }).superRefine((value, ctx) => {
+  const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+  if ((value.scheduling_review_id === null) !== (value.schedule_applied_at === null)) fail("Again needs actual scheduling review and application time");
+  if (value.schedule_applied_at !== null && value.introduction_applied_at !== null) fail("one disposition cannot claim Again and introduction");
+  const application = value.schedule_applied_at ?? value.introduction_applied_at;
+  const fence = value.remediation_fence;
+  if ((fence === null) !== (application === null)) fail("application/admission needs issuance fence");
+  if (fence !== null && (fence.target.card_id !== value.target.card_id || fence.target.card_revision !== value.target.card_revision || application === null || compareUtc(fence.established_at, application) < 0)) fail("fence binds actual target at or after application boundary");
+  const history = value.prior_remediation_fences ?? [];
+  const fences = [...history, ...(fence !== null ? [fence] : [])];
+  if (history.length && fence === null) fail("prior remediation needs current application fence");
+  for (let index = 1; index < fences.length; index++) {
+    const previous = fences[index - 1], current = fences[index];
+    if ((previous.target.card_id === current.target.card_id && previous.target.card_revision === current.target.card_revision) || previous.after_issuance_sequence > current.after_issuance_sequence || compareUtc(previous.established_at, current.established_at) > 0) fail("owner remapping retains distinct targets and monotonic real fences");
+  }
+  if (fences.length && application !== null && compareUtc(fences[0].established_at, application) < 0) fail("original fence cannot precede actual application");
+  if ((value.first_issued === null) !== (value.first_issued_ordinal === null)) fail("first issuance and measured ordinal must be paired");
+  if (value.first_issued !== null && !fences.some((candidate, index) => {
+    const following = fences[index + 1], issued = value.first_issued!;
+    return followsFence(candidate, issued) && (!following || (issued.issuance_sequence <= following.after_issuance_sequence && compareUtc(issued.issued_at, following.established_at) <= 0));
+  })) fail("first issuance must match actual current/prior post-application target window");
+  if (value.first_issued !== null && compareUtc(value.first_issued.issued_at, value.determined_at) < 0) fail("target issuance cannot precede original determination");
+  if (value.settlement !== null && (value.first_issued === null || fence === null || !followsFence(fence, value.settlement.attempt) || value.settlement.attempt.issuance_sequence < value.first_issued.issuance_sequence)) fail("settlement requires compatible post-application issued attempt");
+  if (value.settlement !== null && value.first_issued !== null) {
+    const first = value.first_issued, completed = value.settlement.attempt;
+    const sameGeneration = first.queue_entry_id === completed.queue_entry_id && first.card_id === completed.card_id && first.card_revision === completed.card_revision;
+    const sameSequence = first.issuance_sequence === completed.issuance_sequence;
+    if ((sameSequence && !sameGeneration) || (sameGeneration && (!sameSequence || compareUtc(first.issued_at, completed.issued_at) !== 0))) fail("once-stamped issuance retains actual generation, sequence and time");
+  }
+});
+
 const RawGameEffectKeySchema = z.strictObject({ workspace_id: id, provider, game_id: id, decision_id: id, occurrence_ply: z.number().int().min(1).max(1000) });
+const RawGameEncounterSchema = z.strictObject({ interface_version: z.literal("0.2.1").default("0.2.1"), key: RawGameEffectKeySchema, source: IntroductionGameScopeSchema, decision: RawDecisionPresentationSchema, expected_uci: uci, played_uci: uci, observation: z.enum(["matched", "missed"]), detected_at: utc, occurred_at: utc.nullable(), payload_digest: digest }).superRefine((value, ctx) => {
+  if (value.key.provider !== value.source.provider || value.key.game_id !== value.source.game_id || value.key.decision_id !== value.decision.decision_id) ctx.addIssue({ code: "custom", message: "encounter key must identify same provider/game/decision" });
+  if (value.expected_uci !== value.decision.selected_response_uci || (value.observation === "matched") !== (value.played_uci === value.expected_uci)) ctx.addIssue({ code: "custom", message: "encounter preserves expected/played facts" });
+  const chronology = value.decision.introduction_game;
+  if (chronology !== null && (chronology.provider !== value.source.provider || chronology.game_id !== value.source.game_id || chronology.source_revision !== value.source.source_revision || chronology.source_digest !== value.source.source_digest)) ctx.addIssue({ code: "custom", message: "supplied chronology must identify exact source" });
+});
 const RawGameLapseSchema = z.strictObject({ key: RawGameEffectKeySchema, finding: RawFindingSchema, detected_at: utc, occurred_at: utc.nullable(), payload_digest: digest }).refine(value => value.finding.kind === "confirmed_miss" && value.key.provider === value.finding.provider && value.key.game_id === value.finding.game_id && value.key.decision_id === value.finding.decision_id && value.key.occurrence_ply === value.finding.ply, "lapse must name same confirmed occurrence");
 // Exact v2 EvidenceWithdrawal wire shape; v3 already supports withdrawal-only envelopes.
 const RawEvidenceWithdrawalSchema = z.strictObject({ obligation_id: id, expected_obligation_revision: revision, reason: z.enum(["source_corrected", "source_excluded", "source_deleted", "reanalysis"]) });
@@ -63,8 +153,8 @@ const controlReason = z.enum(["source_corrected", "source_excluded", "source_del
 const RawGameEffectControlSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, action: z.enum(["hold", "withdraw"]), reason: controlReason.nullable().default(null), withdrawal: RawEvidenceWithdrawalSchema.nullable().default(null) }).refine(value => (value.reason !== null || value.withdrawal !== null) && !(value.reason !== null && value.withdrawal !== null && value.reason !== value.withdrawal.reason), "control requires a reason; optional existing withdrawal must agree");
 const RawLearningReceiptSchema = z.strictObject({ key: RawGameEffectKeySchema, source_revision: revision, status: z.enum(["pending", "held", "applied", "settled"]), outcome: z.enum(["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]), owner_receipt_id: id, admitted_at: utc.nullable(), available_by: utc.nullable(), applied_at: utc.nullable(), reason: id.nullable() });
 
-// Wire mirror of the existing frozen learning.EncounterReceipt; no new effect type.
-const RawEncounterReceiptSchema = RawLearningReceiptSchema.safeExtend({ interface_version: z.literal("0.2.1").default("0.2.1"), detected_at: utc, source_digest: digest, observation: z.enum(["matched", "missed"]), observation_recorded: z.boolean(), disposition: z.enum(["review_priority", "first_introduction", "existing_lapse", "frequency_only"]).nullable(), admission_status: z.enum(["pending", "available", "settled", "not_requested"]), deferred_reason: z.enum(["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"]).nullable() }).superRefine((value, ctx) => {
+// Explicit 0.2.2 progress; stored 0.2.1 receipts remain readable without relabelling priority as Again.
+const RawEncounterReceiptSchema = RawLearningReceiptSchema.safeExtend({ interface_version: z.enum(["0.2.1", "0.2.2"]).default("0.2.1"), detected_at: utc, source_digest: digest, observation: z.enum(["matched", "missed"]), observation_recorded: z.boolean(), disposition: z.enum(["review_priority", "first_introduction", "existing_lapse", "frequency_only", "introduced_again"]).nullable(), admission_status: z.enum(["pending", "available", "settled", "not_requested"]), deferred_reason: z.enum(["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"]).nullable(), progress: RawEncounterProgressSchema.optional() }).superRefine((value, ctx) => {
   if (value.observation === "matched" && value.disposition === "existing_lapse") ctx.addIssue({ code: "custom", message: "correct play cannot produce a lapse" });
   if (value.disposition === "frequency_only" && (value.admission_status !== "not_requested" || value.observation !== "matched")) ctx.addIssue({ code: "custom", message: "frequency-only cannot claim admission or discard missed-response importance" });
   if (value.admission_status === "available" && (value.disposition === null || value.status === "held")) ctx.addIssue({ code: "custom", message: "unresolved/held evidence cannot claim availability" });
@@ -72,6 +162,19 @@ const RawEncounterReceiptSchema = RawLearningReceiptSchema.safeExtend({ interfac
   if (value.admission_status === "pending" && value.deferred_reason === null && value.reason === null) ctx.addIssue({ code: "custom", message: "pending admission requires an owner reason" });
   if (value.disposition === "first_introduction" && ["study_only", "zero_limit", "introduction_allowance"].includes(value.deferred_reason ?? "")) ctx.addIssue({ code: "custom", message: "encounter first introduction uses the targeted exception" });
   if (["disabled", "paused"].includes(value.deferred_reason ?? "") && value.available_by !== null) ctx.addIssue({ code: "custom", message: "full-pause controls cannot promise an availability deadline" });
+  if (value.interface_version === "0.2.1") {
+    if (value.progress !== undefined || value.disposition === "introduced_again") ctx.addIssue({ code: "custom", message: "first-departure application evidence requires receipt0.2.2" });
+    return;
+  }
+  const progress = value.progress;
+  if (progress === undefined || !["introduced_again", "first_introduction"].includes(value.disposition ?? "") || value.observation !== "missed") {
+    ctx.addIssue({ code: "custom", message: "0.2.2 needs qualified missed-departure progress and disposition" });
+    return;
+  }
+  if (value.disposition === "introduced_again" && progress.introduction_applied_at !== null) ctx.addIssue({ code: "custom", message: "introduced Again cannot claim first introduction" });
+  if (value.disposition === "first_introduction" && progress.scheduling_review_id !== null) ctx.addIssue({ code: "custom", message: "first introduction cannot fabricate Again" });
+  if (["available", "settled"].includes(value.admission_status) && ((value.disposition === "introduced_again" ? progress.schedule_applied_at : progress.introduction_applied_at) === null || progress.remediation_fence === null)) ctx.addIssue({ code: "custom", message: "available consequence needs actual scheduling/admission evidence" });
+  if ((value.admission_status === "settled") !== (progress.settlement !== null) || (progress.settlement !== null && value.status !== "settled") || (value.status === "settled" && progress.settlement === null && !["withdrawn", "historical_preserved"].includes(value.outcome))) ctx.addIssue({ code: "custom", message: "settled remediation requires genuine post-application completion; terminal controls remain distinct" });
 });
 
 
@@ -92,7 +195,17 @@ export const GamePageSchema = immutable(RawGamePageSchema);
 export const FindingSchema = immutable(RawFindingSchema);
 export const DecisionPresentationSchema = immutable(RawDecisionPresentationSchema);
 export const RepertoireSnapshotSchema = immutable(RawRepertoireSnapshotSchema);
+export const FirstDepartureScopeSchema = immutable(RawFirstDepartureScopeSchema);
+export const FirstDepartureRouteSchema = immutable(RawFirstDepartureRouteSchema);
+export const FirstDepartureSelectionSchema = immutable(RawFirstDepartureSelectionSchema);
+export const FirstDepartureWitnessSchema = immutable(RawFirstDepartureWitnessSchema);
+export const EncounterTargetSchema = immutable(RawEncounterTargetSchema);
+export const IssuedAttemptEvidenceSchema = immutable(RawIssuedAttemptEvidenceSchema);
+export const RemediationFenceSchema = immutable(RawRemediationFenceSchema);
+export const EncounterSettlementSchema = immutable(RawEncounterSettlementSchema);
+export const EncounterProgressSchema = immutable(RawEncounterProgressSchema);
 export const GameEffectKeySchema = immutable(RawGameEffectKeySchema);
+export const GameEncounterSchema = immutable(RawGameEncounterSchema);
 export const GameLapseSchema = immutable(RawGameLapseSchema);
 export const EvidenceWithdrawalSchema = immutable(RawEvidenceWithdrawalSchema);
 export const GameEffectControlSchema = immutable(RawGameEffectControlSchema);
@@ -102,7 +215,14 @@ export const EncounterReceiptSchema = immutable(RawEncounterReceiptSchema);
 export type GamePage = z.infer<typeof GamePageSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
 export type RepertoireSnapshot = z.infer<typeof RepertoireSnapshotSchema>;
+export type FirstDepartureSelection = z.infer<typeof FirstDepartureSelectionSchema>;
+export type FirstDepartureWitness = z.infer<typeof FirstDepartureWitnessSchema>;
+export type EncounterTarget = z.infer<typeof EncounterTargetSchema>;
+export type IssuedAttemptEvidence = z.infer<typeof IssuedAttemptEvidenceSchema>;
+export type RemediationFence = z.infer<typeof RemediationFenceSchema>;
+export type EncounterProgress = z.infer<typeof EncounterProgressSchema>;
 export type GameEffectKey = z.infer<typeof GameEffectKeySchema>;
+export type GameEncounter = z.infer<typeof GameEncounterSchema>;
 export type GameLapse = z.infer<typeof GameLapseSchema>;
 export type GameEffectControl = z.infer<typeof GameEffectControlSchema>;
 export type LearningReceipt = z.infer<typeof LearningReceiptSchema>;
@@ -124,7 +244,7 @@ export interface GameReviewApi {
   sync(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<ProviderSyncStatus>;
   refresh(request: { provider: GameSummary["provider"]; operation_id: string; signal?: AbortSignal }): Promise<GameRefreshStatus>;
   refreshStatus(request: { operation_id: string; signal?: AbortSignal }): Promise<GameRefreshStatus>;
-  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<LearningReceipt>;
+  retryFeedback(request: { finding: Finding; operation_id: string; signal?: AbortSignal }): Promise<EncounterReceipt | LearningReceipt>;
   findings(gameId: string): Promise<readonly Finding[]>;
   feedbackStatus(key: GameEffectKey): Promise<LearningReceipt | null>;
 }
@@ -132,7 +252,20 @@ export interface GameReviewApi {
 const RawGameSummarySchema = z.strictObject({ provider, game_id: id, source_revision: revision, played_at: utc.nullable(), time_precision: precision, player_color: z.enum(["white", "black"]) }).refine(value => (value.played_at === null) === (value.time_precision === "unknown"), "preserve unknown source time");
 const RawProviderSyncStatusSchema = z.strictObject({ provider, status: z.enum(["idle", "pending", "complete", "failed"]), operation_id: id.nullable(), error: id.nullable() }).refine(value => (value.status === "failed") === (value.error !== null) && (value.status === "idle" || value.operation_id !== null), "status must preserve failure and operation identity");
 const RawRecentGamesSchema = z.strictObject({ games: z.array(RawGameSummarySchema), sync: z.array(RawProviderSyncStatusSchema) });
-const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])) });
+const RawGameDetailSchema = RawGameSummarySchema.safeExtend({ starting_fen: id, moves: z.array(uci).max(1000), findings: z.array(RawFindingSchema), receipts: z.array(z.union([RawEncounterReceiptSchema, RawLearningReceiptSchema])), first_departure: RawFirstDepartureSelectionSchema.nullable().default(null), determined_at: utc.nullable().default(null), comparison_revision: id.nullable().default(null), comparison_freshness: z.enum(["current", "stale", "unknown"]).default("unknown") }).superRefine((value, ctx) => {
+  const selection = value.first_departure;
+  if (selection === null) return;
+  const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+  // Outer provider revision and nested canonical source revision are distinct.
+  if (selection.source.provider !== value.provider || selection.source.game_id !== value.game_id || selection.learner_color !== value.player_color) fail("first departure must identify this game and learner");
+  if (selection.ply !== null) {
+    if (selection.ply > value.moves.length || value.moves[selection.ply - 1] !== selection.played_uci) fail("first departure must identify an original played move");
+    const turn = value.starting_fen.trim().split(/\s+/)[1];
+    if (turn !== "w" && turn !== "b") fail("known boundary requires the original starting side to move");
+    const whiteMoves = (turn === "w") === (selection.ply % 2 === 1);
+    if (selection.actor !== (whiteMoves === (value.player_color === "white") ? "learner" : "opponent")) fail("first departure actor must match original game history");
+  }
+});
 export const GameSummarySchema = immutable(RawGameSummarySchema);
 export const ProviderSyncStatusSchema = immutable(RawProviderSyncStatusSchema);
 export const RecentGamesSchema = immutable(RawRecentGamesSchema);
@@ -258,4 +391,4 @@ export interface RepertoireReviewApi extends RepertoireChangePort {
   evidence(positionKey: string): Promise<readonly ProbabilityEvidence[]>;
 }
 
-export const PRODUCT_SCHEMAS = { GameRefreshStatus: GameRefreshStatusSchema, GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema, PopulationSelection: PopulationSelectionSchema, ProbabilityEvidence: ProbabilityEvidenceSchema, EngineContext: EngineContextSchema, CandidateEvaluation: CandidateEvaluationSchema, EngineEvidence: EngineEvidenceSchema, Proposal: ProposalSchema, ProposalDecision: ProposalDecisionSchema, RepertoireChangeReceipt: RepertoireChangeReceiptSchema, Presentation: PresentationSchema, JoinPlan: JoinPlanSchema, PresentationChangeReceipt: PresentationChangeReceiptSchema, RankingInput: RankingInputSchema, RankingOutput: RankingOutputSchema } as const;
+export const PRODUCT_SCHEMAS = { GameRefreshStatus: GameRefreshStatusSchema, GamePage: GamePageSchema, Finding: FindingSchema, RepertoireSnapshot: RepertoireSnapshotSchema, FirstDepartureSelection: FirstDepartureSelectionSchema, FirstDepartureWitness: FirstDepartureWitnessSchema, GameEncounter: GameEncounterSchema, GameLapse: GameLapseSchema, GameEffectControl: GameEffectControlSchema, LearningReceipt: LearningReceiptSchema, EncounterReceipt: EncounterReceiptSchema, GameSummary: GameSummarySchema, ProviderSyncStatus: ProviderSyncStatusSchema, RecentGames: RecentGamesSchema, GameDetail: GameDetailSchema, PopulationSelection: PopulationSelectionSchema, ProbabilityEvidence: ProbabilityEvidenceSchema, EngineContext: EngineContextSchema, CandidateEvaluation: CandidateEvaluationSchema, EngineEvidence: EngineEvidenceSchema, Proposal: ProposalSchema, ProposalDecision: ProposalDecisionSchema, RepertoireChangeReceipt: RepertoireChangeReceiptSchema, Presentation: PresentationSchema, JoinPlan: JoinPlanSchema, PresentationChangeReceipt: PresentationChangeReceiptSchema, RankingInput: RankingInputSchema, RankingOutput: RankingOutputSchema } as const;

@@ -7,6 +7,7 @@ QueueOrderingRow = _owned.QueueOrderingRow
 SavedQueueOrder = _owned.SavedQueueOrder
 QueueOrderPlan = _owned.QueueOrderPlan
 PRESENTATION_VERSION = _owned.PRESENTATION_VERSION
+urgent_priority_key = _owned.urgent_priority_key
 _queue_membership_hash = _owned._queue_membership_hash
 _queue_order_fingerprint = _owned._queue_order_fingerprint
 _preserved_queue_fingerprint = _owned._preserved_queue_fingerprint
@@ -28,8 +29,9 @@ def _priority_queue_order(rows):
     return [originals[row["id"]] for row in _owned._priority_queue_order(_priority_projection(rows))]
 
 
-def _protected_queue_ids(rows, *, preserve_through_entry_id=None):
-    return _owned._protected_queue_ids(_priority_projection(rows), preserve_through_entry_id=preserve_through_entry_id)
+def _protected_queue_ids(rows, *, preserve_through_entry_id=None, urgent=False):
+    return _owned._protected_queue_ids(_priority_projection(rows), preserve_through_entry_id=preserve_through_entry_id,
+                                      urgent=urgent)
 
 
 def _plan_daily_queue_order(rows, day, saved, *, preserve_through_entry_id=None):

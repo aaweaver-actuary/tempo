@@ -67,10 +67,11 @@ sys.meta_path.insert(0, NoPrivate())
 from app.study.interfaces import game_priority as api
 from app.contracts.product_v02 import learning
 expected = {'EncounterFeedbackPort', 'EncounterReceipt', 'GameEffectControl', 'GameEffectKey', 'GameEncounter', 'GameLapse', 'LearningFeedbackPort', 'LearningReceipt'}
+expected |= {'FirstDepartureWitness', 'EncounterTarget', 'IssuedAttemptEvidence', 'RemediationFence', 'EncounterSettlement', 'EncounterProgress', 'QualifiedGameFeedbackPort'}
 assert set(api.__all__) == expected
 for name in expected:
     assert getattr(api, name) is getattr(learning, name)
-for name in ('EncounterReceipt', 'GameEffectControl', 'GameEffectKey', 'GameEncounter', 'GameLapse', 'LearningReceipt'):
+for name in expected - {'EncounterFeedbackPort', 'LearningFeedbackPort', 'QualifiedGameFeedbackPort'}:
     assert getattr(api, name).model_config['frozen']
 '''
     paths = ["backend", "database", "packages/game-review-contracts/src", "contracts/game-evidence/src", "packages/chess-core/src"]

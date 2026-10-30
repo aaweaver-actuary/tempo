@@ -209,7 +209,7 @@ def presentation_facts(database, day, miss_reason: str, *, read=None, after_entr
     return rows, reviewed, eligible
 
 
-def priority_ownership_state(database, day):
+def priority_ownership_state(database, day, *, target_card_id=None):
     """Fence queued ownership/identity and issuance, not derived eligibility policy.
 
     The target's current admission/content/source is independently fenced by Study.
@@ -220,7 +220,10 @@ def priority_ownership_state(database, day):
     IDs must remain False, matching the original EXISTS predicates.
     """
     return database.execute_native("""WITH owned AS (
-        SELECT q.id,jsonb_build_array(q.id,q.card_id,q.xmin::text,c.xmin::text,
+        SELECT q.id,jsonb_build_array(q.id,q.card_id,q.xmin::text,
+            CASE WHEN c.id=%s THEN jsonb_build_array(c.id,c.revision,c.repertoire_id,c.kind,
+                c.start_fen,c.moves_json,c.trained_color,c.content_type,c.archived,
+                c.pending_validation,c.superseded_by)::text ELSE c.xmin::text END,
             COALESCE((q.id,c.id,c.revision) IN (SELECT o.queue_entry_id,o.card_id,o.revision
                 FROM queue_attempt_origins o WHERE o.issued_as_head=1),FALSE),
             q.id IN (SELECT a.queue_entry_id FROM opening_evidence_attempts a
@@ -231,4 +234,4 @@ def priority_ownership_state(database, day):
     ) SELECT encode(sha256(convert_to(
         COALESCE((SELECT string_agg(value,',' ORDER BY id) FROM owned),'') || '|' ||
         COALESCE((SELECT xmin::text FROM frozen_opening_activation WHERE id=1),'') || '|' ||
-        COALESCE((SELECT xmin::text FROM settings WHERE id=1),''),'UTF8')),'hex')""",(day,)).fetchone()[0]
+        COALESCE((SELECT xmin::text FROM settings WHERE id=1),''),'UTF8')),'hex')""",(target_card_id,day)).fetchone()[0]

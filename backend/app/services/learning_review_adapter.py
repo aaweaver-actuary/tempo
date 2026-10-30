@@ -62,13 +62,22 @@ class LearningReviewAdapter:
         self.policy_provider = policy_provider
         self.observed_at = observed_at
         self.local_day = local_day
+        self._command_time = None
+        self._command_day = None
+        self._command_timezone = None
         self.deferred_effects = []
 
+    def _capture_command_day(self):
+        if self._command_time is None:
+            self._command_time = self.observed_at or datetime.now(timezone.utc)
+            self._command_timezone = self.policy().timezone
+            self._command_day = self.local_day or learning.review_day_at(self._command_time,self._command_timezone)
+
     def context(self, command):
+        self._capture_command_day()
         return learning.review_context(command,
-            observed_at=self.observed_at or datetime.now(timezone.utc),
-            local_day=self.local_day or date.today(),
-            timezone_name="local")
+            observed_at=self._command_time, local_day=self._command_day,
+            timezone_name=self._command_timezone)
 
     def policy(self):
         if self.policy_provider:
@@ -237,7 +246,8 @@ class LearningReviewAdapter:
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)
 
     def lock_queue_date(self):
-        lock_queue_date_for_position(self.database, date.today().isoformat())
+        self._capture_command_day()
+        lock_queue_date_for_position(self.database, self._command_day.isoformat())
 
     def completed_evidence_exists(self, attempt_id):
         row = storage.evidence_state(self.database, attempt_id)

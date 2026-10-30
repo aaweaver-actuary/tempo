@@ -4,7 +4,7 @@ No provider request, queue refresh or source capture runs in the publication
 transaction. HTTP owns only reader credentials and dispatches these commands.
 """
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from dataclasses import dataclass
 import json
 
 from fastapi import HTTPException
@@ -64,33 +64,77 @@ def refresh(database, payload):
         raise HTTPException(error.status, error.reason) from error
 
 
-def prepare_retry(payload):
-    """Legacy lapse retry only; encounter redelivery belongs to the worker."""
-    from .feedback_commands import prepare_imported_feedback
+@dataclass(frozen=True)
+class PreparedRetry:
+    request: object
+    source: object
+    work: object
+    current_runtime_id: str
+
+
+def prepare_retry(payload, *, connections=None, clock=None, capture=None, workspace="legacy"):
+    """Read/qualify the original retained command; never call a writer here."""
+    from .provider_priority import prepare_delivery_feedback
+    from .managed_runtime import current_managed_runtime_identity
+    from tempo_legacy_database.adapters.games.managed_mode import feedback_handoff_admitted
+    if connections is None:
+        from tempo_legacy_database.connections import read_connection
+        @contextmanager
+        def connections(*, repertoire_snapshot=False):
+            options = {"repertoire_snapshot": True} if repertoire_snapshot else {}
+            with read_connection(**options) as database:
+                yield database.raw
+    clock = clock or SystemClock()
     request = RetryFeedbackRequest.model_validate_json(json.dumps(payload))
-    capture = prepare_imported_feedback(dict(game_id=request.finding.game_id,
-        repertoire_id=request.finding.repertoire_id, occurrence_ply=request.finding.ply))
-    return request, capture
+    finding = request.finding
+    reads = PostgresReviewStore(connections)
+    source = reads.source_detail(workspace,finding.provider,finding.game_id)
+    if source is None or source.quarantined or finding not in source.findings or not finding.lapse_eligible:
+        raise HTTPException(409,"current_confirmed_finding_required")
+    candidates = [item for item in reads.deliveries(source.source_key) if item.lapse is not None
+        and (item.lapse.key.decision_id,item.lapse.key.occurrence_ply) == (finding.decision_id,finding.ply)]
+    if len(candidates) != 1 or candidates[0].state in {"failed","superseded"}:
+        raise HTTPException(409,"retryable_stored_command_required")
+    def admitted():
+        return feedback_handoff_admitted(workspace,connections,
+            runtime_id=current_managed_runtime_identity())
+    work = prepare_delivery_feedback(candidates[0],connections=connections,clock=clock,
+        admitted=admitted,capture=capture)
+    # Fresh trusted root identity AFTER all expensive preparation. This object
+    # is ephemeral; the gateway never persists/reuses prepared server facts.
+    runtime_id = current_managed_runtime_identity()
+    if work is None or runtime_id is None or runtime_id != work.mode_runtime_id:
+        raise HTTPException(503,"verified_feedback_mode_required")
+    if work.provider_feedback is None:
+        raise HTTPException(409,work.delivery.qualification_reason or "first_departure_preparation_unavailable")
+    return PreparedRetry(request,source,work,runtime_id)
 
 
 def retry(database, prepared):
-    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
-    from tempo_legacy_database.adapters.games.product_review import fence_imported_game
-    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_game_feedback
-    request, prepared_capture = prepared
-    review = command_review(database)
-    source = review.store.source_detail(review.workspace, request.finding.provider, request.finding.game_id)
-    if source is None or source.quarantined or request.finding not in source.findings or not request.finding.lapse_eligible:
-        raise HTTPException(409, "current_confirmed_finding_required")
+    from .provider_priority import apply_prepared_determined_feedback
+    from app.study.encounter_feedback import EncounterFeedback
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
+    request,work = prepared.request,prepared.work
+    clock = SystemClock()
     try:
-        delivery = review.store.request_retry(review.workspace, source, request.finding, request.operation_id)
-        lapse = delivery.lapse
-        fence_imported_game(database, lapse, prepared_capture.capture)
-        owner = current_owner_game_feedback(database, retained_owner_capture=prepared_capture.capture,
-            snapshot=prepared_capture.snapshot, clock=lambda: datetime.now(timezone.utc))
-        receipt = owner.accept_lapse(lapse)
-        PostgresGamesStore(command_connections(database)).save_delivery(delivery.model_copy(update={
-            "receipt": receipt, "state": "acknowledged", "attempts": delivery.attempts + 1, "error": None}))
+        # The handler runs only after the gateway request hash/token/receipt
+        # fence. Reuse actual prepared mode/source locks before retry bookkeeping.
+        fence_feedback_handoff(database,work.delivery.command.key.workspace_id,runtime_id=prepared.current_runtime_id)
+        work.provider_feedback.qualification_fence(database,work.delivery.command,work.delivery.qualification)
+        review = command_review(database,workspace=work.delivery.command.key.workspace_id)
+        delivery = review.store.request_retry(review.workspace,prepared.source,request.finding,request.operation_id,
+            delivery_id=work.original_delivery.operation_id)
+        if delivery.state != "acknowledged":
+            result = apply_prepared_determined_feedback(database,work,clock=clock,
+                current_runtime_id=prepared.current_runtime_id)
+            if not result.progressed:
+                raise HTTPException(409,result.held_reason or "qualified_feedback_retry_pending")
+        owner = EncounterFeedback(PostgresGameFeedbackStore(database),None,
+            clock=lambda:clock.utc_now(),introductions=None,introduction_policy=None)
+        receipt = owner.encounter_status(delivery.command.key)
+        if receipt is None:
+            raise HTTPException(503,"owner_acknowledgment_pending")
         return receipt.model_dump(mode="json")
     except ReviewUnavailable as error:
         raise HTTPException(error.status, error.reason) from error

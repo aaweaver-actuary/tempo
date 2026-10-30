@@ -6,7 +6,7 @@ caller's; exceptions must roll back schedule, queue and receipt together.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 from typing import TYPE_CHECKING, Callable, Protocol
@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from app.contracts.product_v02.learning import GameEncounter
 
 from app.contracts.product_v02.learning import (
-    GameEffectControl, GameEffectKey, GameLapse, LearningReceipt,
+    EncounterProgress, EncounterSettlement, EncounterTarget, FirstDepartureWitness,
+    GameEffectControl, GameEffectKey, GameLapse, IssuedAttemptEvidence,
+    LearningReceipt, RemediationFence,
 )
 from app.contracts.product_v02.repertoire import DecisionPresentation
 from app.services.scheduling_review_application import apply_scheduling_review
@@ -80,6 +82,12 @@ class Effect:
     admission_status: str | None = None
     deferred_reason: str | None = None
     observation_recorded: bool = False
+    qualification: FirstDepartureWitness | None = None
+    progress: EncounterProgress | None = None
+    # Legacy lapse payloads also retain their real reset fence in owner JSON.
+    remediation_fence: RemediationFence | None = None
+    preparation_retry_at: datetime | None = None
+    target_authority: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,7 @@ class Completion:
     reviewed_at: datetime
     clean: bool
     source_kind: str
+    issuance: IssuedAttemptEvidence | None = None
 
 
 class CurrentDecisionPort(Protocol):
@@ -123,6 +132,9 @@ class GameFeedbackStore(Protocol):
     def promote(self, card_id: str, day: str) -> None: ...
     def owed_page(self, after: str, limit: int) -> tuple[Effect, ...]: ...
     def card_effects(self, card_id: str) -> tuple[Effect, ...]: ...
+    def study_day(self, now: datetime) -> date: ...
+    def issuance_frontier(self) -> int: ...
+    def observed_progress(self, effect: Effect) -> EncounterProgress | None: ...
 
 
 class GameFeedbackTargets(Protocol):
@@ -141,6 +153,13 @@ class GameFeedback:
         # adapter explicitly supplies this Study-owned capability when present.
         self.targets: GameFeedbackTargets | None = getattr(store, "targeting", None)
 
+    def _day(self, now: datetime) -> date:
+        return self.store.study_day(now)
+
+    def _fence(self, target: EncounterTarget, now: datetime) -> RemediationFence:
+        return RemediationFence(target=target,
+            after_issuance_sequence=self.store.issuance_frontier(), established_at=now.isoformat())
+
     def _receipt(self, effect: Effect, outcome: str) -> LearningReceipt:
         return LearningReceipt(
             key=effect.key, source_revision=effect.source_revision,
@@ -157,14 +176,14 @@ class GameFeedback:
 
     def accept_lapse(self, lapse: GameLapse) -> LearningReceipt:
         now = instant(self.clock())
-        self.store.lock_target(lapse.finding.presentation_id, now.date().isoformat())
+        self.store.lock_target(lapse.finding.presentation_id, self._day(now).isoformat())
         self.store.lock_effect(lapse.key)
         prior = self.store.get(lapse.key)
         if prior:
             if prior.control or prior.status == "held":
                 return self._receipt(prior, "historical_preserved" if prior.applied_at else "withdrawn")
             if prior.payload_hash != semantic_digest(lapse):
-                changed = replace(prior, status="held", reason="changed_source_quarantined",
+                changed = replace(prior, status='settled' if prior.status=='settled' else "held", reason="changed_source_quarantined",
                                   conflict_json=lapse.model_dump_json())
                 self.store.save(changed, now)
                 return self._receipt(changed, "conflict")
@@ -188,13 +207,14 @@ class GameFeedback:
         effect = prior or Effect(command.key, command.source_revision, now)
         # Opaque source revisions cannot be ordered. A correction is conservative
         # and permanent until explicit D08 resolution; it cannot undo history.
-        effect = replace(effect, status="held", reason="source_" + command.action,
+        effect = replace(effect, status='settled' if effect.status=='settled' else "held", reason="source_" + command.action,
                          control=command)
         self.store.save(effect, now)
         return self._receipt(effect, "historical_preserved" if effect.applied_at else "withdrawn")
 
     def _advance(self, effect: Effect, now: datetime) -> Effect:
-        lapse, day = effect.lapse, now.date().isoformat()
+        lapse, study_day = effect.lapse, self._day(now)
+        day = study_day.isoformat()
         if lapse is None or effect.status not in {"pending", "applied"}:
             return effect
         mappings = self.decisions.current(lapse)
@@ -236,10 +256,12 @@ class GameFeedback:
                 self.store.scheduling, effect.card_id, "again", guided=False,
                 source_kind="game_lapse", source_ref=effect_id(effect.key),
                 light_first_interval_days=self.light_interval, reviewed_at=now,
-                review_day=now.date(),
+                review_day=study_day,
             )
             effect = replace(effect, status="applied", applied_at=now,
-                             review_id=self.store.last_game_review_id(effect.key))
+                review_id=self.store.last_game_review_id(effect.key),
+                remediation_fence=self._fence(EncounterTarget(card_id=effect.card_id,
+                    card_revision=effect.card_revision), now))
         if self.targets:
             if not self.targets.promote_effect(effect, day):
                 return replace(effect, reason="current_presentation_unavailable_or_busy")
@@ -258,7 +280,7 @@ class GameFeedback:
         now = instant(self.clock())
         page = self.store.owed_page(after, limit)
         for observed in page:
-            self.store.lock_target(observed.card_id, now.date().isoformat())
+            self.store.lock_target(observed.card_id, self._day(now).isoformat())
             self.store.lock_effect(observed.key)
             current = self.store.get(observed.key)
             self.store.save(self._advance(current, now), now)
@@ -269,12 +291,45 @@ class GameFeedback:
         if not completion.clean or completion.source_kind not in {"study", "study_exercise"}:
             return
         now = instant(self.clock())
-        for observed in self.store.card_effects(completion.card_id):
+        for observed in self.store.card_effects(completion.card_id)[:1]:
             self.store.lock_effect(observed.key)
             effect = self.store.get(observed.key)
-            matches = (self.targets.completion_matches(effect, completion) if self.targets else
-                effect.card_id == completion.card_id and effect.card_revision == completion.revision)
-            if (effect.status in {"pending", "applied"} and matches
-                    and completion.reviewed_at >= effect.received_at):
-                self.store.save(replace(effect, status="settled", reason="genuine_review",
-                    settled_at=completion.reviewed_at, settlement_review_id=completion.review_id), now)
+            settled = self._settled_effect(effect,completion)
+            if settled is not None:
+                self.store.save(settled,now)
+
+    def _saved_settlement(self,effect):
+        reader = getattr(self.store,'saved_completion',None)
+        completion = reader(effect) if reader is not None else None
+        return self._settled_effect(effect,completion) if completion is not None else None
+
+    def _settled_effect(self,effect,completion):
+        if not completion.clean or completion.source_kind not in {'study','study_exercise'}:
+            return None
+        matches = (self.targets.completion_matches(effect, completion) if self.targets else
+            effect.card_id == completion.card_id and effect.card_revision == completion.revision)
+        progress = self.store.observed_progress(effect)
+        fence = progress.remediation_fence if progress else effect.remediation_fence
+        if (effect.status != "applied" or not matches or fence is None
+                or completion.issuance is None or not fence.precedes(completion.issuance)):
+            return None
+        # Priority alone, and an attempt issued before the reset/admission,
+        # cannot discharge a newly owed consequence. Unseen admission has no
+        # scheduler review and deliberately uses its own application proof.
+        if progress is not None:
+            applied = (progress.introduction_applied_at if effect.disposition == "first_introduction"
+                       else progress.schedule_applied_at if effect.review_id is not None else None)
+            if applied is None:
+                return None
+            if progress.first_issued is None:
+                # The queue owner supplies the true ordinal with its durable
+                # issuance. Completion alone cannot invent that measurement.
+                return None
+            progress = progress.model_copy(update={"settlement": EncounterSettlement(
+                review_id=completion.review_id, attempt=completion.issuance)})
+        else:
+            if effect.review_id is None:
+                return None
+            progress = None
+        return replace(effect,status="settled",reason="genuine_review",progress=progress,
+            settled_at=completion.reviewed_at,settlement_review_id=completion.review_id)

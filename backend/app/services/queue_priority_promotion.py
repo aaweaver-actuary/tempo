@@ -21,10 +21,10 @@ class PreparedPriorityPromotion:
     changes: tuple[tuple[int, int, int], ...]  # entry, previous position, new position
 
 
-def priority_changes(rows, card_id, priority_reason):
+def priority_changes(rows, card_id, priority_reason, *, priority_order=None):
     # The current owner has accepted this command. Its target priority is owed
     # in this transaction even before the new effect receipt is inserted.
-    projected = [{**row, 'gameplay_priority_reason':priority_reason}
+    projected = [{**row, 'gameplay_priority_reason':priority_reason, **(priority_order or {})}
                  if row['card_id'] == card_id else row for row in rows]
     return tuple((row['id'],row['position'],slot['position'])
         for slot,row in zip(sorted(projected,key=lambda row:(row['position'],row['id'])),
@@ -33,7 +33,7 @@ def priority_changes(rows, card_id, priority_reason):
 
 
 def prepare_priority_promotion(queue_date, card_id, *, read,
-                               priority_reason='product_game_encounter'):
+                               priority_reason='product_game_encounter', priority_order=None):
     """Read finite pages before the writer; never grant source/admission authority.
 
     None means no existing queued target: canonical introduction keeps its normal
@@ -42,7 +42,7 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
     """
     prepare_presentation_queries(MISS_REASON)
     with read() as database:
-        before = priority_ownership_state(database,queue_date)
+        before = priority_ownership_state(database,queue_date,target_card_id=card_id)
     rows, after = [], 0
     while True:
         with read() as database:
@@ -54,10 +54,10 @@ def prepare_priority_promotion(queue_date, card_id, *, read,
             break
         after = page[-1]['id']
     with read() as database:
-        if priority_ownership_state(database,queue_date) != before:
+        if priority_ownership_state(database,queue_date,target_card_id=card_id) != before:
             raise StalePriorityPromotion('priority_ownership_changed_during_preparation')
     targets = [row for row in rows if row['card_id'] == card_id]
     if len(targets) != 1:
         return None
     return PreparedPriorityPromotion(queue_date,card_id,targets[0]['id'],priority_reason,
-        before,priority_changes(rows,card_id,priority_reason))
+        before,priority_changes(rows,card_id,priority_reason,priority_order=priority_order))

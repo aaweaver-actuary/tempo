@@ -1,6 +1,7 @@
 """Read-only collection observations; all game/account values are synthetic."""
 import json
 from copy import deepcopy
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -105,6 +106,81 @@ def test_first_departure_is_per_repertoire_and_survives_reentry():
     assert b["first_departure"] == other
 
 
+def test_native_first_boundary_capture_is_atomic_and_reader_retains_selected_global_result(reader_database):
+    """Existing Games page commit persists election with source/capture/outbox."""
+    import psycopg
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from test_product_feedback_jobs import encounter_harness, spec
+    from app.games.feedback.coordinator import stable_id
+
+    @contextmanager
+    def connections():
+        with reader_database.admin() as database:
+            yield database.raw
+
+    store = PostgresGamesStore(connections)
+    current = encounter_harness(store)
+    request = spec("first-boundary-" + uuid.uuid4().hex)
+    store.enqueue(request)
+    claimed = store.claim_job(current.clock.now(), current.clock.now() + 120)
+    source_key = stable_id("fixture", "lichess", "provider-game")
+    with connections() as database:
+        database.execute("""CREATE FUNCTION reject_first_boundary_delivery() RETURNS trigger LANGUAGE plpgsql
+            AS $$ BEGIN RAISE EXCEPTION 'first_boundary_atomicity_fault'; END $$""")
+        database.execute("""CREATE TRIGGER first_boundary_atomicity BEFORE INSERT ON product_feedback_deliveries
+            FOR EACH ROW EXECUTE FUNCTION reject_first_boundary_delivery()""")
+    try:
+        with pytest.raises(psycopg.errors.RaiseException, match="first_boundary_atomicity_fault"):
+            current.coordinator.capture_page(claimed)
+        assert store.source(source_key) is None
+        assert store.load_job(request.job_id).last_checkpoint_at is None
+        with connections() as database:
+            assert database.execute("SELECT COUNT(*) FROM product_feedback_captures WHERE source_key=%s", (source_key,)).fetchone()[0] == 0
+    finally:
+        with connections() as database:
+            database.execute("DROP TRIGGER first_boundary_atomicity ON product_feedback_deliveries")
+            database.execute("DROP FUNCTION reject_first_boundary_delivery()")
+    current.coordinator.capture_page(claimed)
+    restored = PostgresGamesStore(connections)
+    source = restored.source(source_key)
+    assert source.first_departure.status == "own_actionable" and source.first_departure.ply == 1
+    assert source.determined_at == current.clock.utc_now()
+    pending = restored.pending_delivery(current.clock.now())
+    assert pending.encounter.key.decision_id == source.first_departure.decision.decision_id
+    with connections() as database:
+        capture = database.execute("SELECT payload FROM product_feedback_captures WHERE source_key=%s", (source_key,)).fetchone()[0]
+    assert capture["first_departure"] == source.first_departure.model_dump(mode="json")
+    assert capture["determined_at"] == source.determined_at
+    reader = CollectionObservations(DedicatedGamesConnections(reader_database.dsn, read_only=True))
+    detail = reader.selected_game("fixture", "lichess", "provider-game")
+    assert detail["first_departure"] == capture["first_departure"]
+    assert detail["determined_at"] == source.determined_at and detail["selection_diagnostic"] is None
+    assert detail["comparison"] == "retained_evidence"
+    assert detail["repertoires"][0]["first_own_response_miss"] is not None
+    current.clock.value += 60
+    repeated = spec("first-boundary-retry-" + uuid.uuid4().hex)
+    store.enqueue(repeated)
+    current.coordinator.capture_page(store.load_job(repeated.job_id))
+    assert restored.source(source_key).determined_at == source.determined_at
+    assert restored.pending_delivery(current.clock.now()).encounter == pending.encounter
+
+
+def test_new_selection_redacts_route_scope_and_retains_finite_policy_diagnostics():
+    from test_product_first_boundary import select
+    selection = select().model_dump(mode="json")
+    encoded = _encode(dict(schema_version=1, identity={}, first_departure=selection))
+    value = json.loads(encoded)["first_departure"]
+    assert value["status"] == "own_actionable" and value["policy_version"] == "first_departure_v1"
+    assert value["selected_scope"][0]["snapshot_id"].startswith("redacted:")
+    assert value["selected_scope"][0]["source_revision"].startswith("redacted:")
+    assert value["surviving_routes"][0]["route_id"].startswith("redacted:")
+    assert value["surviving_routes"][0]["policy_id"].startswith("redacted:")
+    assert value["decision"]["position_key"].startswith("redacted:")
+    assert value["decision"]["selected_response_uci"].startswith("redacted:")
+    assert "source-rep" not in encoded and "card-route" not in encoded and "e2e4" not in encoded
+    assert json.loads(_encode(dict(identity={}, diagnostic="selected_scope_incomplete_or_unavailable")))["diagnostic"] == "selected_scope_incomplete_or_unavailable"
+
+
 def test_unavailable_authored_snapshot_is_not_an_own_miss():
     result, = retained_summaries([finding(kind="known_unavailable",membership="unknown")],"white")
     assert result["first_own_response_miss"] is None
@@ -204,6 +280,9 @@ def test_missing_receipt_is_undelivered_without_collection_failure(stored):
     assert report["collection"]["availability"]=="available"
     assert report["delivery"]["pending_undelivered_effects"]==1
     assert report["selected_game"]["receipts"][0]["diagnostic"]=="not_delivered"
+    assert report["selected_game"]["played_at"] == stored.source["original"]["played_at"]
+    assert report["selected_game"]["time_precision"] == stored.source["original"]["time_precision"]
+    assert report["selected_game"]["receipts"][0]["occurred_at"] == delivery["encounter"]["occurred_at"]
 
 
 def test_control_of_original_encounter_reads_encounter_receipt(stored):
@@ -466,3 +545,30 @@ def test_identity_only_unavailable_identity_exits_two(capsys):
     reader = SimpleNamespace(identity=lambda: dict(availability="unavailable", diagnostic="collection_read_unavailable"))
     assert main(["--identity-only"], reader_factory=lambda: reader) == 2
     assert json.loads(capsys.readouterr().out)["identity"]["availability"] == "unavailable"
+
+
+def test_status_distinguishes_priority_pending_actual_application_queue_and_fresh_issuance():
+    from app.contracts.product_v02.learning import EncounterReceipt
+    from tempo_legacy_database.adapters.games.collection_observations import study_receipt_progress
+    fixtures = ROOT / "contracts/product-v02/fixtures"
+    def receipt(folder, name):
+        return EncounterReceipt.model_validate_json(json.dumps(json.loads((fixtures / folder / (name+".json")).read_text())["payload"]))
+    legacy = receipt("encounters", "historical-review-priority")
+    old = study_receipt_progress(legacy)
+    assert old["stage"] == "legacy_priority_needs_qualification" and not old["again"]["observed"]
+    pending = receipt("first-departure", "protected-target-pending-reset")
+    facts = study_receipt_progress(pending, dict(progress=pending.progress, target_compatible=True,
+        queued_attempt=dict(queue_entry_id=1, queue_date="2026-10-30", status="queued", attempt_state="not_issued",
+            card_id=pending.progress.target.card_id, card_revision=1, issuance=None), issued_since_determination=6))
+    assert facts["stage"] == "accepted_pending" and facts["queue"]["entry"] is not None
+    assert not facts["introduction"]["observed"] and not facts["issuance"]["observed"]
+    assert facts["issuance"]["issued_since_determination"] == 6
+    remapped = receipt("first-departure", "remapped-again-preserves-first-service")
+    facts = study_receipt_progress(remapped)
+    assert facts["stage"] == "settled" and facts["again"]["review_id"] == 41
+    assert facts["application_target"]["card_id"] == "existing-physical-card"
+    assert facts["current_target"]["card_id"] == "current-composite-b"
+    assert facts["issuance"]["ordinal"] == 1 and facts["issuance"]["current_remediation_issued"]
+    public = _encode(dict(identity={}, selected_game=dict(progress=facts)))
+    assert "existing-physical-card" not in public and "current-composite-b" not in public
+    assert json.loads(public)["selected_game"]["progress"]["again"]["review_id"] == 41

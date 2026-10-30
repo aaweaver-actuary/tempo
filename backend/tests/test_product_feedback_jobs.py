@@ -80,7 +80,7 @@ class MemoryStore:
         return min(ready, key=lambda d: (d.control is None, d.next_attempt_at, d.operation_id)) if ready else None
     def delivery(self, operation_id):
         return self.deliveries.get(operation_id)
-    def save_delivery(self, delivery):
+    def save_delivery(self, delivery, *, serviced=False):
         prior = self.deliveries[delivery.operation_id]
         self.deliveries[delivery.operation_id] = delivery.model_copy(update={"state": "superseded"}) if prior.state == "superseded" else delivery
 
@@ -147,9 +147,10 @@ def harness(store=None, *, kinds=("confirmed_miss",)):
         if value.pgn == "invalid":
             raise ValueError("parse")
         return CanonicalGame(workspace_id=request.workspace_id, game_id=value.source_game_id,
-            game_revision=value.source_revision, source_id=value.source_game_id,
+            game_revision=value.source_revision, source_id=request.provider,
             source_revision=value.source_revision, source_digest=value.source_digest,
-            starting_fen="start", moves=["d2d4"], learner_color="white", played_at=value.played_at)
+            starting_fen=snapshot.membership.routes[0].starting_fen,
+            moves=["d2d4"], learner_color="white", played_at=value.played_at)
     def compare(game, _snapshot, *, record, spec):
         assert record.source_digest == game.source_digest and spec.workspace_id == game.workspace_id
         result = []
@@ -249,6 +250,10 @@ def test_recomparison_keeps_single_lapse():
     h.store.enqueue(spec())
     h.runner.run_once()
     original = next(iter(h.store.deliveries.values())).lapse
+    canonical = next(iter(h.store.sources.values())).normalized
+    # A provider fetch revision can advance without changing the canonical game.
+    # Model the actual SourceIdentity boundary instead of relabeling its revision.
+    h.coordinator.source_identity = SimpleNamespace(bind_source=lambda *args, **kwargs: canonical)
     h.clock.value += 1000
     h.page[0] = page(records=(record(2, "original"),))
     h.store.enqueue(spec("overlap"))
@@ -480,6 +485,13 @@ def test_unintroduced_encounter_delivery_is_not_a_lapse(observation):
     h = encounter_harness(observation=observation)
     h.store.enqueue(spec())
     h.runner.run_once()
+    if observation == "matched":
+        # #618/#619: covered unseen encounters remain facts without urgency.
+        assert not h.store.deliveries and not h.receiver.calls
+        captured, = h.store.captures.values()
+        assert captured.first_departure.status == "covered" and captured.encounters == ()
+        assert captured.findings[0].kind == "known_unintroduced"
+        return
     delivery = next(iter(h.store.deliveries.values()))
     assert delivery.command_kind == "encounter" and delivery.lapse is None
     assert delivery.encounter.observation == observation
@@ -525,7 +537,8 @@ def test_confirmed_introduced_miss_uses_immutable_pending_intake_without_lapse_o
     finding, = captured.findings
     assert finding.kind == "confirmed_miss" and finding.lapse_eligible
     assert command.decision.introduction == "introduced"
-    assert command.decision == h.coordinator.snapshots.snapshot("white").decision_presentations[0]
+    mapping = h.coordinator.snapshots.snapshot("white").decision_presentations[0]
+    assert command.decision == mapping.model_copy(update={"route_id": "route-a", "route_ply": 0})
     assert command.decision.introduction_matches_current_content
     assert command.decision.introduced_at < command.occurred_at
     assert command.observation == "missed" and command.played_uci == finding.played_uci == "d2d4"
@@ -707,7 +720,8 @@ def test_canonical_history_projection_needs_no_pgn_or_acquisition():
         detected_at=detected_at, occurred_at=None, payload_digest="b" * 64)
     assert len(result) == 1
     encounter = result[0]
-    assert encounter.key.game_id == game.game_id and encounter.source == source and encounter.decision == mapping
+    assert encounter.key.game_id == game.game_id and encounter.source == source
+    assert encounter.decision == mapping.model_copy(update={"route_id": "route-a", "route_ply": 0})
     assert encounter.detected_at == detected_at and encounter.occurred_at is None
     assert encounter.payload_digest == "b" * 64 and encounter.observation == "missed"
     assert (encounter.expected_uci, encounter.played_uci) == ("e2e4", "d2d4")
@@ -897,7 +911,8 @@ def test_partial_comparison_failure_keeps_successful_repertoire_findings():
     h.store.enqueue(spec().model_copy(update={"repertoire_ids": ("white", "unavailable")}))
     h.runner.run_once()
     source, = h.store.sources.values()
-    assert not source.quarantined and len(source.findings) == len(source.effects) == 1
+    assert not source.quarantined and len(source.findings) == 1 and source.effects == ()
+    assert source.first_departure.status == "unresolved"
     assert source.diagnostic == 'comparison_unavailable:["unavailable"]'
     assert h.store.load_job("job").window_complete
 
@@ -978,3 +993,100 @@ def test_source_correction_during_comparison_outage_still_fences_original():
     controls = [delivery.control for delivery in h.store.deliveries.values() if delivery.control]
     assert len(controls) == 1 and controls[0].reason == "source_corrected"
     assert controls[0].key == original.lapse.key
+
+
+@pytest.mark.parametrize("boundary", ["opponent", "learner", "incomplete"])
+def test_capture_retains_global_selection_without_per_repertoire_false_effect(boundary):
+    from app.games.feedback.comparison import compare_game
+    from test_product_first_boundary import snapshot
+    h = harness()
+    captured = {"e4": snapshot(repertoire="e4", introduction="unintroduced"),
+        "d4": snapshot(("d2d4", "d7d5"), repertoire="d4", route_id="d4", introduction="unintroduced")}
+    moves = ["e2e4", "c7c5"] if boundary == "opponent" else ["e2e4", "e7e5", "d2d4"]
+    normalize = h.coordinator.normalizer.normalize
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda original, request:
+        normalize(original, request).model_copy(update={"moves": moves}))
+    def supplied(repertoire):
+        if repertoire == "unavailable":
+            raise TimeoutError()
+        return captured[repertoire]
+    h.coordinator.snapshots = SimpleNamespace(snapshot=supplied)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda current, value, **kwargs:
+        compare_game(current, provider="lichess", snapshot=value, time_precision=kwargs["record"].time_precision))
+    h.coordinator.encounter_feedback = True
+    request = spec().model_copy(update={"repertoire_ids": ("e4", "d4") + (("unavailable",) if boundary == "incomplete" else ())})
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    source, = h.store.sources.values()
+    capture, = h.store.captures.values()
+    assert not source.quarantined and source.first_departure == capture.first_departure
+    assert any(item.repertoire_id == "d4" and item.ply == 1 for item in source.findings)
+    if boundary == "learner":
+        assert (source.first_departure.status, source.first_departure.ply) == ("own_actionable", 3)
+        command, = source.encounters
+        assert command.key.occurrence_ply == 3 and command.decision.presentation_id == "card-route"
+        assert len(h.store.deliveries) == 1 and source.determined_at == capture.determined_at == h.clock.utc_now()
+    else:
+        assert source.first_departure.status == ("opponent_gap" if boundary == "opponent" else "unresolved")
+        assert not h.store.deliveries and not source.encounters and source.determined_at is None
+
+
+def test_old_source_and_capture_json_keep_absent_selection_explicit():
+    from app.games.feedback.ports import Capture, SourceState
+    h = harness()
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    source, = h.store.sources.values()
+    capture, = h.store.captures.values()
+    for model, value in ((SourceState, source), (Capture, capture)):
+        historical = value.model_dump_json(exclude={"first_departure", "determined_at"})
+        restored = model.model_validate_json(historical)
+        assert restored.first_departure is restored.determined_at is None
+
+
+@pytest.mark.parametrize("encounter_mode", [False, True])
+def test_new_commands_in_either_envelope_respect_opponent_first_boundary(encounter_mode):
+    from test_product_game_findings import FakeReentryIndex, record as real_record, route, snapshot
+    from app.games.feedback.comparison import compare_record, normalize_record
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored)
+    original = real_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    current = normalize_record(original, provider="lichess", account="Learner", workspace_id="workspace")
+    findings = compare_record(original, provider="lichess", account="Learner", workspace_id="workspace",
+        snapshot=captured, reentry_lookup=FakeReentryIndex(captured, 4))
+    assert [(item.kind, item.ply) for item in findings] == [("opponent_gap", 2), ("confirmed_miss", 5)]
+    h = harness()
+    h.coordinator.encounter_feedback = encounter_mode
+    h.coordinator.normalizer = SimpleNamespace(normalize=lambda *args: current)
+    h.coordinator.comparer = SimpleNamespace(compare=lambda *args, **kwargs: findings)
+    h.coordinator.snapshots = SimpleNamespace(snapshot=lambda _: captured)
+    request = spec().model_copy(update={"workspace_id": "workspace", "repertoire_ids": ("rep",)})
+    h.page[0] = page(request, records=(original,))
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    source, = h.store.sources.values()
+    assert source.first_departure.status == "opponent_gap" and source.first_departure.ply == 2
+    assert source.findings == findings and source.effects == () and not h.store.deliveries
+
+
+@pytest.mark.parametrize("original_observation", ["matched", "missed"])
+def test_corrected_held_source_cannot_create_or_inherit_determination_clock(original_observation):
+    h = encounter_harness(observation=original_observation)
+    h.store.enqueue(spec())
+    h.runner.run_once()
+    original, = h.store.sources.values()
+    assert (original.determined_at is None) == (original_observation == "matched")
+    h.clock.value += 60
+    h.page[0] = page(records=(record(2, "corrected"),))
+    h.coordinator.normalizer = harness().coordinator.normalizer
+    h.coordinator.comparer = harness(kinds=("known_unintroduced",)).coordinator.comparer
+    correction = spec("corrected-determination")
+    h.store.enqueue(correction)
+    h.coordinator.capture_page(h.store.load_job(correction.job_id))
+    source, = h.store.sources.values()
+    changed_capture = list(h.store.captures.values())[-1]
+    assert source.quarantined and source.first_departure == original.first_departure
+    assert source.determined_at == original.determined_at
+    assert changed_capture.first_departure.status == "own_actionable"
+    assert changed_capture.determined_at is None
+    assert changed_capture.diagnostic == "changed_source_requires_D08_resolution"

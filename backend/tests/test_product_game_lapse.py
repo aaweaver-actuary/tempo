@@ -7,7 +7,8 @@ from pathlib import Path
 from fsrs import Card
 import pytest
 
-from app.contracts.product_v02.learning import GameEffectControl, GameLapse
+from app.contracts.product_v02.learning import (FirstDepartureWitness, GameEffectControl,
+    GameLapse, IssuedAttemptEvidence)
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.services.scheduling_review_application import apply_scheduling_review
 from app.services.scheduling_review_contracts import CardState, MaturityFacts
@@ -41,8 +42,12 @@ class MemoryStore:
                  stability=20, difficulty=5).to_json(),
             "2026-10-01T12:00:00Z", False, 20, False, "mature", "normal", 0, '["correct"]')
         self.saved = None
+        self.issuance_sequence = 7
 
     def lock_intake_target(self, card_id): pass
+    def study_day(self, now): return now.date()
+    def issuance_frontier(self): return self.issuance_sequence
+    def observed_progress(self, effect): return effect.progress
 
     def lock_target(self, card_id, day): pass
     def lock_effect(self, key): pass
@@ -168,7 +173,8 @@ def test_genuine_review_settles_once(owner):
     store, _, clock, service = owner
     lapse = fixture("lapse", GameLapse)
     service.accept_lapse(lapse)
-    completion = Completion(100, CARD, 1, NOW + timedelta(hours=1), True, "study")
+    completion = Completion(100, CARD, 1, NOW + timedelta(hours=1), True, "study",
+                            issued_attempt(CARD, 1, 8, NOW + timedelta(minutes=1)))
     for unsuitable in [replace(completion, clean=False), replace(completion, source_kind="game_lapse")]:
         service.settle(unsuitable)
         assert service.effect_status(lapse.key).status == "applied"
@@ -264,6 +270,75 @@ def test_current_owner_provider_alias_preserves_capture_and_rejects_unknowns():
         assert source['export_digest'] == fingerprint(source['game'])
 
 
+@pytest.mark.parametrize("scope", ["complete_ten", "empty", "duplicate"])
+def test_qualified_owner_prepares_every_selected_publication_beyond_eight_and_rejects_invalid_scope(scope):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions, CurrentDecisionUnavailable
+    from app.contracts.product_v02.learning import GameEffectKey, GameEncounter
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    from app.games.feedback.first_boundary import select_first_boundary
+    from app.repertoire import project_published_repertoire
+    from tempo_game_review_contracts import CanonicalGame
+    from test_product_snapshot import repertoire_facts
+
+    publications = []
+    for index in range(10):
+        facts = repertoire_facts()
+        repertoire = "selected-" + str(index)
+        color = "white" if index == 9 else "black"
+        facts['repertoire']['id'] = repertoire
+        for field in ('lines', 'memberships', 'graphs'):
+            for row in facts[field]: row['repertoire_id'] = repertoire
+        for field in ('lines', 'cards', 'graphs'):
+            for row in facts[field]: row['trained_color'] = color
+        publications.append(facts)
+    raw = dict(id="full-scope-game", provider="lichess", color="white",
+        start_fen=publications[-1]['lines'][0]['start_fen'], moves_json='["d2d4"]',
+        played_at="2026-10-25T12:00:00Z")
+    current = CanonicalGame(workspace_id="fixture", game_id=raw['id'], game_revision=1,
+        source_id='lichess', source_revision=1, source_digest=fingerprint(raw),
+        starting_fen=raw['start_fen'], moves=['d2d4'], learner_color='white', played_at=raw['played_at'])
+    snapshots = tuple(project_published_repertoire(facts) for facts in publications)
+    selected = select_first_boundary(current, snapshots=snapshots,
+        source=IntroductionGameScope(provider='lichess', game_id=current.game_id,
+            source_revision=current.source_revision, source_digest=current.source_digest),
+        selected_repertoire_ids=tuple(facts['repertoire']['id'] for facts in publications))
+    assert selected.status == 'own_actionable' and selected.decision.repertoire_id == 'selected-9'
+    command = GameEncounter(key=GameEffectKey(workspace_id=current.workspace_id, provider='lichess',
+        game_id=current.game_id, decision_id=selected.decision.decision_id, occurrence_ply=selected.ply),
+        source=selected.source, decision=selected.decision, expected_uci=selected.expected_uci[0],
+        played_uci=selected.played_uci, observation='missed', detected_at=NOW.isoformat(),
+        occurred_at=current.played_at, payload_digest=current.source_digest)
+    witness = FirstDepartureWitness(selection=selected, configuration_revision=1,
+        determined_at=NOW.isoformat(), stream='forward')
+    authority = object.__new__(CurrentOwnerDecisions)
+    authority.database = None
+    authority.authority = SimpleNamespace(workspace_id=current.workspace_id)
+    authority.source = dict(game=raw, tables=dict(cards=publications[-1]['cards']))
+    # Capture/executable validation and native row fencing have unchanged owning
+    # proofs. Isolate this pure complete-publication preparation boundary here.
+    prepared = []
+    authority._validate_executable = lambda command, card, **kwargs: prepared.append(command)
+    if scope == 'empty': publications = []
+    if scope == 'duplicate': publications[-1] = publications[0]
+    before = deepcopy(publications)
+    options = dict(qualified_publications=publications, qualification_fence=lambda *_: None,
+                   game=current, select_first_boundary=select_first_boundary)
+    if scope != 'complete_ten':
+        with pytest.raises(CurrentDecisionUnavailable, match='first_departure_selected_scope_unproved'):
+            authority.prepare_qualified(command, witness, **options)
+        assert prepared == []
+    else:
+        assert authority.prepare_qualified(command, witness, **options) is authority
+        assert len(authority._qualified_captures) == 10
+        assert [header['id'] for header in authority._qualified_captures] == ["selected-" + str(index) for index in range(10)]
+        assert prepared == [command]
+        assert authority.database is None
+    assert publications == before
+
+
 @pytest.fixture
 def encounter_owner():
     from types import SimpleNamespace
@@ -279,6 +354,9 @@ def encounter_owner():
     class Current:
         mappings = (command.decision,)
         def current_encounter(self, command): return self.mappings
+        def current_qualified(self, command, qualification):
+            assert qualification.matches(command)
+            return self.mappings
 
     class Introductions:
         reason = None
@@ -296,28 +374,63 @@ def encounter_owner():
     store.facts = replace(store.facts, introduced_at=None)
     service = EncounterFeedback(store, decisions, clock=lambda:clock[0], introductions=introductions,
         introduction_policy=EncounterIntroductionPolicy('encounter_exception'))
+    service.test_qualification = qualification_for
     return store, decisions, clock, introductions, service, command
 
 
-def accept_and_refresh(service,command):
+def qualification_for(command):
+    """Explicit pure-policy fixture; current authority remains an injected port."""
+    from app.contracts.product_v02.games import FirstDepartureScope, FirstDepartureRoute, FirstDepartureSelection
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    decision = command.decision if isinstance(command, GameEncounter) else command.finding
+    if isinstance(command, GameEncounter):
+        source = command.source
+        target = decision
+    else:
+        source = IntroductionGameScope(provider=command.key.provider, game_id=command.key.game_id,
+            source_revision=decision.source_revision, source_digest=decision.source_digest)
+        target = fixture('snapshot', RepertoireSnapshot).decision_presentations[0].model_copy(update={
+            'route_id':'route-a','route_ply':0,'presentation_id':decision.presentation_id})
+    scope = FirstDepartureScope(repertoire_id=target.repertoire_id, learner_color='white',
+        snapshot_id='pure-owner-fixture', source_revision='owner-source-1', revision=target.repertoire_revision,
+        digest='c'*64, complete=True, available=True)
+    selection = FirstDepartureSelection(workspace_id=command.key.workspace_id, source=source,
+        learner_color='white',selected_scope=(scope,),status='own_actionable',
+        ply=command.key.occurrence_ply,actor='learner',position_key=target.position_key,
+        played_uci=command.played_uci if isinstance(command, GameEncounter) else decision.played_uci,
+        expected_uci=(target.selected_response_uci,),decision=target,
+        surviving_routes=(FirstDepartureRoute(repertoire_id=target.repertoire_id,
+            route_id=target.route_id,route_ply=target.route_ply,policy_id=target.repertoire_id,
+            source_revision=scope.source_revision,at_deliberate_end=False),),diagnostic=None)
+    return FirstDepartureWitness(selection=selection,configuration_revision=1,
+        determined_at=command.detected_at,stream='forward')
+
+
+def issued_attempt(card_id, revision, sequence, when):
+    return IssuedAttemptEvidence(queue_entry_id=sequence,card_id=card_id,card_revision=revision,
+        issuance_sequence=sequence,issued_at=when.isoformat())
+
+
+def accept_and_refresh(service,command, *, qualification=None):
     """Keep refresh-policy cases explicit; intake/failure isolation has native guards."""
-    accepted=service.accept_encounter(command)
+    if qualification is None and command.observation == 'missed' and hasattr(service, 'test_qualification'):
+        qualification = service.test_qualification(command)
+    accepted=(service.accept_qualified(command,qualification=qualification) if qualification is not None
+              else service.accept_encounter(command))
     if accepted.status=='pending' and accepted.outcome=='accepted':
         return service.refresh_encounter(command.key)
     return accepted
 
 
-@pytest.mark.parametrize('observation', ['matched', 'missed'])
-def test_encounter_first_introduction_once_without_review_or_again(encounter_owner, observation):
+def test_encounter_first_introduction_once_without_review_or_again(encounter_owner):
     store, _, clock, introductions, service, command = encounter_owner
-    command = command.model_copy(update=dict(observation=observation,
-        played_uci=command.expected_uci if observation=='matched' else command.played_uci))
     before = store.card
     receipt = accept_and_refresh(service,command)
     clock[0] += timedelta(days=1)
     duplicate = accept_and_refresh(service,command.model_copy(update={'detected_at':clock[0].isoformat()}))
     assert receipt.disposition == 'first_introduction' and receipt.admission_status == 'available'
-    assert receipt.observation_recorded and receipt.observation == observation
+    assert receipt.observation_recorded and receipt.observation == 'missed'
     assert duplicate.owner_receipt_id == receipt.owner_receipt_id and duplicate.detected_at == command.detected_at
     assert introductions.charges == 1 and store.facts.introduced_at == NOW
     assert store.saved is None and store.card == before and store.reviews == []
@@ -342,16 +455,20 @@ def test_encounter_later_recomparison_cannot_become_lapse(encounter_owner):
     assert store.get(command.key).encounter == GameEncounter.model_validate_json(command.model_dump_json())
 
 
-def test_historical_missed_encounter_retains_priority_after_later_learning(encounter_owner):
+def test_earlier_clean_review_does_not_waive_new_acceptance(encounter_owner):
     store, _, _, introductions, service, command = encounter_owner
     store.facts = replace(store.facts, introduced_at=NOW-timedelta(hours=2))
     store.clean_reviews.append(Completion(77,CARD,1,NOW-timedelta(hours=1),True,'study'))
-    before = store.card
+    ordinary = MemoryStore()
+    apply_scheduling_review(ordinary,CARD,'again',guided=False,source_kind='study',source_ref='real',
+        light_first_interval_days=7,reviewed_at=NOW,review_day=NOW.date())
     receipt = accept_and_refresh(service,command)
-    assert receipt.disposition == 'review_priority' and receipt.admission_status == 'available'
+    assert receipt.disposition == 'introduced_again' and receipt.admission_status == 'available'
     assert receipt.observation_recorded and receipt.observation == 'missed'
     assert (NOW.date().isoformat(),CARD) in store.queue
-    assert store.saved is None and store.card == before and not store.reviews and introductions.charges == 0
+    assert store.saved == ordinary.saved and len(store.reviews) == 1 and introductions.charges == 0
+    assert receipt.progress.scheduling_review_id == 1 and receipt.progress.schedule_applied_at == NOW.isoformat()
+    assert store.clean_reviews[0].review_id == 77
 
 
 def test_correct_introduced_encounter_is_frequency_without_failure(encounter_owner):
@@ -363,6 +480,223 @@ def test_correct_introduced_encounter_is_frequency_without_failure(encounter_own
     assert not store.reviews and not store.queue and store.saved is None and introductions.charges == 0
     service.control_effect(GameEffectControl(key=command.key,source_revision=2,action='hold',reason='source_excluded'))
     assert service.encounter_status(command.key).admission_status == 'not_requested'
+
+
+def test_correct_unseen_encounter_has_no_urgent_consequence(encounter_owner):
+    store, _, _, introductions, service, command = encounter_owner
+    correct = command.model_copy(update=dict(observation='matched',played_uci=command.expected_uci))
+    receipt = accept_and_refresh(service,correct)
+    assert receipt.disposition == 'frequency_only' and receipt.admission_status == 'not_requested'
+    assert store.facts.introduced_at is None and not store.queue and not store.reviews
+    assert introductions.charges == 0
+
+
+def test_unqualified_old_command_cannot_authorize_new_reset_or_introduction(encounter_owner):
+    store, _, _, introductions, service, command = encounter_owner
+    raw = service.accept_encounter(command)
+    assert raw.reason == 'first_departure_qualification_pending'
+    refreshed = service.refresh_encounter(command.key)
+    assert refreshed.admission_status == 'pending' and refreshed.progress is None
+    assert not store.queue and not store.reviews and introductions.charges == 0
+
+
+@pytest.mark.parametrize('mode', ['normal','light','hard'])
+def test_introduced_first_departure_matches_study_again(encounter_owner, mode):
+    store, _, _, introductions, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(hours=1))
+    store.card = replace(store.card,scheduling_mode=mode)
+    ordinary = MemoryStore(); ordinary.card = store.card
+    apply_scheduling_review(ordinary,CARD,'again',guided=False,source_kind='study',source_ref='real',
+        light_first_interval_days=7,reviewed_at=NOW,review_day=NOW.date())
+    receipt = accept_and_refresh(service,command)
+    assert receipt.disposition == 'introduced_again' and receipt.progress.scheduling_review_id == 1
+    assert store.saved == ordinary.saved and introductions.charges == 0
+    assert store.reviews[0].source_kind == 'game_lapse'
+    assert store.reviews[0].source_ref == effect_id(command.key)
+    assert receipt.progress.remediation_fence.after_issuance_sequence == 7
+
+
+def test_encounter_retry_has_one_scheduling_receipt(encounter_owner):
+    store, _, clock, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(hours=1))
+    original = command.model_dump_json()
+    first = accept_and_refresh(service,command)
+    clock[0] += timedelta(days=5)
+    duplicate = service.accept_qualified(command,qualification=qualification_for(command))
+    service.refresh_encounter(command.key)
+    assert len(store.reviews) == 1 and len(store.effects) == 1
+    assert duplicate.progress == first.progress
+    assert store.get(command.key).encounter.model_dump_json() == original
+    assert service.encounter_status(command.key).progress.determined_at == command.detected_at
+
+
+def test_distinct_games_are_distinct_failures(encounter_owner):
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(hours=1))
+    first = accept_and_refresh(service,command)
+    another = command.model_copy(update=dict(
+        key=command.key.model_copy(update={'game_id':'genuinely-different-game'}),
+        source=command.source.model_copy(update={'game_id':'genuinely-different-game'}),
+        decision=command.decision.model_copy(update={'introduction_game':None,'introduced_before_game':None})))
+    second = accept_and_refresh(service,another)
+    assert first.owner_receipt_id != second.owner_receipt_id
+    assert len(store.effects) == len(store.reviews) == 2 and len(store.queue) == 1
+
+
+def test_priority_applied_is_not_schedule_applied(encounter_owner):
+    from app.study.encounter_feedback import encounter_digest
+    from app.study.game_feedback import Effect
+    store, _, clock, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1))
+    old_priority = NOW-timedelta(days=3)
+    store.save(Effect(command.key,command.source.source_revision,old_priority,
+        status='applied',encounter=command,payload_hash=encounter_digest(command),
+        card_id=CARD,card_revision=1,applied_at=old_priority,
+        disposition='review_priority',admission_status='available',observation_recorded=True), NOW)
+    accepted = service.accept_qualified(command,qualification=qualification_for(command))
+    assert accepted.admission_status == 'pending' and accepted.progress.scheduling_review_id is None
+    clock[0] += timedelta(hours=1)
+    result = service.refresh_encounter(command.key)
+    assert result.disposition == 'introduced_again' and result.progress.scheduling_review_id == 1
+    assert instant(result.progress.schedule_applied_at) == clock[0]
+    assert store.get(command.key).applied_at == old_priority and len(store.reviews) == 1
+
+
+def test_issued_target_completion_cannot_settle_pending_reset(encounter_owner):
+    store, _, clock, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1),active_attempt=True)
+    pending = accept_and_refresh(service,command)
+    assert pending.reason == 'active_attempt' and not store.reviews
+    old_attempt = issued_attempt(CARD,1,7,NOW-timedelta(minutes=1))
+    completion = Completion(100,CARD,1,NOW+timedelta(minutes=1),True,'study',old_attempt)
+    clock[0] = completion.reviewed_at
+    service.settle(completion)
+    assert store.get(command.key).status == 'pending' and not store.reviews
+    store.facts = replace(store.facts,active_attempt=False,latest_review_at=completion.reviewed_at)
+    applied = service.refresh_encounter(command.key)
+    assert applied.progress.scheduling_review_id == 1
+    service.settle(completion)
+    assert store.get(command.key).status == 'applied'
+    fresh = issued_attempt(CARD,1,8,clock[0]+timedelta(minutes=1))
+    store.observed_progress = lambda effect: effect.progress.model_copy(update={
+        'first_issued':fresh,'first_issued_ordinal':1})
+    service.settle(replace(completion,review_id=101,reviewed_at=clock[0]+timedelta(minutes=2),issuance=fresh))
+    settled = store.get(command.key)
+    assert settled.status == 'settled' and settled.settlement_review_id == 101
+    assert len(store.reviews) == 1 and settled.progress.settlement.attempt == fresh
+
+
+def test_settlement_is_disposition_specific(encounter_owner):
+    store, _, _, _, service, command = encounter_owner
+    receipt = accept_and_refresh(service,command)
+    assert receipt.disposition == 'first_introduction' and receipt.progress.scheduling_review_id is None
+    fresh = issued_attempt(CARD,1,8,NOW+timedelta(minutes=1))
+    store.observed_progress = lambda effect: effect.progress.model_copy(update={
+        'first_issued':fresh,'first_issued_ordinal':1})
+    completion = Completion(102,CARD,1,NOW+timedelta(minutes=2),True,'study',fresh)
+    service.settle(replace(completion,issuance=None))
+    assert store.get(command.key).status == 'applied'
+    service.settle(completion)
+
+    assert store.get(command.key).status == 'settled' and not store.reviews
+
+
+@pytest.mark.parametrize('introduced',[False,True])
+@pytest.mark.parametrize('action',['hold','withdraw','conflict'])
+def test_settled_encounter_keeps_actual_history_readable_after_source_control_or_conflict(
+    encounter_owner,introduced,action,
+):
+    from app.contracts.product_v02.learning import GameEffectControl
+    store,_,_,_,service,command = encounter_owner
+    if introduced:
+        store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1))
+    accept_and_refresh(service,command)
+    fresh = issued_attempt(CARD,1,8,NOW+timedelta(minutes=1))
+    store.observed_progress = lambda effect:effect.progress.model_copy(update={
+        'first_issued':fresh,'first_issued_ordinal':1})
+    service.settle(Completion(105,CARD,1,NOW+timedelta(minutes=2),True,'study',fresh))
+    original = service.encounter_status(command.key)
+    if action=='conflict':
+        changed = command.model_copy(update={'played_uci':'c2c4'})
+        assert service.accept_encounter(changed).outcome=='conflict'
+    else:
+        service.control_effect(GameEffectControl(key=command.key,source_revision=2,action=action,reason='reanalysis'))
+    retained = service.encounter_status(command.key)
+    assert retained.status=='settled' and retained.admission_status=='settled'
+    assert retained.progress==original.progress
+    assert retained.model_dump_json()
+    assert store.get(command.key).encounter==command
+    assert service.accept_encounter(command).progress==original.progress
+    assert len(store.reviews)==int(introduced)
+
+
+def test_replay_and_unrelated_completion_cannot_settle(encounter_owner):
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1))
+    accept_and_refresh(service,command)
+    fresh = issued_attempt(CARD,1,8,NOW+timedelta(minutes=1))
+    store.observed_progress = lambda effect: effect.progress.model_copy(update={
+        'first_issued':fresh,'first_issued_ordinal':1})
+    valid = Completion(102,CARD,1,NOW+timedelta(minutes=2),True,'study',fresh)
+    for invalid in (replace(valid,clean=False),replace(valid,source_kind='game_lapse'),
+                    replace(valid,revision=2),replace(valid,card_id='unrelated'),
+                    replace(valid,issuance=issued_attempt(CARD,1,7,NOW+timedelta(minutes=1)))):
+        service.settle(invalid)
+        assert store.get(command.key).status == 'applied'
+
+
+@pytest.mark.parametrize('historical_introduction', [None, '2026-10-26'])
+def test_current_introduction_state_has_no_historical_chronology_gate(encounter_owner, historical_introduction):
+    store, decisions, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(minutes=1))
+    decisions.mappings = (command.decision.model_copy(update={'introduced_at':None,
+        'introduced_before_game':None,'introduction_game':None,'introduction':'unknown'}),)
+    receipt = accept_and_refresh(service,command)
+    assert receipt.disposition == 'introduced_again' and len(store.reviews) == 1
+    assert store.reviews[0].reviewed_at == NOW
+
+
+def test_current_presentation_preserves_original_identity(encounter_owner):
+    store, decisions, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1),revision=2)
+    decisions.mappings = (command.decision.model_copy(update={
+        'presentation_id':'current-approved-presentation','presentation_revision':2}),)
+    receipt = accept_and_refresh(service,command)
+    assert receipt.key == command.key and store.get(command.key).encounter == command
+    assert receipt.progress.target.card_id == 'current-approved-presentation'
+    assert receipt.progress.target.card_revision == 2
+    assert (NOW.date().isoformat(),'current-approved-presentation') in store.queue
+    assert len(store.reviews) == 1
+
+
+def test_study_day_matches_ordinary_review(encounter_owner):
+    from tempo_learning_review import review_day_at
+    store, _, clock, _, service, command = encounter_owner
+    clock[0] = NOW.replace(hour=2)
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(days=1))
+    store.study_day = lambda now: review_day_at(now,'America/Los_Angeles')
+    ordinary = MemoryStore()
+    day = review_day_at(clock[0],'America/Los_Angeles')
+    apply_scheduling_review(ordinary,CARD,'again',guided=False,source_kind='study',source_ref='actual',
+        light_first_interval_days=7,reviewed_at=clock[0],review_day=day)
+    accept_and_refresh(service,command)
+    assert store.saved == ordinary.saved and (day.isoformat(),CARD) in store.queue
+    assert day != clock[0].date()
+
+
+def test_legacy_command_qualification_preserves_key_and_original_payload(encounter_owner):
+    store, decisions, _, _, service, _ = encounter_owner
+    original = fixture('lapse',GameLapse)
+    qualification = qualification_for(original)
+    decisions.mappings = (qualification.selection.decision,)
+    store.facts = replace(store.facts,introduced_at=NOW-timedelta(hours=1))
+    accepted = service.accept_qualified(original,qualification=qualification)
+    assert accepted.admission_status == 'pending'
+    result = service.refresh_encounter(original.key)
+    assert result.disposition == 'introduced_again' and result.progress.scheduling_review_id == 1
+    assert store.get(original.key).lapse == original and store.get(original.key).encounter is None
+    assert service.accept_qualified(original,qualification=qualification).outcome == 'duplicate'
+    assert len(store.reviews) == len(store.effects) == 1
 
 
 def test_ordinary_introduction_racing_pending_encounter_preserves_schedule_and_original_intent(encounter_owner):

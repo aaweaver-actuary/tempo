@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 from typing import Any
 
@@ -45,27 +45,46 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
     read_available = queue_storage.prepare_available_attempt(
         database, identified, entry_id, queue_application.MISS_REASON,
     )
-    available = read_available(date.today().isoformat())
+    # A genuine issued board remains operable over rollover. Its exact retained
+    # identity, not a bare queue ID or old prefetch, supplies the original day.
+    day = (queue_storage.issued_origin_day(database, entry_id, card_id, expected_revision)
+           if identified else None) or current_study_day(database)
+    available = read_available(day)
     if not available or available["id"] != entry_id:
         raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     from .queue_attempt_origins import validate_failure_marker
     validate_failure_marker(database, entry_id, card_id, expected_revision)
     if identified:
         read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
-        head = read_head(date.today().isoformat())
+        head = read_head(day)
         issued_origin = queue_storage.issued_origin(database, entry_id, card_id, expected_revision)
         if (not head or head["id"] != entry_id) and not issued_origin:
             raise ReviewConflict("queue_attempt_inactive", "This queue attempt was never issued as the active attempt")
 
 
-def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
+def current_study_day(database, *, now=None):
+    from tempo_learning_review import review_day_at
+    timezone_name = queue_storage.study_timezone(database)
+    if timezone_name is None:
+        raise HTTPException(503, 'Current Study policy is unavailable')
+    return review_day_at(now or datetime.now(timezone.utc), timezone_name).isoformat()
+
+
+def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     """Commit one head's issuance before returning it; never stamp prefetch."""
     entry_id = int(payload["entry_id"])
-    if payload["queue_date"] != date.today().isoformat():
+    if payload["queue_date"] != current_study_day(database):
         return {"issued": False}
     _lock_attempt_card(database, entry_id)
     if queue_storage.is_postgres_connection(database):
         lock_queue_date_for_position(database, payload["queue_date"])
+    # A newly authorized ordinary successor cannot get ahead of already durable
+    # local urgent work. The completed review stays committed; the explicit
+    # next-card command performs preparation outside this writer transaction.
+    from .services.queue_next_card import pending_next_card_preparation
+    if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
+            and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
+        return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
     read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
     head = read_head(payload["queue_date"])
     if not head or head["id"] != entry_id:
@@ -77,6 +96,11 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
     from .services.legacy_study_remediation import bind_first_issuance
     bind_first_issuance(database, entry_id, payload["card_id"], payload["expected_revision"])
     changed = queue_storage.stamp_issued_head(database, entry_id, payload["card_id"], payload["expected_revision"])
+    if changed:
+        from tempo_legacy_database.adapters.study.game_feedback import installed
+        if installed(database):
+            from tempo_legacy_database.adapters.study.game_feedback import record_feedback_issuance
+            record_feedback_issuance(database, entry_id, payload['card_id'], payload['expected_revision'])
     return {"issued": bool(changed)}
 
 
@@ -92,15 +116,21 @@ def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -
 
 def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     entry_id = int(payload["entry_id"])
-    queue_date = date.today().isoformat()
+    queue_date = current_study_day(database)
     _lock_attempt_card(database, entry_id)
-    lock_queue_date_for_position(database, queue_date)
+    original_day = (queue_storage.issued_origin_day(database,entry_id,payload['card_id'],payload['expected_revision'])
+                    if payload.get('card_id') is not None and payload.get('expected_revision') is not None else None)
+    if queue_storage.is_postgres_connection(database):
+        for day in sorted({queue_date, original_day or queue_date}):
+            lock_queue_date_for_position(database, day)
     validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     previous_order = capture_daily_queue_order(database, queue_date)
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     queue_storage.bury_attempt_card(database, queue_date, entry_id)
     preserve_daily_queue_order(database, queue_date, previous=previous_order)
+    if original_day and original_day != queue_date:
+        preserve_daily_queue_order(database,original_day)
     return {"buried": True, "queue_entry_id": entry_id}
 
 
@@ -137,6 +167,8 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
 
 
 register_command("queue.issue_head", issue_queue_head)
+from .services.queue_next_card import prepare_next_card_command, prepared_next_card_result
+register_command('queue.prepare_next', prepared_next_card_result, prepare=prepare_next_card_command)
 register_command("queue.attempt_failed", mark_attempt_failed)
 register_command("queue.bury", bury_queue_entry)
 register_command("queue.ensure_current", ensure_current_queue)

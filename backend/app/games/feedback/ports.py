@@ -5,9 +5,9 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
-from app.contracts.product_v02 import Value
-from app.contracts.product_v02.games import CanonicalGame, Finding, GamePage, GameRecord, GameRejection, GameWindow
-from app.contracts.product_v02.learning import EncounterReceipt, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
+from app.contracts.product_v02 import UtcTimestamp, Value
+from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection, GamePage, GameRecord, GameRejection, GameWindow
+from app.contracts.product_v02.learning import EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
 
@@ -21,6 +21,7 @@ class JobSpec(Value):
     filters: tuple[tuple[str, str], ...] = ()
     purpose: Literal["sync", "refresh"] = "sync"
     configuration_revision: int | None = Field(default=None, ge=1)
+    stream: Literal["forward", "reconciliation", "manual"] = "manual"
 
 
 class JobState(Value):
@@ -50,6 +51,8 @@ class SourceState(Value):
     encounters: tuple[GameEncounter, ...] = ()
     quarantined: bool = False
     diagnostic: str | None = None
+    first_departure: FirstDepartureSelection | None = None
+    determined_at: UtcTimestamp | None = None
 
 
 class Capture(Value):
@@ -62,6 +65,8 @@ class Capture(Value):
     comparison_revision: str
     diagnostic: str | None = None
     encounters: tuple[GameEncounter, ...] = ()
+    first_departure: FirstDepartureSelection | None = None
+    determined_at: UtcTimestamp | None = None
 
 
 class Delivery(Value):
@@ -75,11 +80,31 @@ class Delivery(Value):
     next_attempt_at: float = 0
     receipt: EncounterReceipt | LearningReceipt | None = None
     error: str | None = None
+    # Qualification never replaces the original command or its logical key.
+    qualification_status: Literal["pending", "ready", "held", "ineligible"] = "pending"
+    qualification_reason: str | None = None
+    qualification_retryable: bool = True
+    qualification: FirstDepartureWitness | None = None
+    determined_at: UtcTimestamp | None = None
+    origin_job_id: str | None = None
+    configuration_revision: int | None = Field(default=None, ge=1)
+    stream: Literal["forward", "reconciliation", "manual"] | None = None
+    service_sequence: int = Field(default=0, ge=0)
+    owner_effect_id: str | None = None
 
     @model_validator(mode="after")
     def exactly_one_command(self):
         if sum(item is not None for item in (self.lapse, self.encounter, self.control)) != 1:
             raise ValueError("delivery requires exactly one semantic owner command")
+        if self.qualification is not None:
+            if self.control is not None or not self.qualification.matches(self.command):
+                raise ValueError("qualification must bind the original automatic command")
+            if self.determined_at != self.qualification.determined_at:
+                raise ValueError("qualification cannot restart the actionable determination")
+        if self.qualification_status == "ready" and self.qualification is None:
+            raise ValueError("ready delivery requires complete first-departure qualification")
+        if self.qualification_status in {"held", "ineligible"} and not self.qualification_reason:
+            raise ValueError("held or ineligible delivery requires an explicit reason")
         return self
 
     @property
@@ -102,6 +127,14 @@ class PageCommit(Value):
 
 class ConcurrentUpdate(RuntimeError):
     """Another commit won; discard this uncommitted calculation and retry."""
+
+
+class DeliveryDeferred(RuntimeError):
+    """Known uncommitted semantic/preparation hold, not uncertain transport."""
+    def __init__(self, reason: str, *, retry_after: float = 1, retryable: bool = True):
+        self.reason, self.retry_after = reason, max(0, retry_after)
+        self.retryable = retryable
+        super().__init__(reason)
 
 
 class AcquisitionFailure(RuntimeError):
@@ -135,6 +168,17 @@ class SourceIdentity(Protocol):
     def bind_source(self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
 
 
+class PreparedFirstBoundaryScope(Value):
+    snapshots: tuple[RepertoireSnapshot, ...]
+    diagnostic: str | None = None
+
+
+class FirstBoundaryPreparation(Protocol):
+    """Prepare explicit current mappings outside writer; selector stays pure."""
+    def __call__(self, game: CanonicalGame, *, snapshots: tuple[RepertoireSnapshot, ...],
+                 selection: FirstDepartureSelection) -> PreparedFirstBoundaryScope: ...
+
+
 class Comparer(Protocol):
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]: ...
@@ -153,7 +197,16 @@ class GamesStore(Protocol):
     def save_job(self, job: JobState) -> None: ...
     def source(self, source_key: str) -> SourceState | None: ...
     def commit_page(self, commit: PageCommit) -> None: ...
-    def pending_delivery(self, now: float) -> Delivery | None: ...
-    def save_delivery(self, delivery: Delivery) -> None: ...
+    def pending_delivery(self, now: float, *, ready_only: bool = False,
+                         workspace: str | None = None, priority_order: bool = False) -> Delivery | None: ...
+    def has_determined_delivery(self, workspace: str, *, before_stream: str | None = None,
+                               before_determined_at: str | None = None,
+                               before_effect_id: str | None = None) -> bool: ...
+    def save_delivery(self, delivery: Delivery, *, serviced: bool = False) -> None: ...
     def delivery(self, operation_id: str) -> Delivery | None: ...
+
+
+class DeliveryQualifier(Protocol):
+    """Complete local comparison before owner delivery, outside its writer."""
+    def prepare(self, delivery: Delivery) -> Delivery: ...
 

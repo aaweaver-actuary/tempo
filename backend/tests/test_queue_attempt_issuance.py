@@ -127,6 +127,93 @@ def test_queue_response_issues_only_head_without_business_mutation(queued_attemp
         )] == [('active-a', 1), ('later-b', 0)]
 
 
+def test_actual_issuance_generation_is_once_and_prefetch_is_not_counted(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import issuance_frontier, attempt_issuance
+    client = TestClient(main.app)
+    assert client.get('/api/queue/window?limit=2').status_code == 200
+    with database.read_connection() as connection:
+        first = attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1)
+        assert first is not None and first.issuance_sequence == issuance_frontier(connection) == 1
+        assert attempt_issuance(connection, queued_attempts['later-b'], 'later-b', 1) is None
+    assert client.get('/api/queue/today').status_code == 200
+    database.initialize()  # Process/reload/day queue preparation is not issuance.
+    with database.read_connection() as connection:
+        assert attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1) == first
+        assert issuance_frontier(connection) == 1
+
+
+def test_pending_target_count_observes_committed_issuance_without_prefetch_or_reload(queued_attempts):
+    from datetime import datetime, timezone
+    from tempo_legacy_database.adapters.study.issuance import (
+        committed_issuance_count, first_target_issuance, stamp_issued_head,
+    )
+    determined = '2026-10-30T10:00:00+00:00'
+    with database.connection() as connection:
+        stamp_issued_head(connection, queued_attempts['active-a'], 'active-a', 1,
+                          now=datetime(2026,10,30,9,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 0
+        assert first_target_issuance(connection, 'not-yet-issued', 1, determined) is None
+        stamp_issued_head(connection, queued_attempts['later-b'], 'later-b', 1,
+                          now=datetime(2026,10,30,10,0,1,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 1
+        assert first_target_issuance(connection, 'later-b', 1, determined)[1] == 1
+        assert committed_issuance_count(connection, determined, through_issuance_sequence=1) == 0
+    database.initialize()
+    with database.connection() as connection:
+        stamp_issued_head(connection, queued_attempts['later-b'], 'later-b', 1,
+                          now=datetime(2026,10,31,10,tzinfo=timezone.utc))
+        assert committed_issuance_count(connection, determined) == 1
+
+
+def test_actual_issuance_count_keeps_distinct_revisions_on_same_queue_entry(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import (
+        committed_issuance_count, first_target_issuance,
+    )
+    determined = '2000-01-01T00:00:00Z'
+    client = TestClient(main.app)
+    assert client.get('/api/queue/today').status_code == 200
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET revision=2 WHERE id='active-a'")
+    assert client.get('/api/queue/today').status_code == 200
+    with database.read_connection() as connection:
+        origins = connection.execute("""SELECT queue_entry_id,revision,issuance_sequence
+            FROM queue_attempt_origins WHERE card_id='active-a' ORDER BY revision""").fetchall()
+        assert [(row['queue_entry_id'],row['revision'],row['issuance_sequence']) for row in origins] == [
+            (queued_attempts['active-a'],1,1),(queued_attempts['active-a'],2,2)]
+        assert committed_issuance_count(connection, determined) == 2
+        assert first_target_issuance(connection, 'active-a', 2, determined)[1] == 2
+
+
+def test_legacy_issued_attempt_is_preserved_without_fabricated_post_reset_generation(queued_attempts):
+    from tempo_legacy_database.adapters.study.issuance import stamp_issued_head, attempt_issuance, issuance_frontier
+    with database.connection() as connection:
+        connection.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='active-a'")
+        assert stamp_issued_head(connection, queued_attempts['active-a'], 'active-a', 1) == 1
+        assert attempt_issuance(connection, queued_attempts['active-a'], 'active-a', 1) is None
+        assert issuance_frontier(connection) == 0
+    assert TestClient(main.app).post(f"/api/queue/entries/{queued_attempts['active-a']}/fail",
+        json={'card_id':'active-a','expected_revision':1}).status_code == 200
+
+
+def test_bury_preserved_issued_board_retires_original_and_holds_current_day(queued_attempts,monkeypatch):
+    from datetime import timedelta
+    from app import queue_commands
+    current_day = date.today().isoformat()
+    old_day = (date.today()-timedelta(days=1)).isoformat()
+    with database.connection() as connection:
+        connection.execute('UPDATE daily_queue SET queue_date=? WHERE id=?',(old_day,queued_attempts['active-a']))
+        connection.execute('UPDATE queue_attempt_origins SET queue_date=?,issued_as_head=1 WHERE queue_entry_id=?',
+                           (old_day,queued_attempts['active-a']))
+    monkeypatch.setattr(queue_commands,'current_study_day',lambda *_args,**_kwargs:current_day)
+    with database.connection() as connection:
+        result = queue_commands.bury_queue_entry(connection,dict(entry_id=queued_attempts['active-a'],
+            card_id='active-a',expected_revision=1))
+        assert result['buried'] is True
+        assert connection.execute('SELECT status FROM daily_queue WHERE id=?',(queued_attempts['active-a'],)).fetchone()[0] == 'buried'
+        assert connection.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='active-a' AND queue_date=? AND status='buried'",
+                                  (current_day,)).fetchone()[0] == 1
+
+
 @pytest.mark.parametrize('action', ['fail', 'bury'])
 @pytest.mark.parametrize('replacement', ['revision', 'card'])
 def test_issued_marker_cannot_transfer_to_replacement_identity(queued_attempts, action, replacement):

@@ -12,11 +12,17 @@ def initialize_sqlite_origins(database) -> None:
             last_status TEXT NOT NULL, review_result_json TEXT, legacy INTEGER NOT NULL DEFAULT 0,
             start_fen TEXT NOT NULL, moves_json TEXT NOT NULL, trained_color TEXT, content_type TEXT NOT NULL,
             issued_as_head INTEGER NOT NULL DEFAULT 0,
+            issuance_sequence INTEGER, issued_at TEXT,
             PRIMARY KEY(queue_entry_id,card_id,revision)
         )""")
         origin_columns = {column[1] for column in database.execute("PRAGMA table_info(queue_attempt_origins)")}
         if "issued_as_head" not in origin_columns:
             database.execute("ALTER TABLE queue_attempt_origins ADD COLUMN issued_as_head INTEGER NOT NULL DEFAULT 0")
+        for column, kind in (("issuance_sequence", "INTEGER"), ("issued_at", "TEXT")):
+            if column not in origin_columns:
+                database.execute(f"ALTER TABLE queue_attempt_origins ADD COLUMN {column} {kind}")
+        database.execute("CREATE UNIQUE INDEX IF NOT EXISTS study_attempt_issuance_order ON queue_attempt_origins(issuance_sequence) WHERE issuance_sequence IS NOT NULL")
+        database.execute("CREATE INDEX IF NOT EXISTS study_attempt_issuance_time ON queue_attempt_origins(issued_at,issuance_sequence) WHERE issued_at IS NOT NULL")
         database.execute("CREATE INDEX IF NOT EXISTS idx_queue_attempt_origin_cycle ON queue_attempt_origins(queue_date,card_id,cycle)")
         # Backfill only surviving projection rows. Missing historical identities
         # cannot be inferred from a client's outbox and must remain explicit conflicts.

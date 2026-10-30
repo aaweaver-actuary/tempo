@@ -1,8 +1,10 @@
 import {
-  GameDetailSchema, RecentGamesSchema, ProviderSyncStatusSchema, LearningReceiptSchema, GameRefreshStatusSchema,
+  GameDetailSchema, RecentGamesSchema, ProviderSyncStatusSchema, LearningReceiptSchema, EncounterReceiptSchema, GameRefreshStatusSchema,
   type GameSummary, type GameReviewApi,
 } from "../product-api/contracts";
 import { confirmOperationResponse, PendingOperationError } from "../../lib/operation-status";
+
+const RetryFeedbackReceiptSchema = EncounterReceiptSchema.or(LearningReceiptSchema);
 
 export class GameReviewRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -76,6 +78,6 @@ export function createGameReviewApi({ endpoints, fetch: fetchRequest = globalThi
       if (!endpoints.refreshStatus) return Promise.reject(new Error("Game refresh status endpoint is unavailable."));
       return request(endpoints.refreshStatus(operation_id), GameRefreshStatusSchema, signal);
     },
-    retryFeedback: ({ signal, ...command }) => request(endpoints.retryFeedback, LearningReceiptSchema, signal, command),
+    retryFeedback: ({ signal, ...command }) => request(endpoints.retryFeedback, RetryFeedbackReceiptSchema, signal, command),
   };
 }

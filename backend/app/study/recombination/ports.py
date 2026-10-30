@@ -11,7 +11,12 @@ from .models import CleanStreak, JoinMember, ReviewEvent, RouteContext, RouteUse
 
 @dataclass(frozen=True)
 class Obligation:
-    """An unresolved #487 identity/deadline, never a new lapse or settlement."""
+    """Unresolved identity and original owed ordering, never a new effect.
+
+    available_by preserves historical deadlines. Ordinal-policy effects instead
+    carry their original determination (or receipt) instant in this internal
+    compatibility field; it is not a wall-clock promise or an expiration time.
+    """
     logical_id: str
     decision_id: str
     available_by: datetime

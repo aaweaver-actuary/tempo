@@ -194,14 +194,14 @@ def _issue(database, card_id):
     return entry
 
 
-def _ordinary_review(database, card_id, entry, attempt_id, outcome="correct"):
+def _ordinary_review(database, card_id, entry, attempt_id, outcome="correct", *, observed_at=None):
     """Same controller, adapter, issuance and receipt path as ordinary Study."""
     import tempo_learning_review as learning
     from app.contracts.transport.study import ReviewRequest
     from app.services.learning_review_adapter import LearningReviewAdapter, command_from_request
     request = ReviewRequest(outcome=outcome, guided=False, queue_entry_id=entry,
         expected_revision=1, attempt_id=attempt_id)
-    adapter = LearningReviewAdapter(database, request, observed_at=NOW+timedelta(hours=1),
+    adapter = LearningReviewAdapter(database, request, observed_at=observed_at or NOW+timedelta(hours=1),
         local_day=NOW.date(), policy_provider=lambda: SimpleNamespace(timezone="UTC", light_first_interval_days=7))
     command = command_from_request(card_id, request)
     result = learning.submit_review(adapter, command, lambda: adapter.context(command)).as_dict()

@@ -208,8 +208,34 @@ part of this component handoff.
 
 The [thin managed operator](../../../scripts/README.md#games-collection-operator)
 provides read-only plan/status and explicit enable/disable for the independently
-installed collection-only profile. Source qualification, inactive installation,
-launch-input readiness and live activation are separate outcomes.
+installed optional profile. Its explicit `--mode collect-only` (default) and
+`--mode feedback` use the same frozen service and target lock. A mode switch
+deactivates new handoff, verifies the old owned worker has stopped, then starts
+and verifies the new finite command, label, image and per-start boot identity.
+Saved provider recurrence does not activate either mode. Use `plan --candidate
+<commit> --mode feedback` before the supported `enable --candidate <commit>
+--mode feedback --apply`; use the corresponding `--mode collect-only` enable to
+return to retained collection. `disable --candidate <commit> --apply` stops only
+the owned optional worker. Repeat disable after restoring writer access if status
+reports an incomplete intent clear. Source qualification, inactive installation,
+launch-input readiness and live activation remain separate outcomes.
+
+Feedback requires source schema 56, complete selected-scope authority, actual
+first-departure/current-Study/retained-qualification/foreground/issuance capability
+declarations, and the installed candidate's release evidence. Collection-only's
+precise bound acknowledgment cannot authorize feedback. New handoff takes the
+Games-owned mode fence inside the existing borrowed writer; accepted Study debt
+does not depend on a running Games process or active mode.
+
+The bounded read-only status separates intent from observed process mode. Receipt
+progress distinguishes acceptance, a real Again scheduling review, introduction,
+a compatible queued entry, genuine issued generation/ordinal and settlement.
+Original determination and actual service history survive retries and target
+remapping. Old priority application time is not an Again review, and queue presence
+cannot establish issuance. Missing observations stay explicitly unavailable.
+The #624 delivery owner binds these component capabilities, exercises the changed
+packaged entrypoint/roles once, and owns installation and activation. This source
+handoff has performed neither live migration nor activation.
 
 The [Task G qualification receipt](../../validation/task-g-collection.md) separates
 packaged collection proof, known baseline gate failures, inactive installation

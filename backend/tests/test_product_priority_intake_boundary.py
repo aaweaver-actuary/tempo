@@ -53,9 +53,8 @@ class AcceptedPriorityIntake:
         pytest.fail("Unchanged original evidence does not need a control")
 
 
-@pytest.mark.parametrize("observation", ["matched", "missed"])
-def test_games_acknowledges_accepted_pending_without_queue_or_availability_poll(observation):
-    h = encounter_harness(observation=observation)
+def test_games_acknowledges_accepted_pending_without_queue_or_availability_poll():
+    h = encounter_harness(observation="missed")
     intake = AcceptedPriorityIntake()
     h.coordinator.learning = intake
     h.store.enqueue(spec())
@@ -78,9 +77,8 @@ def test_games_acknowledges_accepted_pending_without_queue_or_availability_poll(
     assert len(intake.calls) == len(intake.commands) == 1 and intake.status_reads == 0
 
 
-@pytest.mark.parametrize("observation", ["matched", "missed"])
-def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh(observation):
-    h = encounter_harness(observation=observation)
+def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh():
+    h = encounter_harness(observation="missed")
     intake = AcceptedPriorityIntake(lose_ack=True)
     h.coordinator.learning = intake
     h.store.enqueue(spec())
@@ -100,9 +98,8 @@ def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh(ob
     assert len(intake.commands) == 1 and intake.status_reads == 0
 
 
-@pytest.mark.parametrize("observation", ["matched", "missed"])
-def test_unavailable_priority_intake_keeps_original_outbox_retryable(observation):
-    h = encounter_harness(observation=observation)
+def test_unavailable_priority_intake_keeps_original_outbox_retryable():
+    h = encounter_harness(observation="missed")
     class UnavailableIntake:
         def accept_encounter(self, command):
             raise ConnectionError("priority intake unavailable")
@@ -124,3 +121,21 @@ def test_unavailable_priority_intake_keeps_original_outbox_retryable(observation
     assert acknowledged.state == "acknowledged"
     assert acknowledged.receipt.admission_status == "pending"
     assert intake.calls == [original.encounter]
+
+
+def test_matched_new_capture_commits_source_checkpoint_without_study_effect():
+    """#618/#619 replace new matched-effect emission with retained coverage."""
+    h = encounter_harness(observation="matched")
+    intake = AcceptedPriorityIntake()
+    h.coordinator.learning = intake
+    h.store.enqueue(spec())
+    assert h.runner.run_once() == "page"
+    source, = h.store.sources.values()
+    capture, = h.store.captures.values()
+    checkpoint = h.store.jobs["job"]
+    assert source.normalized is not None and source.first_departure.status == "covered"
+    assert capture.normalized == source.normalized and capture.first_departure == source.first_departure
+    assert checkpoint.status == "complete" and checkpoint.window_complete and checkpoint.pages_committed == 1
+    assert source.effects == source.encounters == () and h.store.deliveries == {}
+    assert FeedbackRunner(h.coordinator).run_once() == "idle"
+    assert intake.calls == [] and intake.receipts == {} and intake.status_reads == 0

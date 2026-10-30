@@ -12,8 +12,26 @@ import subprocess
 MAX_OUTPUT_BYTES = 256 * 1024
 PRIVATE_FIELDS = frozenset({"account", "workspace_id", "provider_game_id", "canonical_game_id",
     "game_id", "job_id", "source_key", "repertoire_id", "repertoire_ids", "presentation_id",
-    "decision_id", "operation_id", "owner_receipt_id", "position_key", "expected_uci", "played_uci",
-    "source_digest", "comparison_revision", "name"})
+    "decision_id", "operation_id", "owner_receipt_id", "position_key", "expected_uci", "played_uci", "selected_response_uci",
+    "source_digest", "comparison_revision", "name", "route_id", "policy_id", "snapshot_id", "digest",
+    "card_id", "container_id", "hostname", "boot_nonce"})
+
+
+def feedback_release_capabilities(factory=None):
+    """Read actual optional composition declarations, without constructing it."""
+    try:
+        if factory is None:
+            from .feedback_release import feedback_capabilities
+            factory = feedback_capabilities
+        from app.games.feedback.interfaces.managed_mode import FeedbackReleaseCapabilities
+        facts = factory()
+        if isinstance(facts, FeedbackReleaseCapabilities):
+            value = facts
+        else:
+            value = FeedbackReleaseCapabilities.model_validate_json(json.dumps(facts))
+        return {"availability": "available", **value.model_dump(mode="json")}
+    except Exception:
+        return {"availability": "unavailable", "diagnostic": "feedback_composition_unavailable"}
 
 
 BOUND_CODE = "repertoire_snapshot_exceeds_bound"
@@ -84,9 +102,19 @@ def _redacted(value, key=""):
             "collection_read_unavailable", "retained_collection_comparison_absent", "ambiguous_stored_game",
             "empty_findings_are_not_comparison_completion_proof", "receipt_not_observed", "not_delivered",
             "owner_receipt_read_unavailable", "repertoire_reader_not_supplied", "repertoire_read_unavailable",
-            "games_reader_profile_required", "selected_repertoire_ids_absent", "process_and_delivery_disablement_require_runtime_evidence"}
+            "games_reader_profile_required", "selected_repertoire_ids_absent", "process_and_delivery_disablement_require_runtime_evidence",
+            "selected_first_boundary_not_recorded", "unsupported_selected_variant", "invalid_authored_scope",
+            "route_outside_selected_snapshot_scope", "selected_scope_conflicting",
+            "selected_scope_incomplete_or_unavailable", "deliberate_authored_endpoint",
+            "no_applicable_authored_route", "opponent_first_departure", "missing_authored_own_continuation",
+            "ambiguous_expected_response", "conflicting_authored_own_response",
+            "missing_or_ambiguous_physical_target", "current_presentation_unavailable",
+            "physical_target_occurrence_unbound", "positive_coverage_with_incomplete_scope",
+            "authored_continuation_unavailable", "ambiguous_authored_policy", "ended_competing_route",
+            "current_target_candidates_exceed_owner_bound", "current_target_binding_unproved", "current_target_authority_unavailable",
+            "feedback_composition_unavailable", "managed_mode_reader_unavailable"}
         return value if value in safe else "redacted_diagnostic"
-    if value is not None and key in PRIVATE_FIELDS:
+    if value is not None and (key in PRIVATE_FIELDS or key == "source_revision" and isinstance(value, str)):
         # Stable opaque identities preserve correspondence without publishing raw values.
         return "redacted:" + hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:12]
     if isinstance(value, dict):
@@ -109,7 +137,7 @@ def _encode(report, *, private=False):
     return encoded
 
 
-def main(argv=None, *, reader_factory=None):
+def main(argv=None, *, reader_factory=None, capability_factory=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--identity-only", action="store_true", help="Read only database identity/schema")
     parser.add_argument("--workspace", default="legacy")
@@ -165,6 +193,10 @@ def main(argv=None, *, reader_factory=None):
             reader = reader_factory()
         report.update(reader.report(workspace=options.workspace, limit=options.limit,
                                     provider=options.provider, game_id=options.game_id))
+        mode_reader = getattr(reader, "managed_mode", None)
+        report["managed_mode"] = (mode_reader(options.workspace) if callable(mode_reader) else
+                                  {"availability": "unavailable", "diagnostic": "managed_mode_reader_unavailable"})
+    report["feedback_capabilities"] = feedback_release_capabilities(capability_factory)
     try:
         candidate = subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]),
             "rev-parse", "HEAD"], capture_output=True, text=True, timeout=2)

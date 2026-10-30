@@ -333,7 +333,7 @@ class PostgresReviewStore:
                 ORDER BY next_run_at,provider LIMIT 2""",(workspace,now)).fetchall()
         return tuple(SyncConfiguration.model_validate_json(row[0]) for row in rows)
 
-    def request_retry(self, workspace, source, finding: Finding, operation_id):
+    def request_retry(self, workspace, source, finding: Finding, operation_id, *, delivery_id=None):
         digest = hashlib.sha256(finding.model_dump_json().encode()).hexdigest()
         with self._transaction() as database:
             prior = database.execute("""SELECT delivery_id,finding_digest FROM product_feedback_retry_requests
@@ -341,6 +341,8 @@ class PostgresReviewStore:
             if prior:
                 if prior[1] != digest:
                     raise ReviewUnavailable("retry_operation_finding_mismatch")
+                if delivery_id is not None and prior[0] != delivery_id:
+                    raise ReviewUnavailable("retry_operation_delivery_mismatch")
                 row = database.execute("SELECT payload::text FROM product_feedback_sources WHERE source_key=%s FOR UPDATE",
                                        (source.source_key,)).fetchone()
                 current = SourceState.model_validate_json(row[0]) if row else None
@@ -357,11 +359,18 @@ class PostgresReviewStore:
                     or finding not in current.findings or not finding.lapse_eligible
                     or current.normalized.workspace_id != workspace):
                 raise ReviewUnavailable("current_confirmed_finding_required")
-            rows = database.execute("""SELECT payload::text FROM product_feedback_deliveries
-                WHERE source_key=%s AND command_kind='lapse' ORDER BY operation_id LIMIT 1001 FOR UPDATE""",
-                (source.source_key,)).fetchall()
+            if delivery_id is not None:
+                # Gateway preparation already selected the exact retained row.
+                # Its short writer must use the primary key, not rescan history.
+                rows = database.execute("""SELECT payload::text FROM product_feedback_deliveries
+                    WHERE operation_id=%s FOR UPDATE""",(delivery_id,)).fetchall()
+            else:
+                rows = database.execute("""SELECT payload::text FROM product_feedback_deliveries
+                    WHERE source_key=%s AND command_kind='lapse' ORDER BY operation_id LIMIT 1001 FOR UPDATE""",
+                    (source.source_key,)).fetchall()
             candidates = [Delivery.model_validate_json(row[0]) for row in rows]
-            selected = [item for item in candidates if item.lapse.key.decision_id == finding.decision_id
+            selected = [item for item in candidates if item.source_key == source.source_key and item.lapse is not None
+                        and item.lapse.key.decision_id == finding.decision_id
                         and item.lapse.key.occurrence_ply == finding.ply]
             if len(rows) > 1000 or len(selected) != 1 or selected[0].state in {"superseded", "failed"}:
                 raise ReviewUnavailable("retryable_stored_command_required")

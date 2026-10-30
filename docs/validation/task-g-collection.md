@@ -226,3 +226,98 @@ integration evidence cannot replace M.
 L must use an exact-M checkout and the existing registration; supported later
 invocation is `node <exact-M-checkout>/scripts/tempo-cli.mjs start --config /Users/andy/.config/tempo/config.json --no-open`.
 K does not execute it. No install-ready main revision exists at this checkpoint.
+
+## First-departure assembly checkpoint — #624, October 30
+
+This checkpoint is source/native preparation in the isolated
+`codex/624-first-departure-assembly` checkout. Actual main was read as
+`7916133e7ed199191130b02bfef4a93c72fb0dc7`; it is joined in the candidate, preserving
+#582/#587 and the existing #593 recovery. No installed state is inferred from it.
+The final packaged run's existing `test-results/collection-release` receipt must
+identify its actual immutable candidate, backend/web images and production COPY
+closure; the entries below do not claim that run has already passed.
+
+| Released input | Immutable owner pin / assembled handling |
+| --- | --- |
+| #618 shared wire/SPEC | `77a7475f`; both independent reviews satisfied. Python/fixture wire source is retained; #621's reviewed retry return union additionally preserves both receipt versions. |
+| #619 selector/capture | `a8c588259d1558ee5fb9447fe12fe7f93c890cfe`; both reviews satisfied. Pure selector is unchanged; #624 injects prospective preparation outside its implementation. |
+| #620/#581 authority and introduction | `da0c35a81258f0a82607b7b10532e018a6c639bc`; both reviews satisfied. #594 sliced retention (`33e20cff`) and #595 prepared admission (`dd6b704e`) remain. |
+| #621 qualification/delivery | `dcf1ad1bf4c8c90aec928f5dc4726dc0b00b83bd`; both reviews satisfied. #624 adds the borrowed indexed source hint and concrete root. |
+| #622 issuance/continuation | `0fcb896d068d81e84f3f502539a243955892d79c`; both reviews satisfied. The separately reviewed `is_control` handoff remains. |
+| #623 mode/status/boot | `e18263b9d1457dcc5803b5eddbb6edaa2a381dcd`; both reviews satisfied. Mode/boot implementation is unchanged. |
+| #615 N/O and #616 complete source read | `b7124913`, `f01aa660`, `cd7d2568853ea63cd28e45162658bf6346b512e4`. Complete raw reading and decoding/projection after connection exit are retained. Actual approved-shape source proof reported 675 routes/12,908 mappings, 223ms read and 4.84s outside projection; packaged/restored full-scope proof is separate. |
+| #624 current-authority race repair | Owner `fdd5f079d5474aa418fe9bc0e3f92d97e6e7ea4d`, assembled `622b78aa`: bounded negative-lineage fence before using an original prepared target. Both #624 final reviews must include this delta. |
+
+Finite changed-boundary evidence is reused by exact source/input compatibility:
+new captures after genuine join/split and their superseded-card variants;
+prejoin original-command replay across lineage; actual Again/current-target
+settlement; a newly committed source between protected issuance and ordinary
+successor authorization; pure preparation plus receipt-fenced atomic handoff;
+and actual-planner pending absence/cutoff among 5,000 same-workspace legacy rows.
+The new `handoff_priority` sidecar is a derived indexed projection in unpublished
+056, maintained by the existing Games writer. It creates no effect identity,
+learning ledger or independent eligibility/retry authority.
+
+The five-case sidecar/root run (6.67s) predates consuming the separate negative
+lineage fence; that fence has its own genuine stale-preparation/native settlement
+proof (4.63s) and original-target/control compatibility proof. These are component
+proofs with that provenance, not a falsely labeled whole final-image run. Existing
+fixture receipts retain exact immutable PostgreSQL identity, resource bounds and
+`cleanup_verified=true`; no live Study/database/configuration was used.
+
+`study-game-priority` now registers actual first-boundary/current-authority,
+retained compatibility, issuance, control, lineage and foreground-source cases.
+Collection verifies real named identities without substituting a full passing
+execution. The separate explicit `games-collection-release` uses the packaged
+worker/application/roles and one real-server browser path; existing mocked UI
+cases establish their original UI invariants only. Actual ordinary browser moves,
+saves, preparation and issuance cannot be replaced by host-inserted queue,
+completed-attempt or review facts.
+
+At the historical stopped checkpoint, remaining before a resolved/active claim were final #624 A/B review at one coherent
+pin; the frozen backend/web package and real browser journey; applicable exact-main
+CI/installer gates; supported inactive readback with approved full selected scope
+and retained-effect inventory; and authorized managed activation/real-provider
+observations. Publication was denied and not executed pending direct
+human confirmation at that parent task. No branch-push workaround, formal GitHub
+approval, live migration, installation or activation has occurred here. The prior
+one-off `--no-ci` choice did not itself supply continuing bypass authority.
+
+### Continued #624 source integration — October 30
+
+The current assignment explicitly resumes implementation, installation and
+activation. Current AGENTS separately approves the existing managed `--no-ci`
+path. Draft PR #635 carries the recovered integration; the stopped original and
+its uncommitted merge remain preserved. Source-only coordination is in #624;
+private runtime observations remain local.
+
+The integrated source now includes the global GameDetail contract/API/screen,
+corrected-scope reanalysis and per-occurrence clocks, complete-scope Study intake,
+the released snapshot reader and unreserved read-only source profile, truthful
+current-target progress, and managed feedback mode. Current main's new-opening
+promotion retains urgent FIFO and genuine attempt protections. Independent
+semantic and persistence/client reviews cover those changed joins.
+
+The first packaged run at `5b0fe71b` failed all three selected cases: the
+collection fixture lacked its actual image-inspection binding, and both feedback
+cases reached genuine provider capture/global selection but held on a removed
+snapshot-reader import. Failure receipts and verified owned-resource cleanup are
+retained. The fixture and reader consumer are repaired. At exact candidate
+`7a368c5c3e8d5a9669320bba003de18d2b60511a`, the registered
+`games-collection-release` passed all three cases with zero skips in 153.68s:
+collection-only, unseen first introduction, and introduced Again. Both feedback
+cases used actual browser moves/saves/issuance, natural and separately requested
+refresh, settlement, unchanged-source replay, and completed retained reconciliation.
+Immutable backend and web identities are retained in the private build receipt;
+no production source overlay or seeded successful outcome was used. Both browser
+runtime/network cleanups and the owning native fixture cleanup were verified.
+Native source-profile enforcement and both current-target join/split settlement
+cases also passed separately.
+
+Release integration `6988ce61` additionally retains already released main
+`be234854`'s equivalent NULL-safe frozen-history membership queries. Its 22 focused
+pure equivalence/ordering cases passed, and independent review found no changed
+feedback policy or attempt authority. The packaged journey above remains bound to
+its actual candidate/images; the unchanged behavior evidence is reused alongside
+the released query's own native proof rather than relabeling older images.
+Installation and managed activation remain operational checkpoints.

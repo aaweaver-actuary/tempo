@@ -11,7 +11,7 @@ from pydantic import Field, field_validator
 
 from app.contracts.product_v02 import Identifier, Value
 from app.contracts.product_v02.games import Finding, GameRefreshStatus, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import LearningReceipt
+from app.contracts.product_v02.learning import EncounterReceipt, LearningReceipt
 from app.contracts.product_v02.presentation import GameDetail
 from .review import ReviewUnavailable, SyncConfiguration
 
@@ -59,7 +59,7 @@ class GameReviewOperations(Protocol):
     def sync(self, *, provider: Provider, operation_id: str) -> ProviderSyncStatus: ...
     def refresh(self, *, provider: Provider, operation_id: str) -> GameRefreshStatus: ...
     def refresh_status(self, operation_id: str) -> GameRefreshStatus: ...
-    def retry_feedback(self, *, finding: Finding, operation_id: str) -> LearningReceipt: ...
+    def retry_feedback(self, *, finding: Finding, operation_id: str) -> EncounterReceipt | LearningReceipt: ...
     def configuration(self, provider: Provider) -> SyncConfiguration | None: ...
     def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration: ...
 
@@ -97,7 +97,7 @@ def create_game_review_router(operations: GameReviewOperations) -> APIRouter:
     def refresh_status(operation_id: Identifier):
         return invoke(operations.refresh_status, operation_id)
 
-    @router.post("/feedback/retry", response_model=LearningReceipt)
+    @router.post("/feedback/retry", response_model=EncounterReceipt | LearningReceipt)
     def retry_feedback(request: RetryFeedbackRequest):
         return invoke(operations.retry_feedback, finding=request.finding,
                                          operation_id=request.operation_id)

@@ -2,6 +2,7 @@
 from datetime import date, datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
 from app import main, review_commands
@@ -55,6 +56,99 @@ def test_prepared_continuation_replay_preserves_exactly_once_scheduling(queued_a
         replayed = review_commands.submit_review(command, payload(queued_attempts))
         assert replayed == result
         assert connection.execute("SELECT count(*) FROM reviews WHERE card_id='active-a'").fetchone()[0] == 1
+
+
+def test_ready_local_feedback_declines_ordinary_successor_without_rolling_back_review(queued_attempts, monkeypatch):
+    from app.services import queue_next_card
+    monkeypatch.setattr(main.coordinator, 'wake', lambda: None)
+    monkeypatch.setattr(queue_next_card, 'pending_next_card_preparation', lambda *_args,**_kwargs: True)
+    monkeypatch.setattr(queue_next_card, '_prepare', lambda: (_ for _ in ()).throw(
+        AssertionError('Review/issuance called optional preparation inside its writer')))
+    with database.connection() as connection:
+        accepted = review_commands.submit_review(CommandConnection(connection), payload(queued_attempts))
+        assert accepted['persisted'] is True and 'prepared_continuation' not in accepted
+        assert connection.execute("SELECT count(*) FROM reviews WHERE card_id='active-a'").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM review_attempt_receipts WHERE card_id='active-a'").fetchone()[0] == 1
+        assert connection.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE card_id='later-b'").fetchone()[0] == 0
+        assert review_commands.submit_review(CommandConnection(connection), payload(queued_attempts)) == accepted
+
+
+def test_next_card_preparation_is_an_explicit_command_not_a_queue_read(queued_attempts, monkeypatch):
+    from app.services import queue_next_card
+    from app.study.interfaces.next_card import NextCardPreparation, NoNextCardWork
+    prepared = []
+    monkeypatch.setattr(queue_next_card, '_prepare', lambda: prepared.append(True) or NoNextCardWork(NextCardPreparation(True)))
+    client = TestClient(main.app)
+    assert client.get('/api/queue/window?limit=2').status_code == 200
+    assert prepared == []
+    result = client.post('/api/queue/prepare-next')
+    assert result.status_code == 200 and result.json() == dict(progressed=True,pending=False,reason=None)
+    assert prepared == [True]
+
+
+def test_prepared_control_precedes_pending_study_work_without_applying_during_preparation(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.product_composition import next_card_priority as composition
+    from app.study import game_feedback
+    from app.study.interfaces.next_card import NoNextCardWork
+    prepared, study_preparations = {}, []
+    def no_apply(_writer):
+        raise AssertionError('Preparation applied a control before the operation receipt fence')
+    control = SimpleNamespace(priority=None,is_control=True,apply=no_apply)
+    observed = SimpleNamespace(key=object(),qualification=None,
+        progress=SimpleNamespace(determined_at='2026-01-01T00:00:00Z',stream='forward'))
+    @contextmanager
+    def read():
+        yield object()
+    monkeypatch.setattr(composition,'configure_next_card_work',lambda **work:prepared.update(work))
+    monkeypatch.setattr(composition,'installed',lambda _db:True)
+    monkeypatch.setattr(composition,'feedback_preparation_admitted',lambda _db:True)
+    monkeypatch.setattr(composition,'next_feedback_preparation',lambda *_args,**_kwargs:observed)
+    monkeypatch.setattr(composition,'PostgresGameFeedbackStore',lambda _db:SimpleNamespace(study_day=lambda _now:date(2026,1,1)))
+    monkeypatch.setattr(game_feedback,'effect_id',lambda _key:'accepted-study')
+    monkeypatch.setattr(composition,'prepare_feedback_effect',lambda *_args,**_kwargs:study_preparations.append(True) or object())
+    composition.register_current_next_card_priority(read=read,local_handoff_prepare=lambda:control)
+    assert prepared['prepare']() is control
+    assert study_preparations == []
+    assert NoNextCardWork().is_control is False
+
+
+def test_current_queue_day_and_review_day_share_configured_timezone(queued_attempts, monkeypatch):
+    from app.queue_commands import current_study_day
+    from app.services.learning_review_adapter import LearningReviewAdapter, command_from_request
+    from app.contracts.transport.study import ReviewRequest
+    now = datetime.fromisoformat('2026-11-01T00:30:00+00:00')
+    request = ReviewRequest(outcome='correct',queue_entry_id=queued_attempts['active-a'],expected_revision=1)
+    with database.connection() as connection:
+        connection.execute("UPDATE settings SET timezone='America/New_York' WHERE id=1")
+    with database.connection() as connection:
+        adapter = LearningReviewAdapter(connection,request,observed_at=now)
+        context = adapter.context(command_from_request('active-a',request))
+        assert current_study_day(connection,now=now) == context.local_day.isoformat() == context.review_day.isoformat() == '2026-10-31'
+
+
+def test_locked_queue_day_is_retained_if_clock_crosses_saved_timezone_midnight(queued_attempts,monkeypatch):
+    from types import SimpleNamespace
+    from app.services import learning_review_adapter as adapter_module
+    from app.contracts.transport.study import ReviewRequest
+    with database.connection() as connection:
+        connection.execute("UPDATE settings SET timezone='America/New_York' WHERE id=1")
+    instants = iter((datetime.fromisoformat('2026-11-01T03:59:59.999900+00:00'),
+                     datetime.fromisoformat('2026-11-01T04:00:00.000100+00:00')))
+    clock_calls, locked_days = [], []
+    def now(_zone):
+        clock_calls.append(True)
+        return next(instants)
+    monkeypatch.setattr(adapter_module,'datetime',SimpleNamespace(now=now))
+    monkeypatch.setattr(adapter_module,'lock_queue_date_for_position',lambda _db,day:locked_days.append(day))
+    request = ReviewRequest(outcome='correct',queue_entry_id=queued_attempts['active-a'],expected_revision=1)
+    with database.connection() as connection:
+        adapter = adapter_module.LearningReviewAdapter(connection,request)
+        adapter.lock_queue_date()
+        context = adapter.context(adapter_module.command_from_request('active-a',request))
+        assert locked_days == [context.local_day.isoformat()] == ['2026-10-31']
+        assert context.review_day == context.local_day and len(clock_calls) == 1
 
 
 def test_legacy_receipt_confirmation_retains_authoritative_refresh(queued_attempts, monkeypatch):

@@ -233,14 +233,17 @@ its baseline relative order. New tactics remain ordinary work. New openings use
 the presentation adapter's effective `admission_kind == "new"` and normalized
 opening content type, rather than card state or introduction timestamps.
 
-Issued attempts, teaching/presentation checkpoints, unavailable rows, explicit
-entries and positioned repeats keep their physical positions. Existing failed
-remediation repeats and first-success reinforcement retain their positioned
-behavior; a fresh urgent admission after an earlier completed cycle can still
-move into priority. A newly admitted opening can cross older untouched ordinary
-reviews after a mid-session refresh, even when the broad preservation boundary
-keeps those reviews' relative order. A continuation already issued before
-admission remains protected until the next safe boundary.
+Issued attempts, active presentation evidence, unavailable rows and explicit user
+placement keep their physical positions. The first-departure urgent overlay can
+move ahead of unissued teaching/repeat/failure flags while preserving those
+candidate payloads. Without urgent work, ordinary mixing retains positioned
+repeats and first-success reinforcement. A newly admitted opening can cross older
+untouched ordinary reviews after a mid-session refresh, while those reviews keep
+their relative order. Ready forward game obligations precede historical drain;
+original determination and stable effect identity define FIFO within each class,
+including when new openings are promoted. Six simultaneous urgent targets remain
+visible backlog rather than an impossible five-card claim. A continuation already
+issued before admission stays protected until the next safe boundary.
 
 An existing nonempty ready day requests the normal durable refresh when its saved
 presentation receipt lacks the direct current-version prefix. Current ready days
@@ -253,8 +256,8 @@ saved order.
 A receipt carries across a controlled completion, burial or positioned insertion
 only if the pre-mutation membership and frozen activation matched that receipt.
 Unmixed admissions and replacement ranks remain dirty. The version upgrade may
-change the seeded ordinary sequence once; with no promotable new openings the
-final promotion pass is a no-op. No scheduler formula, due date, quota, admission
+change the seeded ordinary sequence once; with neither promotable new openings
+nor urgent work the final promotion pass is a no-op. No scheduler formula, due date, quota, admission
 rule, ranking, selection or offline protocol changes here. Soft failed-retry
 cooldowns require a separate policy adoption.
 

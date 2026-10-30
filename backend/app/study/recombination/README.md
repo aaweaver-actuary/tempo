@@ -105,6 +105,44 @@ per pass. No long-running database transaction or optional worker is introduced.
 
 ## Finite initial schedule and obligations
 
+### Qualified Games targets after a join or split
+
+The existing recombination owner exposes `prepare_game_feedback_target(original,
+read_connection=...)` and `fence_game_feedback_target(database, prepared)` from
+its database adapter. Preparation reuses the same current-route and executable
+policy with short, closed owner reads; no connection remains open during chess
+work. Only an explicit route/decision component and its exact authored occurrence
+can map the original decision to the current physical presentation. Missing
+lineage returns no replacement; stale, changed, unavailable or ambiguous lineage
+is held. The original Games command, source and logical key remain unchanged.
+
+The frozen preparation retains the existing complete source proof, generated
+receipt/result, current map and original/current physical definitions. The
+borrowed writer acquires existing route, publication and card fences without
+waiting, rechecks that proof and current membership/integrity, and returns the
+current target without route replay or projection. Scheduling fields are not
+source identity; current introduction is read by the owner at application time.
+The existing Study effect receipt remains the proof preventing another reset.
+
+For new ordinal-policy obligations with no `available_by`, the internal
+`Obligation.available_by` compatibility field uses the actual original durable
+determination instant, falling back to the original receipt instant. It orders
+still-owed work; it does not invent another 48-hour deadline, expire debt, or
+discard a pending/applied effect because that historical column is null.
+
+```mermaid
+sequenceDiagram
+    participant Prepare as Games/Study owner preparation
+    participant Read as Closed recombination owner reads
+    participant Writer as Borrowed Study writer
+    Prepare->>Read: complete source + explicit current component
+    Read-->>Prepare: frozen owner facts; reads closed
+    Prepare->>Prepare: existing executable/current-route policy
+    Prepare-->>Writer: original decision + prepared current target
+    Writer->>Writer: nonblocking source/map/receipt/card fences; no replay
+    Writer-->>Writer: apply once through existing Study owner
+```
+
 The exact default is:
 
 `due = min(next local study-day boundary, each participating current due,

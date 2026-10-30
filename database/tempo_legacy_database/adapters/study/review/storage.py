@@ -126,10 +126,9 @@ def apply_priority_positions(database, day, changes):
         FROM unnest(%s::bigint[],%s::bigint[],%s::bigint[])
             AS planned(id,previous,position)
         WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'
-          AND queue.position=planned.previous AND queue.attempt_failed=0
+          AND queue.position=planned.previous
           AND queue.review_result_json IS NULL
           AND queue.admission_kind IS DISTINCT FROM 'explicit'
-          AND queue.attempt_state IN ('clean','unstarted','gameplay')
           AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
               WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id
                 AND origin.revision=(SELECT revision FROM cards WHERE id=queue.card_id)

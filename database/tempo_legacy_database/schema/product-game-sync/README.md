@@ -1,4 +1,49 @@
-# Optional game-feedback storage — migration 052
+# Optional game-feedback storage — migrations 052 and 056
+
+#623 adds [056_managed_game_feedback_mode.sql](../../ddl/migrations/056_managed_game_feedback_mode.sql)
+after the Study issuance owner 055, at source readiness 56. It stores one
+`product_feedback_managed_mode` row per workspace: `workspace_id` (text primary
+key), positive `generation` (bigint), finite `mode` (collect-only/feedback), finite
+`phase` (inactive/transitioning/active), and typed `payload` (jsonb). Payload mirrors
+the explicit managed operation/release revision, image, configuration/target
+fingerprints and verified service/container/boot identities; it has no card,
+provider-account or scheduling state. No FK gives this row a Study write edge.
+New Games handoff takes its shared row fence in the existing writer; operator
+disable/transition updates that same row exclusively. Already accepted Study
+obligations do not depend on this optional mode row.
+
+The payload is the frozen public
+[`ManagedGamesModeIntent`](../../../../../backend/app/games/feedback/interfaces/managed_mode.py):
+schema version, workspace/generation/mode/phase, operation ID, exact release revision,
+collector image, configuration/target fingerprints, update/verification times and
+verified runtimes. Each runtime binds service, full container ID, hostname prefix,
+fresh boot nonce and immutable image. The internal nonce file is validated against
+the current Linux kernel boot/PID1 start before trusted preparation reads it;
+failed initialization does not block ordinary backend startup or revive an old
+same-hostname identity. Active feedback requires all three actual
+caller roles (API reader, foreground-worker and optional Games worker). Empty or
+recreated identities cannot authorize new handoff. The row is an operation/release
+mirror; it stores no event or scheduling ledger.
+
+```mermaid
+sequenceDiagram
+  participant Operator as Managed operator / target lock
+  participant Mode as Games workspace mode row
+  participant Handoff as Qualified borrowed writer
+  Operator->>Mode: Exclusive inactive/transitioning update (100ms lock bound)
+  Note over Operator,Mode: If this commits first, new handoff denies
+  Handoff->>Mode: SELECT FOR SHARE NOWAIT, fresh trusted runtime ID
+  Note over Handoff,Mode: If admitted first, shared fence remains through existing commit
+  Handoff->>Handoff: Existing Games/source/current Study acceptance transaction
+  Handoff->>Mode: Release row fence at existing commit/rollback
+```
+
+The same migration adds the narrowly matched `product_feedback_effect_controls`
+index on `product_feedback_deliveries(effect_key)` for
+`command_kind='control' AND state IN ('pending','acknowledged')`. This serves the
+existing current-control recheck inside the 250ms borrowed handoff writer,
+without scanning retained delivery history. Original command bytes/keys and
+controls are unchanged. No live migration has been run by this component.
 
 Source schema for [052_product_game_sync.sql](../../ddl/migrations/052_product_game_sync.sql),
 after Study-owned 051. Readiness advances **51 → 52**. This is additive Games-owned
@@ -13,6 +58,13 @@ logical references without foreign keys to Study or Repertoire.
 
 ```mermaid
 erDiagram
+  product_feedback_managed_mode {
+    TEXT workspace_id PK
+    BIGINT generation
+    TEXT mode
+    TEXT phase
+    JSONB payload
+  }
   product_feedback_jobs {
     TEXT job_id PK
     BIGINT version
@@ -48,6 +100,7 @@ erDiagram
     TEXT state
     DOUBLE next_attempt_at
     JSONB payload
+    TEXT handoff_priority
   }
   product_feedback_configuration {
     TEXT workspace_id PK
@@ -87,6 +140,15 @@ retains the original GameRecord, normalized game, findings, logical effects and
 quarantine state. Delivery payload retains one lapse or control and the receiving
 owner's actual receipt, independently of acquisition completeness.
 
+#619 adds optional `first_departure` and `determined_at` values inside the existing
+source/capture JSON. They retain the typed global boundary, source/scope/route
+provenance and first durable actionable determination. The same existing page
+transaction persists them with the checkpoint and pending command; no new table,
+column, relationship or migration is introduced. Old JSON reads these values as
+null. A logical effect key remains independent of the comparison policy revision.
+The read-only selected-game projection exposes the retained global election
+separately from per-repertoire diagnostic summaries; it never reclassifies work.
+
 Configuration payload contains explicit account/window/repertoires/speeds/rated
 policy, optional fixed-window recurrence and revision. Null recurrence is off.
 Sync requests bind operation IDs to the existing job and request time. Retry
@@ -103,3 +165,50 @@ current-owner fence cases pass against it. The fixture derives readiness from
 the schema owner so later additive 053 is validated rather than rejected by an
 obsolete hardcoded 51. Source/native proof is separate from browser, installed
 schema and deployment qualification.
+# Retained first-departure qualification (#621)
+
+The existing `product_feedback_deliveries.payload` JSON now retains separate
+`qualification_status` (`pending`, `ready`, `held`, `ineligible`), finite reason and
+retryability, the typed current first-departure witness, original determination,
+actual origin job/stream/configuration revision where known, and a service
+sequence for live/history intake fairness. Qualification introduces no new effect identity. Original lapse/encounter/control bytes remain
+unchanged; source/capture/checkpoint/outbox publication remains atomic.
+
+Controls supersede pending automatic records before delivery. A delayed owner
+acknowledgment cannot reactivate them, replace a captured command, or restart its
+determination. Games' current source/config/control fence borrows the Study writer
+through the public composition; actual Study schedules, reviews, admission,
+issuance and settlement remain owned by Study. New handoff additionally consumes
+the separately owned managed-mode shared-row fence (schema56); accepted Study debt
+continues independently when optional feedback is off.
+
+Explicit next-card preparation writes neither owner. After the existing command
+gateway has fenced the receipt, request hash and token, Games borrows that same
+writer for current source/control/outbox locks; Study accepts through its public
+owner and Games saves acknowledgment in the same transaction. No helper commits
+or opens another connection. The optional standalone worker preserves its older
+two-commit acknowledgment-loss protocol and resends the same immutable command.
+The durable service sequence remains the worker's bounded live/history turn;
+explicit head preparation compares one FIFO source candidate with current Study
+urgency and cannot drain a later historical backlog before an earlier live head.
+
+The status inventory's qualification counts have delivery-record grain. An
+accepted/pending receipt counted at acknowledgment is not a current queue,
+issuance or settlement observation. The canonical policy and bounded failure flow
+are documented by [the Games owner](../../../../backend/app/games/feedback/README.md#first-departure-delivery-qualification--621).
+
+#624 adds a nullable `product_feedback_deliveries.handoff_priority` text sidecar
+in the still-unpublished migration056. It is a derived read projection, never
+independent eligibility, retry or scheduling authority. Existing Games capture
+and delivery-save transactions atomically derive it from the actual matching
+witness (or existing control), stream, canonical UTC original determination and
+opaque owner tie. Unqualified legacy collection rows, semantic holds and disposed
+records have no eligible index entry. Original command/payload/time are unchanged.
+
+`product_feedback_determined_pending` indexes workspace, this canonical ordering
+with C collation and retry-after time only where `state='pending' AND
+handoff_priority IS NOT NULL`. Borrowed head observation uses that exact partial
+predicate and priority cutoff; it neither scans unqualified pending history nor
+creates another ledger. Migration derivation uses only stored qualified/control
+facts; absent witness or legacy labels do not invent first-departure authority.
+No live migration/backfill has been performed.

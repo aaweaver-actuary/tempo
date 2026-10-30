@@ -15,6 +15,7 @@ import psycopg
 from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 from psycopg_pool import PoolTimeout
 from functools import wraps
+from .services.feedback_diagnostics import diagnose_feedback, feedback_stage, feedback_failure
 
 from .celery_app import celery_app
 from .command_gateway import (
@@ -28,6 +29,8 @@ from . import study_attempt_commands  # noqa: F401 - registers Study attempt com
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
 from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
+from .product_composition.feedback_release import register_feedback_next_card_priority
+register_feedback_next_card_priority()
 from . import review_commands  # noqa: F401 - registers foreground review command
 from . import opening_evidence_api  # noqa: F401 - registers shadow checkpoint command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
@@ -308,6 +311,7 @@ def bounded_maintenance(function):
 
 @celery_app.task(name="app.tasks.maintain_game_feedback", base=CoalescedWakeTask)
 @bounded_maintenance
+@diagnose_feedback
 def maintain_game_feedback() -> bool:
     """Resume one persisted Study effect without the optional Games worker."""
     from .product_composition.feedback_maintenance import claim_feedback_sweep, execute_feedback_sweep
@@ -318,6 +322,7 @@ def maintain_game_feedback() -> bool:
             task = claim_feedback_sweep()
             if task is None:
                 return False
+            feedback_stage('execute', task)
             complete = execute_feedback_sweep(task)
         if not complete:
             celery_app.send_task("app.tasks.maintain_game_feedback", countdown=1, queue="foreground")
@@ -331,7 +336,9 @@ def maintain_game_feedback() -> bool:
         if task is not None:
             defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
         return False
-    except TransactionTimeout:
+    except TransactionTimeout as error:
+        feedback_failure(error)
+        feedback_stage('deadline_recovery')
         if task is None:
             raise
         defer_task_for_transaction_timeout(task, TransactionTimeout('transaction_deadline'),
@@ -341,9 +348,11 @@ def maintain_game_feedback() -> bool:
         if task is not None:
             defer_task_for_contention(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
         return False
-    except (psycopg.OperationalError, psycopg.InterfaceError):
+    except (psycopg.OperationalError, psycopg.InterfaceError) as error:
+        feedback_failure(error)
         if task is None:
             raise
+        feedback_stage('connection_recovery')
         from .services.durable_tasks import defer_task_for_connection_failure
         defer_task_for_connection_failure(task, wake=_wake_feedback_retry)
         return False

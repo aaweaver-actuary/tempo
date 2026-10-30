@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import json
 from typing import TYPE_CHECKING
 
 from app.contracts.product_v02.repertoire import ImmutableAuthoredRoute
@@ -35,6 +36,53 @@ def introduction_is_held(conflicts: IntroductionConflicts | None, *, repertoire_
 class TargetAlternatives:
     routes: tuple[ImmutableAuthoredRoute, ...]
     reason: str | None = None
+
+
+def introduction_target_identity(target):
+    return tuple(getattr(target, field) for field in (
+        'repertoire_id', 'repertoire_revision', 'presentation_id', 'presentation_revision',
+        'decision_id', 'position_key', 'selected_response_uci', 'route_id', 'route_ply'))
+
+
+@dataclass(frozen=True)
+class PreparedEncounterIntroduction:
+    """Ephemeral proof of complete discovery; the writer must fence every fact."""
+    target_identity: tuple
+    source_binding: str
+    route_ids: tuple[str, ...]
+    reason: str | None = None
+    prepared_target: object | None = None
+
+    def matches(self, target, source_binding: str) -> bool:
+        return (self.reason is None and self.target_identity == introduction_target_identity(target)
+                and self.source_binding == source_binding)
+
+
+def target_definition(target, card):
+    """Validate every exposed learner decision using the existing exact rules."""
+    import chess
+    from tempo_evidence_math import opening_position_key
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    try:
+        moves = json.loads(card['moves_json'])
+        board, expected, exact = chess.Board(card['start_fen']), {}, False
+        if not board.is_valid() or not 1 <= len(moves) <= 40:
+            return None
+        for offset, uci in enumerate(moves):
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                return None
+            if board.turn == (card['trained_color'] == 'white'):
+                position = opening_position_key(board.fen())
+                if position in expected and expected[position] != uci:
+                    return None
+                expected[position] = uci
+                exact |= (target.decision_id == decision_identity(card['id'], offset, moves[:offset])
+                          and target.position_key == position and target.selected_response_uci == uci)
+            board.push(move)
+        return tuple(expected.items()) if exact else None
+    except (ValueError, TypeError, KeyError):
+        return None
 
 
 def target_alternatives(routes, *, expected: tuple[tuple[str, str], ...], learner_color: str) -> TargetAlternatives:

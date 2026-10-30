@@ -27,10 +27,11 @@ SURFACES = {
     "app.games.feedback.interfaces": {
         "app.games.feedback.continuous": ("ContinuousSync", "ForwardWindow"),
         "app.games.feedback.coordinator": ("Coordinator", "delivery_for", "project_encounters", "stable_id"),
+        "app.games.feedback.first_boundary": ("select_first_boundary",),
         "app.games.feedback.jobs": ("FeedbackRunner",),
         "app.games.feedback.ports": ("Acquisition", "AcquisitionFailure", "Capture", "Clock", "Comparer",
-            "ConcurrentUpdate", "Delivery", "GamesStore", "JobSpec", "JobState", "Normalizer",
-            "PageCommit", "SourceIdentity", "SourceState"),
+            "ConcurrentUpdate", "Delivery", "DeliveryDeferred", "GamesStore", "JobSpec", "JobState", "Normalizer",
+            "PageCommit", "SourceIdentity", "SourceState", "FirstBoundaryPreparation", "PreparedFirstBoundaryScope"),
         "app.games.feedback.review": ("GameReview", "ReviewStore", "ReviewUnavailable", "SyncConfiguration"),
     },
     "tempo_game_evidence.interfaces": {

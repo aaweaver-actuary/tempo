@@ -67,7 +67,7 @@ class ForwardWindow:
             configuration.account.casefold(),configuration.revision,window.model_dump(mode="json"),
             self.overlap_seconds],sort_keys=True,separators=(",", ":")).encode()).hexdigest()
         selected=configuration.model_copy(update={"window":window})
-        return build_job(selected,prefix+identity)
+        return build_job(selected,prefix+identity).model_copy(update={"stream": "forward"})
 
 
 Purpose = Literal["forward", "reconciliation"]
@@ -135,7 +135,8 @@ class ContinuousSync:
         selected = configuration.model_copy(update={"window": window})
         job = self.build_job(selected, "reconciliation-scope")
         identity = hashlib.sha256(job.model_dump_json().encode()).hexdigest()
-        return self.build_job(selected, stream_prefix(configuration, "reconciliation") + identity)
+        return self.build_job(selected, stream_prefix(configuration, "reconciliation") + identity).model_copy(
+            update={"stream": "reconciliation"})
 
     def enqueue_due(self):
         now = self.now()

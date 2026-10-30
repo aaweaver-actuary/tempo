@@ -202,10 +202,12 @@ class GameSyncRuntime:
     stop owns only acquisition cancellation and the Games runner. Supplied store,
     snapshot and Learning capabilities are borrowed and are never closed here.
     """
-    def __init__(self, runner: FeedbackRunner, stop: Event, cancel_acquisitions=(), admission=None):
+    def __init__(self, runner: FeedbackRunner, stop: Event, cancel_acquisitions=(), admission=None,
+                 local_admission=None):
         self.runner, self._stop = runner, stop
         self._cancel_acquisitions = tuple(cancel_acquisitions)
         self._admission=admission
+        self._local_admission=local_admission
 
     def run_once(self) -> str:
         if self._admission is None or self._stop.is_set():
@@ -215,7 +217,14 @@ class GameSyncRuntime:
             with self._admission():
                 return self.runner.run_once()
         except BackgroundAdmissionDeferred:
-            return "deferred"
+            if self._local_admission is None:
+                return "deferred"
+            try:
+                with self._local_admission():
+                    result = self.runner.run_delivery_once()
+                    return "deferred" if result == "idle" else result
+            except BackgroundAdmissionDeferred:
+                return "deferred"
 
     def request_stop(self) -> None:
         self._stop.set()
@@ -238,6 +247,10 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
                      encounter_feedback=False,
                      delivery_enabled: bool = True,
                      admission=None,
+                     local_admission=None,
+                     qualifier=None,
+                     effect_identity=None,
+                     first_boundary_preparation=None,
                      transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> GameSyncRuntime:
     """Wire published concrete seams; the caller selects when bounded units run.
 
@@ -257,7 +270,11 @@ def create_game_sync(*, policies: tuple[AcquisitionPolicy, ...], store: GamesSto
     coordinator = Coordinator(providers=providers, normalizer=normalizer or WorkflowNormalizer(),
         comparer=WorkflowComparer(), snapshots=snapshots, store=store, learning=learning,
         source_identity=source_identity,
+        qualifier=qualifier,
+        effect_identity=effect_identity,
+        first_boundary_preparation=first_boundary_preparation if delivery_enabled else None,
         clock=clock, max_page_records=max_page_records, max_page_positions=max_page_positions,
         encounter_feedback=encounter_feedback)
     return GameSyncRuntime(FeedbackRunner(coordinator, delivery_enabled=delivery_enabled), stop,
-                           (provider.acquisition.cancel for provider in providers.values()),admission=admission)
+                           (provider.acquisition.cancel for provider in providers.values()),admission=admission,
+                           local_admission=local_admission)

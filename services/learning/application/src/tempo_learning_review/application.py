@@ -9,6 +9,15 @@ from .models import ReviewCommand, ReviewContext, ReviewResult
 from .ports import ReviewStore, ReviewSubmissionStore
 
 
+def review_day_at(reviewed_at: datetime, timezone_name: str) -> date:
+    """One Study-day conversion for ordinary reviews and game consequences."""
+    try:
+        return (reviewed_at.astimezone(ZoneInfo(timezone_name)).date()
+                if timezone_name != "local" else reviewed_at.astimezone().date())
+    except ZoneInfoNotFoundError:
+        return reviewed_at.astimezone().date()
+
+
 def review_context(command: ReviewCommand, *, observed_at: datetime,
                    local_day: date, timezone_name: str) -> ReviewContext:
     reviewed_at = observed_at
@@ -20,11 +29,7 @@ def review_context(command: ReviewCommand, *, observed_at: datetime,
         if recorded.tzinfo is None or recorded > observed_at + timedelta(minutes=5):
             raise ReviewFailure(422, "Review timestamp must include a timezone and cannot be in the future")
         reviewed_at = recorded.astimezone(timezone.utc)
-        try:
-            review_day = (reviewed_at.astimezone(ZoneInfo(timezone_name)).date()
-                          if timezone_name != "local" else reviewed_at.astimezone().date())
-        except ZoneInfoNotFoundError:
-            review_day = reviewed_at.astimezone().date()
+        review_day = review_day_at(reviewed_at, timezone_name)
     else:
         review_day = local_day
     return ReviewContext(reviewed_at, local_day, review_day)
@@ -111,12 +116,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     policy = store.policy()
     # Receipt/projection replay must not depend on reading current policy.
     if command.recorded_at:
-        try:
-            review_day = (context.reviewed_at.astimezone(ZoneInfo(policy.timezone)).date()
-                          if policy.timezone != "local" else context.reviewed_at.astimezone().date())
-        except ZoneInfoNotFoundError:
-            review_day = context.reviewed_at.astimezone().date()
-        context = replace(context, review_day=review_day)
+        context = replace(context, review_day=review_day_at(context.reviewed_at, policy.timezone))
     if attempt.recovered:
         if attempt.cycle == 0 and attempt.admission_kind == "new" and card.content_type == "opening":
             store.retain_introduction(command.card_id, attempt.queue_date)

@@ -54,13 +54,28 @@ text in storage and positive integer values at the public boundary.
 The additive next-release encounter uses the same schema051 row. `payload_json`
 is either the unchanged shared `GameLapse`, or an envelope with `kind=encounter`,
 immutable shared `GameEncounter` in `command`, and small `owner` admission facts.
+Old raw `GameLapse` JSON remains readable. A lapse needing owner facts uses an
+equivalent `kind=lapse` envelope retaining its original command JSON bytes.
 On conflict, SQL can update only the envelope's `owner` section; original command,
 semantic hash, detection, target and logical identity remain unchanged. There is
-no new table or DDL here. An applied encounter has no fabricated review ID;
-`applied_at` records actual queue/introduction priority, while observation and
-miss/frequency provenance remain distinguishable in the original command.
+no new effect table or DDL here. Qualified `introduced_again` records the actual
+existing `game_lapse` scheduling review ID and application time. First introduction
+has no scheduling review. Old priority `applied_at` alone proves neither Again
+nor admission. The owner JSON keeps separate qualification, immutable accepted
+disposition, current target, actual application/issuance/settlement progress and
+bounded preparation retry time. Original occurrence/source facts stay unchanged.
+For a generated current target, the existing owner section also retains the
+prepared source-header binding and immutable result/receipt digest. The normal
+review's one-effect settlement hook rechecks those bounded facts, current map,
+card revision and membership; it does not replay a repertoire. Remaining
+same-card obligations consume the retained actual completion one at a time in
+the existing preparation path. Physical remaps append prior issuance fences and
+preserve the original real scheduler receipt and first service.
+New qualified effects leave `available_by` null because their service promise is
+actual front/five-card issuance. Upgraded old effects preserve a real legacy
+column as history; version 0.2.2 receipts do not present it as a new deadline.
 
-`current_owner_encounter_feedback` adds priority-only validation. It permits only
+`current_owner_encounter_feedback` adds qualified target validation. It permits only
 the current introduction field to race delivery while preserving all existing
 definition/source/membership fences. Its injected #495 introduction capability
 retains the sole canonical writer and reads existing canonical introduction facts;
@@ -71,12 +86,29 @@ identity and route fields remain unchanged; that actual source revision is alrea
 checked against current rows in the same transaction. The boundary is documented
 by the [receiving owner](../../../../backend/app/study/README.md#next-release-encounter-importance-and-first-introduction).
 
+Preparation that found no current lineage still needs an absence fence in the
+borrowed writer. `fence_feedback_lineage_absence` takes the existing nonblocking
+route lock and probes the indexed route/decision map and physical identity.
+A newly installed map or unavailable generated identity holds the original key
+for fresh preparation; unchanged legacy card/publication fields do not permit
+an Again on a retired card. The route lock also protects the absent map key
+from a concurrent join until commit. The native regression is
+`test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles`.
+
 There are deliberately no foreign keys to cards/reviews/queue: deletion or future
 presentation rebinding must not cascade away owed evidence. Card and review IDs
 are logical Study-owned relationships, revalidated at use. Scheduling/history
 tables and canonical queue remain existing owners; no second queue is created.
 `study_game_feedback_owed(card_id,effect_key)` partially indexes pending/applied
 work. No producer can write these rows through this interface.
+
+`feedback_queue_priorities` uses single-step PostgreSQL JSON operators for its
+current target, available admission and absent-progress checks. The bounded
+reader passes these through the existing SQLite-to-PostgreSQL translator, which
+drops later arguments from variadic JSON-path calls. Nested extraction preserves
+the complete paths and the same SQL-NULL legacy-reset fallback as a borrowed
+native connection. The regrouped obligation lookup already uses single-step
+extraction; its complete repertoire paths share the focused translation regression.
 
 `retains_encounter_introduction(database, card_id)` and the complete
 `retained_encounter_introduction_query()` expose an existing same-revision material
@@ -107,7 +139,7 @@ erDiagram
         text status "pending held applied settled"
         text reason "nullable"
         timestamptz applied_at "nullable"
-        bigint review_id "nullable logical game review; no fake encounter review"
+        bigint review_id "actual Again scheduling review; null for first introduction"
         timestamptz settled_at "nullable"
         bigint settlement_review_id "nullable logical Study review"
         text hold_revision "nullable"

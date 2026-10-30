@@ -23,6 +23,26 @@ class FeedbackRunner:
     def request_stop(self) -> None:
         self._stop.set()
 
+    def run_delivery_once(self) -> str:
+        """Only already determined local work; never claim or fetch a page."""
+        if self._stop.is_set():
+            self.close()
+            return "stopped"
+        if not self.delivery_enabled:
+            return "idle"
+        if not self._unit.acquire(blocking=False):
+            return "busy"
+        try:
+            pending = self.coordinator.store.pending_delivery(self.coordinator.clock.now(), ready_only=True)
+            if pending is None:
+                return "idle"
+            self.coordinator.deliver(pending)
+            return "delivery"
+        finally:
+            self._unit.release()
+            if self._stop.is_set():
+                self.close()
+
     def run_once(self, *, job_id: str | None = None) -> str:
         if self._stop.is_set():
             self.close()

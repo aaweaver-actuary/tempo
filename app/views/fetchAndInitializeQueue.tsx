@@ -1,6 +1,7 @@
 import { holdActiveStudyRequest } from "../lib/study-priority";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
+import { confirmOperationResponse, PendingOperationError } from "../lib/operation-status";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { isIPhoneHomeScreen, usesLocalApi } from "../utils/local";
 import { learningDayKey as localDayKey } from "../lib/study-connection";
@@ -204,8 +205,10 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
 
 async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayload> {
   let failedRequests = 0;
+  let nextCardOperation: string | undefined;
+  let localPriorityPending = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0);
+    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending);
     if (response.ok) {
       failedRequests = 0;
       const payload = responsePayload as QueuePayload;
@@ -234,6 +237,29 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
       retryable = payload.retryable === true || retryable;
     } catch {
       // Keep the stable HTTP fallback when the service returned no JSON body.
+    }
+    const priorityFailure = responsePayload as { detail?: { code?: string } } | undefined;
+    if (!independentStudy && response.status === 503 &&
+        priorityFailure?.detail?.code === 'study_feedback_preparation_pending') {
+      localPriorityPending = true;
+      // The server has declined new attempt authority. Existing work and saved
+      // results are intact. Advance one bounded local owner unit explicitly;
+      // neither a queue GET nor client-side prefetch may perform this write.
+      nextCardOperation ??= crypto.randomUUID();
+      try {
+        const prepared = await awaitQueueStage(confirmOperationResponse(await fetch(
+          `${API_URL}/api/queue/prepare-next`, { method: 'POST', signal,
+            headers: { 'Idempotency-Key': nextCardOperation } }), { signal }), signal);
+        if (!prepared.ok) throw new QueueProcessingError(`Local next-card preparation returned HTTP ${prepared.status}. Retry loading the queue.`);
+        // A complete bounded unit can leave another real obligation pending.
+        // A new unit gets a new operation identity; uncertain delivery reuses it.
+        nextCardOperation = undefined;
+      } catch (error) {
+        if (!(error instanceof PendingOperationError)) throw error;
+      }
+      if (attempt === 19) throw new QueueProcessingError('Local Study priority work is still preparing. Retry loading the queue.');
+      await waitForQueueRetry(50, signal);
+      continue;
     }
     if (response.status === 503 && detail === "Waiting for foreground activity") {
       await waitForQueueRetry(250, signal);

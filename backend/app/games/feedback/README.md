@@ -82,7 +82,7 @@ owner delivery happens after that transaction has released its connection.
   advance independently; comparison remains explicitly unresolved.
 - Source identity is a hash of workspace/provider/provider-game ID. Account,
   original raw PGN, supplied source revision/digest/time precision and comparison
-  revision remain captured. The versioned `comparison-facts-v1` identity hashes
+  revision remain captured. The versioned `comparison-facts-v2-first-departure` identity hashes
   compatible material snapshots and unresolved repertoire IDs, excludes
   `membership.captured_at`, and sorts unordered collections without reordering
   authored moves. Actual source versions, routes, boundaries, target mappings and
@@ -132,7 +132,9 @@ Delivery completion and owner application are separate from window completeness.
 flowchart LR
   Runtime["T10 outer composition / optional runner"] --> C["Coordinator + injected clock"]
   C --> Provider["Acquisition capability: finite timeout"]
-  C --> Pure["Verified normalization / all configured snapshots / same-color per-repertoire comparison"]
+  C --> Pure["Verified normalization / same-color snapshots / per-repertoire comparer"]
+  Pure --> First["Pure global first-boundary selector / complete relevant scope"]
+  First -->|"selected result + original determination marker"| Store
   Pure -->|"comparison unavailable: retain valid source + diagnostic"| Unresolved["Unresolved comparison / acquisition may advance"]
   Unresolved --> Store
   Pure -->|"verified PGN history"| Identity["Optional SourceIdentity binding"]
@@ -168,17 +170,40 @@ have `membership='present'`, while incomplete/unavailable authored evidence is
 reportable mapping uncertainty does not invent a move departure. The existing
 exact authored-anchor/index/card reentry checks remain, and retain earlier findings.
 
-`project_encounters` preserves #570's unknown-introduction behavior and admits
-these existing `known_unavailable` diagnostics only with a unique available exact
-current target and all alias facts agreeing:
-`introduction_evidence_unavailable`, `game_occurrence_time_not_exact`,
-`chronology_requires_timezone`, `conflicting_introduction_chronology`, and
-`introduced_content_identity_unproved`. All mappings at the exact repertoire
-position are checked before the finding's claimed card; conflicting card/revision/
-decision/response alternatives cannot be filtered away. Duplicate identical logical
-occurrences emit once; conflicting commands for the same key emit none. Findings
-remain retained. This neither fabricates chronology nor relaxes lapse eligibility;
-Study owns all current disposition, admission, priority and settlement.
+`select_first_boundary` is the pure #619 action policy, exported through the
+workflow interface. It traverses one combined `RouteFrontier` from the legal
+game prefix. Any surviving authored alternative proves coverage; introduction
+state and physical-card availability do not affect that traversal. It stops at
+the first actual boundary and retains the explicit status, actor, one-based ply,
+pre-move position, expected alternatives, complete relevant scope revisions,
+surviving authored occurrences and exact target, if one exists. Ended competing
+routes and missing selected scope cannot be dropped to manufacture authority.
+
+`project_encounters` emits at most one missed command, only for `own_actionable`.
+Correct unseen encounters and later reentry findings remain diagnostics without
+an urgent effect. Opponent-first gaps, coverage ends and unresolved/ambiguous
+targets emit none. New exact targets carry their real authored route occurrence;
+an old global mapping can be specialized only when one occurrence is proven.
+Alias equivalence uses the existing public resolver on detached current facts,
+ignoring only historical introduction timestamp/chronology fields; the emitted
+decision retains an original member and all current identity/state facts must
+agree. There is no introduction-before-game gate. Study still revalidates current
+source/configuration/publication/target authority and owns the consequence.
+If an original mapping's chronology assertion belongs to another game, only a
+new command's detached decision omits that paired assertion; the retained
+snapshot/selection and previously frozen commands retain their original facts.
+
+`SourceState.first_departure` and `Capture.first_departure` retain this election
+in the existing atomic page/capture/checkpoint write. `determined_at` records
+the first durable actionable election and survives equivalent retries; it is not
+Study acceptance, scheduler application, queue availability, issuance or settlement.
+Old JSON without these optional fields remains readable with null defaults.
+The `comparison-facts-v2-first-departure` revision distinguishes the changed
+comparison policy without changing the logical game effect key. Original frozen
+commands and historical findings are retained; #621 owns their qualification.
+The explicit legacy lapse capture mode also requires that same actionable global
+boundary and exact matching finding before minting a new command. Envelope
+compatibility does not permit later or incomplete-scope automatic effects.
 
 Existing workflow fields carry unresolved comparison evidence without a DTO or
 schema change:
@@ -229,6 +254,137 @@ runtime, native server, provider request, UI change or deployment is exercised b
 these synthetic cases. Shared regression registration is handed to Agent G.
 
 ## Narrow PostgreSQL integration contract
+
+### First-departure delivery qualification — #621
+
+The original `Delivery.command` and effect key remain immutable, including stored
+`0.2.1` encounters and legacy lapses. `qualification.py` elects no new policy: it
+uses the public `select_first_boundary` result over the complete current selected
+scope. A separate `FirstDepartureWitness` binds that result, the actual provider
+configuration revision, original actionable determination and stream. New complete
+captures retain the ready witness in the same Games page/source/outbox transaction;
+retained commands are qualified before the first Study call.
+
+| Original retained work | Delivery disposition |
+| --- | --- |
+| Exact learner first departure with current complete authority | Same command/key through `accept_qualified`; Study chooses the immutable introduced/first-introduction disposition. |
+| Matched encounter, later miss, alternate-repertoire false candidate, opponent gap or deliberate end | Retained diagnostic history; terminal `ineligible`, with no Study call. |
+| Missing/incomplete scope, unavailable mapping or source/preparation | Explicit `held` reason. Retryable preparation retains its retry time; a known source contradiction needs relevant reconciliation or explicit retry. |
+| Acknowledged/settled owner effect | No new outbox occurrence. Study maintenance can qualify its outstanding priority-only effect through the same public preparation boundary. |
+
+Unknown original stream on old work is recorded as reconciliation qualification,
+never fabricated as forward work or decided by an arbitrary age cutoff. Each
+bounded delivery unit keeps controls first, alternates eligible forward and
+historical work when both are ready, and preserves oldest determination/FIFO
+within each class with a deterministic operation tie-breaker. The last service
+sequence lives in the existing delivery JSON, so restart or an equal attempt clock
+does not reset the turn. A completed qualification unit spends its turn even when
+held or ineligible; service accounting does not charge a transport attempt.
+This fairness rule controls intake, not Study's urgent
+presentation order or scheduling severity.
+
+`provider_priority.prepare_feedback_qualification` prepares complete published
+repertoire facts separately from the exact target's retained capture. It uses the
+supplied bounded reader for capture rows and integrity metadata; the historical
+exporter's foreground-idle default is not the next-card command's reader. Every
+connection closes before chess/projection. Study recomputes the public selection
+outside its writer and rechecks current authority under the writer. Games supplies
+only its borrowed source/configuration/control fence; it never writes Study SQL.
+The complete publication read uses `read_repertoire_json` inside the bounded read
+context; both JSON decoding and projection occur after that context exits.
+When the original logical decision has an explicit Study recombination mapping,
+composition asks the owning `prepare_game_feedback_target` capability to replace
+only its physical presentation facts before the complete-scope selector runs.
+The raw publication, routes, membership and source identities remain intact.
+Study independently checks those exact original mappings and fences its current
+binding in the borrowed writer; unavailable or contradictory lineage remains a
+hold, and a superseded card alone grants no replacement authority.
+
+For a new feedback capture with no retained command yet, the same binding starts
+from the pure selector's prospective first boundary. The optional
+`FirstBoundaryPreparation` root enumerates every explicit mapping at its exact
+surviving route occurrences, deduplicates identical facts, and asks the existing
+Study owner for their current physical presentations. It preserves all routes,
+scope/publication identity and logical decisions, then Games reruns the same pure
+selector. Ambiguous/unavailable competitors stay present. A candidate set larger
+than the receiving owner's existing 64-binding limit stays unresolved as a whole;
+no prefix is selected. The resulting new command is still requalified and fenced
+by Study at acceptance. Collection-only construction never supplies this capability.
+
+The explicit next-card composition uses `pending_determined_feedback_in_transaction`
+for the head hint in its existing transaction and PURE `prepare_determined_feedback`
+outside the command writer. The hint uses the derived indexed sidecar, matching
+mode/workspace/retry/control/FIFO facts without scanning unqualified pending history;
+optional read failure returns false within a savepoint. Preparation returns one original
+delivery and its separately prepared current owner facts, with no acknowledgment,
+qualification write or Study mutation. It selects the earliest live/history FIFO
+priority for comparison with the actual accepted Study candidate; discarding it
+for an older candidate or a replayed gateway token changes no state. Only after
+the command gateway's receipt/request-hash/token fence may
+`apply_prepared_determined_feedback` accept through Study and acknowledge Games
+atomically in the same borrowed writer. A savepoint rolls both owners back if a
+current fence, receipt or acknowledgment fails. The standalone optional worker's
+mutating `advance_determined_feedback` remains a separate entrypoint.
+Its worker service cursor is never read or advanced by the borrowed Study writer.
+Pending hold/withdraw controls are local work even without a determination
+witness and take explicit `is_control` precedence over accepted preparation.
+They use the same receipt-fenced borrowed transaction for Study control and Games
+acknowledgment, with no source replay or fabricated determination timestamp.
+
+The public retained-lapse retry command uses `prepare_delivery_feedback` and
+the same qualified borrowed apply. It cannot invoke the old chronology scheduler
+as a bypass. A settled historical `0.2.1` owner receipt may acknowledge its exact
+original source/key without inventing `0.2.2` progress or another reset.
+Conclusive complete reanalysis which disqualifies accepted work emits the existing
+hold control while preserving original commands, receipts and genuine reviews;
+missing comparison proof alone does not withdraw it. Correcting selected repertoire
+scope holds only the obsolete effect, leaving the unchanged game inspectable and
+allowing a different legitimate first departure to create its own occurrence.
+That new occurrence starts a new determination clock; replay keeps it stable.
+Actual source corrections and integrity failures retain D08 quarantine.
+
+Verified managed feedback-mode intent is required. The root captures the trusted
+container boot identity outside the writer after preparation; borrowed apply
+compares it with the prepared identity and takes the actual shared mode-row fence
+before source/outbox/Study locks. No filesystem read occurs inside that writer.
+Inactive, collection-only, absent or contradictory intent
+authorizes no new delivery. Accepted Study obligations remain independent of that
+mode and of the optional process. Provider HTTP, acquisition pages and full capture
+retain the stricter foreground admission; a determined local unit can finish
+preparation during continuous practice outside review/head writer locks.
+Retryable determined holds become eligible only at their retained retry time;
+semantic holds do not cause a foreground retry loop.
+
+The bounded status inventory reports command kinds/states, qualification counts,
+reasons, live/history ready backlog and oldest original determination. Its
+`accepted_pending_at_acknowledgment` count is explicitly the committed receipt at
+acknowledgment, not a current issuance or settlement census. Selected-game receipt
+reads use the public encounter status for qualified legacy lapses as well.
+
+```mermaid
+flowchart LR
+  Frontier["Complete scope / pure prospective first boundary"] --> Target["Feedback only: explicit boundary candidates / closed Study-owner reads"]
+  Target --> Recheck["Same pure selector / complete scope retained"]
+  Recheck --> Capture
+  Recheck --> Reanalysis["Unchanged source / obsolete effect held / new occurrence retained"]
+  Reanalysis --> Capture
+  Capture["Complete Games comparison / atomic original capture"] --> Witness["Separate durable qualification / original determination"]
+  Retained["Original frozen commands"] --> Qualify["Current complete-scope first-boundary qualification"]
+  Qualify --> Witness
+  Witness --> Local["One mode-admitted local preparation unit / connections closed"]
+  Local --> Gateway["Command receipt + request hash + token fence"]
+  Gateway --> Fence["Same borrowed writer: mode + Games source/config/control fence"]
+  Fence --> Study["Study owner: accept same key / Again or introduction"]
+  Study --> Ack["Games ack + Study acceptance commit atomically"]
+  Ack --> Receipt["Committed owner receipt / separate actual issuance and settlement"]
+  Qualify --> Held["Retained held or terminal ineligible / no Study call"]
+```
+
+Focused policy/transport/native storage regressions are in
+[`test_product_delivery_qualification.py`](../../../tests/test_product_delivery_qualification.py).
+The existing owned PostgreSQL fixture verifies the changed storage boundary and
+its cleanup. This component proof is not installed activation or a browser timing
+claim; #624 owns the assembled provider-to-ordinary-Study journey.
 
 [`PostgresGamesStore`](../../../../database/tempo_legacy_database/adapters/games/product_feedback.py)
 accepts a dedicated `connections()` context factory yielding raw tuple-row
@@ -328,8 +484,8 @@ nontruncating advisory validation lock before either command; do not unlink it.
 
 ## Immediately next release: encounter-priority delivery (#489 addendum)
 
-With `encounter_feedback=True`, every newly emitted mapped encounter, including
-a confirmed introduced miss, is an immutable `GameEncounter` sent through the
+With `encounter_feedback=True`, the selected exact learner first departure is
+an immutable missed `GameEncounter` sent through the
 public `EncounterFeedbackPort.accept_encounter`. Expected/played/source/chronology
 facts remain intact; Study owns current disposition and scheduling. Accepted
 `pending` receipts finish Games delivery without queue access or availability

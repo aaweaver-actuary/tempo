@@ -8,6 +8,7 @@ import json
 
 from app.games.feedback.review import GameReview, ReviewUnavailable, SyncConfiguration
 from app.study.game_feedback import GameFeedback
+from app.study.interfaces.feedback_observation import FeedbackObservation
 from app.repertoire import project_capture
 from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections, PostgresReviewStore, fence_imported_game
 from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
@@ -25,7 +26,8 @@ def configured_job(configuration, operation_id):
     from .game_sync import sync_job
     return sync_job(job_id=operation_id, workspace_id=configuration.workspace_id,
         account=configuration.account, window=configuration.window,
-        repertoire_ids=configuration.repertoire_ids, policy=configuration_policy(configuration))
+        repertoire_ids=configuration.repertoire_ids, policy=configuration_policy(configuration)).model_copy(
+            update={"configuration_revision": configuration.revision})
 
 
 def create_game_review(*, workspace, connections, learning, clock, runtime=None):
@@ -35,13 +37,17 @@ def create_game_review(*, workspace, connections, learning, clock, runtime=None)
     if getattr(connections, "read_only", False):
         def delivery(_):
             raise ReviewUnavailable("games_writer_profile_required", 503)
+    elif runtime is None and (not callable(getattr(learning,"prepare",None))
+            or not callable(getattr(learning,"accept_qualified",None))):
+        def delivery(_):
+            raise ReviewUnavailable("qualified_provider_encounter_receiver_required",503)
     else:
         from app.games.feedback.coordinator import Coordinator
         from .game_sync import WorkflowComparer, WorkflowNormalizer
         delivery = runtime.runner.coordinator.deliver if runtime is not None else Coordinator(
             providers={}, normalizer=WorkflowNormalizer(), comparer=WorkflowComparer(),
             snapshots=UnavailableSnapshot(), store=PostgresGamesStore(connections),
-            learning=learning, clock=clock).deliver
+            learning=learning, clock=clock,qualifier=learning).deliver
     return GameReview(workspace=workspace, store=PostgresReviewStore(connections),
         learning=learning, build_job=configured_job, deliver=delivery, now=clock.now)
 
@@ -113,6 +119,9 @@ class CurrentStudyReceiptReads:
 
     def effect_status(self, key):
         return self._status("effect_status", key)
+
+    def feedback_observation(self, key) -> FeedbackObservation | None:
+        return self._status("feedback_observation", key)
 
 
 class SystemClock:

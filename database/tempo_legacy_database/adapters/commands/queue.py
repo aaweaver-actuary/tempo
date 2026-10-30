@@ -9,6 +9,11 @@ def is_postgres_connection(database):
     return isinstance(database, PostgresConnection)
 
 
+def study_timezone(database):
+    row = database.execute('SELECT timezone FROM settings WHERE id=1').fetchone()
+    return row[0] if row else None
+
+
 def warm_queue_refresh_sql(warm_completion_sql):
     from tempo_legacy_database.adapters.postgres_store import postgres_sql
 
@@ -61,12 +66,16 @@ def issued_origin(database, entry_id, card_id, expected_revision):
         ).fetchone()
 
 
+def issued_origin_day(database, entry_id, card_id, expected_revision):
+    row = database.execute("""SELECT queue_date FROM queue_attempt_origins
+        WHERE queue_entry_id=? AND card_id=? AND revision=? AND issued_as_head=1""",
+        (entry_id, card_id, expected_revision)).fetchone()
+    return row[0] if row else None
+
+
 def stamp_issued_head(database, entry_id, card_id, expected_revision):
-    return database.execute(
-        "UPDATE queue_attempt_origins SET issued_as_head=1 "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (entry_id, card_id, expected_revision),
-    ).rowcount
+    from tempo_legacy_database.adapters.study.issuance import stamp_issued_head as stamp
+    return stamp(database, entry_id, card_id, expected_revision)
 
 
 def mark_attempt_failed(database, entry_id):
@@ -79,10 +88,21 @@ def mark_attempt_failed(database, entry_id):
 def bury_attempt_card(database, queue_date, entry_id):
     database.execute(
         """UPDATE daily_queue SET status='buried'
-           WHERE queue_date=? AND status!='complete'
+           WHERE (queue_date=? OR id=?) AND status!='complete'
              AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
-        (queue_date, entry_id),
+        (queue_date, entry_id, entry_id),
     )
+    # Rollover preserves real issued boards. Burying that board retires its old
+    # row AND retains today's exclusion even when it had no current-day row.
+    database.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,status)
+        SELECT ?,original.card_id,
+            (SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue q
+             WHERE q.queue_date=? AND q.card_id=original.card_id),
+            (SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue q WHERE q.queue_date=?),'buried'
+        FROM daily_queue original WHERE original.id=? AND original.queue_date<>?
+          AND NOT EXISTS(SELECT 1 FROM daily_queue held
+              WHERE held.queue_date=? AND held.card_id=original.card_id AND held.status='buried')""",
+        (queue_date,queue_date,queue_date,entry_id,queue_date,queue_date))
 
 
 def lock_current_queue_task(database):

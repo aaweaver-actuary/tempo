@@ -80,10 +80,13 @@ Study-owned maintenance into its existing job execution; it must run independent
 of the producer and on resume. Missing external authority must leave work pending
 until owner revalidation; it is never permission to guess a card.
 
-## Behavior and chronology
+## Retained 0.2.1 lapse compatibility
 
-First detection fixes `available_by <= detected_at + 48h`; duplicate delivery or
-equivalent recomparison never reapplies Again or moves the original deadline.
+Old receipts retain their original `available_by`; it is neither an expiration
+nor the current first-departure service promise. Current timing and acceptance
+rules are canonical in [SPEC G01–G03](../../../SPEC.md#3-game-feedback) and the
+[shared contract](../../../contracts/product-v02/README.md). Duplicate delivery
+or equivalent recomparison never creates another occurrence.
 Semantic identity excludes delivery, comparison and presentation revisions.
 Changed source content/moves/occurrence facts quarantine the original effect.
 Hold/withdraw is durable even before delivery and cannot reactivate on a delayed
@@ -133,11 +136,11 @@ behavior. No route, main.py, independent runtime or live data changes.
 ```mermaid
 flowchart LR
     Producer[Optional producer] -->|shared semantic command| Composition[T07 composition]
-    Composition -->|borrowed transaction and current mapping| Receiver[Study GameFeedback]
+    Composition -->|original command and qualified current mapping| Receiver[Study feedback owner]
     Receiver -->|Again| Scheduler[Existing scheduling application]
     Receiver -->|semantic store port| Store[Study PostgreSQL adapter]
     Scheduler -->|borrowed SchedulingReviewStore| Store
-    Store --> Receipt[(Study effect receipt and deadline)]
+    Store --> Receipt[(Original occurrence, application and issuance fence)]
     Store --> Owned[(Study cards / reviews / ordinary queue)]
     Review[Normal Study completion] -->|same transaction| Settlement[Study settlement hook]
     Settlement --> Receipt
@@ -151,14 +154,15 @@ sequenceDiagram
     participant D as Study-owned effect ledger
     participant W as Independent Study sweep
     participant Q as Existing queue and introduction owner
-    P->>I: accept_encounter(shared immutable facts)
-    I->>D: exact card/source fence; persist once
+    P->>I: accept_qualified(original command, separate witness)
+    I->>D: current source/scope/target fence; persist disposition once
     I-->>P: pending owner receipt; no queue promise
     Note over I,Q: Intake never enumerates, prepares or promotes a queue
     W->>D: claim existing pending obligation
     W->>Q: prepare outside writer; recheck target and issuance
-    Q->>Q: canonical introduction if needed; protected position batch
-    W->>D: commit available status with queue effect
+    Q->>Q: real Again OR canonical introduction; protected position batch
+    W->>D: commit actual application and post-application generation fence
+    Q->>D: actual head issuance and genuine completion settle same occurrence
     Note over P,W: Producer failure or removal does not stop Study pickup
 ```
 
@@ -183,24 +187,35 @@ source field. Run just that case with
 `PYTEST_ADDOPTS='--tb=short -k day_only_introduction_requires_exact_current_game_proof'`
 on the native command above; unrelated native cases retain their evidence.
 
-## Encounter intake and independent Study refresh
+## Qualified first-departure intake and independent Study refresh
 
-The public `EncounterFeedbackPort` consumes shared immutable `GameEncounter`
-facts and returns the existing `EncounterReceipt`. Its `accept_encounter` and
+The public `QualifiedGameFeedbackPort.accept_qualified` consumes the original
+immutable `GameEncounter` or `GameLapse` plus a separate `FirstDepartureWitness`.
+Stored old commands and 0.2.1 receipts remain readable. Its `accept_encounter` and
 `encounter_status` share the original effect key, controls, source/detection and
-schema051 ledger. No new DDL, delivery queue, scheduler or producer dependency.
+schema051 ledger. An unqualified missed command is retained pending qualification
+and grants no new reset, introduction or queue authority. Correct observations
+remain frequency evidence with no urgent consequence.
 
 Intake validates only the exact current source, executable mapping, card identity,
 revision, availability and complete equivalent-route provenance. It uses card and
 effect locks; it cannot enumerate, prepare, lock a queue date, introduce or promote.
-Valid priority requests commit `pending` / `study_priority_pending`, without an
-availability promise. Introduced correct play settles as frequency evidence.
-Historical misses retain importance without fabricating Again or rewinding FSRS.
-Duplicates preserve the original command, receipt and disposition.
+Qualified requests commit `pending` / `study_priority_pending`. Current Study
+state fixes `introduced_again` versus `first_introduction` once. A newly accepted
+introduced miss calls the existing scheduling application at processing time and
+the ordinary Study day, including when the game predates a later clean review.
+No review is backdated or fabricated as a human completion. Duplicates preserve
+the original command, receipt, determination marker and acceptance disposition.
 
 The composition root binds the public producer port to the internal factory
 `current_owner_encounter_intake(database, retained_owner_capture=..., snapshot=...,
-clock=...)`. This factory accepts no queue capability or introduction policy.
+clock=..., prepared_decisions=..., qualification=...)`. This factory accepts no
+queue capability or introduction policy. `CurrentOwnerDecisions.prepare_qualified`
+projects complete raw publication reads and recomputes the injected public pure
+selector outside the writer. It retains the separate bounded legacy physical
+capture; those two snapshot identity schemes are not interchangeable. The writer
+rechecks actual Games source/config/control through its injected owning fence,
+all selected source/publication versions, and exact target/current-card facts.
 `receive_admitted_encounter` still requires actual whole-operation/foreground
 admission and the normal background database safety gate. Unknown control state
 fails closed; zero allowance and Study-only do not imply full pause.
@@ -209,13 +224,49 @@ Study independently discovers the persisted obligation through its existing
 `claim_feedback_sweep` / `execute_feedback_sweep`. It captures current authority
 and prepares finite presentation/ordering pages outside its short writer. The
 consumer calls `EncounterFeedback.refresh_encounter(key)` for that exact observed
-identity; source/target/current-task/lease checks, protected issuance fence, changed
-position batch and the available receipt commit together. A refresh failure rolls
+identity; source/target/current-task/lease checks, scheduling or canonical
+introduction, protected issuance fence, changed position batch and the available
+receipt commit together. A refresh failure rolls
 back only refresh and its task cursor; accepted intake stays pending. There is no
-eager-intake toggle or fallback, and Games removal cannot prevent Study pickup.
+eager-intake toggle or fallback. Already acknowledged priority-only obligations
+are also qualified by this Study sweep; no pending outbox retry is required.
+
+`prepare_feedback_effect` and `apply_prepared_feedback_effect` are the same bounded
+owner unit used by the sweep and the explicit next-card command. Preparation
+closes its readers before chess/queue work; the writer rechecks the actual durable
+task pause, and transient qualification holds retain a durable retry time without
+moving the original determination. Ready live work can precede later historical
+preparation. Source/configuration/target uncertainty remains visible.
+
+The actual scheduling `review_id` proves Again; old priority `applied_at` does not.
+The queue owner's [issuance facts](../../../database/tempo_legacy_database/adapters/study/issuance.py)
+provide a committed generation frontier. An already-issued target saves normally
+and cannot waive its owed reset. Only a compatible genuine post-reset generation
+with a durable review receipt settles `introduced_again`. First introduction
+instead requires canonical admission and a post-admission generation, with no
+game scheduling review. Read status can hydrate actual first issuance from the
+durable origins; optional receipt denormalization never invents an endpoint.
+
+The normal review hook settles one obligation. The same per-effect preparation
+unit consumes a retained genuine completion for remaining obligations, including
+while foreground Study continues; it does not repeat their resets or issue a
+fabricated attempt. Modern current-presentation settlement uses the prepared
+owner's source-header and immutable receipt digest with bounded current map/card
+fences. It performs no repertoire or chess reconstruction under the effect lock.
+Actual completion remains terminal after a later source hold or conflict, while
+the retained control prevents new influence. Invalidating that actual review
+reopens both receipt representations and preserves any source hold.
+
+An owner-proved physical remap retains the original application and first-issued
+endpoint in prior-fence history. It captures fresh issuance authority for the
+current target and requires its genuine completion without applying Again twice.
+Raw retained intake without complete Games qualification remains pending; it
+does not fabricate source/configuration history to gain introduction authority.
 
 The internal refresh factory `current_owner_encounter_feedback` alone receives
 `introductions`, `introduction_policy` and optional immutable `prepared_priority`.
+The independent sweep additionally uses the [prepared introduction path](introductions/README.md#prepared-independent-study-sweep--558-repair),
+with source validation before its writer and commit-time current-row fences.
 The existing #495 canonical capability uses `allowance="encounter_exception"`,
 `paused=actual_whole_operation_pause` and the exact current `target` mapping.
 This targeted first-introduction exception bypasses ordinary new-card cap and

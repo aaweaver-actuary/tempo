@@ -199,7 +199,8 @@ when conflicted. No schema or stored relationship changes are introduced.
   read-only `repertoire_snapshot=True` connection context with no transaction
   or statement deadline, exits that context, then calls public
   `project_published_repertoire`. Chess replay/mapping construction runs after
-  the transaction closes. Other borrowed-transaction snapshot callers retain
+  the transaction closes. Status readiness follows the same path. The existing
+  `read_repertoire` dictionary wrapper and other borrowed-transaction callers retain
   their existing transaction ownership.
 - `membership.revision = scope_source_revision + 1` represents the retained
   zero-based owner counter as a positive public revision. `source_revision` and
@@ -222,8 +223,9 @@ flowchart LR
   Reader --> Project["Repertoire project_repertoire\nexisting T01 snapshot"]
   Games["Games CurrentRepertoireSnapshots"] --> ReadFacts["read_repertoire inside read-only snapshot context\nno quarter-second deadline"]
   ReadFacts --> Select
-  ReadFacts --> Closed["Exit DB context; eager facts retained"]
-  Closed --> Published["Pure project_published_repertoire; local route index"]
+  ReadFacts --> Closed["Exit DB context; bounded eager JSON retained"]
+  Closed --> Decode["Decode complete owner facts"]
+  Decode --> Published["Pure project_published_repertoire; local route index"]
   Published --> Consumers
   Injected["Injected owner read for pure tests"] --> Project
   Project --> Consumers["Existing immutable index / comparer / conflict owner"]

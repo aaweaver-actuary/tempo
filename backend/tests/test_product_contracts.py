@@ -16,8 +16,8 @@ sys.path.insert(0, str(ROOT / "contracts/game-evidence/src"))
 sys.path.insert(0, str(ROOT / "packages/chess-core/src"))
 sys.path.insert(0, str(ROOT / "packages/evidence-math/src"))
 sys.path.insert(0, str(ROOT / "contracts/analysis-jobs/src"))
-from app.contracts.product_v02.games import Finding, GamePage, GameSummary, ProviderSyncStatus, RecentGames
-from app.contracts.product_v02.learning import GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
+from app.contracts.product_v02.games import Finding, FirstDepartureSelection, GamePage, GameSummary, ProviderSyncStatus, RecentGames
+from app.contracts.product_v02.learning import FirstDepartureWitness, GameEffectControl, GameLapse, LearningReceipt, GameEncounter, EncounterReceipt, withdrawal_only_delivery
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.contracts.product_v02.presentation import GameDetail
 from app.contracts.product_v02.analysis import ProbabilityEvidence, EngineEvidence, Proposal, ProposalDecision, RankingInput, RankingOutput
@@ -27,6 +27,7 @@ from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 FIXTURES = ROOT / "contracts/product-v02/fixtures"
 MODELS = {model.__name__: model for model in (Finding, GamePage, RepertoireSnapshot, GameEffectControl, GameLapse, LearningReceipt, GameSummary, ProviderSyncStatus, RecentGames, GameDetail)}
 MODELS.update({model.__name__: model for model in (ProbabilityEvidence, EngineEvidence, Proposal, ProposalDecision, RankingInput, RankingOutput, Presentation, JoinPlan)})
+MODELS.update({model.__name__: model for model in (FirstDepartureSelection, FirstDepartureWitness, GameEncounter, EncounterReceipt)})
 
 
 def fixture(name):
@@ -43,6 +44,45 @@ def test_shared_json_round_trip(path):
     model = MODELS[document["model"]]
     value = model.model_validate_json(json.dumps(document["payload"]))
     assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("path", sorted((FIXTURES / "game-detail").glob("*.json")), ids=lambda path: path.stem)
+def test_game_detail_authoritative_selection_shared_round_trip(path):
+    payload = json.loads(path.read_text())["payload"]
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert json.loads(value.model_dump_json()) == payload
+    assert value.first_departure.source.source_revision != value.source_revision
+    if path.stem == "own_actionable":
+        assert value.findings[0].ply == 1 and value.first_departure.ply == 3
+        assert type(value.receipts[0]) is LearningReceipt
+        assert isinstance(value.receipts[1], EncounterReceipt)
+        assert value.receipts[1].progress.schedule_applied_at is not None
+
+
+def test_game_detail_legacy_omissions_remain_unknown_not_covered():
+    payload = fixture("game-detail")
+    for key in ("first_departure", "determined_at", "comparison_revision", "comparison_freshness"):
+        del payload[key]
+    payload["findings"] = []
+    value = GameDetail.model_validate_json(json.dumps(payload))
+    assert value.first_departure is None and value.determined_at is None
+    assert value.comparison_revision is None and value.comparison_freshness == "unknown"
+
+
+@pytest.mark.parametrize("fault", ["provider", "game", "color", "ply", "played", "actor"])
+def test_game_detail_rejects_selection_from_contradictory_original_history(fault):
+    payload = json.loads((FIXTURES / "game-detail/own_actionable.json").read_text())["payload"]
+    selection = payload["first_departure"]
+    if fault == "provider": selection["source"]["provider"] = "chesscom"
+    elif fault == "game": selection["source"]["game_id"] = "different-game"
+    elif fault == "color": payload["player_color"] = "black"
+    elif fault == "ply": selection["ply"] = 5
+    elif fault == "played": payload["moves"][2] = "b1c3"
+    else:
+        # An opponent-gap shape is valid in isolation; White moves at ply 3.
+        selection.update(status="opponent_gap", actor="opponent", decision=None)
+    with pytest.raises(ValidationError):
+        GameDetail.model_validate_json(json.dumps(payload))
 
 
 @pytest.mark.parametrize("field,value", [("kind", "guessed_miss"), ("ply", 0), ("ply", True), ("source_revision", 0), ("introduced_before_game", None), ("expected_uci", ["e2e4", "g1f3"])])
@@ -390,3 +430,71 @@ def test_targeted_encounter_exception_retains_explicit_pause_and_safety_guards(s
     receipt = EncounterReceipt.model_validate_json(json.dumps(payload))
     assert receipt.admission_status == "pending" and receipt.available_by is None
     assert receipt.detected_at == payload["detected_at"] and receipt.observation_recorded
+
+
+FIRST_DEPARTURE = FIXTURES / "first-departure"
+
+
+@pytest.mark.parametrize("path", sorted(path for path in FIRST_DEPARTURE.glob("*.json") if path.name != "rejections.json"), ids=lambda path: path.stem)
+def test_first_departure_shared_values_and_actual_legacy_receipt_round_trip(path):
+    document = json.loads(path.read_text())
+    value = MODELS[document["model"]].model_validate_json(json.dumps(document["payload"]))
+    assert json.loads(value.model_dump_json()) == document["payload"]
+
+
+@pytest.mark.parametrize("case", json.loads((FIRST_DEPARTURE / "rejections.json").read_text())["cases"], ids=lambda case: case["name"])
+def test_first_departure_python_and_typescript_reject_the_same_contradictions(case):
+    document = json.loads((FIRST_DEPARTURE / f'{case["fixture"]}.json').read_text())
+    payload = document["payload"]
+    for path, replacement in case["updates"].items():
+        current = payload
+        parts = path.split(".")
+        for part in parts[:-1]:
+            current = current[int(part)] if isinstance(current, list) else current[part]
+        current[int(parts[-1]) if isinstance(current, list) else parts[-1]] = replacement
+    with pytest.raises(ValidationError):
+        MODELS[document["model"]].model_validate_json(json.dumps(payload))
+
+
+def test_qualified_witness_binds_original_command_without_new_effect_identity():
+    witness_payload = json.loads((FIRST_DEPARTURE / "own-introduced.json").read_text())["payload"]
+    witness = FirstDepartureWitness.model_validate_json(json.dumps(witness_payload))
+    command_payload = encounter_fixture("unintroduced-missed")
+    original = GameEncounter.model_validate_json(json.dumps(command_payload))
+    assert witness.matches(original)  # Study chooses current disposition; chronology is not authority.
+    original_bytes = original.model_dump_json()
+    witness_payload.update(configuration_revision=8, stream="reconciliation")
+    witness_payload["selection"]["selected_scope"][0]["snapshot_id"] = "recomparison-2"
+    later = FirstDepartureWitness.model_validate_json(json.dumps(witness_payload))
+    assert later.matches(original)
+    assert original.model_dump_json() == original_bytes
+    assert original.key.logical_id() == GameEffectControl(key=original.key, source_revision=2, action="hold", reason="reanalysis").key.logical_id()
+    for field, value in (("game_id", "another-genuine-game"), ("occurrence_ply", 3)):
+        assert original.key.model_copy(update={field: value}).logical_id() != original.key.logical_id()
+    assert not witness.matches(original.model_copy(update={"played_uci": "c2c4"}))
+    assert not witness.matches(GameEncounter.model_validate_json(json.dumps(encounter_fixture("unintroduced-correct"))))
+
+
+def test_priority_receipt_remains_legacy_and_new_pending_does_not_claim_application():
+    legacy = EncounterReceipt.model_validate_json(json.dumps(encounter_fixture("historical-review-priority")))
+    assert legacy.applied_at is not None and legacy.progress is None
+    assert "progress" not in legacy.model_dump(mode="json")
+    pending = EncounterReceipt.model_validate_json(json.dumps(json.loads((FIRST_DEPARTURE / "protected-target-pending-reset.json").read_text())["payload"]))
+    assert pending.progress.scheduling_review_id is None
+    assert pending.progress.remediation_fence is None and pending.admission_status == "pending"
+
+
+@pytest.mark.parametrize("name", ["remapped-again-preserves-first-service", "remapped-introduction-has-no-again", "repeated-remapping-retains-original-application"])
+def test_remapped_receipt_keeps_actual_application_first_service_and_current_settlement(name):
+    payload = json.loads((FIRST_DEPARTURE / f"{name}.json").read_text())["payload"]
+    value = EncounterReceipt.model_validate_json(json.dumps(payload))
+    progress = value.progress
+    assert progress.prior_remediation_fences[0].target.card_id == "existing-physical-card"
+    assert progress.target.card_id == progress.settlement.attempt.card_id
+    assert progress.first_issued.card_id == "existing-physical-card"
+    assert progress.first_issued_ordinal == 1
+    assert progress.determined_at == "2026-10-26T12:00:01Z"
+    assert progress.scheduling_review_id == (None if value.disposition == "first_introduction" else 41)
+    detail = fixture("game-detail")
+    detail.update(game_id=value.key.game_id, provider=value.key.provider, source_revision=value.source_revision, findings=[], receipts=[payload])
+    assert json.loads(GameDetail.model_validate_json(json.dumps(detail)).model_dump_json())["receipts"] == [payload]

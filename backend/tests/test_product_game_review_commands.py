@@ -58,6 +58,42 @@ def test_repertoire_snapshot_connection_is_read_only_without_short_deadline(monk
     assert calls[-1] == "closed"
 
 
+def test_pooled_repertoire_snapshot_profile_is_unreserved_read_only_and_leaves_background_budget(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters import postgres_store
+    calls, pools = [], []
+    class Database:
+        def execute(self, sql, parameters=()): calls.append((sql, parameters))
+    @contextmanager
+    def borrowed(**options):
+        assert options in ({}, {"timeout": 0.1})
+        yield Database()
+    def pool(read_only, *, background=False):
+        pools.append((read_only, background))
+        return SimpleNamespace(connection=borrowed)
+    monkeypatch.setattr(postgres_store, "_pool", pool)
+    with postgres_store.connection(read_only=True, repertoire_snapshot=True) as database:
+        assert database.read_only
+    assert pools == [(True, False)]
+    assert calls[0][0] == "SET TRANSACTION READ ONLY"
+    assert "set_config('transaction_timeout','0'" in calls[1][0]
+    assert "set_config('lock_timeout','100ms'" in calls[1][0]
+    assert "set_config('statement_timeout','0'" in calls[1][0]
+    calls.clear()
+    with postgres_store.connection(read_only=True, background=True): pass
+    assert pools[-1] == (True, True)
+    assert calls[0][1] == ('250ms', '25ms')
+    count = len(pools)
+    for options, reason in [
+        ({"repertoire_snapshot": True}, "repertoire_snapshot_requires_read_only"),
+        ({"read_only": True, "background": True, "repertoire_snapshot": True}, "repertoire_snapshot_requires_unreserved_reader"),
+    ]:
+        with pytest.raises(ValueError, match=reason):
+            with postgres_store.connection(**options): pytest.fail("invalid source read was opened")
+    assert len(pools) == count
+
+
 @pytest.mark.parametrize("count", [1, 10, 17])
 def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch, count):
     from app import command_dispatch
@@ -95,6 +131,34 @@ def test_configuration_receipt_json_arrays_keep_strict_immutable_http_response(m
     assert response.status_code==200 and response.json()==expected
     parsed=SyncConfiguration.model_validate_json(response.text)
     assert parsed.repertoire_ids==("white",) and parsed.speeds==("rapid",)
+
+
+@pytest.mark.parametrize("qualified",[False,True])
+def test_retry_post_preserves_legacy_or_qualified_current_owner_receipt(monkeypatch,qualified):
+    from app import command_dispatch
+    from app.contracts.product_v02.learning import FirstDepartureWitness
+    from test_product_game_review_receipts import scenario
+    from test_product_delivery_qualification import QualifiedReceiver
+    case = scenario(legacy=True)
+    expected = case.receipt
+    if qualified:
+        witness = FirstDepartureWitness(selection=case.source.first_departure,configuration_revision=1,
+            determined_at=case.source.determined_at,stream="reconciliation")
+        expected = QualifiedReceiver().accept_qualified(case.command,qualification=witness)
+    payload = expected.model_dump(mode="json")
+    def dispatch(name,request,*,idempotency_key):
+        assert name == "product_games.retry_feedback" and idempotency_key == "same-original-retry"
+        assert request["finding"] == case.command.finding.model_dump(mode="json")
+        return payload
+    monkeypatch.setattr(command_dispatch,"dispatch_command",dispatch)
+    app = FastAPI();app.include_router(create_game_review_router(CurrentGameReviewOperations()))
+    with TestClient(app) as client:
+        response = client.post("/api/product/game-review/feedback/retry",json=dict(
+            finding=case.command.finding.model_dump(mode="json"),operation_id="same-original-retry"))
+    assert response.status_code == 200,response.text
+    assert response.json() == payload
+    if qualified:
+        assert response.json()["interface_version"] == "0.2.2" and response.json()["progress"] is not None
 
 
 @pytest.fixture

@@ -23,6 +23,10 @@ class Cursor:
 
 
 class Borrowed:
+    # The production recombination capability uses getattr(raw, None) to detect
+    # PostgreSQL. This fake models a nonnative borrowed connection explicitly;
+    # all execute/lifecycle/clock assertions below remain unchanged.
+    raw = None
     def __init__(self, replies, events):
         self.replies, self.events = iter(replies), events
     @property

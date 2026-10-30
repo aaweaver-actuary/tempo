@@ -3,8 +3,8 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
-from . import Identifier, Revision, UciMove, Value
-from .games import Finding, GameSummary
+from . import Identifier, Revision, UciMove, UtcTimestamp, Value
+from .games import Finding, FirstDepartureSelection, GameSummary
 from .learning import EncounterReceipt, LearningReceipt
 
 
@@ -15,6 +15,32 @@ class GameDetail(GameSummary):
     findings: tuple[Finding, ...]
     # Specific subtype first preserves its fields during nested serialization.
     receipts: tuple[EncounterReceipt | LearningReceipt, ...]
+    first_departure: FirstDepartureSelection | None = None
+    determined_at: UtcTimestamp | None = None
+    comparison_revision: Identifier | None = None
+    comparison_freshness: Literal["current", "stale", "unknown"] = "unknown"
+
+    @model_validator(mode="after")
+    def selection_belongs_to_original_history(self):
+        selection = self.first_departure
+        if selection is None:
+            return self
+        # The outer source_revision is provider provenance. Selection source
+        # revision belongs to the canonical source owner and may differ.
+        if (selection.source.provider, selection.source.game_id, selection.learner_color) != (
+                self.provider, self.game_id, self.player_color):
+            raise ValueError("first departure must identify this game and learner")
+        if selection.ply is not None:
+            if selection.ply > len(self.moves) or self.moves[selection.ply - 1] != selection.played_uci:
+                raise ValueError("first departure must identify an original played move")
+            turn = self.starting_fen.split()[1:2]
+            if not turn or turn[0] not in {"w", "b"}:
+                raise ValueError("known boundary requires the original starting side to move")
+            white_moves = (turn[0] == "w") == (selection.ply % 2 == 1)
+            actor = "learner" if white_moves == (self.player_color == "white") else "opponent"
+            if selection.actor != actor:
+                raise ValueError("first departure actor must match original game history")
+        return self
 
 
 class DecisionComponent(Value):

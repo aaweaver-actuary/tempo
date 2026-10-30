@@ -3,6 +3,8 @@
 Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
+import json
+
 from app.repertoire import project_published_repertoire
 from app.games.feedback.review import ReviewUnavailable
 from app.contracts.product_v02.learning import EncounterFeedbackPort
@@ -20,14 +22,15 @@ from .game_worker import run_optional_worker
 from contextlib import contextmanager
 
 
-def _require_current_sync_controls():
+def _require_current_sync_controls(*, allow_foreground=False):
     import os
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     from app.services.study_priority import control_snapshot
     policy=control_snapshot()
     if (os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED")!="1"
             or policy.get("available") is not True or type(policy.get("active")) is not bool
-            or type(policy.get("study_only_mode")) is not bool or policy["active"]):
+            or type(policy.get("study_only_mode")) is not bool
+            or (policy["active"] and not allow_foreground)):
         raise BackgroundAdmissionDeferred("Games sync is disabled, unavailable or waiting for foreground activity")
 
 
@@ -74,7 +77,9 @@ def create_current_game_sync(*, workspace, connections, clock=None,
     original outbox commit before any enabled delivery. Collection needs no
     receiver and leaves commands pending. Delivery never waits for queue refresh.
     """
-    if delivery_enabled and learning is None:
+    if delivery_enabled and (learning is None
+            or not callable(getattr(learning, "accept_qualified", None))
+            or not callable(getattr(learning, "prepare", None))):
         # Canonical identity is joined by SourceIdentity. The concrete receiving
         # seam still needs native qualification before default CLI activation.
         # Never fall back to the older lapse-only bridge or relabel a finding.
@@ -102,12 +107,25 @@ def create_current_game_sync(*, workspace, connections, clock=None,
                 # through clients constructed for the previous configuration.
                 raise ReviewUnavailable("sync_configuration_changed_restart_worker",503)
             yield
+    @contextmanager
+    def configured_local_admission():
+        # This grants only an already determined local delivery unit. Provider
+        # acquisition/full capture keeps its stricter foreground admission.
+        _require_current_sync_controls(allow_foreground=True)
+        current = tuple(value for provider in ("lichess", "chesscom")
+            if (value:=configuration_store.configuration(workspace,provider)) is not None)
+        if current != configurations:
+            raise ReviewUnavailable("sync_configuration_changed_restart_worker",503)
+        yield
     store = PostgresCanonicalGamesStore(connections)
     runtime = create_game_sync(policies=tuple(configuration_policy(value) for value in configurations),
         store=store, snapshots=CurrentRepertoireSnapshots(connections), learning=learning,
         clock=clock, source_identity=store,
         transport_factory=transport_factory,encounter_feedback=True,admission=configured_admission,
-        delivery_enabled=delivery_enabled)
+        delivery_enabled=delivery_enabled, qualifier=learning if delivery_enabled else None,
+        effect_identity=getattr(learning, "effect_identity", None) if delivery_enabled else None,
+        first_boundary_preparation=(getattr(learning,"prepare_first_boundary",None) if delivery_enabled else None),
+        local_admission=configured_local_admission if delivery_enabled else None)
     review = create_game_review(workspace=workspace, connections=connections,
                                learning=learning, clock=clock, runtime=runtime)
     reconciliation_options = ({} if reconciliation_interval_seconds is None else
@@ -176,8 +194,11 @@ def main():
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--preview",action="store_true",help="Read saved scopes and next forward windows; no imports/writes")
     parser.add_argument("--follow",action="store_true",help="Explicitly advance consecutive configured windows")
-    parser.add_argument("--collect-only", action="store_true",
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--collect-only", action="store_true",
         help="Persist Games observations and pending commands without delivering to Study")
+    modes.add_argument("--feedback", action="store_true",
+        help="Explicit feedback mode; qualified delivery also requires verified managed mode intent")
     parser.add_argument("--reconcile-interval-seconds", type=int,
         help="Explicit reconciliation interval for --follow (at least 60 seconds)")
     parser.add_argument("--overlap-seconds",type=int,help="Explicit overlap for --follow (0..3600)")
@@ -219,12 +240,17 @@ def main():
         print(json.dumps(dict(read_only=True,providers=result)));return
     if os.environ.get("TEMPO_PRODUCT_GAME_SYNC_ENABLED")!="1":
         raise RuntimeError("TEMPO_PRODUCT_GAME_SYNC_ENABLED=1 is required; no worker starts automatically")
+    if options.feedback:
+        from .game_collection_status import feedback_release_capabilities
+        from app.games.feedback.interfaces.managed_mode import FeedbackReleaseCapabilities
+        capability = feedback_release_capabilities()
+        required = set(FeedbackReleaseCapabilities.model_fields) - {"policy_version", "receipt_interface_version"}
+        if capability.get("availability") != "available" or any(capability.get(name) is not True for name in required):
+            raise ReviewUnavailable("qualified_feedback_composition_required", 503)
     dsn = os.environ.get("TEMPO_DATABASE_WRITE_URL")
     if not dsn:
         raise RuntimeError("TEMPO_DATABASE_WRITE_URL is required")
-    worker_options = {}
-    if options.collect_only:
-        worker_options["delivery_enabled"] = False
+    worker_options = {"delivery_enabled": options.feedback}
     if options.reconcile_interval_seconds is not None:
         worker_options["reconciliation_interval_seconds"] = options.reconcile_interval_seconds
     runtime, review = current_provider_worker(workspace=options.workspace,

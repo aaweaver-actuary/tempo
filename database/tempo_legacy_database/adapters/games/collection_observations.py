@@ -8,11 +8,70 @@ from typing import Protocol
 import json
 
 from app.contracts.product_v02.learning import GameEffectKey, EncounterReceipt, LearningReceipt
+from app.study.interfaces.feedback_observation import FeedbackObservation
 
 
 class ReceiptReads(Protocol):
     def encounter_status(self, key: GameEffectKey) -> EncounterReceipt | None: ...
     def effect_status(self, key: GameEffectKey) -> LearningReceipt | None: ...
+    def feedback_observation(self, key: GameEffectKey) -> FeedbackObservation | None: ...
+
+
+def study_receipt_progress(receipt, observation: FeedbackObservation | None = None) -> dict:
+    """Project only actual owning receipt/queue facts; never infer issued from available."""
+    if receipt is None:
+        return {"stage": "not_accepted", "queue": {"availability": "unavailable"}}
+    value = receipt.model_dump(mode="json")
+    progress_value = getattr(receipt, "progress", None)
+    if observation is not None and observation.get("progress") is not None:
+        progress_value = observation["progress"]
+    progress = progress_value.model_dump(mode="json") if progress_value is not None else {}
+    history = progress.get("prior_remediation_fences") or []
+    original_target = history[0]["target"] if history else progress.get("target")
+    again = progress.get("scheduling_review_id") is not None and progress.get("schedule_applied_at") is not None
+    introduced = progress.get("introduction_applied_at") is not None
+    issued = progress.get("first_issued")
+    settled = progress.get("settlement")
+    queued_value = None if observation is None else observation.get("queued_attempt")
+    queue_issuance = queued_value.get("issuance") if queued_value else None
+    actual_attempts = (() if progress_value is None else (
+        progress_value.first_issued,
+        progress_value.settlement.attempt if progress_value.settlement else None,
+        queue_issuance))
+    current_issued = bool(progress_value and progress_value.remediation_fence and any(
+        attempt is not None and progress_value.remediation_fence.precedes(attempt) for attempt in actual_attempts))
+    if value["outcome"] == "withdrawn": stage = "withdrawn"
+    elif value["status"] == "held": stage = "held"
+    elif settled is not None: stage = "settled"
+    elif current_issued: stage = "issued"
+    elif history: stage = "remediation_pending"
+    elif again: stage = "again_applied"
+    elif introduced: stage = "introduced"
+    elif value["status"] == "settled": stage = "historical_settled"
+    elif value.get("disposition") == "review_priority": stage = "legacy_priority_needs_qualification"
+    else: stage = "accepted_pending"
+    queued = queued_value
+    if queued is not None:
+        queued = {name: queued.get(name) for name in ("queue_entry_id", "queue_date", "status", "attempt_state", "card_id", "card_revision", "issuance")}
+        if queued["issuance"] is not None:
+            queued["issuance"] = queued["issuance"].model_dump(mode="json")
+    return {"stage": stage, "owner_receipt_status": value["status"],
+        "owner_reported_admission": value.get("admission_status"),
+        "hold_reason": value.get("deferred_reason") or value.get("reason"),
+        "detected_at": value.get("detected_at"), "determined_at": progress.get("determined_at"),
+        "accepted_at": value.get("admitted_at"), "stream": progress.get("stream"),
+        "application_target": original_target, "current_target": progress.get("target"),
+        "again": {"observed": again, "review_id": progress.get("scheduling_review_id"),
+                  "applied_at": progress.get("schedule_applied_at")},
+        "introduction": {"observed": introduced, "applied_at": progress.get("introduction_applied_at")},
+        "queue": {"availability": "available" if observation is not None else "unavailable",
+                  "target_compatible": None if observation is None else observation.get("target_compatible"),
+                  "entry": queued},
+        "issuance": {"observed": issued is not None, "attempt": issued,
+                     "current_remediation_issued": current_issued,
+                     "ordinal": progress.get("first_issued_ordinal"),
+                     "issued_since_determination": None if observation is None else observation.get("issued_since_determination")},
+        "settlement": {"observed": settled is not None, "receipt": settled}}
 
 
 def provider_name(value: str) -> str:
@@ -83,6 +142,13 @@ class CollectionObservations:
         return self._section(lambda: self._rows("""SELECT current_user AS reader_role,
             current_setting('transaction_read_only') AS transaction_read_only,
             (SELECT MAX(version) FROM tempo_schema_migrations) AS schema_version""")[0])
+
+    def managed_mode(self, workspace: str) -> dict:
+        def read():
+            from .managed_mode import read_feedback_mode
+            intent = read_feedback_mode(self.connections, workspace)
+            return {"intent": intent.model_dump(mode="json") if intent else None}
+        return self._section(read)
 
     def providers(self, workspace: str, limit: int, provider: str | None) -> dict:
         def read():
@@ -228,10 +294,45 @@ class CollectionObservations:
                     AS pending_undelivered_effects,
                 COUNT(DISTINCT d.effect_key) FILTER(WHERE d.state='pending' AND d.command_kind='control')
                     AS pending_controls,
-                COUNT(*) FILTER(WHERE d.state='acknowledged') AS acknowledged_delivery_records
+                COUNT(*) FILTER(WHERE d.state='acknowledged') AS acknowledged_delivery_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND COALESCE(d.payload->>'qualification_status','pending')='pending') AS qualification_pending_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='held') AS qualification_held_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control'
+                    AND d.payload->>'qualification_status'='ineligible') AS qualification_ineligible_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready') AS qualification_ready_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='acknowledged'
+                    AND d.payload->'receipt'->>'admission_status'='pending') AS accepted_pending_at_acknowledgment,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready'
+                    AND d.payload->>'stream'='forward') AS live_ready_records,
+                COUNT(*) FILTER(WHERE d.command_kind<>'control' AND d.state='pending'
+                    AND d.payload->>'qualification_status'='ready'
+                    AND COALESCE(d.payload->>'stream','')<>'forward') AS historical_ready_records,
+                MIN((d.payload->>'determined_at')::timestamptz) FILTER(WHERE d.state='pending'
+                    AND d.payload->>'qualification_status'='ready')::text AS oldest_ready_determined_at
                 FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
                 WHERE s.payload->'normalized'->>'workspace_id'=%s""", (workspace,))[0]
-            return {**row, "observed_execution_mode": "unknown", "globally_disabled": None,
+            kinds = self._rows("""SELECT d.command_kind,d.state,
+                COALESCE(d.payload->>'qualification_status','pending') qualification_status,COUNT(*) records
+                FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
+                WHERE s.payload->'normalized'->>'workspace_id'=%s
+                GROUP BY d.command_kind,d.state,COALESCE(d.payload->>'qualification_status','pending')
+                ORDER BY d.command_kind,d.state,qualification_status LIMIT 65""", (workspace,))
+            reasons = self._rows("""SELECT d.payload->>'qualification_reason' diagnostic,COUNT(*) records
+                FROM product_feedback_deliveries d JOIN product_feedback_sources s USING(source_key)
+                WHERE s.payload->'normalized'->>'workspace_id'=%s
+                  AND d.payload->>'qualification_status' IN ('held','ineligible')
+                  AND d.payload->>'qualification_reason' IS NOT NULL
+                GROUP BY d.payload->>'qualification_reason' ORDER BY diagnostic LIMIT 21""", (workspace,))
+            return {**row, "qualification_grain": "retained_delivery_records",
+                    "command_kinds_and_states": kinds[:64], "command_kinds_truncated": len(kinds)>64,
+                    "qualification_reasons": reasons[:20], "qualification_reasons_truncated": len(reasons)>20,
+                    "study_progress_currently_observed": False,
+                    "acceptance_count_basis": "committed_owner_receipt_at_acknowledgment",
+                    "observed_execution_mode": "unknown", "globally_disabled": None,
                     "diagnostic": "process_and_delivery_disablement_require_runtime_evidence"}
         return self._section(read)
 
@@ -245,8 +346,12 @@ class CollectionObservations:
                 payload->>'diagnostic' diagnostic,payload->'quarantined' quarantined,
                 payload->'original'->'source_revision' source_revision,
                 payload->'normalized'->'source_revision' canonical_source_revision,
+                payload->'original'->>'played_at' played_at,
+                payload->'original'->>'time_precision' time_precision,
                 payload->'normalized'->>'game_id' canonical_game_id,
-                payload->'normalized'->>'learner_color' learner_color
+                payload->'normalized'->>'learner_color' learner_color,
+                payload->'first_departure' first_departure,
+                payload->>'determined_at' determined_at
                 FROM product_feedback_sources WHERE payload->'normalized'->>'workspace_id'=%s
                 AND payload->'normalized'->>'source_id'=ANY(%s)
                 AND payload->'original'->>'source_game_id'=%s ORDER BY source_key LIMIT 3""",
@@ -259,6 +364,11 @@ class CollectionObservations:
                         "learner_color": canonical[0]["color"] if canonical else None,
                         "comparison": "unresolved", "diagnostic": "retained_collection_comparison_absent"}
             source = sources[0]
+            selection = source.get("first_departure")
+            if selection is not None:
+                from app.contracts.product_v02.games import FirstDepartureSelection
+                selection = FirstDepartureSelection.model_validate_json(json.dumps(selection))
+                source["first_departure"] = selection.model_dump(mode="json")
             findings = self._rows("""SELECT finding FROM product_feedback_sources s,
                 LATERAL jsonb_array_elements(s.payload->'findings') finding
                 WHERE source_key=%s ORDER BY (finding->>'ply')::int,finding->>'repertoire_id',
@@ -277,26 +387,42 @@ class CollectionObservations:
                 delivery = Delivery.model_validate_json(json.dumps(row["payload"]))
                 receipt = None
                 diagnostic = "receipt_not_observed"
+                observation = None
                 if self.receipts:
                     try:
                         owner = self.receipts()
-                        receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"]
+                        receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"] or delivery.qualification is not None
                                    else owner.effect_status(delivery.command.key))
                         diagnostic = None if receipt else "not_delivered"
+                        observe = getattr(owner, "feedback_observation", None)
+                        if receipt is not None and callable(observe):
+                            try:
+                                observation = observe(delivery.command.key)
+                            except Exception:
+                                observation = None  # Missing queue facts cannot erase an actual receipt.
                     except Exception:
                         diagnostic = "owner_receipt_read_unavailable"
                 receipts.append({"operation_id": delivery.operation_id, "delivery_state": delivery.state,
+                    "command_kind": delivery.command_kind,
+                    "delivery_qualification": {"status": delivery.qualification_status,
+                        "diagnostic": delivery.qualification_reason,
+                        "retryable": delivery.qualification_retryable,
+                        "determined_at": delivery.determined_at, "stream": delivery.stream},
+                    "occurred_at": delivery.command.model_dump(mode="json").get("occurred_at"),
                     "receipt": receipt.model_dump(mode="json") if receipt else None,
+                    "progress": study_receipt_progress(receipt, observation),
                     "diagnostic": diagnostic})
             retained = [row["finding"] for row in findings[:1000]]
             return {"provider": provider, "provider_game_id": game_id, **source,
+                    "selection_diagnostic": None if selection is not None else "selected_first_boundary_not_recorded",
                     "repertoires": retained_summaries(retained, source["learner_color"]),
                     "findings": retained,
                     "findings_truncated": len(findings) > 1000, "receipts": receipts,
                     "deliveries_truncated": len(deliveries) > 100,
                     "comparison": "unresolved" if source["diagnostic"] or source["quarantined"]
-                        or not findings or len(findings) > 1000
-                        or any(f["membership"] in {"unknown", "conflict"} for f in retained)
+                        or (selection.status == "unresolved" if selection is not None else
+                            not findings or len(findings) > 1000
+                            or any(f["membership"] in {"unknown", "conflict"} for f in retained))
                         else "retained_evidence"}
         return self._section(read)
 
