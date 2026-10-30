@@ -14,12 +14,12 @@ describe("UI focus regressions", () => {
     expect(WORKSPACES.map((workspace) => workspace.label)).toEqual([
       "Train",
       "Tactics",
-      "Endgames",
       "Repertoire",
+      "Games",
       "Studies",
       "Settings",
     ]);
-    expect(screen.queryByRole("button", { name: "Games" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Endgames" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Builder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Insights" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Progress" })).toBeNull();

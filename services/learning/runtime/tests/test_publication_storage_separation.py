@@ -174,7 +174,7 @@ def test_retirement_preserves_lock_and_effect_order(monkeypatch):
     monkeypatch.setattr(publications,'lock_opening_repertoires',lambda *_: events.append('repertoires'))
     monkeypatch.setattr(publications.storage,'ordered_publication_cards',lambda *_: [('a',),('z',)])
     monkeypatch.setattr(publications.storage,'lock_card',lambda _db,card: events.append(('card',card)))
-    names=['deactivate_cards','archive_study_exercises','disable_endgame_templates','supersede_publication_queue','retire_accepted','increment_activation_revision']
+    names=['deactivate_cards','archive_study_exercises','supersede_publication_queue','retire_accepted','increment_activation_revision']
     for name in names:monkeypatch.setattr(publications.storage,name,lambda *_args,_name=name: events.append(_name))
     result=publications.retire(None,activation_payload())
     assert events==['publication','repertoires',('card','a'),('card','z'),*names]

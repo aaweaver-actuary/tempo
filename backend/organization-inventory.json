@@ -6,8 +6,8 @@
   "reviewed_original_modules": 202,
   "review_coverage_is_implementation_completion": false,
   "original_status_counts": {
-    "reviewed-awaiting-owner-closure": 160,
-    "retired-source": 9,
+    "reviewed-awaiting-owner-closure": 159,
+    "retired-source": 10,
     "split-transport-contracts": 1,
     "moved-cohesive-module": 29,
     "partial-contract-extraction": 3
@@ -45,7 +45,6 @@
     "backend/app/contracts/transport/content.py",
     "backend/app/contracts/transport/defense.py",
     "backend/app/contracts/transport/discovery.py",
-    "backend/app/contracts/transport/endgames.py",
     "backend/app/contracts/transport/engine.py",
     "backend/app/contracts/transport/game_analysis.py",
     "backend/app/contracts/transport/game_findings.py",
@@ -74,7 +73,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 224,
+  "current_python_module_count": 222,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -389,44 +388,16 @@
     },
     {
       "original_path": "backend/app/endgame_commands.py",
-      "current_paths": [
-        "backend/app/endgame_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Endgames / foreground command composition",
       "responsibility": [
         {
-          "symbols": [
-            "create_endgame_template"
-          ],
-          "lines": [
-            16,
-            17
-          ],
-          "responsibility": "Preserve removed on-demand calculation HTTP410"
-        },
-        {
-          "symbols": [
-            "create_endgame_attempt"
-          ],
-          "lines": [
-            23,
-            34
-          ],
-          "responsibility": "Lock enabled saved template, create attempt identity/time and existing response"
-        },
-        {
-          "symbols": [
-            "register_command"
-          ],
-          "lines": [
-            20,
-            37
-          ],
-          "responsibility": "Import-time template/attempt registrations"
+          "symbols": [],
+          "responsibility": "Endgames command composition removed by owner-authorized full feature retirement; no active handler remains."
         }
       ],
-      "next_step": "First small cohesive move: keep 37 lines intact as Endgames command composition; update tasks.py:45 and direct test import/source guard paths. Retain removed-template endpoint and returned moves exactly; do not revive endgame calculation."
+      "next_step": "None: retirement migrations and missing-route regressions own compatibility."
     },
     {
       "original_path": "backend/app/finding_card_commands.py",

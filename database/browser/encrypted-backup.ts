@@ -2,6 +2,7 @@ import { deleteRecords, getRecords, putRecords, TEMPO_STORES, type StoredRecord 
 import { encryptedEnvelopeSchema, decryptedBackupSchema, storedRecordSchema } from "../../app/domain/schemas";
 import { parseData, validRecords } from "../../app/lib/validated-data";
 import { z } from "zod";
+import { retireBackupPractice } from "../../app/domain/retired-practice";
 
 const queueOrderSchema = z.looseObject({ queue_date: z.string().optional(), position: z.number().int().nonnegative().optional() });
 const tombstoneValueSchema = z.strictObject({ store: z.enum(TEMPO_STORES).optional(), recordKey: z.string().min(1).optional() });
@@ -32,7 +33,7 @@ async function backupKey(passphrase: string, salt: Uint8Array, iterations: numbe
 
 export async function createEncryptedBackup(passphrase: string): Promise<Blob> {
   if (!passphrase) throw new Error("A passphrase is required");
-  const stores = Object.fromEntries(await Promise.all(TEMPO_STORES.map(async (store) => [store, await getRecords(store)])));
+  const stores = retireBackupPractice(Object.fromEntries(await Promise.all(TEMPO_STORES.map(async (store) => [store, await getRecords(store)]))));
   const plaintext = new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), stores }));
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -63,16 +64,22 @@ function newest(left: StoredRecord | undefined, right: StoredRecord): StoredReco
 export async function restoreEncryptedBackup(file: Blob, passphrase: string) {
   const snapshot = await decryptBackup(file, passphrase);
   if (snapshot.schemaVersion !== 1) throw new Error("Unsupported backup schema");
+  const incomingStores = retireBackupPractice(Object.fromEntries(TEMPO_STORES.map(store =>
+    [store, validRecords(storedRecordSchema, snapshot.stores[store] ?? [], `backup ${store}`)])));
+  const originalStores: Record<string, StoredRecord[]> = Object.fromEntries(await Promise.all(TEMPO_STORES.map(async store => [store, await getRecords(store)])));
+  const retainedStores = retireBackupPractice(originalStores);
   let merged = 0;
   for (const store of TEMPO_STORES) {
-    const incoming = validRecords(storedRecordSchema, snapshot.stores[store] ?? [], `backup ${store}`);
-    const current = await getRecords(store);
+    const incoming = incomingStores[store];
+    const current = retainedStores[store];
     const records = new Map(current.map((record) => [record.key, record]));
     for (const record of incoming) {
       if (!record || typeof record.key !== "string") throw new Error(`Invalid ${store} record`);
       records.set(record.key, store === "settings" ? newest(records.get(record.key), record) : record);
       merged += 1;
     }
+    const retainedKeys = new Set(current.map(row => row.key));
+    await deleteRecords(store, originalStores[store].filter(row => !retainedKeys.has(row.key)).map(row => row.key));
     if (store === "queues") {
       const ordered = [...records.values()].map((record) => ({ record, order: parseData(queueOrderSchema, record.value, `backup queue order ${record.key}`) })).sort((left, right) => {
         const a = left.order;

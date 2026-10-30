@@ -258,7 +258,6 @@ export async function preloadView(view: View) {
   if (!usesLocalApi()) return;
   const paths: Partial<Record<View, string[]>> = {
     repertoire: ["repertoires"],
-    endgames: ["endgames/templates"],
     settings: ["settings"],
     studies: ["studies"],
   };

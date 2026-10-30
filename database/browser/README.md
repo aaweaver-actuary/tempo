@@ -87,7 +87,7 @@ erDiagram
 | --- | --- |
 | `sessionStorage`, `tempo-learning-connection-v1` | JSON connection with `origin: string`, `workspace: string`, `credential: string`, optional `bootstrap: StudyBootstrap` (schema version, workspace, timezone, local date, settings). Tab-scoped restore state; the credential is not included in retained-data inspection/export. The application retains the existing runtime validation. |
 | `localStorage`, `tempo-learning-authorities-v1` | JSON object keyed by encoded authority identity; each binding stores `origin: string`, `workspace: string`, `offlineDatabase: string`. The identity and database-name relationship is validated by the application; there is **no foreign-key constraint**. No credential is stored in this registry. |
-| Existing legacy pending-operation keys in `localStorage` | The existing inspection reads nonempty values with `tempo-pending-training`, `tempo-pending-teaching`, `tempo-pending-endgame` or `tempo-pending-burial` prefixes; exact `tempo-pending-tactic-capture-v1` and `tempo-pending-card-delete-v1` keys; and `tempo-bury-operation`, `tempo-bury-identity`, `tempo-seen-moves` or `tempo-first-clean-passes` prefixes. It does not inspect the retired finding, exclusion, defensive-scan or guided-review keys. Values remain the original serialized strings; the exact regular expression stays in the linked helper. Inspection does not rewrite, delete, import or upgrade them. |
+| Existing legacy pending-operation keys in `localStorage` | The existing inspection reads nonempty values with `tempo-pending-training`, `tempo-pending-teaching`, `tempo-pending-burial` prefixes; exact `tempo-pending-tactic-capture-v1` and `tempo-pending-card-delete-v1` keys; and `tempo-bury-operation`, `tempo-bury-identity`, `tempo-seen-moves` or `tempo-first-clean-passes` prefixes. It does not inspect the retired finding, exclusion, defensive-scan or guided-review keys. Values remain the original serialized strings; the exact regular expression stays in the linked helper. Inspection does not rewrite, delete, import or upgrade them. |
 
 The read-only inspector enumerates known/discovered `tempo-offline-training:*` databases plus `tempo-study-intents` and `tempo-offline-training`, retaining the existing version/key/index checks. Application decisions about retained/foreign authority data stay outside this directory. This relocation changes no stored names, payload formats, schema versions, credential handling or live browser data.
 
@@ -103,7 +103,7 @@ identities; WebStorage provides no foreign keys or multi-record transactions.
 | Logical owner | Single persistence source / dictionary | Existing application responsibility |
 | --- | --- | --- |
 | Repertoire authoring and Discovery | [Sixteen journals](adapters/authoring/README.md) | Source/card/branch/coverage/Discovery mutation preparation and reconciliation. |
-| Games, Tactics and Endgames | [Four retained command journals](adapters/games-analysis/README.md) | Game synchronization, Endgames attempt/template and Tactics capture commands retain their separate implementations. Retired optional Games action records remain stored; the existing inspector does not cover those keys. |
+| Games and Tactics | [Retained command journals](adapters/games-analysis/README.md) | Game synchronization and Tactics capture commands retain their separate implementations. Retired optional Games action records remain stored; the existing inspector does not cover those keys. |
 | Practice, teaching settings and authored annotations | [Eight specific stores](adapters/practice/README.md) | Review archive, burial state, tactic progress, pending settings/activity/activation/annotation requests. Active-pack preferences remain outside. |
 | Authored Studies | [Pending command key ledger](adapters/authored-studies/README.md) | Session-lifetime UUID retry key; request fingerprint, UUID creation and HTTP retry/poll decisions stay in the view. It is not an offline payload outbox. |
 | Independent Workbench package | [Authority-scoped pending mutation](adapters/workbench/README.md) | Immutable command/run identity, digest, conflict/replay and transport policy. The standard package artifact contains its one compiled root adapter; no checkout dependency. |
@@ -127,3 +127,7 @@ scripts or the independent [Maia worker package](../../workers/maia/README.md).
 Study worker validation remains in its existing regression suite.
 
 Return to the [database index](../README.md).
+
+## Retired practice compatibility
+
+The [pure policy](../../app/domain/retired-practice.ts) recognizes the retired practice family, never puzzle themes. Prepared queues and command recovery use their existing workspace/authority storage. Legacy feature keys are explicitly retired; unrelated pending saves remain. The `tempo` database is a backup/import mirror, not the ordinary Study serving store. Its retired rows are removed inside checksum-validated import or decrypted backup restore, with schema and ownership checks; opening a database never deletes records. New backups filter the retired family.

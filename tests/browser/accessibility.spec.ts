@@ -9,7 +9,6 @@ for (const width of [390, 1280])
     for (const workspace of [
       "Train",
       "Tactics",
-      "Endgames",
       "Repertoire",
       "Settings",
     ]) {

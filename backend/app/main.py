@@ -68,7 +68,6 @@ from app.contracts.transport.game_sync import AccountSettings, GameSyncEnqueueRe
 from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, AnalysisPastePreviewRequest, BranchRequest, RemoveBranchRequest
 from app.contracts.transport.content import CardRevisionRequest, PrefixSplitRequest, PrefixSplitResponse
 from app.contracts.transport.authored_integrity import CoverageMaiaSubmission, IntegrityResolutionRequest
-from app.contracts.transport.endgames import EndgameProbeRequest, EndgameTemplateRequest
 from app.contracts.transport.game_analysis import GameAnalysisRequest, GameAnalysisFailureRequest, GameAnalysisLeaseRequest, GameAnalysisPositionClaimRequest
 from app.contracts.transport.game_findings import GameFindingDecisionRequest, GameFindingCurationRequest, GameExclusionRequest, GameFindingCardRequest
 from app.contracts.transport.games import GamePublicRecord, GameSummaryRecord, GamesSummaryResponse
@@ -425,7 +424,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
         and (
             request.url.path in {
                 "/api/repertoire/paste/preview",
-                "/api/endgames/probe",
                 "/api/cards/validate",
                 "/api/product/game-history/preview",
             }
@@ -619,13 +617,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
         product_history_command = (request.method == "POST" and len(path_parts) == 4
             and path_parts[:3] == ["api", "product", "game-history"]
             and path_parts[3] in {"preview", "start", "run-ready", "resume"})
-        endgame_probe = (path_parts == ["api", "endgames", "probe"]
-                         and request.method == "POST")
-        endgame_template_command = (path_parts == ["api", "endgames", "templates"]
-                                    and request.method == "POST")
-        endgame_attempt_command = (len(path_parts) == 5
-                                   and path_parts[:3] == ["api", "endgames", "templates"]
-                                   and path_parts[4] == "attempt" and request.method == "POST")
         branch_add_command = (path_parts == ["api", "repertoire", "branches"]
                               and request.method == "POST")
         branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
@@ -690,8 +681,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     settings_command,
                     operation_retry_command,
                     legacy_evidence_command, product_feedback_command, product_history_command, product_review_command,
-                    endgame_probe, endgame_template_command,
-                    endgame_attempt_command, branch_add_command, branch_remove_command,
+                    branch_add_command, branch_remove_command,
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
@@ -1037,7 +1027,6 @@ def put_settings(s: Settings,
             s.engine_line_window_cp,
             s.major_mistake_cp,
             s.light_first_interval_days,
-            s.draw_hold_user_moves,
             s.coverage_reply_denominator,
             s.coverage_cumulative_target,
             s.coverage_horizon_fullmoves,
@@ -2962,51 +2951,12 @@ def tactic_progress():
     return data
 
 
-@app.post("/api/endgames/probe")
-async def probe_endgame(request: EndgameProbeRequest):
-    raise HTTPException(410, "On-demand endgame calculation has been removed")
 
 
-@app.get("/api/endgames/templates")
-def list_endgames():
-    with connection() as db:
-        rows = practice_storage.endgame_templates(db)
-    return {"templates": [dict(row) for row in rows]}
 
 
-@app.post("/api/endgames/templates")
-def create_endgame(request: EndgameTemplateRequest,
-                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    raise HTTPException(410, "On-demand endgame calculation has been removed")
 
 
-@app.post("/api/endgames/templates/{identifier}/attempt")
-async def create_endgame_attempt(
-    identifier: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if idempotency_key and postgres_store.configured():
-        from .command_gateway import CommandConflict
-        try:
-            receipt = read_operation(idempotency_key, command_name="endgames.attempt.create")
-        except CommandConflict as error:
-            raise HTTPException(409, str(error)) from error
-        if receipt["state"] != "unknown":
-            with read_connection() as db:
-                saved = practice_storage.saved_endgame_payload(db, idempotency_key)
-            if not saved or json.loads(saved["payload_json"]).get("template_id") != identifier:
-                raise HTTPException(409, "Operation ID was already used for another template")
-        if receipt["state"] == "complete":
-            return receipt["response"]
-        if receipt["state"] == "failed":
-            failure = receipt["error"]
-            raise HTTPException(failure.get("status_code", 500), failure.get("message", "Save failed"))
-        if receipt["state"] != "unknown":
-            # Existing command recovery remains with its canonical operation
-            # endpoint/worker. Never regenerate its immutable input here.
-            return JSONResponse(status_code=202, content=receipt,
-                                headers={"Location": "/api/operations/" + idempotency_key})
-    raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
 
 
 @app.put("/api/games/accounts")

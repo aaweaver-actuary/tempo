@@ -82,7 +82,6 @@ def case():
         make_conninfo(admin, dbname=name, user=reader, password=password),
         "test-credential-" + "x" * 32,
         maintenance=False,
-        tablebase_url=None,
         operator_token="operator-" + "y" * 40,
         evidence_token="evidence-" + "z" * 40,
     )

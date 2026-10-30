@@ -7,8 +7,6 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
 import RetryButton from "../components/buttons/RetryButton";
-import EndgamesView from "./endgames_view";
-import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
@@ -169,7 +167,6 @@ function StandardTrainingView({
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError, reviewPersistenceIdentity]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
-  const isEndgame = card.kind === "endgame" && !hasSavedEndgameLine(card);
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
@@ -209,7 +206,7 @@ function StandardTrainingView({
       onOpeningAssistance?.(step, feedback === "wrong" ? "revealed" : attemptFailed ? "guided" : showHint ? "hint" : "teaching");
     }
   }
-  useBoardPublisher("train", useSharedBoard && !isEndgame ? {
+  useBoardPublisher("train", useSharedBoard ? {
     keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
     unavailable:
@@ -378,20 +375,7 @@ function StandardTrainingView({
           </Button>
         </div>
       )}
-      {cardsLeft > 0 && isEndgame && (
-        <EndgamesView
-          key={card.queueEntryId}
-          scheduledCard={card}
-          onReview={(outcome) => void rateCard(outcome)}
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          onQueueChanged={() => void refreshDatabaseQueue()}
-          onBury={onBury}
-          blocked={trainingMutationBlocked}
-          useSharedBoard={useSharedBoard}
-        />
-      )}
-      {cardsLeft > 0 && !isEndgame && (
+      {cardsLeft > 0 && (
         <section
           className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}${phoneOpening ? " phone-opening-study" : ""}`}
           id="train"

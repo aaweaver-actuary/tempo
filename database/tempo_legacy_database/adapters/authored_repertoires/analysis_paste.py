@@ -5,7 +5,7 @@ import sqlite3
 def repertoires(database):
     return [dict(row) for row in database.execute(
         """SELECT id,name FROM repertoires
-           WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"""
+           WHERE id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"""
     )]
 
 

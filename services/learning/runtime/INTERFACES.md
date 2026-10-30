@@ -91,13 +91,11 @@ Idempotency-Key values and durable payload normalization remain legacy protocol.
 
 Supported families: card/opening review and reconciliation, required opening
 checkpoints, five typed Study specifications (including self-assessment), tactical
-discovery attempts, saved endgame attempt recovery and defense recognition/move attempts.
-Endgame probe/new-position calculation returns 410. An existing operation key
-can recover only its recorded immutable payload; no provider or replacement
-position is calculated. Saved templates/cards/attempts/history remain stored.
-GET queue issuance authenticates and commits issuance before returning an attempt.
-Projection generation is never an attempt token. Pending operation responses keep
-202, operation_id, state and Location; errors retain detail and review conflict codes.
+discovery attempts, defense recognition/move attempts.
+Endgames routes and execution remain retired; new publications cannot recreate the family.
+The legacy `endgame` publication property is accepted only as null, preserving
+ordinary historical payload identity and immutable digests. Omitted metadata
+serializes as null; non-null metadata and `content_type="endgame"` remain rejected.
 
 `POST /internal/evidence` accepts the existing discriminated Game Evidence v1/v2 contracts. The default adapter uses `tempo-learning-remediation` on the same borrowed transaction; its per-query tuple cursors do not change the shared row factory. A workspace-bound evidence credential authorizes the producer's observed facts. Learning derives publication, decision position, complete accepted alternatives and immutable card revision from its own active definitions. There is no source database import or network lookup inside this boundary.
 
@@ -141,9 +139,7 @@ HTTP 409; database contention remains retryable. Publications are complete
 generations, not append-style chunks: multiple active publications cannot be used
 to cumulatively import an opening repertoire larger than 128 definitions.
 
-Tablebase cache identity is `tb-fen-v2:<complete normalized FEN>`. It includes the
-halfmove clock and never reads old four-field keys. Offline cached answers and
-explicit HTTP 503 for an unavailable uncached provider retain their existing API.
+
 
 `fixtures/legacy-protocol.json` publishes authentication, queue, review, transport,
 conflict and unavailable envelopes. The existing strict client schemas and review

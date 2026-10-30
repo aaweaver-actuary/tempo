@@ -16,7 +16,6 @@ defines no classes and is not a new shared domain implementation.
 | Content card definition/prefix split contracts | [`content.py`](content.py) | `CardRevisionRequest`, `PrefixSplitRequest`, `PrefixSplitCard`, `PrefixSplitResponse` |
 | Authored repertoire settings/annotation contracts | [`authored_repertoire.py`](authored_repertoire.py) | `RepertoireSettingsRequest`, `RepertoireSettingsResponse`, `RepertoireRenameRequest`, `AnnotationArrow`, `AnnotationSquare`, `PositionAnnotationRequest` |
 | Tactics contracts | [`tactics.py`](tactics.py) | `TacticCaptureRequest`, `TacticCaptureResponse`, `TacticAttemptRequest`, `TacticActivationRequest` |
-| Endgames contracts | [`endgames.py`](endgames.py) | `EndgameTemplateRequest`, `EndgameProbeRequest` |
 | Games engine evidence contracts | [`game_analysis.py`](game_analysis.py) | `GameAnalysisCandidate`, `GameAnalysisEvaluation`, `GameAnalysisRequest`, `GameAnalysisFailureRequest`, `GameAnalysisPositionClaimRequest`, `GameAnalysisLeaseRequest` |
 | Shared engine attempt diagnostic contract | [`engine.py`](engine.py) | `EngineAttemptDiagnostics` |
 | Defense analysis/practice contracts | [`defense.py`](defense.py) | `ThreatAnalysisSubmission`, `ThreatAnalysisFailureRequest`, `DefenseAttemptRequest`, `DefenseRecognitionRequest` |

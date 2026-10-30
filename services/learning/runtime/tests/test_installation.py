@@ -56,7 +56,7 @@ import tempo_learning_runtime as learning
 for module in pkgutil.walk_packages(learning.__path__, learning.__name__+'.'):
     __import__(module.name)
 from fastapi.testclient import TestClient
-configuration=learning.Configuration('w','postgresql://unused/learning','postgresql://reader/learning','x'*40,maintenance=False,tablebase_url=None)
+configuration=learning.Configuration('w','postgresql://unused/learning','postgresql://reader/learning','x'*40,maintenance=False)
 with TestClient(learning.create_app(configuration)) as client:
     assert client.get('/health/live').status_code==200
     assert client.get('/api/queue/window').status_code==401

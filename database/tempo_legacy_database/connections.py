@@ -527,38 +527,6 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_tactic_progress_deck_clean ON tactic_progress(deck_id, clean_pass_at)",
         """
-        CREATE TABLE IF NOT EXISTS endgame_templates (
-            id TEXT PRIMARY KEY,
-            card_id TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL,
-            white_material TEXT NOT NULL,
-            black_material TEXT NOT NULL,
-            trained_color TEXT NOT NULL,
-            goal_mix TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS endgame_attempts (
-            id TEXT PRIMARY KEY,
-            template_id TEXT NOT NULL REFERENCES endgame_templates(id) ON DELETE CASCADE,
-            start_fen TEXT NOT NULL,
-            target TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'active',
-            user_moves INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            completed_at TEXT
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS tablebase_cache (
-            fen_key TEXT PRIMARY KEY,
-            response_json TEXT NOT NULL,
-            fetched_at TEXT NOT NULL
-        )
-        """,
-        """
         CREATE TABLE IF NOT EXISTS game_sync_state (
             provider TEXT PRIMARY KEY,
             status TEXT NOT NULL DEFAULT 'idle',
@@ -1349,7 +1317,6 @@ def initialize() -> None:
                 "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30",
                 "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100",
                 "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7",
-                "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20",
                 "coverage_reply_denominator": "INTEGER NOT NULL DEFAULT 100",
                 "coverage_cumulative_target": "INTEGER NOT NULL DEFAULT 95",
                 "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15",
@@ -1578,7 +1545,7 @@ def initialize() -> None:
         ).fetchone():
             for repertoire in database.execute(
                 """SELECT id FROM repertoires
-                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"""
+                   WHERE id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"""
             ).fetchall():
                 repertoire_id = repertoire["id"]
                 database.execute(
@@ -1706,7 +1673,7 @@ def initialize() -> None:
                       repertoire.id,1,40,'queued','queued',1,
                       json_object('repertoire_id',repertoire.id),0,5,?,?,?
                FROM repertoires repertoire
-               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
+               WHERE repertoire.id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
                  AND NOT EXISTS(
                      SELECT 1 FROM opening_graph_publications publication
                      WHERE publication.repertoire_id=repertoire.id
@@ -1764,3 +1731,7 @@ def initialize() -> None:
             guarded_table = frozen_guard_statement.split(' ON ', 1)[1].split(' ', 1)[0]
             if guarded_table in frozen_existing_tables:
                 frozen_schema_database.execute(frozen_guard_statement)
+
+    from tempo_legacy_database.ddl.retired_practice_schema import retire_endgames
+    with connection() as retirement_database:
+        retire_endgames(retirement_database)

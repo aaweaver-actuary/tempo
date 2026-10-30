@@ -16,7 +16,6 @@ class Configuration:
     timezone: str = "America/New_York"
     pool_size: int = 4
     maintenance: bool = True
-    tablebase_url: str | None = None  # Accepted for configuration compatibility; unused.
 
     operator_token: str | None = field(default=None, repr=False)
     evidence_token: str | None = field(default=None, repr=False)

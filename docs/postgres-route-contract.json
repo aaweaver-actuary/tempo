@@ -749,34 +749,6 @@
     "state": "staged"
   },
   {
-    "method": "POST",
-    "path": "/api/endgames/probe",
-    "handler": "probe_endgame",
-    "treatment": "read_only_post",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/endgames/templates",
-    "handler": "list_endgames",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/endgames/templates",
-    "handler": "create_endgame",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/endgames/templates/{identifier}/attempt",
-    "handler": "create_endgame_attempt",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
     "method": "PUT",
     "path": "/api/games/accounts",
     "handler": "accounts",

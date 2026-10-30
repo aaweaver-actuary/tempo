@@ -35,7 +35,6 @@ def test_minimal_installed_container_load_issue_review_without_backend_or_broker
         TEMPO_LEARNING_ORIGINS="http://localhost:5173",
         TEMPO_LEARNING_HOSTS="127.0.0.1",
         TEMPO_LEARNING_MAINTENANCE="0",
-        TEMPO_LEARNING_TABLEBASE_URL="",
     )
     command = [
         "docker",
@@ -73,7 +72,6 @@ def test_minimal_installed_container_load_issue_review_without_backend_or_broker
         "ORIGINS",
         "HOSTS",
         "MAINTENANCE",
-        "TABLEBASE_URL",
     ):
         command += ["--env", "TEMPO_LEARNING_" + key]
     try:

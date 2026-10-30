@@ -1,3 +1,4 @@
+import { withoutRetiredPractice } from "../retired-practice";
 import {
   queueEnvelopeSchema,
   queueCardSchema,
@@ -73,8 +74,6 @@ export function mapQueueCardToPracticeCard(
         ? "defense"
         : card.content_type === "tactic"
         ? "puzzle"
-        : card.content_type === "endgame"
-          ? "endgame"
           : card.content_type === "middlegame"
           ? "middlegame"
           : "opening",
@@ -85,8 +84,6 @@ export function mapQueueCardToPracticeCard(
         ? "Defensive decision"
         : card.content_type === "tactic"
         ? "Tactics review"
-        : card.content_type === "endgame"
-          ? "Endgame study"
           : card.repertoire_name,
     subtitle:
       card.content_type === "study_exercise"
@@ -176,7 +173,7 @@ export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
       diagnostic.message,
       diagnostic.card_id,
     );
-  return validRecords(queueCardSchema, body.cards.map(queueRecordWithCompatibleOpeningEvidence), "queue card").flatMap(
+  return validRecords(queueCardSchema, withoutRetiredPractice(body.cards).map(queueRecordWithCompatibleOpeningEvidence), "queue card").flatMap(
     (record) => {
       try {
         return [mapQueueCardToPracticeCard(record)];

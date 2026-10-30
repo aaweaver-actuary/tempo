@@ -33,7 +33,7 @@ def representative_values(database: psycopg.Connection) -> dict[str, str]:
 
     repertoire_id = first(
         "SELECT id FROM repertoires WHERE id NOT IN "
-        "('__tactics__','__endgames__','__game_mistakes__','__defense__') "
+        "('__tactics__','__game_mistakes__','__defense__') "
         "ORDER BY is_main DESC,id LIMIT 1"
     )
     card_id = first("SELECT id FROM cards WHERE archived=0 ORDER BY id LIMIT 1")

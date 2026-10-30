@@ -1076,7 +1076,7 @@ Quiet notifications (October 2, 2026):
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |
 | Board clipped at narrow viewport | `local import respects the daily limit and keeps the Black Study queue playable`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
-| Removed endgame calculation silently calls an external provider | `removed tablebase calculation rejects locally without external-provider fallback` |
+| Retired Endgames reappears in navigation or removes chess-themed Tactics | `Endgames has no navigation or menu entry while Train and Tactics remain`; `ending-themed packs remain legal playable Tactics` |
 | Engine not usable in production | `production Stockfish returns playable engine moves without clipping the board` |
 | Maia runtime/module loading errors, including production JavaScript MIME type | `Maia initializes matching runtime assets and returns legal playable probabilities` |
 | Board controls fall below the viewport | Board-and-controls bounds assertions in every browser workspace regression |
@@ -1175,7 +1175,7 @@ Append every new reported issue and its test names here. Current entries identif
 | Nested workspaces clip desktop content | `desktop workspace panels do not clip controls or content` |
 | Board toolbar placement varies between modes | `board controls retain consistent placement across workspaces` |
 | Application navigation recreates the board | `application navigation retains one Chessground instance` |
-| Service failures masquerade as empty data | `failed initial loads never display empty records or zero statistics` |
+| Unavailable authoritative Settings enable saving fallback defaults | `failed settings reads cannot overwrite authoritative settings with defaults` |
 | Split resizing loses preference or changes other workspaces | `shared split supports keyboard reset and persistence without changing workspace preference` |
 | Responsive navigation and task tabs break across browser engines | `critical navigation, board input, split and dialogs work across browser engines` |
 | Inaccessible controls and page overflow | `workspace accessibility and reflow` (phone and desktop) |
@@ -1472,9 +1472,10 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - A queued graph rebuild publishes after its repertoire is deleted and fails on a foreign key: `backend/tests/test_postgres_cutover.py::test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal`.
 - A confirmed PostgreSQL repertoire deletion remains visible while the training queue refreshes: `tests/browser/workspace-flows.spec.ts::sample deletion uses repertoire identity and does not delete its same-filename sibling`.
 - Removed legacy template generation still dispatches new calculation: `backend/tests/test_postgres_cutover.py::test_removed_endgame_template_generation_rejects_before_dispatch`.
-- Endgame template admission looks complete while its write is pending or retries with a new operation ID: `tests/unit/endgame-template-pending-regressions.test.ts::endgame admission remains pending and reuses its operation ID`.
-- Saved legacy attempt recovery must retain its original immutable payload instead of regenerating: `backend/tests/test_postgres_cutover.py::test_saved_endgame_pending_receipt_recovers_without_preparation`. Former provider/cache/generation cases are retired because calculation is removed.
-- A pending endgame attempt creates a second position or loses its operation ID: `tests/unit/endgame-attempt-pending-regressions.test.ts::a pending endgame attempt keeps its operation ID and does not create another position`.
+- Retired Endgames journals or imported backups revive practice: `tests/unit/endgame-template-pending-regressions.test.ts` preserves unrelated pending saves, checksum validation before writes, selective mirror cleanup and transaction rollback.
+- Retired Endgames commands are redelivered: `tests/unit/endgame-attempt-pending-regressions.test.ts::retired endgame intents settle without delivery and preserve unrelated pending reviews`.
+- Retired endpoints reenter a foreground handler: `test_retired_endgame_pending_receipt_cannot_reenter_feature_handler` in `backend/tests/test_postgres_cutover.py`.
+- Retirement deletes another practice family: both `backend/tests/test_endgames_retirement.py` SQLite tests and Learning's `test_native_endgames_retirement_preserves_other_families_and_fences_recreation` exercise preservation and rollback.
 - PostgreSQL migration 002 is applied but the API rejects its own current schema at startup: `backend/tests/test_postgres_cutover.py::test_postgres_startup_accepts_latest_checked_in_schema`.
 - Opening-graph traversal holds a PostgreSQL read transaction or per-line slicing changes graph identity: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal`.
 - Opening-graph staging writes an unbounded line or loses its cursor on replay: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor`.
@@ -1645,6 +1646,8 @@ PR #50 durable preference compatibility: `test_preference_dispatch_preserves_leg
 PR #50 current-main migration reconciliation: `test_segmentation_migration_has_unique_number_and_matches_schema_readiness` rejects duplicate migration numbers, readiness drift and a segmentation filename/recorded-version mismatch. Main added migrations 21–23 while this unpublished preview migration still used 21; integration run 36897266117 failed readiness (`24 != 23`). The new regression reproduced the duplicate number locally. Segmentation now uses migration 24; existing startup-readiness and disposable upgrade/restore checks remain required.
 
 ## CI reliability maintenance
+
+- `non-persistence backend ownership accepts only services and the two moved providers` — `tests/runner/ci-reliability.test.mjs`: narrowly mapped non-persistence backend sources are restricted to legitimate service owners and the two explicitly moved providers.
 
 CI reliability maintenance: `tests/runner/ci-reliability.test.mjs` (invoked by `tests/unit/ci-reliability-regressions.test.ts`) covers `core and required integration failures block quality`, `missing cancelled and unexpectedly skipped required work cannot pass quality`, `absent required command and selected test results cannot pass quality`, `explicit inapplicability is accepted and reported but unexpected skips fail`, `quarantined harness failures remain visible with required replacement coverage`, `rename deletion unknown paths and missing history select conservative coverage`, `new unclassified specs fail planning and every test has nightly and release coverage`, `leaf source selection includes complete families and rendering selects pinned checks`, `split complete coverage preserves every PostgreSQL product scenario`, `deployment requires complete verification and scheduled or verification-only runs cannot deploy`, `failed-layer rerun leaves successful unrelated jobs intact and diagnostic retry cannot green the gate`, `actual browser collection grep selects exactly the planned tests`, and `diagnostic artifact failure still cleans owned resources and preserves both failures`. `split complete verification matches the existing full command inventory` in `tests/unit/test-plan-regressions.test.ts` protects the decomposition boundary. The unresolved initial phone/Study visibility signature remains required coverage; no active quarantine or automatic retry is installed.
 
@@ -3100,7 +3103,7 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `every current browser spec belongs to exactly one complete family`
 - `reviewed source mappings reject missing families and duplicate or ambiguous paths`
 - `demoted critical cases remain required by their complete browser families`
-- `ordinary prose and standalone core tests select only six global browser smoke cases`
+- `ordinary prose and standalone core tests select only five global browser smoke cases` — `tests/runner/ci-reliability.test.mjs`: ordinary prose and standalone core-test edits retain five global critical browser cases without selecting optional families.
 - `mapped leaf changes retain critical plus their family with regression additions`
 - `shared subsystem sources select complete consumer families without unrelated families`
 - `cross-cutting browser infrastructure and uncertain inputs require the complete matrix`
@@ -5597,3 +5600,6 @@ and failed cleanup leaving normal lease recovery rather than a retry loop.
 - `Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values` keeps the product interface and analysis threshold, preserves loaded legacy backend values on an unrelated save, and stops reading/writing retained legacy browser keys.
 - `shows pending save honestly and reads the original completed receipt before accepting it` now proves both save confirmation and recovery use Games rather than a separate Learning origin with the same original ID.
 - `Games receipts use the request origin and original identity` covers absolute/relative command endpoints and unresolved pending receipts. `relative Games receipts have a deterministic origin outside the browser` covers the server fallback. `Study receipt callers retain the selected Learning origin by default` preserves the unchanged default. All cases extend their existing regular owning unit files.
+
+
+October 29 full-retirement amendment: earlier dated Endgames saved-line, provider and material-guard entries are historical. Current owning filenames retain retirement, replay-discard, data-preservation and route-absence regressions; see [the exact source manifest](../docs/architecture/endgames-retirement.json). No deleted feature behavior remains an acceptance requirement.

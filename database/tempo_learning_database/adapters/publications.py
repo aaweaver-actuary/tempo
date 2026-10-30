@@ -210,12 +210,6 @@ def insert_opening_step(database, repertoire_id, generation, line_id, decision_i
     )
 
 
-def upsert_endgame(database, template_id, card_id, name, white_material, black_material,
-                   trained_color, goal_mix, created_at):
-    database.execute(
-        "INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,white_material=excluded.white_material,black_material=excluded.black_material,trained_color=excluded.trained_color,goal_mix=excluded.goal_mix,enabled=1",
-        (template_id, card_id, name, white_material, black_material, trained_color, goal_mix, created_at),
-    )
 
 
 def upsert_defense(database, candidate_id, card_id, revision, definition_json):
@@ -283,8 +277,6 @@ def archive_study_exercises(database, publication_id):
     database.execute("UPDATE study_exercises SET status='archived' WHERE id IN (SELECT study_exercise_id FROM cards WHERE publication_id=?)", (publication_id,))
 
 
-def disable_endgame_templates(database, publication_id):
-    database.execute("UPDATE endgame_templates SET enabled=0 WHERE card_id IN (SELECT id FROM cards WHERE publication_id=?)", (publication_id,))
 
 
 def supersede_publication_queue(database, publication_id):

@@ -7,6 +7,7 @@ type VisualQueueCard = {
   id: string; queue_entry_id: number; start_fen: string; moves: string[];
   content_type: "opening"; repertoire_name: string; repertoire_source: string;
   first_correct_at: string; trained_color: "white";
+  repertoire_id?: string;
 };
 export type VisualRepertoireLine = {
   id: string; repertoire_id: string; repertoire_name: string; name: string;
@@ -15,6 +16,7 @@ export type VisualRepertoireLine = {
 export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[], repertoireLines?: VisualRepertoireLine[], activityResponse?: ActivityResponse) {
   let activeTrainingCards = trainingCards ?? [{
     id: "visual-card",
+    repertoire_id: "visual-repertoire",
     queue_entry_id: 1,
     start_fen: startFen,
     moves,
@@ -57,7 +59,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
       engine_line_window_cp: 30,
       major_mistake_cp: 100,
       light_first_interval_days: 7,
-      draw_hold_user_moves: 20,
     };
     const fixtures: Record<string, unknown> = {
       "/api/health": {
@@ -180,8 +181,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
         timeline: [],
         adherence: 1,
       },
-      "/api/endgames/probe": { category: "win", moves: [] },
-      "/api/endgames/templates": { templates: [] },
       "/api/tactics/catalog": {
         version: 1,
         groups: [

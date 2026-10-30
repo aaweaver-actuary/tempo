@@ -237,7 +237,6 @@ Primary key: (`id`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql
 | `engine_line_window_cp` | `bigint` | no |  |
 | `major_mistake_cp` | `bigint` | no |  |
 | `light_first_interval_days` | `bigint` | no |  |
-| `draw_hold_user_moves` | `bigint` | no |  |
 | `tactics_new_per_day` | `bigint` | no |  |
 | `coverage_reply_denominator` | `bigint` | no |  |
 | `coverage_cumulative_target` | `bigint` | no |  |

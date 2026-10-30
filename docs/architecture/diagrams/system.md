@@ -41,3 +41,5 @@ source protection requires expected workspace identities configured before
 deployment, and default `[]` accepts absence. Canonical receipt authority and
 late optional cleanup remain explicit. No live incident, native database proof,
 host resource isolation or deployment is established by these source drawings.
+
+Current source retires Endgames serving and storage; see the canonical [retired-practice flow](../../../app/README.md#retired-practice). Historical host/calculation-removal receipts above do not imply saved Endgames practice remains supported. Deployment is unverified.

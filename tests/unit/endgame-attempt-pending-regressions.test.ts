@@ -1,34 +1,23 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { startEndgameAttempt } from "../../app/lib/endgame-attempt-command";
-import { PendingOperationError } from "../../app/lib/operation-status";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
+import { recoverStudyRequests } from "../../app/lib/study-command-client";
 
-const completed = {
-  id: "attempt", fen: "8/8/8/8/8/8/4k3/4K3 w - - 0 1", target: "draw", moves: [],
-};
+afterEach(() => vi.unstubAllGlobals());
 
-afterEach(() => {
-  localStorage.clear();
-  vi.unstubAllGlobals();
-});
-
-it("a pending endgame attempt keeps its operation ID and does not create another position", async () => {
-  const keys: string[] = [];
-  let receiptReads = 0;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).includes("/api/operations/")) {
-      receiptReads += 1;
-      return Response.json(receiptReads < 3 ? { state: "pending" } : {
-        state: "complete", response: completed,
-      });
-    }
-    const key = String((init?.headers as Record<string, string>)["Idempotency-Key"]);
-    keys.push(key);
-    return Response.json({ operation_id: key, state: "pending" }, { status: 202 });
-  }));
-  await expect(startEndgameAttempt("template")).rejects.toBeInstanceOf(PendingOperationError);
-  expect(localStorage.getItem("tempo-pending-endgame-attempt-v1")).not.toBeNull();
-  expect((await startEndgameAttempt("template")).id).toBe("attempt");
-  expect(keys).toHaveLength(2);
-  expect(keys[0]).toBe(keys[1]);
-  expect(localStorage.getItem("tempo-pending-endgame-attempt-v1")).toBeNull();
+it("retired endgame intents settle without delivery and preserve unrelated pending reviews", async () => {
+  const store = await studyIntentStore();
+  const envelope = { key: "retired", kind: "endgame-command", attemptId: "old-attempt", requestId: "original-operation",
+    endpoint: "/api/endgames/templates/old/attempt", revision: 1, createdAt: "2026-10-29T00:00:00Z",
+    payload: { body: {}, headers: {}, scope: "endgame:old" } };
+  await store.put(envelope);
+  await store.put({ ...envelope, key: "review", kind: "review", requestId: "review-operation",
+    endpoint: "/api/cards/kept/review", payload: { backendId: "kept", outcome: "correct" } });
+  const before = await store.get("review");
+  const fetcher = vi.fn(() => { throw new Error("Retirement must never send a request"); });
+  vi.stubGlobal("fetch", fetcher);
+  await recoverStudyRequests();
+  expect(await store.get("retired")).toMatchObject({ state: "discarded", requestId: "original-operation", receipt: { type: "retired" } });
+  expect(await store.get("review")).toEqual(before);
+  await recoverStudyRequests();
+  expect(fetcher).not.toHaveBeenCalled();
 });

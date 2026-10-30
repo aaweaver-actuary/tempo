@@ -60,7 +60,7 @@ def clear_source_references(database, identifiers, now_factory):
 
 
 def purge_training_records(database, identifiers, queue_ids):
-    for table, column, selected in (('study_attempts', 'card_id', identifiers), ('study_attempts', 'queue_entry_id', queue_ids), ('card_revisions', 'card_id', identifiers), ('queue_projection_diagnostics', 'card_id', identifiers), ('endgame_templates', 'card_id', identifiers), ('tactic_progress', 'card_id', identifiers)):
+    for table, column, selected in (('study_attempts', 'card_id', identifiers), ('study_attempts', 'queue_entry_id', queue_ids), ('card_revisions', 'card_id', identifiers), ('queue_projection_diagnostics', 'card_id', identifiers), ('tactic_progress', 'card_id', identifiers)):
         _delete_matching(database, table, column, selected)
 
 

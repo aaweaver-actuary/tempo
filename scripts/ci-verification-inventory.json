@@ -46,7 +46,6 @@
       "backend/app/contracts/transport/content.py",
       "backend/app/contracts/transport/defense.py",
       "backend/app/contracts/transport/discovery.py",
-      "backend/app/contracts/transport/endgames.py",
       "backend/app/contracts/transport/engine.py",
       "backend/app/contracts/transport/game_analysis.py",
       "backend/app/contracts/transport/game_findings.py",
@@ -82,7 +81,7 @@
       "backend/app/card_commands.py", "backend/app/coverage_commands.py",
       "backend/app/coverage_maia_commands.py", "backend/app/defense_commands.py",
       "backend/app/defensive_admin_commands.py", "backend/app/discovery_commands.py",
-      "backend/app/endgame_commands.py", "backend/app/finding_card_commands.py",
+      "backend/app/finding_card_commands.py",
       "backend/app/finding_commands.py", "backend/app/game_analysis_commands.py",
       "backend/app/game_analysis_publication.py", "backend/app/game_commands.py",
       "backend/app/game_sync_commands.py", "backend/app/integrity_repair_commands.py", "backend/app/models.py",
@@ -185,10 +184,10 @@
   "families": {
     "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
     "activity": ["activity-tray.spec.ts"],
-    "training": ["opening-progression.spec.ts", "phone-opening-study.spec.ts", "pending-discovery-saves-mobile.spec.ts", "training-prefetch.spec.ts", "training-critical-path.spec.ts", "post-review-progression.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts", "study-only-mode.spec.ts", "redis-admission-recovery.spec.ts", "training-queue-contention.spec.ts"],
-    "repertoire": ["prefix-split-training.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts", "content-deletion.spec.ts"],
+    "training": ["opening-progression.spec.ts", "phone-opening-study.spec.ts", "pending-discovery-saves-mobile.spec.ts", "training-prefetch.spec.ts", "training-critical-path.spec.ts", "post-review-progression.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts", "study-only-mode.spec.ts", "redis-admission-recovery.spec.ts", "training-queue-contention.spec.ts", "frozen-opening-order.spec.ts", "product-recombination.spec.ts"],
+    "repertoire": ["prefix-split-training.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts", "content-deletion.spec.ts", "product-repertoire-review.spec.ts"],
     "studies": ["studies.spec.ts"],
-    "games": ["paste-analysis.spec.ts", "real-game-feedback.spec.ts"],
+    "games": ["paste-analysis.spec.ts", "real-game-feedback.spec.ts", "product-game-feedback.spec.ts"],
     "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],
     "workspace": ["product-fixture-reset.spec.ts", "accessibility.spec.ts", "layout.spec.ts", "workspace-flows.spec.ts", "cross-browser.spec.ts"],
     "pinned": ["visual.spec.ts", "performance.spec.ts"]
@@ -207,7 +206,7 @@
   "critical": [
     {"file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted"},
     {"file": "phone-offline-training.spec.ts", "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt", "covers": "offline replay"},
-    {"file": "recovery.spec.ts", "title": "failed initial loads never display empty records or zero statistics", "covers": "fail-closed service behavior"},
+    {"file": "recovery.spec.ts", "title": "failed settings reads cannot overwrite authoritative settings with defaults", "covers": "fail-closed service behavior: unavailable settings cannot enable saving fallback defaults"},
     {"file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading"},
     {"file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, service, notification and parent updates and drops once", "covers": "held drag preservation"}
   ],

@@ -10,7 +10,6 @@ import type {
 export enum CardKindEnum {
   Opening = "opening",
   Middlegame = "middlegame",
-  Endgame = "endgame",
   Puzzle = "puzzle",
   Defense = "defense",
   Study = "study",

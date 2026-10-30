@@ -81,23 +81,13 @@ for (const viewport of [
   for (const workspace of [
     "Train",
     "Tactics",
-    "Endgames",
     "Repertoire",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await prepareVisualUI(page);
-      if (workspace === "Endgames")
-        await page.evaluate(() => {
-          Math.random = () => 0.5;
-        });
       await navigate(page, workspace);
-      if (workspace === "Endgames")
-        await expect(page.locator(".board-frame")).toHaveAttribute(
-          "data-fen",
-          "8/8/8/7R/K7/8/8/6k1 w - - 0 1",
-        );
       if (workspace === "Settings") {
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeVisible();
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).not.toBeChecked();
@@ -219,6 +209,20 @@ test("board-unavailable", async ({ page }) => {
 test("training-feedback-phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareVisualUI(page);
+  await page.route("**/api/repertoires/visual-repertoire/move-membership?**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    expect(request.method()).toBe("GET");
+    expect(url.searchParams.get("fen")).toBe(
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    );
+    expect(url.searchParams.get("move_uci")).toBe("d2d4");
+    expect(url.searchParams.get("cursor")).toBe("");
+    expect(url.searchParams.has("source_token")).toBe(false);
+    await route.fulfill({ status: 200, json: {
+      verified: false, source_token: "visual-repertoire-v1", next_cursor: null,
+    } });
+  });
   await expect(
     page.getByText("Spanish opening", { exact: true }).first(),
   ).toBeVisible();

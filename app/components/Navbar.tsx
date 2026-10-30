@@ -10,14 +10,13 @@ import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 export const WORKSPACES: { id: View; label: string }[] = [
   { id: "train", label: "Train" },
   { id: "tactics", label: "Tactics" },
-  { id: "endgames", label: "Endgames" },
   { id: "repertoire", label: "Repertoire" },
   { id: "games", label: "Games" },
   { id: "studies", label: "Studies" },
   { id: "settings", label: "Settings" },
 ];
 const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));
-const PHONE_PRIMARY: View[] = ["train", "tactics", "endgames"];
+const PHONE_PRIMARY: View[] = ["train", "tactics"];
 export default function Navbar({
   view,
   setView,

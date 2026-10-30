@@ -106,7 +106,7 @@ it("persistent board shell reuses one Chessground instance across board owner sw
       interactionMode: "legal",
       positionRevision: 3,
     });
-    setBoard("endgames", {
+    setBoard("tactics", {
       ...defaultBoardState,
       fen: "8/8/8/8/8/8/5K2/6k1 w - - 0 1",
       orientation: "white",

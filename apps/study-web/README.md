@@ -21,7 +21,7 @@ not weakened to exclude optional chunks after they have been emitted.
 
 [Canonical source composition](../../app/README.md#main-study-path-and-source-gap) and
 [offline boundary](../../static/README.md#conditional-study-build-and-offline-assets-main)
-records the branch implementation and evidence scope. Merged host/endgame repairs have separate
+records the branch implementation and evidence scope. Host execution boundaries and full Endgames retirement have separate
 [Learning ownership](../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main);
 deployment resource isolation remains unqualified by this frontend work.
 

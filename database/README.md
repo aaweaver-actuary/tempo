@@ -8,13 +8,13 @@ Physical colocation does not grant a component access to another owner's data an
 
 ## Find stored data
 
-| Owner | Namespace / scope | Tables in source DDL | Charts and complete field/type dictionary |
+| Owner | Namespace / scope | Recorded inventory count | Charts and complete field/type dictionary |
 | --- | --- | ---: | --- |
-| [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | 163 | [Schema index](tempo_legacy_database/schema/README.md) |
+| [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | See current index | [Schema index](tempo_legacy_database/schema/README.md) |
 | [Content](tempo_content_database/README.md) | `content` | 20 | [Schema index](tempo_content_database/schema/README.md) |
 | [Intelligence](tempo_intelligence_database/README.md) | `intelligence` | 25 | [Schema index](tempo_intelligence_database/schema/README.md) |
 | [Game Evidence](tempo_game_evidence_database/README.md) | `public in dedicated Game Evidence database` | 14 | [Schema index](tempo_game_evidence_database/schema/README.md) |
-| [Learning runtime](tempo_learning_database/README.md) | `learning` | 70 | [Schema index](tempo_learning_database/schema/README.md) |
+| [Learning runtime](tempo_learning_database/README.md) | `learning` | See current index | [Schema index](tempo_learning_database/schema/README.md) |
 | [Learning remediation](tempo_remediation_database/README.md) | `learning or public, chosen by including owner` | 12 | [Schema index](tempo_remediation_database/schema/README.md) |
 | [Browser](browser/README.md) | IndexedDB databases and local replay stores | object stores | [Browser storage chart/dictionary](browser/README.md) |
 | [Browser intent package](browser-intents/README.md) | Workspace-scoped IndexedDB intent/teaching facts | object stores | [Intent storage chart/dictionary](browser-intents/README.md) |
@@ -52,3 +52,5 @@ Schema/storage relationship changes must keep affected owner diagrams and data d
 ## Reducing the schema
 
 There is no target live table count. [SIMPLIFICATION.md](SIMPLIFICATION.md) records proposals, not assigned cleanup. [PERSISTENCE-DISPOSITION.md](PERSISTENCE-DISPOSITION.md) records a separately proposed graph-preserving fresh start; it does not waive preservation of the current installation's content, learning history, receipts, or pending work during ordinary feature delivery. Applying a fresh start requires an explicit current assignment, exact target/keep/disposal boundaries, verified recovery protection, and the required authorization for the specific irreversible action. Reuse still-valid explicit authorization; do not demand it again merely because an agent changed. These documents do not authorize execution.
+
+The October 29 full Endgames retirement removes three feature tables from each affected owner and the legacy draw-hold setting. The affected current schema indexes/ER diagrams include these changes. Other numeric counts above remain the dated inventory baseline. Migrations are source-tested only; no live migration or deployment is claimed.

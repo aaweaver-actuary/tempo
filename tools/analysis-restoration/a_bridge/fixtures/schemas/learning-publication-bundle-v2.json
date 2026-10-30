@@ -222,7 +222,6 @@
             "opening",
             "tactic",
             "middlegame",
-            "endgame",
             "defense",
             "study_exercise"
           ],
@@ -247,17 +246,9 @@
           "type": "string"
         },
         "endgame": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": null,
-          "title": "Endgame"
+          "title": "Endgame",
+          "type": "null"
         },
         "exercise_id": {
           "anyOf": [

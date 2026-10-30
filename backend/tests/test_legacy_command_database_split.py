@@ -4,11 +4,9 @@ import json
 from pathlib import Path
 import sqlite3
 
-from fastapi import HTTPException
 import pytest
 
 from app.annotation_commands import save_position_annotation
-from app.endgame_commands import create_endgame_attempt
 from app.teaching_commands import record_teaching_state
 
 
@@ -35,47 +33,20 @@ def command_database():
                 arrows_json TEXT,squares_json TEXT,updated_at TEXT,PRIMARY KEY(repertoire_id,fen_key));
             CREATE TABLE teaching_states(card_id TEXT,revision INTEGER,ply INTEGER,taught_at TEXT,
                 PRIMARY KEY(card_id,revision,ply));
-            CREATE TABLE endgame_templates(id TEXT PRIMARY KEY,enabled INTEGER);
-            CREATE TABLE endgame_attempts(id TEXT PRIMARY KEY,template_id TEXT,start_fen TEXT,
-                target TEXT,created_at TEXT);
             INSERT INTO repertoires VALUES('rep');
             INSERT INTO cards VALUES('card',0);
-            INSERT INTO endgame_templates VALUES('enabled',1),('disabled',0);
         """)
         yield CommandSqlite(connection)
 
 
 def test_remaining_command_handlers_delegate_all_sql_execution_to_database_owner():
     application = Path(__file__).resolve().parents[1] / "app"
-    for module in ("account", "activity", "annotation", "endgame", "teaching"):
+    for module in ("account", "activity", "annotation", "teaching"):
         path = application / f"{module}_commands.py"
         calls = [node for node in ast.walk(ast.parse(path.read_text()))
                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                  and node.func.attr in {"execute", "execute_native", "executemany", "cursor"}]
         assert not calls, f"{path.name} still performs SQL/cursor operations"
-
-
-def test_endgame_attempt_insert_is_owned_by_callers_transaction(command_database):
-    payload = {"template_id": "enabled", "fen": "saved-fen", "target": "win", "moves": ["a1a2"]}
-    result = create_endgame_attempt(command_database, payload)
-    row = command_database.connection.execute("SELECT * FROM endgame_attempts").fetchone()
-    assert (row["id"], row["template_id"], row["start_fen"], row["target"]) == (
-        result["id"], "enabled", "saved-fen", "win")
-    assert result["moves"] == payload["moves"]
-    assert command_database.connection.in_transaction
-    command_database.connection.rollback()
-    assert command_database.connection.execute("SELECT COUNT(*) FROM endgame_attempts").fetchone()[0] == 0
-
-
-@pytest.mark.parametrize("template_id", ["disabled", "absent"])
-def test_endgame_attempt_missing_or_disabled_template_has_no_write(command_database, template_id):
-    with pytest.raises(HTTPException) as error:
-        create_endgame_attempt(command_database, {
-            "template_id": template_id, "fen": "saved-fen", "target": "win", "moves": [],
-        })
-    assert error.value.status_code == 404
-    assert not command_database.connection.in_transaction
-    assert command_database.connection.execute("SELECT COUNT(*) FROM endgame_attempts").fetchone()[0] == 0
 
 
 def test_teaching_replay_keeps_original_timestamp_and_caller_rollback(command_database):

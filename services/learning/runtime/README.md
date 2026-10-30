@@ -208,20 +208,14 @@ A command first durably accepts its immutable intent, then executes its handler 
 
 Essential queue work and cursors live in PostgreSQL. Maintenance commits one admission/cursor slice at a time and yields between sections. Its pool maximum is 1. Foreground acquisition/lock/statement/transaction budgets are 250/250/1500/2500 ms; maintenance uses 100/25/200/250 ms. Evidence intake uses the same background pool and 25 ms lock budget with a 1,000 ms transaction bound for an atomic maximum-128-item wire delivery; ordinary maintenance keeps its 250 ms bound. Intake transaction expiry returns 503/Retry-After with all acceptance effects rolled back. Transient failures retain the original intent for retry; a contended command backs off so queue maintenance can progress.
 
-On-demand endgame calculation is removed. The former provider URL environment
-setting is ignored; the optional constructor field `tablebase_url` remains an
-unused compatibility input. No provider/cache/calculation path is started or
-used. The configured connection maximum is `2 * TEMPO_LEARNING_POOL_SIZE + 1`
-(foreground reader/writer plus maintenance); the endgame daemon and both optional
-pools have been deleted.
-
-Saved templates, immutable attempt receipts, cards, reviews and histories remain
-stored. Supplying an existing attempt operation ID may recover its original
-saved payload/result through the canonical gateway. New positions return 410.
-Ordinary practice uses an authored/persisted legal FEN and nonempty legal line;
-a material-only card has no saved solution, so it shows its saved position and
-an explicit unavailable notice with Bury. No calculated continuation or success
-is invented. See the [browser boundary](../../../app/README.md#saved-endgame-practice-after-calculation-removal).
+Endgames serving and accepted execution facts are retired, including saved-card
+practice, template listing and attempt recovery routes. The unused provider
+constructor input is removed. [Ordered migration 0004](../../../database/tempo_learning_database/ddl/migrations/0004_retire_endgames.sql)
+deletes this family and linked review history, drops its three tables, and fences
+recreation. Immutable receipts and deleted-card identities remain replay evidence.
+The existing operator migration path owns this change; startup never migrates.
+The configured connection maximum remains `2 * TEMPO_LEARNING_POOL_SIZE + 1`.
+[Browser behavior and source diagram](../../../app/README.md#retired-practice).
 
 ## Daily presentation
 
@@ -309,9 +303,8 @@ retaining its CPU/memory and transaction-time limits. Runtime never changes that
 setting. PostgreSQL documents this as shared lock-table capacity, not a per-review
 row limit: [PostgreSQL 18 lock management](https://www.postgresql.org/docs/18/runtime-config-locks.html).
 
-Endgame probes read the persistent cache first. A cache miss with no configured provider is an explicit 503. Provider failure is an explicit 503. Defense grading uses validated accepted engine reports; an uncovered legal move creates durable `needs_analysis` intent without a grade or scheduling event.
+Defense grading uses validated accepted engine reports; an uncovered legal move creates durable `needs_analysis` intent without a grade or scheduling event.
 
-Tablebase keys use `tb-fen-v2:` plus the complete normalized FEN, including the halfmove clock. Historical four-field entries remain stored but are not read under the new semantics.
 
 The default receiver now adopts the installed remediation library for both Game Evidence v1 and v2. Authenticated source deliveries are validated against Learning's own active accepted definitions, complete alternatives and immutable exercise revisions. Producers supply observed-game facts; their publication/activation claims do not authorize Learning state. The evidence credential is scoped to the configured workspace. Historical source revisions are fenced by Learning's durable source/game heads; intake never queries a provider or source-game database.
 

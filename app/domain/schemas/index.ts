@@ -31,7 +31,7 @@ export const queueCardSchema = z.strictObject({
   latest_review_id: integer.optional(),
   start_fen: fenStringSchema,
   moves: z.array(z.string()),
-  content_type: z.enum(["opening", "middlegame", "endgame", "tactic", "defense", "study_exercise"]),
+  content_type: z.enum(["opening", "middlegame", "tactic", "defense", "study_exercise"]),
   repertoire_name: z.string(),
   repertoire_source: z.string(),
   cycle: integer.optional(),
@@ -184,7 +184,7 @@ export const annotationsResponseSchema = z.strictObject({
 });
 export const practiceCardSchema = z.strictObject({
   id: cardIdSchema,
-  kind: z.enum(["opening", "middlegame", "endgame", "puzzle"]),
+  kind: z.enum(["opening", "middlegame", "puzzle"]),
   title: z.string(),
   subtitle: z.string(),
   startingFen: fenStringSchema,
@@ -314,7 +314,6 @@ export const settingsResponseSchema = z.strictObject({
   engine_line_window_cp: z.number().int().min(0).max(300),
   major_mistake_cp: z.number().int().min(25).max(1000),
   light_first_interval_days: z.number().int().min(1).max(90),
-  draw_hold_user_moves: z.number().int().min(5).max(100),
   coverage_reply_denominator: z.number().int().min(2).max(10000).default(100),
   coverage_cumulative_target: z.number().int().min(50).max(100).default(95),
   coverage_horizon_fullmoves: z.number().int().min(4).max(40).default(15),
@@ -945,54 +944,6 @@ export const progressResponseSchema = z.strictObject({
   dueToday: integer,
   blockedDue: integer.optional(),
   totalCards: integer,
-});
-const tablebaseCategorySchema = z.enum([
-  "win",
-  "loss",
-  "draw",
-  "blessed-loss",
-  "cursed-win",
-  "unknown",
-]);
-export const tablebaseResponseSchema = z.looseObject({
-  category: tablebaseCategorySchema,
-  moves: z
-    .array(
-      z.looseObject({
-        uci: uciMoveSchema,
-        san: sanMoveSchema.optional(),
-        category: tablebaseCategorySchema.optional(),
-        dtz: z.number().int().nullable().optional(),
-      }),
-    )
-    .optional(),
-});
-export const endgameTemplatesSchema = z.strictObject({
-  templates: z.array(
-    z.strictObject({
-      id: identifierSchema,
-      card_id: cardIdSchema,
-      name: z.string(),
-      white_material: z.string(),
-      black_material: z.string(),
-      trained_color: colorSchema,
-      goal_mix: z.enum(["win", "draw", "both"]),
-      enabled: sqliteBooleanSchema,
-      created_at: isoDateSchema,
-    }),
-  ),
-});
-export const endgameCreatedSchema = z.strictObject({
-  id: identifierSchema,
-  card_id: cardIdSchema,
-  sample_fen: fenStringSchema,
-  already_exists: z.boolean(),
-});
-export const endgameAttemptSchema = z.strictObject({
-  id: identifierSchema,
-  fen: fenStringSchema,
-  target: z.enum(["win", "draw"]),
-  moves: z.array(z.unknown()),
 });
 export const oauthTokenSchema = z.looseObject({
   access_token: z.string().min(1),

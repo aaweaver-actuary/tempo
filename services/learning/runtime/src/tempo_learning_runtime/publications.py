@@ -27,7 +27,7 @@ class ExecutionFacts(BaseModel):
     model_config = ConfigDict(extra="forbid")
     card_id: str
     content_type: Literal[
-        "opening", "tactic", "middlegame", "endgame", "defense", "study_exercise"
+        "opening", "tactic", "middlegame", "defense", "study_exercise"
     ]
     memberships: list[str] = Field(default_factory=list, max_length=100)
     trained_color: Literal["white", "black"] | None = None
@@ -41,7 +41,8 @@ class ExecutionFacts(BaseModel):
     sibling_group: str | None = None
     source_ref: str | None = None
     source_fen: str | None = None
-    endgame: dict | None = None
+    # Preserve ordinary pre-retirement publication bytes and immutable digests.
+    endgame: None = None
     defense: dict | None = None
 
     @field_validator("memberships")
@@ -130,25 +131,6 @@ class PublicationBundle(BaseModel):
                     != fact.card_id
                 ):
                     raise ValueError("Card identity differs from executable definition")
-            if fact.content_type == "endgame":
-                if fact.endgame is None or not fact.trained_color:
-                    raise ValueError("Endgame template facts missing")
-                from .endgames import normalized_material
-
-                if (
-                    not {"name", "white_material", "black_material"}
-                    <= fact.endgame.keys()
-                ):
-                    raise ValueError("Incomplete endgame template")
-                white = normalized_material(fact.endgame["white_material"])
-                black = normalized_material(fact.endgame["black_material"])
-                if (
-                    len(white) + len(black) > 7
-                    or not fact.endgame.get("name")
-                    or fact.endgame.get("goal_mix", "both")
-                    not in ("win", "draw", "both")
-                ):
-                    raise ValueError("Invalid endgame template")
             if fact.content_type == "defense":
                 if fact.defense is None:
                     raise ValueError("Defense rubric facts missing")
@@ -378,9 +360,6 @@ def activate(database, payload):
                 storage.insert_line(database, line_id, membership, fact.trained_color, now)
                 storage.upsert_opening_publication(database, membership, generation)
                 storage.insert_opening_step(database, membership, generation, line_id, fact.route_order, fact.card_id, fact.parent_card_id, definition.starting_fen, json.dumps(moves), fact.trained_color)
-        if fact.endgame:
-            template = fact.endgame
-            storage.upsert_endgame(database, fact.source_ref or fact.card_id, fact.card_id, template["name"], template["white_material"], template["black_material"], fact.trained_color, template.get("goal_mix", "both"), now)
         if fact.defense:
             storage.upsert_defense(database, fact.defense["candidate_id"], fact.card_id, definition.exercise_revision, json.dumps(fact.defense))
     verify_opening_graph(database, bundle)
@@ -453,7 +432,6 @@ def retire(database, payload):
         storage.lock_card(database, row[0])
     storage.deactivate_cards(database, identity)
     storage.archive_study_exercises(database, identity)
-    storage.disable_endgame_templates(database, identity)
     storage.supersede_publication_queue(database, identity)
     storage.retire_accepted(database, identity, generation)
     storage.increment_activation_revision(database, identity)

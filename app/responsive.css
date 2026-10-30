@@ -210,7 +210,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(
 .unified-board-shell-panel
   :is(
     .tactics-page,
-    .endgames-page,
     .library-page,
     .training-grid,
     .training-header
@@ -227,10 +226,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(
 .unified-board-shell-panel
   :is(
     .training-grid.training-grid-shared,
-    .tactics-workspace,
-    .endgame-workspace,
-    .scheduled-endgame .endgame-workspace
-  ) {
+    .tactics-workspace) {
   display: flex;
   flex-direction: column;
   height: auto;
@@ -269,7 +265,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(
   max-width: 100%;
   overflow-x: auto;
 }
-.template-list,
 .motif-rail {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -280,7 +275,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(
   overflow: visible;
   align-self: stretch;
 }
-.template-list button,
 .motif-rail button {
   width: 100%;
   min-width: 0;
@@ -299,8 +293,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(
 .stage-tabs button {
   flex: 1 1 auto;
 }
-.tactic-study h2,
-.endgame-study h2 {
+.tactic-study h2{
   margin: 0 0 8px;
   font-size: 28px;
 }

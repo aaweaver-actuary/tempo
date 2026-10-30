@@ -54,7 +54,7 @@ def initialize_scope_schema(database) -> None:
         database.execute(f'CREATE TRIGGER canonical_source_card_{event.lower()} AFTER {event} ON cards WHEN {source}.canonical_route_source=1 AND {source}.content_type=\'opening\' AND {source}.moves_json<>\'[]\' BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE (id={source}.repertoire_id AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id={source}.id AND owner_link.repertoire_id={source}.repertoire_id AND owner_link.canonical_route_source=0)) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id={source}.id AND canonical_route_source=1); END')
     for event in ('INSERT', 'DELETE', 'UPDATE'):
         source = 'OLD' if event == 'DELETE' else 'NEW'
-        condition = f" WHEN {source}.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__retained_cards__')"
+        condition = f" WHEN {source}.id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__retained_cards__')"
         if event == 'UPDATE':
             condition += ' AND (OLD.canonical_prefix_moves_json IS NOT NEW.canonical_prefix_moves_json OR OLD.scope_source_revision IS NOT NEW.scope_source_revision OR OLD.is_main IS NOT NEW.is_main)'
         database.execute(f'DROP TRIGGER IF EXISTS canonical_game_scope_{event.lower()}')

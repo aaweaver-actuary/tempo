@@ -21,14 +21,6 @@ export enum EnginePriority {
 
 export type EnginePriorityValue = `${EnginePriority}`;
 
-export enum TablebaseCategory {
-  Win = "win",
-  Loss = "loss",
-  Draw = "draw",
-  BlessedLoss = "blessed-loss",
-  CursedWin = "cursed-win",
-  Unknown = "unknown",
-}
 
 export type ExplorerMove = {
   uci: UciMove;
@@ -104,13 +96,3 @@ export type BuilderSession = {
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";
-
-export type TablebaseResult = {
-  category: `${TablebaseCategory}`;
-  moves?: {
-    uci: UciMove;
-    san?: SanMove;
-    category?: `${TablebaseCategory}`;
-    dtz?: number;
-  }[];
-};

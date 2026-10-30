@@ -74,3 +74,5 @@ migration has been run by the feature implementation.
 - [050_learning_remediation.sql](050_learning_remediation.sql)
 
 - [054_product_repertoire_review.sql](054_product_repertoire_review.sql)
+
+- [055_retire_endgames.sql](055_retire_endgames.sql) — explicit Endgames retirement; no live migration performed by this implementation.

@@ -1281,14 +1281,7 @@ button {
   color: var(--green-dark);
   font-weight: 700;
 }
-.scheduled-endgame .endgame-workspace {
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.65fr);
-}
 @media (max-width: 620px) {
-  .scheduled-endgame .endgame-workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
 }
 .failure-note {
   padding: 14px;
@@ -1747,8 +1740,7 @@ button {
   font-size: 11px;
   line-height: 1.5;
 }
-.tactics-page,
-.endgames-page {
+.tactics-page{
   height: calc(100dvh - var(--nav-height));
   max-width: 1380px;
   margin: 0 auto;
@@ -1849,15 +1841,13 @@ button {
   position: relative;
   align-self: stretch;
 }
-.tactic-study h2,
-.endgame-study h2 {
+.tactic-study h2{
   margin: 22px 0 5px;
   font:
     500 clamp(28px, 3vw, 40px) Georgia,
     serif;
 }
-.tactic-rating,
-.endgame-study > p {
+.tactic-rating{
   color: var(--muted);
   font-size: 13px;
 }
@@ -1879,40 +1869,6 @@ button {
   display: block;
   height: 100%;
   background: var(--green);
-}
-.endgame-workspace {
-  height: calc(100% - 76px);
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 210px minmax(340px, 1fr) minmax(250px, 0.58fr);
-  gap: 20px;
-  align-items: center;
-  overflow: hidden;
-}
-.template-list {
-  align-self: center;
-  display: grid;
-  gap: 8px;
-}
-.template-list button {
-  padding: 15px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-  text-align: left;
-  cursor: pointer;
-}
-.template-list button.active {
-  border-color: #8da28a;
-  background: #e8eee5;
-}
-.template-list strong,
-.template-list small {
-  display: block;
-}
-.template-list small {
-  margin-top: 5px;
-  color: var(--muted);
 }
 .classification {
   display: grid;
@@ -2202,20 +2158,9 @@ button {
   .ratings {
     margin-top: 18px;
   }
-  .tactics-workspace,
-  .endgame-workspace {
+  .tactics-workspace{
     grid-template-columns: 1fr;
     align-items: start;
-  }
-  .template-list {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(145px, 1fr));
-    gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-  .template-list button {
-    min-width: 145px;
   }
   .motif-rail {
     max-height: none;
@@ -2225,8 +2170,7 @@ button {
   .motif-rail button {
     min-width: 170px;
   }
-  .tactic-study,
-  .endgame-study {
+  .tactic-study{
     max-width: 680px;
     margin: 0 auto;
   }
@@ -2305,8 +2249,7 @@ button {
   .stage-tabs button {
     flex: 0 0 auto;
   }
-  .tactics-page,
-  .endgames-page {
+  .tactics-page{
     padding-top: 18px;
   }
   .editor-layout {
@@ -2452,30 +2395,26 @@ button {
   .training-grid {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
   }
-  .tactics-workspace,
-  .endgame-workspace {
+  .tactics-workspace{
     grid-template-columns: minmax(340px, 1fr) minmax(260px, 0.62fr);
     grid-template-rows: auto minmax(0, 1fr);
     align-items: center;
   }
-  .motif-rail,
-  .template-list {
+  .motif-rail{
     grid-column: 1/-1;
     grid-row: 1;
     max-height: 86px;
     display: flex;
     overflow: auto;
   }
-  .motif-rail button,
-  .template-list button {
+  .motif-rail button{
     min-width: 160px;
   }
   .centered-board {
     grid-column: 1;
     grid-row: 2;
   }
-  .tactic-study,
-  .endgame-study {
+  .tactic-study{
     grid-column: 2;
     grid-row: 2;
     max-height: 100%;
@@ -2488,12 +2427,10 @@ button {
     grid-template-rows: auto minmax(0, 1fr);
     gap: 24px;
   }
-  .tactics-workspace,
-  .endgame-workspace {
+  .tactics-workspace{
     grid-template-rows: auto auto minmax(0, 1fr);
   }
-  .tactic-study,
-  .endgame-study {
+  .tactic-study{
     min-height: 0;
     max-height: 100%;
     overflow: auto;

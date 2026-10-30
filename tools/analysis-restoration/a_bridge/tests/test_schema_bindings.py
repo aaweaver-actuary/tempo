@@ -35,3 +35,19 @@ def test_C3_documented_binding_schemas_have_matching_projection_contract():
 def test_C3_documented_binding_schemas_retain_strict_projection_bounds(name,change):
     payload={'card_id':'physical-card','ply':7,'exercise_ply':2,'decision_id':'explicit-interior-decision',**change}
     assert list(Draft202012Validator(binding_schema(name)).iter_errors(payload))
+
+
+def test_endgames_retirement_schema_allows_only_null_compatibility_metadata():
+    document = json.loads((SCHEMAS / "learning-publication-bundle-v2.json").read_text())
+    Draft202012Validator.check_schema(document)
+    facts = document["$defs"]["ExecutionFacts"]
+    assert facts["properties"]["endgame"] == {"default": None, "title": "Endgame", "type": "null"}
+    assert "endgame" not in facts["required"]
+    assert "endgame" not in facts["properties"]["content_type"]["enum"]
+    assert facts["additionalProperties"] is False
+    validator = Draft202012Validator({"$defs": document["$defs"], "$ref": "#/$defs/ExecutionFacts"})
+    ordinary = {"card_id": "ordinary-card", "content_type": "opening", "due_date": "2026-10-29", "endgame": None}
+    validator.validate(ordinary)
+    validator.validate({key: value for key, value in ordinary.items() if key != "endgame"})
+    for change in ({"endgame": {}}, {"content_type": "endgame"}, {"unexpected": True}):
+        assert list(validator.iter_errors({**ordinary, **change}))

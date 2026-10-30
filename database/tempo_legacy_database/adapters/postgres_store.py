@@ -89,11 +89,6 @@ def tempo_row_factory(cursor: psycopg.Cursor) -> RowMaker[TempoRow]:
 
 
 _REPLACE_QUERIES = {
-    "tablebase_cache": (
-        "INSERT INTO tablebase_cache(fen_key,response_json,fetched_at) VALUES(%s,%s,%s) "
-        "ON CONFLICT(fen_key) DO UPDATE SET response_json=EXCLUDED.response_json, "
-        "fetched_at=EXCLUDED.fetched_at"
-    ),
     "repertoire_integrity_source_runs": (
         "INSERT INTO repertoire_integrity_source_runs"
         "(run_id,source_offset,observations_json,invalid_json) VALUES(%s,%s,%s,%s) "

@@ -13,7 +13,7 @@ def matching_repertoire(database, source_name, trained_color):
     return database.execute_native(
         "SELECT repertoire.id FROM repertoires repertoire "
         "WHERE repertoire.source_name=%s "
-        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') "
+        "AND repertoire.id NOT IN ('__tactics__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') "
         "AND EXISTS(SELECT 1 FROM repertoire_lines line "
         "WHERE line.repertoire_id=repertoire.id AND line.trained_color=%s) "
         "ORDER BY repertoire.created_at DESC LIMIT 1",

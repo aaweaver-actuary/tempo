@@ -34,7 +34,7 @@ Visible focus, accessible names, reduced motion and input-safe shortcuts are man
 Board flip is always first; workspace actions follow in the same toolbar. Practice hints
 and grading never become available through optional analysis controls. Retained context
 tabs expose an accessible name, `aria-controls`, and a selected state, and preserve mounted
-state when hidden or when the viewport changes. Endgames uses Study and Positions. Tactics
+state when hidden or when the viewport changes. Tactics
 keeps solving in Solve (default) and moves the catalog into Packs. Secondary and destructive
 actions stay in compact action or overflow menus so one task remains visually dominant.
 Dialogs trap focus, Escape dismisses, and closing restores the prior focus.
@@ -84,7 +84,7 @@ between modes; surface/pieces remain aligned through flips and DPR changes.
 
 Visual baselines live beside tests/browser/visual.spec.ts and are generated only in the
 pinned Linux ARM64 Playwright image (quality CI uses `ubuntu-24.04-arm`). Review every changed baseline; CI never accepts updates.
-The baseline gallery covers the retained Train, Tactics, Endgames, Repertoire, and Settings
+The baseline gallery covers the retained Train, Tactics, Repertoire, and Settings
 sections at phone/tablet/laptop/wide widths plus failure/dialog states. Behavioral checks
 independently prove reachability and correctness.
 
@@ -103,7 +103,6 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 | --- | --- | --- | --- | --- |
 | Train | [390px](../tests/browser/visual-baselines/train-390.png) | [768px](../tests/browser/visual-baselines/train-768.png) | [1280px](../tests/browser/visual-baselines/train-1280.png) | [1920px](../tests/browser/visual-baselines/train-1920.png) |
 | Tactics | [390px](../tests/browser/visual-baselines/tactics-390.png) | [768px](../tests/browser/visual-baselines/tactics-768.png) | [1280px](../tests/browser/visual-baselines/tactics-1280.png) | [1920px](../tests/browser/visual-baselines/tactics-1920.png) |
-| Endgames | [390px](../tests/browser/visual-baselines/endgames-390.png) | [768px](../tests/browser/visual-baselines/endgames-768.png) | [1280px](../tests/browser/visual-baselines/endgames-1280.png) | [1920px](../tests/browser/visual-baselines/endgames-1920.png) |
 | Repertoire | [390px](../tests/browser/visual-baselines/repertoire-390.png) | [768px](../tests/browser/visual-baselines/repertoire-768.png) | [1280px](../tests/browser/visual-baselines/repertoire-1280.png) | [1920px](../tests/browser/visual-baselines/repertoire-1920.png) |
 | Settings | [390px](../tests/browser/visual-baselines/settings-390.png) | [768px](../tests/browser/visual-baselines/settings-768.png) | [1280px](../tests/browser/visual-baselines/settings-1280.png) | [1920px](../tests/browser/visual-baselines/settings-1920.png) |
 

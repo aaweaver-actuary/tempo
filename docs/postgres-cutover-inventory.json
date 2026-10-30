@@ -11669,6 +11669,7 @@
     "app/views/study_exercise_runner.tsx",
     "app/views/tactics_view.tsx"
   ],
+  "historical_inventory_note": "Frozen cutover census, not current source. Endgames source/route/table entries are retired by migrations legacy 055 and learning.runtime/0004; current source inventory is docs/architecture/endgames-retirement.json and current routes are docs/postgres-route-contract.json.",
   "routes": [
     {
       "file": "backend/app/main.py",

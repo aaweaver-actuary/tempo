@@ -145,13 +145,12 @@ test("hover feedback covers controls outside the chessboard without changing the
   await expect(board).toHaveCSS("background-image", boardBackground);
 });
 
-test("removed endgame calculation notice remains readable on narrow screens", async ({ page }) => {
+test("retired Endgames is absent from phone navigation and menu", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareUI(page);
-  await navigate(page, "Endgames");
-  const notice = page.getByText(/On-demand endgame calculation has been removed/);
-  await notice.scrollIntoViewIfNeeded();
-  await expect(notice).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Endgames", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Endgames", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Edit material|New position|^Win$|^Draw$/ })).toHaveCount(0);
 });
 
@@ -160,7 +159,7 @@ test("desktop workspace panels do not clip controls or content", async ({
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await prepareUI(page);
-  for (const workspace of ["Endgames"]) {
+  for (const workspace of ["Tactics"]) {
     await navigate(page, workspace);
     await noPageOverflow(page);
     for (const button of await page
@@ -184,7 +183,7 @@ test("shared split supports keyboard reset and persistence without changing work
   await separator.focus();
   await page.keyboard.press("ArrowRight");
   await expect(separator).toHaveAttribute("aria-valuenow", "48");
-  await navigate(page, "Endgames");
+  await navigate(page, "Tactics");
   await expect(separator).toHaveAttribute("aria-valuenow", "48");
   await page.reload();
   await expect(separator).toHaveAttribute("aria-valuenow", "48");

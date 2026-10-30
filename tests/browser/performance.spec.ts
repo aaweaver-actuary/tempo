@@ -22,6 +22,17 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await prepareVisualUI(page, false);
+  let failureOperationKey: string | undefined;
+  await page.route("**/api/queue/entries/1/fail", async (route) => {
+    const request = route.request();
+    expect(request.method()).toBe("POST");
+    expect(request.postDataJSON()).toEqual({ card_id: "visual-card", expected_revision: 1 });
+    const operationKey = request.headers()["idempotency-key"];
+    expect(operationKey).toBeTruthy();
+    if (failureOperationKey !== undefined) expect(operationKey).toBe(failureOperationKey);
+    failureOperationKey = operationKey;
+    await route.fulfill({ status: 200, json: { attempt_failed: true } });
+  });
   const boardReadySamples: number[] = [];
   for (let reload = 0; reload < 5; reload++) {
     if (reload > 0) await page.reload();
@@ -33,7 +44,7 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
       performance.getEntriesByName("tempo:board-ready").at(-1)!.duration,
     ));
   }
-  const modes = ["Endgames", "Tactics", "Train"] as const;
+  const modes = ["Tactics", "Train"] as const;
   for (const mode of modes) await navigate(page, mode);
   const viewSwitchSamples: Record<string, number[]> = Object.fromEntries(
     modes.map((mode) => [mode, []]),
@@ -93,13 +104,25 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     await page.keyboard.press(index % 2 ? "ArrowLeft" : "ArrowRight");
   const boardBounds = (await page.locator(".cg-wrap").boundingBox())!;
   const moveToPaintSamples: number[] = [];
+  const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const restart = page.locator(".shared-board-toolbar .board-tools")
+    .getByRole("button", { name: /Restart/ });
+  await expect(restart).toHaveCount(1);
   for (let repetition = 0; repetition < 5; repetition++) {
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", startingFen);
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+    // The timing owner retains only its latest measure. Clear that old sample
+    // before taking the baseline so count growth proves this input was measured.
+    await page.evaluate(() => performance.clearMeasures("tempo:move-to-paint"));
+    const priorMoveEntries = await page.evaluate(() => performance.getEntriesByName("tempo:move-to-paint").length);
     for (const rank of [6, 4])
       await page.mouse.click(
         boardBounds.x + (4.5 * boardBounds.width) / 8,
         boardBounds.y + ((rank + 0.5) * boardBounds.height) / 8,
       );
     await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3/);
+    await expect.poll(() => page.evaluate(() => performance.getEntriesByName("tempo:move-to-paint").length))
+      .toBeGreaterThan(priorMoveEntries);
     await page.evaluate(() => new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     ));
@@ -109,9 +132,18 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     expect(moveDuration).not.toBeNull();
     moveToPaintSamples.push(moveDuration!);
     if (repetition < 4) {
-      await page.locator(".shared-board-toolbar .board-tools")
-        .getByRole("button", { name: /Back/ }).click();
-      await expect(page.locator(".board-frame")).not.toHaveAttribute("data-fen", /4P3/);
+      if (repetition === 0) {
+        const failed = page.waitForResponse((response) =>
+          new URL(response.url()).pathname === "/api/queue/entries/1/fail" &&
+          response.request().method() === "POST" && response.status() === 200,
+        );
+        await restart.click();
+        await failed;
+      } else {
+        await restart.click();
+      }
+      await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", startingFen);
+      await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
     }
   }
   const longTasks = await page.evaluate(() =>
@@ -135,7 +167,8 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     schemaVersion: 1,
     timestamp: new Date().toISOString(),
     commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: { name: "prepareVisualUI-default", boardReloads: 5, warmMoves: 5 },
+    fixture: { name: "prepareVisualUI-restart-guided-v1", boardReloads: 5, warmMoves: 5,
+      resetStrategy: "First sample uses the original attempt; subsequent samples use Restart and are guided." },
     browser: browserName,
     viewSwitchSamples,
     viewSwitchSummary: Object.fromEntries(
@@ -240,17 +273,26 @@ test("warm training cards advance to the next visible paint", async ({ page }, t
 // #31: continuous held dragging is distinct from existing post-move metrics.
 test("held-piece drag baseline separates workloads and capture overhead", async ({ browser }, testInfo) => {
   test.setTimeout(600_000);
-  const { heldDrag, prepareHeldDrag, installHeldDiscovery, heldDragFixtureVersion, heldDragStartFen } = await import("./held-drag-fixtures");
-  type Workload = "idle" | "synthetic-worker" | "discovery-preparation" | "stockfish-worker" | "main-thread-stall";
+  const { heldDrag, prepareHeldDrag, heldDragFixtureVersion, heldDragStartFen } = await import("./held-drag-fixtures");
+  type Workload = "idle" | "synthetic-worker" | "stockfish-worker" | "main-thread-stall";
   type Run = {
     repetition: number; workload: Workload; enabled: boolean; cacheState: "cold-context" | "warm-context-reload";
     probe: import("./held-drag-fixtures").DragProbe; snapshot: import("./held-drag-fixtures").DragSnapshot | null;
     workloadEvidence: { startedAtMs: number | null; endedAtMs: number | null; error: string | null; messages: number };
   };
   const runs: Run[] = [];
+  const stages: Array<{ repetition: number; workload: Workload; enabled: boolean; cacheState: string; stage: string; timestamp: string }> = [];
+  function recordStage(repetition: number, workload: Workload, enabled: boolean, cacheState: string, stage: string) {
+    const entry = { repetition, workload, enabled, cacheState, stage, timestamp: new Date().toISOString() };
+    stages.push(entry);
+    writePerformanceReport("held-drag-stages-chromium.json", JSON.stringify(stages, null, 2));
+    console.log("held-drag-stage", JSON.stringify(entry));
+  }
   const report = {
     schemaVersion: 1, timestamp: new Date().toISOString(), commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: { name: heldDragFixtureVersion, pointerMoves: 40, paceMs: 20, repetitions: 3, dataset: "Spanish five-ply card and one discovery", probe: "bounded-transform-probe-v1" },
+    fixture: { name: `${heldDragFixtureVersion}-supported-workloads-v1`, pointerMoves: 40, paceMs: 20, repetitions: 3,
+      dataset: "Spanish five-ply opening card; idle, synthetic worker, Stockfish worker and main-thread stall; retired Discoveries preview excluded",
+      workloads: ["idle", "synthetic-worker", "stockfish-worker", "main-thread-stall"], probe: "bounded-transform-probe-v1" },
     environment: {
       browser: "chromium", browserVersion: browser.version(), buildMode: "production-local", runner: process.env.TEMPO_VISUAL_RUNNER,
       architecture: process.arch, viewport: { width: 1280, height: 800 }, devicePixelRatio: 1, reducedMotion: "no-preference", serviceWorkers: "block",
@@ -267,9 +309,10 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
   try {
     persist();
     for (let repetition = 0; repetition < 3; repetition++) {
-      for (const workload of ["idle", "synthetic-worker", "discovery-preparation", "stockfish-worker", "main-thread-stall"] as Workload[]) {
+      for (const workload of ["idle", "synthetic-worker", "stockfish-worker", "main-thread-stall"] as Workload[]) {
         // Alternate enabled/disabled order to reduce systematic warming bias.
         for (const enabled of repetition % 2 ? [false, true] : [true, false]) {
+          recordStage(repetition, workload, enabled, "cold-context", "context-creation");
           const context = await browser.newContext({
             baseURL: testInfo.project.use.baseURL, viewport: { width: 1280, height: 800 },
             deviceScaleFactor: 1, reducedMotion: "no-preference", serviceWorkers: "block", locale: "en-US", timezoneId: "America/New_York",
@@ -277,26 +320,15 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
           const experimentPage = await context.newPage();
           try {
             for (const cacheState of ["cold-context", "warm-context-reload"] as const) {
-              let discovery!: Awaited<ReturnType<typeof installHeldDiscovery>>;
+              recordStage(repetition, workload, enabled, cacheState, "navigation-start");
               if (cacheState === "cold-context") {
-                await prepareHeldDrag(experimentPage, enabled, async () => { discovery = await installHeldDiscovery(experimentPage); });
+                await prepareHeldDrag(experimentPage, enabled);
               } else {
-                await experimentPage.unroute("**/api/discoveries?**");
-                await experimentPage.unroute("**/api/discoveries/*/recommendations");
-                discovery = await installHeldDiscovery(experimentPage);
                 await experimentPage.reload();
               }
+              recordStage(repetition, workload, enabled, cacheState, "navigation-complete");
               await expect(experimentPage.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
-              // #33 defers closed-tray training work. Explicit demand starts
-              // this controlled in-flight workload before returning to the board.
-              await experimentPage.getByRole("button", { name: "Discoveries", exact: true }).click();
-              await expect.poll(discovery.started).toBe(true);
-              await experimentPage.getByRole("button", { name: "Back to work", exact: true }).click();
-              if (workload !== "discovery-preparation") {
-                discovery.release(); await expect.poll(discovery.completed).toBe(true);
-                // Settle the routed response before the idle/control measurements.
-                await experimentPage.waitForTimeout(100);
-              }
+              recordStage(repetition, workload, enabled, cacheState, "board-input-ready");
               await experimentPage.evaluate(() => {
                 Object.assign(window, { tempoWorkloadEvidence: { startedAtMs: null, endedAtMs: null, error: null, messages: 0 } });
               });
@@ -313,13 +345,12 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                   worker.postMessage({ type: "init" });
                 }));
               }
+              recordStage(repetition, workload, enabled, cacheState, "workload-initialized");
               try {
+                recordStage(repetition, workload, enabled, cacheState, "held-drag-start");
                 const result = await heldDrag(experimentPage, async step => {
                   if (step !== 10) return;
-                  if (workload === "discovery-preparation") {
-                    await experimentPage.evaluate(() => { Reflect.get(window, "tempoWorkloadEvidence").startedAtMs = performance.now(); });
-                    discovery.release();
-                  } else if (workload === "synthetic-worker") {
+                  if (workload === "synthetic-worker") {
                     await experimentPage.evaluate(() => {
                       const evidence = Reflect.get(window, "tempoWorkloadEvidence");
                       const source = `onmessage=()=>{const end=performance.now()+1200;function slice(){const until=performance.now()+15;while(performance.now()<until){};if(performance.now()<end)setTimeout(slice,0);else postMessage('done')}slice()}`;
@@ -353,10 +384,8 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                     }, heldDragStartFen);
                   }
                 });
-                if (workload === "discovery-preparation") {
-                  await expect.poll(discovery.completed).toBe(true);
-                  await experimentPage.evaluate(() => { Reflect.get(window, "tempoWorkloadEvidence").endedAtMs = performance.now(); });
-                }
+                recordStage(repetition, workload, enabled, cacheState, "held-drag-complete");
+                recordStage(repetition, workload, enabled, cacheState, "post-drag-workload-complete");
                 const workloadEvidence = await experimentPage.evaluate(() => Reflect.get(window, "tempoWorkloadEvidence")) as Run["workloadEvidence"];
                 runs.push({ repetition, workload, enabled, cacheState, ...result, workloadEvidence });
                 persist();
@@ -372,16 +401,19 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                 }
                 if (workload === "stockfish-worker") expect(workloadEvidence.messages).toBeGreaterThan(0);
               } finally {
-                discovery.release();
                 await experimentPage.evaluate(() => (Reflect.get(window, "tempoHeldWorker") as Worker | undefined)?.terminate());
               }
             }
-          } finally { await context.close(); }
+          } finally {
+            recordStage(repetition, workload, enabled, "context", "context-cleanup-start");
+            await context.close();
+            recordStage(repetition, workload, enabled, "context", "context-cleanup-complete");
+          }
         }
       }
     }
   } finally {
-    for (const workload of ["idle", "synthetic-worker", "discovery-preparation", "stockfish-worker", "main-thread-stall"] as Workload[]) {
+    for (const workload of ["idle", "synthetic-worker", "stockfish-worker", "main-thread-stall"] as Workload[]) {
       for (const enabled of [true, false]) {
         const matching = runs.filter(run => run.workload === workload && run.enabled === enabled);
         const frameGaps = matching.flatMap(run => run.probe.samples.flatMap(sample => sample.gapMs === null ? [] : [sample.gapMs]));
@@ -401,5 +433,17 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
     persist();
     await testInfo.attach("held-drag-performance", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
   }
-  expect(runs).toHaveLength(60);
+  const expectedWorkloads: Workload[] = ["idle", "synthetic-worker", "stockfish-worker", "main-thread-stall"];
+  expect(runs).toHaveLength(48);
+  expect(report.summaries).toHaveLength(8);
+  for (const workload of expectedWorkloads) {
+    for (const enabled of [true, false]) {
+      const matching = runs.filter(run => run.workload === workload && run.enabled === enabled);
+      expect(matching).toHaveLength(6);
+      for (let repetition = 0; repetition < 3; repetition++) {
+        const repeated = matching.filter(run => run.repetition === repetition);
+        expect(repeated.map(run => run.cacheState).sort()).toEqual(["cold-context", "warm-context-reload"]);
+      }
+    }
+  }
 });

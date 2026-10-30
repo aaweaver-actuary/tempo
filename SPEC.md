@@ -16,6 +16,14 @@ For product scope and delivery order, this document takes precedence over confli
 
 The first useful feature must not depend on completing an independent Learning replacement, full history migration, the code-reduction target, a services framework, or a general-purpose analysis system. Preserve current content and learning history in place; do not migrate them merely to add optional workflows. Small owning-component changes are allowed when needed for a feature.
 
+### October 29 amendment — retire existing Endgames
+
+The owner explicitly retires the current Endgames feature, including saved cards,
+templates, attempts and linked reviews. Preserve unrelated Study/history, authored
+Studies, Games phase statistics and endgame-themed Tactics. Old practice, publication,
+import and retry paths must not recreate the retired family. This amendment defines
+source scope; implementation does not authorize operating live services.
+
 ## 2. Required outcomes
 
 | ID | Outcome |

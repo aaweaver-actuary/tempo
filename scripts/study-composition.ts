@@ -18,9 +18,7 @@ export const optionalStudyImplementations = {
 export const optionalStudyContractExceptions = {
   'app/domain/analysis.ts': 'Shared study exercise grading and annotation schemas.',
   'app/domain/games.ts': 'Shared game metadata types used by retained Study views.',
-  'app/lib/saved-endgame-practice.ts': 'Retained Study endgame line validation for playable saved cards.',
   'app/lib/tactics-progress.ts': 'Retained Study tactics progress projection for accepted packs.',
-  'app/views/endgames_view.tsx': 'Retained Study endgames experience.',
 } as const;
 const optionalModules = new Set<string>(Object.values(optionalStudyImplementations).flat());
 const optionalKeyword = /(game|workbench|discover|analysis|engine|maia|insight|statistics|progress|builder)/i;

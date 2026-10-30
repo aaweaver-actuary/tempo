@@ -1,54 +1,54 @@
-"""Native saved-state/replay/review preservation after calculation removal."""
-
-import uuid
+"""Retirement rejects old execution facts while ordinary native Study keeps working."""
+from pathlib import Path
+import runpy
+import pytest
+from pydantic import ValidationError
+from tempo_learning_runtime.publications import PublicationBundle
+from tempo_learning_runtime.publication_bridge import PublicationBundleV2
+from test_content_bridge import content_bundle
 from test_runtime import activate, bundle, head, review_payload, submit
 
 
-def endgame_bundle():
-    payload = bundle(
-        [
-            (
-                "endgame",
-                {
-                    "type": "move_line",
-                    "accepted_lines": [["e2e4"]],
-                    "mode": "single",
-                    "grading_policy": "reference",
-                },
-            )
-        ]
-    )
-    payload["facts"][0].update(
-        source_ref="template-a",
-        endgame={
-            "name": "Rook ending",
-            "white_material": "KR",
-            "black_material": "K",
-            "goal_mix": "both",
-        },
-    )
-    return payload
+def test_retired_endgame_publications_cannot_create_new_cards():
+    payload = bundle()
+    payload["facts"][0]["content_type"] = "endgame"
+    with pytest.raises(ValidationError):
+        PublicationBundle.model_validate(payload)
 
 
-def test_saved_endgame_attempt_replay_and_review_survive_calculation_removal(case):
-    from tempo_learning_runtime import gateway
-    activate(case, endgame_bundle())
+def test_retired_endgame_v2_publications_cannot_create_new_cards():
+    payload = content_bundle(1)
+    payload["facts"][0]["content_type"] = "endgame"
+    with pytest.raises(ValidationError):
+        PublicationBundleV2.model_validate(payload)
+
+
+@pytest.mark.parametrize("version,family", [(1, "opening"), (1, "tactic"), (2, "opening")])
+def test_retired_endgame_nonnull_metadata_rejected_for_ordinary_publications(version, family):
+    payload = content_bundle(1) if version == 2 else bundle([(family, {
+        "type": "move_line", "accepted_lines": [["e2e4"]],
+        "mode": "single", "grading_policy": "reference",
+    })])
+    payload["facts"][0]["endgame"] = {}
+    model = PublicationBundleV2 if version == 2 else PublicationBundle
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_retired_endgame_routes_leave_ordinary_review_usable(case):
+    activate(case)
     card = head(case)
-    operation = uuid.uuid4().hex
-    payload = {"template_id": "template-a", "fen": "8/8/8/8/8/2k5/R7/1K6 w - - 0 1",
-               "target": "win", "moves": []}
-    # Represents an already-recorded immutable pre-removal position. Recovery
-    # keeps the canonical gateway and never needs a provider or generator.
-    with case.database.scope():
-        saved = gateway.dispatch("endgames.attempt.create", payload, operation)
-    endpoint = "/api/endgames/templates/template-a/attempt"
-    replay = case.client.post(endpoint, headers={"Idempotency-Key": operation})
-    assert replay.status_code == 200 and replay.json() == saved
-    assert case.client.post(endpoint).status_code == 410
-    assert case.client.post("/api/endgames/probe", json={"fen": payload["fen"]}).status_code == 410
-    assert case.client.post("/api/endgames/templates/other/attempt",
-                            headers={"Idempotency-Key": operation}).status_code == 409
-    assert case.query("SELECT COUNT(*) FROM learning.endgame_attempts")[0][0] == 1
-    reviewed = submit(case, card, review_payload(card))
-    assert reviewed.status_code == 200, reviewed.text
+    for method, path in [("GET", "/api/endgames/templates"), ("POST", "/api/endgames/probe"), ("POST", "/api/endgames/templates/old/attempt")]:
+        response = case.client.request(method, path, json={})
+        assert response.status_code == 404, response.text
+    response = submit(case, card, review_payload(card))
+    assert response.status_code == 200, response.text
     assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 1
+
+
+@pytest.mark.parametrize("owner", ["learning", "legacy"])
+@pytest.mark.parametrize("conflict", [False, True], ids=["upgrade", "ownership-rollback"])
+def test_native_endgames_retirement_preserves_other_families_and_fences_recreation(case, owner, conflict):
+    root = Path(__file__).resolve().parents[4]
+    proof = runpy.run_path(str(root / "database/tests/endgames_retirement.py"))
+    proof["assert_retirement"](case.admin, owner, conflict)
