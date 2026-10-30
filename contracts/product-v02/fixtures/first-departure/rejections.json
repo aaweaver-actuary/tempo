@@ -171,6 +171,57 @@
         "progress.schedule_applied_at": "2026-10-26T12:01:00.000002Z",
         "progress.remediation_fence.established_at": "2026-10-26T12:01:00.000001Z"
       }
+    },
+    {
+      "name": "coverage_end_cannot_invent_expected_response",
+      "fixture": "coverage-end",
+      "updates": {
+        "expected_uci": [
+          "e2e4"
+        ]
+      }
+    },
+    {
+      "name": "coverage_end_requires_all_surviving_routes_ended",
+      "fixture": "coverage-end",
+      "updates": {
+        "surviving_routes.0.at_deliberate_end": false
+      }
+    },
+    {
+      "name": "coverage_end_requires_actual_ended_route",
+      "fixture": "coverage-end",
+      "updates": {
+        "surviving_routes": []
+      }
+    },
+    {
+      "name": "missing_own_continuation_cannot_invent_expected_response",
+      "fixture": "ambiguous-target",
+      "updates": {
+        "status": "missing_own_continuation"
+      }
+    },
+    {
+      "name": "one_issuance_sequence_has_one_generation",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.queue_entry_id": 999
+      }
+    },
+    {
+      "name": "one_generation_cannot_receive_second_sequence",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issuance_sequence": 104
+      }
+    },
+    {
+      "name": "one_generation_cannot_reset_issuance_time",
+      "fixture": "unseen-issued-settled",
+      "updates": {
+        "progress.settlement.attempt.issued_at": "2026-10-26T12:03:00Z"
+      }
     }
   ]
 }

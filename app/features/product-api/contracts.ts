@@ -74,6 +74,8 @@ const RawFirstDepartureSelectionSchema = z.strictObject({ policy_version: z.lite
   if (["own_actionable", "own_unmapped", "missing_own_continuation"].includes(value.status) && value.actor !== "learner") fail("learner boundary requires learner actor");
   if (value.status === "opponent_gap" && value.actor !== "opponent") fail("opponent gap cannot authorize learner effect");
   if (["own_actionable", "own_unmapped", "opponent_gap"].includes(value.status) && value.expected_uci.includes(value.played_uci!)) fail("departure cannot be a supported expected alternative");
+  if (value.status === "coverage_end" && (value.expected_uci.length || !value.surviving_routes.length || !value.surviving_routes.every(item => item.at_deliberate_end))) fail("coverage end requires all surviving authored routes deliberately ended and no expected move");
+  if (value.status === "missing_own_continuation" && value.expected_uci.length) fail("missing own continuation cannot invent an expected response");
   if (new Set(value.surviving_routes.map(item => JSON.stringify([item.repertoire_id, item.route_id, item.route_ply, item.policy_id]))).size !== value.surviving_routes.length) fail("surviving route occurrences must be distinct");
   if (value.surviving_routes.some(item => !scopes.has(item.repertoire_id) || scopes.get(item.repertoire_id)!.source_revision !== item.source_revision)) fail("route must bind selected source revision");
   if (value.status !== "own_actionable" && value.decision !== null) fail("non-actionable result cannot claim actionable target");
@@ -118,6 +120,12 @@ const RawEncounterProgressSchema = z.strictObject({ policy_version: z.literal("f
   if (value.first_issued !== null && (fence === null || !followsFence(fence, value.first_issued))) fail("remedial issuance must follow application");
   if (value.first_issued !== null && compareUtc(value.first_issued.issued_at, value.determined_at) < 0) fail("target issuance cannot precede original determination");
   if (value.settlement !== null && (value.first_issued === null || fence === null || !followsFence(fence, value.settlement.attempt) || value.settlement.attempt.issuance_sequence < value.first_issued.issuance_sequence)) fail("settlement requires compatible post-application issued attempt");
+  if (value.settlement !== null && value.first_issued !== null) {
+    const first = value.first_issued, completed = value.settlement.attempt;
+    const sameGeneration = first.queue_entry_id === completed.queue_entry_id && first.card_id === completed.card_id && first.card_revision === completed.card_revision;
+    const sameSequence = first.issuance_sequence === completed.issuance_sequence;
+    if ((sameSequence && !sameGeneration) || (sameGeneration && (!sameSequence || compareUtc(first.issued_at, completed.issued_at) !== 0))) fail("once-stamped issuance retains actual generation, sequence and time");
+  }
 });
 
 const RawGameEffectKeySchema = z.strictObject({ workspace_id: id, provider, game_id: id, decision_id: id, occurrence_ply: z.number().int().min(1).max(1000) });

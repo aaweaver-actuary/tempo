@@ -207,6 +207,15 @@ class EncounterProgress(Value):
                 or not self.remediation_fence.precedes(self.settlement.attempt)
                 or self.settlement.attempt.issuance_sequence < self.first_issued.issuance_sequence):
             raise ValueError("settlement requires a genuine compatible post-application issued attempt")
+        if self.settlement is not None:
+            first, completed = self.first_issued, self.settlement.attempt
+            same_generation = ((first.queue_entry_id, first.card_id, first.card_revision) ==
+                               (completed.queue_entry_id, completed.card_id, completed.card_revision))
+            same_sequence = first.issuance_sequence == completed.issuance_sequence
+            same_time = (datetime.fromisoformat(first.issued_at.replace("Z", "+00:00")) ==
+                         datetime.fromisoformat(completed.issued_at.replace("Z", "+00:00")))
+            if (same_sequence and not same_generation) or (same_generation and not (same_sequence and same_time)):
+                raise ValueError("one once-stamped issuance must retain its actual generation, sequence and time")
         return self
 
 
