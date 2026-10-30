@@ -302,7 +302,22 @@ The first packaged run at `5b0fe71b` failed all three selected cases: the
 collection fixture lacked its actual image-inspection binding, and both feedback
 cases reached genuine provider capture/global selection but held on a removed
 snapshot-reader import. Failure receipts and verified owned-resource cleanup are
-retained. The fixture and reader consumer are repaired; the next exact candidate
-must still demonstrate all three actual packaged cases before installation or
-activation is claimed. Native source-profile SQL enforcement passed separately;
-pure checks, collection and source reviews are not substituted for that journey.
+retained. The fixture and reader consumer are repaired. At exact candidate
+`7a368c5c3e8d5a9669320bba003de18d2b60511a`, the registered
+`games-collection-release` passed all three cases with zero skips in 153.68s:
+collection-only, unseen first introduction, and introduced Again. Both feedback
+cases used actual browser moves/saves/issuance, natural and separately requested
+refresh, settlement, unchanged-source replay, and completed retained reconciliation.
+Immutable backend and web identities are retained in the private build receipt;
+no production source overlay or seeded successful outcome was used. Both browser
+runtime/network cleanups and the owning native fixture cleanup were verified.
+Native source-profile enforcement and both current-target join/split settlement
+cases also passed separately.
+
+Release integration `6988ce61` additionally retains already released main
+`be234854`'s equivalent NULL-safe frozen-history membership queries. Its 22 focused
+pure equivalence/ordering cases passed, and independent review found no changed
+feedback policy or attempt authority. The packaged journey above remains bound to
+its actual candidate/images; the unchanged behavior evidence is reused alongside
+the released query's own native proof rather than relabeling older images.
+Installation and managed activation remain operational checkpoints.
