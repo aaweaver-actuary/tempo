@@ -42,6 +42,8 @@ PostgreSQL cases use task-owned disposable fixtures.
 mapping and guarded recovery of a noninitial saved page, including a full
 100-record page, retry without provider refetch, and rejection of changed
 configuration, source evidence, or existing delivery.
+New canonical publication and the recovery receipt share a transaction; a
+synthetic write failure proves both roll back together.
 Its native case uses the existing labelled disposable PostgreSQL fixture to
 prove canonical source publication, original-page readback, historical-job claim
 isolation, unchanged Refresh/forward settings and no Study writes during collection.

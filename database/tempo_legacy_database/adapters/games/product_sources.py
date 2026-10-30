@@ -189,9 +189,8 @@ class PostgresCanonicalGamesStore(PostgresGamesStore):
             for alias in sorted(_aliases(spec.provider)):
                 storage.lock_import_identity(database, f"{alias}:{prepared.provider_game_id}")
             existing = _current(raw, prepared, for_update=True)
-            if existing is None:
-                raise ValueError("history_daily_canonical_source_missing")
-            canonical = _bound_game(verified, _source_header(prepared, existing, original=record))
+            header = _source_header(prepared, existing, original=record)
+            canonical = _bound_game(verified, header)
             jobs = raw.execute("SELECT payload::text FROM product_feedback_jobs WHERE job_id=%s FOR UPDATE", (spec.job_id,)).fetchall()
             if len(jobs) != 1 or JobState.model_validate_json(jobs[0][0]) != expected:
                 raise ValueError("history_daily_job_changed")
@@ -238,6 +237,10 @@ class PostgresCanonicalGamesStore(PostgresGamesStore):
                 raise ValueError("history_daily_capture_mismatch")
             if raw.execute("SELECT 1 FROM product_feedback_deliveries WHERE source_key=%s LIMIT 1", (key,)).fetchone():
                 raise ValueError("history_daily_delivery_exists")
+            # Publish a new canonical source in the same transaction as its
+            # resolution; later failure cannot expose an unbound source.
+            if existing is None:
+                storage.insert_imported_game(database, header["id"], prepared.provider, _values(prepared))
             revision = stable_id("chesscom-daily-classical-resolution-v1", key, state.record_fingerprint, canonical.source_digest)
             evidence = capture.model_copy(update={"comparison_revision":revision, "normalized":canonical,
                 "diagnostic":"chesscom_daily_classical_resolution_v1"})

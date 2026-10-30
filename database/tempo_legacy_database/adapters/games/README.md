@@ -86,4 +86,5 @@ The Games owner maps Chess.com daily to classical, matching the acquisition
 adapter while retaining original provider metadata. Its guarded historical
 recovery keeps the original capture, adds resolution evidence, fences the
 saved configuration and source identities, and authorizes replay of the exact
-saved page only for the proven effect-free daily mapping conflict.
+saved page only for the proven effect-free daily mapping conflict. A missing
+canonical game is created in that same transaction.
