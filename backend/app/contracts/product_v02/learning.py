@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Literal, Protocol
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -155,7 +156,6 @@ class RemediationFence(Value):
     established_at: UtcTimestamp
 
     def precedes(self, attempt: IssuedAttemptEvidence) -> bool:
-        from datetime import datetime
         return bool((attempt.card_id, attempt.card_revision) == (self.target.card_id, self.target.card_revision)
             and attempt.issuance_sequence > self.after_issuance_sequence
             and datetime.fromisoformat(attempt.issued_at.replace("Z", "+00:00")) >=
@@ -191,7 +191,9 @@ class EncounterProgress(Value):
         if (self.remediation_fence is None) != (application is None):
             raise ValueError("application/admission and its issuance fence must be recorded together")
         if self.remediation_fence is not None:
-            if self.remediation_fence.target != self.target or self.remediation_fence.established_at != application:
+            if (self.remediation_fence.target != self.target
+                    or datetime.fromisoformat(self.remediation_fence.established_at.replace("Z", "+00:00")) <
+                       datetime.fromisoformat(application.replace("Z", "+00:00"))):
                 raise ValueError("remediation fence must bind the actual target and application boundary")
         if (self.first_issued is None) != (self.first_issued_ordinal is None):
             raise ValueError("actual first issuance and its measured ordinal must be supplied together")
@@ -252,6 +254,13 @@ class EncounterReceipt(LearningReceipt):
     admission_status: Literal["pending", "available", "settled", "not_requested"]
     deferred_reason: Literal["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"] | None
     progress: EncounterProgress | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def optional_progress_is_omitted_not_null(cls, value):
+        if isinstance(value, dict) and "progress" in value and value["progress"] is None:
+            raise ValueError("legacy receipt omits progress; new policy requires actual progress")
+        return value
 
     @model_validator(mode="after")
     def truthful_disposition_and_deferral(self):
