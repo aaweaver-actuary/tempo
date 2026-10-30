@@ -245,8 +245,9 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     from app.games.feedback.ports import Delivery
     import shutil
 
-    image, revision = _candidate_image()
-    web_image = _candidate_web_image(revision)
+    image, backend_revision = _candidate_image()
+    candidate = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    web_image = _candidate_web_image(candidate)
     case = feedback_case
     with case.transaction() as database:
         info = database.raw.info
@@ -305,7 +306,8 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     assert nginx.count('proxy_pass http://api:8000;')==1
     (directory/'nginx.conf').write_text(nginx.replace('proxy_pass http://api:8000;','proxy_pass http://127.0.0.1:8000;'))
     budgets = json.loads((ROOT/'config/resource-budgets.json').read_text())['developmentServices']
-    containers, report = {}, dict(candidate=revision,image=image,web_image=web_image,schema=56,
+    containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
+        image=image,web_image=web_image,schema=56,
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
     stage = 'role_startup'
     browser, browser_log = None, None
@@ -354,8 +356,10 @@ def test_packaged_feedback_unseen_source_reaches_real_study_and_same_key_settlem
     def execute(role, *arguments, input=None):
         return docker('exec','-i',containers[role]['id'],*arguments,input=input).stdout
 
+    fixture_entry = "exec(compile(open('/qualification/entry.py').read(), '/qualification/entry.py', 'exec'))"
+
     def entry(role, mode, *arguments):
-        return json.loads(execute(role,'python','-B','/qualification/entry.py',mode,*arguments).strip().splitlines()[-1])
+        return json.loads(execute(role,'python','-B','-c',fixture_entry,mode,*arguments).strip().splitlines()[-1])
 
     def api(method,path,body=None,identity=None):
         code = """import json,sys,httpx
@@ -417,7 +421,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
-        launch('game-feedback-worker',['python','-B','/qualification/entry.py','feedback-worker'])
+        launch('game-feedback-worker',['python','-B','-c',fixture_entry,'feedback-worker'])
         wait_for(lambda: api('GET','/api/health')['status']==200,'packaged_feedback_api_not_ready')
         def actual_collector_prepared():
             observed = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
@@ -462,7 +466,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert len({item['container_id'] for item in observed_runtimes})==3
         stamp = datetime.now(timezone.utc).isoformat()
         mode = dict(schema_version=1,workspace_id='legacy',generation=1,mode='feedback',phase='active',
-            operation_id='packaged-feedback:'+uuid.uuid4().hex,release_revision=revision,collector_image=image,
+            operation_id='packaged-feedback:'+uuid.uuid4().hex,release_revision=backend_revision,collector_image=image,
             configuration_fingerprint=hashlib.sha256(json.dumps(observed_config,sort_keys=True).encode()).hexdigest(),
             target_fingerprint=hashlib.sha256(json.dumps(dict(owner=owner,container=pg['Id'],database=database_name),sort_keys=True).encode()).hexdigest(),
             runtimes=observed_runtimes,updated_at=stamp,verified_at=stamp)
