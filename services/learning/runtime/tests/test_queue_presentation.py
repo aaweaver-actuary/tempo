@@ -7,7 +7,7 @@ from tempo_learning_runtime.queue_ordering import PRESENTATION_VERSION
 from test_runtime import activate, bundle, head, review_payload, submit
 
 
-def test_runtime_balances_admitted_work_and_replays_without_moving_issued_head(case):
+def test_runtime_puts_new_openings_first_and_replays_without_moving_issued_head(case):
     import chess
     moves = [move.uci() for move in chess.Board().legal_moves][:10]
     payload = bundle([(kind,dict(type='move_line',accepted_lines=[[move]],mode='single',grading_policy='reference'))
@@ -15,7 +15,7 @@ def test_runtime_balances_admitted_work_and_replays_without_moving_issued_head(c
     activate(case,payload)
     rows = [tuple(row) for row in case.query("SELECT q.id,q.card_id,q.position,c.content_type,q.queue_date FROM learning.daily_queue q JOIN learning.cards c ON c.id=q.card_id WHERE q.status='queued' ORDER BY position,id")]
     assert len(rows)==10
-    assert 3 <= next(index+1 for index,row in enumerate(rows) if row[3]=='tactic') <= 8
+    assert [row[3] for row in rows] == ['opening'] * 9 + ['tactic']
     assert Counter(row[3] for row in rows)=={'opening':9,'tactic':1}
     issued = head(case)
     origins = [tuple(row) for row in case.query("SELECT queue_entry_id,card_id,admission_kind,admission_repertoire_id FROM learning.queue_attempt_origins ORDER BY queue_entry_id")]

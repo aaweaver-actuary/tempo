@@ -226,26 +226,40 @@ is invented. See the [browser boundary](../../../app/README.md#saved-endgame-pra
 ## Daily presentation
 
 The shared Learning `queue_ordering` owner presents only admitted rows. Policy
-`queue-presentation-v3` retains the persisted daily seed and policy fingerprint,
-spreads new/review cohorts proportionately and spreads content families within
-each cohort. Frozen selection and new-opening relative rank remain authoritative;
-opening slots can move across other categories. This policy also runs in legacy
-Study-only refresh, without enabling optional analysis or admission providers.
+`queue-presentation-v4` retains the persisted daily seed and policy fingerprint.
+Among movable slots, existing urgent game misses come first, followed by eligible,
+untouched new opening cards in frozen-rank order, then the ordinary remainder in
+its baseline relative order. New tactics remain ordinary work. New openings use
+the presentation adapter's effective `admission_kind == "new"` and normalized
+opening content type, rather than card state or introduction timestamps.
 
 Issued attempts, active presentation evidence, unavailable rows and explicit user
 placement keep their physical positions. The first-departure urgent overlay can
 move ahead of unissued teaching/repeat/failure flags while preserving those
-candidate payloads. Without urgent work, ordinary mixing retains its positioned
-repeat behavior. Ready forward work precedes historical drain; original
-determination and stable effect identity define FIFO within each class. Six
-simultaneous targets remain visible backlog rather than an impossible five-card
-claim. A receipt carries across a controlled completion, burial or
-positioned insertion only if the pre-mutation membership and frozen activation
-matched that receipt. Unmixed admissions and replacement ranks remain dirty.
-Reloads and refreshes reuse the saved order; legacy prepared publication
-rejects changed membership, issuance, revision, eligibility or positions before
-writing. No scheduler formula, due date, quota, admission rule or offline protocol
-changes here. Soft failed-retry cooldowns require a separate policy adoption.
+candidate payloads. Without urgent work, ordinary mixing retains positioned
+repeats and first-success reinforcement. A newly admitted opening can cross older
+untouched ordinary reviews after a mid-session refresh, while those reviews keep
+their relative order. Ready forward game obligations precede historical drain;
+original determination and stable effect identity define FIFO within each class,
+including when new openings are promoted. Six simultaneous urgent targets remain
+visible backlog rather than an impossible five-card claim. A continuation already
+issued before admission stays protected until the next safe boundary.
+
+An existing nonempty ready day requests the normal durable refresh when its saved
+presentation receipt lacks the direct current-version prefix. Current ready days
+and empty ready days retain their fast path; queued or leased refresh work is
+reused. Publication still checks complete membership, frozen activation, issuance,
+revision, eligibility and positions. Version freshness only requests refresh; it
+does not certify publication validity. Reloads and subsequent refreshes reuse the
+saved order.
+
+A receipt carries across a controlled completion, burial or positioned insertion
+only if the pre-mutation membership and frozen activation matched that receipt.
+Unmixed admissions and replacement ranks remain dirty. The version upgrade may
+change the seeded ordinary sequence once; with neither promotable new openings
+nor urgent work the final promotion pass is a no-op. No scheduler formula, due date, quota, admission
+rule, ranking, selection or offline protocol changes here. Soft failed-retry
+cooldowns require a separate policy adoption.
 
 Legacy background preparation pages at most 16 queue entries per read section,
 looks up review history separately, and evaluates eligibility only for that page.

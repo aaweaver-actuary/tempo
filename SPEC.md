@@ -129,7 +129,7 @@ Preserve missing/unknown probability mass. Do not renormalize a partial Explorer
 
 ### S02 — Probability-driven introductions
 
-Rank eligible, approved, unintroduced opening decisions by expected encounter likelihood, evidence support, and uncertainty—not a statistical-significance test. Deduplicate shared decisions and transpositions. Required reviews and admitted game misses take precedence over discretionary new introductions.
+Rank eligible, approved, unintroduced opening decisions by expected encounter likelihood, evidence support, and uncertainty—not a statistical-significance test. Deduplicate shared decisions and transpositions. Among reorderable queue slots, admitted urgent game misses come first, then eligible, admitted, untouched new repertoire cards in their frozen relative order, then ordinary reviews and other ordinary work. Apply this presentation order on daily construction, safe refresh after new-card admission, and adoption by an existing ready day. Active, issued, presented or teaching attempts, explicit work, unavailable rows and positioned retries retain their protected positions.
 
 For discretionary introductions, use one global opening introduction budget with user-selected relative repertoire weights. G03 governs the real-game encounter exception. Depth should follow likely useful encounters rather than requiring every ancestor to reach an arbitrary maturity threshold. Changes to this policy belong to Study's introduction owner; optional analysis supplies rankings, not direct queue writes. Retain the last usable ranking or the existing safe order when evidence is unavailable.
 

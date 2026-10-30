@@ -70,6 +70,20 @@ def test_review_triggered_queue_extension_preserves_surviving_attempt_order_and_
     assert _plan_daily_queue_order(rows, '2026-10-09', None, preserve_through_entry_id=3)[2] == ordered
 
 
+def test_newly_admitted_opening_crosses_untouched_reviews_but_keeps_attempt_and_retry_slots():
+    from app.main import _plan_daily_queue_order
+    rows = [dict(id=index, card_id=f'card-{index}', position=index - 1,
+                 admission_kind='review', content_type='opening', gameplay_priority_reason=None)
+            for index in range(1, 5)]
+    rows[0]['issued'] = True
+    rows[2].update(cycle=1, attempt_state='guided')
+    rows.append(dict(id=5, card_id='admitted-child', position=4, admission_kind='new',
+                     content_type='opening', gameplay_priority_reason=None))
+    _, _, ordered = _plan_daily_queue_order(rows, '2026-10-09', None, preserve_through_entry_id=4)
+    assert [row['id'] for row in ordered] == [1, 5, 3, 2, 4]
+    assert _plan_daily_queue_order(rows, '2026-10-09', None, preserve_through_entry_id=4)[2] == ordered
+
+
 def test_republished_routes_reuse_real_exposure_but_shortened_new_parent_does_not_inherit_it(progression_database):
     connection = progression_database
     connection.execute("INSERT INTO reviews VALUES('parent','again','study',NULL)")

@@ -344,7 +344,7 @@ def local_host_admission(monkeypatch):
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
 
 
-def test_native_proportional_presentation_preserves_frozen_selection_quota_and_retry(case, local_host_admission):
+def test_native_new_openings_first_preserves_frozen_selection_quota_and_retry(case, local_host_admission):
     from app.services import frozen_opening_order as frozen, postgres_queue_refresh as refresh, queue_application
     from app.study.openings.frozen_math import content_fingerprint
     with postgres_store.connection() as database:
@@ -383,9 +383,7 @@ def test_native_proportional_presentation_preserves_frozen_selection_quota_and_r
                 assert next(row['position'] for row in current if row['id']==identifier) == next(row[2] for row in original if row[0]==identifier)
             ordinary = [row for row in current if row['id'] not in protected]
             assert [row['card_id'] for row in ordinary if row['content_type']=='opening'] == expected_openings
-            tactic_positions = [index+1 for index,row in enumerate(ordinary) if row['content_type']=='tactic']
-            assert len(tactic_positions)==10 and tactic_positions[-1]>=92
-            assert all(9<=right-left<=11 for left,right in zip(tactic_positions,tactic_positions[1:]))
+            assert [row['content_type'] for row in ordinary] == ['opening'] * 90 + ['tactic'] * 10
             assert [tuple(row) for row in database.execute("SELECT card_id,cycle,admission_kind,admission_repertoire_id FROM queue_attempt_origins WHERE queue_date=? ORDER BY queue_entry_id",(case['day'],))] == quota
         assert refresh._prepare_queue_randomization(case['day'])['entries'] is None
 

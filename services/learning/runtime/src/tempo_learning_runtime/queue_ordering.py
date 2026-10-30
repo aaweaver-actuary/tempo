@@ -11,7 +11,7 @@ from typing import NotRequired, Sequence, TypedDict
 from .real_game_feedback import MISS_REASON
 
 
-PRESENTATION_VERSION = "queue-presentation-v3"
+PRESENTATION_VERSION = "queue-presentation-v4"
 
 
 class QueueOrderingRow(TypedDict):
@@ -76,7 +76,7 @@ def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) ->
     ):
         return fingerprint
     # Only a matching pre-mutation receipt can certify a controlled removal or
-    # positioned insertion. A v3 prefix alone cannot certify new admissions or
+    # positioned insertion. A policy prefix alone cannot certify new admissions or
     # a replacement frozen publication that has not yet been presented.
     return "unmixed:" + fingerprint
 
@@ -163,18 +163,22 @@ def _plan_daily_queue_order(
     *,
     preserve_through_entry_id: int | None = None,
 ) -> QueueOrderPlan:
-    """Spread each cohort through the movable slots, then retain that order.
+    """Present new openings first while retaining protected slots and replay.
 
-    Each group's virtual positions are spaced 1/count apart. Its seeded phase
-    lies in the middle half of the first interval; exact fractions avoid clock,
-    floating-point and process-randomization dependencies. Priority/explicit and
-    protected slots are intentional exceptions to ordinary proportional spacing.
+    The seeded cohort/category mix establishes ordinary relative order. Each
+    group's virtual positions are spaced 1/count apart, with a seeded phase in
+    the middle half of the first interval. A final pass promotes urgent work and
+    new openings across untouched ordinary work, including older preserved rows.
+    Actual attempts keep their positions; unissued historical retry flags do
+    not pin ordinary work ahead of an eligible urgent obligation.
     """
     seed = saved["seed"] if saved else int(hashlib.sha256(day.encode()).hexdigest()[:15], 16)
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
     urgent = any(_movable_urgent(row) for row in rows)
-    protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id,
-                                     urgent=urgent)
+    # Establish ordinary relative order with the existing preservation boundary.
+    # The final urgency pass may cross those slots without reshuffling their
+    # untouched ordinary occupants relative to one another.
+    protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id)
     movable = [row for row in slots if row["id"] not in protected]
     priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
                       key=_urgent_order)
@@ -192,10 +196,29 @@ def _plan_daily_queue_order(
         else:
             values.sort(key=lambda row: (_digest([PRESENTATION_VERSION, seed, key, row["card_id"], row["id"]]), row["id"]))
         cohorts.setdefault(key[0], {})[key[1]] = values
-    # Balance review/new cohorts first, then content within each cohort. Equal
-    # cohorts still alternate even when one contains more different families.
+    # Establish the baseline cohort/content mix before promoting new openings.
+    # The preservation boundary retains older ordinary relative order.
     cohort_rows = {cohort: _spread_groups(categories, seed, cohort)
                    for cohort, categories in cohorts.items()}
     ordered = iter(priority + _spread_groups(cohort_rows, seed, "cohorts"))
     result = [row if row["id"] in protected else next(ordered) for row in slots]
+
+    # A broad progression boundary protects ordinary relative order, not its
+    # precedence over newly admitted openings. Only actual attempt/retry and
+    # eligibility protections reserve physical slots for this final pass.
+    protected = _protected_queue_ids(rows, urgent=urgent)
+    movable = [row for row in result if row["id"] not in protected]
+    openings = [row for row in movable if row["admission_kind"] == "new"
+                and (row["content_type"] or "opening") == "opening"
+                and row["gameplay_priority_reason"] != MISS_REASON]
+    priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
+                      key=_urgent_order)
+    if openings or priority:
+        openings.sort(key=lambda row: (row.get("frozen_rank") is None,
+                      row.get("frozen_rank") or 0, row["position"], row["id"]))
+        opening_ids = {row["id"] for row in openings}
+        remainder = [row for row in movable if row["id"] not in opening_ids
+                     and row["gameplay_priority_reason"] != MISS_REASON]
+        ordered = iter(priority + openings + remainder)
+        result = [row if row["id"] in protected else next(ordered) for row in result]
     return seed, _queue_membership_hash(rows), result

@@ -21,16 +21,17 @@ def plan(rows, seed=0, **options):
     return ordering._plan_daily_queue_order(rows, "2026-10-18", {"seed": seed, "membership_hash": "old"}, **options)
 
 
-@pytest.mark.parametrize("minority", [("new", "tactic"), ("review", "opening")])
-def test_ten_percent_cohort_is_spread_through_the_whole_queue(minority):
-    rows = rows_for(("new", "opening", 90), (*minority, 10))
+def is_new_opening(row):
+    return row['admission_kind'] == 'new' and (row['content_type'] or 'opening') == 'opening'
+
+
+@pytest.mark.parametrize("new_count,review_count", [(10, 90), (90, 10), (1, 99)])
+def test_new_openings_precede_ordinary_reviews_for_skewed_cohorts(new_count, review_count):
+    rows = rows_for(("review", "opening", review_count), ("new", "opening", new_count))
     for seed in range(64):
         ordered = plan(rows, seed)[2]
-        positions = [index + 1 for index, row in enumerate(ordered)
-                     if (row['admission_kind'], row['content_type']) == minority]
-        assert len(positions) == 10
-        assert positions[0] <= 8 and positions[-1] >= 92
-        assert all(9 <= right - left <= 11 for left, right in zip(positions, positions[1:]))
+        assert all(is_new_opening(row) for row in ordered[:new_count])
+        assert all(not is_new_opening(row) for row in ordered[new_count:])
 
 
 @pytest.mark.parametrize("groups", [
@@ -39,22 +40,35 @@ def test_ten_percent_cohort_is_spread_through_the_whole_queue(minority):
     [("new", "opening", 1), ("review", "tactic", 1), ("review", "defense", 1)],
     [("review", "middlegame", 7)], [],
 ])
-def test_proportional_prefix_counts_and_membership_are_stable_across_seeds(groups):
+def test_new_opening_front_block_preserves_membership_seed_and_input(groups):
     rows = rows_for(*groups)
     original = deepcopy(rows)
     expected = Counter((row['admission_kind'], row['content_type']) for row in rows)
     for seed in range(16):
         result = plan(rows, seed)
         assert result == plan(list(reversed(rows)), seed)
+        assert Counter((row['admission_kind'], row['content_type']) for row in result[2]) == expected
         assert {row['id'] for row in result[2]} == {row['id'] for row in rows}
         assert result[0] == seed
         assert result[1].startswith(ordering.PRESENTATION_VERSION + ':')
-        seen = Counter()
-        for length, row in enumerate(result[2], 1):
-            seen[row['admission_kind'], row['content_type']] += 1
-            for key, count in expected.items():
-                assert abs(seen[key] - length * count / len(rows)) <= len(expected)
+        count = sum(is_new_opening(row) for row in rows)
+        assert all(is_new_opening(row) for row in result[2][:count])
+        assert all(not is_new_opening(row) for row in result[2][count:])
+        assert plan(result[2], seed)[2] == result[2]
     assert rows == original
+
+
+def test_ordinary_remainder_keeps_existing_cohort_and_category_spreading():
+    rows = rows_for(("new", "opening", 9), ("new", "tactic", 10), ("review", "opening", 20),
+                    ("review", "tactic", 20))
+    for seed in range(16):
+        suffix = plan(rows, seed)[2][9:]
+        # Promotion retains the baseline mix rather than putting new tactics in
+        # the opening block or sorting ordinary work back to its input positions.
+        assert sum(row['admission_kind'] == 'new' for row in suffix) == 10
+        assert {row['content_type'] for row in suffix[:10]} == {'opening', 'tactic'}
+        assert {row['admission_kind'] for row in suffix[:10]} == {'new', 'review'}
+        assert suffix != rows[9:]
 
 
 def test_frozen_relative_rank_moves_across_categories_without_changing_selection():
@@ -64,7 +78,7 @@ def test_frozen_relative_rank_moves_across_categories_without_changing_selection
     for seed in range(8):
         ordered = plan(rows, seed)[2]
         assert [row['frozen_rank'] for row in ordered if row['content_type'] == 'opening'] == list(range(1, 10))
-        assert any(row['content_type'] == 'tactic' for row in ordered[:8])
+        assert all(is_new_opening(row) for row in ordered[:9])
         assert sorted(row['id'] for row in ordered) == list(range(1, 13))
 
 
@@ -91,7 +105,7 @@ def test_priority_is_first_movable_and_overlay_preserves_ordinary_order():
     assert overlay[2:] == rows[1:-1]
 
 
-def test_preserve_through_retains_exact_existing_slots():
+def test_preserve_through_retains_frozen_rank_order_within_existing_openings():
     rows = rows_for(("new", "opening", 4), ("review", "tactic", 4))
     rows[0]['position'], rows[3]['position'] = rows[3]['position'], rows[0]['position']
     ordered = plan(rows, preserve_through_entry_id=4)[2]
@@ -172,6 +186,23 @@ def test_live_urgent_cohort_is_durable_fifo_before_history_and_ordinary_work():
     assert ordering._priority_queue_order(ordering._priority_queue_order(rows)) == ordering._priority_queue_order(rows)
 
 
+def test_new_opening_promotion_preserves_live_urgent_fifo_and_issued_attempt():
+    rows = rows_for(('review','opening',6), ('new','opening',2))
+    rows[0]['issued'] = True
+    # Trigger the final new-opening pass with a reverse-ID urgent cohort and
+    # a historically older reconciliation obligation that still follows live.
+    for ordinal, row in enumerate(reversed(rows[2:6])):
+        row.update(gameplay_priority_reason=ordering.MISS_REASON, urgent_stream='forward',
+            urgent_determined_at=f'2026-10-30T00:00:0{ordinal}Z', urgent_effect_id=f'live-{ordinal}')
+    rows[1].update(gameplay_priority_reason=ordering.MISS_REASON, urgent_stream='reconciliation',
+        urgent_determined_at='2020-01-01T00:00:00Z', urgent_effect_id='history')
+    expected = [rows[0], *reversed(rows[2:6]), rows[1], *rows[6:]]
+    original = deepcopy(rows)
+    assert plan(rows, preserve_through_entry_id=rows[5]['id'])[2] == expected
+    assert plan(list(reversed(rows)))[2] == expected
+    assert rows == original
+
+
 def test_urgent_fifo_compares_actual_utc_instants_at_microsecond_precision():
     rows = rows_for(('review','opening',3))
     for row in rows:
@@ -193,7 +224,7 @@ def test_unavailable_priority_does_not_relax_ordinary_positioned_repeat():
     assert held_only[2] == rows[2]
 
 
-def test_prior_v3_receipt_cannot_certify_replacement_activation_or_unmixed_append():
+def test_current_receipt_cannot_certify_replacement_activation_or_unmixed_append():
     rows = rows_for(("new", "opening", 3))
     token = ['old', 1]
     saved = {'membership_hash': ordering._queue_order_fingerprint(ordering._queue_membership_hash(rows), token)}
@@ -212,3 +243,91 @@ def test_only_verified_pre_mutation_provenance_preserves_removal_and_positioned_
     assert ordering._preserved_queue_fingerprint(changed, saved, token, previous=previous) == expected
     assert ordering._preserved_queue_fingerprint(changed, saved, ['replacement', 2], previous=previous).startswith('unmixed:')
     assert ordering._queue_order_provenance(rows[1:], saved, token) is None
+
+
+def test_null_content_normalizes_to_new_opening_but_new_tactics_do_not():
+    rows = rows_for(("review", "opening", 5), ("new", "tactic", 4), ("new", None, 2))
+    ordered = plan(rows)[2]
+    assert ordered[:2] == rows[-2:]
+    assert not any(is_new_opening(row) for row in ordered[2:])
+
+
+def test_ranked_openings_precede_unranked_then_use_prior_position_and_id():
+    rows = rows_for(("new", "opening", 6), ("review", "opening", 2))
+    rows[0]['frozen_rank'] = 4
+    rows[2]['frozen_rank'] = 0
+    rows[3]['frozen_rank'] = 4
+    rows[1]['position'] = rows[4]['position'] = 6
+    for seed in range(8):
+        ordered = plan(rows, seed)[2]
+        assert [row['id'] for row in ordered[:6]] == [3, 1, 4, 6, 2, 5]
+
+
+def test_empty_and_all_protected_queues_preserve_exact_positions():
+    assert plan([])[2] == []
+    rows = rows_for(("review", "opening", 3), ("new", "opening", 4))
+    for row in rows:
+        row['issued'] = True
+    assert plan(list(reversed(rows)))[2] == rows
+
+
+def test_no_promotable_openings_keep_the_versioned_baseline_order():
+    rows = rows_for(("review", "opening", 20), ("new", "tactic", 4))
+    for seed in range(8):
+        result = plan(rows, seed)[2]
+        assert result == plan(list(reversed(rows)), seed)[2]
+        assert result == plan(result, seed)[2]
+        # With every old row inside the preservation boundary, baseline order
+        # itself is fixed and the final pass must not reorder the remainder.
+        assert plan(rows, seed, preserve_through_entry_id=24)[2] == rows
+
+
+def test_new_opening_fills_first_available_slot_after_issued_ordinary_head():
+    rows = rows_for(("review", "opening", 5), ("new", "opening", 2))
+    rows[0]['issued'] = True
+    ordered = plan(rows)[2]
+    assert ordered[0] == rows[0]
+    assert ordered[1:3] == rows[-2:]
+
+
+@pytest.mark.parametrize('protection', [dict(cycle=1), dict(attempt_failed=True),
+    dict(attempt_state='guided'), dict(attempt_state='reinforcement')])
+def test_positioned_repeat_stays_while_new_opening_crosses_ordinary_reviews(protection):
+    rows = rows_for(("review", "opening", 5), ("new", "opening", 2))
+    rows[2].update(protection)
+    ordered = plan(rows, preserve_through_entry_id=5)[2]
+    assert ordered[2] == rows[2]
+    assert ordered[:2] == rows[-2:]
+    assert ordered[3:] == [rows[0], rows[1], rows[3], rows[4]]
+
+
+def test_new_child_crosses_preserve_through_untouched_reviews_without_reversing_them():
+    rows = rows_for(("review", "opening", 2), ("new", "opening", 1))
+    assert plan(rows, preserve_through_entry_id=2)[2] == [rows[2], rows[0], rows[1]]
+
+
+def test_new_child_and_prior_opening_use_frozen_rank_across_preserved_ordinary_work():
+    rows = rows_for(("review", "opening", 4), ("new", "opening", 2))
+    rows[0]['issued'] = True
+    rows[2].update(cycle=1, attempt_state='guided')
+    rows[4]['frozen_rank'] = 9
+    rows[5]['frozen_rank'] = 1
+    assert plan(rows, preserve_through_entry_id=5)[2] == [rows[0], rows[5], rows[2], rows[4], rows[1], rows[3]]
+
+
+def test_historical_literal_v3_receipt_cannot_certify_current_policy():
+    rows = rows_for(("new", "opening", 3))
+    old = {'seed': 123, 'membership_hash': 'queue-presentation-v3:' + ordering._digest(
+        sorted((row['id'], row['card_id']) for row in rows))}
+    assert ordering.PRESENTATION_VERSION != 'queue-presentation-v3'
+    assert ordering._queue_order_provenance(rows, old, [None, 0]) is None
+    assert ordering._preserved_queue_fingerprint(rows, old, [None, 0]).startswith('unmixed:')
+
+
+def test_urgent_game_work_precedes_new_openings_across_preserve_through():
+    rows = rows_for(("review", "opening", 4), ("new", "opening", 2))
+    rows[0]['issued'] = True
+    rows[3]['gameplay_priority_reason'] = ordering.MISS_REASON
+    ordered = plan(rows, preserve_through_entry_id=4)[2]
+    assert ordered[:4] == [rows[0], rows[3], rows[4], rows[5]]
+    assert ordered[4:] == rows[1:3]

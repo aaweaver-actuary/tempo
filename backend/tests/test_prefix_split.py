@@ -8,6 +8,7 @@ from tempo_legacy_database import connections as database
 from app.main import app
 from app import main as main_module
 from app.chess.cards import card_id
+from app.services.queue_ordering import PRESENTATION_VERSION
 
 
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -46,7 +47,7 @@ def test_split_then_refresh_preserves_after_four_only_from_verified_presentation
         queue_application.randomize_daily_queue(connection, day)
         after = [tuple(row) for row in connection.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
         assert after == before
-        assert fingerprint.startswith('queue-presentation-v3:')
+        assert fingerprint.startswith(PRESENTATION_VERSION + ':')
 
 
 def seed_prefix_card(database_connection, trained_color: str, moves: list[str]) -> str:

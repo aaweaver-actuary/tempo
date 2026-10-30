@@ -18,7 +18,7 @@ def test_database_initialize_migrates_study_tables_for_direct_queue_users(tmp_pa
         assert "study_exercise_id" in {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
 
 
-def _seed_cards() -> None:
+def _seed_cards(*, review_groups: int = 2) -> None:
     today = date.today().isoformat()
     with database.connection() as db:
         db.execute(
@@ -26,7 +26,7 @@ def _seed_cards() -> None:
             (today,),
         )
         for index, content_type in enumerate(
-            ["opening", "tactic", "endgame", "middlegame"] * 2
+            ["opening", "tactic", "endgame", "middlegame"] * review_groups
         ):
             card_id = f"review-{index}"
             db.execute(
@@ -53,32 +53,43 @@ def _seed_cards() -> None:
     )
 
 
-def test_daily_queue_is_stable_within_a_day_and_mixed(tmp_path, monkeypatch):
+def test_daily_queue_puts_untouched_new_openings_first_and_replays_stably(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         _seed_cards()
         first = client.get("/api/queue/today").json()["cards"]
         second = client.get("/api/queue/today").json()["cards"]
         assert [card["id"] for card in first] == [card["id"] for card in second]
-        cohorts = ["review" if card["id"].startswith("review-") else "new" for card in first]
-        assert all(left != right for left, right in zip(cohorts, cohorts[1:]))
-        assert len({card["content_type"] for card in first[:6]}) >= 3
+        assert {card["id"] for card in first[:2]} == {"new-0", "new-4"}
+        assert all(card["content_type"] == "opening" for card in first[:2])
+        assert len(first) == 16
+        assert {card["id"] for card in first} == {
+            f"{cohort}-{index}" for cohort in ("new", "review") for index in range(8)
+        }
+        assert {card["content_type"] for card in first[2:]} >= {"opening", "tactic"}
         assert len({card["position"] for card in first}) == len(first)
 
 
-def test_training_queue_window_limits_cards_and_preserves_order(tmp_path, monkeypatch):
+def test_training_queue_window_longer_than_twenty_starts_with_new_openings(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        _seed_cards()
+        _seed_cards(review_groups=6)
         complete = client.get("/api/queue/today").json()
-        window_response = client.get("/api/queue/window?limit=3")
+        with database.read_connection() as db:
+            persisted = [row[0] for row in db.execute(
+                "SELECT id FROM daily_queue WHERE status='queued' ORDER BY position,id"
+            )]
+        assert complete["count"] == 32
+        assert [card["queue_entry_id"] for card in complete["cards"]] == persisted
+        assert {card["id"] for card in complete["cards"][:2]} == {"new-0", "new-4"}
+        window_response = client.get("/api/queue/window?limit=20")
         assert window_response.status_code == 200
         window = window_response.json()
         assert [card["queue_entry_id"] for card in window["cards"]] == [
-            card["queue_entry_id"] for card in complete["cards"][:3]
+            card["queue_entry_id"] for card in complete["cards"][:20]
         ]
         assert window["count"] == complete["count"]
-        assert len(window["cards"]) == 3
+        assert len(window["cards"]) == 20
 
 
 def test_study_queue_window_count_matches_published_prepared_cards(tmp_path, monkeypatch):
@@ -146,6 +157,7 @@ def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatc
                 )
             ]
         assert today_order != tomorrow_order
+        assert set(today_order[:2]) == set(tomorrow_order[:2]) == {"new-0", "new-4"}
 
 
 def test_bury_excludes_card_until_next_day_without_review_or_schedule_change(tmp_path, monkeypatch):
