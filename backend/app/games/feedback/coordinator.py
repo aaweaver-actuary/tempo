@@ -13,6 +13,7 @@ from app.contracts.product_v02.repertoire import IntroductionGameScope, Repertoi
 from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, Delivery, DeliveryDeferred, DeliveryQualifier,
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState)
 from .first_boundary import select_first_boundary
+from .qualification import acknowledge_qualified_delivery
 
 
 def stable_id(*parts: object) -> str:
@@ -400,14 +401,8 @@ class Coordinator:
                 receipt = self.learning.control_effect(command)
             elif self.qualifier is not None:
                 receipt = self.learning.accept_qualified(command, qualification=delivery.qualification)
-                digest = (command.source.source_digest if delivery.encounter is not None
-                          else command.finding.source_digest)
-                if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (digest, "missed"):
-                    raise ValueError("receiver_qualified_receipt_provenance_mismatch")
-                if (receipt.interface_version != "0.2.2" or receipt.progress is None
-                        or receipt.progress.determined_at != delivery.qualification.determined_at
-                        or receipt.progress.stream != delivery.qualification.stream):
-                    raise ValueError("receiver_first_departure_policy_receipt_required")
+                self.store.save_delivery(acknowledge_qualified_delivery(delivery, receipt))
+                return
             elif delivery.encounter is not None:
                 receipt = self.learning.accept_encounter(command)
                 if not isinstance(receipt, EncounterReceipt) or (receipt.source_digest, receipt.observation) != (

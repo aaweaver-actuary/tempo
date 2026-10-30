@@ -8,11 +8,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
 import logging
+import json
 import re
 
 from app.contracts.product_v02.learning import FirstDepartureWitness
-from app.games.feedback.ports import DeliveryDeferred
-from app.games.feedback.qualification import held_delivery, qualify_delivery
+from app.games.feedback.ports import Delivery, DeliveryDeferred
+from app.games.feedback.qualification import (acknowledge_qualified_delivery,
+    held_delivery, qualify_delivery)
 from app.repertoire import project_capture, project_published_repertoire
 from .encounters import receive_admitted_encounter
 from .game_review import CurrentStudyFeedback, CurrentStudyReceiptReads
@@ -40,6 +42,8 @@ _CAPTURE_REASONS = frozenset({
     "qualified_source_identity_changed", "qualified_original_effect_unproved",
     "qualified_effect_controlled", "qualified_canonical_source_changed",
     "qualification_original_command_mismatch",
+    "managed_feedback_mode_not_active", "managed_feedback_runtime_identity_unavailable",
+    "managed_feedback_runtime_identity_changed",
 })
 
 
@@ -62,6 +66,22 @@ class PreparedProviderFeedback:
     qualification: FirstDepartureWitness
     prepared_decisions: object
     require_active_mode: bool = False
+    mode_runtime_id: str | None = None
+    qualification_fence: object = None
+
+
+@dataclass(frozen=True)
+class PreparedDeterminedFeedback:
+    original_delivery: Delivery
+    delivery: Delivery
+    provider_feedback: PreparedProviderFeedback | None
+    mode_runtime_id: str
+
+    @property
+    def priority(self):
+        return dict(urgent_stream=self.delivery.stream,
+            urgent_determined_at=self.delivery.determined_at,
+            urgent_effect_id=self.delivery.owner_effect_id)
 
 
 @dataclass(frozen=True)
@@ -106,7 +126,7 @@ def _owner_capture(connections, supplied=None):
 
 def _qualified_facts(command, *, connections, clock, delivery=None, selector=None):
     """Read bounded source/config/publications; close connections before replay."""
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire_json
     from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
     from app.games.feedback.coordinator import delivery_for
     if selector is None:
@@ -125,8 +145,9 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
         for repertoire_id in configuration.repertoire_ids:
             try:
                 with connections() as database:
-                    facts = read_repertoire(database, repertoire_id)
-                # Chess work runs after that read transaction/connection closes.
+                    facts_json = read_repertoire_json(database, repertoire_id)
+                # Decoding and chess work both follow the bounded read context.
+                facts = json.loads(facts_json)
                 snapshot = project_published_repertoire(facts)
             except ValueError:
                 unavailable.append(repertoire_id)
@@ -148,20 +169,27 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
     """Prepare global publication proof and exact target proof separately."""
     from tempo_legacy_database.adapters.games.product_feedback import fence_qualified_feedback
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
+    runtime_id = None
+    if require_active_mode:
+        from .managed_runtime import current_managed_runtime_identity
+        runtime_id = current_managed_runtime_identity()
+        if runtime_id is None:
+            raise DeliveryDeferred("managed_feedback_runtime_identity_unavailable")
     decision = qualification.selection.decision
     target_capture = capture(decision.repertoire_id, command.key.game_id,
         (command.key.occurrence_ply - 1,))
     game = retained_canonical_game(target_capture)
     target_snapshot = project_capture(target_capture, comparison_game=game)
+    source_fence = partial(fence_qualified_feedback,
+        expected_configuration=configuration, expected_source=source,
+        require_active_mode=require_active_mode, mode_runtime_id=runtime_id)
     decisions = CurrentOwnerDecisions(None, retained_owner_capture=target_capture,
         snapshot=target_snapshot).prepare_qualified(command, qualification,
             qualified_publications=publications,
-            qualification_fence=partial(fence_qualified_feedback,
-                expected_configuration=configuration, expected_source=source,
-                require_active_mode=require_active_mode),
+            qualification_fence=source_fence,
             game=game, select_first_boundary=selector)
     return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions,
-        require_active_mode)
+        require_active_mode, runtime_id, source_fence)
 
 
 def prepare_feedback_qualification(command, *, connections=None, read=None, clock,
@@ -258,8 +286,123 @@ def pending_determined_feedback(*, workspace, connections, admitted, before_prio
         return False
 
 
+def prepare_determined_feedback(*, workspace, connections, clock, admitted, capture=None,
+                               selector=None):
+    """PURE preparation of one determined outbox unit, with every read closed.
+
+    Selecting, qualification, target capture and chess projection cannot mutate
+    either owner. A gateway may discard this object for a replayed/stale request.
+    """
+    if not _admitted(admitted):
+        return None
+    from .managed_runtime import current_managed_runtime_identity
+    runtime_id = current_managed_runtime_identity()
+    if runtime_id is None:
+        return None
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from app.study.game_feedback import effect_id
+    original = PostgresGamesStore(connections).pending_delivery(clock.now(),
+        ready_only=True, workspace=workspace, priority_order=True)
+    if original is None:
+        return None
+    qualified, provider = original, None
+    try:
+        qualified, source, configuration, publications, selected = _qualified_facts(
+            original.command, connections=connections, clock=clock, delivery=original,
+            selector=selector)
+        if qualified.qualification_status == "ready":
+            provider = _prepare_qualified_owner(original.command, qualified.qualification,
+                source=source, configuration=configuration, publications=publications,
+                selector=selected, capture=_owner_capture(connections, capture), require_active_mode=True)
+    except DeliveryDeferred as error:
+        qualified = held_delivery(qualified, error.reason,
+            retry_at=clock.now() + error.retry_after, retryable=error.retryable)
+    except Exception as error:
+        qualified = held_delivery(qualified, "first_departure_preparation_unavailable",
+            retry_at=clock.now() + 30)
+        _LOGGER.warning("Local Games preparation deferred error=%s code=%s",
+                        type(error).__name__, _failure_code(error))
+    qualified = qualified.model_copy(update={"owner_effect_id": effect_id(original.command.key)})
+    # Full projection can take seconds. A restart/identity replacement during it
+    # invalidates the ephemeral work rather than lending an old boot authority.
+    if current_managed_runtime_identity() != runtime_id:
+        return None
+    if provider is not None and provider.mode_runtime_id != runtime_id:
+        return None
+    return PreparedDeterminedFeedback(original, qualified, provider, runtime_id)
+
+
+def _accept_prepared_provider(database, prepared, *, clock, current_runtime_id=None):
+    """Only fixed prepared facts and owner SQL run in the borrowed writer."""
+    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
+    if prepared.require_active_mode:
+        if current_runtime_id is None or current_runtime_id != prepared.mode_runtime_id:
+            raise DeliveryDeferred("managed_feedback_runtime_identity_changed")
+        from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
+        fence_feedback_handoff(database, prepared.command.key.workspace_id,
+            runtime_id=current_runtime_id)
+    receiver = current_owner_encounter_intake(database,
+        retained_owner_capture=prepared.target_capture, snapshot=prepared.target_snapshot,
+        prepared_decisions=prepared.prepared_decisions, qualification=prepared.qualification,
+        clock=lambda: datetime.fromisoformat(clock.utc_now().replace("Z", "+00:00")))
+    return receiver.accept_qualified(prepared.command, qualification=prepared.qualification)
+
+
+def apply_prepared_determined_feedback(database, prepared, *, clock, current_runtime_id):
+    """Apply after the gateway receipt/token fence; caller owns commit.
+
+    The root supplies a fresh trusted boot identity obtained outside this writer,
+    never a producer/persisted token. A savepoint rolls back both owners together
+    on a stale fence, invalid receipt or failed acknowledgment. No connections,
+    filesystem, provider calls or chess preparation occur here.
+    """
+    from tempo_legacy_database.adapters.games.product_feedback import (
+        lock_delivery_in_transaction, save_delivery_in_transaction,
+    )
+    if current_runtime_id is None or current_runtime_id != prepared.mode_runtime_id:
+        return LocalFeedbackProgress(False, True, "managed_feedback_runtime_identity_changed")
+    raw = getattr(database, "raw", database)
+    if (getattr(database, "read_only", False)
+            or raw.info.transaction_status.name != "INTRANS"):
+        raise ValueError("borrowed_owner_writer_transaction_required")
+    try:
+        with raw.transaction():  # A savepoint only; never the caller's commit.
+            from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
+            fence_feedback_handoff(database, prepared.delivery.command.key.workspace_id,
+                runtime_id=current_runtime_id)
+            provider = prepared.provider_feedback
+            if provider is not None:
+                if (provider.command != prepared.delivery.command
+                        or provider.qualification != prepared.delivery.qualification
+                        or provider.mode_runtime_id != current_runtime_id
+                        or not provider.require_active_mode or not callable(provider.qualification_fence)):
+                    raise DeliveryDeferred("first_departure_prepared_authority_required")
+                # Mode/config/source locks precede the outbox and Study locks.
+                provider.qualification_fence(database, provider.command, provider.qualification)
+            current = lock_delivery_in_transaction(database, prepared.delivery.operation_id,
+                expected=prepared.original_delivery)
+            if current.state != "pending":
+                return LocalFeedbackProgress(False, False, "delivery_already_disposed")
+            if provider is None:
+                save_delivery_in_transaction(database, prepared.delivery, expected=current)
+                return LocalFeedbackProgress(False, prepared.delivery.state == "pending",
+                    prepared.delivery.qualification_reason)
+            receipt = _accept_prepared_provider(database, provider, clock=clock,
+                current_runtime_id=current_runtime_id)
+            acknowledged = acknowledge_qualified_delivery(prepared.delivery, receipt)
+            saved = save_delivery_in_transaction(database, acknowledged, expected=current)
+            return LocalFeedbackProgress(saved.state == "acknowledged",
+                receipt.status == "pending" or receipt.admission_status == "pending",
+                saved.error)
+    except Exception as error:
+        # The savepoint has already undone any Study acceptance/outbox change.
+        _LOGGER.warning("Local Games apply deferred error=%s code=%s",
+                        type(error).__name__, _failure_code(error))
+        return LocalFeedbackProgress(False, True, "local_feedback_" + _failure_code(error))
+
+
 def advance_determined_feedback(*, workspace, connections, clock, admitted, limit=1):
-    """One mode-admitted local unit before a head writer; no provider factory."""
+    """Standalone mutating worker unit; never a gateway's pure preparer."""
     if limit != 1:
         raise ValueError("local_feedback_is_one_bounded_unit")
     if not _admitted(admitted):
@@ -365,18 +508,16 @@ class CurrentProviderPriorityIntake:
             raise DeliveryDeferred(code) from error
 
     def accept_prepared(self, prepared):
-        from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
         self._require_local_admission()
+        runtime_id = None
+        if prepared.require_active_mode:
+            from .managed_runtime import current_managed_runtime_identity
+            runtime_id = current_managed_runtime_identity()
+            if runtime_id is None or runtime_id != prepared.mode_runtime_id:
+                raise DeliveryDeferred("managed_feedback_runtime_identity_changed")
         with self.connections.writer() as database:
-            if prepared.require_active_mode:
-                from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
-                # Serialize a new handoff before any Study/card/effect lock.
-                fence_feedback_handoff(database, prepared.command.key.workspace_id)
-            receiver = current_owner_encounter_intake(database,
-                retained_owner_capture=prepared.target_capture, snapshot=prepared.target_snapshot,
-                prepared_decisions=prepared.prepared_decisions, qualification=prepared.qualification,
-                clock=lambda: datetime.fromisoformat(self.clock.utc_now().replace("Z", "+00:00")))
-            receipt = receiver.accept_qualified(prepared.command, qualification=prepared.qualification)
+            receipt = _accept_prepared_provider(database, prepared, clock=self.clock,
+                current_runtime_id=runtime_id)
         return receipt  # Commit is complete; loss of this acknowledgment is safe.
 
     def accept_encounter(self, command):

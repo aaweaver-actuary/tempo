@@ -3,7 +3,8 @@
 No storage, provider or Study implementation is imported. Composition supplies
 complete current owner snapshots; a missing scope remains a hold.
 """
-from app.contracts.product_v02.learning import FirstDepartureWitness, GameEncounter
+from app.contracts.product_v02.learning import (EncounterReceipt, FirstDepartureWitness,
+    GameEncounter)
 from app.contracts.product_v02.repertoire import IntroductionGameScope
 
 
@@ -11,6 +12,23 @@ def held_delivery(delivery, reason, *, retry_at, retryable=True):
     return delivery.model_copy(update={"qualification_status": "held",
         "qualification_reason": reason, "qualification_retryable": retryable,
         "error": reason, "next_attempt_at": retry_at})
+
+
+def acknowledge_qualified_delivery(delivery, receipt):
+    """Validate the real owner receipt without changing the frozen command."""
+    command, qualification = delivery.command, delivery.qualification
+    source = command.source if isinstance(command, GameEncounter) else command.finding
+    if (not isinstance(receipt, EncounterReceipt) or receipt.key != command.key
+            or receipt.source_revision != source.source_revision or not receipt.owner_receipt_id
+            or receipt.source_digest != source.source_digest or receipt.observation != "missed"):
+        raise ValueError("receiver_qualified_receipt_provenance_mismatch")
+    if (qualification is None or receipt.interface_version != "0.2.2" or receipt.progress is None
+            or receipt.progress.determined_at != qualification.determined_at
+            or receipt.progress.stream != qualification.stream):
+        raise ValueError("receiver_first_departure_policy_receipt_required")
+    state = "failed" if receipt.outcome in {"conflict", "stale_revision"} else "acknowledged"
+    return delivery.model_copy(update={"state": state, "receipt": receipt,
+        "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None})
 
 
 def qualify_delivery(delivery, *, source, configuration, snapshots, unavailable=(),

@@ -5922,3 +5922,14 @@ Review B's source-clock regression is
 `test_corrected_held_source_cannot_create_or_inherit_determination_clock` in
 `test_product_feedback_jobs.py`; the existing new-selection redaction regression
 also masks `decision.selected_response_uci` and rejects raw move leakage.
+
+The #621 receipt-fenced split is covered by
+`test_native_pure_prepare_and_receipt_fenced_apply_commit_both_owners_atomically`:
+discarded preparation changes no rows; a later gateway failure or acknowledgment
+failure rolls back both owners; success retains one original effect/receipt.
+`test_native_prepared_handoff_rechecks_actual_boot_mode_source_and_control`
+checks the four current admission/control races.
+`test_qualification_decodes_complete_publication_after_reader_exit` guards the
+#616 raw-read adoption. `test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox`
+and `test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle`
+guard candidate precedence and retained recovery time without a quiet-window wait.

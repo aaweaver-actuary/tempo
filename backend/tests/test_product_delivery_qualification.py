@@ -257,6 +257,218 @@ def test_mode_admission_is_required_without_worker_health_dependency():
     assert not result.progressed and not result.pending and result.held_reason == "feedback_mode_not_admitted"
 
 
+def test_qualification_decodes_complete_publication_after_reader_exit(monkeypatch):
+    import json
+    from app.product_composition import provider_priority as composition
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    from tempo_legacy_database.adapters.games import product_review
+    case, reading, events = setup_case(), [False], []
+    @contextmanager
+    def connections():
+        reading[0] = True
+        try:
+            yield object()
+        finally:
+            reading[0] = False
+            events.append("closed")
+    class Reads:
+        def __init__(self, connections): pass
+        def configuration(self, *args): return case.configuration
+        def source_detail(self, *args): return case.source
+    def raw_read(database, repertoire):
+        assert reading[0] and repertoire == "rep"
+        events.append("raw")
+        return '{"complete":"publication"}'
+    def decode(text):
+        assert not reading[0]
+        events.append("decode")
+        return json.loads(text)
+    def project(facts):
+        assert not reading[0] and facts == {"complete": "publication"}
+        events.append("project")
+        return case.snapshot
+    monkeypatch.setattr(product_review, "PostgresReviewStore", Reads)
+    monkeypatch.setattr(product_snapshot, "read_repertoire_json", raw_read)
+    monkeypatch.setattr(composition, "json", SimpleNamespace(loads=decode))
+    monkeypatch.setattr(composition, "project_published_repertoire", project)
+    result = composition._qualified_facts(case.command, connections=connections,
+        clock=FakeClock(), delivery=delivery_for(case.source.source_key,case.command))
+    assert result[0].qualification_status == "ready"
+    assert events == ["raw", "closed", "decode", "project"]
+
+
+@pytest.fixture
+def native_handoff(owned_postgres, monkeypatch):
+    """Real publication/source, immutable outbox, mode and Study owner join."""
+    import hashlib
+    import chess
+    import chess.pgn
+    from datetime import timedelta
+    from product_encounter_fixtures import retained_history_case
+    from app.product_composition.retained_game import retained_canonical_game
+    from app.product_composition import provider_priority as composition
+    from app.product_composition import managed_runtime
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from tempo_legacy_database.adapters.games.managed_mode import ManagedGamesModeStore
+    from test_game_feedback_mode import intent, RUNTIME
+    from test_product_game_lapse import NOW as STAMP
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(managed_runtime, "current_managed_runtime_identity", lambda: RUNTIME)
+    with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
+        @contextmanager
+        def connections():
+            with case.transaction() as database:
+                database.execute_native("""SELECT set_config('transaction_timeout','250ms',true),
+                    set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
+                yield database.raw
+        captured = case.capture(case.game_ids[0])
+        original, canonical = case.command(captured), retained_canonical_game(captured)
+        pgn = chess.pgn.Game(); pgn.setup(chess.Board(canonical.starting_fen))
+        pgn.add_variation(chess.Move.from_uci(original.played_uci))
+        text = str(pgn)
+        record = GameRecord(source_game_id=captured["game"]["provider_game_id"],source_revision=1,
+            source_digest=hashlib.sha256(text.encode()).hexdigest(),pgn=text,
+            played_at=canonical.played_at,time_precision="second")
+        source = SourceState(source_key=case.card_id+"-source",version=1,original=record,
+            record_fingerprint=record.source_digest,normalized=canonical,findings=(),
+            comparison_revision="original-capture",effects=(original,),encounters=(original,))
+        config = SyncConfiguration(workspace_id=canonical.workspace_id,provider="lichess",account="synthetic",
+            window=GameWindow(start_at=(STAMP-timedelta(days=2)).isoformat(),end_at=STAMP.isoformat(),
+                precision="second"),repertoire_ids=(case.repertoire_id,),speeds=("rapid",),rated=None,
+            interval_seconds=None)
+        PostgresReviewStore(connections).configure(config,0)
+        modes = ManagedGamesModeStore(connections)
+        modes.record(intent(canonical.workspace_id),expected_generation=0)
+        store = PostgresGamesStore(connections)
+        capture = lambda repertoire, game, plies: case.capture(game)
+        class Clock:
+            def now(self): return STAMP.timestamp()
+            def utc_now(self): return STAMP.isoformat()
+        clock = Clock()
+        try:
+            with case.transaction() as database:
+                database.execute_native("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,1,%s::jsonb)",
+                    (source.source_key,source.model_dump_json()))
+            proof = composition.prepare_feedback_qualification(original,connections=connections,
+                capture=capture,clock=clock,determination=STAMP.isoformat(),stream="forward")
+            from app.study.game_feedback import effect_id
+            delivery = delivery_for(source.source_key,original).model_copy(update={
+                "qualification_status":"ready", "qualification":proof.qualification,
+                "determined_at":STAMP.isoformat(),"stream":"forward",
+                "owner_effect_id":effect_id(original.key)})
+            with case.transaction() as database:
+                database.execute_native("""INSERT INTO product_feedback_deliveries
+                    (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
+                    VALUES(%s,%s,%s,'encounter','pending',0,%s::jsonb)""",
+                    (delivery.operation_id,source.source_key,original.key.logical_id(),delivery.model_dump_json()))
+            yield SimpleNamespace(case=case,workspace=canonical.workspace_id,connections=connections,
+                store=store,modes=modes,source=source,original=delivery,capture=capture,clock=clock,
+                runtime_id=RUNTIME,intent=intent)
+        finally:
+            with case.transaction() as database:
+                database.execute_native("DELETE FROM product_feedback_deliveries WHERE source_key=%s",(source.source_key,))
+                database.execute_native("DELETE FROM product_feedback_sources WHERE source_key=%s",(source.source_key,))
+                database.execute_native("DELETE FROM product_feedback_configuration WHERE workspace_id=%s AND provider='lichess'",
+                    (canonical.workspace_id,))
+                database.execute_native("DELETE FROM product_feedback_managed_mode WHERE workspace_id=%s",(canonical.workspace_id,))
+
+
+def test_native_pure_prepare_and_receipt_fenced_apply_commit_both_owners_atomically(native_handoff, monkeypatch):
+    from app.product_composition import provider_priority as composition, managed_runtime
+    from tempo_legacy_database.adapters.games import product_feedback
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    case = native_handoff
+    before = case.case.readback()
+    def prepare():
+        return composition.prepare_determined_feedback(workspace=case.workspace,
+            connections=case.connections,clock=case.clock,admitted=lambda:True,capture=case.capture)
+    prepared = prepare()
+    discarded_for_replayed_gateway_request = prepare()
+    assert prepared.original_delivery == discarded_for_replayed_gateway_request.original_delivery == case.original
+    assert prepared.provider_feedback is not None
+    assert case.store.delivery(case.original.operation_id) == case.original and case.case.readback() == before
+    with case.case.transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is None
+    # The handler already owns its receipt/token fence. These capabilities must
+    # never be read or invoked from its borrowed writer.
+    monkeypatch.setattr(managed_runtime, "current_managed_runtime_identity",
+        lambda:pytest.fail("runtime filesystem read inside writer"))
+    def apply(database):
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        return composition.apply_prepared_determined_feedback(database,prepared,
+            clock=case.clock,current_runtime_id=case.runtime_id)
+    # A gateway failure AFTER successful source apply rolls back both owners.
+    with pytest.raises(RuntimeError,match="gateway_receipt_failure"):
+        with case.case.transaction() as database:
+            assert apply(database).progressed
+            raise RuntimeError("gateway_receipt_failure")
+    assert case.store.delivery(case.original.operation_id) == case.original
+    with case.case.transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is None
+    actual_save = product_feedback.save_delivery_in_transaction
+    def failed_ack(*args,**kwargs):
+        actual_save(*args,**kwargs)
+        raise RuntimeError("ack_write_failed_after_owner_accept")
+    monkeypatch.setattr(product_feedback,"save_delivery_in_transaction",failed_ack)
+    with case.case.transaction() as database:
+        failed = apply(database)
+        assert not failed.progressed and failed.pending
+    monkeypatch.setattr(product_feedback,"save_delivery_in_transaction",actual_save)
+    assert case.store.delivery(case.original.operation_id) == case.original
+    with case.case.transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is None
+    with case.case.transaction() as database:
+        result = apply(database)
+        assert result.progressed and result.pending
+    acknowledged = case.store.delivery(case.original.operation_id)
+    assert acknowledged.state == "acknowledged" and acknowledged.command == case.original.command
+    assert acknowledged.determined_at == acknowledged.receipt.progress.determined_at == case.original.determined_at
+    with case.case.transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is not None
+        assert database.execute_native("SELECT count(*) FROM study_game_feedback WHERE card_id=%s",(case.case.card_id,)).fetchone()[0] == 1
+        assert not apply(database).progressed  # Stale prepared original cannot advance another unit.
+    assert case.store.delivery(case.original.operation_id) == acknowledged
+
+
+@pytest.mark.parametrize("change",["boot","mode","source","control"])
+def test_native_prepared_handoff_rechecks_actual_boot_mode_source_and_control(native_handoff,monkeypatch,change):
+    from app.product_composition import provider_priority as composition
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    case = native_handoff
+    prepared = composition.prepare_determined_feedback(workspace=case.workspace,connections=case.connections,
+        clock=case.clock,admitted=lambda:True,capture=case.capture)
+    assert prepared.provider_feedback is not None
+    runtime_id = case.runtime_id
+    if change == "boot":
+        runtime_id = runtime_id[:13] + "9"*32
+    elif change == "mode":
+        case.modes.record(case.intent(case.workspace,generation=2,phase="inactive"),expected_generation=1)
+    elif change == "source":
+        changed = case.source.model_copy(update={"quarantined":True})
+        with case.case.transaction() as database:
+            database.execute_native("UPDATE product_feedback_sources SET payload=%s::jsonb WHERE source_key=%s",
+                (changed.model_dump_json(),changed.source_key))
+    else:
+        from app.games.feedback.ports import JobSpec,PageCommit
+        control = delivery_for(case.source.source_key,GameEffectControl(key=case.original.command.key,
+            source_revision=1,action="hold",reason="reanalysis"))
+        spec = JobSpec(job_id=uuid.uuid4().hex,workspace_id=case.workspace,provider="lichess",
+            account="synthetic",window=setup_case().configuration.window,repertoire_ids=(case.case.repertoire_id,))
+        case.store.commit_page(PageCommit(job=case.store.enqueue(spec),sources=(),captures=(),deliveries=(control,)))
+    with case.case.transaction() as database:
+        database.execute_native("SET LOCAL transaction_timeout='250ms'")
+        result = composition.apply_prepared_determined_feedback(database,prepared,
+            clock=case.clock,current_runtime_id=runtime_id)
+        assert not result.progressed
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is None
+    actual = case.store.delivery(case.original.operation_id)
+    assert actual.command == case.original.command
+    assert actual.state == ("superseded" if change == "control" else "pending")
+    assert actual.attempts == 0 and actual.receipt is None
+
+
 @pytest.fixture
 def native_deliveries(owned_postgres):
     from psycopg.types.json import Jsonb
@@ -303,6 +515,8 @@ def test_native_live_and_history_deliveries_have_bounded_fair_progress(native_de
     case = native_deliveries
     live = [case.seed("forward", ordinal) for ordinal in (1, 3, 5)]
     history = [case.seed("reconciliation", ordinal) for ordinal in (2, 4)]
+    assert case.store.pending_delivery(100,workspace=case.workspace,ready_only=True,
+        priority_order=True).operation_id == live[0].operation_id
     seen = []
     # Equal attempt clocks cannot reset the cursor; each fresh store reads the
     # actual persisted service sequence, not an in-process quota counter.
@@ -352,6 +566,21 @@ def test_native_nonretryable_held_delivery_is_not_a_transport_loop(native_delive
     case.store.save_delivery(held)
     assert case.store.pending_delivery(100, workspace=case.workspace) is None
     assert case.store.delivery(original.operation_id).attempts == 0
+
+
+def test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle(native_deliveries):
+    import time
+    case = native_deliveries
+    original = case.seed("forward",1)
+    held = original.model_copy(update={"qualification_status":"held",
+        "qualification_reason":"first_departure_preparation_unavailable","qualification_retryable":True,
+        "next_attempt_at":time.time()+60})
+    case.store.save_delivery(held)
+    assert not case.store.has_determined_delivery(case.workspace)
+    due = held.model_copy(update={"next_attempt_at":0})
+    case.store.save_delivery(due)
+    assert case.store.has_determined_delivery(case.workspace)
+    assert case.store.pending_delivery(time.time(),ready_only=True,workspace=case.workspace) == due
 
 
 def test_native_inventory_distinguishes_qualification_and_acceptance(native_deliveries):

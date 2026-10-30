@@ -288,15 +288,32 @@ exporter's foreground-idle default is not the next-card command's reader. Every
 connection closes before chess/projection. Study recomputes the public selection
 outside its writer and rechecks current authority under the writer. Games supplies
 only its borrowed source/configuration/control fence; it never writes Study SQL.
+The complete publication read uses `read_repertoire_json` inside the bounded read
+context; both JSON decoding and projection occur after that context exits.
 
-The explicit next-card composition may call `pending_determined_feedback` (SELECT
-only) and `advance_determined_feedback` (at most one local unit). Verified managed
-feedback-mode intent is required, with a second shared-row fence in the same
-acceptance writer. Inactive, collection-only, absent or contradictory intent
+The explicit next-card composition calls `pending_determined_feedback` (SELECT
+only) and PURE `prepare_determined_feedback`. Preparation returns one original
+delivery and its separately prepared current owner facts, with no acknowledgment,
+qualification write or Study mutation. It selects the earliest live/history FIFO
+priority for comparison with the actual accepted Study candidate; discarding it
+for an older candidate or a replayed gateway token changes no state. Only after
+the command gateway's receipt/request-hash/token fence may
+`apply_prepared_determined_feedback` accept through Study and acknowledge Games
+atomically in the same borrowed writer. A savepoint rolls both owners back if a
+current fence, receipt or acknowledgment fails. The standalone optional worker's
+mutating `advance_determined_feedback` remains a separate entrypoint.
+
+Verified managed feedback-mode intent is required. The root captures the trusted
+container boot identity outside the writer after preparation; borrowed apply
+compares it with the prepared identity and takes the actual shared mode-row fence
+before source/outbox/Study locks. No filesystem read occurs inside that writer.
+Inactive, collection-only, absent or contradictory intent
 authorizes no new delivery. Accepted Study obligations remain independent of that
 mode and of the optional process. Provider HTTP, acquisition pages and full capture
 retain the stricter foreground admission; a determined local unit can finish
 preparation during continuous practice outside review/head writer locks.
+Retryable determined holds become eligible only at their retained retry time;
+semantic holds do not cause a foreground retry loop.
 
 The bounded status inventory reports command kinds/states, qualification counts,
 reasons, live/history ready backlog and oldest original determination. Its
@@ -310,9 +327,11 @@ flowchart LR
   Retained["Original frozen commands"] --> Qualify["Current complete-scope first-boundary qualification"]
   Qualify --> Witness
   Witness --> Local["One mode-admitted local preparation unit / connections closed"]
-  Local --> Fence["Borrowed Games source/config/control + mode fence"]
+  Local --> Gateway["Command receipt + request hash + token fence"]
+  Gateway --> Fence["Same borrowed writer: mode + Games source/config/control fence"]
   Fence --> Study["Study owner: accept same key / Again or introduction"]
-  Study --> Receipt["Committed owner receipt / separate actual issuance and settlement"]
+  Study --> Ack["Games ack + Study acceptance commit atomically"]
+  Ack --> Receipt["Committed owner receipt / separate actual issuance and settlement"]
   Qualify --> Held["Retained held or terminal ineligible / no Study call"]
 ```
 

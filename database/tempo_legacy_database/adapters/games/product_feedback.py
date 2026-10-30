@@ -42,7 +42,7 @@ CREATE INDEX product_feedback_ready_deliveries ON product_feedback_deliveries(st
 
 
 def fence_qualified_feedback(database, command, qualification, *, expected_configuration,
-                             expected_source, require_active_mode=False):
+                             expected_source, require_active_mode=False, mode_runtime_id=None):
     """Borrow Study's writer to fence Games-owned facts, without replay or I/O.
 
     Preparation supplied actual owner reads, not producer labels. Study separately
@@ -62,7 +62,7 @@ def fence_qualified_feedback(database, command, qualification, *, expected_confi
             from .managed_mode import fence_feedback_handoff
         except ImportError as error:
             raise ReviewUnavailable("verified_feedback_mode_unavailable") from error
-        fence_feedback_handoff(database, key.workspace_id)
+        fence_feedback_handoff(database, key.workspace_id, runtime_id=mode_runtime_id)
     require(qualification.matches(command), "qualification_original_command_mismatch")
     require((expected_configuration.workspace_id, expected_configuration.provider,
              expected_configuration.revision) ==
@@ -108,6 +108,55 @@ def fence_qualified_feedback(database, command, qualification, *, expected_confi
             and raw["provider_game_id"] == actual_source.original.source_game_id
             and account is not None and account[0].casefold() == actual_configuration.account.casefold(),
             "qualified_canonical_source_changed")
+
+
+def _borrowed_writer(database):
+    raw = getattr(database, "raw", database)
+    if (getattr(database, "read_only", False)
+            or raw.info.transaction_status.name != "INTRANS"):
+        raise ValueError("borrowed_owner_writer_transaction_required")
+    return raw
+
+
+def lock_delivery_in_transaction(database, operation_id: str, *, expected=None):
+    """Games-owned short row fence in the caller's existing transaction."""
+    raw = _borrowed_writer(database)
+    locked = raw.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:game-feedback-delivery',0))").fetchone()[0]
+    if not locked:
+        raise ConcurrentUpdate("delivery service cursor busy")
+    row = raw.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s FOR UPDATE NOWAIT",
+        (operation_id,)).fetchone()
+    if row is None:
+        raise ValueError("delivery was not durably captured")
+    actual = Delivery.model_validate_json(row[0])
+    if expected is not None and actual != expected:
+        raise ConcurrentUpdate("prepared delivery changed")
+    return actual
+
+
+def save_delivery_in_transaction(database, delivery: Delivery, *, expected=None):
+    """Persist one outbox result without starting or committing a transaction."""
+    raw = _borrowed_writer(database)
+    previous = lock_delivery_in_transaction(raw, delivery.operation_id, expected=expected)
+    if previous.command != delivery.command or previous.source_key != delivery.source_key:
+        raise ValueError("captured delivery command cannot be replaced")
+    if delivery.attempts < previous.attempts:
+        raise ConcurrentUpdate("delivery attempt advanced")
+    if previous.determined_at is not None and delivery.determined_at != previous.determined_at:
+        raise ValueError("actionable determination cannot be restarted")
+    if previous.state == "superseded":
+        delivery = delivery.model_copy(update={"state": "superseded"})
+    elif previous.state != "pending":
+        return previous
+    if delivery.attempts > previous.attempts and delivery.control is None:
+        sequence = raw.execute("""SELECT COALESCE(MAX(
+            COALESCE((payload->>'service_sequence')::bigint,0)),0)+1
+            FROM product_feedback_deliveries""").fetchone()[0]
+        delivery = delivery.model_copy(update={"service_sequence": sequence})
+    raw.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb
+        WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at,
+        delivery.model_dump_json(), delivery.operation_id))
+    return delivery
 
 
 class PostgresGamesStore:
@@ -225,7 +274,7 @@ class PostgresGamesStore:
             return Delivery.model_validate_json(row[0]) if row else None
 
     def pending_delivery(self, now: float, *, ready_only: bool = False,
-                         workspace: str | None = None) -> Delivery | None:
+                         workspace: str | None = None, priority_order: bool = False) -> Delivery | None:
         """Controls first, then alternate live and historical ready service.
 
         The last actual attempt is retained in an existing delivery's JSON. A
@@ -252,14 +301,18 @@ class PostgresGamesStore:
                        AND delivery.payload->>'qualification_status' IN ('ready','held')
                        AND delivery.payload->'qualification'<>'null'::jsonb))
                 ORDER BY CASE WHEN command_kind='control' THEN 0
+                    WHEN %s THEN CASE WHEN payload->>'stream'='forward' THEN 1 ELSE 2 END
                     WHEN COALESCE(payload->>'stream','')='forward'
                          AND NOT COALESCE((SELECT was_live FROM last_service),false) THEN 1
                     WHEN COALESCE(payload->>'stream','')<>'forward'
                          AND COALESCE((SELECT was_live FROM last_service),false) THEN 1
                     ELSE 2 END,
                     COALESCE(payload->>'determined_at',payload->'encounter'->>'detected_at',
-                        payload->'lapse'->>'detected_at')::timestamptz NULLS FIRST,operation_id LIMIT 1""",
-                (workspace, workspace, now, workspace, workspace, ready_only)).fetchone()
+                        payload->'lapse'->>'detected_at')::timestamptz NULLS FIRST,
+                    CASE WHEN %s THEN COALESCE(payload->>'owner_effect_id',operation_id) ELSE operation_id END
+                    LIMIT 1""",
+                (workspace, workspace, now, workspace, workspace, ready_only,
+                 priority_order, priority_order)).fetchone()
             return Delivery.model_validate_json(row[0]) if row else None
 
     def has_determined_delivery(self, workspace: str, *, before_stream: str | None = None,
@@ -269,46 +322,21 @@ class PostgresGamesStore:
         with self._transaction() as database:
             return database.execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
                 WHERE state='pending' AND command_kind<>'control'
-                  AND payload->>'qualification_status'='ready'
+                  AND next_attempt_at<=extract(epoch FROM clock_timestamp())
+                  AND (payload->>'qualification_status'='ready'
+                    OR (payload->>'qualification_status'='held'
+                        AND COALESCE((payload->>'qualification_retryable')::boolean,true)
+                        AND payload->'qualification'<>'null'::jsonb))
                   AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
                       payload->'lapse'->'key'->>'workspace_id')=%s
-                  AND (%s::text IS NULL
-                    OR CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END
-                        < CASE WHEN %s='forward' THEN 0 ELSE 1 END
-                    OR (CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END
-                        = CASE WHEN %s='forward' THEN 0 ELSE 1 END AND (
-                            (payload->>'determined_at')::timestamptz < %s::timestamptz
-                            OR ((payload->>'determined_at')::timestamptz = %s::timestamptz
-                                AND (payload->>'owner_effect_id' IS NULL OR payload->>'owner_effect_id'<%s)))))""",
-                (workspace, before_stream, before_stream, before_stream,
-                 before_determined_at, before_determined_at, before_effect_id)).fetchone()[0]
+                  AND (%s::text IS NULL OR (
+                        CASE WHEN payload->>'stream'='forward' THEN 0 ELSE 1 END,
+                        (payload->>'determined_at')::timestamptz,
+                        COALESCE(payload->>'owner_effect_id','')) < (
+                        CASE WHEN %s='forward' THEN 0 ELSE 1 END,%s::timestamptz,%s)))""",
+                (workspace, before_stream, before_stream,
+                 before_determined_at, before_effect_id)).fetchone()[0]
 
     def save_delivery(self, delivery: Delivery) -> None:
         with self._transaction() as database:
-            # One JSON service cursor in the existing owner, never a second
-            # scheduler/ledger. Use a try-lock so local intake remains bounded.
-            locked = database.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:game-feedback-delivery',0))").fetchone()[0]
-            if not locked:
-                raise ConcurrentUpdate("delivery service cursor busy")
-            row = database.execute("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s FOR UPDATE", (delivery.operation_id,)).fetchone()
-            if row is None:
-                raise ValueError("delivery was not durably captured")
-            previous = Delivery.model_validate_json(row[0])
-            if previous.command != delivery.command or previous.source_key != delivery.source_key:
-                raise ValueError("captured delivery command cannot be replaced")
-            if delivery.attempts < previous.attempts:
-                raise ConcurrentUpdate("delivery attempt advanced")
-            if previous.determined_at is not None and delivery.determined_at != previous.determined_at:
-                raise ValueError("actionable determination cannot be restarted")
-            # A delayed sender acknowledgment cannot reactivate a superseded command.
-            if previous.state == "superseded":
-                delivery = delivery.model_copy(update={"state": "superseded"})
-            elif previous.state != "pending":
-                return
-            if delivery.attempts > previous.attempts and delivery.control is None:
-                sequence = database.execute("""SELECT COALESCE(MAX(
-                    COALESCE((payload->>'service_sequence')::bigint,0)),0)+1
-                    FROM product_feedback_deliveries""").fetchone()[0]
-                delivery = delivery.model_copy(update={"service_sequence": sequence})
-            database.execute("""UPDATE product_feedback_deliveries SET state=%s,next_attempt_at=%s,payload=%s::jsonb
-                WHERE operation_id=%s""", (delivery.state, delivery.next_attempt_at, delivery.model_dump_json(), delivery.operation_id))
+            save_delivery_in_transaction(database, delivery)

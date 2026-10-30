@@ -130,6 +130,16 @@ issuance and settlement remain owned by Study. New handoff additionally consumes
 the separately owned managed-mode shared-row fence (schema56); accepted Study debt
 continues independently when optional feedback is off.
 
+Explicit next-card preparation writes neither owner. After the existing command
+gateway has fenced the receipt, request hash and token, Games borrows that same
+writer for current source/control/outbox locks; Study accepts through its public
+owner and Games saves acknowledgment in the same transaction. No helper commits
+or opens another connection. The optional standalone worker preserves its older
+two-commit acknowledgment-loss protocol and resends the same immutable command.
+The durable service sequence remains the worker's bounded live/history turn;
+explicit head preparation compares one FIFO source candidate with current Study
+urgency and cannot drain a later historical backlog before an earlier live head.
+
 The status inventory's qualification counts have delivery-record grain. An
 accepted/pending receipt counted at acknowledgment is not a current queue,
 issuance or settlement observation. The canonical policy and bounded failure flow
