@@ -138,6 +138,16 @@ def owned_postgres(tmp_path_factory, *, additional_ports=()):
             current = json.loads(docker("inspect", container).stdout)[0]
             assert current["Config"]["Labels"]["tempo.owner"] == identity
             assert current["Config"]["Labels"]["tempo.disposable"] == "true"
+            # Evidence is best effort; a failed observation must never prevent
+            # the exact verified fixture from reaching its existing teardown.
+            report['memory_observations'] = {}
+            for metric in ('memory.events', 'memory.peak'):
+                try:
+                    observed = docker('exec', current['Id'], 'cat', '/sys/fs/cgroup/' + metric, check=False)
+                    report['memory_observations'][metric] = {
+                        'exit_code': observed.returncode, 'value': observed.stdout[:4096]}
+                except Exception as error:
+                    report['memory_observations'][metric] = {'error_class': type(error).__name__}
             logs = docker("logs", container, check=False)
             (evidence / 'postgres.log').write_text(logs.stdout + logs.stderr)
             docker("rm", "--force", current["Id"])
