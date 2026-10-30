@@ -225,6 +225,30 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
                 (case.card_id,)).fetchone()[0] == 1
             assert database.execute_native('SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s',
                 (case.card_id,)).fetchone()[0] == 2
+            # The real review owner invalidates its saved row before invoking
+            # the obligation hook. Reopening must clear both receipt shapes.
+            from tempo_legacy_database.adapters.study.game_feedback import invalidate_saved_review
+            database.execute_native('UPDATE reviews SET invalidated_at=%s WHERE id=%s',
+                (timeline[0]+timedelta(minutes=2),remedied['review_id']))
+            invalidate_saved_review(database,case.card_id,remedied['review_id'])
+            reopened = owner(database,timeline[0]+timedelta(minutes=2)).encounter_status(command.key)
+            assert reopened.status == 'applied' and reopened.progress.settlement is None
+            assert reopened.progress.remediation_fence == effect.progress.remediation_fence
+            assert reopened.progress.first_issued == effect.progress.first_issued
+            assert reopened.progress.scheduling_review_id == reset.progress.scheduling_review_id
+        timeline[0] += timedelta(minutes=3)
+        with case.transaction() as database:
+            from tempo_legacy_database.adapters.study.game_feedback import resume_available_feedback
+            resume_available_feedback(database,NOW.date().isoformat())
+            retry_entry = _issue(database,case.card_id)
+            assert retry_entry not in (active,fresh)
+            retry = _ordinary_review(database,case.card_id,retry_entry,'reopened-target:'+case.card_id,
+                observed_at=timeline[0]+timedelta(minutes=1))
+            settled = owner(database,timeline[0]+timedelta(minutes=1)).encounter_status(command.key)
+            assert settled.status == 'settled' and settled.progress.settlement.review_id == retry['review_id']
+            assert settled.progress.first_issued == effect.progress.first_issued
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                (case.card_id,)).fetchone()[0] == 1
 
 
 def _study_refresh(case, capture, snapshot, command):

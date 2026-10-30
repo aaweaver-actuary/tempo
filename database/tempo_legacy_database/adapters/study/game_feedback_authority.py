@@ -58,6 +58,7 @@ class CurrentOwnerDecisions:
         self._qualified = None
         self._qualified_captures = ()
         self._qualification_fence = None
+        self._prepared_targets = ()
         _require(source['authority'] == source['observed_after']
                  and snapshot.membership.digest == source['export_digest']
                  and snapshot.membership.source_revision == fingerprint(source['authority'])
@@ -85,7 +86,7 @@ class CurrentOwnerDecisions:
         return self
 
     def prepare_qualified(self, command, qualification, *, qualified_publications,
-                          qualification_fence, game, select_first_boundary):
+                          qualification_fence, game, select_first_boundary, prepared_targets=()):
         """Recompute first-boundary authority on trusted closed-read owner facts.
 
         The selector is injected by composition through its public pure port.
@@ -102,6 +103,21 @@ class CurrentOwnerDecisions:
                  and len({item['repertoire']['id'] for item in publications}) == len(publications),
                  'first_departure_selected_scope_unproved')
         snapshots = tuple(project_published_repertoire(facts) for facts in publications)
+        from .recombination import PreparedFeedbackTarget
+        targets = tuple(prepared_targets)
+        _require(len(targets) <= 64 and all(isinstance(item,PreparedFeedbackTarget) for item in targets),
+                 'first_departure_current_target_preparation_required')
+        originals = [item.original.model_dump_json() for item in targets]
+        _require(len(set(originals)) == len(originals), 'first_departure_duplicate_current_target')
+        available_originals = {mapping.model_dump_json() for snapshot in snapshots
+                               for mapping in snapshot.decision_presentations}
+        _require(set(originals) <= available_originals and all(
+            item.original.decision_id == command.key.decision_id for item in targets),
+            'first_departure_current_target_original_unproved')
+        replacements = {item.original.model_dump_json():item.current for item in targets}
+        snapshots = tuple(snapshot.model_copy(update={'decision_presentations':tuple(
+            replacements.get(mapping.model_dump_json(),mapping) for mapping in snapshot.decision_presentations)})
+            for snapshot in snapshots)
         raw = self.source['game']
         _require(game.workspace_id == self.authority.workspace_id
                  and game.game_id == raw['id'] and game.source_digest == fingerprint(raw)
@@ -122,8 +138,19 @@ class CurrentOwnerDecisions:
         self._qualified_captures = tuple(item['repertoire'] for item in publications)
         self._qualification_fence = qualification_fence
         self._qualified = (command.model_dump_json(), qualification.model_dump_json())
-        self.prepare_encounter(qualified_encounter_view(command,qualification))
+        self._prepared_targets = targets
+        if self.prepared_target(qualification.selection.decision) is None:
+            self.prepare_encounter(qualified_encounter_view(command,qualification))
         return self
+
+    def prepared_target(self, target):
+        """Exact trusted logical occurrence; physical scheduling remains separate."""
+        fields = ('decision_id','repertoire_id','position_key','selected_response_uci',
+                  'presentation_id','presentation_revision','route_id','route_ply')
+        matches = [item for item in self._prepared_targets if all(
+            getattr(item.current,field) == getattr(target,field) for field in fields)]
+        _require(len(matches) <= 1, 'first_departure_current_target_ambiguous')
+        return matches[0] if matches else None
 
     def current_qualified(self, command, qualification):
         _require(self._qualified == (command.model_dump_json(), qualification.model_dump_json()),
@@ -131,6 +158,13 @@ class CurrentOwnerDecisions:
         self._qualification_fence(self.database, command, qualification)
         for header in sorted(self._qualified_captures, key=lambda item:item['id']):
             self._fence_selected_publication(header)
+        target = self.prepared_target(qualification.selection.decision)
+        if target is not None:
+            from .recombination import fence_game_feedback_target
+            try:
+                return (fence_game_feedback_target(self.database,target),)
+            except ValueError as error:
+                raise CurrentDecisionUnavailable(str(error)) from error
         # The legacy lapse becomes only an in-memory factual view. Its stored
         # bytes, payload digest, occurrence and logical identity stay original.
         return self._current(qualified_encounter_view(command,qualification),priority_only=True)

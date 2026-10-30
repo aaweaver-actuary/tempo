@@ -508,11 +508,14 @@ def retained_encounter_introduction_query():
     Pending/unapplied observations and changed physical revisions grant nothing.
     Callers check installed() before using this PostgreSQL-only projection.
     """
-    return """SELECT DISTINCT effect.card_id FROM study_game_feedback effect
-        JOIN cards current_card ON current_card.id=effect.card_id
-          AND current_card.revision=effect.card_revision
+    return """SELECT DISTINCT current_card.id card_id FROM study_game_feedback effect
+        JOIN cards current_card ON current_card.id=COALESCE(
+            effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id',effect.card_id)
+          AND current_card.revision=COALESCE(
+            (effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_revision')::integer,effect.card_revision)
         WHERE effect.applied_at IS NOT NULL AND current_card.introduced_at IS NOT NULL
-          AND effect.payload_json::jsonb->>'kind'='encounter'"""
+          AND (effect.payload_json::jsonb->>'kind'='encounter'
+            OR effect.payload_json::jsonb->'owner'->'progress'->>'introduction_applied_at' IS NOT NULL)"""
 
 
 def retains_encounter_introduction(database, card_id):

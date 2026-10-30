@@ -7,7 +7,7 @@ from app.study.introductions import encounter
 from tempo_legacy_database.adapters.queue_refresh.application import admission as storage
 
 
-def prepare_encounter_introduction(target: DecisionPresentation, *, read) -> encounter.PreparedEncounterIntroduction:
+def prepare_encounter_introduction(target: DecisionPresentation, *, read, prepared_target=None) -> encounter.PreparedEncounterIntroduction:
     identity = encounter.introduction_target_identity(target)
     def rejected(reason):
         return encounter.PreparedEncounterIntroduction(identity, '', (), reason)
@@ -19,7 +19,14 @@ def prepare_encounter_introduction(target: DecisionPresentation, *, read) -> enc
             or header['scope_source_revision'] + 1 != target.repertoire_revision):
         return rejected('current_source_unproved')
     card = cards[0]
-    expected = encounter.target_definition(target, card)
+    physical = target
+    if prepared_target is not None:
+        from tempo_legacy_database.adapters.study.recombination import feedback_admission_target
+        physical = feedback_admission_target(prepared_target).model_copy(update={
+            'repertoire_revision':target.repertoire_revision})
+        if physical.presentation_id != target.presentation_id or prepared_target.current.decision_id != target.decision_id:
+            return rejected('current_target_lineage_unproved')
+    expected = encounter.target_definition(physical, card)
     if expected is None:
         return rejected('current_target_definition_unproved')
     def routes():
@@ -57,8 +64,13 @@ def prepare_encounter_introduction(target: DecisionPresentation, *, read) -> enc
         for line in lines)):
         return rejected('current_source_changed_or_busy')
     from .queue_admission_adapter import _playable_introduction
-    if not _playable_introduction(target, card, graphs, {line['id']: line for line in lines},
-                                  learner_color=card['trained_color'], route_cache={}):
-        return rejected('current_playable_context_unproved')
+    if prepared_target is None:
+        if not _playable_introduction(target, card, graphs, {line['id']: line for line in lines},
+                                      learner_color=card['trained_color'], route_cache={}):
+            return rejected('current_playable_context_unproved')
+    # A lineage target's existing owner proved executable route/component
+    # correspondence during closed-read preparation. Canonical admission
+    # fences that same binding in its borrowed writer.
     return encounter.PreparedEncounterIntroduction(identity,
-        storage.introduction_source_binding(current_header, current_cards[0], current_graphs, lines), route_ids)
+        storage.introduction_source_binding(current_header, current_cards[0], current_graphs, lines), route_ids,
+        prepared_target=prepared_target)

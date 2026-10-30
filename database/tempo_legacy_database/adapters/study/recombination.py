@@ -1090,6 +1090,23 @@ def fence_game_feedback_target(database, prepared: PreparedFeedbackTarget):
         introduction_matches_current_content=bool(card['introduced_at'])))
 
 
+def feedback_admission_target(prepared: PreparedFeedbackTarget):
+    """Physical spelling for canonical admission after explicit lineage proof.
+
+    The original logical identity remains in the command, witness and progress.
+    This spelling is used only by the existing physical executable checks.
+    """
+    if not isinstance(prepared,PreparedFeedbackTarget):
+        raise ValueError('feedback_target_preparation_required')
+    result = json.loads(prepared.binding_json)['record']['result_json']
+    offset = prepared.original.route_ply-result['route_use']['start_ply']
+    moves = tuple(result['moves'])
+    if not 0 <= offset < len(moves):
+        raise ValueError('feedback_target_original_occurrence_changed')
+    return prepared.current.model_copy(update={'decision_id':decision_identity(
+        prepared.current.presentation_id,offset,moves[:offset])})
+
+
 def is_current_occurrence(database,occurrence):
     """Explicit Study regrouping proof for #487's physical target validator.
 

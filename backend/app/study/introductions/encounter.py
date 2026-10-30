@@ -51,6 +51,7 @@ class PreparedEncounterIntroduction:
     source_binding: str
     route_ids: tuple[str, ...]
     reason: str | None = None
+    prepared_target: object | None = None
 
     def matches(self, target, source_binding: str) -> bool:
         return (self.reason is None and self.target_identity == introduction_target_identity(target)

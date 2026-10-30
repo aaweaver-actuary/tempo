@@ -66,9 +66,9 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
         from app.study.introductions.encounter import PreparedEncounterIntroduction, introduction_target_identity
         target = qualification.selection.decision.model_copy(update={
             'repertoire_revision': decisions.authority.scope_source_revision + 1})
-        captured_card = next(row for row in captured['tables']['cards'] if row['id'] == target.presentation_id)
-        introduction = (prepare_encounter_introduction(target, read=read)
-            if captured_card['introduced_at'] is None else PreparedEncounterIntroduction(
+        prepared_target = decisions.prepared_target(target)
+        introduction = (prepare_encounter_introduction(target, read=read,prepared_target=prepared_target)
+            if target.introduction == 'unintroduced' else PreparedEncounterIntroduction(
                 introduction_target_identity(target), '', (), 'encounter_preparation_required'))
         with read() as database:
             day = PostgresGameFeedbackStore(database).study_day(instant(clock())).isoformat()

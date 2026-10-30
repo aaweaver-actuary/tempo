@@ -194,6 +194,16 @@ class CurrentEncounterIntroductions:
         if not admission_storage.lock_product_admission(self.database, day, target.presentation_id):
             return CommitResult('deferred', reason='current_target_busy')
         prepared = self.prepared_introduction
+        if prepared is not None and prepared.prepared_target is not None:
+            from tempo_legacy_database.adapters.study.recombination import fence_game_feedback_target
+            try:
+                current = fence_game_feedback_target(self.database,prepared.prepared_target)
+            except ValueError:
+                return CommitResult('deferred',reason='current_target_lineage_changed_or_busy')
+            fields = ('decision_id','presentation_id','presentation_revision','repertoire_id',
+                      'position_key','selected_response_uci','route_id','route_ply')
+            if any(getattr(current,field) != getattr(target,field) for field in fields):
+                return CommitResult('deferred',reason='current_target_lineage_unproved')
         requested_lines = prepared.route_ids if prepared is not None and not prepared.reason else ()
         header, lines, cards, graphs = admission_storage.product_source_facts(
             self.database, repertoire_id, (target.presentation_id,), requested_lines, fence=True)
