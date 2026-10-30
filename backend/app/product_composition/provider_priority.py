@@ -61,6 +61,7 @@ class PreparedProviderFeedback:
     target_snapshot: object
     qualification: FirstDepartureWitness
     prepared_decisions: object
+    require_active_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -141,7 +142,7 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
 
 
 def _prepare_qualified_owner(command, qualification, *, source, configuration,
-                             publications, selector, capture):
+                             publications, selector, capture, require_active_mode=False):
     """Prepare global publication proof and exact target proof separately."""
     from tempo_legacy_database.adapters.games.product_feedback import fence_qualified_feedback
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
@@ -154,14 +155,16 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
         snapshot=target_snapshot).prepare_qualified(command, qualification,
             qualified_publications=publications,
             qualification_fence=partial(fence_qualified_feedback,
-                expected_configuration=configuration, expected_source=source),
+                expected_configuration=configuration, expected_source=source,
+                require_active_mode=require_active_mode),
             game=game, select_first_boundary=selector)
-    return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions)
+    return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions,
+        require_active_mode)
 
 
 def prepare_feedback_qualification(command, *, connections=None, read=None, clock,
                                    qualification=None, determination=None, stream=None,
-                                   capture=None, selector=None):
+                                   capture=None, selector=None, require_active_mode=False):
     """Public local preparation for pending or already acknowledged obligations.
 
     This entry owns no writer/dispatch and never waits for optional process
@@ -211,9 +214,15 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
     qualified, source, configuration, publications, selector = _qualified_facts(command,
         connections=connections, clock=clock, delivery=delivery, selector=selector)
     if qualified.qualification_status != "ready":
-        raise DeliveryDeferred(qualified.qualification_reason or "first_departure_unavailable")
+        reason = qualified.qualification_reason or "first_departure_unavailable"
+        changed_authority = reason in {"first_departure_source_changed", "first_departure_configuration_mismatch",
+            "first_departure_determination_conflict", "first_departure_stream_conflict"}
+        raise DeliveryDeferred(reason, retry_after=1,
+            retryable=(qualified.qualification_status != "ineligible"
+                and qualified.qualification_retryable and not changed_authority))
     return _prepare_qualified_owner(command, qualified.qualification, source=source,
-        configuration=configuration, publications=publications, selector=selector, capture=capture)
+        configuration=configuration, publications=publications, selector=selector, capture=capture,
+        require_active_mode=require_active_mode)
 
 
 def _admitted(admitted):
@@ -294,10 +303,11 @@ class CurrentProviderPriorityIntake:
         if facts is None or facts[0].command != command or facts[0].qualification != qualification:
             return prepare_feedback_qualification(command, connections=self.connections,
                 clock=self.clock, qualification=qualification, capture=self.capture,
-                selector=self.selector)
+                selector=self.selector, require_active_mode=True)
         _, source, configuration, publications, selector = facts
         return _prepare_qualified_owner(command, qualification, source=source,
-            configuration=configuration, publications=publications, selector=selector, capture=self.capture)
+            configuration=configuration, publications=publications, selector=selector, capture=self.capture,
+            require_active_mode=True)
 
     def _require_local_admission(self):
         if self.admitted is not None:
@@ -324,6 +334,8 @@ class CurrentProviderPriorityIntake:
             return self.accept_prepared(prepared)
         except DeliveryDeferred:
             raise
+        except ImportError as error:
+            raise DeliveryDeferred("feedback_capability_unavailable") from error
         except (CurrentDecisionUnavailable, ReviewUnavailable, ValueError) as error:
             code = _failure_code(error)
             if code == "unclassified":
@@ -334,6 +346,10 @@ class CurrentProviderPriorityIntake:
         from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
         self._require_local_admission()
         with self.connections.writer() as database:
+            if prepared.require_active_mode:
+                from tempo_legacy_database.adapters.games.managed_mode import fence_feedback_handoff
+                # Serialize a new handoff before any Study/card/effect lock.
+                fence_feedback_handoff(database, prepared.command.key.workspace_id)
             receiver = current_owner_encounter_intake(database,
                 retained_owner_capture=prepared.target_capture, snapshot=prepared.target_snapshot,
                 prepared_decisions=prepared.prepared_decisions, qualification=prepared.qualification,

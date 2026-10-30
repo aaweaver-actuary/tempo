@@ -82,6 +82,7 @@ class Delivery(Value):
     # Qualification never replaces the original command or its logical key.
     qualification_status: Literal["pending", "ready", "held", "ineligible"] = "pending"
     qualification_reason: str | None = None
+    qualification_retryable: bool = True
     qualification: FirstDepartureWitness | None = None
     determined_at: UtcTimestamp | None = None
     origin_job_id: str | None = None
@@ -128,8 +129,9 @@ class ConcurrentUpdate(RuntimeError):
 
 class DeliveryDeferred(RuntimeError):
     """Known uncommitted semantic/preparation hold, not uncertain transport."""
-    def __init__(self, reason: str, *, retry_after: float = 30):
+    def __init__(self, reason: str, *, retry_after: float = 1, retryable: bool = True):
         self.reason, self.retry_after = reason, max(0, retry_after)
+        self.retryable = retryable
         super().__init__(reason)
 
 

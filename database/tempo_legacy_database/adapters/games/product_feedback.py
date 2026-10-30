@@ -42,7 +42,7 @@ CREATE INDEX product_feedback_ready_deliveries ON product_feedback_deliveries(st
 
 
 def fence_qualified_feedback(database, command, qualification, *, expected_configuration,
-                             expected_source):
+                             expected_source, require_active_mode=False):
     """Borrow Study's writer to fence Games-owned facts, without replay or I/O.
 
     Preparation supplied actual owner reads, not producer labels. Study separately
@@ -57,6 +57,12 @@ def fence_qualified_feedback(database, command, qualification, *, expected_confi
             raise ReviewUnavailable(reason)
 
     key = command.key
+    if require_active_mode:
+        try:
+            from .managed_mode import fence_feedback_handoff
+        except ImportError as error:
+            raise ReviewUnavailable("verified_feedback_mode_unavailable") from error
+        fence_feedback_handoff(database, key.workspace_id)
     require(qualification.matches(command), "qualification_original_command_mismatch")
     require((expected_configuration.workspace_id, expected_configuration.provider,
              expected_configuration.revision) ==
@@ -232,9 +238,13 @@ class PostgresGamesStore:
                 FROM product_feedback_deliveries
                 WHERE command_kind<>'control'
                   AND COALESCE((payload->>'service_sequence')::bigint,0)>0
+                  AND (%s::text IS NULL OR COALESCE(payload->'encounter'->'key'->>'workspace_id',
+                       payload->'lapse'->'key'->>'workspace_id')=%s)
                 ORDER BY (payload->>'service_sequence')::bigint DESC LIMIT 1
             ) SELECT delivery.payload::text FROM product_feedback_deliveries delivery
                 WHERE delivery.state='pending' AND delivery.next_attempt_at<=%s
+                  AND (delivery.payload->>'qualification_status' IS DISTINCT FROM 'held'
+                       OR COALESCE((delivery.payload->>'qualification_retryable')::boolean,true))
                   AND (%s::text IS NULL OR COALESCE(delivery.payload->'encounter'->'key'->>'workspace_id',
                        delivery.payload->'lapse'->'key'->>'workspace_id',
                        delivery.payload->'control'->'key'->>'workspace_id')=%s)
@@ -249,7 +259,7 @@ class PostgresGamesStore:
                     ELSE 2 END,
                     COALESCE(payload->>'determined_at',payload->'encounter'->>'detected_at',
                         payload->'lapse'->>'detected_at')::timestamptz NULLS FIRST,operation_id LIMIT 1""",
-                (now, workspace, workspace, ready_only)).fetchone()
+                (workspace, workspace, now, workspace, workspace, ready_only)).fetchone()
             return Delivery.model_validate_json(row[0]) if row else None
 
     def has_determined_delivery(self, workspace: str) -> bool:

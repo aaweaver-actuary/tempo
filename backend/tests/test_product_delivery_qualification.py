@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from threading import Event
 from types import SimpleNamespace
 from contextlib import contextmanager
+import uuid
 
 import pytest
 
@@ -20,6 +21,7 @@ from app.product_composition.game_sync import GameSyncRuntime
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 from test_product_feedback_jobs import FakeClock, MemoryStore
 from test_product_first_boundary import NOW, game, snapshot
+from test_product_game_lapse_postgres import owned_postgres
 
 
 def command(current, authored, ply=1, *, matched=False):
@@ -238,4 +240,99 @@ def test_mode_admission_is_required_without_worker_health_dependency():
     result = advance_determined_feedback(workspace="fixture", connections=forbidden,
         clock=FakeClock(), admitted=denied)
     assert not result.progressed and not result.pending and result.held_reason == "feedback_mode_not_admitted"
+
+
+@pytest.fixture
+def native_deliveries(owned_postgres):
+    from psycopg.types.json import Jsonb
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    workspace = "qualification-" + uuid.uuid4().hex
+    @contextmanager
+    def connections():
+        with owned_postgres() as database:
+            yield database.raw
+    store = PostgresGamesStore(connections)
+    def seed(stream, ordinal):
+        case = setup_case()
+        identity = uuid.uuid4().hex
+        current = case.game.model_copy(update={"workspace_id": workspace, "game_id": identity})
+        original = case.command.model_copy(update={"key": case.command.key.model_copy(
+            update={"workspace_id": workspace, "game_id": identity}),
+            "source": case.command.source.model_copy(update={"game_id": identity})})
+        case.game, case.command = current, original
+        case.configuration = case.configuration.model_copy(update={"workspace_id": workspace})
+        case.source = case.source.model_copy(update={"source_key": identity, "version": 1,
+            "normalized": current, "effects": (original,)})
+        # Scope identity belongs to this synthetic workspace, as do the cards.
+        case.snapshot = case.snapshot.model_copy(update={"membership": case.snapshot.membership.model_copy(
+            update={"workspace_id": workspace})})
+        delivery = qualify(case, delivery_for(identity, original).model_copy(update={"stream": stream}))
+        delivery = delivery.model_copy(update={"determined_at": f"2026-10-30T00:00:{ordinal:02d}Z",
+            "qualification": delivery.qualification.model_copy(update={
+                "determined_at": f"2026-10-30T00:00:{ordinal:02d}Z"})})
+        with connections() as database:
+            database.execute("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,1,%s)",
+                (identity, Jsonb(case.source.model_dump(mode="json"))))
+            database.execute("""INSERT INTO product_feedback_deliveries
+                (operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload)
+                VALUES(%s,%s,%s,'encounter','pending',0,%s)""",
+                (delivery.operation_id, identity, original.key.logical_id(), Jsonb(delivery.model_dump(mode="json"))))
+        return delivery
+    return SimpleNamespace(store=store,connections=connections,workspace=workspace,seed=seed)
+
+
+def test_native_live_and_history_deliveries_have_bounded_fair_progress(native_deliveries):
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    case = native_deliveries
+    live = [case.seed("forward", ordinal) for ordinal in (1, 3, 5)]
+    history = [case.seed("reconciliation", ordinal) for ordinal in (2, 4)]
+    seen = []
+    # Equal attempt clocks cannot reset the cursor; each fresh store reads the
+    # actual persisted service sequence, not an in-process quota counter.
+    for _ in range(5):
+        restored = PostgresGamesStore(case.connections)
+        selected = restored.pending_delivery(100, workspace=case.workspace)
+        seen.append(selected.operation_id)
+        restored.save_delivery(selected.model_copy(update={"attempts": selected.attempts + 1,
+            "next_attempt_at": 200}))
+    assert seen == [live[0].operation_id, history[0].operation_id,
+        live[1].operation_id, history[1].operation_id, live[2].operation_id]
+    with case.connections() as database:
+        rows = database.execute("""SELECT payload::text FROM product_feedback_deliveries
+            WHERE source_key=ANY(%s)""", ([item.source_key for item in live + history],)).fetchall()
+    retained = [Delivery.model_validate_json(row[0]) for row in rows]
+    assert sorted(item.service_sequence for item in retained) == [1, 2, 3, 4, 5]
+    assert all(item.command == next(original.command for original in live + history
+        if original.operation_id == item.operation_id) for item in retained)
+
+
+def test_native_controls_win_after_qualification_and_delayed_ack(native_deliveries):
+    from app.games.feedback.ports import JobSpec, PageCommit
+    case = native_deliveries
+    original = case.seed("forward", 1)
+    control = delivery_for(original.source_key, GameEffectControl(key=original.command.key,
+        source_revision=1, action="hold", reason="reanalysis"))
+    request = JobSpec(job_id=uuid.uuid4().hex, workspace_id=case.workspace, provider="lichess",
+        account="Learner", window=setup_case().configuration.window, repertoire_ids=("rep",))
+    job = case.store.enqueue(request)
+    case.store.commit_page(PageCommit(job=job, sources=(), captures=(), deliveries=(control,)))
+    selected = case.store.pending_delivery(100, workspace=case.workspace)
+    assert selected.control == control.control
+    case.store.save_delivery(original.model_copy(update={"state": "acknowledged", "attempts": 1}))
+    retained = case.store.delivery(original.operation_id)
+    assert retained.state == "superseded" and retained.command == original.command
+    changed = retained.model_copy(update={"encounter": retained.encounter.model_copy(update={"payload_digest": "b" * 64})})
+    with pytest.raises(ValueError, match="captured delivery command cannot be replaced"):
+        case.store.save_delivery(changed)
+    assert case.store.delivery(original.operation_id).command == original.command
+
+
+def test_native_nonretryable_held_delivery_is_not_a_transport_loop(native_deliveries):
+    case = native_deliveries
+    original = case.seed("forward", 1)
+    held = original.model_copy(update={"qualification_status": "held",
+        "qualification_reason": "first_departure_source_changed", "qualification_retryable": False})
+    case.store.save_delivery(held)
+    assert case.store.pending_delivery(100, workspace=case.workspace) is None
+    assert case.store.delivery(original.operation_id).attempts == 0
 

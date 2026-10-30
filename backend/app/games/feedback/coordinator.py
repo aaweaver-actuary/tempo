@@ -404,7 +404,8 @@ class Coordinator:
                 "attempts": delivery.attempts + 1, "error": receipt.reason if state == "failed" else None}))
         except DeliveryDeferred as error:
             self.store.save_delivery(delivery.model_copy(update={"qualification_status": "held",
-                "qualification_reason": error.reason, "error": error.reason,
+                "qualification_reason": error.reason, "qualification_retryable": error.retryable,
+                "error": error.reason,
                 "next_attempt_at": self.clock.now() + error.retry_after}))
         except Exception as error:
             # A receiver may already have committed. Preserve this exact command.
