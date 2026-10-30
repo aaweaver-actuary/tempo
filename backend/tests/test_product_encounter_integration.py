@@ -399,6 +399,27 @@ def test_native_acknowledged_priority_only_is_qualified_from_foreground_with_exi
                 from tempo_legacy_database.adapters.study.game_feedback import feedback_queue_priorities
                 assert feedback_queue_priorities(database,(case.card_id,))=={}
                 assert next_feedback_preparation(database,NOW.date().isoformat(),now=NOW+timedelta(minutes=1)).key==command.key
+                owed = PostgresGameFeedbackStore(database).get(command.key)
+            from contextlib import contextmanager
+            from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+            @contextmanager
+            def raw_reads():
+                with case.transaction() as database:
+                    yield database.raw
+            # The configuration owner restores actual scope/account after the
+            # missing-configuration fault; Study does not invent a release flag.
+            restored = source.configuration.model_copy(update={'revision':1})
+            PostgresReviewStore(raw_reads).configure(restored,0)
+            release_at = NOW+timedelta(minutes=2)
+            released = prepare_feedback_effect(owed,read=case.transaction,capture=lambda *args:captured,
+                clock=lambda:release_at,qualification_prepare=source.prepare)
+            assert released.reason is None
+            with case.transaction() as database:
+                resumed = apply_prepared_feedback_effect(database,released,clock=lambda:release_at,operation_admitted=True)
+                assert resumed.admission_status=='available' and resumed.progress.scheduling_review_id==first
+                assert case.card_id in feedback_queue_priorities(database,(case.card_id,))
+                assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+                    (case.card_id,)).fetchone()[0]==1
 
 
 def test_native_one_review_settles_one_obligation_and_foreground_consumes_retained_completion(
