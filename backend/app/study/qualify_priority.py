@@ -1,8 +1,9 @@
 """Required affected Games→Study boundary selection, using the existing pytest runner.
 
 Run from any directory: python backend/app/study/qualify_priority.py.
-Combine #487 deferred intake and #488 functional integration source first. Missing
+The joined #618–#624 source owns the explicit finite selection below. Missing
 required files/cases fail pytest collection; there are no optional fallbacks.
+Packaged/browser proof remains the separate explicit games-collection-release suite.
 """
 from pathlib import Path
 import fcntl
@@ -21,6 +22,20 @@ REQUIRED = (
     "backend/tests/test_product_encounter_integration.py::test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games",
     "backend/tests/test_product_feedback_integration.py::test_maintenance_cold_import_has_no_games_dependency",
     "backend/tests/test_priority_ownership_pickup_postgres.py::test_historical_evidence_ownership_pickup_commits_within_existing_budget_and_replays",
+    "backend/tests/test_product_first_boundary.py",
+    "backend/tests/test_product_delivery_qualification.py::test_feedback_enable_qualifies_original_collection_outbox",
+    "backend/tests/test_product_delivery_qualification.py::test_retained_legacy_lapse_has_compatible_or_terminal_disposition",
+    "backend/tests/test_product_delivery_qualification.py::test_qualification_decodes_complete_publication_after_reader_exit",
+    "backend/tests/test_product_delivery_qualification.py::test_native_live_and_history_deliveries_have_bounded_fair_progress",
+    "backend/tests/test_product_delivery_qualification.py::test_native_semantic_qualification_spends_fair_turn_without_transport_attempt",
+    "backend/tests/test_product_delivery_qualification.py::test_native_controls_win_after_qualification_and_delayed_ack",
+    "backend/tests/test_product_feedback_release.py",
+    "backend/tests/test_study_attempt_issuance_postgres.py",
+    "backend/tests/test_prepared_review_continuation.py::test_prepared_control_precedes_pending_study_work_without_applying_during_preparation",
+    "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[False-fresh]",
+    "backend/tests/test_product_recombination_postgres.py::test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement[True-fresh]",
+    "backend/tests/test_product_recombination_postgres.py::test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_or_second_reset",
+    "backend/tests/test_product_recombination_postgres.py::test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles",
 )
 
 

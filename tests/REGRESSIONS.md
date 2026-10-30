@@ -6036,3 +6036,36 @@ unavailable competitors and the complete candidate-bound rejection. The adjacent
 collection-factory case proves this optional Study preparation capability is
 removed when delivery is disabled. The public workflow cold-import guard includes
 the two declared preparation value/port exports.
+
+#624's assembled owner regressions now include:
+
+- `test_native_root_observes_source_and_applies_one_unit_only_after_receipt_fence`
+  traverses the registered pure source preparation and same borrowed writer. It
+  forbids filesystem/new-connection work in the writer and contains a missing
+  optional source table without aborting ordinary Study.
+- `test_native_pending_absence_and_cutoff_use_index_among_same_workspace_legacy_history`
+  uses 5,000 due pending legacy records in the same workspace, including ready
+  labels without witnesses. Actual planner EXPLAIN (without forced indexes),
+  migration derivation, retry-after, semantic hold, FIFO cutoff and control
+  precedence are verified; original command bytes stay unchanged.
+- `test_native_new_source_before_prepared_successor_preserves_save_and_issues_target_first`
+  first issues a real protected head, then commits a genuine new provider capture.
+  The saved review remains durable, the speculative ordinary successor receives
+  no issuance, and two explicit bounded units prepare the target at actual first
+  new issuance ordinal one; its real review settles the same effect.
+- The fresh variants of
+  `test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement`
+  capture a NEW game after an actually earned join or split. The prejoin-capture
+  companion retains the earlier command's exact bytes/key/determination through
+  both lineage changes, repeat capture/acceptance and one real reset/settlement.
+- `test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles`
+  earns A/C three reviews and B two, prepares A, then earns B's real joining
+  review. The old preparation cannot apply to retired A even though its old
+  source/card flags remain unchanged. The existing route lock fences indexed
+  lineage absence without writer chess; fresh preparation reaches B once.
+
+`backend/app/study/qualify_priority.py` registers these real finite native cases
+and their affected selector/issuance/compatibility boundaries. The explicit
+`games-collection-release` suite remains the separate pinned-image/provider and
+real-server browser journey; collection, fixture syntax and mocked browser cases
+alone do not establish packaged or browser acceptance.
