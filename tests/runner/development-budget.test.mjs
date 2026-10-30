@@ -56,7 +56,7 @@ test('aggregate development limits include all services and reject an additional
 test('optional inventory has unrestricted CPU and retains existing memory plus the Games allocation', () => {
   const {['game-feedback-worker']:games,...existing}=resourceBudgets.optionalServices;
   assert.equal(Object.values(existing).reduce((sum,item)=>sum+item.memoryMiB,0),2048);
-  assert.deepEqual(games,{memoryMiB:1024,pidsLimit:96});
+  assert.deepEqual(games,{memoryMiB:1536,pidsLimit:96});
   assert(Object.values(resourceBudgets.optionalServices).every(item=>!Object.hasOwn(item,'cpus')));
   assert.throws(()=>composeResourceLimits(Object.keys(resourceBudgets.optionalServices),'owner',resourceBudgets.optionalServices),/aggregate.*memory budget/);
 });
@@ -1052,7 +1052,7 @@ test('healthy idle snapshot with stalled publisher allows a new essential reques
 
 
 test('A28 Games generated limits preserve memory PID and ownership without restoring a CPU quota', () => {
-  for(const [allocations, memory] of [[resourceBudgets.developmentServices,'512m'],[resourceBudgets.optionalServices,'1024m']]) {
+  for(const [allocations, memory] of [[resourceBudgets.developmentServices,'512m'],[resourceBudgets.optionalServices,'1536m']]) {
     const {services}=composeResourceLimits(['game-feedback-worker'],'owner',allocations);
     assert.deepEqual(services['game-feedback-worker'],{mem_limit:memory,pids_limit:96,
       labels:{'tempo.resource-owner':'owner','tempo.resource-class':'development'}});
