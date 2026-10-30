@@ -459,8 +459,10 @@ export async function main(
       mode, currentService, allowModeTransition: true });
     if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');
     else if (!apiRevisionVerified) blockers.push('installed_api_revision_mismatch');
-    if (mode === 'feedback' && !verifiedRuntimes.some(runtime => runtime.service === 'foreground-worker'))
-      blockers.push('foreground_feedback_runtime_unverified');
+    if (mode === 'feedback') {
+      if (!verifiedRuntimes.some(runtime => runtime.service === 'api')) blockers.push('api_feedback_runtime_unverified');
+      if (!verifiedRuntimes.some(runtime => runtime.service === 'foreground-worker')) blockers.push('foreground_feedback_runtime_unverified');
+    }
     const readiness = assessSelectedReadiness(report, allowances, {fullReaderSuccessful: probeSuccessful(fullReaderProbe),
       collectionOnly: mode === 'collect-only' && apiRevisionVerified && !blockers.includes('collection_only_command_required') &&
         !blockers.includes('competing_or_unverified_collector')});

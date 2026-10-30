@@ -561,11 +561,15 @@ test('failed feedback admission clear stops only the optional worker and reports
   assert.equal(status.running, false); assert.equal(status.managed_mode.verified_for_current_runtime, false);
 });
 
-test('unverified foreground boot and edited mode override cannot activate feedback', async t => {
+test('unverified API or foreground boot and edited mode override cannot activate feedback', async t => {
   const fixture = collectionMainFixture(t, {modern: true});
-  fixture.input.failRuntime = 'foreground-worker';
-  await assert.rejects(fixture.invoke('enable', {mode: 'feedback'}), /foreground_feedback_runtime_unverified/);
-  assert.equal(fixture.actionCalls('run').length, 0); assert.equal(fixture.actionCalls('up').length, 0);
+  for (const [runtime, blocker] of [['api', 'api_feedback_runtime_unverified'], ['foreground-worker', 'foreground_feedback_runtime_unverified']]) {
+    fixture.input.failRuntime = runtime;
+    const plan = await fixture.invoke('plan', {mode: 'feedback'});
+    assert.equal(plan.activation_ready, false); assert.ok(plan.blockers.includes(blocker));
+    await assert.rejects(fixture.invoke('enable', {mode: 'feedback'}), new RegExp(blocker));
+    assert.equal(fixture.actionCalls('run').length, 0); assert.equal(fixture.actionCalls('up').length, 0);
+  }
   delete fixture.input.failRuntime;
   await fixture.invoke('enable', {mode: 'feedback'});
   const release = JSON.parse(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'));
