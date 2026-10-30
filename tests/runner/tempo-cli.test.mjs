@@ -2186,6 +2186,43 @@ test("CLI automatic start cancels on actual SIGINT without a deployment record",
 });
 
 function installRelaunchFixture(fixture, stopOnEntry) {
+  // Production relaunches its absolute entrypoint, not the registered fixture root.
+  // Intercept only that continued invocation; the wrapper imports the same fake
+  // network in the child before exercising the unchanged production main.
+  writeFileSync(fixture.hook, readFileSync(fixture.hook, "utf8") + `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+const launch = childProcess.spawn;
+childProcess.spawn = (command, args, options) => {
+  if (command === process.execPath && args[0] === ${JSON.stringify(cliEntry)} && options?.env?.TEMPO_CLI_CONTINUATION) {
+    writeFileSync(${JSON.stringify(join(fixture.directory, "observed-relaunch.json"))}, JSON.stringify({ entrypoint: args[0], args: args.slice(1) }));
+    return launch(command, [${JSON.stringify(join(fixture.root, "scripts/tempo-cli.mjs"))}, ...args.slice(1)], options);
+  }
+  return launch(command, args, options);
+};
+syncBuiltinESMExports();
+const syntheticFetch = globalThis.fetch;
+globalThis.fetch = async (input, options) => {
+  const url = new URL(input);
+  if (!["api.github.com", "github.com"].includes(url.hostname)) return syntheticFetch(input, options);
+  const data = JSON.parse(readFileSync(${JSON.stringify(join(fixture.directory, "fixture.json"))}, "utf8"));
+  const prefix = "https://api.github.com/repos/aaweaver-actuary/tempo/";
+  const runs = data.diagnostics.runs ?? [{ id: 12, head_sha: data.revision, head_branch: "main", event: "push" }];
+  const workflowRequest = prefix + "actions/workflows/pages.yml/runs?head_sha=" + data.revision + "&branch=main&per_page=100&page=1";
+  const jobsRequest = runs.some(run => run.head_sha === data.revision && run.head_branch === "main" && run.event === "push"
+    && String(input) === prefix + "actions/runs/" + run.id + "/jobs?filter=latest&per_page=100&page=1");
+  if (String(input) !== workflowRequest && !jobsRequest) {
+    appendFileSync(${JSON.stringify(join(fixture.directory, "requests.jsonl"))}, JSON.stringify({ url: String(input), unexpected: true }) + "\\n");
+    throw new Error("Unexpected relaunch fixture GitHub request: " + input);
+  }
+  const response = await syntheticFetch(input, options);
+  appendFileSync(${JSON.stringify(join(fixture.directory, "relaunch-network.jsonl"))}, JSON.stringify({
+    child: Boolean(process.env.TEMPO_CLI_CONTINUATION), url: String(input), revision: data.revision, body: await response.clone().json(),
+  }) + "\\n");
+  return response;
+};
+`);
   editFixtureJson(fixture, "machine.json", value => { value.head = "c".repeat(40); });
   mkdirSync(join(fixture.root, "scripts"));
   writeFileSync(join(fixture.root, "scripts/tempo-cli.mjs"), `
@@ -2200,6 +2237,30 @@ catch (error) { console.error(error.message); if (error.action) console.error(er
 `);
 }
 
+function assertSyntheticRelaunch(fixture, childStatus = null) {
+  const launch = readFixtureJson(fixture, "observed-relaunch.json");
+  assert.equal(launch.entrypoint, cliEntry);
+  assert.deepEqual(launch.args, ["start", "--no-open", "--config", fixture.registration]);
+  const continued = readFixtureJson(fixture, "observed-continuation.json");
+  assert.equal(continued.source.head, readFixtureJson(fixture, "fixture.json").revision);
+  const requests = readFileSync(join(fixture.directory, "relaunch-network.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  assert(requests.some(request => !request.child && request.body.jobs), "parent must receive synthetic job evidence");
+  for (const request of requests) {
+    for (const run of request.body.workflow_runs ?? []) {
+      assert.equal(run.head_sha, request.revision);
+      assert.equal(run.head_branch, "main");
+      assert.equal(run.event, "push");
+    }
+    if (request.body.jobs) assert.deepEqual(request.body.jobs, diagnosticJobs);
+  }
+  const childRequests = requests.filter(request => request.child);
+  if (childStatus === null) assert.deepEqual(childRequests, [], "concurrent stop must cancel before child verification");
+  else {
+    assert(childRequests.some(request => request.body.workflow_runs?.some(run => run.status === childStatus)), "child must use synthetic workflow evidence");
+    assert.equal(childRequests.some(request => request.body.jobs), childStatus === "completed");
+  }
+}
+
 test("CLI automatic start relaunch preserves the original fence across a concurrent stop", t => {
   const fixture = diagnosticFixture(t);
   installRelaunchFixture(fixture, true);
@@ -2211,6 +2272,7 @@ test("CLI automatic start relaunch preserves the original fence across a concurr
   assert.equal(continued.source.head, "a".repeat(40));
   assert.deepEqual(Object.keys(continued.source).sort(), ["branch", "changes", "head", "origin"]);
   assert.equal(continued.installationState[join(fixture.stateDirectory, "operation.json")], null);
+  assertSyntheticRelaunch(fixture);
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("build")));
 });
 
@@ -2230,6 +2292,7 @@ try { process.exitCode`).replace("await main(process.argv.slice(2))", "await mai
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /30-minute wait/);
   assert.equal(readFixtureJson(fixture, "observed-continuation.json").deadline, 1_800_000);
+  assertSyntheticRelaunch(fixture, "queued");
   assert(!existsSync(join(fixture.stateDirectory, "operation.json")));
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("build")));
 });
@@ -2291,6 +2354,7 @@ test("CLI automatic start waits for advancing main instead of deploying an older
   const receipt = readFixtureJson(fixture, "deployment.json", true);
   assert.equal(receipt.revision, "b".repeat(40));
   assert.equal(receipt.evidence.commit, receipt.revision);
+  assertSyntheticRelaunch(fixture, "completed");
   assert(fixture.calls().filter(call => call.args.includes("merge")).every(call => call.args.at(-1) === receipt.revision));
 });
 
