@@ -5515,6 +5515,19 @@ publication under the unchanged 250 ms background transaction cap with the same
 575-row/5,312-history shape. It also requires stale issuance/eligibility rejection,
 protected positions, history/origin identity and stable replay, in its own
 freshly migrated disposable database with verified cleanup.
+`test_postgres_frozen_queue_publication_with_historical_and_null_evidence`
+adds an active, genuinely staged frozen publication with 575 queued rows,
+5,656 evidence rows and 30,321 retained origins across 43 dates. It binds the exact
+eligible set, legacy-held work, changed
+captured definitions/memberships, reversed frozen rank, protected positions and
+full publication under the unchanged 250 ms cap. The equivalence cases in
+`backend/tests/test_frozen_opening_order.py::test_legacy_frozen_exposure_membership_matches_correlated_history_with_nulls`
+retain every existing exposure/explicit/nonlegacy/nonopening/inactive exception
+and NULL-as-absent semantics. The adjacent
+`test_changed_frozen_definition_issued_origin_set_matches_correlated_exclusion_with_nulls`
+retains matching-issued, unissued, unrelated and NULL-origin behavior in the
+captured-definition exclusion. These guards and the native full-publication case
+cover all four history membership lookups without relaxing eligibility.
 
 
 Background queue presentation after game-priority application must use its supplied bounded reader when no borrowed database connection exists; real obligations retain priority, stale obligations lose priority, and active Study attempts/history remain intact.
