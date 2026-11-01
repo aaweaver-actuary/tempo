@@ -414,6 +414,8 @@ def record_owned_rehearsal(owner, present):
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--list',action='store_true')
     parser.add_argument('--quick',action='store_true')

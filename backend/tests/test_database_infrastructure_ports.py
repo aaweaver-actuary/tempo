@@ -111,3 +111,37 @@ def test_missing_binding_fails_closed(monkeypatch):
     monkeypatch.setattr(infrastructure, "_admission", None)
     with pytest.raises(RuntimeError, match="not bound"):
         infrastructure.database_admission()
+
+
+def test_database_first_composition_reuses_real_gate_and_stage(tmp_path):
+    code = """
+from pathlib import Path
+import sys
+from tempo_legacy_database import connections, infrastructure
+assert 'app.services.activity_gate' not in sys.modules
+from app.product_composition.database_infrastructure import bind_database_infrastructure
+from app.services.activity_gate import activity_gate
+from app.services.background_runtime import database_stage
+bind_database_infrastructure()
+bind_database_infrastructure()
+assert infrastructure.database_admission() is activity_gate
+assert infrastructure._measurement is database_stage
+connections.DB_PATH = Path(sys.argv[1])
+with connections.connection() as db:
+    db.execute('CREATE TABLE proof (value INTEGER)')
+with activity_gate.background_job('proof', 'one'):
+    with connections.background_connection() as db:
+        db.execute('INSERT INTO proof VALUES (1)')
+with connections.read_connection() as db:
+    assert db.execute('SELECT value FROM proof').fetchone()[0] == 1
+"""
+    subprocess.run([sys.executable, "-c", code, str(tmp_path / "proof.sqlite")],
+                   check=True, env=os.environ.copy())
+
+
+def test_composition_helper_import_is_inert():
+    code = ("import sys; import app.product_composition.database_infrastructure; "
+            "assert 'app.services.activity_gate' not in sys.modules; "
+            "assert 'app.services.background_runtime' not in sys.modules; "
+            "assert 'tempo_legacy_database.connections' not in sys.modules")
+    subprocess.run([sys.executable, "-c", code], check=True, env=os.environ.copy())

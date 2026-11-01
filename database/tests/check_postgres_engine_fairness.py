@@ -576,6 +576,8 @@ class EngineFairnessProof:
 
 
 def proof_engine_fairness(parent_database_url):
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Engine fairness proof requires an explicitly disposable PostgreSQL instance')
     import database.tests.check_postgres_graph_retention as fixtures
@@ -590,6 +592,8 @@ def proof_engine_fairness(parent_database_url):
 
 
 if __name__ == '__main__':
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if child_mode := os.getenv('TEMPO_ENGINE_FAIRNESS_CHILD_MODE'):
         redis_admission_gate._FOREGROUND_KEY = os.environ['TEMPO_ENGINE_FAIRNESS_FOREGROUND_KEY']
         redis_admission_gate._BACKGROUND_KEY = os.environ['TEMPO_ENGINE_FAIRNESS_BACKGROUND_KEY']

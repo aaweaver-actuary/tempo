@@ -1544,6 +1544,8 @@ def test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier():
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Prefix application proofs require the disposable runner')
     os.environ['TZ']='America/New_York'

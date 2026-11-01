@@ -3,6 +3,11 @@
 import pytest
 
 
+def pytest_configure():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
+
+
 @pytest.fixture
 def normal_study_mode(monkeypatch):
     """Keep unrelated mocked worker proofs in normal scheduling mode.
