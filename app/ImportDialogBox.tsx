@@ -9,7 +9,7 @@ import { Notice } from "./components/task-tabs";
 import { readWorkspaceResponse, invalidateWorkspaceData } from "./lib/workspace-data";
 import { API_URL } from "./const";
 import { parsePgnImport } from "./lib/pgn-import";
-import type { LocalRepertoire } from "./types";
+import type { LocalRepertoire } from "./domain/repertoire";
 import { usesLocalApi } from "./utils/local";
 import CloseButton from "./components/buttons/CloseButton";
 import {
