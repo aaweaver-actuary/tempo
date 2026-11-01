@@ -6609,3 +6609,7 @@ logical identities, determination clocks, retained pages and completed checkpoin
 ### Recovery readback checks both actual receipt contracts (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` binds the original command payload and exact full `operation_receipts.response_json` to the browser receipt, then compares the immutable Learning attempt receipt after removing only the adapter's known after-save `recombination` annotation. Prepared continuation and all other fields, review identity and actual issuance origins remain exact. The 4d53 first transition completed with a persisted receipt and next board; comparing its enriched public response directly to the core attempt row exposed the fixture contract error.
+
+### Native legacy settlement fixture uses the authoritative Study clock (#668)
+
+`backend/tests/test_product_feedback_integration.py::test_normal_study_review_settles_obligation` and `::test_producer_absence_does_not_block_study` retain their fixed October26 policy clock at the current `queue_commands.datetime.now` seam as well as the legacy date seam. The selected4d native run accepted the legacy effect but correctly refused issuance when its old fixture patched only `date.today`, leaving the current Study-day clock at November1. No production policy, original command, issuance/settlement assertion or database deadline changes.
