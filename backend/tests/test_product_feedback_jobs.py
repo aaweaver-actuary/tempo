@@ -1090,3 +1090,66 @@ def test_corrected_held_source_cannot_create_or_inherit_determination_clock(orig
     assert changed_capture.first_departure.status == "own_actionable"
     assert changed_capture.determined_at is None
     assert changed_capture.diagnostic == "changed_source_requires_D08_resolution"
+
+
+@pytest.mark.parametrize('moves', [('d2d4',), ('g1f3', 'd7d5', 'g2g3'),
+                                   ('g1f3', 'c7c5', 'g2g3', 'd7d5', 'f1h3')])
+def test_workflow_skips_unusable_reentry_index_without_changing_complete_findings(monkeypatch, moves):
+    from app.product_composition import game_sync
+    from app.repertoire import build_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"))
+    captured = snapshot(authored)
+    original = source_record(moves)
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    full = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                 snapshot=captured, reentry_lookup=build_index(captured))
+    absent = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                   snapshot=captured, reentry_lookup=None)
+    assert full == absent
+    from app.repertoire import position_index
+    def forbidden(*args):
+        raise AssertionError('unanchored source must not allocate a position index')
+    monkeypatch.setattr(position_index, '_build_validated_index', forbidden)
+    comparer = game_sync.WorkflowComparer()
+    actual = comparer.compare(game, captured, record=original, spec=SimpleNamespace(provider='lichess'))
+    assert actual == full
+
+
+def test_workflow_explicit_reentry_still_builds_real_index_and_resumes_anchor():
+    from app.product_composition import game_sync
+    from app.repertoire import build_index, build_reentry_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored)
+    original = source_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    optional = build_reentry_index(captured)
+    candidate = optional.reentry_candidate('rep', optional.routes['rep', 'route'][4].full_fen)
+    assert candidate.ply == 4 and candidate.reentry_authority_id == 'anchor'
+    expected = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                     snapshot=captured, reentry_lookup=build_index(captured))
+    actual = game_sync.WorkflowComparer().compare(game, captured, record=original,
+                                                 spec=SimpleNamespace(provider='lichess'))
+    assert actual == expected
+    assert [(item.kind, item.ply) for item in actual] == [('opponent_gap', 2), ('confirmed_miss', 5)]
+
+
+def test_unanchored_workflow_preserves_illegal_route_refusal():
+    from app.product_composition import game_sync
+    from app.repertoire import build_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    captured = snapshot(route(('e2e4',)))
+    invalid = captured.membership.routes[0].model_copy(update={'moves': ('e2e5',)})
+    captured = captured.model_copy(update={'membership': captured.membership.model_copy(update={'routes': (invalid,)})})
+    original = source_record(('e2e4',))
+    spec = SimpleNamespace(provider='lichess', account='learner', workspace_id='workspace')
+    game = game_sync.WorkflowNormalizer().normalize(original, spec)
+    with pytest.raises(ValueError) as before:
+        game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                               snapshot=captured, reentry_lookup=build_index(captured))
+    with pytest.raises(type(before.value)) as after:
+        game_sync.WorkflowComparer().compare(game, captured, record=original, spec=spec)
+    assert str(after.value) == str(before.value)

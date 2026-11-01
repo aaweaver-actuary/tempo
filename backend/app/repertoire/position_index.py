@@ -136,13 +136,28 @@ class PositionIndex:
         return item
 
 
-def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
-    """Copy the public T01 snapshot into a deeply immutable exact-position index."""
+def _validated_snapshot(snapshot: RepertoireSnapshot) -> RepertoireSnapshot:
     if (len(snapshot.membership.routes) > 10000
             or sum(len(route.moves) for route in snapshot.membership.routes) > 100000):
         raise ValueError("snapshot_index_exceeds_bound")
     # Revalidate even frozen models: legacy membership contains mutable lists.
-    source = RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
+    return RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
+
+
+def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
+    """Copy the public T01 snapshot into a deeply immutable exact-position index."""
+    return _build_validated_index(_validated_snapshot(snapshot))
+
+
+def build_reentry_index(snapshot: RepertoireSnapshot) -> PositionIndex | None:
+    """Validate the complete source; index only explicitly authorized reentry."""
+    source = _validated_snapshot(snapshot)
+    if not any(route.reentries for route in source.membership.routes):
+        return None
+    return _build_validated_index(source)
+
+
+def _build_validated_index(source: RepertoireSnapshot) -> PositionIndex:
     membership = source.membership
     boundaries = {item.route_id: item for item in source.boundaries}
     mappings = defaultdict(list)

@@ -24,7 +24,7 @@ from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import AcquisitionFailure, Clock, GamesStore, JobSpec
 from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
 from app.games.providers.lichess_acquisition import LichessAcquisitionError, fetch_lichess_page
-from app.repertoire import build_index
+from app.repertoire import build_reentry_index
 
 class AcquisitionPolicy(Value):
     """Explicit user filters plus finite integration resource bounds.
@@ -171,7 +171,7 @@ class WorkflowComparer:
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]:
         return compare_game(game, provider=spec.provider, time_precision=record.time_precision,
-                            snapshot=snapshot, reentry_lookup=build_index(snapshot))
+                            snapshot=snapshot, reentry_lookup=build_reentry_index(snapshot))
 
 
 def sync_job(*, job_id: str, workspace_id: str, account: str, window: GameWindow,
