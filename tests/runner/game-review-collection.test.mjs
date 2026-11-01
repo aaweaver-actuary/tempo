@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { assessSelectedReadiness, collectorMode, serviceInMode, readProbe, collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
+import { assessSelectedReadiness, operationalStatus, collectorMode, serviceInMode, readProbe, collectionBlockers, main, operateCollection, readCollectionMaintenance, serviceName } from '../../scripts/game-review-collection.mjs';
 import { targetKey } from '../../scripts/tempo-deployment.mjs';
 import { configurationFingerprint } from '../../scripts/tempo-runtime.mjs';
 import { cliFixture } from './tempo-cli-fixture.mjs';
@@ -1017,4 +1017,75 @@ test('minimal disable refuses a different installed API candidate', async t => {
   await assert.rejects(fixture.invoke('disable'), /identity\/ownership/);
   assert.equal(fixture.actionCalls('stop').length, 0);
   assert.equal(fixture.actionCalls('run').length, 0);
+});
+
+test('operator_status_distinguishes_stopped_process_from_active_intent', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  fixture.inventory.find(c => c.Config.Labels['com.docker.compose.service'] === serviceName).State.Running = false;
+  const status = (await fixture.invoke('status', {mode: 'feedback'})).operational_status;
+  assert.equal(status.desired_mode.value, 'feedback');
+  assert.equal(status.desired_mode.source, 'managed_intent');
+  assert.equal(status.managed.phase, 'active');
+  assert.equal(status.process.state, 'stopped');
+  assert.equal(status.runtime_identity[serviceName], 'absent');
+  assert.equal(status.intent_matches_current_runtime, false);
+  assert.equal(status.new_feedback_intake, 'requires_admission_check');
+  assert.equal(status.accepted_study_obligations.current, 'unknown');
+});
+
+test('inactive_mode_can_retain_historical_acknowledgment_without_claiming_current_obligations', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  await fixture.invoke('disable', {mode: 'feedback'});
+  fixture.input.report.delivery.accepted_pending_at_acknowledgment = 3;
+  fixture.input.report.collection.comparison_completeness = 'not_asserted';
+  const output = await fixture.invoke('plan', {mode: 'feedback'});
+  const status = output.operational_status;
+  assert.equal(status.managed.phase, 'inactive');
+  assert.equal(status.new_feedback_intake, 'disabled_by_intent');
+  assert.deepEqual(status.accepted_study_obligations, {current: 'unknown', accepted_pending_at_acknowledgment: 3});
+  assert.equal(output.comparison_coverage, 'complete');
+  assert.deepEqual(status.history_comparison, {scope: 'retained_collection', status: 'not_asserted'});
+});
+
+test('failed_runtime_and_full_reader_probes_remain_unknown_in_operator_status', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  fixture.input.failRuntime = 'api';
+  fixture.input.fullRead = () => { throw new Error('unavailable'); };
+  const output = await fixture.invoke('plan', {mode: 'feedback'});
+  assert.equal(output.operational_status.runtime_identity.api, 'unknown');
+  assert.equal(output.operational_status.intent_matches_current_runtime, null);
+  assert.deepEqual(output.operational_status.accepted_study_obligations,
+    {current: 'unknown', accepted_pending_at_acknowledgment: null});
+  assert.equal(output.operational_status.history_comparison.status, 'unknown');
+  assert.equal(output.activation_ready, false);
+});
+
+test('runtime_image_mismatch_is_unverified_not_a_failed_probe', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  fixture.inventory.find(c => c.Config.Labels['com.docker.compose.service'] === 'foreground-worker').Image = 'sha256:' + 'd'.repeat(64);
+  const status = (await fixture.invoke('status', {mode: 'feedback'})).operational_status;
+  assert.equal(status.runtime_identity['foreground-worker'], 'unverified');
+  assert.equal(status.intent_matches_current_runtime, false);
+});
+
+test('missing_managed_observation_does_not_invent_a_desired_mode', async t => {
+  const fixture = collectionMainFixture(t);
+  const output = await fixture.invoke('status');
+  assert.deepEqual(output.operational_status.desired_mode, {value: null, source: 'unknown'});
+  assert.equal(output.operational_status.managed.availability, 'unknown');
+  assert.equal(output.operational_status.new_feedback_intake, 'unknown');
+  assert.equal(output.operational_status.history_comparison.status, 'unknown');
+});
+
+test('malformed_managed_intent_remains_unknown', () => {
+  const result = operationalStatus({modeEvidence: {availability: 'available', intent: {mode: 'feedback'}},
+    release: {}, running: false, observedMode: null, runtimeObservations: {},
+    matchingRecordedRuntime: null, report: null, fullReaderSuccessful: false});
+  assert.equal(result.managed.availability, 'unknown');
+  assert.equal(result.new_feedback_intake, 'unknown');
+  assert.deepEqual(result.desired_mode, {value: null, source: 'unknown'});
 });
