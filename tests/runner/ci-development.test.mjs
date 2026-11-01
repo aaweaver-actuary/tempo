@@ -576,3 +576,14 @@ test('programme_browser_specs_have_one_owner_and_queue_qualification_keeps_them'
   assert.equal(unknown.core.backend, 'all');
   assert(unknown.jobs.postgres.required && unknown.jobs.browser.required);
 });
+
+
+test('retired_games_critical_entry_removed_without_changing_other_coverage', () => {
+  assert.deepEqual(inventory.critical, [
+    { file: 'recovery.spec.ts', title: 'intentional training failure is saved once and reload resumes it without another failure', covers: 'browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted' },
+    { file: 'phone-offline-training.spec.ts', title: 'prepared phone queue and study worker survive full offline reload and sync one review per attempt', covers: 'offline replay' },
+    { file: 'studies.spec.ts', title: 'FEN-only study square exercise is authored enrolled and reviewed through the real workspace', covers: 'Study grading' },
+    { file: 'held-drag-preservation.spec.ts', title: 'held training drag survives sync, service, notification and parent updates and drops once', covers: 'held drag preservation' },
+  ]);
+  assert(readFileSync('tests/unit/product-game-review.test.tsx', 'utf8').includes('keeps list errors local and retries the read request'));
+});

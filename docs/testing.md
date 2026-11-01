@@ -1062,3 +1062,9 @@ The existing browser families classify frozen opening order, Study recombination
 and recovery with training; product feedback with Games; and repertoire review
 with Repertoire. These are their actual journey owners, not exemptions from
 packaged fixture requirements or permission to skip their assertions.
+
+The former critical browser case “failed initial loads never display empty
+records or zero statistics” targeted the removed legacy Games workspace and
+was deleted with that workspace in `7ee2583d`. Its obsolete inventory entry is
+removed. The current Game Review unit case “keeps list errors local and retries
+the read request” remains; it is not a replacement browser-equivalence claim.
