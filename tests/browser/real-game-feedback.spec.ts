@@ -263,3 +263,86 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
         console_errors: consoleErrors, page_errors: pageErrors }) });
   }
 });
+
+test("packaged held prerequisite preserves Study through essential worker recovery", async ({ page }, testInfo) => {
+  const scenarioPath = process.env.TEMPO_PACKAGED_HOLD_SCENARIO;
+  test.skip(!scenarioPath, "Requires the owned packaged recovery assembly");
+  if (!scenarioPath) throw new Error("Owned prerequisite scenario required");
+  const scenario = JSON.parse(await readFile(scenarioPath, "utf8")) as { version: number; controls: string[]; target: string };
+  expect(scenario.version).toBe(1);
+  const directory = dirname(scenarioPath);
+  const board = page.locator('[data-view="train"] .persistent-board-shell[data-board-owner="train"] .board-frame:visible, #train .board-frame:visible').first();
+  const cards = new Map<number, { id: string; queue_entry_id: number; revision: number }>();
+  page.on("response", async response => {
+    if (new URL(response.url()).pathname === "/api/queue/window" && response.status() === 200) {
+      const body = await response.json() as { cards: Array<{ id: string; queue_entry_id: number; revision: number }> };
+      body.cards.forEach(card => cards.set(card.queue_entry_id, card));
+    }
+  });
+  async function marker(value: Record<string, unknown>) {
+    const path = join(directory, "hold-browser-ready.json");
+    await writeFile(path + ".next", JSON.stringify(value)); await rename(path + ".next", path);
+  }
+  async function released(stage: string) {
+    await expect.poll(async () => {
+      try { return (JSON.parse(await readFile(join(directory, "hold-provider-ready.json"), "utf8"))) as { stage: string }; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { stage: "pending" }; throw error; }
+    }, { timeout: 45_000 }).toMatchObject({ stage });
+  }
+  async function saved(card: { id: string; queue_entry_id: number; revision: number }) {
+    const received = page.waitForResponse(response => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/cards/${card.id}/review`);
+    await expect(board).toHaveAttribute("data-input-enabled", "true");
+    await move(page, "e2", "e4");
+    const response = await received, request = response.request();
+    const body = request.postDataJSON() as Record<string, unknown>, identity = request.headers()["idempotency-key"];
+    const result = await response.json() as Record<string, unknown>;
+    const complete = async (status: number, value: Record<string, unknown>) => {
+      if (status === 200) return value;
+      expect(status).toBe(202);
+      let receipt: { state?: string; response?: Record<string, unknown> } = {};
+      await expect.poll(async () => {
+        receipt = await page.evaluate(async id => {
+          const observed = await fetch(`/api/operations/${encodeURIComponent(id)}`);
+          if (!observed.ok) throw new Error(`Receipt unavailable: ${observed.status}`);
+          return observed.json();
+        }, String(value.operation_id));
+        return receipt.state;
+      }, { timeout: 45_000 }).toBe("complete");
+      return receipt.response!;
+    };
+    const receipt = await complete(response.status(), result);
+    expect(receipt.persisted).toBe(true); expect(body.guided).toBe(false);
+    const replay = await page.evaluate(async input => {
+      const result = await fetch(input.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": input.identity }, body: JSON.stringify(input.body) });
+      return { status: result.status, value: await result.json() };
+    }, { url: request.url(), identity, body });
+    expect(await complete(replay.status, replay.value)).toEqual(receipt);
+    return { receipt, replay: receipt, body, identity };
+  }
+  await page.addInitScript(() => localStorage.setItem("tempo-sound", "false"));
+  await page.goto("/");
+  await marker({ stage: "waiting" });
+  await expect(board).toHaveAttribute("data-input-enabled", "true", { timeout: 45_000 });
+  const current = async () => {
+    let card: { id: string; queue_entry_id: number; revision: number } | undefined;
+    await expect.poll(async () => { card = cards.get(Number(await page.locator("#train").getAttribute("data-queue-entry-id"))); return card?.id; }).toBeTruthy();
+    return card!;
+  };
+  const first = await current(); expect(scenario.controls).toContain(first.id);
+  await released("held");
+  const firstSave = await saved(first);
+  await expect.poll(() => page.locator("#train").getAttribute("data-queue-entry-id"), { timeout: 45_000 }).not.toBe(String(first.queue_entry_id));
+  const second = await current(); expect(scenario.controls).toContain(second.id); expect(second.id).not.toBe(first.id);
+  await marker({ stage: "saved", control: first.id, successor: second.id, saved: firstSave.receipt, replay: firstSave.replay });
+  await released("go-away");
+  const away = await page.context().newPage(); await away.goto("about:blank"); await away.bringToFront();
+  await marker({ stage: "away" });
+  await released("restored"); await page.bringToFront(); await away.close();
+  await saved(second);
+  await expect.poll(() => page.locator("#train").getAttribute("data-queue-entry-id"), { timeout: 45_000 }).not.toBe(String(second.queue_entry_id));
+  const target = await current(); expect(target.id).toBe(scenario.target);
+  const targetSave = await saved(target);
+  await marker({ stage: "complete", target_review: targetSave.receipt });
+  await testInfo.attach("held-prerequisite-correspondence", { contentType: "application/json", body: JSON.stringify({ first, second, target, firstSave, targetSave }) });
+});
