@@ -23,3 +23,20 @@ invalid: CommandDescriptor[AlienTransaction, int, str, bool] = CommandDescriptor
 register_descriptor(valid)
 register_descriptor(invalid)  # type: ignore[arg-type]  # an unrelated transaction must remain rejected
 CommandRegistry().register(invalid)  # independent registries retain generic transactions
+
+from contextlib import nullcontext
+from typing import ContextManager
+
+class BoolLifecycle:
+    def writer_admission(self) -> ContextManager[object]: return nullcontext()
+    def delayed_preparation_error(self, error: Exception) -> Exception: return error
+    def reject_after_rollback(self, database: PostgresConnection, operation_id: str, error: Exception) -> bool: return False
+    def is_pending(self, result: bool) -> bool: return result
+
+class WrongResultLifecycle(BoolLifecycle):
+    def is_pending(self, result: str) -> bool: return bool(result)  # type: ignore[override]
+
+good_lifecycle: CommandDescriptor[PostgresConnection, int, str, bool] = CommandDescriptor(
+    'good-lifecycle', decode, prepare, supported, transition_lifecycle=BoolLifecycle())
+bad_lifecycle: CommandDescriptor[PostgresConnection, int, str, bool] = CommandDescriptor(
+    'bad-lifecycle', decode, prepare, supported, transition_lifecycle=WrongResultLifecycle())  # type: ignore[arg-type]

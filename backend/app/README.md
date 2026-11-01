@@ -100,9 +100,9 @@ providers. The gateway's existing handler and preparer dictionaries are the
 same registry-owned objects, and the compatibility registration and executor
 continue to use them. `register_descriptor` adds a typed registration path constrained to the
 existing `PostgresConnection` supplied by the executor; independent registries
-may use another transaction type. Existing feature registrations have not yet migrated. B1 still hashes the
-original payload before preparation, and all transaction and exceptional
-execution paths remain unchanged. Tests that temporarily replace private gateway
+may use another transaction type. The prefix transition uses this descriptor;
+other legacy registrations remain. B1 still hashes the original payload before
+preparation, and transaction ordering remains unchanged. Tests that temporarily replace private gateway
 attributes are test doubles, not additional production registries.
 
 ```mermaid
@@ -112,4 +112,21 @@ flowchart LR
   Registry --> Maps
   Executor["Existing gateway executor"] --> Maps
   Identity["B1 original-payload identity"] --> Executor
+```
+
+The prefix-transition descriptor also supplies its specialized lifecycle to the
+same registry. The gateway retains receipt and savepoint ownership; the owner
+supplies foreground admission, delayed preparation retry, rejection after
+rollback, and pending-result classification. Other legacy commands have no
+transition lifecycle. Public foreground-defer errors retain their HTTP identity.
+
+```mermaid
+flowchart LR
+  Original["Original payload"] --> Prepare["Bounded transition preparation"]
+  Original --> Receipt["Gateway identity / receipt fence"]
+  Prepare --> Admission["Owner foreground admission"]
+  Admission --> Receipt
+  Receipt --> Apply["Transition apply savepoint"]
+  Apply -->|rollback| Reject["Owner rejection and recovery state"]
+  Apply -->|pending| Pending["Gateway retains pending receipt"]
 ```

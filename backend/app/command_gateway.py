@@ -20,6 +20,7 @@ from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
 from .contracts.command_registry import CommandDescriptor, CommandRegistry
+from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
@@ -52,6 +53,7 @@ def register_command(
     """Register publication and optional non-persisted preparation before its transaction."""
     if name in _handlers:
         raise ValueError(f"Duplicate command: {name}")
+    _registry.transition_lifecycles.pop(name, None)
     _handlers[name] = handler
     if prepare is not None:
         _preparers[name] = prepare
@@ -194,15 +196,14 @@ def _execute_command(
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             raise
         except Exception as error:
-            from .prefix_evaluation_api import PrefixEvaluationForegroundDeferred
             if isinstance(error, PrefixEvaluationForegroundDeferred):
                 raise BackgroundAdmissionDeferred('Waiting for foreground activity') from error
             # Persist definitive preparation failures through the same receipt
             # envelope, after checking delivery identity and the attempt fence.
             preparation_error = error
     command_connection = _writer_connection(background)
-    from .services.activity_gate import activity_gate
-    write_admission = activity_gate.foreground() if command_name == 'repertoire.prefix_transition.apply' else nullcontext()
+    lifecycle = _registry.transition_lifecycles.get(command_name)
+    write_admission = lifecycle.writer_admission() if lifecycle is not None else nullcontext()
     with write_admission, command_connection as database:
         raw = storage.receipt_writer(database)
         # Serialize two deliveries of one command across worker processes.
@@ -220,9 +221,10 @@ def _execute_command(
         storage.begin_handler(raw)
         try:
             if preparation_error is not None:
-                if (command_name == 'repertoire.prefix_transition.apply' and
-                        isinstance(preparation_error, HTTPException) and preparation_error.status_code == 503):
-                    raise SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation') from preparation_error
+                if lifecycle is not None:
+                    transformed = lifecycle.delayed_preparation_error(preparation_error)
+                    if transformed is not preparation_error:
+                        raise transformed from preparation_error
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
@@ -234,9 +236,8 @@ def _execute_command(
             if storage.is_transition_in_progress(error):
                 error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': storage.primary_error_message(error)})
             committed_transition = False
-            if command_name == 'repertoire.prefix_transition.apply':
-                from .services.prefix_transition_application import reject_unactivated_application
-                committed_transition = reject_unactivated_application(database, operation_id, error)
+            if lifecycle is not None:
+                committed_transition = lifecycle.reject_after_rollback(database, operation_id, error)
             error_payload = {
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
@@ -262,7 +263,7 @@ def _execute_command(
             storage.fail_operation(raw, error_json, operation_id)
             return None
         storage.release_handler(raw)
-        if command_name == 'repertoire.prefix_transition.apply' and result.get('status') == 'pending':
+        if lifecycle is not None and lifecycle.is_pending(result):
             storage.keep_transition_pending(raw, operation_id)
             return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
