@@ -2,7 +2,7 @@ import { aggregateBrowserShards, validateBrowserShardJobs } from "./ci-browser-s
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { layerCommands, validatePostgresScenarios, validateUnitResults } from "./ci-run-layer.mjs";
+import { layerCommands, validatePostgresScenarios, validateUnitResults, validateQueueOwnerEvidence, declaredQueueInputHashes, queueOwnerMergeBase } from "./ci-run-layer.mjs";
 import { allLayers, mandatoryLayers, planHash } from "./ci-verification-plan.mjs";
 import { sourceMetadata, validateExecutionIdentity, validateReuseEvidence } from "./ci-evidence.mjs";
 
@@ -27,6 +27,15 @@ export function layerFailures(plan, layer, result, report) {
   }
   if (["postgres", "lifecycle"].includes(layer)) {
     try { validatePostgresScenarios(layer, plan, report.scenarios); } catch (error) { failures.push(error.message); }
+    if (layer === "postgres") {
+      const suites = plan.jobs.postgres.owner_suites ?? [];
+      if (suites.length) {
+        try {
+          if (report.ownerEvidence?.planHash !== plan.hash || report.ownerEvidence?.head !== plan.head) throw new Error("Queue owner plan identity differs");
+          validateQueueOwnerEvidence(plan, report.ownerEvidence.evidence, declaredQueueInputHashes(), queueOwnerMergeBase(plan));
+        } catch (error) { failures.push(error.message); }
+      } else if (report.ownerEvidence) failures.push("Unexpected queue owner evidence");
+    }
   }
   if (layer === "browser" && plan.browserShards?.count > 1) {
     try {

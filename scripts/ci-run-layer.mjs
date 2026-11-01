@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { copyFileSync, existsSync, readFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, readFileSync, mkdirSync, readdirSync, writeFileSync, mkdtempSync, rmSync, lstatSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { escapeRegex, allLayers, planHash } from "./ci-verification-plan.mjs";
 import { resolvePython } from "./resolve-python.mjs";
 import { postgresTestStages } from "../database/tests/postgres-test-plan.mjs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { cpus, totalmem } from "node:os";
 import { aggregateBrowserShards, browserShard, browserShardFingerprint, browserShardReportPath, validateBrowserShardPlan } from "./ci-browser-shards.mjs";
 import { withTaskBrowserBuild, isLocalQualificationBuild } from "./task-browser-build.mjs";
@@ -15,10 +17,90 @@ import { suiteFingerprint } from "./ci-evidence.mjs";
 function postgresVerification(layer, plan) {
   const mode = layer === "postgres" ? "durability" : "lifecycle";
   const planned = plan.jobs[layer];
+  if (layer === "postgres") {
+    const expected = plan.comparisonAvailable && plan.paths.includes("backend/app/services/queue_presentation.py")
+      ? ["study-queue-presentation"] : [];
+    if (JSON.stringify(planned?.owner_suites ?? []) !== JSON.stringify(expected))
+      throw new Error("PostgreSQL owner obligations differ from affected source");
+  }
   if (planned?.mode !== mode || JSON.stringify(planned.planned_stages) !== JSON.stringify(postgresTestStages({ mode }))) {
     throw new Error(`${layer}: PostgreSQL scenario inventory differs from the immutable plan`);
   }
   return planned;
+}
+
+export function validateQueueOwnerEvidence(plan, evidence, expectedHashes, expectedMergeBase) {
+  const expected = "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts";
+  const selected = plan.jobs.postgres.owner_suites ?? [];
+  if (JSON.stringify(selected) !== JSON.stringify(["study-queue-presentation"])) throw new Error("Unexpected queue owner selection");
+  if (!evidence || evidence.suite !== selected[0] || evidence.scope !== "queue-presentation-native-case"
+      || evidence.passed !== 1 || evidence.failed !== 0 || evidence.skipped !== 0
+      || JSON.stringify(evidence.expectedIdentities) !== JSON.stringify([expected])
+      || JSON.stringify(evidence.executedIdentities) !== JSON.stringify([expected])
+      || !plan.base || !plan.commit || evidence.comparison?.resolvedHead !== plan.commit
+      || evidence.comparison?.resolvedBase !== plan.base || evidence.comparison?.requestedBase !== plan.base
+      || JSON.stringify(evidence.comparison) !== JSON.stringify(evidence.comparisonAfter)
+      || !expectedMergeBase || evidence.comparison?.mergeBase !== expectedMergeBase || !evidence.python || !evidence.platform
+      || !/^tempo-game-feedback-[0-9a-f]{32}$/.test(evidence.fixture?.owner ?? "")
+      || !/^[0-9a-f]{64}$/.test(evidence.fixture?.container_id ?? "")
+      || !/^sha256:[0-9a-f]{64}$/.test(evidence.fixture?.image_id ?? "")
+      || evidence.fixture?.cleanup_verified !== true || !evidence.fixture?.memory_bytes || !evidence.fixture?.pids_limit
+      || !Object.keys(evidence.comparison?.sourceInputs ?? {}).length
+      || JSON.stringify(evidence.comparison.sourceInputs) !== JSON.stringify(expectedHashes))
+    throw new Error("Missing or mismatched queue presentation owner evidence");
+}
+
+export function queueOwnerMergeBase(plan) {
+  if (!plan.commit || !plan.base) throw new Error("Queue owner proof requires candidate and base");
+  const result = spawnSync("git", ["merge-base", plan.commit, plan.base], { encoding: "utf8" });
+  if (result.status !== 0 || !result.stdout.trim()) throw new Error("Queue owner merge base unavailable");
+  return result.stdout.trim();
+}
+
+export function declaredQueueInputHashes(root = process.cwd()) {
+  const manifest = JSON.parse(readFileSync(join(root, "components.json"), "utf8"));
+  const suite = manifest.suites.find(item => item.id === "study-queue-presentation");
+  if (!suite?.inputs?.length) throw new Error("Missing queue owner suite inputs");
+  const result = spawnSync("git", ["ls-files", "-z", "--", "components.json", ...suite.inputs], { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) throw new Error("Cannot enumerate queue owner inputs");
+  const paths = result.stdout.split("\0").filter(Boolean).sort();
+  if (!paths.length || ["components.json", ...suite.inputs].some(input => !paths.some(path => path === input || path.startsWith(input.replace(/\/$/, "") + "/"))))
+    throw new Error("Missing queue owner input");
+  return Object.fromEntries(paths.map(path => [path, createHash("sha256").update(readFileSync(join(root, path))).digest("hex")]));
+}
+
+/** Execute exactly the registered owner suite; failed roots remain for inspection. */
+export function runQueueOwnerAttempt(plan, run, options = {}) {
+  if (plan.hash !== planHash(plan)) throw new Error("Immutable plan hash mismatch");
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  if (revision.status !== 0 || revision.stdout.trim() !== plan.commit) throw new Error("Owner checkout differs from plan candidate");
+  postgresVerification("postgres", plan);
+  if (!plan.base || !plan.jobs.postgres.owner_suites?.length) throw new Error("Queue owner proof requires its selected suite and base");
+  const root = mkdtempSync(join(tmpdir(), "tempo-ci-queue-owner-"));
+  mkdirSync(join(root, "fixtures"));
+  const environment = { ...process.env, ...(options.environment ?? {}),
+    TEMPO_PRIORITY_PROOF_BASE: plan.base, TEMPO_PRIORITY_EVIDENCE_ROOT: root,
+    TEMPO_PRIORITY_EVIDENCE: join(root, "evidence.json"), TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT: join(root, "fixtures") };
+  try {
+    const result = run(environment);
+    if (result.status !== 0 || result.error) return { result, failureRoot: root };
+    if (lstatSync(environment.TEMPO_PRIORITY_EVIDENCE).isSymbolicLink()) throw new Error("Owner evidence cannot be a symlink");
+    const evidence = JSON.parse(readFileSync(environment.TEMPO_PRIORITY_EVIDENCE, "utf8"));
+    const fixtureRoot = environment.TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT;
+    const reports = readdirSync(fixtureRoot).map(name => join(fixtureRoot, name, "fixture.json")).filter(existsSync);
+    if (reports.length !== 1) throw new Error("Expected one fresh owner fixture report");
+    if (lstatSync(dirname(reports[0])).isSymbolicLink() || lstatSync(reports[0]).isSymbolicLink())
+      throw new Error("Owner fixture evidence cannot be a symlink");
+    const fixture = JSON.parse(readFileSync(reports[0], "utf8"));
+    const fields = ["owner", "container_id", "image_id", "profile", "storage", "memory_bytes", "pids_limit", "cleanup_verified"];
+    if (dirname(reports[0]) !== join(fixtureRoot, fixture.owner ?? "") ||
+        fields.some(field => fixture[field] !== evidence.fixture?.[field])) throw new Error("Owner fixture identity differs from proof evidence");
+    validateQueueOwnerEvidence(plan, evidence, options.expectedHashes ?? declaredQueueInputHashes(), options.expectedMergeBase ?? queueOwnerMergeBase(plan));
+    rmSync(root, { recursive: true, force: true });
+    return { result, evidence };
+  } catch (error) {
+    return { result: { status: 1, error }, failureRoot: root };
+  }
 }
 
 export function validatePostgresScenarios(layer, plan, scenarios) {
@@ -61,8 +143,11 @@ export function layerCommands(layer, plan, shardId) {
   }
   if (["postgres", "lifecycle"].includes(layer)) {
     const { mode } = postgresVerification(layer, plan);
-    return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
+    const commands = [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
       [mode, "node", ["database/tests/test-postgres-docker.mjs", "--mode", mode]]];
+    if (layer === "postgres" && plan.jobs.postgres.owner_suites?.includes("study-queue-presentation"))
+      commands.push(["study-queue-presentation", "node", ["tools/component-build/test-lane.mjs", "--suite", "study-queue-presentation"]]);
+    return commands;
   }
   if (layer === "visual") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount"]], ["visual", "npm", ["run", "test:visual"]]];
   const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
@@ -175,8 +260,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json", "test-results/ci/frontend-inventory.json", "test-results/ci/backend-inventory.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);
       }
-      const environment = diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : env;
+      const environment = diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : { ...env };
       const run = selectedEnv => spawnSync(command, args, { stdio: "inherit", env: selectedEnv });
+      if (layer === "postgres" && args.includes("study-queue-presentation")) {
+        const attempt = runQueueOwnerAttempt(plan, run, { environment });
+        if (attempt.failureRoot) (report.ownerAttemptFailures ??= []).push({ diagnostic: Boolean(diagnostic), root: attempt.failureRoot });
+        if (!diagnostic && attempt.evidence) report.ownerEvidence = { planHash: plan.hash, head: plan.head, evidence: attempt.evidence };
+        return attempt.result;
+      }
       return isLocalQualificationBuild(command, args)
         ? withTaskBrowserBuild(output => run({ ...environment, TEMPO_BROWSER_BUILD_DIR: output }))
         : run(environment);

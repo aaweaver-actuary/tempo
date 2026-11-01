@@ -86,7 +86,8 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
     container = identity + "-postgres"
     volume = identity + '-data' if allocation['storage'] == 'owned-volume' else None
     password = secrets.token_urlsafe(32)
-    evidence = ROOT / "test-results/game-feedback-native" / identity
+    evidence_root = Path(os.environ.get("TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT", ROOT / "test-results/game-feedback-native"))
+    evidence = evidence_root / identity
     evidence.mkdir(parents=True)
     report = {"owner": identity, "container": container, "cleanup_verified": False,
               "profile": profile, "storage": allocation['storage']}

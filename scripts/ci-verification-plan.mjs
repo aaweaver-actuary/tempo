@@ -251,6 +251,9 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     }
     collection.forEach(item => { if (!jobs.browser.applicable) item.selected = false; });
   }
+  // This exact path adds the native owner obligation; it does not remove gates.
+  jobs.postgres.owner_suites = comparisonAvailable && paths.includes("backend/app/services/queue_presentation.py")
+    ? ["study-queue-presentation"] : [];
   const inventoryRevision = planHash({ inventory: sourceInventory, cases, pinnedCases, quarantine });
   const plan = { version: 3, repository, repositoryId, pullRequest, inventoryRevision, runtime, tier, draft, head, base, commit, event, ref, core, regressionFiles, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
     families: [...families].sort(), jobs,

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
+import { verificationPlan, inventory, validateInventory } from '../../scripts/ci-verification-plan.mjs';
 import { evaluateQuality, layerFailures } from '../../scripts/ci-quality.mjs';
 function temporaryContractDirectory(prefix, parent = join(process.cwd(),'test-results')) {
   mkdirSync(parent,{recursive:true});
@@ -540,4 +540,50 @@ test('queue_presentation_remains_conservative_until_native_owner_is_bridged', ()
   const withoutFixture = draft([path], { sourceInventory: missing });
   for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(withoutFixture.jobs[layer].required, layer);
   assert.deepEqual(withoutFixture.core, { frontend: 'all', backend: 'all' });
+});
+
+test('queue_presentation_adds_owner_proof_without_narrowing', () => {
+  const selected = draft(['backend/app/services/queue_presentation.py']);
+  assert.deepEqual(selected.jobs.postgres.owner_suites, ['study-queue-presentation']);
+  for (const layer of ['backend', 'postgres', 'browser', 'lifecycle']) assert(selected.jobs[layer].required);
+  assert.deepEqual(layerCommands('postgres', selected).at(-1), ['study-queue-presentation', 'node', ['tools/component-build/test-lane.mjs', '--suite', 'study-queue-presentation']]);
+  assert.equal(makeFastPlan(selected.paths, { head: 'head', base: 'base' }).tier, 'FULL');
+  const qualified = verificationPlan({ files, cases, paths: selected.paths, tier: 'qualification' });
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser']) assert(qualified.jobs[layer].required);
+});
+
+test('ui_and_unknown_paths_preserve_existing_selection', () => {
+  const ui = draft(['app/views/home_view.tsx']);
+  assert.equal(ui.jobs.postgres.applicable, false);
+  assert.deepEqual(ui.jobs.postgres.owner_suites, []);
+  const unknown = draft(['unknown/new-source.xyz']);
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(unknown.jobs[layer].required);
+  assert.deepEqual(unknown.jobs.postgres.owner_suites, []);
+});
+
+
+test('programme_browser_specs_have_one_owner_and_queue_qualification_keeps_them', () => {
+  const owners = { 'frozen-opening-order.spec.ts': 'training', 'product-recombination.spec.ts': 'training',
+    'study-recovery.spec.ts': 'training', 'product-game-feedback.spec.ts': 'games',
+    'product-repertoire-review.spec.ts': 'repertoire' };
+  for (const [file, family] of Object.entries(owners)) {
+    assert.deepEqual(Object.entries(inventory.families).filter(([, entries]) => entries.includes(file)).map(([name]) => name), [family]);
+  }
+  const qualified = verificationPlan({ files, cases, paths: ['backend/app/services/queue_presentation.py'], tier: 'qualification' });
+  for (const file of Object.keys(owners)) assert(qualified.families.includes(owners[file]));
+  assert.throws(() => validateInventory([...files, 'unknown-programme.spec.ts']), /Unclassified browser spec/);
+  const unknown = draft(['unknown/new-source.xyz']);
+  assert.equal(unknown.core.backend, 'all');
+  assert(unknown.jobs.postgres.required && unknown.jobs.browser.required);
+});
+
+
+test('retired_games_critical_entry_removed_without_changing_other_coverage', () => {
+  assert.deepEqual(inventory.critical, [
+    { file: 'recovery.spec.ts', title: 'intentional training failure is saved once and reload resumes it without another failure', covers: 'browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted' },
+    { file: 'phone-offline-training.spec.ts', title: 'prepared phone queue and study worker survive full offline reload and sync one review per attempt', covers: 'offline replay' },
+    { file: 'studies.spec.ts', title: 'FEN-only study square exercise is authored enrolled and reviewed through the real workspace', covers: 'Study grading' },
+    { file: 'held-drag-preservation.spec.ts', title: 'held training drag survives sync, service, notification and parent updates and drops once', covers: 'held drag preservation' },
+  ]);
+  assert(readFileSync('tests/unit/product-game-review.test.tsx', 'utf8').includes('keeps list errors local and retries the read request'));
 });

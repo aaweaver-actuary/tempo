@@ -1049,3 +1049,22 @@ runner removes only its own temporary output. Default `local-dist` remains the
 normal local/Study build and Study image contract. This isolates these Vite
 outputs only: workspace package build outputs, WASM output and default timing
 reports remain shared, so whole concurrent builds are not yet qualified.
+
+The CI verification plan adds the registered `study-queue-presentation` owner
+suite to the PostgreSQL layer for an exact `backend/app/services/queue_presentation.py`
+change. Existing durability, browser, qualification and conservative fallback
+gates remain. The owner result is bound to the plan's candidate/base, declared
+source hashes, exact case identity and a fresh disposable fixture report; a
+missing or mismatched report fails the layer. This does not enable hosted CI or
+claim a narrowed FAST/FULL selection.
+
+The existing browser families classify frozen opening order, Study recombination
+and recovery with training; product feedback with Games; and repertoire review
+with Repertoire. These are their actual journey owners, not exemptions from
+packaged fixture requirements or permission to skip their assertions.
+
+The former critical browser case “failed initial loads never display empty
+records or zero statistics” targeted the removed legacy Games workspace and
+was deleted with that workspace in `7ee2583d`. Its obsolete inventory entry is
+removed. The current Game Review unit case “keeps list errors local and retries
+the read request” remains; it is not a replacement browser-equivalence claim.

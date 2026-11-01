@@ -16,7 +16,7 @@ export function suiteFingerprint(plan, layer, commands) {
     tests: layer === "browser" ? plan.collection.filter(test => test.selected).map(test => test.id).sort()
       : layer === "visual" ? plan.pinnedCollection.map(test => test.id).sort() : null,
     ...(layer === "browser" ? { browserShards: plan.browserShards ?? null } : {}),
-    stages: plan.jobs[layer]?.planned_stages });
+    stages: plan.jobs[layer]?.planned_stages, owner_suites: plan.jobs[layer]?.owner_suites });
 }
 
 export function runtimeMatches(layer, plan, report) {
