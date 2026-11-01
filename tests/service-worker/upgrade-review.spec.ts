@@ -16,6 +16,8 @@ test('real worker upgrade retains and replays the original pending review', asyn
   let version = 7;
   const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
   const server = createServer(async (request, response) => {
+    response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     try {
       const path = new URL(request.url!, 'http://localhost').pathname;
       if (path === '/sw.js') {
