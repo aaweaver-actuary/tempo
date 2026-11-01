@@ -24,6 +24,7 @@ from .product_composition.database_infrastructure import bind_database_infrastru
 bind_database_infrastructure()
 
 from .celery_app import celery_app
+from .product_composition.worker_game_sync import resolve_worker_game_sync_command
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
     record_operation_retry, defer_operation_for_foreground,
@@ -44,7 +45,6 @@ from . import repertoire_commands  # noqa: F401 - registers foreground repertoir
 from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
-from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
 from .product_composition.feedback_commands import register_commands as register_product_feedback_commands
@@ -229,6 +229,7 @@ def execute_foreground_command(
 
 
 def _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle=None):
+    resolve_worker_game_sync_command(command_name)
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
@@ -275,6 +276,7 @@ def execute_background_command(
     expected_retry_cycle: int | None = None,
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
+    resolve_worker_game_sync_command(command_name)
 
     with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(command_name, operation_id, yielding=True):

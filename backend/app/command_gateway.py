@@ -46,6 +46,11 @@ class CommandConflict(ValueError):
     """An operation ID was reused for a different command or payload."""
 
 
+def is_command_registered(name: str) -> bool:
+    """Report whether the existing default registry contains a command."""
+    return name in _handlers
+
+
 def register_command(
     name: str, handler: CommandHandler, *, prepare: Callable[[dict[str, Any]], Any] | None = None,
 ) -> None:

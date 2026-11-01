@@ -658,3 +658,18 @@ Study-only currently permits only daily-queue task kinds. A queued graph/scan
 cannot progress under that policy without an explicit supported repair operation;
 ordinary Study must remain available while that prerequisite is held. No optional
 producer is enabled by this observer.
+
+### Worker Games sync registration
+
+The worker resolves `games.sync.enqueue` on dispatch through the existing
+command module and default gateway registry. Other command names do not wait
+for this selection. The worker still imports other Games and optional features;
+this one registration cut does not establish whole-worker isolation.
+
+```mermaid
+flowchart LR
+  dispatch["Worker command dispatch"] -->|"games.sync.enqueue only"| selection["Games sync selection"]
+  selection --> registration["Existing Games sync registration"]
+  registration --> registry["Existing gateway registry"]
+  dispatch -->|"other commands"| registry
+```
