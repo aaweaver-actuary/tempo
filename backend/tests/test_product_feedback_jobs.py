@@ -1168,3 +1168,20 @@ def test_page_index_reuse_preserves_results_invalidates_mutation_and_dies_with_p
         raise RuntimeError('cancel')
     comparer.compare(game,snapshot,record=original_record,spec=spec())
     assert len(builds) == 5
+
+
+def test_swallowed_normalization_failure_records_stage_without_private_source(caplog):
+    h = harness()
+    def broken(*args, **kwargs):
+        raise ValueError('PRIVATE_PROVIDER_PAYLOAD')
+    h.coordinator.normalizer.normalize = broken
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING', logger='tempo.games.page'):
+        h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.quarantined and source.diagnostic == 'unresolved_parsing_or_comparison_boundary'
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ', 1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'normalization'
+    assert diagnostic['failures'][0]['error_class'] == 'ValueError'
+    assert 'PRIVATE_PROVIDER_PAYLOAD' not in line
