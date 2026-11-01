@@ -27,6 +27,7 @@ it("pinned visual runner caches npm downloads while reinstalling locked dependen
     expect(argumentsPassed).toContain("/workspace/node_modules");
     expect(argumentsPassed.some((argument) => argument.includes("npm ci --no-audit"))).toBe(true);
     expect(argumentsPassed).toContain("linux/arm64");
+    expect(argumentsPassed.some(argument => /^TEMPO_BROWSER_BUILD_DIR=\/workspace\/test-results\/tempo-local-build-[^/]+\/output$/.test(argument))).toBe(true);
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }

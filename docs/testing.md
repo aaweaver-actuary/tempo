@@ -1032,3 +1032,10 @@ This does not retire the native engine smoke above, browser engine assets, Maia,
 or the Intelligence dispatcher and shared analysis-job contracts.
 
 The native `test_postgres_daily_queue_large_graph_unlock_meets_transaction_budget` fixture includes publication readiness and expects 6,251 bounded pages across its unchanged 100,000 locked cards and 900,021 graph steps. This replaces the retired sparse selector's three-page assumption; the exact 21 unlocked cards and 250 ms per-transaction limit remain asserted.
+
+Task-owned local qualification builds and pinned visual runs use a unique
+`TEMPO_BROWSER_BUILD_DIR`; the visual build and preview share that path, and the
+runner removes only its own temporary output. Default `local-dist` remains the
+normal local/Study build and Study image contract. This isolates these Vite
+outputs only: workspace package build outputs, WASM output and default timing
+reports remain shared, so whole concurrent builds are not yet qualified.
