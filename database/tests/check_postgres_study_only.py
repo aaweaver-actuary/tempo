@@ -41,9 +41,12 @@ def prove_settings_descriptor_original_identity():
     original = {'settings': values, 'supplied_fields': ['new_cards_per_day']}
     original_copy = deepcopy(original)
     prepare = command_gateway._preparers['settings.update']
+    prepared_values = []
     def changed_preparation(payload):
         prepared = prepare(payload)
-        return replace(prepared, settings=prepared.settings.model_copy(update={'new_cards_per_day': 19}))
+        changed = replace(prepared, settings=prepared.settings.model_copy(update={'new_cards_per_day': 19}))
+        prepared_values.append(changed.settings.new_cards_per_day)
+        return changed
     def snapshot():
         with postgres_store.connection() as database:
             settings_value = database.execute('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]
@@ -64,6 +67,7 @@ def prove_settings_descriptor_original_identity():
         assert json.loads(baseline[2][3]) == first
         with patch.dict(command_gateway._preparers, {'settings.update': changed_preparation}):
             assert execute_command(operation, 'settings.update', original) == first
+            assert prepared_values == [19] and prepared_values[0] != values['new_cards_per_day']
             changed = deepcopy(original)
             changed['settings']['new_cards_per_day'] = 14 if values['new_cards_per_day'] != 14 else 15
             try:
@@ -72,6 +76,7 @@ def prove_settings_descriptor_original_identity():
                 pass
             else:
                 raise AssertionError('changed original payload did not conflict')
+            assert prepared_values == [19, 19]
         assert original == original_copy
         assert write.call_count == 1
         assert snapshot() == baseline
