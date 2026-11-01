@@ -14,7 +14,7 @@ import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { validLegacyReview, validConflict } from "./study-legacy-validation";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { IntentStorageError } from "@tempo/browser-intents";
 
 export type ReviewConflictInformation = { code: string; message: string; retryable: boolean };
@@ -239,17 +239,23 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   const endpoint = `${transport.origin}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
   let failureMarkerSent = false;
   const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
-    endpoint, signal, client: transport.client, requireCurrent, request: async (url, options) => {
+    endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
       requireCurrent();
       // Receipt-first recovery reaches this callback only when replay is necessary.
       if (review.guided && !reconciling && !failureMarkerSent) {
         failureMarkerSent = true;
         const failureEndpoint = `${transport.origin}/api/queue/entries/${review.queueEntryId}/fail`;
         try {
-          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => confirmOperationResponse(await transport.client.learningFetch(failureEndpoint, {
-            method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
-          }), { signal, client: transport.client }), parentSignal);
+          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => {
+            const marker = await transport.client.learningFetch(failureEndpoint, {
+              method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
+            });
+            requireCurrent();
+            const confirmed = await confirmOperationResponse(marker, { signal, client: transport.client });
+            requireCurrent();
+            return confirmed;
+          }, parentSignal);
           requireCurrent();
           if (!response.ok) throw await responseError(response, failureEndpoint, review);
         } catch (error) {

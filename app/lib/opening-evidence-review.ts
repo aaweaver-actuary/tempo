@@ -8,17 +8,22 @@ function definitiveEvidenceFailure(error: unknown): string | undefined {
   if (error instanceof FailedOperationError && /opening_evidence_(conflict|unavailable)/.test(error.message)) return error.message;
 }
 
-export async function saveEvidenceAwareReview(options: {
+type ReviewEvidenceOptions = {
   endpoint: string; operationKey: string; body: Record<string, unknown>; completion?: OpeningEvidenceCheckpoint;
   evidenceRejected?: string; signal?: AbortSignal;
   aggregateOnly?: boolean;
   verifyReceiptFirst?: boolean;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
-  client?: StudyClient; requireCurrent?: () => void;
-}): Promise<Response> {
+} & (
+  | { client: StudyClient; requireCurrent: () => void; rejectEvidence: typeof rejectOpeningEvidence }
+  | { client?: undefined; requireCurrent?: undefined; rejectEvidence?: undefined }
+);
+
+export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): Promise<Response> {
   const request = options.request ?? options.client?.learningFetch ?? fetch;
   const binding = options.client ? createReviewTransport(options.client) : undefined;
+  const rejectEvidence = options.rejectEvidence ?? rejectOpeningEvidence;
   const requireCurrent = () => { binding?.requireCurrent(); options.requireCurrent?.(); };
   let rejection = options.evidenceRejected;
   const send = async (): Promise<Response> => {
@@ -47,7 +52,7 @@ export async function saveEvidenceAwareReview(options: {
     rejection = evidenceFailure;
     await options.onEvidenceRejected(rejection);
     requireCurrent();
-    await rejectOpeningEvidence(options.completion!.attempt_id, rejection).catch(() => undefined);
+    await rejectEvidence(options.completion!.attempt_id, rejection).catch(() => undefined);
     requireCurrent();
     return send();
   }
@@ -61,7 +66,7 @@ export async function saveEvidenceAwareReview(options: {
       // Persist fallback identity before submitting it; a reload cannot switch delivery keys.
       await options.onEvidenceRejected(rejection);
       requireCurrent();
-      await rejectOpeningEvidence(options.completion.attempt_id, rejection).catch(() => undefined);
+      await rejectEvidence(options.completion.attempt_id, rejection).catch(() => undefined);
       requireCurrent();
       response = await send();
     }
