@@ -92,9 +92,10 @@ def test_review_requeue_keeps_lazy_cursor_positions_classification_and_receipt(m
     replies += [Cursor(rows=[(2,), (3,)], event=lambda: events.append('iterate'))]
     replies += [Cursor(), Cursor(), Cursor(), Cursor()]
     database = Borrowed(replies, events)
-    monkeypatch.setattr(application, 'capture_daily_queue_order',
+    from app.study import queue_placement
+    monkeypatch.setattr(queue_placement, 'capture_daily_queue_order',
                         lambda connection, day: events.append('capture') or 'receipt')
-    monkeypatch.setattr(application, 'preserve_daily_queue_order',
+    monkeypatch.setattr(queue_placement, 'preserve_daily_queue_order',
                         lambda connection, day, previous: events.append(('preserve', connection is database, previous)))
     application.ensure_card_queued_after(database, 'card', 1, priority_reason='reason', queue_date='day')
     writes = [event[1] for event in events if isinstance(event, tuple) and event[0] == 'execute']
@@ -113,8 +114,9 @@ def test_review_protected_insert_keeps_nested_position_read_and_positional_order
     database = Borrowed([Cursor(), Cursor(value=(1,)), Cursor(value=(9,)),
                          Cursor(value={'id': 7}), Cursor(), Cursor(), Cursor()], events)
     rows = [dict(id=2, position=0), dict(id=7, position=9)]
-    monkeypatch.setattr(application, 'presentation_rows', lambda connection, day: rows)
-    monkeypatch.setattr(application, '_priority_queue_order', lambda value: list(reversed(value)))
+    from app.study import queue_placement
+    monkeypatch.setattr(queue_placement, 'presentation_rows', lambda connection, day: rows)
+    monkeypatch.setattr(queue_placement, '_priority_queue_order', lambda value: list(reversed(value)))
     application.ensure_card_queued_after(database, 'card', queue_date='day',
                                         protect_presented=True, preserve_order=False)
     parameters = [event[1] for event in events if isinstance(event, tuple)]
@@ -159,3 +161,10 @@ assert not ({'app.services.queue_application','app.services.durable_tasks',
              'app.services.tactical_catalog'} & set(sys.modules))
 """
     subprocess.run([sys.executable,'-c',script],check=True,env=os.environ.copy())
+
+
+def test_queue_placement_compatibility_alias_is_the_study_owner():
+    from app.study.queue_placement import ensure_card_queued_after
+    from tempo_learning_runtime import queue_ordering
+    assert application.ensure_card_queued_after is ensure_card_queued_after
+    assert queue_ordering._priority_queue_order is queue_ordering.priority_queue_order

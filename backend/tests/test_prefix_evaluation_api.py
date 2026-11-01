@@ -209,7 +209,8 @@ def test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hash
         try: yield Database()
         finally: open_read = False
     monkeypatch.setattr(api.postgres_store, 'connection', connection)
-    monkeypatch.setattr(api, 'check_available', lambda *_: None)
+    from app.services import prefix_evaluation_source
+    monkeypatch.setattr(prefix_evaluation_source, 'check_available', lambda *_: None)
     loaded = api.load_snapshot('rep', 999999999)
     assert not open_read
     assert loaded.lines == source.lines and loaded.presentations == tuple(cards)

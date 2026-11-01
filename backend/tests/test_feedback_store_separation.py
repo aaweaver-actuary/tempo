@@ -68,11 +68,12 @@ def test_typed_card_projection_maps_facts_without_storage_rows_leaking(monkeypat
 
 
 def test_existing_introduction_and_review_capabilities_keep_borrowed_identity_and_options(monkeypatch):
-    from app.services import queue_application, review_service
+    from app.services import queue_application
+    from app.study import queue_placement
     database, events = object(), []
     monkeypatch.setattr(queue_application, 'request_queue_refresh_in_transaction',
                         lambda *args: events.append(('refresh', args)))
-    monkeypatch.setattr(review_service, 'ensure_card_queued_after',
+    monkeypatch.setattr(queue_placement, 'ensure_card_queued_after',
                         lambda *args, **kwargs: events.append(('review', args, kwargs)))
     store = composition.BorrowedFeedbackStore(database)
     store.request_introduction('day')

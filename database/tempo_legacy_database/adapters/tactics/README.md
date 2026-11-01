@@ -5,15 +5,17 @@
 | Module | Existing persistence operations | Application owner retained outside this directory |
 | --- | --- | --- |
 | [attempts.py](attempts.py) | Puzzle advisory lock, attempt receipt/settings read, tactic repertoire/progress/card writes, card lock/schedule read, queued-card fact, admission/result receipt writes. | [tactic_commands.py](../../../../backend/app/tactic_commands.py) retains request/receipt handling, card identity, clocks, clean/correct grading, due/mode decisions, review-queue callback and queue-refresh handoff. |
-| [captures.py](captures.py) | Capture advisory lock/receipt, repertoire/card/membership writes, driver-specific row/queue locks, reopening/guided queue update and source/result receipt. | [tactic_capture.py](../../../../backend/app/services/tactic_capture.py) retains legal-line validation, source trust/provenance, canonical request bytes, replay/content conflict HTTP errors, identity, clocks and review-queue reason/result decisions. |
+| [captures.py](captures.py) | Capture advisory lock and source/result receipt only. | [tactic_capture.py](../../../../backend/app/services/tactic_capture.py) retains legality, provenance, canonical identity and replay; Study owns the borrowed admission effects via [captured_tactic.py](../study/captured_tactic.py). |
 | [catalog.py](catalog.py) | Active/progress/due facts, activation upsert, quota/rotation/introduction facts, packaged-card/progress/introduction/queue/cursor writes. Reuses the identical repertoire operation from `attempts.py`. | [tactical_catalog.py](../../../../backend/app/services/tactical_catalog.py) retains asset/version loading, membership/status aggregation, known-pack validation, daily allowance/rotation/selection, puzzle validation, deletion skip and queue-position decisions. |
 
 ```mermaid
 flowchart LR
-  application[Existing tactic request, capture and catalog composition] -->|same borrowed transaction| persistence[Named legacy tactic storage operations]
-  application --> review[Existing review and queue helpers]
-  persistence --> facts[Tactic progress, captures and attempt receipts]
-  persistence --> shared[Legacy shared cards, memberships and daily queue]
+  application[Tactics capture / identity and receipt] -->|same borrowed transaction| receipt[Tactics capture receipt storage]
+  application -->|validated facts / borrowed capability| learning[Study captured tactic admission]
+  learning --> storage[Study capture card / queue storage]
+  learning --> review[Existing review queue helper]
+  receipt --> facts[Tactic capture receipts]
+  storage --> shared[Legacy shared cards, memberships and daily queue]
   review --> shared
 ```
 
@@ -28,6 +30,6 @@ The [practice-family diagrams/dictionary](../../schema/practice-families-1/READM
 | `tactic_progress` | Puzzle/deck/card identity, first clean/admitted timestamps and admission mode. |
 | `tactic_pack_activation`, `tactic_introductions`, `tactic_rotation` | Active pack flags, puzzle/pack/introduction date records and the singleton last-pack cursor. |
 
-Shared legacy reads/writes are explicitly retained: [cards/daily queue](../../schema/study-queue-review-1/README.md) hold tactic executable FEN/moves, state/schedule/source and queue position/guided attempt state; [settings](../../schema/runtime-metadata/README.md) holds the existing light interval/daily quota; [repertoires](../../schema/authored-content-3/README.md) and [memberships](../../schema/authored-content-2/README.md) hold repertoire metadata/card links. These table accesses and the `review_service.ensure_card_queued_after` / queue-command refresh coupling existed before the move. They are legacy Study/review coupling, not new ownership permission or proof of optional-feature/Study isolation. No new sibling-domain dependency was added.
+Shared legacy reads/writes are explicitly retained: [cards/daily queue](../../schema/study-queue-review-1/README.md) hold tactic executable FEN/moves, state/schedule/source and queue position/guided attempt state; [settings](../../schema/runtime-metadata/README.md) holds the existing light interval/daily quota; [repertoires](../../schema/authored-content-3/README.md) and [memberships](../../schema/authored-content-2/README.md) hold repertoire metadata/card links. Capture card and queue statements are Study-owned operations; the Tactics receipt and Study effects still use the same supplied writer. The Study implementation reuses the existing `review_service.ensure_card_queued_after` and the command retains its queue-refresh handoff. This does not establish deployed resource isolation.
 
 Focused existing capture/task-SQLite checks and one-time old/new synthetic traces cover borrowed transaction, advisory/row/queue lock order, replay before clocks/writes, grading/due/queue decisions, capture conflicts/reuse, catalog activation/rotation/deletion/quota and exact statement/parameter/state results. Native-style locks in traces are fakes; no native PostgreSQL, live data/schema, API lifecycle, provider, deployment or full-system check is claimed.

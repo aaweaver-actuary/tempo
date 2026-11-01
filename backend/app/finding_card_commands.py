@@ -16,7 +16,9 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import finding_cards as storage
 from app.chess.cards import card_id
 from .services.review_service import ensure_card_queued_after
-from .services.tactic_capture import capture_tactic, game_capture_id, validate_tactic_line
+from .services.tactic_capture import game_capture_id, validate_tactic_line
+from .product_composition.tactic_capture import capture_tactic
+from .contracts.tactic_capture import TacticCaptureValidationError
 from .queue_commands import request_queue_refresh_in_transaction
 
 
@@ -69,7 +71,10 @@ def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequ
         raise HTTPException(422, "The proposed study line contains an illegal move") from error
     normalized_fen = chess.Board(starting_fen).fen()
     if finding["kind"] == "tactical miss":
-        normalized_fen, normalized_moves, trained_color = validate_tactic_line(starting_fen, normalized_moves)
+        try:
+            normalized_fen, normalized_moves, trained_color = validate_tactic_line(starting_fen, normalized_moves)
+        except TacticCaptureValidationError as error:
+            raise HTTPException(422, str(error)) from error
         existing = storage.existing_tactic_card(database, card_id(normalized_fen, normalized_moves))
     else:
         existing = storage.existing_middlegame_card(database, normalized_fen, json.dumps(normalized_moves))

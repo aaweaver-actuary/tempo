@@ -18,6 +18,8 @@ from test_prefix_transition import prepared_snapshot, changed_snapshot
 def prepared(monkeypatch):
     state = {'snapshot': prepared_snapshot()}
     monkeypatch.setattr(api.structural.postgres_store, 'configured', lambda: True)
+    from app.services import prefix_evaluation_source
+    monkeypatch.setattr(prefix_evaluation_source, 'check_available', lambda *_args: None)
     monkeypatch.setattr(api.structural, 'check_available', lambda *_args: None)
     monkeypatch.setattr(api.structural, 'load_snapshot', lambda *_args: state['snapshot'].source)
     monkeypatch.setattr(api, 'discover_memberships', lambda *_args: tuple(row['card_id'] for row in state['snapshot'].rows('repertoire_cards')))
@@ -142,9 +144,10 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
     def encode_after_close(value):
         assert not active_read
         return canonical_json(value)
-    monkeypatch.setattr(api.structural, 'load_snapshot', loader)
-    monkeypatch.setattr(api.structural, 'check_available', lambda *_args: None)
-    monkeypatch.setattr(api, 'canonical_json', encode_after_close)
+    from app.services import prefix_transition_source as transition_source
+    monkeypatch.setattr(transition_source.structural, 'load_snapshot', loader)
+    monkeypatch.setattr(transition_source.structural, 'check_available', lambda *_args: None)
+    monkeypatch.setattr(transition_source, 'canonical_json', encode_after_close)
     if oversized:
         with pytest.raises(api.PrefixEvaluationError) as error:
             api.load_transition_snapshot('rep', fixture.lookup_card_ids, fixture.study_day, 999999999)

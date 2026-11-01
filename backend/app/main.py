@@ -2767,7 +2767,7 @@ def create_tactic_capture(request: TacticCaptureRequest,
             "tactics.capture.create", {"request": request.model_dump(mode="json")},
             idempotency_key=capture_id,
         )
-    from .services.tactic_capture import capture_tactic
+    from .product_composition.tactic_capture import capture_tactic
     result = submit_foreground_write(lambda database: capture_tactic(database, request),
                                      label="tactic-capture")
     enqueue_daily_queue_refresh()
