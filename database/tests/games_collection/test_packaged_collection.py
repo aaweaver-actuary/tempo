@@ -617,7 +617,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
     def provider_ready(value):
         publish_json(directory/'provider-ready.json', value)
 
-    def publish_provider(value, *, allow_paused=False):
+    def publish_provider(value, *, allow_paused=False, allow_finished_collector=False):
         # Host copy is evidence only. Every live consumer reads its Linux tmpfs.
         publish_json(directory/'provider.json', value)
         payload = json.dumps(value)
@@ -645,14 +645,22 @@ print(hashlib.sha256(path.read_bytes()).hexdigest())
                 continue
             if not actual['State']['Running']:
                 assert role=='game-feedback-worker', 'provider_reader_stopped_'+role
-                observed[role] = 'already stopped; selected flow never restarts this collector'
+                if recovery_mode is not None:
+                    assert allow_finished_collector
+                    assert actual['State']['ExitCode']==0 and not actual['State']['OOMKilled']
+                    observed[role] = dict(completed=True,container_id=actual['Id'],exit_code=0,oom_killed=False)
+                else:
+                    observed[role] = 'already stopped; selected flow never restarts this collector'
                 continue
             digest = execute(role,'python','-B','-c',code,input=payload).strip()
             assert digest==expected, 'guest_provider_snapshot_mismatch_'+role
             observed[role] = digest
         if recovery_mode is not None and not allow_paused:
             assert all(observed.get(role)==expected for role in
-                ('api','foreground-worker','background-worker','game-feedback-worker')), 'recovery_provider_not_published_to_all_roles'
+                ('api','foreground-worker','background-worker')), 'recovery_provider_not_published_to_active_roles'
+            collector = observed.get('game-feedback-worker')
+            assert collector==expected or (allow_finished_collector and isinstance(collector,dict)
+                and collector.get('completed') is True), 'recovery_collector_snapshot_not_published'
         report.setdefault('provider_input_publications',[]).append(dict(sha256=expected,roles=observed,
             transport='stdin to existing role Linux tmpfs; atomic same-directory replace'))
 

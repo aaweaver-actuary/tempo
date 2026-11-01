@@ -435,6 +435,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']
     configuration_windows = []
+    producer_finished = False
     def configure_window():
         # Fixture source admission is explicit. Each fresh bounded window is
         # committed through the configuration owner, never by forging a job
@@ -443,7 +444,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['window'] = dict(start_at=(now - timedelta(seconds=120)).isoformat(),
             end_at=(now - timedelta(seconds=60)).isoformat(), precision='second')
-        publish_provider(inputs)
+        publish_provider(inputs, allow_finished_collector=producer_finished)
         configured = entry('foreground-worker', 'recovery-configure')
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
@@ -545,7 +546,9 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert produced[0]['selection']['status'] == 'opponent_gap'
                     else:
                         assert (len(produced) == 1 and grants > 0) or (not produced and grants == 0)
-                    producer_progress = dict(control=policy['body'], original_admission_grants=grants,
+                    producer_finished = True
+                    producer_progress = dict(actual_worker_finished=True, container_id=collector['Id'],
+                        control=policy['body'], original_admission_grants=grants,
                         source_id=gap_id, source_rows=[dict(row) for row in produced],
                         optional_paused=not produced, runtime=expected,
                         jobs=jobs,

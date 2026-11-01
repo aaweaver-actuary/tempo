@@ -6650,3 +6650,7 @@ the actual64KiB refusal. Existing row-count sentinels/MVCC/fences are unchanged.
 ### Full-scope fixture collection uses the optional role allocation (#668)
 
 `study_recovery_acceptance.py::run_recovery` executes only the three ten-repertoire controlled collection calls in the existing running/unpaused448MiB background role and records that allocation. The720 run proved placing this large optional helper beside two Study command workers and beat exhausted the384MiB foreground cgroup (exit137/oom_kill1). No memory cap, product policy, deadline or held-case foreground call changes.
+
+### Recovery publication recognizes only verified terminal collectors (#668)
+
+The existing transition7 actual worker/source/jobs/admission checks set the terminal-consumer flag. Subsequent full-scope publication accepts the same stopped collector only with exit0/noOOM while requiring fresh API/foreground/background digests. Initial publication and producer-release still require all4; this neither extends collector lifetime nor fabricates an active managed identity.
