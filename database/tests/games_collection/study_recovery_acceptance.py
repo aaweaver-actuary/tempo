@@ -25,7 +25,7 @@ from fixtures.study_recovery_content import OBSERVED, publication
 
 def memory_observation(docker, container):
     """Bounded read-only cgroup/process observations; never change teardown."""
-    command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
+    command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'CPU\\n'; cat /sys/fs/cgroup/cpu.stat; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
     try:
         result = docker('exec', container, 'sh', '-c', command, check=False)
         return dict(returncode=result.returncode, output=result.stdout[:32768], error=result.stderr[:2000])
@@ -631,7 +631,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
             assert status['receipt']['status'] == 'settled'
             assert status['command'] == item['command']
             item['settled_receipt'] = status['receipt']
-        report['study_recovery'] = dict(mode=study_only, workload=workload, measurements=measurements,
+        report['study_recovery'] = dict(first_sample_context='warm: the preceding packaged browser journeys already used this candidate; initial browser acquisition is recorded separately',
+            cpu_observation_interval='cgroup CPU counters before scope/held case and after the complete acceptance; not exclusive per-review CPU', mode=study_only, workload=workload, measurements=measurements,
             transitions=transitions, background=background, staged=staged,
             background_events=progress,
             actual_managed_producer=producer_progress, controlled_configuration_windows=configuration_windows,

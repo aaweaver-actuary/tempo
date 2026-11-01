@@ -695,7 +695,9 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 TEMPO_CI_REPORT=str(browser_report),TEMPO_TEST_OUTPUT_DIR=str(browser_evidence/'artifacts')),
             stdout=browser_log,stderr=subprocess.STDOUT,text=True,start_new_session=True)
         report['browser_process']=dict(pid=browser.pid,process_group=browser.pid,report=str(browser_report))
-        wait_for(lambda:browser_ready('protected'),'packaged_feedback_browser_protected_board_missing')
+        first_browser = wait_for(lambda:browser_ready('protected'),'packaged_feedback_browser_protected_board_missing')
+        report['initial_browser_acquisition'] = dict(milliseconds=first_browser['first_browser_load_ms'],
+            classification='fresh browser initial load after service readiness/setup; not an isolated cold server process measurement')
         inputs['now'] = datetime.now(timezone.utc).timestamp()
         (directory/'provider.json').write_text(json.dumps(inputs))
         (directory/'feedback-start').write_text('actual_mode_verified\n')

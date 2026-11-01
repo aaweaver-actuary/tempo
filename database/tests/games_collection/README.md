@@ -76,7 +76,7 @@ fail the healthy run. Native readback after the endpoint checks the exact
 review receipt and monotonically newer committed issuance. Three separate
 transitions must enter explicit preparation; actual local preparer calls,
 retained original effects/settlement and admitted daily-queue background progress
-are checked. Every sample, first/cold sample and failure remains in the receipts.
+are checked. Every sample and failure remains in the receipts. The first measured transition is already warm from the preceding packaged journey; initial fresh-browser acquisition is recorded separately, without claiming an isolated cold-server measurement.
 
 The old setup collector's synthetic quiet-admission seam is separated from the
 measured run. Its recovery phase reconstructs the real managed worker with the

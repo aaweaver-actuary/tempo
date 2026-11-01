@@ -180,10 +180,11 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
   try {
     await page.setViewportSize({ width: 1280, height: 844 });
     await page.addInitScript(() => localStorage.setItem("tempo-sound", "false"));
+    const firstBrowserStarted = performance.now();
     await page.goto("/");
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(scenario.protected_queue_entry_id));
     const board = page.locator(".board-frame").first(), protectedFen = await board.getAttribute("data-fen");
-    await browserReady({ stage: "protected", entry_id: scenario.protected_queue_entry_id });
+    await browserReady({ stage: "protected", entry_id: scenario.protected_queue_entry_id, first_browser_load_ms: performance.now() - firstBrowserStarted });
     await providerReady("source");
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(scenario.protected_queue_entry_id));
     await expect(board).toHaveAttribute("data-fen", protectedFen!);
