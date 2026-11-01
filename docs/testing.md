@@ -1068,3 +1068,8 @@ records or zero statistics” targeted the removed legacy Games workspace and
 was deleted with that workspace in `7ee2583d`. Its obsolete inventory entry is
 removed. The current Game Review unit case “keeps list errors local and retries
 the read request” remains; it is not a replacement browser-equivalence claim.
+
+The three packaged feedback/recovery browser cases require their owning
+scenario files. When selected without them they fail with the existing explicit
+missing-fixture error rather than skip; regular browser execution must supply
+the appropriate owner assembly. The strict skip guard and quality checks remain.

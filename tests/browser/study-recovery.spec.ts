@@ -19,7 +19,6 @@ type Trace = {
 
 test("packaged recovery records thirty authoritative playable transitions", async ({ page }, testInfo) => {
   const scenarioPath = process.env.TEMPO_STUDY_RECOVERY_SCENARIO;
-  test.skip(!scenarioPath, "Requires the source-bound owned recovery assembly");
   if (!scenarioPath) throw new Error("Owned recovery scenario required");
   // Thirty real UI reviews plus controlled provider setup, not a longer product deadline.
   test.setTimeout(10 * 60_000);

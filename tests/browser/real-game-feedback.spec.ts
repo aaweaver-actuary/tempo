@@ -58,7 +58,6 @@ test("connected completion fetches a new real-game obligation before cached ordi
 
 test("packaged first-departure feedback uses real browser saves and issuance", async ({ page }, testInfo) => {
   const scenarioPath = process.env.TEMPO_PACKAGED_FEEDBACK_SCENARIO;
-  test.skip(!scenarioPath, "Requires the owned packaged feedback fixture");
   if (!scenarioPath) throw new Error("Owned packaged feedback scenario is required");
   const scenario = JSON.parse(await readFile(scenarioPath, "utf8")) as {
     version: number; protected_card_id: string; protected_queue_entry_id: number; target_card_id: string; introduced: boolean;
@@ -270,7 +269,6 @@ test("packaged held prerequisite preserves Study through essential worker recove
   // individual product requests and stage assertions retain their own bounds.
   test.setTimeout(180_000);
   const scenarioPath = process.env.TEMPO_PACKAGED_HOLD_SCENARIO;
-  test.skip(!scenarioPath, "Requires the owned packaged recovery assembly");
   if (!scenarioPath) throw new Error("Owned prerequisite scenario required");
   const scenario = JSON.parse(await readFile(scenarioPath, "utf8")) as { version: number; controls: string[]; target: string };
   expect(scenario.version).toBe(1);
