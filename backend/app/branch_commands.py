@@ -19,7 +19,7 @@ from app.chess.cards import card_id
 from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
-from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
+from .services.coverage_seed_request import request_coverage_seed_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 

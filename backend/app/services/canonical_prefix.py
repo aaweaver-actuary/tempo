@@ -292,7 +292,7 @@ def save_prefix(database, payload: dict) -> dict:
     if not command_storage.postgres_is_configured():
         command_storage.fail_active_local_coverage(database, repertoire_id)
     if command_storage.postgres_is_configured():
-        from .postgres_coverage_seed import request_coverage_seed_in_transaction
+        from .coverage_seed_request import request_coverage_seed_in_transaction
         command_storage.advance_priority_source_epoch(database, repertoire_id)
         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
         command_storage.delete_priority_publication(database, repertoire_id)
