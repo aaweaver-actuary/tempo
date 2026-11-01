@@ -599,6 +599,8 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
 
     def queue():
         result = api('GET','/api/queue/window?limit=2')
+        report.setdefault('first_protected_queue_response', result)
+        report['last_protected_queue_response'] = result
         if result['status']==503:
             detail = result['body'].get('detail')
             assert (isinstance(detail,dict) and detail.get('code')=='study_feedback_preparation_pending'
@@ -1273,6 +1275,31 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                     prefix=[], expected='e2e4', wrong='d2d4', starting_fen=capture['game']['start_fen']))
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
+        if stage == 'genuine_protected_head':
+            try:
+                # Read only this labelled synthetic fixture before teardown;
+                # diagnostics never repair eligibility or manufacture a head.
+                with case.transaction() as database:
+                    database.execute_native("SET LOCAL statement_timeout='100ms'")
+                    observed = database.execute_native("""SELECT jsonb_build_object(
+                        'cards',(SELECT jsonb_agg(item) FROM (
+                            SELECT id,state,due_date,introduced_at,first_correct_at,archived,
+                                pending_validation,superseded_by,content_type
+                            FROM cards ORDER BY id LIMIT 20) item),
+                        'queue',(SELECT jsonb_agg(item) FROM (
+                            SELECT * FROM daily_queue ORDER BY id LIMIT 20) item),
+                        'projection',(SELECT jsonb_agg(item) FROM (
+                            SELECT * FROM queue_projections ORDER BY queue_date LIMIT 5) item),
+                        'tasks',(SELECT jsonb_agg(item) FROM (
+                            SELECT id,kind,generation,state,phase,payload_json,attempt_count,
+                                next_attempt_at,last_error FROM background_tasks
+                            WHERE kind='daily_queue' ORDER BY id LIMIT 5) item))""").fetchone()[0]
+                diagnostic = json.dumps(observed,default=str)
+                for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+                    diagnostic = diagnostic.replace(private,'<redacted>')
+                report['protected_queue_state_at_failure'] = json.loads(diagnostic)
+            except Exception as diagnostic_error:
+                report['protected_queue_observation_error'] = type(diagnostic_error).__name__
         if stage in ('natural_refresh_before_explicit_request','browser_requests_fresh_refresh',
                 'actual_unseen_refresh_before_browser_completion'):
             try:
