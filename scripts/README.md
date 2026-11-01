@@ -624,6 +624,9 @@ source is mounted into that image; only synthetic qualification inputs are mount
 
 ### Engine job-family routing
 
+The file-scoped engine image packaging proof is `node tools/component-build/test-lane.mjs runners engine-image-packaging` (also registered as the `engine-image-packaging` component suite). It checks Docker COPY inputs and declared proof inputs for literal relative static imports and `new URL()` child paths; computed or dynamic dependencies and actual image startup require separate proof. Affected-path selection is not automatically wired to this suite.
+
+
 The engine cycle processes at most one recovered or newly claimed job. Its
 [Games and Defense adapters](engine-job-families.mjs) own claim, recovery and
 result callback routing. The ordinary durable journal retains Games operations
