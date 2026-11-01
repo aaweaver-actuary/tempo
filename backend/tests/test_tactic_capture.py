@@ -286,3 +286,17 @@ def test_capture_receipt_failure_rolls_back_sqlite_admission(tmp_path, monkeypat
         for table in ('cards', 'repertoire_cards', 'daily_queue', 'tactic_captures'):
             assert reader.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0
         assert reader.execute("SELECT COUNT(*) FROM repertoires WHERE id='__captured_tactics__'").fetchone()[0] == 0
+
+
+def test_borrowed_capture_adapter_projects_sqlite_row_to_declared_facts(capture_database):
+    from app.product_composition.tactic_capture import BorrowedCaptureStorage
+    result = capture_tactic(capture_database, authored_capture())
+    facts = BorrowedCaptureStorage(capture_database).capture_card(result['card_id'])
+    assert type(facts) is dict
+    assert set(facts) == {'content_type', 'archived', 'superseded_by', 'pending_validation', 'start_fen', 'moves_json'}
+    assert facts['content_type'] == 'tactic'
+    assert facts['archived'] is False and facts['pending_validation'] is False
+    capture_database.execute('UPDATE cards SET archived=1,pending_validation=1 WHERE id=?', (result['card_id'],))
+    updated = BorrowedCaptureStorage(capture_database).capture_card(result['card_id'])
+    assert updated['archived'] is True and updated['pending_validation'] is True
+    assert BorrowedCaptureStorage(capture_database).capture_card('missing') is None

@@ -94,9 +94,25 @@ def main():
                             ("repertoire_cards", "repertoire_id,card_id"), ("daily_queue", "id"),
                             ("tactic_captures", "id"))}
         before_fault = business_rows()
-        with patch.object(capture_storage, "save_capture_receipt", side_effect=RuntimeError("synthetic receipt failure")) as failing_receipt:
+        fault_card_id = card_id(fault["starting_fen"], fault["moves"])
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (fault_card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (fault["capture_id"],)).fetchone()[0] == 0
+        observed_admission = []
+        def fail_after_admission(writer, capture_id, actual_card_id, *_):
+            assert capture_id == fault["capture_id"] and actual_card_id == fault_card_id
+            assert writer.execute("SELECT COUNT(*) FROM cards WHERE id=? AND content_type='tactic'", (fault_card_id,)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+                                  ("__captured_tactics__", fault_card_id)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='queued' AND attempt_state='guided'",
+                                  (fault_card_id,)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (capture_id,)).fetchone()[0] == 0
+            observed_admission.append(True)
+            raise RuntimeError("synthetic receipt failure")
+        with patch.object(capture_storage, "save_capture_receipt", side_effect=fail_after_admission) as failing_receipt:
             assert execute_command(fault["capture_id"], "tactics.capture.create", {"request": fault}) is None
             assert failing_receipt.call_count == 1
+        assert observed_admission == [True]
         assert read_operation(fault["capture_id"])["state"] == "failed"
         assert business_rows() == before_fault
         # Existing-card collision rolls back the repertoire/event/schedule/queue changes.
