@@ -114,13 +114,13 @@ requalify the other rows or establish an installation:
   compatibility imports still have separate callers.
 - [Study client composition](../../../app/lib/README.md) supplies explicit client
   instances alongside the retained default client and aliases.
-- [Games feedback maintenance](../../../backend/app/product_composition/README.md)
-  remains a bounded composition with retained feedback obligations; it does not
-  establish deployed resource isolation or replacement of every legacy reader.
+- [Independent Learning composition](../../../services/learning/runtime/README.md#command-registry-selection-proposed-g1)
+  selects an immutable registry per app. Its [maintenance lifecycle](../../../services/learning/runtime/README.md#maintenance-lifecycle-ownership-g2--proposed-g3)
+  preserves nested cleanup and reports a terminal essential-maintenance failure
+  through readiness. Source separation does not establish deployed isolation.
 
-The last verified installed revision is `1ece5e17`; the #657 `4a4` build and
-acceptance remain pending, not installed. These are source and reported status
-facts, not a new runtime or deployment inspection.
+Installation status is maintained in [#657](https://github.com/aaweaver-actuary/tempo/issues/657);
+this source pin does not certify installation or runtime acceptance.
 
 ## Bounded resumption priorities
 
