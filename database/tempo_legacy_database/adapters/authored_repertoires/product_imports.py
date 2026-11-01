@@ -105,7 +105,7 @@ class RetainedImports:
             raise ChangeError("borrowed_transaction_required")
         preview = ImportPreview.model_validate_json(json.dumps(payload.get("retained_import_preview")))
         # Same operation lock as discard, then the import's existing target lock.
-        receipts.lock_operation(self.database.raw, preview.retained.operation_id)
+        receipts.lock_operation(receipts.receipt_writer(self.database), preview.retained.operation_id)
         storage.lock_main_repertoire(self.database)
         approved = ImportPayload.model_validate_json(preview.approved_payload_json)
         match = storage.matching_repertoire(self.database, approved.source_name, approved.trained_color)

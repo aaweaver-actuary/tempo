@@ -100,9 +100,9 @@ providers. The gateway's existing handler and preparer dictionaries are the
 same registry-owned objects, and the compatibility registration and executor
 continue to use them. `register_descriptor` adds a typed registration path constrained to the
 existing `PostgresConnection` supplied by the executor; independent registries
-may use another transaction type. Existing feature registrations have not yet migrated. B1 still hashes the
-original payload before preparation, and all transaction and exceptional
-execution paths remain unchanged. Tests that temporarily replace private gateway
+may use another transaction type. The prefix transition uses this descriptor;
+other legacy registrations remain. B1 still hashes the original payload before
+preparation, and transaction ordering remains unchanged. Tests that temporarily replace private gateway
 attributes are test doubles, not additional production registries.
 
 ```mermaid
@@ -123,4 +123,46 @@ recognize immediate foreground deferral during preparation.
 flowchart LR
   Gateway["Command gateway"] --> Error["Public prefix_errors exception"]
   API["Prefix evaluation API compatibility alias"] --> Error
+```
+
+### Proposed settings descriptor adoption (#705 B3a)
+
+`settings.update` now registers its typed settings request, identity
+preparation and transactional apply function with the existing descriptor
+registry. Its compatibility `update_settings` entry uses the same decoder and
+apply function. The gateway hashes the original payload before decoding; settings
+validation now occurs during existing preparation, with definitive errors still
+recorded through the existing receipt path. Settings writes, queue requests and
+the descriptor's typed post-commit callback refreshes policy after the writer
+closes and before the gateway wakes the queue. Completed receipt replay also
+invokes the callback; failed commands do not.
+
+```mermaid
+flowchart LR
+  original["Original settings payload"] --> digest["Original-payload receipt identity"]
+  original --> decode["Typed settings decode and identity preparation"]
+  digest --> gateway["Existing gateway receipt / transaction"]
+  decode --> gateway
+  gateway --> apply["Settings transactional apply"]
+  apply --> effects["Existing settings, provider and queue effects"]
+  effects --> committed["Commit and close writer"]
+  committed --> policy["Settings-owned policy callback"]
+  policy --> wake["Existing queue wake decision"]
+```
+
+The prefix-transition descriptor also supplies its specialized lifecycle to the
+same registry. The gateway retains receipt and savepoint ownership; the owner
+supplies foreground admission, delayed preparation retry, rejection after
+rollback, and pending-result classification. Other legacy commands have no
+transition lifecycle. Public foreground-defer errors retain their HTTP identity.
+
+```mermaid
+flowchart LR
+  Original["Original payload"] --> Prepare["Bounded transition preparation"]
+  Original --> Receipt["Gateway identity / receipt fence"]
+  Prepare --> Admission["Owner foreground admission"]
+  Admission --> Receipt
+  Receipt --> Apply["Transition apply savepoint"]
+  Apply -->|rollback| Reject["Owner rejection and recovery state"]
+  Apply -->|pending| Pending["Gateway retains pending receipt"]
 ```

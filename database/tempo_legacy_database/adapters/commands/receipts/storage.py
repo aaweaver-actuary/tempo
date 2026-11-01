@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, TempoRow
 import psycopg
 from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 
 TRANSIENT_DATABASE_ERRORS = (psycopg.OperationalError, psycopg.InterfaceError, DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout)
 
 
-def _writer_connection(background: bool):
+def receipt_write_scope(background: bool):
     if background:
         from tempo_legacy_database.connections import background_connection
         return background_connection()
@@ -21,32 +25,46 @@ def foreground_receipt_reader():
     return postgres_store.connection(read_only=True)
 
 
-def receipt_writer(database):
-    return database.raw
+class ReceiptWriter:
+    """Opaque receipt capability tied to the caller-owned transaction."""
+    __slots__ = ("_connection",)
+
+    def __init__(self, database: PostgresConnection) -> None:
+        self._connection = database.raw
 
 
-def insert_queued(raw, operation_id, command_name, request_hash, payload, background):
-    raw.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) VALUES(%s,%s,%s,'queued',%s,%s) ON CONFLICT(operation_id) DO NOTHING", (operation_id, command_name, request_hash, json.dumps(payload, separators=(',', ':')), background))
+def _receipt_connection(writer: ReceiptWriter) -> psycopg.Connection[TempoRow]:
+    # Only the receipt owner accesses the native connection; it is never exposed
+    # as a method on the token or as a new transaction/lifetime capability.
+    return writer._connection
 
 
-def locked_attempt(raw, operation_id):
-    return raw.execute('SELECT command_name,request_hash,state,payload_json,next_retry_at,lease_expires_at,attempt_count,cycle_attempt_count,retry_cycle FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+def receipt_writer(database: PostgresConnection) -> ReceiptWriter:
+    return ReceiptWriter(database)
 
 
-def save_missing_payload(raw, saved_payload, background, operation_id):
-    raw.execute('UPDATE operation_receipts SET payload_json=%s,background=%s WHERE operation_id=%s', (json.dumps(saved_payload, separators=(',', ':')), background, operation_id))
+def insert_queued(writer: ReceiptWriter, operation_id, command_name, request_hash, payload, background):
+    _receipt_connection(writer).execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) VALUES(%s,%s,%s,'queued',%s,%s) ON CONFLICT(operation_id) DO NOTHING", (operation_id, command_name, request_hash, json.dumps(payload, separators=(',', ':')), background))
 
 
-def restart_blocked(raw, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='queued',retry_cycle=retry_cycle+1,cycle_attempt_count=0,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+def locked_attempt(writer: ReceiptWriter, operation_id):
+    return _receipt_connection(writer).execute('SELECT command_name,request_hash,state,payload_json,next_retry_at,lease_expires_at,attempt_count,cycle_attempt_count,retry_cycle FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
 
 
-def block_exhausted(raw, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='blocked',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+def save_missing_payload(writer: ReceiptWriter, saved_payload, background, operation_id):
+    _receipt_connection(writer).execute('UPDATE operation_receipts SET payload_json=%s,background=%s WHERE operation_id=%s', (json.dumps(saved_payload, separators=(',', ':')), background, operation_id))
 
 
-def start_attempt(raw, attempt_token, lease_factory, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='executing',attempt_count=attempt_count+1,cycle_attempt_count=cycle_attempt_count+1,attempt_token=%s,next_retry_at=NULL,lease_expires_at=%s,updated_at=NOW() WHERE operation_id=%s", (attempt_token, lease_factory(), operation_id))
+def restart_blocked(writer: ReceiptWriter, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='queued',retry_cycle=retry_cycle+1,cycle_attempt_count=0,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+
+
+def block_exhausted(writer: ReceiptWriter, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='blocked',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+
+
+def start_attempt(writer: ReceiptWriter, attempt_token, lease_factory, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='executing',attempt_count=attempt_count+1,cycle_attempt_count=cycle_attempt_count+1,attempt_token=%s,next_retry_at=NULL,lease_expires_at=%s,updated_at=NOW() WHERE operation_id=%s", (attempt_token, lease_factory(), operation_id))
 
 
 def blocked_operation(database, operation_id):
@@ -86,44 +104,44 @@ def reserve_recovery(database, operation_id):
     database.raw.execute("UPDATE operation_receipts SET state='queued',next_retry_at=NOW()+INTERVAL '30 seconds',lease_expires_at=NULL,attempt_token=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
 
 
-def lock_operation(raw, operation_id):
-    raw.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))', (operation_id,))
+def lock_operation(writer: ReceiptWriter, operation_id):
+    _receipt_connection(writer).execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))', (operation_id,))
 
 
-def insert_pending(raw, operation_id, command_name, request_hash):
-    raw.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) VALUES (%s,%s,%s,'pending') ON CONFLICT(operation_id) DO NOTHING", (operation_id, command_name, request_hash))
+def insert_pending(writer: ReceiptWriter, operation_id, command_name, request_hash):
+    _receipt_connection(writer).execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) VALUES (%s,%s,%s,'pending') ON CONFLICT(operation_id) DO NOTHING", (operation_id, command_name, request_hash))
 
 
-def locked_publication(raw, operation_id):
-    return raw.execute('SELECT command_name,request_hash,state,response_json,error_json,attempt_token FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+def locked_publication(writer: ReceiptWriter, operation_id):
+    return _receipt_connection(writer).execute('SELECT command_name,request_hash,state,response_json,error_json,attempt_token FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
 
 
-def begin_handler(raw):
-    raw.execute('SAVEPOINT command_handler')
+def begin_handler(writer: ReceiptWriter):
+    _receipt_connection(writer).execute('SAVEPOINT command_handler')
 
 
-def rollback_handler(raw):
-    raw.execute('ROLLBACK TO SAVEPOINT command_handler')
+def rollback_handler(writer: ReceiptWriter):
+    _receipt_connection(writer).execute('ROLLBACK TO SAVEPOINT command_handler')
 
 
-def block_transition(raw, error_json, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='blocked',last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
+def block_transition(writer: ReceiptWriter, error_json, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='blocked',last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
 
 
-def fail_operation(raw, error_json, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='failed',error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
+def fail_operation(writer: ReceiptWriter, error_json, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='failed',error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
 
 
-def release_handler(raw):
-    raw.execute('RELEASE SAVEPOINT command_handler')
+def release_handler(writer: ReceiptWriter):
+    _receipt_connection(writer).execute('RELEASE SAVEPOINT command_handler')
 
 
-def keep_transition_pending(raw, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='pending',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+def keep_transition_pending(writer: ReceiptWriter, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='pending',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
 
 
-def complete_operation(raw, response_json, operation_id):
-    raw.execute("UPDATE operation_receipts SET state='complete',response_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (response_json, operation_id))
+def complete_operation(writer: ReceiptWriter, response_json, operation_id):
+    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='complete',response_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (response_json, operation_id))
 
 
 def operation_status(database, operation_id):
