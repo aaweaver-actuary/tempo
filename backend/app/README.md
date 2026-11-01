@@ -113,3 +113,14 @@ flowchart LR
   Executor["Existing gateway executor"] --> Maps
   Identity["B1 original-payload identity"] --> Executor
 ```
+
+Prefix foreground deferral has one public exception class. The diagnostic API
+re-exports that same class for existing callers, retaining its HTTP response and
+the diagnostic's deadline-first check. The gateway uses the public contract to
+recognize immediate foreground deferral during preparation.
+
+```mermaid
+flowchart LR
+  Gateway["Command gateway"] --> Error["Public prefix_errors exception"]
+  API["Prefix evaluation API compatibility alias"] --> Error
+```

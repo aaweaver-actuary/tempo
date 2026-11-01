@@ -194,7 +194,7 @@ def _execute_command(
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             raise
         except Exception as error:
-            from .prefix_evaluation_api import PrefixEvaluationForegroundDeferred
+            from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
             if isinstance(error, PrefixEvaluationForegroundDeferred):
                 raise BackgroundAdmissionDeferred('Waiting for foreground activity') from error
             # Persist definitive preparation failures through the same receipt
