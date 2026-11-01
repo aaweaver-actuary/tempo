@@ -6584,3 +6584,7 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Packaged recovery clock stays behind genuine issuance (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` retains the held source/restoration and ten-repertoire sources under actual UTC determination time. The earlier settled-source reconciliation's accelerated clock must not freeze a future new delivery; retry waits for the original durable deadline, and actual browser issuance/save must settle that same key. The combined058 run exposed the fixture failure after genuine target review; its evidence remains a failed qualification, not a product settlement pass. The same fixture clock advances with wall time so the existing continuous R2 collector can reach its original +2s uncertainty and +30s held retry deadlines.
+
+### Recovery backlog includes executable response segments (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` selects 576 actual generated opening prefix/response cards, including response segments with an initial opponent cue. Restricting to white-start shared prefixes left only two candidates in the first representative publication despite 1,261 executable non-target cards. The actual generator's selected 576 cards all replay legally and contain a trained-color decision; complete ten-repertoire shape assertions and the thirty actual browser transitions remain required.
