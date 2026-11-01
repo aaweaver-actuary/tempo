@@ -375,13 +375,12 @@ flowchart LR
 The existing opening-evidence service retains checkpoint preparation and
 transactional publication. The checkpoint command module registers those
 functions, and the HTTP router loads that module for compatibility. The worker
-still imports the HTTP router for registration until its reserved import line
-is released and switched to the command module.
+loads the same command module directly for registration.
 
 ```mermaid
 flowchart LR
   http["Opening evidence HTTP router"] --> commands["Checkpoint command registration"]
-  worker["Worker (pending adoption)"] --> http
+  worker["Worker"] --> commands
   commands --> owner["Existing opening-evidence service"]
   owner --> storage["Existing evidence storage and caller transaction"]
 ```
