@@ -2,11 +2,11 @@ import { attachPassingBrowserShards } from "./ci-browser-shard-fixture.mjs";
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
 import { evaluateQuality, layerFailures } from "../../scripts/ci-quality.mjs";
-import { executeLayer, layerCommands, browserResults, validateQueueOwnerEvidence, declaredQueueInputHashes } from "../../scripts/ci-run-layer.mjs";
+import { executeLayer, layerCommands, browserResults, validateQueueOwnerEvidence, declaredQueueInputHashes, runQueueOwnerAttempt } from "../../scripts/ci-run-layer.mjs";
 import { postgresTestStages } from "../../database/tests/postgres-test-plan.mjs";
 
 const demotedCriticalCases = [
@@ -747,4 +747,45 @@ test("queue_owner_evidence_rejects_missing_or_mismatched_results", () => {
   assert.deepEqual(layerFailures(realPlan, "postgres", "success", report), []);
   report.ownerEvidence.evidence.fixture.cleanup_verified = false;
   assert(layerFailures(realPlan, "postgres", "success", report).some(message => /queue presentation/.test(message)));
+});
+
+
+test("queue_owner_attempt_uses_fresh_roots_and_retains_failed_fixture_evidence", () => {
+  const id = "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts";
+  const sha = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const selected = verificationPlan({ paths: ["backend/app/services/queue_presentation.py"], files, cases, commit: sha, base: sha, head: sha });
+  const hashes = { "components.json": "a".repeat(64) };
+  const comparison = { requestedBase: sha, resolvedBase: sha, resolvedHead: sha, mergeBase: sha, sourceInputs: hashes, worktreeStatus: [] };
+  const fixture = { owner: "tempo-game-feedback-" + "a".repeat(32), container_id: "b".repeat(64), image_id: "sha256:" + "c".repeat(64), cleanup_verified: false, memory_bytes: 1, pids_limit: 1 };
+  const evidence = { suite: "study-queue-presentation", scope: "queue-presentation-native-case", expectedIdentities: [id], executedIdentities: [id], passed: 1, failed: 0, skipped: 0, python: "actual", platform: "actual", fixture, comparison, comparisonAfter: structuredClone(comparison) };
+  const roots = [];
+  const run = clean => env => {
+    roots.push(env.TEMPO_PRIORITY_EVIDENCE_ROOT);
+    const fixtureDir = env.TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT + "/" + fixture.owner;
+    mkdirSync(fixtureDir); writeFileSync(fixtureDir + "/fixture.json", JSON.stringify({ ...fixture, cleanup_verified: clean }));
+    writeFileSync(env.TEMPO_PRIORITY_EVIDENCE, JSON.stringify({ ...evidence, fixture: { ...fixture, cleanup_verified: clean } }));
+    return { status: 0 };
+  };
+  const options = { expectedHashes: hashes, expectedMergeBase: sha };
+  const first = runQueueOwnerAttempt(selected, run(false), options);
+  try {
+    assert.equal(first.result.status, 1);
+    assert.equal(first.failureRoot, roots[0]);
+    assert(existsSync(roots[0] + "/fixtures/" + fixture.owner + "/fixture.json"));
+    const second = runQueueOwnerAttempt(selected, run(true), options);
+    assert.equal(second.result.status, 0);
+    assert.notEqual(roots[0], roots[1]);
+    assert(!existsSync(roots[1]));
+    assert(existsSync(roots[0]));
+    const extra = runQueueOwnerAttempt(selected, env => {
+      const result = run(true)(env);
+      mkdirSync(env.TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT + "/extra");
+      writeFileSync(env.TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT + "/extra/fixture.json", "{}");
+      return result;
+    }, options);
+    try {
+      assert.equal(extra.result.status, 1);
+      assert(existsSync(extra.failureRoot + "/fixtures/extra/fixture.json"));
+    } finally { if (extra.failureRoot) rmSync(extra.failureRoot, { recursive: true, force: true }); }
+  } finally { if (first.failureRoot) rmSync(first.failureRoot, { recursive: true, force: true }); }
 });
