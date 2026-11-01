@@ -6458,3 +6458,11 @@ safe disable never invoke expensive readiness/preview, retain candidate ownershi
 report unassessed activation as unknown and use finite explicit-read deadlines.
 Older readiness assertions now invoke explicit plan, matching the new operation
 contract; all activation refusal and identity invariants remain intact.
+
+## Bounded Games page diagnostics and reuse (#665)
+
+`test_product_feedback_jobs.py` owns safe page exception class/stage/frame logging,
+swallowed comparison failures remaining unresolved, snapshot-boundary cancellation
+without partial checkpoints, and equal-result index reuse invalidated by changed
+snapshot facts and cleared after failed/completed page scope. Original durable
+retry/provider fairness/page atomicity regressions remain applicable.

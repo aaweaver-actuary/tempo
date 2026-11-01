@@ -653,3 +653,29 @@ Study-only currently permits only daily-queue task kinds. A queued graph/scan
 cannot progress under that policy without an explicit supported repair operation;
 ordinary Study must remain available while that prerequisite is held. No optional
 producer is enabled by this observer.
+
+### Historical page failure and index lifetime (#665)
+
+The Games page owner records fixed phase, elapsed time/counts, hashed work token,
+exception class, safe SQLSTATE and at most four six-frame traces. Arbitrary error
+messages, source content, account names and SQL parameters are excluded. Both
+swallowed snapshot/comparison failures and outer page failures remain observable;
+logging failure never replaces the original error or job retry result.
+
+```mermaid
+flowchart LR
+  Page[One claimed page / retained cursor] --> Snapshots[Complete configured snapshots]
+  Snapshots --> Scope[Page-local index reuse: max 16 entries / 32 MiB encoded inputs]
+  Scope --> Compare[Every source and applicable repertoire compared]
+  Compare --> Commit[Existing atomic page / outbox / cursor commit]
+  Scope --> Clear[Completion / failure / cancellation clears reuse]
+  Page --> Diag[Payload-free stage and bounded failure frames]
+```
+
+Indexes are keyed by all supplied snapshot bytes, so changed source or nested
+snapshot mutation cannot reuse an old index. Oversized scopes are still compared
+completely without retained reuse. No index or authority survives the page;
+writer currentness fences remain unchanged. Cancellation is checked before each
+snapshot and comparison; no partial provider cursor is committed. This is not a
+claim that the original historical incident exception or full-scope latency has
+been reproduced or repaired; exact packaged/incident evidence remains separate.
