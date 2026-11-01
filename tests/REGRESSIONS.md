@@ -6529,3 +6529,12 @@ reuse, changed canonical source/time or exact executable rejection, and actual
 PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
 The existing handoff fixture uses the production bounded connection profile and a
 task-owned private passfile; all 250ms transaction limits remain unchanged.
+
+
+## Bounded Games page diagnostics and reuse (#665)
+
+`test_product_feedback_jobs.py` owns safe page exception class/stage/frame logging,
+swallowed comparison failures remaining unresolved, snapshot-boundary cancellation
+without partial checkpoints, and equal-result index reuse invalidated by changed
+snapshot facts and cleared after failed/completed page scope. Original durable
+retry/provider fairness/page atomicity regressions remain applicable.

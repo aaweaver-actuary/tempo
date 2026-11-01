@@ -1090,3 +1090,81 @@ def test_corrected_held_source_cannot_create_or_inherit_determination_clock(orig
     assert changed_capture.first_departure.status == "own_actionable"
     assert changed_capture.determined_at is None
     assert changed_capture.diagnostic == "changed_source_requires_D08_resolution"
+
+
+def test_optional_page_exception_emits_safe_stage_and_frames_without_private_error(caplog):
+    h = harness()
+    h.page[0] = RuntimeError('PRIVATE_PGN_ACCOUNT_AND_SQL')
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING', logger='tempo.games.page'):
+        assert h.runner.run_once() == 'page'
+    saved = h.store.jobs['job']
+    assert saved.status == 'retryable' and saved.error == 'optional_unit_failed'
+    assert saved.next_attempt_at > h.clock.now()
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ',1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'acquisition'
+    assert diagnostic['failures'][0]['error_class'] == 'RuntimeError'
+    assert diagnostic['failures'][0]['frames']
+    assert 'PRIVATE_PGN_ACCOUNT_AND_SQL' not in line and 'Learner' not in line
+    assert 'job' not in diagnostic.values()
+
+
+def test_swallowed_comparison_failure_is_diagnosed_and_remains_unresolved(caplog):
+    h = harness()
+    def broken(*args, **kwargs):
+        raise RuntimeError('PRIVATE_SOURCE')
+    h.coordinator.comparer.compare = broken
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING',logger='tempo.games.page'):
+        h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.diagnostic.startswith('comparison_unavailable:')
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ',1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'comparison'
+    assert 'PRIVATE_SOURCE' not in line
+
+
+def test_page_cancellation_before_each_snapshot_does_not_publish_partial_checkpoint():
+    h = harness()
+    request = spec().model_copy(update={'repertoire_ids':('white','second')})
+    job = h.store.enqueue(request)
+    read = h.coordinator.snapshots.snapshot
+    calls = []
+    def snapshot(identity):
+        calls.append(identity)
+        return read(identity)
+    h.coordinator.snapshots.snapshot = snapshot
+    h.coordinator.capture_page(job,stopped=lambda:len(calls) == 1)
+    assert calls == ['white'] and not h.store.sources and not h.store.pages
+    assert h.store.jobs['job'].status == 'queued'
+
+
+def test_page_index_reuse_preserves_results_invalidates_mutation_and_dies_with_page(monkeypatch):
+    from app.product_composition import game_sync
+    h = harness()
+    snapshot = h.coordinator.snapshots.snapshot('white')
+    original_record = record()
+    game = h.coordinator.normalizer.normalize(original_record,spec())
+    builds = []
+    real = game_sync.build_index
+    def build(value):
+        builds.append(value.membership.revision)
+        return real(value)
+    monkeypatch.setattr(game_sync,'build_index',build)
+    comparer = game_sync.WorkflowComparer()
+    expected = comparer.compare(game,snapshot,record=original_record,spec=spec())
+    with comparer.page_scope():
+        assert comparer.compare(game,snapshot,record=original_record,spec=spec()) == expected
+        assert comparer.compare(game,snapshot,record=original_record,spec=spec()) == expected
+        changed = snapshot.model_copy(update={'membership':snapshot.membership.model_copy(update={'revision':2}),
+            'decision_presentations':tuple(item.model_copy(update={'repertoire_revision':2})
+                                           for item in snapshot.decision_presentations)})
+        comparer.compare(game,changed,record=original_record,spec=spec())
+    assert len(builds) == 3
+    with pytest.raises(RuntimeError), comparer.page_scope():
+        comparer.compare(game,snapshot,record=original_record,spec=spec())
+        raise RuntimeError('cancel')
+    comparer.compare(game,snapshot,record=original_record,spec=spec())
+    assert len(builds) == 5

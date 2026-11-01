@@ -6,6 +6,8 @@ Games' coordinator owns durable revisions/checkpoints and retries.
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from hashlib import sha256
 from collections.abc import Callable
 from email.utils import parsedate_to_datetime
 from threading import Event, Lock
@@ -168,10 +170,36 @@ class WorkflowNormalizer:
 
 class WorkflowComparer:
     """The same index/comparer seam used by #488; no learning writer."""
+    def __init__(self):
+        self._page_indexes = None
+        self._page_bytes = 0
+
+    @contextmanager
+    def page_scope(self):
+        # A page owns its source snapshot; no authority survives page completion,
+        # cancellation, failure or a later source/configuration observation.
+        previous, previous_bytes = self._page_indexes, self._page_bytes
+        self._page_indexes, self._page_bytes = {}, 0
+        try:
+            yield
+        finally:
+            self._page_indexes, self._page_bytes = previous, previous_bytes
+
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]:
+        encoded = snapshot.model_dump_json().encode()
+        identity = sha256(encoded).digest()
+        index = self._page_indexes.get(identity) if self._page_indexes is not None else None
+        if index is None:
+            index = build_index(snapshot)
+            # Bound retained input-equivalent size and entries. A larger scope
+            # remains complete and compared, simply without retained reuse.
+            if (self._page_indexes is not None and len(self._page_indexes) < 16
+                    and self._page_bytes + len(encoded) <= 32 * 1024 * 1024):
+                self._page_indexes[identity] = index
+                self._page_bytes += len(encoded)
         return compare_game(game, provider=spec.provider, time_precision=record.time_precision,
-                            snapshot=snapshot, reentry_lookup=build_index(snapshot))
+                            snapshot=snapshot, reentry_lookup=index)
 
 
 def sync_job(*, job_id: str, workspace_id: str, account: str, window: GameWindow,
