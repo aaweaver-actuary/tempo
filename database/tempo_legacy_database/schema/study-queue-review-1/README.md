@@ -66,6 +66,10 @@ erDiagram
 
 Referenced tables outside this view: `public.game_findings`, `public.imported_games`, `public.repertoires`, `public.study_exercises`. Follow the [schema index](../README.md) for their full definitions.
 
+Captured Tactics card and guided queue writes use the Study-owned
+[`captured_tactic` adapter](../../adapters/study/captured_tactic.py) in the same
+transaction as the Tactics capture receipt. No stored relationships changed.
+
 ## Data dictionary
 
 ### `public.card_revisions`
