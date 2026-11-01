@@ -7,6 +7,10 @@ and excludes foreground/unreserved snapshot profiles. The existing disposable
 adds a high-cost, tiny-result compiler counterfactual under the unchanged real
 250ms writer, exact-result success without JIT, atomic timeout rollback and
 same-session settings reset. Pure red/green passed; native execution pending.
+The eight-subplan oracle must cross the unchanged compilation threshold while
+remaining below the unchanged optimization threshold, matching the observed
+queue eligibility cost class. The original 128-subplan counterfactual exceeded
+the bounded outer check during JIT compilation; it proved no rollback or fix.
 
 ## Lichess export application identification
 

@@ -33,7 +33,7 @@ def check_background_jit_admission() -> dict:
     """
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("JIT proof requires the disposable PostgreSQL test instance")
-    branches = 128
+    branches = 8
     query = " UNION ALL ".join(
         f"SELECT {index} AS ordinal,sum(a.value+b.value+{index}) AS total "
         "FROM generate_series(1,(SELECT 1)) a(value) "
@@ -57,8 +57,10 @@ def check_background_jit_admission() -> dict:
             database.raw.execute("SELECT set_config('jit','on',true)")
             plan = database.raw.execute('EXPLAIN (FORMAT JSON) ' + query).fetchone()[0][0]
             threshold = float(database.raw.execute('SHOW jit_above_cost').fetchone()[0])
-            assert plan['Plan']['Total Cost'] > threshold
+            optimization_threshold = float(database.raw.execute('SHOW jit_optimize_above_cost').fetchone()[0])
+            assert threshold < plan['Plan']['Total Cost'] < optimization_threshold
             assert plan.get('JIT', {}).get('Options', {}).get('Expressions') is True
+            assert plan['JIT']['Options']['Optimization'] is False
         # Restore only compiler admission as the released writer did. The same
         # server-enforced 250ms/25ms profile must roll back the pending write.
         try:
