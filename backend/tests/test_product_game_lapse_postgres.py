@@ -64,6 +64,11 @@ def study_recovery_assembly_allocations(configuration):
     allocation['postgres']['memoryMiB'] = postgres_fixture_profile('study-recovery-assembly')['memory_mib']
     allocation['foreground-worker']['memoryMiB'] = 384
     allocation['background-worker'] = dict(configuration['optionalServices']['background-worker'])
+    # Transfer measured Redis/web headroom to the explicit full-scope capture
+    # process, retaining the same aggregate disposable assembly budget.
+    allocation['redis']['memoryMiB'] = 32
+    allocation['web']['memoryMiB'] = 32
+    allocation['background-worker']['memoryMiB'] = 512
     # Preserve the 2 GiB task-owned fixture; it does not claim the live
     # historical comparison's larger production worker allocation.
     allocation['game-feedback-worker'] = dict(configuration['developmentServices']['game-feedback-worker'])

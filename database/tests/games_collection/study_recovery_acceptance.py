@@ -574,7 +574,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     producer = json.loads(docker('inspect', containers[producer_role]['id']).stdout)[0]
                     assert producer['Id']==containers[producer_role]['id']
                     assert producer['State']['Running'] and not producer['State']['Paused']
-                    assert producer['HostConfig']['Memory']==448*1024*1024
+                    assert producer['HostConfig']['Memory']==512*1024*1024
                     captured = entry(producer_role, 'worker')
                     with case.transaction() as database:
                         source = database.execute_native("""SELECT source_key,payload->'first_departure' AS selection
