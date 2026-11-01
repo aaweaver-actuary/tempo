@@ -49,11 +49,13 @@ test('real worker upgrade retains and replays the original pending review', asyn
     });
     let accept = false;
     const delivered: { id: string | undefined; body: Record<string, unknown> }[] = [];
+    const attempted: { id: string | undefined; body: Record<string, unknown> }[] = [];
     await page.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (request.method() === 'POST' && /\/api\/cards\/[^/]+\/review$/.test(path)) {
-        if (!accept) return route.fulfill({ status: 503, json: { detail: 'temporarily unavailable' } });
-        delivered.push({ id: request.headers()['idempotency-key'], body: request.postDataJSON() });
+        const submission = { id: request.headers()['idempotency-key'], body: request.postDataJSON() };
+        if (!accept) { attempted.push(submission); return route.fulfill({ status: 503, json: { detail: 'temporarily unavailable' } }); }
+        delivered.push(submission);
         return route.fulfill({ json: { persisted: true, review_id: 601 } });
       }
       if (path.startsWith('/api/operations/')) return route.fulfill({ status: 404, json: { detail: 'Not found' } });
@@ -69,6 +71,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await expect(page.locator('.phone-study-heading h2')).toHaveText('London System');
     await move(page, 'd2', 'd4');
     await expect.poll(async () => (await nativeStudyRecords(page)).filter(item => item.kind === 'review' && item.state !== 'committed').length).toBe(1);
+    await expect.poll(() => attempted.length).toBe(1);
     const original = (await nativeStudyRecords(page)).find(item => item.kind === 'review' && item.state !== 'committed')!;
     expect(original.key).toMatch(/^review:/);
     expect(original.requestId).toBe(`review-attempt:${original.key.slice('review:'.length)}`);
@@ -92,6 +95,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await page.reload();
     await page.getByRole('button', { name: 'Check saved reviews', exact: true }).click();
     await expect.poll(() => delivered.length, { timeout: 20000 }).toBe(1);
+    expect(delivered[0]).toEqual(attempted[0]);
     expect(delivered[0].id).toBe(original.requestId);
     const saved = original.payload as { backendId: string; queueEntryId: number; attemptId: string; completedAt: string; outcome: string; guided: boolean; expectedRevision?: number };
     expect(delivered[0].body).toMatchObject({ queue_entry_id: saved.queueEntryId, attempt_id: saved.attemptId,
