@@ -85,7 +85,8 @@ class Guard(importlib.abc.MetaPathFinder):
                         'app.product_composition.feedback_commands',
                         'app.product_composition.game_history_runtime',
                         'app.product_composition.game_sync',
-                        'app.services.repertoire_coverage'}:
+                        'app.services.repertoire_coverage',
+                        'app.services.threat_pipeline'}:
             raise AssertionError('legacy import: ' + fullname)
 def forbidden(*args, **kwargs): raise AssertionError('network or process startup')
 sys.meta_path.insert(0, Guard())

@@ -254,11 +254,12 @@ owner function at call time; the normal-mode test fixture can patch that owner
 without importing task registrations. Task-specific tests may still override the
 compatibility function directly. This changes no task dispatch or claim policy.
 
-The HTTP router and worker both load the canonical prefix command registration.
+The worker loads canonical prefix command registration; the HTTP router dispatches without importing it.
 
 ```mermaid
 flowchart LR
-  http["Canonical prefix HTTP router"] --> commands["Prefix command registration"]
+  http["Canonical prefix HTTP router"] --> owner["Canonical prefix service"]
+  commands["Prefix command registration"]
   worker["Worker"] --> commands
   commands --> owner["Canonical prefix service"]
   owner --> storage["Existing prefix and coverage storage in caller transaction"]
@@ -268,13 +269,14 @@ The borrowed-writer coverage seed request is owned by
 [`coverage_seed_request.py`](coverage_seed_request.py); the seed producer
 re-exports the same function for compatibility. Worker seed, Explorer and
 recovery implementations are selected only when their existing work is
-invoked. The request still uses the existing cohort calculation, which shares
-`repertoire_coverage.py` with Explorer code; this is not a complete Explorer
-import boundary.
+invoked. The request and legacy coverage implementation share the pure-policy borrowed-read
+[`coverage_cohort.py`](coverage_cohort.py) without loading Explorer implementation. The Maia candidate adapter shares
+[`coverage_probabilities.py`](coverage_probabilities.py) with the legacy coverage owner.
 
 ```mermaid
 flowchart LR
   Authoring["Authoring transaction"] --> Request["Coverage seed request"]
+  Request --> Cohort["Coverage cohort facts"]
   Request --> Task["Existing durable seed task"]
   Task --> Fence["Worker delivery fence"]
   Fence --> Seed["Seed producer"]

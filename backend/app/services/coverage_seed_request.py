@@ -6,7 +6,7 @@ import uuid
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.coverage import seeding as storage
 from .durable_tasks import enqueue_task_in_transaction
-from .repertoire_coverage import recent_player_cohort
+from .coverage_cohort import recent_player_cohort
 from .canonical_scope_freshness import coverage_run_is_current, scope_identity
 from .canonical_prefix import read_prefix
 

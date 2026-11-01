@@ -5418,7 +5418,10 @@ def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatc
             lambda task, submitted_at, *, queue_refresh_wake=False: directly_executed.append(task) or True)
         assert tasks.poll_background_tasks.run() is True
     assert directly_executed == [claimed_task]
-    assert polled_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
+    # #691 assigns daily queue leases to the foreground owner.
+    expected_kinds = tuple(kind for kind in tasks._SUPPORTED_BACKGROUND_KINDS if kind != 'daily_queue')
+    assert polled_filters == [expected_kinds]
+    assert 'daily_queue' not in polled_filters[0]
     assert sent_tasks == []
 
 

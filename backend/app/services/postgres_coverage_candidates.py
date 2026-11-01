@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.controls import coverage as storage
-from .repertoire_coverage import CoverageCandidate, blend_probabilities, required_reply_moves
+from .coverage_probabilities import CoverageCandidate, blend_probabilities, required_reply_moves
 
 
 def recalculate_coverage_node(
