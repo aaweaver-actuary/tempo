@@ -438,13 +438,13 @@ node /absolute/qualified/source/scripts/game-review-collection.mjs enable --cand
 node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
 ```
 
-Plan/status first run `game_collection_status --identity-only`, then the full
-reader, through the verified installed API's reader profile. The two commands
-retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`, and
-`json_status`). Identity and other operator commands retain the existing 30,000 ms timeout.
-The full snapshot report has no fixed subprocess deadline; both reader commands
-retain the 4 MiB subprocess output bound. A full-reader failure does not erase independently
-observed schema, but still blocks enable. Complete JSON from a nonzero exit remains
+Status and disable use the verified installed API's identity-only reader and
+leave activation readiness unassessed. Plan and enable additionally run the full
+reader and feedback preview, each with a finite 30-second deadline. The reader
+commands retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`,
+and `json_status`) and the 4 MiB subprocess output bound. A full-reader failure
+does not erase independently observed schema, but still blocks enable.
+Complete JSON from a nonzero exit remains
 diagnostic evidence, never a successful probe. Malformed/truncated output is not
 accepted. Conflicting schema observations block explicitly.
 A successful JSON read does not imply launch readiness. Missing fields, truncated
