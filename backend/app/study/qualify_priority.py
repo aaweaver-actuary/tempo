@@ -165,12 +165,38 @@ def main(arguments=()):
             except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
                 print("Priority proof evidence invalid: " + str(error), file=sys.stderr)
                 return 1
-            print(json.dumps({"suite": suite_id, "scope": "queue-presentation-native-case",
-                              "expectedIdentities": [QUEUE_PROOF],
-                              "executedIdentities": [identity], "passed": 1,
-                              "python": sys.version, "platform": platform.platform(),
-                              "fixture": "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture",
-                              "comparison": before}, sort_keys=True))
+            evidence = {"suite": suite_id, "scope": "queue-presentation-native-case",
+                        "expectedIdentities": [QUEUE_PROOF], "executedIdentities": [identity],
+                        "passed": 1, "failed": 0, "skipped": 0,
+                        "python": sys.version, "platform": platform.platform(),
+                        "comparison": before, "comparisonAfter": after}
+            destination = environment.get("TEMPO_PRIORITY_EVIDENCE")
+            if destination:
+                try:
+                    owner_root = Path(environment["TEMPO_PRIORITY_EVIDENCE_ROOT"]).resolve(strict=True)
+                    target = Path(destination).resolve()
+                    fixture_root = Path(environment["TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT"]).resolve(strict=True)
+                    if target.parent != owner_root or fixture_root != owner_root / "fixtures" or target.exists():
+                        raise ValueError("Priority evidence requires a fresh owned root")
+                    reports = list(fixture_root.glob("*/fixture.json"))
+                    if len(reports) != 1:
+                        raise ValueError("Expected one owned PostgreSQL fixture report")
+                    fixture = json.loads(reports[0].read_text())
+                    if (fixture.get("cleanup_verified") is not True or fixture.get("owner") != reports[0].parent.name
+                            or not fixture.get("container_id") or not fixture.get("image_id")):
+                        raise ValueError("Missing owned PostgreSQL identity or cleanup")
+                    evidence["fixture"] = {key: fixture[key] for key in
+                        ("owner", "container_id", "image_id", "profile", "storage", "memory_bytes", "pids_limit", "cleanup_verified")}
+                    with tempfile.NamedTemporaryFile(mode="w", dir=owner_root, prefix="evidence-", delete=False) as output:
+                        temporary = output.name
+                        json.dump(evidence, output, sort_keys=True)
+                    os.replace(temporary, target)
+                except (KeyError, OSError, ValueError, json.JSONDecodeError) as error:
+                    print("Priority fixture evidence invalid: " + str(error), file=sys.stderr)
+                    return 1
+            else:
+                evidence["fixture"] = "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture"
+            print(json.dumps(evidence, sort_keys=True))
             return 0
     if not collecting and lock_path.exists():
         # Never truncate or unlink the shared advisory lock.

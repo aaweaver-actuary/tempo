@@ -541,3 +541,22 @@ test('queue_presentation_remains_conservative_until_native_owner_is_bridged', ()
   for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(withoutFixture.jobs[layer].required, layer);
   assert.deepEqual(withoutFixture.core, { frontend: 'all', backend: 'all' });
 });
+
+test('queue_presentation_adds_owner_proof_without_narrowing', () => {
+  const selected = draft(['backend/app/services/queue_presentation.py']);
+  assert.deepEqual(selected.jobs.postgres.owner_suites, ['study-queue-presentation']);
+  for (const layer of ['backend', 'postgres', 'browser', 'lifecycle']) assert(selected.jobs[layer].required);
+  assert.deepEqual(layerCommands('postgres', selected).at(-1), ['study-queue-presentation', 'node', ['tools/component-build/test-lane.mjs', '--suite', 'study-queue-presentation']]);
+  assert.equal(makeFastPlan(selected.paths, { head: 'head', base: 'base' }).tier, 'FULL');
+  const qualified = verificationPlan({ files, cases, paths: selected.paths, tier: 'qualification' });
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser']) assert(qualified.jobs[layer].required);
+});
+
+test('ui_and_unknown_paths_preserve_existing_selection', () => {
+  const ui = draft(['app/views/home_view.tsx']);
+  assert.equal(ui.jobs.postgres.applicable, false);
+  assert.deepEqual(ui.jobs.postgres.owner_suites, []);
+  const unknown = draft(['unknown/new-source.xyz']);
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(unknown.jobs[layer].required);
+  assert.deepEqual(unknown.jobs.postgres.owner_suites, []);
+});

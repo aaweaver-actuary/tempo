@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
-import { evaluateQuality } from "../../scripts/ci-quality.mjs";
-import { executeLayer, layerCommands, browserResults } from "../../scripts/ci-run-layer.mjs";
+import { evaluateQuality, layerFailures } from "../../scripts/ci-quality.mjs";
+import { executeLayer, layerCommands, browserResults, validateQueueOwnerEvidence, declaredQueueInputHashes } from "../../scripts/ci-run-layer.mjs";
 import { postgresTestStages } from "../../database/tests/postgres-test-plan.mjs";
 
 const demotedCriticalCases = [
@@ -711,4 +711,40 @@ test("documented global browser smoke count and titles match inventory and real 
   assert.equal(Number(documentedCount[1]), inventory.critical.length);
   assert.equal(Number(documentedCount[1]), plan({ cases: currentBrowserCases() }).collection.filter(item => item.critical).length);
   for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
+});
+
+
+test("queue_owner_evidence_rejects_missing_or_mismatched_results", () => {
+  const id = "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts";
+  const selected = plan({ paths: ["backend/app/services/queue_presentation.py"], base: "base", head: "pr-head" });
+  const hashes = { "components.json": "a".repeat(64) };
+  const comparison = { requestedBase: "base", resolvedBase: "base", resolvedHead: "revision", mergeBase: "ancestor", sourceInputs: hashes, worktreeStatus: [] };
+  const evidence = { suite: "study-queue-presentation", scope: "queue-presentation-native-case", expectedIdentities: [id], executedIdentities: [id], passed: 1, failed: 0, skipped: 0,
+    python: "3.12 actual", platform: "actual platform", fixture: { owner: "tempo-game-feedback-" + "a".repeat(32), container_id: "b".repeat(64), image_id: "sha256:" + "c".repeat(64), cleanup_verified: true, memory_bytes: 1, pids_limit: 1 }, comparison, comparisonAfter: structuredClone(comparison) };
+  assert.doesNotThrow(() => validateQueueOwnerEvidence(selected, evidence, hashes, "ancestor"));
+  assert.throws(() => validateQueueOwnerEvidence(selected, undefined, hashes, "ancestor"));
+  for (const mutate of [
+    e => e.skipped = 1, e => e.failed = 1, e => e.executedIdentities = [],
+    e => e.executedIdentities.push(id), e => e.fixture.cleanup_verified = false,
+    e => delete e.fixture.image_id, e => e.comparison.resolvedBase = "other",
+    e => e.comparison.resolvedHead = "pr-head", e => e.comparisonAfter.sourceInputs["components.json"] = "b".repeat(64),
+    e => e.comparison.sourceInputs["components.json"] = "c".repeat(64),
+  ]) {
+    const changed = structuredClone(evidence); mutate(changed);
+    assert.throws(() => validateQueueOwnerEvidence(selected, changed, hashes, "ancestor"));
+  }
+  const extra = structuredClone(selected); extra.jobs.postgres.owner_suites.push("other");
+  assert.throws(() => validateQueueOwnerEvidence(extra, evidence, hashes, "ancestor"));
+  const sha = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const realPlan = verificationPlan({ paths: ["backend/app/services/queue_presentation.py"], files, cases, commit: sha, base: sha, head: sha });
+  const realHashes = declaredQueueInputHashes();
+  const bound = structuredClone(evidence);
+  Object.assign(bound.comparison, { requestedBase: sha, resolvedBase: sha, resolvedHead: sha, mergeBase: sha, sourceInputs: realHashes });
+  bound.comparisonAfter = structuredClone(bound.comparison);
+  const report = successfulResults(realPlan).reports.postgres;
+  assert(layerFailures(realPlan, "postgres", "success", report).some(message => /Queue owner/.test(message)));
+  report.ownerEvidence = { planHash: realPlan.hash, head: realPlan.head, evidence: bound };
+  assert.deepEqual(layerFailures(realPlan, "postgres", "success", report), []);
+  report.ownerEvidence.evidence.fixture.cleanup_verified = false;
+  assert(layerFailures(realPlan, "postgres", "success", report).some(message => /queue presentation/.test(message)));
 });

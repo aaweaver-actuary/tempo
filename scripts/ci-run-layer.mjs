@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { copyFileSync, existsSync, readFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, readFileSync, mkdirSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { escapeRegex, allLayers, planHash } from "./ci-verification-plan.mjs";
 import { resolvePython } from "./resolve-python.mjs";
 import { postgresTestStages } from "../database/tests/postgres-test-plan.mjs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { cpus, totalmem } from "node:os";
 import { aggregateBrowserShards, browserShard, browserShardFingerprint, browserShardReportPath, validateBrowserShardPlan } from "./ci-browser-shards.mjs";
 import { withTaskBrowserBuild, isLocalQualificationBuild } from "./task-browser-build.mjs";
@@ -15,10 +17,56 @@ import { suiteFingerprint } from "./ci-evidence.mjs";
 function postgresVerification(layer, plan) {
   const mode = layer === "postgres" ? "durability" : "lifecycle";
   const planned = plan.jobs[layer];
+  if (layer === "postgres") {
+    const expected = plan.comparisonAvailable && plan.paths.includes("backend/app/services/queue_presentation.py")
+      ? ["study-queue-presentation"] : [];
+    if (JSON.stringify(planned?.owner_suites ?? []) !== JSON.stringify(expected))
+      throw new Error("PostgreSQL owner obligations differ from affected source");
+  }
   if (planned?.mode !== mode || JSON.stringify(planned.planned_stages) !== JSON.stringify(postgresTestStages({ mode }))) {
     throw new Error(`${layer}: PostgreSQL scenario inventory differs from the immutable plan`);
   }
   return planned;
+}
+
+export function validateQueueOwnerEvidence(plan, evidence, expectedHashes, expectedMergeBase) {
+  const expected = "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts";
+  const selected = plan.jobs.postgres.owner_suites ?? [];
+  if (JSON.stringify(selected) !== JSON.stringify(["study-queue-presentation"])) throw new Error("Unexpected queue owner selection");
+  if (!evidence || evidence.suite !== selected[0] || evidence.scope !== "queue-presentation-native-case"
+      || evidence.passed !== 1 || evidence.failed !== 0 || evidence.skipped !== 0
+      || JSON.stringify(evidence.expectedIdentities) !== JSON.stringify([expected])
+      || JSON.stringify(evidence.executedIdentities) !== JSON.stringify([expected])
+      || !plan.base || !plan.commit || evidence.comparison?.resolvedHead !== plan.commit
+      || evidence.comparison?.resolvedBase !== plan.base || evidence.comparison?.requestedBase !== plan.base
+      || JSON.stringify(evidence.comparison) !== JSON.stringify(evidence.comparisonAfter)
+      || !expectedMergeBase || evidence.comparison?.mergeBase !== expectedMergeBase || !evidence.python || !evidence.platform
+      || !/^tempo-game-feedback-[0-9a-f]{32}$/.test(evidence.fixture?.owner ?? "")
+      || !/^[0-9a-f]{64}$/.test(evidence.fixture?.container_id ?? "")
+      || !/^sha256:[0-9a-f]{64}$/.test(evidence.fixture?.image_id ?? "")
+      || evidence.fixture?.cleanup_verified !== true || !evidence.fixture?.memory_bytes || !evidence.fixture?.pids_limit
+      || !Object.keys(evidence.comparison?.sourceInputs ?? {}).length
+      || JSON.stringify(evidence.comparison.sourceInputs) !== JSON.stringify(expectedHashes))
+    throw new Error("Missing or mismatched queue presentation owner evidence");
+}
+
+export function queueOwnerMergeBase(plan) {
+  if (!plan.commit || !plan.base) throw new Error("Queue owner proof requires candidate and base");
+  const result = spawnSync("git", ["merge-base", plan.commit, plan.base], { encoding: "utf8" });
+  if (result.status !== 0 || !result.stdout.trim()) throw new Error("Queue owner merge base unavailable");
+  return result.stdout.trim();
+}
+
+export function declaredQueueInputHashes(root = process.cwd()) {
+  const manifest = JSON.parse(readFileSync(join(root, "components.json"), "utf8"));
+  const suite = manifest.suites.find(item => item.id === "study-queue-presentation");
+  if (!suite?.inputs?.length) throw new Error("Missing queue owner suite inputs");
+  const result = spawnSync("git", ["ls-files", "-z", "--", "components.json", ...suite.inputs], { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) throw new Error("Cannot enumerate queue owner inputs");
+  const paths = result.stdout.split("\0").filter(Boolean).sort();
+  if (!paths.length || ["components.json", ...suite.inputs].some(input => !paths.some(path => path === input || path.startsWith(input.replace(/\/$/, "") + "/"))))
+    throw new Error("Missing queue owner input");
+  return Object.fromEntries(paths.map(path => [path, createHash("sha256").update(readFileSync(join(root, path))).digest("hex")]));
 }
 
 export function validatePostgresScenarios(layer, plan, scenarios) {
@@ -61,8 +109,11 @@ export function layerCommands(layer, plan, shardId) {
   }
   if (["postgres", "lifecycle"].includes(layer)) {
     const { mode } = postgresVerification(layer, plan);
-    return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
+    const commands = [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
       [mode, "node", ["database/tests/test-postgres-docker.mjs", "--mode", mode]]];
+    if (layer === "postgres" && plan.jobs.postgres.owner_suites?.includes("study-queue-presentation"))
+      commands.push(["study-queue-presentation", "node", ["tools/component-build/test-lane.mjs", "--suite", "study-queue-presentation"]]);
+    return commands;
   }
   if (layer === "visual") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount"]], ["visual", "npm", ["run", "test:visual"]]];
   const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
@@ -163,19 +214,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       rust: spawnSync("rustc", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? null,
       cpuCount: cpus().length, memoryBytes: totalmem(),
       wasmPack: spawnSync("wasm-pack", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? null } };
+  let ownerEvidenceRoot;
   try {
     const revision = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
     if (plan.hash !== planHash(plan)) throw new Error("Immutable plan hash mismatch");
     if (revision.stdout.trim() !== plan.commit) throw new Error("Layer checkout differs from the immutable plan revision");
     protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
     const commands = layerCommands(layer, plan, shardId);
+    if (layer === "postgres" && plan.jobs.postgres.owner_suites?.length) {
+      if (!plan.base) throw new Error("Queue owner proof requires an exact base");
+      ownerEvidenceRoot = mkdtempSync(join(tmpdir(), "tempo-ci-queue-owner-"));
+      mkdirSync(join(ownerEvidenceRoot, "fixtures"));
+    }
     const testReportPath = shardId === undefined ? `test-results/ci/${layer}-tests.json` : `${dirname(reportPath)}/tests.json`;
     const env = { ...process.env, PYTHONPATH: "backend:database", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: testReportPath };
     Object.assign(report, executeLayer(commands, (command, args, diagnostic) => {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json", "test-results/ci/frontend-inventory.json", "test-results/ci/backend-inventory.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);
       }
-      const environment = diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : env;
+      const environment = diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : { ...env };
+      if (ownerEvidenceRoot && args.includes("study-queue-presentation")) Object.assign(environment, {
+        TEMPO_PRIORITY_PROOF_BASE: plan.base, TEMPO_PRIORITY_EVIDENCE_ROOT: ownerEvidenceRoot,
+        TEMPO_PRIORITY_EVIDENCE: join(ownerEvidenceRoot, "evidence.json"),
+        TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT: join(ownerEvidenceRoot, "fixtures"),
+      });
       const run = selectedEnv => spawnSync(command, args, { stdio: "inherit", env: selectedEnv });
       return isLocalQualificationBuild(command, args)
         ? withTaskBrowserBuild(output => run({ ...environment, TEMPO_BROWSER_BUILD_DIR: output }))
@@ -226,9 +288,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const scenarios = JSON.parse(readFileSync(`test-results/performance/${files[0]}`, "utf8"));
       validatePostgresScenarios(layer, plan, scenarios);
       report.scenarios = scenarios;
+      if (layer === "postgres" && plan.jobs.postgres.owner_suites?.length) {
+        const evidence = JSON.parse(readFileSync(join(ownerEvidenceRoot, "evidence.json"), "utf8"));
+        validateQueueOwnerEvidence(plan, evidence, declaredQueueInputHashes(), queueOwnerMergeBase(plan));
+        report.ownerEvidence = { planHash: plan.hash, head: plan.head, evidence };
+      }
     }
     report.completed = true;
   } catch (error) { report.error = error.message; report.status = "failed"; console.error(error); }
-  finally { writeFileSync(reportPath, JSON.stringify(report, null, 2)); }
+  finally { if (ownerEvidenceRoot) rmSync(ownerEvidenceRoot, { recursive: true, force: true }); writeFileSync(reportPath, JSON.stringify(report, null, 2)); }
   process.exitCode = report.status === "success" ? 0 : 1;
 }

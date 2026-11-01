@@ -1049,3 +1049,11 @@ runner removes only its own temporary output. Default `local-dist` remains the
 normal local/Study build and Study image contract. This isolates these Vite
 outputs only: workspace package build outputs, WASM output and default timing
 reports remain shared, so whole concurrent builds are not yet qualified.
+
+The CI verification plan adds the registered `study-queue-presentation` owner
+suite to the PostgreSQL layer for an exact `backend/app/services/queue_presentation.py`
+change. Existing durability, browser, qualification and conservative fallback
+gates remain. The owner result is bound to the plan's candidate/base, declared
+source hashes, exact case identity and a fresh disposable fixture report; a
+missing or mismatched report fails the layer. This does not enable hosted CI or
+claim a narrowed FAST/FULL selection.
