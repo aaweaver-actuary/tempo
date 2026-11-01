@@ -254,22 +254,25 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
 
   return { studyConnection, studyWorkspace, studyOfflineDatabaseName, learningDayKey, sendStudyActivity,
     learningFetch, retainedStudyData, assertStudyAuthority, connectStudy, disconnectStudy,
-    get origin() { return learningUrl; }, get generation() { return connectionGeneration; } };
+    get origin() { return learningUrl; }, get generation() { return connectionGeneration; },
+    get independent() { return configuration.independent; } };
 }
+
+export type StudyClient = ReturnType<typeof createStudyClient>;
 
 const browserStorage: StudyClientStorage = { readAuthorityRegistry, readRetainedStudyData, readSessionConnection,
   removeSessionConnection, sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection };
 export let LEARNING_URL = API_URL;
-const defaultClient = createStudyClient({ independent: independentStudy, baseUrl: API_URL, storage: browserStorage,
+export const defaultStudyClient = createStudyClient({ independent: independentStudy, baseUrl: API_URL, storage: browserStorage,
   transport: (input, init) => globalThis.fetch(input, init), persistSession: true,
   onUrlChange: value => { LEARNING_URL = value; } });
-export const studyConnection = defaultClient.studyConnection;
-export const studyWorkspace = defaultClient.studyWorkspace;
-export const studyOfflineDatabaseName = defaultClient.studyOfflineDatabaseName;
-export const learningDayKey = defaultClient.learningDayKey;
-export const sendStudyActivity = defaultClient.sendStudyActivity;
-export const learningFetch = defaultClient.learningFetch;
-export const retainedStudyData = defaultClient.retainedStudyData;
-export const assertStudyAuthority = defaultClient.assertStudyAuthority;
-export const connectStudy = defaultClient.connectStudy;
-export const disconnectStudy = defaultClient.disconnectStudy;
+export const studyConnection = defaultStudyClient.studyConnection;
+export const studyWorkspace = defaultStudyClient.studyWorkspace;
+export const studyOfflineDatabaseName = defaultStudyClient.studyOfflineDatabaseName;
+export const learningDayKey = defaultStudyClient.learningDayKey;
+export const sendStudyActivity = defaultStudyClient.sendStudyActivity;
+export const learningFetch = defaultStudyClient.learningFetch;
+export const retainedStudyData = defaultStudyClient.retainedStudyData;
+export const assertStudyAuthority = defaultStudyClient.assertStudyAuthority;
+export const connectStudy = defaultStudyClient.connectStudy;
+export const disconnectStudy = defaultStudyClient.disconnectStudy;
