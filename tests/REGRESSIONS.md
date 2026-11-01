@@ -6637,3 +6637,7 @@ the actual64KiB refusal. Existing row-count sentinels/MVCC/fences are unchanged.
 ### Position index legal replay facts (overnight source admission)
 
 `backend/tests/test_product_position_index.py::test_index_reuses_legal_replay_facts_without_reparsing_occurrences` covers legal and pinned/irrelevant EP, castling, exact initial/full FEN, illegal-prefix diagnostics, route aliases with distinct physical bindings/reentry authority, and route-local adjacency. Each route parses only its root; all occurrence keys match standalone validated lookup. This repairs repeated FEN parsing in complete-scope comparison without changing route/ply bounds, opening identity or public validation.
+
+### Full-scope fixture collection uses the optional role allocation (#668)
+
+`study_recovery_acceptance.py::run_recovery` executes only the three ten-repertoire controlled collection calls in the existing running/unpaused448MiB background role and records that allocation. The720 run proved placing this large optional helper beside two Study command workers and beat exhausted the384MiB foreground cgroup (exit137/oom_kill1). No memory cap, product policy, deadline or held-case foreground call changes.
