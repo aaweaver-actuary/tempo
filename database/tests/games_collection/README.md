@@ -117,6 +117,14 @@ same original delivery must reach real target issuance and clean browser
 settlement. Each pause/process/resource belongs to the verified disposable
 assembly and is covered by its existing teardown. The separate unchanged
 thirty-transition loop retains the representative latency targets and raw samples.
+New semantic feedback sources use the actual UTC clock before capture and
+qualification, including the three ten-repertoire sources. The earlier settled
+source reconciliation may accelerate its collection schedule, but that clock
+must not carry into a new determination ahead of actual browser issuance. Held
+retry waits for the original retained retry deadline within the existing 45s
+orchestration bound; it never advances the original command's semantic time.
+The fixture clock continues with actual wall time after each snapshot, allowing
+the continuous collector's original uncertainty/held retries to become due.
 
 The recovery foreground worker uses Celery's supported embedded beat with its
 schedule file under `/tmp`, retaining two prefork command workers and the same
