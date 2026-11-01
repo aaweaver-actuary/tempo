@@ -53,7 +53,7 @@ def postgres_fixture_profile(profile):
     if profile == 'study-recovery':
         return dict(memory_mib=1024, storage='owned-volume')
     if profile == 'study-recovery-assembly':
-        return dict(memory_mib=384, storage='owned-volume')
+        return dict(memory_mib=448, storage='owned-volume')
     raise ValueError('unknown_owned_postgres_fixture_profile')
 
 
@@ -72,6 +72,7 @@ def study_recovery_assembly_allocations(configuration):
     # Preserve the 2 GiB task-owned fixture; it does not claim the live
     # historical comparison's larger production worker allocation.
     allocation['game-feedback-worker'] = dict(configuration['developmentServices']['game-feedback-worker'])
+    allocation['game-feedback-worker']['memoryMiB'] = 448
     assert all(type(value['memoryMiB']) is int and value['memoryMiB'] > 0 for value in allocation.values())
     assert sum(value['memoryMiB'] for value in allocation.values()) <= configuration['development']['memoryMiB'], \
         'study_recovery_assembly_exceeds_development_budget'
