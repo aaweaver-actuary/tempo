@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
+from .services.coverage_seed_request import request_coverage_seed_in_transaction
 
 
 def request_coverage_refresh(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:

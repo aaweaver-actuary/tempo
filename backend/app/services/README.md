@@ -263,3 +263,20 @@ flowchart LR
   commands --> owner["Canonical prefix service"]
   owner --> storage["Existing prefix and coverage storage in caller transaction"]
 ```
+
+The borrowed-writer coverage seed request is owned by
+[`coverage_seed_request.py`](coverage_seed_request.py); the seed producer
+re-exports the same function for compatibility. Worker seed, Explorer and
+recovery implementations are selected only when their existing work is
+invoked. The request still uses the existing cohort calculation, which shares
+`repertoire_coverage.py` with Explorer code; this is not a complete Explorer
+import boundary.
+
+```mermaid
+flowchart LR
+  Authoring["Authoring transaction"] --> Request["Coverage seed request"]
+  Request --> Task["Existing durable seed task"]
+  Task --> Fence["Worker delivery fence"]
+  Fence --> Seed["Seed producer"]
+  Recovery["Coverage recovery invocation"] --> Explorer["Explorer recovery owner"]
+```

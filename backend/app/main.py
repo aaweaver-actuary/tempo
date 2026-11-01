@@ -140,14 +140,6 @@ from .services.repertoire_integrity import (
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
 from .services.canonical_prefix import prefix_projection, ensure_line_in_scope, ensure_batch_lines_in_scope, certify_admitted_route
-from .services.repertoire_coverage import (
-    claim_maia_coverage_node,
-    coverage_gaps,
-    coverage_summary,
-    enqueue_coverage_refresh,
-    set_explorer_session_token,
-    submit_maia_coverage,
-)
 from .services.opening_graph import (
     decision_segments,
     enqueue_opening_graph_rebuild,
@@ -158,6 +150,36 @@ from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
     recommend_missing_continuations,
 )
+
+
+def claim_maia_coverage_node() -> dict | None:
+    from .services.repertoire_coverage import claim_maia_coverage_node as owner
+    return owner()
+
+
+def coverage_gaps(repertoire_id: str) -> list[dict]:
+    from .services.repertoire_coverage import coverage_gaps as owner
+    return owner(repertoire_id)
+
+
+def coverage_summary(repertoire_id: str) -> dict:
+    from .services.repertoire_coverage import coverage_summary as owner
+    return owner(repertoire_id)
+
+
+def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False, background: bool = False) -> str:
+    from .services.repertoire_coverage import enqueue_coverage_refresh as owner
+    return owner(repertoire_id, automatic=automatic, background=background)
+
+
+def set_explorer_session_token(token: str | None) -> None:
+    from .services.repertoire_coverage import set_explorer_session_token as owner
+    return owner(token)
+
+
+def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
+    from .services.repertoire_coverage import submit_maia_coverage as owner
+    return owner(node_id, lease_id, moves)
 
 
 def _compatibility_coordinator():

@@ -67,7 +67,8 @@ blocked = {'app.game_sync_commands','app.game_evidence_commands','app.product_co
 'app.product_composition.game_review_commands','app.game_commands','app.game_analysis_commands','app.game_analysis_publication',
 'app.services.postgres_game_sync','app.services.postgres_game_sync_windows','app.services.postgres_next_opponent',
 'app.services.postgres_game_derivation','app.services.postgres_game_repertoire','app.services.postgres_game_findings',
-'app.services.postgres_game_misses','app.services.postgres_game_events','app.services.postgres_game_features','app.services.postgres_game_priorities'}
+'app.services.postgres_game_misses','app.services.postgres_game_events','app.services.postgres_game_features','app.services.postgres_game_priorities',
+'app.services.postgres_coverage_seed','app.services.postgres_coverage_explorer','app.services.postgres_coverage_recovery'}
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname in blocked: raise AssertionError(fullname)

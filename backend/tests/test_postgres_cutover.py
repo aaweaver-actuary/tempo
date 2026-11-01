@@ -49,9 +49,9 @@ def unscoped_canonical_prefix(monkeypatch):
     test_canonical_repertoire_prefix.py and the PostgreSQL browser/durability gate.
     """
     from app import coverage_maia_commands
-    from app.services import canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage
+    from app.services import canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, coverage_seed_request, postgres_coverage_explorer, repertoire_coverage
     monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args, **_kwargs: 0)
-    for module in (canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage, coverage_maia_commands):
+    for module in (canonical_prefix, canonical_scope_freshness, discovery_admission, postgres_coverage_seed, coverage_seed_request, postgres_coverage_explorer, repertoire_coverage, coverage_maia_commands):
         if hasattr(module, "read_prefix"):
             monkeypatch.setattr(module, "read_prefix", lambda *_args, **_kwargs: {
                 "moves": [], "revision": 0, "preview_id": None, "source_revision": 0,
@@ -5877,7 +5877,7 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
 
 
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch, unscoped_canonical_prefix):
-    from app.services import postgres_coverage_seed
+    from app.services import coverage_seed_request
 
     statements = []
 
@@ -5896,17 +5896,17 @@ def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(m
                 })
             return SimpleNamespace(fetchone=lambda: None)
 
-    monkeypatch.setattr(postgres_coverage_seed, "recent_player_cohort", lambda *_args: {
+    monkeypatch.setattr(coverage_seed_request, "recent_player_cohort", lambda *_args: {
         "maia_elo": 1500, "explorer_rating": 1600, "recent_median_rating": 1500,
         "speed_weights": {"rapid": 1}, "games": 1,
     })
-    monkeypatch.setattr(postgres_coverage_seed, "_source_fingerprint",
+    monkeypatch.setattr(coverage_seed_request, "_source_fingerprint",
                         lambda *_args: "new-fingerprint")
     enqueued = []
-    monkeypatch.setattr(postgres_coverage_seed, "enqueue_task_in_transaction",
+    monkeypatch.setattr(coverage_seed_request, "enqueue_task_in_transaction",
                         lambda database, kind, key, payload, **kwargs:
                             enqueued.append((kind, key, payload)))
-    result = postgres_coverage_seed.request_coverage_seed_in_transaction(
+    result = coverage_seed_request.request_coverage_seed_in_transaction(
         Database(), "rep", automatic=True, supersede_active=True,
     )
     assert result["run_id"] != "old-run"
@@ -6342,19 +6342,19 @@ def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_p
 
 
 def test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires(monkeypatch):
-    from app.services import postgres_coverage_seed
+    from app.services import coverage_seed_request
     prefix = {'moves': [], 'revision': 0, 'source_revision': 1, 'preview_id': None}
-    monkeypatch.setattr(postgres_coverage_seed, 'read_prefix', lambda *args: prefix)
+    monkeypatch.setattr(coverage_seed_request, 'read_prefix', lambda *args: prefix)
     class Database:
         def execute_native(self, *args):
             return SimpleNamespace(fetchone=lambda: ('line-hash',))
-    original = postgres_coverage_seed._source_fingerprint(Database(), 'rep')
+    original = coverage_seed_request._source_fingerprint(Database(), 'rep')
     prefix['source_revision'] += 1
-    assert postgres_coverage_seed._source_fingerprint(Database(), 'rep') == original
+    assert coverage_seed_request._source_fingerprint(Database(), 'rep') == original
     prefix.update(moves=['e2e4'], revision=1, preview_id='current')
-    scoped = postgres_coverage_seed._source_fingerprint(Database(), 'rep')
+    scoped = coverage_seed_request._source_fingerprint(Database(), 'rep')
     prefix['source_revision'] += 1
-    assert postgres_coverage_seed._source_fingerprint(Database(), 'rep') != scoped
+    assert coverage_seed_request._source_fingerprint(Database(), 'rep') != scoped
 def test_pgn_payload_diagnostic_counts_branches_moves_annotations_and_serializer_bytes():
     from benchmarks.pgn_payload import branching_fixture, measure_payload
     from app.pgn_import_commands import prepare_import_payload

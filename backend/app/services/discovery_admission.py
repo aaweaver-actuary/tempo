@@ -570,7 +570,7 @@ def _ensure_admission_coverage_refresh(task: dict) -> None:
     if run:
         return
     if storage.configured():
-        from .postgres_coverage_seed import request_coverage_seed_in_transaction
+        from .coverage_seed_request import request_coverage_seed_in_transaction
 
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
