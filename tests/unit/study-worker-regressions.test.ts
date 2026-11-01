@@ -2,6 +2,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { runStudyTask } from "../../app/lib/background-study";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
+import { Chess } from "chess.js";
+import { computeStudyTask } from "../../app/lib/study-computation";
 import { tempoPerformanceTimings } from "../../app/lib/performance";
 
 afterEach(() => {
@@ -69,8 +71,11 @@ it("schema-invalid study worker reply rejects all callers and replaces the worke
   expect(workers[0].onmessage).toBeNull();
   expect(workers[0].onerror).toBeNull();
   expect(workers[0].onmessageerror).toBeNull();
-  workers[1].onmessage!({ data: { id: requestId, result: ["fresh-worker"] } } as MessageEvent);
-  await expect(retry).resolves.toEqual(["fresh-worker"]);
+  const validCards = computeStudyTask({ kind: "queue", payload: { cards: [{ id: "fresh", queue_entry_id: 1,
+    start_fen: new Chess().fen(), moves: ["e2e4"], content_type: "opening",
+    repertoire_name: "Fixture", repertoire_source: "synthetic" }] } });
+  workers[1].onmessage!({ data: { id: requestId, result: validCards } } as MessageEvent);
+  await expect(retry).resolves.toEqual(validCards);
 });
 
 it("phone worker construction failure rejects asynchronously with actionable diagnostics", async () => {

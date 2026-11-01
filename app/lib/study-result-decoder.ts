@@ -1,0 +1,49 @@
+import * as z from 'zod';
+import { analysisLineSchema, indexedPositionSchema, packagedPuzzleSchema, practiceCardSchema,
+  fenKeySchema, identifierSchema, uciMoveSchema } from '../domain/schemas';
+import { studySnapshotSchema } from '../domain/study-exercises';
+import { validateWorkspacePayload } from '../domain/adapters/workspace-adapters';
+import type { StudyTask, StudyTaskResult } from './study-computation';
+
+// The older local-repertoire schema is a subset; worker cards include the
+// Study, defense, and encounter fields supplied by the current card adapter.
+const workerCard = practiceCardSchema.extend({
+  kind: z.enum(['opening', 'middlegame', 'endgame', 'puzzle', 'defense', 'study']),
+  priorityReason: z.string().optional(),
+  encounterBadges: z.array(z.enum(['Seen recently', 'Frequent'])).optional(),
+  encounterCount30d: z.number().int().nonnegative().optional(),
+  lastEncounteredAt: z.string().optional(),
+  hasPriorStudyReview: z.boolean().optional(),
+  priorStudyReviewCount: z.number().int().nonnegative().optional(),
+  defenseCandidateId: z.string().optional(),
+  studyId: z.string().optional(), studyExerciseId: z.string().optional(),
+  studySnapshot: studySnapshotSchema.optional(),
+});
+const position = indexedPositionSchema.omit({ distance: true });
+const ranked = position.extend({ distance: z.number().int().min(0).max(2) });
+const snapshot = z.strictObject({
+  generation: z.number().int().nonnegative(), positions: z.array(position),
+  movesByRepertoire: z.map(identifierSchema, z.map(fenKeySchema, z.set(uciMoveSchema))),
+});
+
+/** Validate the untrusted structured-clone result against its retained task. */
+export function decodeStudyResult<Task extends StudyTask>(task: Task, raw: unknown, shouldPublishDiagnostics?: () => boolean): StudyTaskResult<Task> {
+  let result: unknown;
+  switch (task.kind) {
+    case 'workspace': result = validateWorkspacePayload(task.url, raw, shouldPublishDiagnostics); break;
+    case 'queue': result = z.array(workerCard).parse(raw); break;
+    case 'deck': result = z.array(z.strictObject({ record: packagedPuzzleSchema, card: workerCard })).parse(raw); break;
+    case 'lines': case 'transportLines': result = z.array(analysisLineSchema).parse(raw); break;
+    case 'index': result = z.array(position).parse(raw); break;
+    case 'repertoireAlternatives': case 'repertoirePreparation': {
+      const parsed = snapshot.parse(raw);
+      if (parsed.generation !== task.generation) throw new Error('Study worker returned a different generation');
+      result = parsed;
+      break;
+    }
+    case 'matches': result = z.array(ranked).parse(raw); break;
+    case 'similarity': result = z.array(ranked.extend({ nextUci: uciMoveSchema })).parse(raw); break;
+  }
+  // The switch has validated the task-specific schema; workspace remains unknown.
+  return result as StudyTaskResult<Task>;
+}

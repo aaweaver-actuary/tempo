@@ -1,5 +1,6 @@
 import { computeStudyTask, type StudyTask, type StudyTaskResult } from "./study-computation";
 import { isBulkStudyTask, runBulkStudyTask } from './bulk-study';
+import { decodeStudyResult } from "./study-result-decoder";
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
@@ -11,7 +12,7 @@ let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<
   number,
-  { title: string; queuedAt: number; startedAt?: number; shouldPublishDiagnostics?: () => boolean; resolve: (value: unknown) => void; reject: (error: Error) => void }
+  { task: StudyTask; title: string; queuedAt: number; startedAt?: number; shouldPublishDiagnostics?: () => boolean; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
 
 function failStudyRequests(cause?: unknown): void {
@@ -101,12 +102,18 @@ export function runStudyTask<Task extends StudyTask>(
     if (data.computeMs !== undefined)
       recordTempoDuration("study-worker-compute", data.computeMs);
     recordTempoDuration("study-worker-roundtrip", performance.now() - request.queuedAt);
-    if (data.error) {
+    if (data.error !== undefined) {
       updateBrowserActivity(`study:${data.id}`, request.title, "failed", "Failed", data.error);
       request.reject(new Error(data.error));
     } else {
-      updateBrowserActivity(`study:${data.id}`, request.title, "complete", "Finished");
-      request.resolve(data.result);
+      try {
+        const result = decodeStudyResult(request.task, data.result, request.shouldPublishDiagnostics);
+        updateBrowserActivity(`study:${data.id}`, request.title, "complete", "Finished");
+        request.resolve(result);
+      } catch (error) {
+        updateBrowserActivity(`study:${data.id}`, request.title, "failed", "Failed", "Invalid worker result");
+        request.reject(new Error("Study worker returned invalid data", { cause: error }));
+      }
     }
   };
   requestWorker.onerror = (event) => {
@@ -132,6 +139,7 @@ export function runStudyTask<Task extends StudyTask>(
     };
     signal?.addEventListener("abort", cancel, { once: true });
     pending.set(id, {
+      task,
       title,
       queuedAt: performance.now(),
       shouldPublishDiagnostics,

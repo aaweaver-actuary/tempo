@@ -573,6 +573,14 @@ export const studyReplySchema = z.strictObject({
   error: z.string().optional(),
   computeMs: z.number().nonnegative().optional(),
   diagnostics: z.array(dataDiagnosticSchema).optional(),
+}).superRefine((reply, context) => {
+  const hasResult = Object.hasOwn(reply, "result");
+  if (reply.state === "running") {
+    if (hasResult || reply.error !== undefined || reply.computeMs !== undefined || reply.diagnostics !== undefined)
+      context.addIssue({ code: "custom", message: "Running acknowledgement cannot contain a result or error" });
+  } else if (hasResult === (reply.error !== undefined)) {
+    context.addIssue({ code: "custom", message: "Completed reply requires exactly one result or error" });
+  }
 });
 const lineValidationSchema = z.strictObject({
   isValid: z.boolean(),
