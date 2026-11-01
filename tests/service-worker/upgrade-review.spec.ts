@@ -93,7 +93,23 @@ test('real worker upgrade retains and replays the original pending review', asyn
     accept = true;
     await context.setOffline(false);
     await page.reload();
+    const observe = async (label: string) => {
+      const records = await nativeStudyRecords(page);
+      const state = await page.evaluate(() => ({ now: Date.now(), notifications: localStorage.getItem('tempo-notifications-v1') }));
+      diagnostics.push(JSON.stringify({ label, ...state, records }));
+      return { records, now: state.now };
+    };
+    const beforeRetry = await observe('before-explicit-retry');
+    const expiries = beforeRetry.records.map(record => (record as typeof record & { claim?: { expiresAt: number } }).claim?.expiresAt)
+      .filter((value): value is number => typeof value === 'number' && value > beforeRetry.now);
+    if (expiries.length) {
+      const afterExpiry = Math.max(...expiries) + 1;
+      expect(new Date(afterExpiry).toISOString().slice(0, 10)).toBe('2026-09-18');
+      await page.clock.setFixedTime(new Date(afterExpiry));
+      diagnostics.push(JSON.stringify({ label: 'observed-claim-expiry', expiresAt: expiries, advancedTo: afterExpiry }));
+    }
     await page.getByRole('button', { name: 'Check saved reviews', exact: true }).click();
+    await observe('immediately-after-explicit-retry');
     await expect.poll(() => delivered.length, { timeout: 20000 }).toBe(1);
     expect(delivered[0]).toEqual(attempted[0]);
     expect(delivered[0].id).toBe(original.requestId);
@@ -105,6 +121,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await page.reload();
     expect(delivered).toHaveLength(1);
   } finally {
+    try { diagnostics.push(JSON.stringify({ label: 'final-state', now: await page.evaluate(() => Date.now()), records: await nativeStudyRecords(page), notifications: await page.evaluate(() => localStorage.getItem('tempo-notifications-v1')) })); } catch (error) { diagnostics.push(`final-state-error: ${String(error)}`); }
     await testInfo.attach('browser-diagnostics', { body: JSON.stringify(diagnostics, null, 2), contentType: 'application/json' });
     await new Promise<void>((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose()));
   }
