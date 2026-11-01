@@ -299,7 +299,11 @@ def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_lo
                 execute = database.execute_native if native else database.execute
                 return execute(statement, parameters).fetchall()
         monkeypatch.setattr(reads, '_bounded_read', bounded)
-        plans = [postgres_queue_refresh._prepare_queue_randomization(NOW.date().isoformat()) for _ in range(2)]
+        plans, preparation_reads = [], []
+        for _ in range(2):
+            start = len(bounded_calls)
+            plans.append(postgres_queue_refresh._prepare_queue_randomization(NOW.date().isoformat()))
+            preparation_reads.append(bounded_calls[start:])
         # Read IDs explicitly rather than depending on the storage column order.
         with case.transaction() as database:
             expected_ids = {row[0] for row in database.execute_native('SELECT id FROM daily_queue WHERE queue_date=%s AND status=\'queued\'',
@@ -312,9 +316,18 @@ def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_lo
             assert plan['entries'] is not None and {entry['id'] for entry in plan['entries']} == expected_ids
             assert all(set(entry) == {'id', 'position', 'bucket', 'kind'} for entry in plan['entries'])
         assert plans[0]['presentation_state'] == plans[1]['presentation_state']
-        owed_calls = [(sql, parameters, native) for sql, parameters, native in bounded_calls if 'FROM study_game_feedback' in sql]
-        assert len(owed_calls) == 2  # one lookup per three-entry priority page, twice
-        assert all('?' in sql and not native and len(parameters) == 2 for sql, parameters, native in owed_calls)
+        for reads_in_preparation in preparation_reads:
+            feedback_reads = [(sql, parameters, native) for sql, parameters, native in reads_in_preparation
+                              if 'FROM study_game_feedback' in sql]
+            owed = [call for call in feedback_reads if call[0].startswith('SELECT DISTINCT card_id FROM study_game_feedback')]
+            ready = [call for call in feedback_reads if call[0].startswith('SELECT effect.* FROM study_game_feedback effect')]
+            assert len(feedback_reads) == 2 and len(owed) == 1 and len(ready) == 1
+            owed_sql, owed_ids, owed_native = owed[0]
+            ready_sql, ready_ids, ready_native = ready[0]
+            assert not owed_native and owed_sql.count('?') == 2
+            assert len(owed_ids) == 2 and set(owed_ids) == {case.card_id, case.card_id + ':1'}
+            assert not ready_native and ready_sql.count('?') == 4
+            assert tuple(ready_ids) == tuple(owed_ids) * 2
         assert preserved() == before
         with case.transaction() as database:
             replay = qualified_receiving(database, None).accept_encounter(command)
