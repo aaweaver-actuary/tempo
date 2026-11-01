@@ -17,6 +17,7 @@ STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 @pytest.mark.parametrize('prior_state', ['mixed', 'unmixed_admission', 'replacement_frozen_token'])
 def test_split_then_refresh_preserves_after_four_only_from_verified_presentation(tmp_path, monkeypatch, prior_state):
     from app.services import frozen_opening_order, queue_application
+    from app.study import queue_order
     from app.services.prefix_split import apply_prefix_split
     monkeypatch.setattr(database, 'DB_PATH', tmp_path/'split-presentation.db')
     database.initialize()
@@ -33,6 +34,7 @@ def test_split_then_refresh_preserves_after_four_only_from_verified_presentation
             connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'unmixed-admission',99)",(day,))
         elif prior_state=='replacement_frozen_token':
             monkeypatch.setattr(frozen_opening_order,'activation',lambda *args,**kwargs: ('replacement',2))
+            monkeypatch.setattr(queue_order, 'activation', lambda *args, **kwargs: ('replacement', 2))
         result = apply_prefix_split(connection, source, 3)
         parent,child = result['parent']['card_id'],result['continuation']['card_id']
         # Complete the existing validation seam before ordinary presentation.

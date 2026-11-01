@@ -351,3 +351,21 @@ flowchart LR
   http["HTTP composition"] -->|"clock, head issuance, manifest and exercise revision"| shaping
   shaping --> wire["Existing flat queue response"]
 ```
+
+### Proposed queue order capture and preservation (#708 E2a)
+
+`queue_order.capture_daily_queue_order` and `preserve_daily_queue_order` use
+the caller's existing transaction and the existing review-storage operations
+and frozen activation fact. The Learning runtime's public queue-order policy
+functions own the fingerprint and provenance calculations; their previous
+private spellings remain compatibility aliases. Review, queue, prefix and
+legacy defense callers invoke this Study owner. Queue placement and defense
+schedule policy have not moved.
+
+```mermaid
+flowchart LR
+  callers["Review, queue and authoring callers"] --> owner["Study queue order owner"]
+  owner --> policy["Learning queue-order fingerprint and provenance"]
+  owner --> reads["Existing review storage and frozen activation"]
+  reads --> tx["Caller-owned transaction and existing receipt"]
+```

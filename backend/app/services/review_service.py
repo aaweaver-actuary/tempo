@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-import hashlib
+from datetime import date, datetime
 import json
 from tempo_legacy_database.adapters.study.review import storage
 from tempo_legacy_database.adapters.study.review.storage import sqlite3
@@ -13,6 +12,7 @@ from .scheduler import schedule_review, unlock_ready
 from .queue_presentation import presentation_rows
 from .queue_ordering import _priority_queue_order
 from .queue_priority_promotion import StalePriorityPromotion, priority_changes
+from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
 
 def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
@@ -51,27 +51,6 @@ def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
     recent_outcomes = [row["rating"] for row in reversed(rows[-2:])]
     state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
     storage.save_defense_schedule(database, card_id, schedule, state)
-
-
-def _queue_order_inputs(database, queue_date):
-    entries = storage.queued_order_entries(database, queue_date)
-    from .frozen_opening_order import activation
-    saved = storage.queue_membership_receipt(database, queue_date)
-    return entries, saved, activation(database)
-
-
-def capture_daily_queue_order(database, queue_date):
-    """Prove the pre-mutation rows/token have actually received presentation."""
-    from .queue_ordering import _queue_order_provenance
-    return _queue_order_provenance(*_queue_order_inputs(database, queue_date))
-
-
-def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str, *, previous=None) -> None:
-    """Carry a verified receipt across one controlled positional mutation."""
-    from .queue_ordering import _preserved_queue_fingerprint
-    membership_hash = _preserved_queue_fingerprint(*_queue_order_inputs(database, queue_date), previous=previous)
-    seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
-    storage.write_queue_order_receipt(database, queue_date, seed, membership_hash, lambda: datetime.now(timezone.utc).isoformat())
 
 
 def apply_scheduling_review(
