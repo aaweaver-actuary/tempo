@@ -7,6 +7,12 @@ Packaged/browser proof remains the separate explicit games-collection-release su
 """
 from pathlib import Path
 import fcntl
+import hashlib
+import json
+import platform
+import shlex
+import tempfile
+import xml.etree.ElementTree as ET
 import os
 import subprocess
 import sys
@@ -27,6 +33,7 @@ REQUIRED = (
     "backend/tests/test_product_contracts.py::test_new_product_boundaries_do_not_import_composition_or_private_siblings",
     "backend/tests/test_study_encounter_intake_boundary.py::test_intake_never_calls_queue_and_commits_once_when_refresh_fails",
     "backend/tests/test_study_encounter_intake_boundary.py::test_study_refresh_without_games_consumes_accepted_priority",
+    "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts",
     "backend/tests/test_product_deferred_priority_integration.py::test_real_shape_history_intake_commits_pending_then_study_refresh_without_games",
     "backend/tests/test_product_encounter_integration.py::test_unintroduced_encounter_intake_commits_pending_without_queue_capability",
     "backend/tests/test_product_encounter_integration.py::test_pending_encounter_resumes_on_existing_durable_pause_and_task_fence_without_games",
@@ -54,6 +61,63 @@ REQUIRED = (
 )
 
 
+# This is a single native owner obligation, not a FAST/planner replacement.
+QUEUE_PROOF = "backend/tests/test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts"
+
+
+def queue_proof_passed(report):
+    """Require the exact case to have passed, not merely a nonempty suite."""
+    executed = list(ET.parse(report).getroot().iter("testcase"))
+    if not executed or any(case.find(tag) is not None for case in executed for tag in ("skipped", "failure", "error")):
+        raise ValueError("Required queue presentation native case is missing, skipped or failed")
+    cases = [case for case in executed
+             if case.get("classname", "").endswith("test_study_encounter_intake_boundary")
+             and case.get("name") == QUEUE_PROOF.split("::")[1]]
+    if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")):
+        raise ValueError("Required queue presentation native case is missing, skipped or failed")
+    return QUEUE_PROOF
+
+
+def source_binding(root=ROOT, base="origin/main"):
+    """Bind the existing declared suite inputs to actual source bytes and git endpoints."""
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True).stdout
+    head = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+    resolved_base = git("rev-parse", "--verify", base + "^{commit}").decode().strip()
+    merge_base = git("merge-base", head, resolved_base).decode().strip()
+    manifest_path = root / "components.json"
+    manifest = json.loads(manifest_path.read_text())
+    suite = next(item for item in manifest["suites"] if item["id"] == "study-game-priority")
+    inputs = ["components.json", *suite["inputs"]]
+    tracked = git("ls-files", "-z", "--", *inputs).decode().split("\0")
+    files = sorted(path for path in tracked if path)
+    if not files:
+        raise ValueError("Priority proof has no declared source inputs")
+    for selected in inputs:
+        if not any(path == selected or path.startswith(selected.rstrip("/") + "/") for path in files):
+            raise ValueError("Missing declared priority input: " + selected)
+    hashes = {}
+    for path in files:
+        file = root / path
+        if not file.is_file() or file.is_symlink():
+            raise ValueError("Missing or unsupported priority input: " + path)
+        hashes[path] = hashlib.sha256(file.read_bytes()).hexdigest()
+    return {"requestedBase": base, "resolvedBase": resolved_base, "resolvedHead": head,
+            "mergeBase": merge_base, "sourceInputs": hashes,
+            "worktreeStatus": git("status", "--porcelain", "--untracked-files=normal").decode().splitlines()}
+
+
+def junit_path(arguments, environment):
+    options = [*shlex.split(environment.get("PYTEST_ADDOPTS", "")), *arguments]
+    found = []
+    for index, option in enumerate(options):
+        if option.startswith(("--junitxml=", "--junit-xml=")):
+            found.append(option.split("=", 1)[1])
+        elif option in ("--junitxml", "--junit-xml") and index + 1 < len(options):
+            found.append(options[index + 1])
+    return Path(found[-1]) if found else None
+
+
 def main(arguments=()):
     # Reuse the receiving owner's existing source-overlay qualification inputs;
     # select the caller's already-installed Python, never install dependencies.
@@ -69,10 +133,39 @@ def main(arguments=()):
     paths = [ROOT / source for source in sources]
     environment = os.environ | {"PYTHONPATH": os.pathsep.join(map(str, paths)), "PYTHONDONTWRITEBYTECODE": "1"}
     command = [sys.executable, "-m", "pytest", "-q", *REQUIRED, *arguments]
+    collecting = "--collect-only" in arguments
     lock_path = Path(environment.get("TEMPO_VALIDATION_LOCK_PATH", "/tmp/tempo-mac-validation-20261025.lock"))
-    if "--collect-only" not in arguments and lock_path.exists():
-        # Never truncate or unlink the shared advisory lock. Fail promptly if a
-        # native owner is already qualifying; release immediately on completion.
+    def execute():
+        if collecting:
+            return subprocess.run(command, cwd=ROOT, env=environment).returncode
+        before = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"))
+        with tempfile.TemporaryDirectory(prefix="tempo-priority-junit-") as temporary:
+            report = junit_path(arguments, environment)
+            effective_command = command
+            if report is None:
+                report = Path(temporary) / "cases.xml"
+                effective_command = [*command, "--junitxml=" + str(report)]
+            elif not report.is_absolute():
+                report = ROOT / report
+            outcome = subprocess.run(effective_command, cwd=ROOT, env=environment).returncode
+            if outcome:
+                return outcome
+            try:
+                identity = queue_proof_passed(report)
+                after = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"))
+                if before != after:
+                    raise ValueError("Priority proof inputs or candidate changed during execution")
+            except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
+                print("Priority proof evidence invalid: " + str(error), file=sys.stderr)
+                return 1
+            print(json.dumps({"suite": "study-game-priority", "scope": "queue-presentation-native-case",
+                              "executedIdentities": [identity], "passed": 1,
+                              "python": sys.version, "platform": platform.platform(),
+                              "fixture": "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture",
+                              "comparison": before}, sort_keys=True))
+            return 0
+    if not collecting and lock_path.exists():
+        # Never truncate or unlink the shared advisory lock.
         with lock_path.open("r+") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -80,10 +173,10 @@ def main(arguments=()):
                 print("VALIDATION_LOCK_BUSY", file=sys.stderr)
                 return 2
             try:
-                return subprocess.run(command, cwd=ROOT, env=environment).returncode
+                return execute()
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
-    return subprocess.run(command, cwd=ROOT, env=environment).returncode
+    return execute()
 
 
 if __name__ == "__main__":

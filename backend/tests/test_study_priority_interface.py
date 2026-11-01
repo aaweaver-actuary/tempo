@@ -87,6 +87,7 @@ def test_required_priority_command_registers_real_failure_replay_and_independent
         and any(isinstance(target, ast.Name) and target.id == "REQUIRED" for target in node.targets))
     assert len(required) == len(set(required))
     critical = {
+        "test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts",
         "test_intake_never_calls_queue_and_commits_once_when_refresh_fails",
         "test_study_refresh_without_games_consumes_accepted_priority",
         "test_real_shape_history_intake_commits_pending_then_study_refresh_without_games",
@@ -115,3 +116,78 @@ def test_required_priority_command_registers_real_failure_replay_and_independent
         nodeids = {line.strip() for line in collected.stdout.splitlines()
                    if line.startswith("backend/tests/")}
         assert nodeids == set(parameterized), collected.stdout
+
+
+def test_queue_presentation_owner_proof_requires_exact_passing_junit_case(tmp_path):
+    import pytest
+    from app.study.qualify_priority import QUEUE_PROOF, queue_proof_passed, junit_path
+    report = tmp_path / 'cases.xml'
+    name = QUEUE_PROOF.split('::')[1]
+    def write(case):
+        report.write_text(f'<testsuite>{case}</testsuite>')
+    good = f'<testcase classname="backend.tests.test_study_encounter_intake_boundary" name="{name}" />'
+    write(good)
+    assert queue_proof_passed(report) == QUEUE_PROOF
+    for case in ('', good.replace('/>', '><skipped /></testcase>'),
+                 good.replace('/>', '><failure /></testcase>'), good + good,
+                 good + '<testcase classname="unrelated" name="skipped"><skipped /></testcase>'):
+        write(case)
+        with pytest.raises(ValueError, match='missing, skipped or failed'):
+            queue_proof_passed(report)
+    assert junit_path([], {'PYTEST_ADDOPTS': f'--junitxml={report}'}) == report
+    assert junit_path(['--junit-xml', str(report)], {}) == report
+    assert junit_path([], {}) is None
+
+
+def test_queue_presentation_owner_binding_uses_declared_inputs_and_candidate(tmp_path):
+    import hashlib
+    from app.study.qualify_priority import source_binding
+    def git(*args):
+        return subprocess.run(['git', '-C', str(tmp_path), *args], check=True, capture_output=True, text=True).stdout.strip()
+    git('init', '-q')
+    git('config', 'user.email', 'fixture@example.invalid')
+    git('config', 'user.name', 'Fixture')
+    (tmp_path / 'source').mkdir()
+    (tmp_path / 'source' / 'queue.py').write_text('baseline')
+    (tmp_path / 'components.json').write_text(json.dumps({'suites': [{'id':'study-game-priority', 'inputs':['source']}]}))
+    git('add', 'components.json', 'source/queue.py'); git('commit', '-qm', 'base')
+    base = git('rev-parse', 'HEAD')
+    (tmp_path / 'source' / 'queue.py').write_text('candidate')
+    git('add', 'source/queue.py'); git('commit', '-qm', 'candidate')
+    candidate = git('rev-parse', 'HEAD')
+    binding = source_binding(tmp_path, base)
+    assert (binding['resolvedBase'], binding['resolvedHead'], binding['mergeBase']) == (base, candidate, base)
+    assert binding['sourceInputs']['source/queue.py'] == hashlib.sha256(b'candidate').hexdigest()
+    assert binding['worktreeStatus'] == []
+    (tmp_path / 'source' / 'queue.py').write_text('dirty')
+    changed = source_binding(tmp_path, base)
+    assert changed['sourceInputs']['source/queue.py'] == hashlib.sha256(b'dirty').hexdigest()
+    assert changed['worktreeStatus'] and changed != binding
+
+
+def test_priority_qualifier_requires_exact_native_identity_before_reporting(monkeypatch, tmp_path, capsys):
+    from types import SimpleNamespace
+    from app.study import qualify_priority as owner
+    monkeypatch.setenv('TEMPO_VALIDATION_LOCK_PATH', str(tmp_path / 'absent-lock'))
+    monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+    binding = {'requestedBase':'base', 'resolvedBase':'base-sha', 'resolvedHead':'head-sha',
+               'mergeBase':'base-sha', 'sourceInputs':{'queue.py':'sha256'}, 'worktreeStatus':[]}
+    monkeypatch.setattr(owner, 'source_binding', lambda **kwargs: binding)
+    monkeypatch.setattr(owner.platform, 'platform', lambda: 'fixture-platform')
+    mode = ['passed']
+    def run(command, **kwargs):
+        assert owner.QUEUE_PROOF in command
+        report = Path(next(argument.split('=', 1)[1] for argument in command if argument.startswith('--junitxml=')))
+        case = owner.QUEUE_PROOF.split('::')[1]
+        content = f'<testcase classname="backend.tests.test_study_encounter_intake_boundary" name="{case}">'
+        report.write_text('<testsuite>' + (content + ('<skipped />' if mode[0] == 'skipped' else '') + '</testcase>' if mode[0] != 'missing' else '') + '</testsuite>')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(owner.subprocess, 'run', run)
+    assert owner.main() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['executedIdentities'] == [owner.QUEUE_PROOF]
+    assert output['comparison'] == binding and output['passed'] == 1
+    for value in ('missing', 'skipped'):
+        mode[0] = value
+        assert owner.main() == 1
+        assert 'Priority proof evidence invalid' in capsys.readouterr().err
