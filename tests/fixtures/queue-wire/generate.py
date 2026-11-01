@@ -55,8 +55,15 @@ def row(identifier, entry, family):
                 **({'study_id':'study-1', 'study_exercise_id':'exercise-1', 'repertoire_id':None, 'kind':'exercise'} if family == 'study_exercise' else {}))
 
 opening = row('opening-1', 21, 'opening')
-opening.update(opening_evidence_origin_queue_entry_id=20, opening_evidence_parent_attempt_id='original-attempt')
-rows = [opening, row('tactic-1', 22, 'tactic'), row('exercise-card', 23, 'study_exercise')]
+opening.update(opening_evidence_origin_queue_entry_id=20, opening_evidence_parent_attempt_id='original-attempt',
+               position=1, cycle=1, attempt_state='again', attempt_failed=1)
+defense = row('defense-1', 24, 'defense')
+defense.update(source_ref='candidate-1', admission_source='defense:candidate-1')
+endgame = row('saved-endgame-1', 25, 'endgame')
+endgame.update(source_ref='saved-endgame', repertoire_id='endgames')
+rows = [opening, row('tactic-1', 22, 'tactic'), row('exercise-card', 23, 'study_exercise'),
+        defense, endgame, row('middlegame-1', 26, 'middlegame')]
+
 state = SimpleNamespace(rows=rows, available=True)
 storage = SimpleNamespace(
     evidence_timezone=lambda db: ['UTC'], queue_projection=lambda db, day: None,

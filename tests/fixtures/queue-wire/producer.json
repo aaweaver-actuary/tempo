@@ -2,7 +2,10 @@
   "available": {
     "cards": [
       {
+        "attempt_failed": 1,
+        "attempt_state": "again",
         "content_type": "opening",
+        "cycle": 1,
         "encounter_badges": [],
         "encounter_count_30d": 0,
         "encounter_evidence_status": "available",
@@ -34,6 +37,7 @@
         "opening_evidence_origin_queue_entry_id": 20,
         "opening_evidence_parent_attempt_id": "original-attempt",
         "opening_evidence_study_timezone": "UTC",
+        "position": 1,
         "prefix_split_offer_available": false,
         "prefix_split_rejected_after_review_id": 0,
         "queue_entry_id": 21,
@@ -105,9 +109,73 @@
           }
         },
         "trained_color": "white"
+      },
+      {
+        "admission_source": "defense:candidate-1",
+        "content_type": "defense",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "defense-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 24,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "source_ref": "candidate-1",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "endgame",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "saved-endgame-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 25,
+        "repertoire_id": "endgames",
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "source_ref": "saved-endgame",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "middlegame",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "middlegame-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 26,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
       }
     ],
-    "count": 3,
+    "count": 6,
     "diagnostics": [],
     "local_date": "2026-11-01",
     "prepared_at": "2026-11-01T12:00:00+00:00",
@@ -137,7 +205,10 @@
   "unavailable": {
     "cards": [
       {
+        "attempt_failed": 1,
+        "attempt_state": "again",
         "content_type": "opening",
+        "cycle": 1,
         "encounter_badges": [],
         "encounter_evidence_status": "unavailable",
         "id": "opening-1",
@@ -168,6 +239,7 @@
         "opening_evidence_origin_queue_entry_id": 20,
         "opening_evidence_parent_attempt_id": "original-attempt",
         "opening_evidence_study_timezone": "UTC",
+        "position": 1,
         "prefix_split_offer_available": false,
         "prefix_split_rejected_after_review_id": 0,
         "queue_entry_id": 21,
@@ -218,9 +290,70 @@
         "study_exercise_id": "exercise-1",
         "study_id": "study-1",
         "trained_color": "white"
+      },
+      {
+        "admission_source": "defense:candidate-1",
+        "content_type": "defense",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "defense-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 24,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "source_ref": "candidate-1",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "endgame",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "saved-endgame-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 25,
+        "repertoire_id": "endgames",
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "source_ref": "saved-endgame",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "middlegame",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "middlegame-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 26,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
       }
     ],
-    "count": 3,
+    "count": 6,
     "diagnostics": [],
     "local_date": "2026-11-01",
     "projection": {
