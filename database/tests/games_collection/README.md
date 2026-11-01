@@ -164,3 +164,10 @@ maximum and reserved-slot settings are read from the owned database into
 `fixture.json`; the assembly keeps its 384MiB memory cap, 128-PID limit, 32MiB
 shared buffers and all existing transaction/acquisition deadlines. This aligns
 the test profile without changing production pool settings or claiming a leak.
+
+Post-measurement readback checks the complete command owner's stored response
+against the exact public browser receipt, including its recombination annotation,
+and binds its original card/attempt/queue payload. The Learning attempt receipt
+is compared exactly after removing only that known after-save annotation; its
+prepared continuation and every other field remain required. This follows the
+existing adapter's two receipt contracts rather than discarding unknown fields.
