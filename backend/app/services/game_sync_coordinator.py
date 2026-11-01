@@ -20,7 +20,6 @@ from app.contracts.transport.game_sync import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .real_game_feedback_adapter import apply_real_game_misses
 from .gameplay_events import refresh_gameplay_events
-from .game_sync import sync_providers
 from app.games.ingestion.serialization import serialize_job
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
@@ -39,6 +38,12 @@ from .opening_graph import (
     prepare_opening_graph_rebuild,
     publish_opening_graph_rebuild,
 )
+
+
+async def sync_providers(*args, **kwargs):
+    """Load provider acquisition only for the explicit legacy sync job."""
+    from .game_sync import sync_providers as acquire
+    return await acquire(*args, **kwargs)
 
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
