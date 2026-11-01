@@ -378,7 +378,10 @@ def feedback_case(feedback_postgres):
 def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced,
                                                                           recovery_mode=None, *,
                                                                           forbid_legacy_capture=False,
-                                                                          changed_target_rollback=False):
+                                                                          changed_target_rollback=False,
+                                                                          changed_configuration_rollback=False,
+                                                                          lose_owner_ack=False,
+                                                                          games_absent_after_acceptance=False):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
     from app.games.feedback.ports import Delivery
@@ -388,7 +391,9 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     candidate = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     web_image = _candidate_web_image(candidate)
     case = feedback_case
-    assert not changed_target_rollback or forbid_legacy_capture
+    assert not any((changed_target_rollback,changed_configuration_rollback,lose_owner_ack,
+        games_absent_after_acceptance)) or forbid_legacy_capture
+    assert not (changed_target_rollback and changed_configuration_rollback), 'one_controlled_fence_fault_per_journey'
     assert not forbid_legacy_capture or recovery_mode is None, 'r2_functional_guard_is_separate_from_thirty_transition_run'
     with case.transaction() as database:
         info = database.raw.info
@@ -447,8 +452,13 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     directory = tmp_path/'feedback-qualification'; directory.mkdir()
     shutil.copyfile(ROOT/'backend/tests/fixtures/product_collection_packaged.py',directory/'entry.py')
     r2_marker = directory/'r2-current-feedback.json'
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    expected_r2_key = dict(workspace_id='legacy',provider='lichess',game_id='lichess:'+source_id,
+        decision_id=decision_identity(target_id,0,[]),occurrence_ply=1)
     r2_configuration = dict(schema_version=1,target_id=target_id,target_revision=original_target_revision,
-        inject_target_change=changed_target_rollback)
+        expected_key=expected_r2_key,
+        inject_target_change=changed_target_rollback,inject_configuration_change=changed_configuration_rollback,
+        lose_owner_ack=lose_owner_ack,hold_accepted_debt=games_absent_after_acceptance)
     if forbid_legacy_capture:
         r2_marker.write_text(json.dumps(r2_configuration))
     now = datetime.now(timezone.utc)
@@ -637,6 +647,11 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
+        original_configuration = None
+        if changed_target_rollback or changed_configuration_rollback:
+            with case.transaction() as database:
+                original_configuration = database.execute_native("""SELECT revision,payload FROM product_feedback_configuration
+                    WHERE workspace_id='legacy' AND provider='lichess'""").fetchone()
         wait_for(health_ready,'packaged_feedback_api_not_ready')
         stage = 'genuine_protected_head'
         protected_queue = wait_for(queue,'packaged_feedback_protected_head_pending')
@@ -789,9 +804,10 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             observed = Delivery.model_validate_json(json.dumps(rows[0][1]))
             return rows[0] if observed.qualification_status=='ready' and observed.determined_at else None
         rejected_original = None
-        if changed_target_rollback:
-            stage = 'controlled_current_target_rollback'
+        if changed_target_rollback or changed_configuration_rollback:
+            stage = 'controlled_configuration_rollback' if changed_configuration_rollback else 'controlled_current_target_rollback'
             target_token = hashlib.sha256(target_id.encode()).hexdigest()[:16]
+            event_name = 'r2_configuration_fence_rejected' if changed_configuration_rollback else 'r2_current_target_fence_rejected'
             def target_rollback():
                 refusal = None
                 for role in ('game-feedback-worker','foreground-worker','background-worker'):
@@ -799,13 +815,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                     text = logs.stdout+'\n'+logs.stderr
                     assert 'r2_legacy_capture_forbidden_call' not in text, 'r2_current_feedback_used_legacy_capture'
                     for line in text.splitlines():
-                        offset = line.find('{"r2_current_target_fence_rejected"')
+                        offset = line.find('{"'+event_name+'"')
                         if offset >= 0:
                             try:
                                 event = json.loads(line[offset:])
                             except ValueError:
                                 continue
-                            if event.get('target_token') == target_token and event.get('r2_current_target_fence_rejected') is True:
+                            if event.get(event_name) is True and (changed_configuration_rollback or event.get('target_token') == target_token):
                                 refusal = dict(role=role,**event)
                 if refusal is None:
                     return None
@@ -821,6 +837,9 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                     assert actual.state == 'pending' and actual.receipt is None, 'r2_failed_target_was_acknowledged'
                     assert database.execute_native('SELECT revision FROM cards WHERE id=%s',(target_id,)).fetchone()[0] == original_target_revision, \
                         'r2_injected_target_change_did_not_rollback'
+                    actual_configuration = database.execute_native("""SELECT revision,payload FROM product_feedback_configuration
+                        WHERE workspace_id='legacy' AND provider='lichess'""").fetchone()
+                    assert tuple(actual_configuration) == tuple(original_configuration), 'r2_configuration_or_complete_selection_did_not_rollback'
                     assert database.execute_native('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s',(target_id,)).fetchone()[0] == 0, \
                         'r2_failed_target_left_an_effect'
                     assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0] == 0, \
@@ -828,21 +847,99 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 return dict(refusal=refusal,operation_id=actual.operation_id,
                     command=actual.command.model_dump(mode='json'),determined_at=actual.determined_at)
             rejected_original = wait_for(target_rollback,'r2_current_target_rollback_not_demonstrated')
-            report['controlled_current_target_rollback'] = dict(refusal=rejected_original['refusal'],
+            report[stage] = dict(refusal=rejected_original['refusal'],
                 target_revision_unchanged=True,no_effect_or_ack=True,
-                classification='controlled in-transaction target mutation immediately before narrow fence; not external concurrency')
+                complete_configuration_unchanged=True,
+                classification='controlled in-transaction owner-fact mutation immediately before actual final fence; not external concurrency')
             r2_configuration['inject_target_change'] = False
+            r2_configuration['inject_configuration_change'] = False
             temporary = r2_marker.with_suffix('.tmp')
             temporary.write_text(json.dumps(r2_configuration)); temporary.replace(r2_marker)
             stage = 'provider_first_departure'
+        lost_ack_original = None
+        if lose_owner_ack:
+            stage = 'real_owner_commit_before_lost_ack'
+            def actual_lost_ack():
+                row = actual_delivery()
+                if row is None:
+                    return None
+                actual = Delivery.model_validate_json(json.dumps(row[1]))
+                if actual.error != 'owner_acknowledgment_uncertain':
+                    return None
+                assert actual.state == 'pending' and actual.receipt is None and actual.attempts>=1
+                observed = entry('api','feedback-state',actual.operation_id)
+                owner_receipt = observed['receipt']
+                assert owner_receipt is not None and owner_receipt['status']=='pending'
+                assert owner_receipt['key']==actual.command.model_dump(mode='json')['key']
+                logs = docker('logs',containers['game-feedback-worker']['id'],check=False)
+                events = []
+                for line in (logs.stdout+'\n'+logs.stderr).splitlines():
+                    offset = line.find('{"r2_owner_ack_lost_after_commit"')
+                    if offset >= 0:
+                        events.append(json.loads(line[offset:]))
+                assert len(events)==1 and events[0]['operation_id']==actual.operation_id
+                assert events[0]['owner_receipt_id']==owner_receipt['owner_receipt_id']
+                with case.transaction() as database:
+                    assert database.execute_native('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s',(target_id,)).fetchone()[0]==1
+                    assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
+                return dict(operation_id=actual.operation_id,command=actual.command.model_dump(mode='json'),
+                    determined_at=actual.determined_at,owner_receipt_id=owner_receipt['owner_receipt_id'],
+                    uncertain_attempts=actual.attempts)
+            lost_ack_original = wait_for(actual_lost_ack,'r2_real_owner_commit_lost_ack_not_observed')
+            report['owner_commit_before_ack_loss'] = dict(operation_id=lost_ack_original['operation_id'],
+                genuine_pending_owner_receipt=True,uncertain_original_outbox=True,one_effect_no_review=True,
+                uncertain_attempts=lost_ack_original['uncertain_attempts'])
+            (directory/'r2-release-lost-ack').write_text('observed_actual_committed_owner_and_uncertain_outbox\n')
         delivery = wait_for(actual_delivery,'packaged_feedback_original_delivery_missing')
         original_delivery = Delivery.model_validate_json(json.dumps(delivery[1]))
         assert original_delivery.command_kind=='encounter'
         operation_id, original = delivery[0], original_delivery.command.model_dump(mode='json')
         assert original_delivery.operation_id==operation_id and delivery[1]['encounter']==original
+        if forbid_legacy_capture:
+            assert original['key']==expected_r2_key, 'r2_controlled_fixture_key_differs_from_actual_owner_command'
         if rejected_original is not None:
             assert operation_id == rejected_original['operation_id'] and original == rejected_original['command']
             assert original_delivery.determined_at == rejected_original['determined_at'], 'r2_target_retry_restarted_clock'
+        if lost_ack_original is not None:
+            assert (operation_id,original,original_delivery.determined_at)==(lost_ack_original['operation_id'],
+                lost_ack_original['command'],lost_ack_original['determined_at']), 'r2_ack_retry_changed_original_identity'
+            def recovered_ack():
+                observed = entry('api','feedback-state',operation_id)
+                if observed['delivery_state'] != 'acknowledged':
+                    return None
+                current_delivery = Delivery.model_validate_json(json.dumps(actual_delivery()[1]))
+                assert current_delivery.attempts==lost_ack_original['uncertain_attempts']+1
+                assert current_delivery.error is None and current_delivery.receipt.owner_receipt_id==lost_ack_original['owner_receipt_id']
+                assert observed['receipt']['owner_receipt_id']==lost_ack_original['owner_receipt_id']
+                assert observed['command']==original and observed['receipt']['status']=='pending'
+                return observed
+            wait_for(recovered_ack,'r2_original_ack_not_recovered_from_real_owner_receipt')
+            report['lost_ack_same_key_recovered'] = True
+        if games_absent_after_acceptance:
+            stage = 'accepted_debt_without_games'
+            accepted = entry('api','feedback-state',operation_id)
+            assert accepted['delivery_state']=='acknowledged'
+            assert accepted['receipt']['status']=='pending' and accepted['receipt']['admission_status']=='pending'
+            assert accepted['receipt']['progress']['schedule_applied_at'] is None
+            assert accepted['receipt']['progress']['introduction_applied_at'] is None
+            owned = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
+            assert owned['Config']['Labels']['tempo.owner']==owner and owned['Config']['Labels']['tempo.disposable']=='true'
+            docker('stop','--time','10',owned['Id'])
+            assert not json.loads(docker('inspect',owned['Id']).stdout)[0]['State']['Running']
+            actual_mode = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'status','--workspace','legacy'))['intent']
+            assert actual_mode['generation']==1 and actual_mode['phase']=='active'
+            inactive_mode = actual_mode | dict(generation=2,phase='inactive',runtimes=[],verified_at=None,
+                operation_id='r2-accepted-debt-inactive:'+uuid.uuid4().hex,updated_at=datetime.now(timezone.utc).isoformat())
+            inactive = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'record','--workspace','legacy','--expected-generation','1','--intent-json',json.dumps(inactive_mode),'--apply'))
+            assert inactive['applied'] and inactive['generation']==2 and inactive['phase']=='inactive'
+            r2_configuration['hold_accepted_debt'] = False
+            temporary = r2_marker.with_suffix('.tmp')
+            temporary.write_text(json.dumps(r2_configuration)); temporary.replace(r2_marker)
+            report['accepted_debt_without_games'] = dict(real_pending_owner_receipt=True,
+                exact_collector_stopped=True,supported_inactive_generation=2,
+                owner_receipt_id=accepted['receipt']['owner_receipt_id'])
         assert original['observation']=='missed' and original['played_uci']=='d2d4' and original['expected_uci']=='e2e4'
         with case.transaction() as database:
             # One statement captures the task generation and event boundary
@@ -887,6 +984,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert protected_review['response']['persisted'] and protected_review['replay']==protected_review['response']
         before_review = entry('api','feedback-state',operation_id)
         receipt = before_review['receipt']
+        if games_absent_after_acceptance:
+            assert receipt['owner_receipt_id']==report['accepted_debt_without_games']['owner_receipt_id']
+            assert not json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]['State']['Running']
+            inactive_status = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'status','--workspace','legacy'))
+            assert inactive_status['intent']['phase']=='inactive' and inactive_status['intent']['generation']==2
+            report['accepted_debt_without_games']['same_owner_receipt_reached_real_issuance'] = True
         assert receipt['key']==original['key'] and receipt['disposition']==('introduced_again' if introduced else 'first_introduction')
         assert before_review['qualification']['selection']['status']=='own_actionable'
         assert before_review['qualification']['selection']['ply']==original['key']['occurrence_ply']==1
@@ -1094,6 +1198,9 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         settled = entry('api','feedback-state',operation_id)
         assert settled['command']==original and settled['receipt']['key']==original['key']
         assert settled['receipt']['status']=='settled'
+        if games_absent_after_acceptance:
+            assert settled['receipt']['owner_receipt_id']==report['accepted_debt_without_games']['owner_receipt_id']
+            report['accepted_debt_without_games']['same_owner_receipt_genuinely_settled'] = True
         assert settled['receipt']['progress']['settlement']['review_id']==clean['response']['review_id']
         with case.transaction() as database:
             from tempo_legacy_database.adapters.study.issuance import attempt_issuance
