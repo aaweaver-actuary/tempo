@@ -238,7 +238,7 @@ def test_study_refresh_without_games_consumes_accepted_priority(case,monkeypatch
 
 
 def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts(case, monkeypatch):
-    from test_scaled_game_priority_postgres import scale, receiving
+    from test_scaled_game_priority_postgres import scale
     from app.services.queue_priority_promotion import prepare_priority_promotion
     from tempo_legacy_database.adapters.study.game_feedback import owed_feedback_card_ids
     from tempo_legacy_database.adapters import postgres_store
@@ -246,14 +246,20 @@ def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_lo
     monkeypatch.setattr(postgres_store, 'configured', lambda: True)
     # Three entries suffice: two retained protected attempts and one target.
     with scale(case, 3) as (capture, snapshot, command):
+        def qualified_receiving(database, plan):
+            return current_owner_encounter_feedback(database, retained_owner_capture=capture, snapshot=snapshot,
+                clock=lambda: NOW, introductions=None, introduction_policy=EncounterIntroductionPolicy('encounter_exception'),
+                prepared_priority=plan, prepared_decisions=case.qualified.prepared.prepared_decisions)
+
         with case.transaction() as database:
             database.execute_native('UPDATE queue_attempt_origins SET issued_as_head=0 WHERE card_id=%s', (case.card_id,))
-            accepted = receiving(database, capture, snapshot, None).accept_encounter(command)
+            accepted = qualified_receiving(database, None).accept_qualified(
+                command, qualification=case.qualified.prepared.qualification)
             assert accepted.admission_status == 'pending'
             assert owed_feedback_card_ids(database, (case.card_id,)) == {case.card_id}
         prepared = prepare_priority_promotion(NOW.date().isoformat(), case.card_id, read=case.transaction)
         with case.transaction() as database:
-            available = receiving(database, capture, snapshot, prepared).refresh_encounter(command.key)
+            available = qualified_receiving(database, prepared).refresh_encounter(command.key)
             assert available.admission_status == 'available'
             assert available.owner_receipt_id == accepted.owner_receipt_id
             # A stale label on another fixture card is presentation-only;
@@ -311,7 +317,7 @@ def test_applied_game_priority_allows_bounded_daily_queue_preparation_without_lo
         assert all('?' in sql and not native and len(parameters) == 2 for sql, parameters, native in owed_calls)
         assert preserved() == before
         with case.transaction() as database:
-            replay = receiving(database, capture, snapshot, None).accept_encounter(command)
+            replay = qualified_receiving(database, None).accept_encounter(command)
             assert replay.owner_receipt_id == available.owner_receipt_id and replay.outcome == 'duplicate'
             assert replay.admission_status == 'available'
         assert preserved() == before
