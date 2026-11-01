@@ -490,11 +490,13 @@ separate operator gates.
 
 ```mermaid
 flowchart LR
-  Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + determined source pending"]
+  Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + ready source or control"]
   Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
   Pending --> Select["Read accepted Study responsibility and original priority"]
   Select --> Choice["Compare cheap local delivery metadata; controls first"]
-  Choice --> Routes["Complete authored-scope reads; close each ordinary bounded reader"]
+  Choice --> Prerequisite["Cheap retained-target prerequisite observation"]
+  Prerequisite -->|"held: retain debt, finite worker retry"| Ordinary["Unrelated valid Study continues"]
+  Prerequisite -->|"current or target unknown: qualify afresh"| Routes["Complete authored-scope reads; close each ordinary bounded reader"]
   Routes --> Proof["Repertoire-owned exact-game legal execution over every applicable route"]
   Proof --> Bindings["Elect first boundary; read complete bindings for every surviving route"]
   Bindings --> Prepare["Repertoire-owned snapshot; current Study target preparation outside writer"]
@@ -515,8 +517,12 @@ selects accepted Study work before invoking optional handoff, passing its origin
 priority as a cutoff to the local metadata selector. Controls retain precedence;
 a later optional delivery is not projected or captured before earlier accepted
 work. Retained unqualified work keeps its historical priority fallback. Recoverable
-preparation holds report `pending:true` and their owner reason rather than a
-false no-work result. Accepted Study preparation uses bounded foreground reads
+preparation holds report `pending:true`, `blocks_issuance:false` and their owner
+reason. A retry deadline only allows reconsideration; it does not restore ready
+authority. Old non-null priority sidecars are filtered against current payload
+status/error at reads and cleared lazily on owner writes. Retained qualified
+targets get a cheap current graph/integrity observation before any scope replay;
+restoration permits full qualification, never acceptance from the hint alone. Accepted Study preparation uses bounded foreground reads
 and continues independently of Games mode/process.
 
 Qualification uses the owning adapter's two finite reads: complete authored

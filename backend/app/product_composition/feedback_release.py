@@ -31,7 +31,8 @@ class PreparedCurrentGamesWork:
         from .provider_priority import apply_prepared_determined_feedback
         result = apply_prepared_determined_feedback(database,self.work,clock=self.clock,
             current_runtime_id=self.current_runtime_id)
-        return NextCardPreparation(result.progressed,result.pending,result.held_reason)
+        return NextCardPreparation(result.progressed,result.pending,result.held_reason,
+            blocks_issuance=bool(result.pending and result.progressed))
 
 
 def register_feedback_next_card_priority(*, workspace="legacy",read=None,clock=None):

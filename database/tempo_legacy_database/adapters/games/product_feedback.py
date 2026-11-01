@@ -9,7 +9,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime,timezone
 
-from app.games.feedback.ports import ConcurrentUpdate, Delivery, JobSpec, JobState, PageCommit, SourceState
+from app.games.feedback.ports import (ConcurrentUpdate, Delivery, JobSpec, JobState, PageCommit,
+    SourceState, delivery_blocks_issuance)
 
 SCHEMA_SQL = """
 CREATE TABLE product_feedback_jobs (
@@ -353,8 +354,9 @@ class PostgresGamesStore:
                        delivery.payload->'lapse'->'key'->>'workspace_id',
                        delivery.payload->'control'->'key'->>'workspace_id')=%s)
                   AND (NOT %s OR delivery.command_kind='control' OR (
-                       delivery.payload->>'qualification_status' IN ('ready','held')
-                       AND delivery.payload->'qualification'<>'null'::jsonb))
+                       delivery.payload->>'qualification_status'='ready'
+                       AND delivery.payload->>'error' IS NULL
+                       AND jsonb_typeof(delivery.payload->'qualification')='object'))
                 ORDER BY CASE WHEN command_kind='control' THEN 0
                     WHEN %s THEN CASE WHEN payload->>'stream'='forward' THEN 1 ELSE 2 END
                     WHEN COALESCE(payload->>'stream','')='forward'
@@ -397,6 +399,9 @@ def has_determined_delivery_in_transaction(database, workspace: str, *, before_s
     bound = ' AND handoff_priority COLLATE "C" < %s COLLATE "C"' if cutoff is not None else ''
     return execute("""SELECT EXISTS(SELECT 1 FROM product_feedback_deliveries
         WHERE state='pending' AND handoff_priority IS NOT NULL
+          AND (command_kind='control' OR (payload->>'qualification_status'='ready'
+               AND payload->>'error' IS NULL
+               AND jsonb_typeof(payload->'qualification')='object'))
           AND next_attempt_at<=extract(epoch FROM statement_timestamp())
           AND COALESCE(payload->'encounter'->'key'->>'workspace_id',
               payload->'lapse'->'key'->>'workspace_id',payload->'control'->'key'->>'workspace_id')=%s"""
@@ -418,13 +423,9 @@ def handoff_priority_for(delivery):
     Unqualified collection history has no sidecar. A legacy label/clock alone
     cannot enter the head hint; the actual witness must match the original.
     """
-    if delivery.state != "pending":
+    if not delivery_blocks_issuance(delivery):
         return None
     if delivery.control is not None:
         return ""
     witness = delivery.qualification
-    if (witness is None or not witness.matches(delivery.command)
-            or delivery.qualification_status not in {"ready","held"}
-            or (delivery.qualification_status == "held" and not delivery.qualification_retryable)):
-        return None
     return handoff_priority_key(witness.stream,witness.determined_at,delivery.owner_effect_id)

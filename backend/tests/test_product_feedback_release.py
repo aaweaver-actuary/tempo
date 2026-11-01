@@ -273,3 +273,73 @@ def test_native_new_source_before_prepared_successor_preserves_save_and_issues_t
     finally:
         with case.case.transaction() as database:
             database.execute_native('DELETE FROM cards WHERE id=ANY(%s)',([active,ordinary],))
+
+
+def test_unchanged_integrity_hold_skips_all_publication_work_and_recovers_same_key(monkeypatch):
+    """Finite retries observe owner facts, never replay scope for a known hold."""
+    from app.games.feedback.ports import DeliveryDeferred
+    from app.games.feedback.qualification import held_delivery
+    from app.services import postgres_integrity
+    from test_product_delivery_qualification import setup_case, qualify
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    case = setup_case()
+    original = qualify(case)
+    calls = []
+    ready = [False]
+    @contextmanager
+    def connections():
+        yield object()
+    def observe(database, repertoire_id):
+        calls.append(repertoire_id)
+        return SimpleNamespace(ready=ready[0], reason=None if ready[0] else 'integrity_scan_incomplete',
+            fingerprint='same-owner-version')
+    monkeypatch.setattr(postgres_integrity, 'observe_feedback_integrity_prerequisite', observe, raising=False)
+    monkeypatch.setattr(PostgresReviewStore, 'configuration', lambda *args:case.configuration)
+    monkeypatch.setattr(PostgresReviewStore, 'source_detail', lambda *args:case.source)
+    def publication(*args):
+        pytest.fail('held prerequisite projected a publication')
+    monkeypatch.setattr(product_snapshot, 'read_authored_scope', publication)
+    clock = SimpleNamespace(now=lambda:100, utc_now=lambda:original.determined_at)
+    held = original
+    for _ in range(3):
+        with pytest.raises(DeliveryDeferred, match='integrity_scan_incomplete') as caught:
+            provider_priority._qualified_facts(original.command, connections=connections,
+                clock=clock, delivery=held)
+        held = held_delivery(held, caught.value.reason, retry_at=100+caught.value.retry_after)
+        assert held.command.model_dump_json() == original.command.model_dump_json()
+        assert held.determined_at == original.determined_at
+    assert len(calls) == 3
+    ready[0] = True
+    provider_priority._observe_retained_prerequisite(held, case.source, case.configuration,
+        connections=connections)
+    # Recovery is permission to qualify again, never a manufactured witness.
+    recovered = qualify(case, held)
+    assert recovered.operation_id == original.operation_id
+    assert recovered.qualification_status == 'ready' and recovered.determined_at == original.determined_at
+
+
+def test_optional_held_apply_result_is_explicitly_nonblocking(monkeypatch):
+    monkeypatch.setattr(provider_priority, 'apply_prepared_determined_feedback',
+        lambda *args, **kwargs:provider_priority.LocalFeedbackProgress(False, True, 'integrity_scan_incomplete'))
+    prepared = feedback_release.PreparedCurrentGamesWork(object(), object(), 'boot')
+    result = prepared.apply(object())
+    assert result.pending and result.blocks_issuance is False
+
+
+def test_uncertain_ack_reconciles_original_owner_receipt_before_any_projection(monkeypatch):
+    from test_product_delivery_qualification import setup_case, qualify, QualifiedReceiver
+    original = qualify(setup_case())
+    receipt = QualifiedReceiver().accept_qualified(original.command, qualification=original.qualification)
+    uncertain = original.model_copy(update={'error':'owner_acknowledgment_uncertain', 'attempts':1})
+    # Construct only the tested existing receiver capabilities; no runtime or
+    # database bootstrap is required to prove this ordering.
+    intake = provider_priority.CurrentProviderPriorityIntake.__new__(provider_priority.CurrentProviderPriorityIntake)
+    intake.reads = SimpleNamespace(encounter_status=lambda key:receipt if key == original.command.key else None)
+    intake.connections = lambda:pytest.fail('unexpected source read')
+    intake.clock = SimpleNamespace(now=lambda:100)
+    monkeypatch.setattr(provider_priority, '_qualified_facts', lambda *args, **kwargs:pytest.fail('uncertain ack projected scope'))
+    resolved = intake.prepare(uncertain)
+    assert resolved.state == 'acknowledged' and resolved.receipt == receipt
+    assert resolved.command.model_dump_json() == original.command.model_dump_json()
+    assert resolved.operation_id == original.operation_id and resolved.determined_at == original.determined_at

@@ -6432,3 +6432,16 @@ thirty-transition recovery acceptance or genuine installed observations.
 needs-repair certificates, absent joins, queued newer graph generations, malformed
 scan evidence, stable dependency fingerprints and one-read nonmutating observation.
 The hint never replaces the final owner transaction's certificate/target fence.
+
+### Study reliability C — held feedback readiness (#660)
+
+`test_unchanged_integrity_hold_skips_all_publication_work_and_recovers_same_key`
+and `test_optional_held_apply_result_is_explicitly_nonblocking` in
+`backend/tests/test_product_feedback_release.py` prove finite prerequisite
+observations skip publication work while preserving the original identity and
+clock, and optional pending holds explicitly permit unrelated issuance.
+`test_native_retryable_determined_hold_recovers_when_due_without_foreground_idle`
+and `test_native_poisoned_priority_cannot_hide_later_ready_delivery` in
+`backend/tests/test_product_delivery_qualification.py` prove PostgreSQL read-side
+policy rejects stale priority sidecars and expired retry deadlines as authority,
+while retaining retryable debt and serving later ready live/history work.

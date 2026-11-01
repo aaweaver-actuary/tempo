@@ -981,8 +981,14 @@ def test_native_retryable_determined_hold_recovers_when_due_without_foreground_i
     assert not case.store.has_determined_delivery(case.workspace)
     due = held.model_copy(update={"next_attempt_at":0})
     case.store.save_delivery(due)
-    assert case.store.has_determined_delivery(case.workspace)
-    assert case.store.pending_delivery(time.time(),ready_only=True,workspace=case.workspace) == due
+    # Retry eligibility is not current issuance authority, including old rows
+    # whose historical derived sidecar was non-null.
+    with case.connections() as database:
+        database.execute("UPDATE product_feedback_deliveries SET handoff_priority='stale-priority' WHERE operation_id=%s",
+            (due.operation_id,))
+    assert not case.store.has_determined_delivery(case.workspace)
+    assert case.store.pending_delivery(time.time(),ready_only=True,workspace=case.workspace) is None
+    assert case.store.pending_delivery(time.time(),workspace=case.workspace) == due
 
 
 def test_native_inventory_distinguishes_qualification_and_acceptance(native_deliveries):
@@ -1034,3 +1040,32 @@ def test_native_ready_study_head_is_not_blocked_by_later_or_historical_outbox(na
         before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "0" * 64)
     assert case.store.has_determined_delivery(case.workspace, before_stream="reconciliation",
         before_determined_at=historical.determined_at, before_effect_id="game-effect:" + "f" * 64)
+
+
+@pytest.mark.parametrize('error', ['integrity_scan_incomplete', 'owner_acknowledgment_uncertain'])
+def test_native_poisoned_priority_cannot_hide_later_ready_delivery(native_deliveries, error):
+    """Old derived sidecars are hints, never authority after a retained hold."""
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore, handoff_priority_for
+    case = native_deliveries
+    poisoned = case.seed('forward', 1)
+    live = case.seed('forward', 2)
+    history = case.seed('reconciliation', 3)
+    updates = dict(error=error, next_attempt_at=0)
+    if error != 'owner_acknowledgment_uncertain':
+        updates.update(qualification_status='held', qualification_reason=error)
+    held = poisoned.model_copy(update=updates)
+    case.store.save_delivery(held)
+    assert handoff_priority_for(held) is None
+    with case.connections() as database:
+        database.execute('UPDATE product_feedback_deliveries SET handoff_priority=%s WHERE operation_id=%s',
+            (handoff_priority_for(poisoned), poisoned.operation_id))
+    restored = PostgresGamesStore(case.connections)
+    assert restored.pending_delivery(100, ready_only=True, workspace=case.workspace,
+        priority_order=True) == live
+    # Both ready streams remain available after process restart; retained debt
+    # is also reconsiderable by the optional producer under its original key.
+    restored.save_delivery(live.model_copy(update={'next_attempt_at':200}), serviced=True)
+    assert restored.pending_delivery(100, ready_only=True, workspace=case.workspace) == history
+    retained = restored.delivery(poisoned.operation_id)
+    assert retained.command.model_dump_json() == poisoned.command.model_dump_json()
+    assert retained.determined_at == poisoned.determined_at and retained.receipt is None
