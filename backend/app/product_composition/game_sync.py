@@ -187,6 +187,12 @@ class WorkflowComparer:
 
     def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
                 record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]:
+        if not any(route.reentries for route in snapshot.membership.routes):
+            # Keep full owner validation/bounds, without retaining JSON used
+            # only to key the optional positive reentry-index cache.
+            index = build_reentry_index(snapshot)
+            return compare_game(game, provider=spec.provider, time_precision=record.time_precision,
+                                snapshot=snapshot, reentry_lookup=index)
         encoded = snapshot.model_dump_json().encode()
         identity = sha256(encoded).digest()
         index = self._page_indexes.get(identity) if self._page_indexes is not None else None
