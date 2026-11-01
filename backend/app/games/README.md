@@ -57,3 +57,18 @@ After the integration import update, focused validation reused the existing
 `backend/tests/test_game_sync.py` fake provider-window, normalization/accounting
 and saved-job projection cases; `backend/tests/test_next_opponent_profile.py`
 owns deterministic profile/cohort/timezone behavior: all15regular cases pass. Eleven byte-exact existing provider/normalization/projection/DTO scenarios pass in a task-only pure wrapper, avoiding import of the mixed coordinator/Main workflow. Explicit MockTransport and connection/process guards remain active. No native, provider-network or full-system qualification is claimed.
+
+## Next-opponent HTTP read
+
+The profile router receives a read operation from product composition. Router
+construction only installs the existing GET route; the supplied operation retains
+the configured-storage check, read-only connection and error translation.
+
+```mermaid
+flowchart LR
+  http["Next-opponent HTTP router"] -->|"supplied read operation"| composition["Product composition"]
+  composition -->|"existing read connection"| owner["Published profile reader"]
+```
+
+Other Games routes, worker dependencies and deployed resource isolation are
+outside this route move.

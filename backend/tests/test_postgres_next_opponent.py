@@ -221,7 +221,8 @@ def test_issue107_http_contract_invalid_speed_unsupported_and_storage_error(monk
     def unavailable():
         raise psycopg.OperationalError("private internal details")
         yield
-    monkeypatch.setattr(main, "read_connection", unavailable)
+    from app.product_composition import next_opponent
+    monkeypatch.setattr(next_opponent, "read_connection", unavailable)
     response = client.get("/api/games/next-opponent-profile")
     assert response.status_code == 503
     assert "check Tempo service status" in response.json()["detail"]
@@ -235,7 +236,8 @@ def test_issue107_missing_settings_is_service_error_not_unknown_account(monkeypa
                         cursor() if "FROM settings" in statement else original_execute(statement, parameters))
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(database))
+    from app.product_composition import next_opponent
+    monkeypatch.setattr(next_opponent, "read_connection", lambda: nullcontext(database))
     response = TestClient(main.app).get("/api/games/next-opponent-profile")
     assert response.status_code == 503
     assert "check Tempo service status" in response.json()["detail"]
@@ -263,7 +265,8 @@ def test_issue107_profile_http_reads_only_published_account_snapshot(monkeypatch
                           published_generation=1, published_method=METHOD_VERSION)
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(database))
+    from app.product_composition import next_opponent
+    monkeypatch.setattr(next_opponent, "read_connection", lambda: nullcontext(database))
     response = TestClient(main.app).get("/api/games/next-opponent-profile?speed=rapid")
     assert response.status_code == 200
     payload = response.json()

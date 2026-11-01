@@ -18,7 +18,6 @@ from typing import Literal
 import chess
 import chess.pgn
 import httpx
-import psycopg
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,7 +53,8 @@ from tempo_legacy_database.adapters.foreground_controls import repertoires as re
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
-from app.contracts.next_opponent import NextOpponentProfileResponse, ProfileSpeed
+from app.games.opponents.http import create_next_opponent_router
+from app.product_composition.next_opponent import read_next_opponent_profile
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
 from .study_routes import create_study_router
@@ -2967,18 +2967,7 @@ def sync(request: GameSyncRequest,
     }
 
 
-@app.get("/api/games/next-opponent-profile", response_model=NextOpponentProfileResponse)
-def next_opponent_profile(speed: ProfileSpeed = "auto"):
-    if not postgres_store.configured():
-        return NextOpponentProfileResponse(availability="unsupported", refresh_status="idle",
-            stale=True, requested_speed=speed,
-            detail="Next-opponent publication requires the PostgreSQL product. Study remains available.")
-    from .services.postgres_next_opponent import read_profile
-    try:
-        with read_connection() as database:
-            return read_profile(database, speed)
-    except psycopg.Error as error:
-        raise HTTPException(503, "Next-opponent profile storage is unavailable; check Tempo service status and retry.") from error
+app.include_router(create_next_opponent_router(read_next_opponent_profile))
 
 
 @app.get("/api/games/sync/status", response_model=GameSyncStatusResponse)
