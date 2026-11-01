@@ -9,13 +9,56 @@ from fastapi.responses import JSONResponse
 from tempo_learning_database.connections import connection, current_database
 from .review_conflicts import ReviewConflict
 
-_handlers = {}
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from functools import lru_cache
+from types import MappingProxyType
 
 
-def register_command(name, handler, **unused):
-    if name in _handlers:
-        raise ValueError("Duplicate Learning command: " + name)
-    _handlers[name] = handler
+@dataclass(frozen=True, init=False, eq=False)
+class CommandRegistry:
+    """Immutable command definitions selected by one execution composition."""
+    def __init__(self, definitions):
+        handlers = {}
+        for name, handler in definitions:
+            if name in handlers:
+                raise ValueError("Duplicate Learning command: " + name)
+            handlers[name] = handler
+        object.__setattr__(self, "_definitions", MappingProxyType(handlers))
+
+    def __contains__(self, name):
+        return name in self._definitions
+
+    def handler(self, name):
+        return self._definitions[name]
+
+    @property
+    def names(self):
+        return frozenset(self._definitions)
+
+
+_selected_registry = ContextVar("learning_command_registry", default=None)
+
+
+@lru_cache(maxsize=1)
+def default_registry():
+    # Direct callers retain a complete immutable registry without an app startup.
+    from .api import register_handlers
+    return register_handlers()
+
+
+def current_registry():
+    return _selected_registry.get() or default_registry()
+
+
+@contextmanager
+def registry_scope(registry):
+    token = _selected_registry.set(registry)
+    try:
+        yield registry
+    finally:
+        _selected_registry.reset(token)
 
 
 def request_digest(name, payload):
@@ -28,7 +71,7 @@ def request_digest(name, payload):
 
 
 def record_intent(operation_id, name, payload):
-    if name not in _handlers:
+    if name not in current_registry():
         raise HTTPException(422, "Unknown Learning command")
     if not operation_id or len(operation_id) > 128:
         raise HTTPException(422, "Idempotency-Key must contain 1 to 128 characters")
@@ -70,7 +113,7 @@ def execute(operation_id, *, background=False, publication=None):
                         "review_attempt_reused",
                         "Attempt ID was already used with another response",
                     )
-            result = _handlers[row["command_name"]](database, payload)
+            result = current_registry().handler(row["command_name"])(database, payload)
         except (
             psycopg.OperationalError,
             psycopg.InterfaceError,

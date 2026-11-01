@@ -18,7 +18,6 @@ DAY=date(2026,10,21);NOW=datetime(2026,10,21,12,tzinfo=timezone.utc)
 @pytest.fixture
 def endpoints(monkeypatch):
     monkeypatch.setattr(api,'Database',lambda _: object())
-    monkeypatch.setattr(api.gateway,'_handlers',{})
     app=api.create_app(Configuration('workspace','unused','unused','x'*40,maintenance=False))
     return {route.path:route.endpoint for route in app.routes if hasattr(route,'endpoint')}
 
