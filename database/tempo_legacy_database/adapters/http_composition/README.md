@@ -143,3 +143,9 @@ The native owning regression verifies results, protected entries, count, borrowe
 transaction identity and restoration. Paired disposable timing establishes the
 compiler mechanism; installed latency and the complete saved-review-to-playable
 journey require separate acceptance.
+
+Proposed #708 queue serving projection explicitly selects the current card
+columns rather than `cards.*`; queue predicates, joins, candidate limits,
+ordering and count/head operations remain unchanged. The Study queue-serving
+assembler owns flat response shaping; the HTTP composition retains separate
+advisory reads and head issuance.
