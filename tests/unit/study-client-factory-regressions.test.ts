@@ -40,7 +40,16 @@ it('two_clients_cannot_cross_authorities_or_credentials', async () => {
   await two.learningFetch('https://b.example/api/queue/today');
   expect(requests.at(-1)!.headers.get('Authorization')).toBe(`Bearer ${keyB}`);
   await expect(one.learningFetch('https://b.example/api/queue/today')).rejects.toThrow('unavailable');
-  await expect(one.learningFetch('https://b.example/assets/x')).rejects.toThrow('unavailable');
+  const controller = new AbortController();
+  const asset = new Request('https://b.example/assets/x', { method:'POST', body:'asset bytes',
+    signal:controller.signal, headers:{ 'X-Caller':'retained' } });
+  await one.learningFetch(asset);
+  const passthrough = requests.at(-1)!;
+  expect(await passthrough.text()).toBe('asset bytes');
+  expect(passthrough.headers.get('X-Caller')).toBe('retained');
+  expect(passthrough.headers.has('Authorization')).toBe(false);
+  expect(passthrough.headers.has('X-Tempo-Workspace')).toBe(false);
+  controller.abort(); expect(passthrough.signal.aborted).toBe(true);
   expect(one.studyWorkspace()).toBe('https://a.example:study:alpha');
   expect(two.studyWorkspace()).toBe('https://b.example:study:beta');
   one.disconnectStudy(); expect(two.studyConnection()?.workspace).toBe('beta');

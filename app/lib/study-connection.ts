@@ -122,10 +122,8 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
     const requestGeneration = connectionGeneration;
     const original = input instanceof Request ? input.url : String(input);
     const url = new URL(original, connection.origin);
-    if (url.origin !== connection.origin)
-      throw new Error("This capability is unavailable in independent Study. Open Workbench.");
     if (!url.pathname.startsWith("/api/")) return transport(input, options);
-    if (!learningPaths.test(url.pathname))
+    if (url.origin !== connection.origin || !learningPaths.test(url.pathname))
       throw new Error("This capability is unavailable in independent Study. Open Workbench.");
     const headers = new Headers(options.headers ?? (input instanceof Request ? input.headers : undefined));
     headers.delete("X-Tempo-Work-Class");
