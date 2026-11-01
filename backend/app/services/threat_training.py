@@ -23,8 +23,9 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
+from app.study.queue_placement import ensure_card_queued_after
 from .review_service import (
-    apply_scheduling_review, ensure_card_queued_after,
+    apply_scheduling_review,
     rebuild_defense_schedule,
 )
 from .threat_grading import DefenseExercise, grade_defense_move

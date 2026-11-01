@@ -158,7 +158,7 @@ def admit_prelocked(database, card_id, day):
         buried = storage.buried_entry(database, card_id, day) is not None
         class PrelockedWriter:
             def apply(self, proposal):
-                from .review_service import ensure_card_queued_after
+                from app.study.queue_placement import ensure_card_queued_after
                 if not frozen_valid:
                     return AdmissionResult("deferred", "frozen_order_changed")
                 ensure_card_queued_after(database, card_id, 0, priority_reason=BRIDGE_MISS_REASON,

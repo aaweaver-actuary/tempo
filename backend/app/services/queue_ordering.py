@@ -26,7 +26,7 @@ def _priority_projection(rows):
 
 def _priority_queue_order(rows):
     originals = {row["id"]: row for row in rows}
-    return [originals[row["id"]] for row in _owned._priority_queue_order(_priority_projection(rows))]
+    return [originals[row["id"]] for row in _owned.priority_queue_order(_priority_projection(rows))]
 
 
 def _protected_queue_ids(rows, *, preserve_through_entry_id=None, urgent=False):

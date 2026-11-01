@@ -141,7 +141,8 @@ def assert_one_again_preserves_human_history(database, case, before, effect):
 
 
 def test_intake_never_calls_queue_and_commits_once_when_refresh_fails(case,monkeypatch):
-    from app.services import queue_priority_promotion,queue_presentation,review_service,queue_application
+    from app.services import queue_priority_promotion,queue_presentation,queue_application
+    from app.study import queue_placement
     from tempo_legacy_database.adapters import postgres_store
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     with representative(case) as (capture,snapshot,command):
@@ -151,8 +152,8 @@ def test_intake_never_calls_queue_and_commits_once_when_refresh_fails(case,monke
         with monkeypatch.context() as guard:
             guard.setattr(queue_priority_promotion,'prepare_priority_promotion',forbidden)
             guard.setattr(queue_presentation,'presentation_rows',forbidden)
-            guard.setattr(review_service,'presentation_rows',forbidden)
-            guard.setattr(review_service,'ensure_card_queued_after',forbidden)
+            guard.setattr(queue_placement,'presentation_rows',forbidden)
+            guard.setattr(queue_placement,'ensure_card_queued_after',forbidden)
             guard.setattr(queue_application,'request_queue_refresh_in_transaction',forbidden)
             guard.setattr(PostgresGameFeedbackStore,'promote_encounter',forbidden)
             guard.setattr(PostgresGameFeedbackStore,'lock_target',forbidden)

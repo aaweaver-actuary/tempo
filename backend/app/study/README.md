@@ -385,3 +385,19 @@ flowchart LR
   commands --> owner["Existing opening-evidence service"]
   owner --> storage["Existing evidence storage and caller transaction"]
 ```
+## Queue placement ownership
+
+`queue_placement.ensure_card_queued_after` places cards using the caller's
+transaction and the existing database adapter. The review-service export remains
+an identical compatibility alias. Queue receipt capture and preservation remain
+in `queue_order`; priority ordering delegates through the backend normalization
+adapter to Learning's public `priority_queue_order`.
+
+```mermaid
+flowchart LR
+    Caller --> Placement[Study queue placement]
+    Placement --> Receipt[Study queue order receipt]
+    Placement --> Storage[Study database adapter]
+    Placement --> Normalize[Backend priority normalization]
+    Normalize --> Policy[Learning priority ordering]
+```

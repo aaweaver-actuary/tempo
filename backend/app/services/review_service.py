@@ -9,10 +9,8 @@ from tempo_legacy_database.adapters.study.review.storage import sqlite3
 
 from tempo_legacy_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
-from .queue_presentation import presentation_rows
-from .queue_ordering import _priority_queue_order
-from .queue_priority_promotion import StalePriorityPromotion, priority_changes
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
+from app.study.queue_placement import ensure_card_queued_after
 
 
 def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
@@ -81,54 +79,3 @@ def apply_scheduling_review(
         clear_satisfied_miss_priority(database, card_id)
     unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), result["state"])
     return result
-
-
-def ensure_card_queued_after(
-    database: sqlite3.Connection,
-    card_id: str,
-    after_cards: int = 4,
-    attempt_state: str = "gameplay",
-    priority_reason: str | None = None,
-    *, queue_date: str | None = None, protect_presented: bool = False,
-    preserve_order: bool = True, prepared_priority=None, priority_order=None,
-) -> None:
-    day = queue_date or date.today().isoformat()
-    previous_order = capture_daily_queue_order(database, day) if preserve_order else None
-    if prepared_priority is not None:
-        if (not protect_presented or preserve_order
-                or (day,card_id,priority_reason) != (prepared_priority.queue_date,
-                    prepared_priority.card_id,prepared_priority.priority_reason)
-                or storage.priority_ownership_state(database,day,target_card_id=card_id) != prepared_priority.ownership_state):
-            raise StalePriorityPromotion('priority_presentation_changed')
-    entry = storage.queued_entry(database, day, card_id)
-    if prepared_priority is not None and (not entry or entry['id'] != prepared_priority.entry_id):
-        raise StalePriorityPromotion('priority_target_changed')
-    if not entry:
-        cycle = storage.next_cycle(database, day, card_id)
-        entry = storage.insert_entry(database, day, card_id, cycle, protect_presented, attempt_state, priority_reason)
-    elif priority_reason:
-        storage.set_priority(database, priority_reason, entry["id"])
-    if protect_presented:
-        if prepared_priority is not None:
-            changes = prepared_priority.changes
-        else:
-            rows = presentation_rows(database, day)
-            if priority_reason in {'product_game_lapse','product_game_encounter'}:
-                changes = priority_changes(rows,card_id,priority_reason,priority_order=priority_order)
-            else:
-                changes = tuple((row['id'],row['position'],slot['position'])
-                    for slot,row in zip(sorted(rows,key=lambda row:(row['position'],row['id'])),
-                                        _priority_queue_order(rows))
-                    if slot['position'] != row['position'])
-        try:
-            storage.apply_priority_positions(database,day,changes)
-        except storage.PriorityPositionConflict as error:
-            raise StalePriorityPromotion('priority_positions_changed') from error
-    else:
-        ordered_ids = [row[0] for row in storage.other_queued_entries(database, day, entry["id"])]
-        ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
-        for position, entry_id in enumerate(ordered_ids):
-            storage.set_position(database, position, entry_id)
-    storage.classify_entry(database, entry["id"])
-    if preserve_order:
-        preserve_daily_queue_order(database, day, previous=previous_order)
