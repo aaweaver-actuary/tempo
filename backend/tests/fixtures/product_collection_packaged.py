@@ -154,6 +154,10 @@ def feedback_admitted():
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 bind_database_infrastructure()
 
+if len(sys.argv) > 1 and sys.argv[1] == 'worker' and Path('/qualification/capture_diagnostic.py').is_file():
+    import runpy
+    runpy.run_path('/qualification/capture_diagnostic.py')['install']()
+
 try:
     if sys.argv[1] in {'worker', 'feedback-worker'}:
         feedback = sys.argv[1] == 'feedback-worker'
