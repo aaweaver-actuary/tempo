@@ -15,7 +15,7 @@ from app.contracts.transport.tactics import TacticCaptureRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import finding_cards as storage
 from app.chess.cards import card_id
-from .services.review_service import ensure_card_queued_after
+from .study.queue_placement import ensure_card_queued_after
 from .services.tactic_capture import game_capture_id, validate_tactic_line
 from .product_composition.tactic_capture import capture_tactic
 from .contracts.tactic_capture import TacticCaptureValidationError
