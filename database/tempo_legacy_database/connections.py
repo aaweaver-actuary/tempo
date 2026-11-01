@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from app.services.activity_gate import activity_gate
+from tempo_legacy_database.infrastructure import database_admission, database_measurement
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
@@ -45,9 +45,8 @@ DB_PATH = Path(
 
 @contextmanager
 def _measured_background_database_section():
-    from app.services.background_runtime import database_stage
     # Stage publication is outside the admission lease and local reservation.
-    with database_stage(), activity_gate.background_database_section():
+    with database_measurement(), database_admission().background_database_section():
         yield
 
 
@@ -58,7 +57,7 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
             yield database
         return
     if postgres_store.configured():
-        activity_gate.assert_foreground_connection_allowed(background)
+        database_admission().assert_foreground_connection_allowed(background)
         if background:
             gate_started = time.perf_counter()
             with _measured_background_database_section():
@@ -77,12 +76,12 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
             with postgres_store.connection(read_only=False) as database:
                 yield database
         return
-    activity_gate.assert_foreground_connection_allowed(background)
+    database_admission().assert_foreground_connection_allowed(background)
     if not background:
         # A background writer may already have acquired SQLite's write lock by
         # the time this foreground request enters the activity gate. Wait for
         # that bounded section to commit instead of surfacing a transient 503.
-        activity_gate.wait_for_background_sections()
+        database_admission().wait_for_background_sections()
     section = _measured_background_database_section() if background else None
     section_wait_started = time.perf_counter() if background else None
     if section is not None:
@@ -110,7 +109,7 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
         finally:
             if section is not None:
                 section_duration = time.perf_counter() - database_started
-                job = activity_gate.current_job
+                job = database_admission().current_job
                 job_label = f"{job[0]}:{job[1]}" if job else "unknown"
                 _LOGGER.info(
                     "background database section job=%s foreground_wait=%.3fs database_duration=%.3fs",

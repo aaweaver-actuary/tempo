@@ -18,3 +18,20 @@ Fields such as `source_ref`, publication generation, JSON payload identities and
 The dictionaries distinguish nullable fields, primary/composite keys, enforced FKs and uniqueness. Defaults/checks/triggers/partial or expression indexes remain authoritative in the linked DDL; they are not restated as extra relationships.
 
 [Native bridge proofs](tests/legacy_bridge/README.md),[Discovery acceptance proofs](tests/discovery_acceptance/README.md),[queue admission proofs](tests/queue_admission/README.md) and their [finite qualification/resource tooling](tooling/legacy_bridge/README.md) now live under this owner. Source paths and discovery change; native execution remains unverified and is not triggered by navigation or ordinary application tests.
+
+## Supplied database infrastructure (D1)
+
+The connection router and SQLite writer consume the admission and measurement
+capabilities in [infrastructure.py](infrastructure.py). Composition must bind the
+existing activity gate singleton and `database_stage` before controlled access;
+missing binding fails explicitly. The gate, measurement context, compatibility
+lock and transaction ownership remain unchanged. This source increment needs the
+separate composition binding before application integration.
+
+```mermaid
+flowchart LR
+    C[Application composition] -->|supplies existing gate and stage| P[Database infrastructure port]
+    R[Legacy connection router and writer] -->|admission and measurement| P
+    P --> G[Existing activity gate and measurement context]
+    R --> S[(Legacy database)]
+```
