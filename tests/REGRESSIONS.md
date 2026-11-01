@@ -6588,3 +6588,7 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Recovery backlog includes executable response segments (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` selects 576 actual generated opening prefix/response cards, including response segments with an initial opponent cue. Restricting to white-start shared prefixes left only two candidates in the first representative publication despite 1,261 executable non-target cards. The actual generator's selected 576 cards all replay legally and contain a trained-color decision; complete ten-repertoire shape assertions and the thirty actual browser transitions remain required.
+
+### Recovery observer correlates the supported review receipt (#668)
+
+`tests/browser/study-recovery.spec.ts::packaged recovery records thirty authoritative playable transitions` retains original POST attempt/command identity and supported persisted card/queue/positive review identity, with exact host `review_attempt_receipts` lookup by attempt after measurement. A fixture observer must not demand a nonexistent echoed attempt field: the bacd run committed review586 and advanced to the next real board in the first transition, but the observer threw before recording persistence. Full thirty-transition success still requires the unchanged latency, failure and owner-origin assertions.
