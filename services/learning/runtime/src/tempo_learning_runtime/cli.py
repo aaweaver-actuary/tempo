@@ -46,11 +46,11 @@ def main():
             from . import gateway, publications
             from .api import register_handlers
 
-            register_handlers()
+            registry = register_handlers()
             database = Database(configuration)
             try:
                 payload = json.loads(arguments.file.read_text())
-                with database.scope():
+                with database.scope(), gateway.registry_scope(registry):
                     if arguments.command == "stage":
                         with connection() as transaction:
                             result = publications.stage(
@@ -75,10 +75,14 @@ def main():
             )
         else:
             from .maintenance import run_once
+            from . import gateway
+            from .api import register_handlers
+
+            registry = register_handlers()
 
             database = Database(configuration)
             try:
-                with database.scope():
+                with database.scope(), gateway.registry_scope(registry):
                     print(json.dumps({"work_performed": run_once()}))
             finally:
                 database.close()

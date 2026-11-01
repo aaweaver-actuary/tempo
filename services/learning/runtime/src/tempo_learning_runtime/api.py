@@ -81,10 +81,6 @@ def save_endgame_attempt(db, payload):
 
 
 def register_handlers():
-    if "queue.issue_head" not in gateway._handlers:
-        queue_commands.register_handlers()
-    if "studies.attempts.submit" not in gateway._handlers:
-        study_attempt_commands.register_handlers()
     handlers = {
         "study.settings.update": study_bootstrap.update_settings,
         "cards.teaching.record": teaching_commands.record_teaching,
@@ -108,13 +104,13 @@ def register_handlers():
         "publication.activate.v2": publication_bridge.activate,
         "publication.retire": retire,
     }
-    for name, handler in handlers.items():
-        if name not in gateway._handlers:
-            gateway.register_command(name, handler)
+    return gateway.CommandRegistry((*queue_commands.handler_definitions(),
+                                    *study_attempt_commands.handler_definitions(),
+                                    *handlers.items()))
 
 
 def create_app(configuration: Configuration):
-    register_handlers()
+    registry = register_handlers()
     database = Database(configuration)
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
@@ -125,7 +121,7 @@ def create_app(configuration: Configuration):
 
         async def maintain():
             while not stopping.is_set():
-                with database.scope():
+                with database.scope(), gateway.registry_scope(registry):
                     await asyncio.to_thread(safe_run_once)
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=0.1)
@@ -145,6 +141,7 @@ def create_app(configuration: Configuration):
                 database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
+    app.state.command_registry = registry
     app.state.database = database
     app.state.host_activity = activity
 
@@ -200,7 +197,7 @@ def create_app(configuration: Configuration):
         # Optional host reporting stays outside the durable transaction owner.
         # A pending essential request remains protected even if its browser is suspended.
         essential = request.url.path.startswith("/api/") and request.url.path != "/api/study/activity" and request.method != "OPTIONS"
-        with database.scope():
+        with database.scope(), gateway.registry_scope(registry):
             if essential:
                 async with request_activity():
                     return await call_next(request)
