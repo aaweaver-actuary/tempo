@@ -1,5 +1,5 @@
 """Settings descriptor adoption through the real gateway and receipt flow."""
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 import copy
 import json
@@ -112,3 +112,51 @@ def test_failed_settings_queue_request_does_not_wake(runtime, monkeypatch):
     error = json.loads(receipts['failed-op'][4])
     assert error['status_code'] == 503 and error['detail'] == 'queue unavailable'
     assert effects[-1] == 'rollback' and wakes == []
+
+
+def test_settings_commit_policy_hook_precedes_wake_and_replays(runtime, monkeypatch):
+    events = []
+
+    @contextmanager
+    def writer(*_):
+        events.append('open')
+        yield object()
+        events.extend(['commit', 'close'])
+
+    monkeypatch.setattr(gateway, '_writer_connection', writer)
+    monkeypatch.setattr(study_priority, 'refresh_policy', lambda: events.append('policy'))
+    monkeypatch.setattr(queue_refresh_wakeup, 'wake_queue_refresh', lambda: events.append('wake'))
+    first = gateway.execute_command('ordered-op', 'settings.update', payload())
+    assert events == ['open', 'commit', 'close', 'policy', 'wake']
+    events.clear()
+    assert gateway.execute_command('ordered-op', 'settings.update', payload()) == first
+    assert events == ['open', 'commit', 'close', 'policy']
+
+
+def test_failed_settings_skips_policy_and_wake(runtime, monkeypatch):
+    events = []
+    monkeypatch.setattr(study_priority, 'refresh_policy', lambda: events.append('policy'))
+    monkeypatch.setattr(queue_refresh_wakeup, 'wake_queue_refresh', lambda: events.append('wake'))
+    assert gateway.execute_command('invalid-hook-op', 'settings.update', {'settings': {}, 'supplied_fields': ['unknown']}) is None
+    assert events == []
+
+
+def test_settings_policy_hook_exception_occurs_after_commit_before_wake(runtime, monkeypatch):
+    events = []
+
+    @contextmanager
+    def writer(*_):
+        yield object()
+        events.extend(['commit', 'close'])
+
+    def fail_policy():
+        events.append('policy')
+        raise RuntimeError('policy unavailable')
+
+    monkeypatch.setattr(gateway, '_writer_connection', writer)
+    monkeypatch.setattr(study_priority, 'refresh_policy', fail_policy)
+    monkeypatch.setattr(queue_refresh_wakeup, 'wake_queue_refresh', lambda: events.append('wake'))
+    with pytest.raises(RuntimeError, match='policy unavailable'):
+        gateway.execute_command('hook-error-op', 'settings.update', payload())
+    assert events == ['commit', 'close', 'policy']
+    assert runtime[0]['hook-error-op'][2] == 'complete'
