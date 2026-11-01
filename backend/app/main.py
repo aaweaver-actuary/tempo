@@ -96,8 +96,8 @@ from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from app.chess.evaluation import classify_swings
-from .services.game_analysis_worker import (
-    EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
+from .services.game_analysis_runtime import (
+    evidence_version as game_worker_evidence_version,
     build_game_evaluations, claim_position, release_position, save_position_report,
 )
 from .services.game_findings import motif_recommendations
@@ -3301,11 +3301,12 @@ def finalize_game_analysis_position(
         evaluations = build_game_evaluations(parent_job)
     except (KeyError, ValueError) as error:
         raise HTTPException(409, f"Game analysis is incomplete: {error}") from error
+    evidence_version = game_worker_evidence_version()
     submission = GameAnalysisRequest(
         evaluations=evaluations, depth=14, lease_id=request.lease_id,
-        idempotency_key=f"{row['game_id']}:analysis:{row['analysis_version']}:evidence:{GAME_WORKER_EVIDENCE_VERSION}",
+        idempotency_key=f"{row['game_id']}:analysis:{row['analysis_version']}:evidence:{evidence_version}",
         analysis_version=row["analysis_version"],
-        analysis_evidence_version=GAME_WORKER_EVIDENCE_VERSION,
+        analysis_evidence_version=evidence_version,
         engine_version="Stockfish 19 WASM", network_version="nn-61e7af4bb97d.nnue",
     )
     if postgres_store.configured():
