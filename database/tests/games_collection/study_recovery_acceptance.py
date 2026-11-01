@@ -33,6 +33,15 @@ def memory_observation(docker, container):
         return dict(observation_error=type(error).__name__)
 
 
+def _wait_for_original_retry(held, *, now=time.time, monotonic=time.monotonic, sleep=time.sleep):
+    """Wait for this delivery's durable retry deadline without changing identity."""
+    deadline = monotonic() + 45
+    while now() < held['next_attempt_at']:
+        assert monotonic() < deadline, 'held_original_retry_deadline_not_reached'
+        sleep(.1)
+    return now()
+
+
 def _rows(transaction, table, columns, values, *, conflict=''):
     """Bounded committed fixture writes keep all normal production triggers."""
     for offset in range(0, len(values), 100):
@@ -300,7 +309,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         node = game
         for uci in [*target['prefix'], target['wrong']]:
             node = node.add_variation(chess.Move.from_uci(uci))
-        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp()) + 61
+        inputs['now'] = datetime.now(timezone.utc).timestamp()
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['revision'] += 1
         inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
@@ -350,7 +359,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
                 break
         else:
             raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
-        inputs['now'] += 31
+        inputs['now'] = _wait_for_original_retry(held)
         (directory/'provider.json').write_text(json.dumps(inputs))
         retry = entry('foreground-worker', 'retry-local-feedback')
         current = entry('api', 'feedback-state', operation)
@@ -360,6 +369,12 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         final_browser = wait_browser('complete')
         assert held_browser.wait(timeout=5)==0
         settled = entry('api','feedback-state',operation)
+        receipt = settled.get('receipt') or {}
+        progress = receipt.get('progress') or {}
+        report['held_settlement_observation'] = dict(
+            operation_id=operation, command_matches=settled['command'] == original,
+            receipt_status=receipt.get('status'), determined_at=progress.get('determined_at'),
+            first_issued=progress.get('first_issued'), retry_deadline=held['next_attempt_at'])
         assert settled['command']==original and settled['receipt']['status']=='settled'
         assert settled['receipt']['progress']['scheduling_review_id'] is not None
         assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
