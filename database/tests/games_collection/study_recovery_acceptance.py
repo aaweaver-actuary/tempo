@@ -254,8 +254,12 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             assert held_browser.poll() is None, 'held_browser_failed_before_'+stage
             assert time.monotonic()<deadline, 'held_browser_stage_timeout_'+stage
             time.sleep(.05)
-    docker('pause', background)
+    paused_background = paused_collector = False
     try:
+      docker('pause', background)
+      paused_background = True
+      docker('pause', collector)
+      paused_collector = True
       with (directory/'hold-browser.log').open('w') as output:
         held_browser = subprocess.Popen([shutil.which('node'), str(root/'node_modules/@playwright/test/cli.js'),
             'test','tests/browser/real-game-feedback.spec.ts','--config=playwright.config.ts','--project=chromium',
@@ -300,68 +304,69 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             assert len(rows) == 1 and rows[0]['payload']['state'] == 'pending'
             operation, original = rows[0]['operation_id'], rows[0]['payload']['encounter']
             graph = database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s', (repertoire,)).fetchone()[0]
-        paused = False
-        try:
-            docker('pause', collector)
-            paused = True
-            assert entry('foreground-worker', 'hold-integrity', repertoire)['invalidated']
-            prepared = confirmed(api('POST', '/api/queue/prepare-next', {}, 'held-prepare:' + uuid.uuid4().hex))
-            assert prepared['pending'] and prepared['blocks_issuance'] is False, prepared
-            with case.transaction() as database:
-                held = database.execute_native('SELECT payload FROM product_feedback_deliveries WHERE operation_id=%s', (operation,)).fetchone()[0]
-                assert held['qualification_status'] == 'held' and held['encounter'] == original
-                assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE identity_json::jsonb->>'game_id'=%s", (original['key']['game_id'],)).fetchone()[0] == 0
-            release('held')
-            saved_marker = wait_browser('saved')
-            saved = saved_marker['saved']
-            assert saved['persisted'] and saved_marker['replay'] == saved
-            assert saved_marker['control'] == card['id']
-            assert saved_marker['successor'] in controls and saved_marker['successor'] != card['id']
-            ordinary = api('GET', '/api/queue/window?limit=2')
-            assert ordinary['status'] == 200 and ordinary['body']['cards'][0]['id'] == saved_marker['successor'], ordinary
-            day = ordinary['body']['local_date']
-            release('go-away')
-            wait_browser('away')
-            deadline = time.monotonic()+45
-            while api('GET','/api/system/foreground-active')['body'].get('active') is not False:
-                assert time.monotonic()<deadline, 'held_browser_visibility_lease_not_released'
-                time.sleep(.1)
-            scan = entry('foreground-worker', 'request-integrity', repertoire, str(graph), day)
-            phases = []
-            for _ in range(128):
-                recovered = entry('foreground-worker', 'step-integrity', scan['task_id'], repertoire,
-                    str(scan['generation']), day, str(graph))
-                phases.extend(recovered['phases'])
-                if recovered['complete']:
-                    break
-            else:
-                raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
-            inputs['now'] += 31
-            (directory/'provider.json').write_text(json.dumps(inputs))
-            retry = entry('foreground-worker', 'retry-local-feedback')
-            current = entry('api', 'feedback-state', operation)
-            assert current['command'] == original and current['receipt'] is not None
-            assert current['receipt']['key'] == original['key']
-            release('restored')
-            final_browser = wait_browser('complete')
-            assert held_browser.wait(timeout=5)==0
-            settled = entry('api','feedback-state',operation)
-            assert settled['command']==original and settled['receipt']['status']=='settled'
-            assert settled['receipt']['progress']['scheduling_review_id'] is not None
-            assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
-            crash = json.loads((directory/'essential-crashed.json').read_text())
-            with case.transaction() as database:
-                events = [dict(row) for row in database.execute_native("SELECT event,phase,generation FROM background_task_events WHERE task_id=%s AND generation=%s ORDER BY id", (crash['task_id'],crash['generation'])).fetchall()]
-                assert any(item['event']=='slice_complete' for item in events) and any(item['event']=='published' for item in events)
-            report['essential_queue_crash_recovery'] = dict(crash=crash, events=events, browser_waiting=policy['body']['active'], optional_worker_paused=True)
-            report['held_prerequisite_recovery'] = dict(source_id=source_id, operation_id=operation,
-                original=original, held=held, saved=saved, control_card_id=card['id'], browser=final_browser,
-                core_queue_after_save=ordinary['status'], owner_scan=scan, owner_phases=phases,
-                local_retry=retry, recovered_receipt=current['receipt'], settled_receipt=settled['receipt'], collector_stopped=True,
-                classification='synthetic packaged owner restoration and actual browser save; separate 30-transition browser measurements follow')
-        finally:
-            if paused:
-                docker('unpause', collector)
+        qualified = entry('foreground-worker','qualify-local-feedback',operation)
+        assert qualified['qualified'] and qualified['operation_id']==operation
+        assert entry('foreground-worker', 'hold-integrity', repertoire)['invalidated']
+        prepared = confirmed(api('POST', '/api/queue/prepare-next', {}, 'held-prepare:' + uuid.uuid4().hex))
+        assert prepared['pending'] and prepared['blocks_issuance'] is False, prepared
+        with case.transaction() as database:
+            held = database.execute_native('SELECT payload FROM product_feedback_deliveries WHERE operation_id=%s', (operation,)).fetchone()[0]
+            assert held['qualification_status'] == 'held' and held['encounter'] == original
+            assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE identity_json::jsonb->>'game_id'=%s", (original['key']['game_id'],)).fetchone()[0] == 0
+        release('held')
+        saved_marker = wait_browser('saved')
+        saved = saved_marker['saved']
+        assert saved['persisted'] and saved_marker['replay'] == saved
+        assert saved_marker['control'] == card['id']
+        assert saved_marker['successor'] in controls and saved_marker['successor'] != card['id']
+        ordinary = api('GET', '/api/queue/window?limit=2')
+        assert ordinary['status'] == 200 and ordinary['body']['cards'][0]['id'] == saved_marker['successor'], ordinary
+        day = ordinary['body']['local_date']
+        release('go-away')
+        wait_browser('away')
+        deadline = time.monotonic()+45
+        while api('GET','/api/system/foreground-active')['body'].get('active') is not False:
+            assert time.monotonic()<deadline, 'held_browser_visibility_lease_not_released'
+            time.sleep(.1)
+        scan = entry('foreground-worker', 'request-integrity', repertoire, str(graph), day)
+        phases = []
+        for _ in range(128):
+            recovered = entry('foreground-worker', 'step-integrity', scan['task_id'], repertoire,
+                str(scan['generation']), day, str(graph))
+            phases.extend(recovered['phases'])
+            if recovered['complete']:
+                break
+        else:
+            raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
+        inputs['now'] += 31
+        (directory/'provider.json').write_text(json.dumps(inputs))
+        retry = entry('foreground-worker', 'retry-local-feedback')
+        current = entry('api', 'feedback-state', operation)
+        assert current['command'] == original and current['receipt'] is not None
+        assert current['receipt']['key'] == original['key']
+        release('restored')
+        final_browser = wait_browser('complete')
+        assert held_browser.wait(timeout=5)==0
+        settled = entry('api','feedback-state',operation)
+        assert settled['command']==original and settled['receipt']['status']=='settled'
+        assert settled['receipt']['progress']['scheduling_review_id'] is not None
+        assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
+        entry('foreground-worker','retry-local-feedback')
+        assert entry('api','feedback-state',operation)['receipt']==settled['receipt']
+        crash = json.loads((directory/'essential-crashed.json').read_text())
+        with case.transaction() as database:
+            events = [dict(row) for row in database.execute_native("SELECT event,phase,generation FROM background_task_events WHERE task_id=%s AND generation=%s ORDER BY id", (crash['task_id'],crash['generation'])).fetchall()]
+            assert any(item['event']=='slice_complete' for item in events) and any(item['event']=='published' for item in events)
+            from app.study.game_feedback import effect_id
+            from app.contracts.product_v02.learning import GameEffectKey
+            effect = effect_id(GameEffectKey.model_validate(original['key']))
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",(effect,)).fetchone()[0]==1
+        report['essential_queue_crash_recovery'] = dict(crash=crash, events=events, browser_waiting=policy['body']['active'], optional_worker_paused=True)
+        report['held_prerequisite_recovery'] = dict(source_id=source_id, operation_id=operation,
+            original=original, held=held, saved=saved, control_card_id=card['id'], browser=final_browser,
+            core_queue_after_save=ordinary['status'], owner_scan=scan, owner_phases=phases,
+            local_retry=retry, recovered_receipt=current['receipt'], settled_receipt=settled['receipt'], collector_stopped=True,
+            classification='synthetic packaged owner restoration and actual browser save; separate 30-transition browser measurements follow')
 
     finally:
         if held_browser and held_browser.poll() is None:
@@ -370,7 +375,10 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             try: held_browser.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 os.killpg(held_browser.pid, signal.SIGKILL); held_browser.wait(timeout=5)
-        docker('unpause', background)
+        if paused_collector:
+            docker('unpause', collector)
+        if paused_background:
+            docker('unpause', background)
 
 
 def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, docker, containers,

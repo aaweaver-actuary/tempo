@@ -190,6 +190,21 @@ try:
         store.configure(configuration, previous.revision if previous else 0)
         print(json.dumps({'configured': True, 'revision': configuration.revision,
                           'selected_repertoire_count': len(configuration.repertoire_ids)}))
+    elif sys.argv[1] == 'qualify-local-feedback':
+        from app.product_composition.provider_priority import CurrentProviderPriorityIntake
+        from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+        from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+        connections = DedicatedGamesConnections(os.environ['TEMPO_DATABASE_WRITE_URL'])
+        store = PostgresGamesStore(connections)
+        original = store.delivery(sys.argv[2])
+        if original is None:
+            raise RuntimeError('Original fixture delivery unavailable')
+        intake = CurrentProviderPriorityIntake(connections=connections,clock=Clock(),operation_stopped=lambda:False)
+        qualified = intake.prepare(original)
+        assert qualified.qualification_status == 'ready' and qualified.qualification is not None
+        assert qualified.command == original.command and qualified.operation_id == original.operation_id
+        store.save_delivery(qualified)
+        print(json.dumps({'qualified':True,'operation_id':qualified.operation_id,'determined_at':qualified.determined_at}))
     elif sys.argv[1] == 'hold-integrity':
         from tempo_legacy_database.connections import connection
         from app.services.postgres_integrity import invalidate_integrity_in_transaction

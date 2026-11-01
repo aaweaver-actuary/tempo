@@ -265,6 +265,9 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
 });
 
 test("packaged held prerequisite preserves Study through essential worker recovery", async ({ page }, testInfo) => {
+  // Finite orchestration includes real child recovery and explicit owner scan;
+  // individual product requests and stage assertions retain their own bounds.
+  test.setTimeout(180_000);
   const scenarioPath = process.env.TEMPO_PACKAGED_HOLD_SCENARIO;
   test.skip(!scenarioPath, "Requires the owned packaged recovery assembly");
   if (!scenarioPath) throw new Error("Owned prerequisite scenario required");
