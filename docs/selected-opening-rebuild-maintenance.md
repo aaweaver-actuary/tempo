@@ -18,6 +18,26 @@ Study-only, frozen activation, expected follow-up generations and their prior
 row identity/generation/state/phase/lease fields are saved in version-2 plans.
 Active prefix publication/recovery is refused.
 
+
+The selected-mode CLI performs one explicit startup readiness wait for the
+**authoritative background pool** before preflight or resume reads. Authoritative
+reads use the writer credential pool; earlier ordinary-reader probes do not warm
+that separate pool. `prepare_authoritative_background_pool()` waits at most five
+seconds for its existing minimum connection, outside every application transaction
+and Redis admission lease. Failure propagates before preflight, evidence capture
+or task claims. This does not change ordinary 100 ms background acquisition,
+250 ms transaction budgets, credentials, pool size or runtime behavior, and it
+does not retry a failed cold process.
+
+```mermaid
+flowchart LR
+  Pins[Validate CLI pins / saved resume plan] --> Ready[Background authoritative pool ready: max 5 seconds]
+  Ready --> Preflight[Existing pinned owner preflight]
+  Ready -->|startup failure| Stop[Stop before task claims]
+  Preflight --> Guard[Ordinary admission and short transaction]
+  Guard --> Dry[Read-only dry-run / original scoped apply]
+```
+
 Apply claims only that graph row and calls existing bounded phase handlers.
 Only its owner-requested matching integrity scan and selected segmentation run
 follow; follow-up IDs are saved before claiming. Normal worker allowlists stay

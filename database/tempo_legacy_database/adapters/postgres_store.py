@@ -257,6 +257,16 @@ def _pool(read_only: bool, *, background: bool = False) -> ConnectionPool:
         return pool
 
 
+def prepare_authoritative_background_pool() -> None:
+    """Explicit recovery CLI startup, before admission or any transaction.
+
+    Authoritative reads use writer credentials and a separate background pool.
+    Let its asynchronous minimum connection become ready once; normal runtime
+    acquisition and transaction deadlines remain unchanged.
+    """
+    _pool(False, background=True).wait(timeout=5)
+
+
 @contextmanager
 def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,
                repeatable_read: bool = False, pool_timeout_seconds: float | None = None,

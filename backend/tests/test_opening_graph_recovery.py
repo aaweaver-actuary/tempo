@@ -333,7 +333,10 @@ def test_selected_cli_defaults_to_dry_run_and_resume_cannot_change_pins(selected
     args = SimpleNamespace(mode=recovery.QUEUED_REBUILD_MODE, task_id='target', repertoire_id='caro', generation=2,
                            target='target-hash', day=prepared['day'], source_revision=197, prefix_revision=0,
                            output=str(tmp_path / 'private'), resume=False, apply=False, max_seconds=1200, max_slices=5)
+    readiness = Mock()
+    monkeypatch.setattr(recovery.postgres_store, 'prepare_authoritative_background_pool', readiness)
     cli.selected_rebuild_main(args)
+    readiness.assert_called_once_with()
     execute.assert_not_called()
     assert connections == [{'read_only': True, 'authoritative': True, 'background': True}]
     assert json.loads((Path(args.output) / 'preflight.json').read_text()) == prepared
@@ -341,6 +344,7 @@ def test_selected_cli_defaults_to_dry_run_and_resume_cannot_change_pins(selected
     args.source_revision = 198
     with pytest.raises(ValueError, match='differs from command'):
         cli.selected_rebuild_main(args)
+    readiness.assert_called_once_with()  # Invalid resume pins fail before even pool startup.
     execute.assert_not_called()
 
 
@@ -636,3 +640,66 @@ def test_native_sixth_case_isolates_each_reused_card_seed_boundary(monkeypatch):
     assert pools.call_count == 4
     assert native.os.environ['TEMPO_DATABASE_READ_URL'] == 'original-reader'
     assert native.os.environ['TEMPO_DATABASE_WRITE_URL'] == 'original-writer'
+
+
+def test_recovery_pool_readiness_waits_for_exact_background_writer_pool_without_a_transaction(monkeypatch):
+    from tempo_legacy_database.adapters import postgres_store
+    events = []
+    class Pool:
+        def wait(self, *, timeout):
+            events.append(('wait', timeout))
+        def connection(self, **kwargs):
+            pytest.fail('pool readiness borrowed an application transaction')
+    def select(read_only, *, background=False):
+        events.append(('select', read_only, background))
+        return Pool()
+    monkeypatch.setattr(postgres_store, '_pool', select)
+    postgres_store.prepare_authoritative_background_pool()
+    assert events == [('select', False, True), ('wait', 5)]
+
+
+@pytest.mark.parametrize('failed', [False, True])
+def test_selected_cli_pool_readiness_precedes_preflight_and_never_claims_on_failure(selected, monkeypatch, tmp_path, failed):
+    recovery, prepared, row, database = selected
+    from psycopg_pool import PoolTimeout
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('pool_rebuild_cli', path)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    events = []
+    def ready():
+        events.append('pool_ready')
+        if failed:
+            raise PoolTimeout('controlled cold-pool startup failure')
+    monkeypatch.setattr(recovery.postgres_store, 'prepare_authoritative_background_pool', ready)
+    def preflight(*args, **kwargs):
+        assert events == ['pool_ready']
+        events.append('preflight')
+        return prepared
+    monkeypatch.setattr(cli, 'preflight_queued_rebuild', preflight)
+    monkeypatch.setattr(cli, 'capture_evidence', Mock(return_value={'private':'fixture'}))
+    claims = Mock(side_effect=AssertionError('dry-run cannot claim'))
+    monkeypatch.setattr(cli, 'finish_queued_rebuild', claims)
+    def lease():
+        assert events == ['pool_ready', 'preflight']
+        events.append('lease')
+        return nullcontext()
+    def connection(**options):
+        assert events == ['pool_ready', 'preflight', 'lease']
+        events.append(('transaction', options))
+        return nullcontext(database)
+    monkeypatch.setattr(recovery, 'background_lease', lease)
+    monkeypatch.setattr(recovery.postgres_store, 'connection', connection)
+    args = SimpleNamespace(mode=recovery.QUEUED_REBUILD_MODE, task_id='target', repertoire_id='caro', generation=2,
+        target='target-hash', day=prepared['day'], source_revision=197, prefix_revision=0,
+        output=str(tmp_path/'private'), resume=False, apply=False, max_seconds=1200, max_slices=5)
+    if failed:
+        with pytest.raises(PoolTimeout, match='cold-pool startup failure'):
+            cli.selected_rebuild_main(args)
+        assert events == ['pool_ready']
+        assert not (Path(args.output)/'preflight.json').exists()
+    else:
+        cli.selected_rebuild_main(args)
+        assert events == ['pool_ready', 'preflight', 'lease',
+            ('transaction', {'read_only':True,'authoritative':True,'background':True})]
+    claims.assert_not_called()
