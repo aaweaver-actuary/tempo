@@ -6,7 +6,7 @@ from importlib.util import find_spec
 from app import canonical_prefix_api
 from app.services import (
     game_sync_coordinator, postgres_coverage_explorer,
-    postgres_coverage_seed,
+    postgres_coverage_seed, coverage_seed_request,
 )
 
 
@@ -33,7 +33,7 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
                         lambda *args, **kwargs: effects.append(("graph-refresh", args, kwargs)))
     monkeypatch.setattr(storage, "advance_priority_source_epoch",
                         lambda *args: effects.append(("source-epoch", args)))
-    monkeypatch.setattr(postgres_coverage_seed, "request_coverage_seed_in_transaction",
+    monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
                         lambda *args, **kwargs: effects.append(("coverage", args, kwargs)))
     monkeypatch.setattr(storage, "delete_priority_publication",
                         lambda *args: effects.append(("invalidate-publication", args)))

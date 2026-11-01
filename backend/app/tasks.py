@@ -92,10 +92,7 @@ from .services.postgres_opening_segmentation import execute_segmentation_slice
 from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
 )
-from .services.postgres_coverage_seed import execute_coverage_seed_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
-from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
-from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -156,6 +153,21 @@ def execute_game_analysis_publication_slice(claimed_task):
 def execute_game_analysis_followup_slice(claimed_task):
     from .game_analysis_publication import execute_game_analysis_followup_slice as execute
     return execute(claimed_task)
+
+
+def execute_coverage_seed_slice(claimed_task):
+    from .services.postgres_coverage_seed import execute_coverage_seed_slice as execute
+    return execute(claimed_task)
+
+
+def execute_coverage_explorer_slice(claimed_task):
+    from .services.postgres_coverage_explorer import execute_coverage_explorer_slice as execute
+    return execute(claimed_task)
+
+
+def recover_one_explorer_run():
+    from .services.postgres_coverage_recovery import recover_one_explorer_run as execute
+    return execute()
 
 
 def execute_game_sync_record_slice(claimed_task):
