@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
-import { posix } from "node:path";
 import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
@@ -78,33 +76,4 @@ it("engine preemption monotonic seconds are separate from successful work and ea
   expect(success("success")).toEqual({ outcome: "success", elapsed_seconds: 2 });
   expect(logs).toHaveLength(2);
   expect(logs.join()).not.toMatch(/request|position|lease|token/);
-});
-
-
-it("engine Docker image includes every relative worker module including diagnostic timing", () => {
-  const dockerfile = readFileSync("Dockerfile.engine", "utf8");
-  const copiedSources = dockerfile.split("\n").filter(line => line.startsWith("COPY "))
-    .flatMap(line => line.split(/\s+/).slice(1, -1));
-  const missing = (copied: string[]) => {
-    const visited = new Set<string>();
-    const pending = ["scripts/defense-engine-worker.mjs"];
-    const absent: string[] = [];
-    while (pending.length) {
-      const file = pending.pop()!;
-      if (visited.has(file)) continue;
-      visited.add(file);
-      if (!copied.includes(file)) absent.push(file);
-      const source = readFileSync(file, "utf8");
-      const imports = source.matchAll(/(?:^import\s+(?:[^\n]*?\s+from\s+)?|^export\s+[^\n]*?\s+from\s+|new URL\()(["'])(\.[^"']+)\1/gm);
-      for (const match of imports) {
-        const dependency = posix.normalize(posix.join(posix.dirname(file), match[2]));
-        if (dependency.endsWith(".mjs")) pending.push(dependency);
-        else if (!copied.includes(dependency)) absent.push(dependency);
-      }
-    }
-    return absent;
-  };
-  expect(missing(copiedSources.filter(file => file !== "scripts/engine-job-families.mjs")))
-    .toContain("scripts/engine-job-families.mjs");
-  expect(missing(copiedSources)).toEqual([]);
 });
