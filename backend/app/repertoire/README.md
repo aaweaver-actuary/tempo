@@ -58,8 +58,12 @@ introduction evidence, schedules, queues and mutations. Optional consumers do
 not become a Study dependency.
 
 The existing donor conflict scanner remains untouched: it silently stops on an
-illegal tail and lacks route occurrences. This index reuses the public
-`tempo_evidence_math.opening_position_key` instead of copying that normalization.
+illegal tail and lacks route occurrences. Standalone position lookup reuses the public
+`tempo_evidence_math.opening_position_key`. Index construction captures immutable
+full FEN, turn and canonical legal-EP identity from each already-validated replay
+board, then reuses those facts for physical bindings and occurrences. It does not
+parse each authored position again. Supplied initial FEN, subsequent raw EP FEN,
+route-local provenance and illegal-prefix diagnostics remain intact.
 The existing read capture already supplies finite consistent route/card/graph
 facts, so no new SQL projection is added. Capture owns 64-row pages, the
 32,768-row / 520-page / 20-second / 32-MiB traversal budget and per-stream

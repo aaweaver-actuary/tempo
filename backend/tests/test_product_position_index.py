@@ -178,3 +178,60 @@ def test_route_scoped_binding_does_not_authorize_other_transposed_occurrence():
     assert index.reentry_candidate("rep", chess.STARTING_FEN) is None
     assert any(item.route_id == "b" and item.code == "physical_mapping_unknown"
                for item in index.mapping_diagnostics)
+
+
+@pytest.mark.parametrize("starting_fen,moves", [
+    (chess.STARTING_FEN, ("e2e4", "a7a6", "e4e5", "d7d5", "e5d6", "a6a5", "e2e3")),
+    ("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 17 42", ("e1g1", "e8c8", "f1e1", "c8c6")),
+    ("k3r3/8/8/3pP3/8/8/8/4K3 w - d6 7 10", ("e1f1", "a8b8", "e5e6", "b8b6")),
+])
+def test_index_reuses_legal_replay_facts_without_reparsing_occurrences(
+        monkeypatch, starting_fen, moves):
+    """Legal/false EP, castling and illegal tails retain exact route evidence."""
+    source = snapshot(
+        route("a", moves, starting_fen=starting_fen,
+              bindings=[binding(route_id="a", route_ply=0)]),
+        route("alias", moves, starting_fen=starting_fen, complete=False))
+    board = chess.Board(starting_fen)
+    full_fens = [starting_fen]
+    legal_moves = []
+    for uci in moves:
+        move = chess.Move.from_uci(uci)
+        if move not in board.legal_moves:
+            break
+        board.push(move)
+        legal_moves.append(uci)
+        full_fens.append(board.fen(en_passant="fen"))
+    expected_keys = [position_key("rep", fen) for fen in full_fens]
+    expected_turns = [chess.Board(fen).turn for fen in full_fens]
+    parsed = []
+    original_board = chess.Board
+
+    class CountedBoard(original_board):
+        def __init__(self, fen=chess.STARTING_FEN, **kwargs):
+            parsed.append(fen)
+            super().__init__(fen, **kwargs)
+
+    monkeypatch.setattr(chess, "Board", CountedBoard)
+    index = build_index(source)
+    # Each route validates its root once; occurrence construction uses only
+    # immutable facts captured from that same board after legal moves.
+    assert parsed == [starting_fen, starting_fen]
+    assert len(legal_moves) < len(moves)
+    for route_id in ("a", "alias"):
+        occurrences = index.routes["rep", route_id]
+        assert [item.key for item in occurrences] == expected_keys
+        assert [item.full_fen for item in occurrences] == full_fens
+        assert [item.learner_turn for item in occurrences] == expected_turns
+        assert all(item.route_id == route_id and item.starting_fen == starting_fen
+                   and item.route_moves == tuple(legal_moves) and not item.terminal
+                   for item in occurrences)
+        assert [(item.ply, item.code) for item in index.diagnostics if item.route_id == route_id
+                and item.code == "illegal_move"] == [(len(legal_moves), "illegal_move")]
+    assert index.routes["rep", "a"][0].binding.presentation_id == "card"
+    assert index.routes["rep", "a"][0].reentry_authority_id == "explicit-reentry"
+    assert index.routes["rep", "alias"][0].binding is None
+    assert index.routes["rep", "alias"][0].reentry_authority_id is None
+    assert {(item.before.route_id, item.after.route_id) for item in index.adjacency} == {
+        ("a", "a"), ("alias", "alias")}
+    assert not index.complete
