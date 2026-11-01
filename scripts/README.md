@@ -604,3 +604,24 @@ recorded runtime image across operator/documentation-only changes, also set
 `TEMPO_COLLECTION_TEST_REVISION` to its original exact source commit; the suite
 verifies every Dockerfile COPY input and rejects untracked runtime additions. No production
 source is mounted into that image; only synthetic qualification inputs are mounted.
+
+### Engine job-family routing
+
+The engine cycle processes at most one recovered or newly claimed job. Its
+[Games and Defense adapters](engine-job-families.mjs) own claim, recovery and
+result callback routing. The ordinary durable journal retains Games operations
+and all callbacks; a separate journal retains uncertain Defense claims. Games
+recovery is attempted first, and a recovered claim is not claimed again.
+`engine-search.mjs` still owns the existing control polling and pre-search
+release calls; this increment does not claim a fully family-neutral search.
+
+```mermaid
+flowchart LR
+  W[Engine worker] --> C[One-job cycle]
+  C --> G[Games adapter]
+  C --> D[Defense adapter]
+  G --> J[Ordinary durable journal]
+  D --> J
+  D --> K[Defense claim journal]
+  C --> S[Existing engine search and control]
+```

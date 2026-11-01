@@ -1,5 +1,6 @@
 import { admitEngineJob, engineSearchWasPreempted } from "./engine-search.mjs";
 import { recoverNextEngineJob } from "./engine-job-recovery.mjs";
+import { createEngineJobFamilies } from "./engine-job-families.mjs";
 import { engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
 
 // One production cycle: recover callbacks before claiming, search once, then publish or release.
@@ -7,10 +8,11 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
   shutdown, logError = console.error }) {
   if (searches.fatalEngineError) { shutdown(); return; }
   let job;
-  let jobKind;
+  let family;
+  const families = createEngineJobFamilies({ request, durableRequest, defenseClaimRequest });
   try {
-    const recovered = await recoverNextEngineJob(durableRequest, defenseClaimRequest);
-    ({ job, jobKind } = recovered);
+    const recovered = await recoverNextEngineJob(families.game, families.defense);
+    ({ job, family } = recovered);
     let { defenseClaimUnresolved, preferredGameId } = recovered;
     if (!job) {
       const available = await request("/api/system/foreground-active");
@@ -18,7 +20,7 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
       if (available.available === false || available.active !== false) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); return; }
       if (!defenseClaimUnresolved) {
         try {
-          const selection = await request("/api/defensive-threats/analysis/claim", { method: "POST" });
+          const selection = await families.defense.claim();
           job = selection.job;
           preferredGameId = selection.preferred_game_id;
         } catch (error) {
@@ -27,34 +29,24 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
           logError("Defensive claim remains unresolved:", error.operationId, error.message);
         }
       }
-      if (job) jobKind = "defense";
+      if (job) family = families.defense;
       else {
-        await request("/api/games/analysis/repair-timeout", { method: "POST" });
-        await request("/api/games/analysis/repair-provenance", { method: "POST" });
-        job = (await request("/api/games/analysis/position/claim", { method: "POST",
-          ...(preferredGameId ? { body: JSON.stringify({ preferred_game_id: preferredGameId }) } : {}),
-        })).job;
-        jobKind = "game";
+        job = await families.game.claim(preferredGameId);
+        family = families.game;
       }
     }
     if (!job) { engineWaitingStage("engine", "idle"); await sleep(2_000); return; }
-    if (job.kind === "finalize") {
-      await request("/api/games/analysis/position/finalize", {
-        method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
-      });
+    if (family.isFinalize(job)) {
+      await family.finalize(job);
       job = undefined;
       return;
     }
-    if (!await admitEngineJob(job, jobKind === "defense" ? "engine_defense" : "engine_game", request)) {
+    if (!await admitEngineJob(job, family.workClass, request)) {
       job = undefined;
       return;
     }
-    const { report, diagnostics } = await searches.evaluate(job, jobKind === "defense" ? "engine_defense" : "engine_game");
-    await request(jobKind === "defense"
-      ? `/api/defensive-threats/analysis/${job.id}/report`
-      : `/api/games/analysis/position/${job.id}/report`, {
-      method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report, diagnostics }),
-    });
+    const { report, diagnostics } = await searches.evaluate(job, family.workClass);
+    await family.complete(job, report, diagnostics);
   } catch (error) {
     if (error.operationId) {
       logError("Engine database command is still pending:", error.operationId);
@@ -65,23 +57,16 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
     if (job) {
       const preempted = engineSearchWasPreempted(error);
       try {
-        if (job.kind === "finalize") {
-          await request(`/api/games/analysis/${encodeURIComponent(job.game_id)}/failure`, {
-            method: "POST", body: JSON.stringify({ lease_id: job.lease_id,
-              error: `Game finalization failed: ${error.message.slice(0, 900)}` }),
-          });
+        if (family.isFinalize(job)) {
+          await family.finalizeFailure(job, error);
           job = undefined;
           return;
         }
-        const prefix = jobKind === "defense" ? "/api/defensive-threats/analysis" : "/api/games/analysis/position";
         const deliveryController = searches.fatalEngineError ? new AbortController() : undefined;
         const deliveryDeadline = deliveryController ? setTimeout(() => deliveryController.abort(), 1_500) : undefined;
         try {
-          await request(`${prefix}/${job.id}/${preempted ? "release" : "failure"}`, {
-            method: "POST", body: JSON.stringify(preempted
-              ? { lease_id: job.lease_id, diagnostics: error.diagnostics }
-              : { lease_id: job.lease_id, error: error.message.slice(0, 1000), diagnostics: error.diagnostics }),
-          }, deliveryController ? { signal: deliveryController.signal, pollAttempts: 0 } : undefined);
+          const deliveryOptions = deliveryController ? { signal: deliveryController.signal, pollAttempts: 0 } : undefined;
+          await (preempted ? family.release(job, error, deliveryOptions) : family.fail(job, error, deliveryOptions));
         } finally {
           clearTimeout(deliveryDeadline);
         }

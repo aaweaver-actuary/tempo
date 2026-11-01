@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEngineSearch, admitEngineJob, engineSearchAllowed, engineSearchWasPreempted } from "../../scripts/engine-search.mjs";
+import { createEngineJobFamilies } from "../../scripts/engine-job-families.mjs";
 import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
 import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
 import { runEngineWorkerCycle } from "../../scripts/engine-worker-cycle.mjs";
@@ -54,7 +55,8 @@ it("pausing an active defensive search drains once and records preemption withou
 
 it("paused defensive claims recovered after restart are durably released before search", async () => {
   const defenseJournal = { recover: vi.fn().mockResolvedValue({ result: { job } }) };
-  const recovered = await recoverNextEngineJob({ recover: vi.fn().mockResolvedValue(null) }, defenseJournal);
+  const families = createEngineJobFamilies({ request: vi.fn(), durableRequest: { recover: vi.fn().mockResolvedValue(null) }, defenseClaimRequest: defenseJournal });
+  const recovered = await recoverNextEngineJob(families.game, families.defense);
   const request = vi.fn().mockResolvedValueOnce({ foreground_active: false, search_allowed: false })
     .mockResolvedValueOnce({ status: "queued" });
   expect(await admitEngineJob(recovered.job, "engine_defense", request)).toBe(false);
@@ -393,4 +395,51 @@ it("engine fairness never replaces a recovered game lease with a fresh reservati
   expect(request).toHaveBeenCalledWith('/api/games/analysis/position/finalize', {
     method: 'POST', body: JSON.stringify({ lease_id: 'recovered-lease' }),
   });
+});
+
+it.each(['game', 'defense'])('recovered %s search reports to its own family without another claim', async family => {
+  const recovered = { id: `${family}-recovered`, lease_id: 'original-lease', kind: 'position' };
+  const gameJournal = { recover: vi.fn().mockResolvedValue(family === 'game'
+    ? { path: '/api/games/analysis/position/claim', result: { job: recovered } } : null) };
+  const defenseJournal = { recover: vi.fn().mockResolvedValue(family === 'defense'
+    ? { result: { job: recovered } } : null) };
+  const request = vi.fn(async (path: string) => path.includes('/control')
+    ? { foreground_active: false, search_allowed: true } : { active: false });
+  const searches = { fatalEngineError: false, evaluate: vi.fn().mockResolvedValue({ report: { ok: true }, diagnostics: {} }) };
+  await runEngineWorkerCycle({ searches, request, durableRequest: gameJournal, defenseClaimRequest: defenseJournal,
+    sleep: vi.fn(), shutdown: vi.fn(), logError: vi.fn() });
+  const prefix = family === 'game' ? '/api/games/analysis/position' : '/api/defensive-threats/analysis';
+  expect(request).toHaveBeenCalledWith(`${prefix}/${recovered.id}/report`, expect.objectContaining({ method: 'POST' }));
+  expect(request.mock.calls.some(call => call[0].endsWith('/claim'))).toBe(false);
+  expect(searches.evaluate).toHaveBeenCalledTimes(1);
+});
+
+it('an uncertain defense claim retains its identity while a game can finalize', async () => {
+  const pending = Object.assign(new Error('claim pending'), { operationId: 'original-claim' });
+  const request = vi.fn(async (path: string) => {
+    if (path === '/api/system/foreground-active') return { active: false };
+    if (path === '/api/defensive-threats/analysis/claim') throw pending;
+    if (path === '/api/games/analysis/position/claim') return { job: { kind: 'finalize', lease_id: 'lease', game_id: 'g' } };
+    return {};
+  });
+  const searches = { fatalEngineError: false, evaluate: vi.fn() };
+  const logError = vi.fn();
+  await runEngineWorkerCycle({ searches, request, durableRequest: { recover: vi.fn().mockResolvedValue(null) },
+    defenseClaimRequest: { recover: vi.fn().mockResolvedValue(null) }, sleep: vi.fn(), shutdown: vi.fn(), logError });
+  expect(logError).toHaveBeenCalledWith('Defensive claim remains unresolved:', 'original-claim', 'claim pending');
+  expect(request).toHaveBeenCalledWith('/api/games/analysis/position/finalize', expect.any(Object));
+  expect(searches.evaluate).not.toHaveBeenCalled();
+});
+
+it('a defense family outage without an uncertain receipt does not invent a game claim', async () => {
+  const request = vi.fn(async (path: string) => {
+    if (path === '/api/system/foreground-active') return { active: false };
+    throw new Error('defense unavailable');
+  });
+  const logError = vi.fn();
+  await runEngineWorkerCycle({ searches: { fatalEngineError: false, evaluate: vi.fn() }, request,
+    durableRequest: { recover: vi.fn().mockResolvedValue(null) }, defenseClaimRequest: { recover: vi.fn().mockResolvedValue(null) },
+    sleep: vi.fn(), shutdown: vi.fn(), logError });
+  expect(request.mock.calls.some(call => call[0].startsWith('/api/games/'))).toBe(false);
+  expect(logError).toHaveBeenCalledWith('Could not claim engine request:', expect.any(Error));
 });
