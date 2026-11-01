@@ -9,7 +9,11 @@ import signal
 
 import httpx
 
-from .main import coordinator  # Registers every durable task handler.
+from .product_composition.database_infrastructure import bind_database_infrastructure
+from .product_composition.compatibility_coordinator import compose_compatibility_coordinator
+
+bind_database_infrastructure()
+coordinator = compose_compatibility_coordinator()
 from tempo_legacy_database.adapters.database_executor import database_writer
 
 

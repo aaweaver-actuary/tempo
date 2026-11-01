@@ -57,7 +57,8 @@ from tempo_legacy_database.adapters.authored_repertoires.opening_mutations impor
 from app.contracts.next_opponent import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
-from .study_routes import router as study_router
+from .study_routes import create_study_router
+from .product_composition.compatibility_coordinator import compose_compatibility_coordinator, enqueue_daily_queue_refresh
 from app.contracts.transport.tactics import TacticActivationRequest
 from app.contracts.review_conflicts import ReviewConflict
 from .services.tactical_catalog import (
@@ -224,7 +225,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 from .services.background_runtime import StudyResponseTiming
 app.add_middleware(StudyResponseTiming)
-app.include_router(study_router)
+app.include_router(create_study_router(enqueue_daily_queue_refresh))
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
 from .product_composition.game_history_current import current_game_history_router
@@ -1182,99 +1183,7 @@ def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry
     return queue_application.materialize_daily_queue(database, queue_date, preserve_through_entry_id=preserve_through_entry_id)
 
 
-def _execute_daily_queue_task(task: dict) -> None:
-    queue_date = task["payload"].get("queue_date") or date.today().isoformat()
-    try:
-        submit_background_write(
-            lambda database: materialize_daily_queue(database, queue_date,
-                preserve_through_entry_id=task["payload"].get("preserve_through_entry_id")),
-            label=f"daily-queue:{queue_date}",
-        )
-    except Exception as error:
-        sanitized_error = str(error)[:500]
-        submit_background_write(
-            lambda database: queue_maintenance_storage.mark_queue_projection_failed(database, queue_date, sanitized_error),
-            label=f"daily-queue-failed:{queue_date}",
-        )
-        raise
-
-
-register_durable_task_handler("daily_queue", _execute_daily_queue_task)
-register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
-register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
-from .services.prefix_transition_application import execute_application_slice
-register_durable_task_handler("prefix_transition_application", execute_application_slice)
-from .services.postgres_opening_segmentation import execute_segmentation_slice
-register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
-from .services.canonical_prefix_preview import execute_prefix_preview_slice
-register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
-register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
-register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
-register_durable_task_handler("defensive_threat_validate", execute_threat_validation)
-register_durable_task_handler("defensive_threat_report_audit", execute_threat_report_audit)
-register_durable_task_handler("defensive_threat_backfill", execute_threat_backfill_slice)
-register_durable_task_handler("defensive_admission", execute_defense_admission_slice)
-register_durable_task_handler("defensive_rubric_audit", execute_defense_rubric_audit_slice)
-register_durable_task_handler("discovery_admission", execute_admission_intent_slice)
-register_durable_task_handler("discovery_recommendation", execute_recommendation_request_slice)
-
-
-def _ensure_current_daily_queue() -> None:
-    from .queue_commands import current_study_day
-    with read_connection() as database:
-        queue_date = current_study_day(database)
-        projection = queue_maintenance_storage.queue_projection_state(database, queue_date)
-    if projection is None:
-        enqueue_daily_queue_refresh(foreground=False)
-
-
-register_maintenance_handler(_ensure_current_daily_queue)
-
-
-def _ensure_daily_defense_admission() -> None:
-    from .services.defensive_analysis import analysis_enabled
-    with background_read_connection(authoritative=True) as database:
-        if not analysis_enabled(database):
-            return
-    today = date.today().isoformat()
-    with read_connection() as database:
-        existing = queue_maintenance_storage.existing_defense_admission(database, today)
-        eligible = queue_maintenance_storage.eligible_defense_admission(database)
-    if not existing and eligible:
-        enqueue_defense_admission(background=True)
-
-
-register_maintenance_handler(_ensure_daily_defense_admission)
-
-
-def _ensure_discovery_admissions() -> None:
-    with read_connection() as database:
-        intent = queue_maintenance_storage.pending_discovery_admission(database)
-    if intent:
-        enqueue_admission_intent(intent["id"])
-
-
-register_maintenance_handler(_ensure_discovery_admissions)
-
-
-def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
-    from .queue_commands import current_study_day
-    with read_connection() as database:
-        queue_date = current_study_day(database)
-    task = enqueue_task(
-        "daily_queue",
-        "current",
-        {"queue_date": queue_date},
-        priority=10,
-        foreground=foreground,
-    )
-    submit = submit_foreground_write if foreground else submit_background_write
-    submit(
-        lambda database: queue_maintenance_storage.mark_queue_projection_refreshing(database, queue_date),
-        label=f"daily-queue-refreshing:{queue_date}",
-    )
-    coordinator.wake()
-    return task
+compose_compatibility_coordinator()
 
 
 def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
