@@ -28,3 +28,10 @@ def recovery_case(recovery_postgres):
 def test_packaged_study_recovery_thirty_consecutive_transitions(recovery_case, tmp_path, study_only):
     """Real source-bound v1 assembly; 30 measured saves per mode, no live target."""
     run_existing_feedback(recovery_case, tmp_path, introduced=True, recovery_mode=study_only)
+
+
+@pytest.mark.parametrize('introduced',[False,True],ids=['unseen','introduced-with-target-rollback'])
+def test_packaged_current_feedback_without_legacy_capture(recovery_case,tmp_path,introduced):
+    """Existing real browser journey; fixed tripwires plus one target rollback."""
+    run_existing_feedback(recovery_case,tmp_path,introduced=introduced,
+        forbid_legacy_capture=True,changed_target_rollback=introduced)
