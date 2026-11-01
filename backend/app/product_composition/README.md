@@ -685,3 +685,15 @@ flowchart LR
   registration --> registry["Existing gateway registry"]
   dispatch -->|"other commands"| registry
 ```
+
+Games sync record and window slices are selected at their existing worker
+handler seams only after the retained task passes admission and its lease fence.
+The essential queue path does not import either slice implementation; other
+optional worker imports remain outside this cut.
+
+```mermaid
+flowchart LR
+  task["Retained worker slice"] --> fence["Existing admission and lease fence"]
+  fence -->|"Games sync kind"| load["Load matching sync slice"]
+  fence -->|"daily queue"| queue["Existing Study queue slice"]
+```
