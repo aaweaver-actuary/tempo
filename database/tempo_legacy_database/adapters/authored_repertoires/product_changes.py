@@ -4,9 +4,14 @@ Outer composition supplies the owning current-source projection and publication
 command. No queue, review, scheduling or physical-card table is written here.
 SCHEMA_SQL is a disposable-fixture / integration-migration handoff, never auto-run.
 """
+from __future__ import annotations
+
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 from app.contracts.product_v02.analysis import Proposal, RepertoireChangeReceipt
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
@@ -76,6 +81,15 @@ class PostgresChangeStore:
         self.publisher = publisher
         self.before_lock = before_lock
         self.card_reader = card_reader
+
+    @classmethod
+    def from_borrowed(cls, database: PostgresConnection, repertoire_id: str,
+                      reader: Callable[[object, str], RepertoireSnapshot],
+                      publisher: Callable[[object, ValidatedChange], RepertoireSnapshot | None],
+                      before_lock: Callable[[object, str], None] | None = None,
+                      card_reader: Callable | None = None) -> PostgresChangeStore:
+        """Use the existing wrapper's native connection without acquiring ownership."""
+        return cls(database.raw, repertoire_id, reader, publisher, before_lock, card_reader)
 
     @contextmanager
     def transaction(self, repertoire_id: str):
