@@ -1286,8 +1286,15 @@ print(hashlib.sha256(path.read_bytes()).hexdigest())
         stage = 'same_source_reconciliation_replay'
         with case.transaction() as database:
             captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
-            reconciliation_before = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
-        inputs['now'] += 601
+            reconciliation = database.execute_native("""SELECT COUNT(*),
+                MAX((payload->>'last_checkpoint_at')::timestamptz) FROM product_feedback_jobs
+                WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'""").fetchone()
+            reconciliation_before, reconciliation_completed_at = reconciliation
+        assert reconciliation_completed_at is not None
+        # Production spaces repeat scans from actual completion, not enqueue or
+        # the older host snapshot. This advances only the settled-source replay.
+        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp(),
+            reconciliation_completed_at.timestamp()) + 601
         publish_provider(inputs)
         replay_run = entry('foreground-worker','worker')
         assert replay_run['durable_checkpoints_retained'] and replay_run['bounded_units']>1
