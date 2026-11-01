@@ -29,12 +29,12 @@ from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_i
 from app.chess.cards import card_id
 
 
-def main():
+def main(database_url="postgresql://postgres@postgres:5432/tempo"):
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Capture proof requires the disposable PostgreSQL instance")
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
-    os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = database_url
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
     day = date.today().isoformat()
     request = {"capture_id": str(uuid.uuid4()), "starting_fen": chess.STARTING_FEN,
