@@ -1,7 +1,6 @@
 """Public independent Intelligence composition and configuration."""
 
 from .config import Configuration
-from .api import create_app
 
 __version__ = "0.1.0"
 
@@ -28,3 +27,11 @@ def run_analysis_work(configuration,run_id,maximum=1,client=None):
         if store is not None:store.close()
 
 __all__=["Configuration","create_app","analysis_v1","run_analysis_work"]
+
+
+def __getattr__(name: str):
+    """Load HTTP composition only when its supported export is requested."""
+    if name == "create_app":
+        from .api import create_app
+        return create_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -479,3 +479,21 @@ The source distribution includes that harness; runtime wheels exclude it. Pure/
 fake component tests and artifact qualification orchestration remain application-
 owned. Optional actual A/B tests remain intact native qualification, not a claim
 that a pure application or whole-backend independence proof was run.
+
+### Public import boundary
+
+The root `Configuration`, `analysis_v1` and `run_analysis_work` exports can be
+imported without loading HTTP composition or the database adapter. The supported
+root `create_app` export resolves lazily to the same API function and retains its
+construction dependencies. `run_analysis_work` keeps its existing explicit
+startup and cleanup; exports, version and distribution dependencies are unchanged.
+
+```mermaid
+flowchart LR
+  P[Pure consumer] --> R[Intelligence package root]
+  R --> M[Configuration and analysis contracts]
+  A[HTTP consumer] -->|create_app on demand| R
+  R -.-> H[HTTP composition]
+  W[Worker caller] -->|run_analysis_work| R
+  R -.-> S[Existing worker and store lifecycle]
+```
