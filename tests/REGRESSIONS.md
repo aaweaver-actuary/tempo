@@ -6625,3 +6625,7 @@ Existing packaged feedback/recovery cases publish live provider JSON via verifie
 ### Settled-source replay follows its durable completion deadline (#668)
 
 The existing packaged same-source reconciliation replay derives its controlled clock from the actual latest completed reconciliation checkpoint plus the existing601-second advance. Production spaces repeats from completion, so adding601 to an older host snapshot can miss the deadline after the fixture clock begins following wall time. The a5aa run passed real initial browser settlement and coherent guest publication before exposing this fixture timing error. New semantic source clocks and all product intervals/deadlines remain unchanged.
+
+### Held browser drains its queue observers before teardown (#668)
+
+`tests/browser/real-game-feedback.spec.ts::packaged held prerequisite preserves Study through essential worker recovery` detaches its named response observer and awaits all tracked queue JSON reads while the page is alive, then asserts every recorded parse error. The9ac run completed the genuine target save but an untracked listener continued into Playwright teardown and raised “Test ended”. No response failure is ignored and all original product assertions/timeouts remain unchanged.
