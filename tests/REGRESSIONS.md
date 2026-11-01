@@ -6560,3 +6560,8 @@ claim that an active SQL statement/source projection is preemptible.
 proves a due held live delivery cannot starve ready historical intake while a
 truly ready live delivery keeps priority. Both cases preserve original commands,
 logical identities, determination clocks, retained pages and completed checkpoints.
+
+
+### Packaged collector startup admission ordering (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` owns the startup regression: establish the genuine protected browser attempt and verify API/foreground identities before constructing the collector. Its existing 45-second admission window then covers only actual collector preparation/identity/profile, the three-runtime managed-mode commit, and release. The first 41f21 packaged attempt failed before browser acceptance because unrelated setup consumed this window; collector exit was not an OOM. Deadlines, actual worker execution, mode checks and full browser/recovery assertions remain unchanged.

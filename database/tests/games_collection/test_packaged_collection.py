@@ -652,13 +652,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             with case.transaction() as database:
                 original_configuration = database.execute_native("""SELECT revision,payload FROM product_feedback_configuration
                     WHERE workspace_id='legacy' AND provider='lichess'""").fetchone()
-        launch('game-feedback-worker',['python','-B','-c',fixture_entry,'feedback-worker'])
         wait_for(health_ready,'packaged_feedback_api_not_ready')
-        def actual_collector_prepared():
-            observed = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
-            assert observed['State']['Running'], 'packaged_feedback_collector_exited_before_verification'
-            return '"feedback_runtime_prepared": true' in docker('logs',observed['Id']).stdout
-        wait_for(actual_collector_prepared,'packaged_feedback_collector_not_prepared')
         stage = 'genuine_protected_head'
         protected_queue = wait_for(queue,'packaged_feedback_protected_head_pending')
         protected = protected_queue['cards'][0]
@@ -676,7 +670,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             'retained_qualification','foreground_handoff','issuance_fence')), 'packaged_feedback_composition_incomplete'
         report['feedback_capabilities']=capabilities
         observed_runtimes, observed_config = [], {}
-        for role in ('api','foreground-worker','game-feedback-worker'):
+        def observe_runtime(role):
             inspected = json.loads(docker('inspect',containers[role]['id']).stdout)[0]
             identity = json.loads(execute(role,'python','-m','app.product_composition.managed_runtime','inspect'))
             assert inspected['State']['Running'] and inspected['Image']==image
@@ -694,16 +688,8 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             observed_runtimes.append(dict(service=role,container_id=inspected['Id'],hostname=identity['runtime']['hostname'],
                 boot_nonce=identity['runtime']['boot_nonce'],image=image))
             observed_config[role] = inspected['Config']
-        assert len({item['container_id'] for item in observed_runtimes})==3
-        stamp = datetime.now(timezone.utc).isoformat()
-        mode = dict(schema_version=1,workspace_id='legacy',generation=1,mode='feedback',phase='active',
-            operation_id='packaged-feedback:'+uuid.uuid4().hex,release_revision=backend_revision,collector_image=image,
-            configuration_fingerprint=hashlib.sha256(json.dumps(observed_config,sort_keys=True).encode()).hexdigest(),
-            target_fingerprint=hashlib.sha256(json.dumps(dict(owner=owner,container=pg['Id'],database=database_name),sort_keys=True).encode()).hexdigest(),
-            runtimes=observed_runtimes,updated_at=stamp,verified_at=stamp)
-        recorded = json.loads(execute('game-feedback-worker','python','-m','app.product_composition.game_feedback_mode',
-            'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
-        assert recorded['applied'] and recorded['mode']=='feedback'
+        for role in ('api','foreground-worker'):
+            observe_runtime(role)
         stage = 'actual_browser_start'
         scenario = directory/'browser-scenario.json'
         scenario.write_text(json.dumps(dict(version=1,protected_card_id=case.card_id,
@@ -723,6 +709,27 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         first_browser = wait_for(lambda:browser_ready('protected'),'packaged_feedback_browser_protected_board_missing')
         report['initial_browser_acquisition'] = dict(milliseconds=first_browser['first_browser_load_ms'],
             classification='fresh browser initial load after service readiness/setup; not an isolated cold server process measurement')
+        # Establish the protected browser and inspect unrelated roles before
+        # constructing the collector: its unchanged 45-second admission
+        # window is reserved for its own verification and actual mode.
+        stage = 'verified_managed_mode'
+        launch('game-feedback-worker',['python','-B','-c',fixture_entry,'feedback-worker'])
+        def actual_collector_prepared():
+            observed = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
+            assert observed['State']['Running'], 'packaged_feedback_collector_exited_before_verification'
+            return '"feedback_runtime_prepared": true' in docker('logs',observed['Id']).stdout
+        wait_for(actual_collector_prepared,'packaged_feedback_collector_not_prepared')
+        observe_runtime('game-feedback-worker')
+        assert len({item['container_id'] for item in observed_runtimes})==3
+        stamp = datetime.now(timezone.utc).isoformat()
+        mode = dict(schema_version=1,workspace_id='legacy',generation=1,mode='feedback',phase='active',
+            operation_id='packaged-feedback:'+uuid.uuid4().hex,release_revision=backend_revision,collector_image=image,
+            configuration_fingerprint=hashlib.sha256(json.dumps(observed_config,sort_keys=True).encode()).hexdigest(),
+            target_fingerprint=hashlib.sha256(json.dumps(dict(owner=owner,container=pg['Id'],database=database_name),sort_keys=True).encode()).hexdigest(),
+            runtimes=observed_runtimes,updated_at=stamp,verified_at=stamp)
+        recorded = json.loads(execute('game-feedback-worker','python','-m','app.product_composition.game_feedback_mode',
+            'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
+        assert recorded['applied'] and recorded['mode']=='feedback'
         inputs['now'] = datetime.now(timezone.utc).timestamp()
         (directory/'provider.json').write_text(json.dumps(inputs))
         (directory/'feedback-start').write_text('actual_mode_verified\n')
