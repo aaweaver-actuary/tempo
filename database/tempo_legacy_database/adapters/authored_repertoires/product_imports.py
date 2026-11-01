@@ -23,7 +23,7 @@ class RetainedImports:
         self.database = database
 
     def read(self, operation_id: str) -> RetainedImport:
-        from app.command_gateway import request_digest
+        from app.contracts.command_identity import request_digest
         if not isinstance(operation_id, str) or not 1 <= len(operation_id) <= 128:
             raise ChangeError("invalid_import_operation")
         row = receipts.operation_status(self.database, operation_id)

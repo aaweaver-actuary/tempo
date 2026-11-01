@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
-import hashlib
 import json
 import uuid
 from typing import Any
@@ -19,6 +18,7 @@ from fastapi import HTTPException
 
 from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
+from .contracts.command_identity import request_digest as _identity_digest
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
@@ -55,24 +55,7 @@ def register_command(
 
 
 def request_digest(command_name: str, payload: dict[str, Any]) -> str:
-    # A paste preview is derived from the current repertoire snapshot. After a
-    # successful save that snapshot changes, but replaying the same user save
-    # must still resolve to its original receipt.
-    if command_name in {"opening_evidence.checkpoint", "cards.review", "cards.review.reconcile"}:
-        # Preparation is authoritative derived data; retries bind the original envelope.
-        identity_payload = {key: value for key, value in payload.items() if key != "prepared_manifest"}
-    elif command_name == "analysis.paste.commit":
-        identity_payload = payload["request"]
-    elif command_name == "discovery.accept":
-        # Recommendation preparation can change during a retry. The accepted
-        # choice and evidence revision identify the user's operation.
-        identity_payload = {key: payload[key] for key in (
-            "opportunity_id", "selected_move_uci", "evidence_fingerprint"
-        )}
-    else:
-        identity_payload = payload
-    serialized = json.dumps([command_name, identity_payload], sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode()).hexdigest()
+    return _identity_digest(command_name, payload)
 
 
 def record_operation_attempt(
