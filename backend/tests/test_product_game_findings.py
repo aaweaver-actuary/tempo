@@ -761,3 +761,49 @@ def test_correct_authored_move_with_ambiguous_target_still_reaches_later_differe
     findings = compare(record(("e2e4", "e7e5", "f1c4")), captured)
     assert findings[-1].ply == 3 and findings[-1].expected_uci == ("g1f3",)
     assert findings[-1].played_uci == "f1c4"
+
+
+@pytest.mark.parametrize('moves', [
+    ('d2d4',),
+    ('e2e4', 'e7e5', 'g1f3'),
+    ('g1f3', 'c7c5', 'g2g3', 'd7d5', 'f1h3'),
+])
+def test_anchorless_workflow_preserves_full_findings_without_unused_cache_serialization(monkeypatch, moves):
+    from app.product_composition.game_sync import WorkflowComparer
+    from app.repertoire import build_index
+    captured = snapshot(route(('g1f3', 'd7d5', 'g2g3', 'c7c5', 'f1g2')))
+    original = record(moves)
+    game = normalize_record(original, provider='lichess', account='Learner', workspace_id='workspace')
+    expected = compare_game(game, provider='lichess', snapshot=captured,
+        time_precision=original.time_precision, reentry_lookup=build_index(captured))
+    assert expected
+    def unused_snapshot_json(*args, **kwargs):
+        raise AssertionError('anchorless comparison must not retain cache JSON')
+    monkeypatch.setattr(RepertoireSnapshot, 'model_dump_json', unused_snapshot_json)
+    comparer = WorkflowComparer()
+    with comparer.page_scope():
+        for _ in range(2):
+            assert comparer.compare(game, captured, record=original,
+                spec=SimpleNamespace(provider='lichess')) == expected
+        assert comparer._page_indexes == {} and comparer._page_bytes == 0
+
+
+@pytest.mark.parametrize('failure', ['routes', 'plies', 'schema'])
+def test_anchorless_cache_bypass_still_refuses_oversized_or_mutated_source(failure):
+    from app.product_composition.game_sync import WorkflowComparer
+    captured = snapshot()
+    authored = captured.membership.routes[0]
+    original = record()
+    game = normalize_record(original, provider='lichess', account='Learner', workspace_id='workspace')
+    if failure == 'routes':
+        routes = (authored,) * 10001
+    elif failure == 'plies':
+        routes = (authored.model_copy(update={'moves': ('g1f3',) * 1000}),) * 101
+    else:
+        routes = (authored.model_copy(update={'learner_color': 'invalid'}),)
+    invalid = captured.model_copy(update={'membership': captured.membership.model_copy(update={'routes': routes})})
+    comparer = WorkflowComparer()
+    with comparer.page_scope():
+        assert comparer.compare(game, captured, record=original, spec=SimpleNamespace(provider='lichess'))
+        with pytest.raises(ValueError, match='snapshot_index_exceeds_bound' if failure != 'schema' else 'learner_color'):
+            comparer.compare(game, invalid, record=original, spec=SimpleNamespace(provider='lichess'))
