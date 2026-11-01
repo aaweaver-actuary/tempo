@@ -725,3 +725,15 @@ flowchart LR
   Worker[SQLite compatibility worker] --> Compose
   Compose --> Owner[Existing coordinator singleton and handlers]
 ```
+
+The explicit retained product-feedback command is selected after its existing
+attempt receipt, before preparation and the writer. Other commands do not wait
+for its registration lock; accepted Study obligations retain their existing
+receiver and receipt semantics.
+
+```mermaid
+flowchart LR
+  Attempt["Retained command attempt"] --> Choice["Product feedback selection"]
+  Choice --> Registry["Existing gateway registry"]
+  Registry --> Writer["Existing receiver transaction"]
+```
