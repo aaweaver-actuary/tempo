@@ -1,3 +1,4 @@
+import { nextCardPreparationResultSchema, preparationBlocksIssuance } from "../../app/lib/next-card-preparation-contract";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { webcrypto } from "node:crypto";
@@ -212,4 +213,22 @@ describe("first-departure policy compatibility", () => {
     const detail = GameDetailSchema.parse({ ...fixture("game-detail"), receipts: [legacyPayload, currentPayload] });
     expect(JSON.parse(JSON.stringify(detail.receipts))).toEqual([legacyPayload, currentPayload]);
   });
+});
+
+
+describe("Study preparation shared receipt compatibility", () => {
+  const fixtures = JSON.parse(readFileSync(resolve(directory, "study-reliability/preparation.json"), "utf8"));
+  for (const testCase of fixtures.cases) {
+    it(`pending_feedback_is_not_issuance_blocking_by_itself ${testCase.name}`, () => {
+      const original = JSON.stringify(testCase.payload);
+      const value = nextCardPreparationResultSchema.parse(testCase.payload);
+      expect(preparationBlocksIssuance(value)).toBe(testCase.blocks);
+      expect(JSON.stringify(testCase.payload)).toBe(original);
+    });
+  }
+  for (const [index, payload] of fixtures.invalid.entries()) {
+    it(`preparation_contract_rejects_invalid_shared_receipts ${index}`, () => {
+      expect(nextCardPreparationResultSchema.safeParse(payload).success).toBe(false);
+    });
+  }
 });
