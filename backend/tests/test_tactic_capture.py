@@ -11,7 +11,9 @@ import pytest
 
 from tempo_legacy_database import connections as database
 from app.contracts.transport.tactics import TacticCaptureRequest
-from app.services.tactic_capture import capture_tactic, validate_tactic_line
+from app.product_composition.tactic_capture import capture_tactic
+from app.services.tactic_capture import validate_tactic_line
+from app.contracts.tactic_capture import TacticCaptureValidationError
 from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
 from tempo_legacy_database.ddl.tactic_capture_migration import normalize_game_tactic_cards
 from app.services.tactical_catalog import seed_tactical_introductions
@@ -89,9 +91,8 @@ def test_captured_tactic_reuses_existing_tactic_without_erasing_history(capture_
     (chess.STARTING_FEN, []), (chess.STARTING_FEN, ["0000"]),
 ])
 def test_captured_tactic_rejects_invalid_fen_and_illegal_solution(capture_database, fen, moves):
-    with pytest.raises(HTTPException) as failure:
+    with pytest.raises(TacticCaptureValidationError, match="Cannot capture tactic"):
         validate_tactic_line(fen, moves)
-    assert failure.value.status_code == 422
     assert capture_database.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 0
 
 
@@ -268,3 +269,20 @@ def test_game_tactic_import_repair_never_mutates_after_failed_exact_verification
     with pytest.raises(RuntimeError, match="exact comparison failed"):
         repair.repair_verified_import(source, "destination")
     assert source.read_bytes() == b"original"
+
+
+def test_capture_receipt_failure_rolls_back_sqlite_admission(tmp_path, monkeypatch):
+    from tempo_legacy_database.adapters.tactics import captures as receipt_storage
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'capture-rollback.db')
+    database.initialize()
+    request = authored_capture()
+    def fail(*_):
+        raise RuntimeError('synthetic receipt failure')
+    monkeypatch.setattr(receipt_storage, 'save_capture_receipt', fail)
+    with pytest.raises(RuntimeError, match='synthetic receipt failure'):
+        with database.connection() as writer:
+            capture_tactic(writer, request)
+    with database.connection() as reader:
+        for table in ('cards', 'repertoire_cards', 'daily_queue', 'tactic_captures'):
+            assert reader.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0
+        assert reader.execute("SELECT COUNT(*) FROM repertoires WHERE id='__captured_tactics__'").fetchone()[0] == 0

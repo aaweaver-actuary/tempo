@@ -15,11 +15,13 @@ from pathlib import Path
 import sys
 import threading
 import uuid
+from unittest.mock import patch
 
 import chess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.tactics import captures as capture_storage
 from app import tactic_commands  # registers the production handler
 from app.command_gateway import execute_command, read_operation
 from app.services.postgres_queue_refresh import _publish_tactical_introduction
@@ -82,6 +84,21 @@ def main():
         with postgres_store.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (invalid["capture_id"],)).fetchone()[0] == 0
             assert entries_before == [tuple(row) for row in database.execute("SELECT * FROM daily_queue ORDER BY id")]
+        # Failure immediately before the capture receipt rolls back every borrowed
+        # card/queue effect while the gateway retains its own failed operation receipt.
+        fault = {**request, "capture_id": str(uuid.uuid4()), "moves": ["d2d4"]}
+        def business_rows():
+            with postgres_store.connection(read_only=True) as database:
+                return {table: [tuple(row) for row in database.execute(f"SELECT * FROM {table} ORDER BY {order}")]
+                        for table, order in (("repertoires", "id"), ("cards", "id"),
+                            ("repertoire_cards", "repertoire_id,card_id"), ("daily_queue", "id"),
+                            ("tactic_captures", "id"))}
+        before_fault = business_rows()
+        with patch.object(capture_storage, "save_capture_receipt", side_effect=RuntimeError("synthetic receipt failure")) as failing_receipt:
+            assert execute_command(fault["capture_id"], "tactics.capture.create", {"request": fault}) is None
+            assert failing_receipt.call_count == 1
+        assert read_operation(fault["capture_id"])["state"] == "failed"
+        assert business_rows() == before_fault
         # Existing-card collision rolls back the repertoire/event/schedule/queue changes.
         with postgres_store.connection() as database:
             database.execute("UPDATE cards SET archived=1 WHERE id=?", (captured["card_id"],))
