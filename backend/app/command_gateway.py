@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 from tempo_legacy_database.adapters.commands.receipts import storage
 from tempo_legacy_database.adapters.commands.receipts.storage import (
     psycopg, DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
-    _writer_connection,
+    receipt_write_scope as _writer_connection,
 )
 from fastapi import HTTPException
 
@@ -78,9 +78,9 @@ def record_operation_attempt(
     """Persist retry identity before work; a crash can then be recovered."""
     request_hash = request_digest(command_name, payload)
     with _writer_connection(background) as database:
-        raw = storage.receipt_writer(database)
-        storage.insert_queued(raw, operation_id, command_name, request_hash, payload, background)
-        receipt = storage.locked_attempt(raw, operation_id)
+        receipt_writer = storage.receipt_writer(database)
+        storage.insert_queued(receipt_writer, operation_id, command_name, request_hash, payload, background)
+        receipt = storage.locked_attempt(receipt_writer, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         saved_payload = json.loads(receipt[3]) if receipt[3] else payload
@@ -88,10 +88,10 @@ def record_operation_attempt(
         if receipt[2] in {"complete", "failed"}:
             return False, saved_payload, None, receipt[7]
         if receipt[3] is None:
-            storage.save_missing_payload(raw, saved_payload, background, operation_id)
+            storage.save_missing_payload(receipt_writer, saved_payload, background, operation_id)
         now = datetime.now(timezone.utc)
         if receipt[2] == "blocked" and expected_retry_cycle == receipt[8]:
-            storage.restart_blocked(raw, operation_id)
+            storage.restart_blocked(receipt_writer, operation_id)
             cycle_attempts = 0
         elif expected_retry_cycle is not None:
             return False, saved_payload, None, receipt[7]
@@ -102,10 +102,10 @@ def record_operation_attempt(
         ) or (receipt[2] == "executing" and receipt[5] and receipt[5] > now):
             return False, saved_payload, None, cycle_attempts
         if background and cycle_attempts >= MAX_BACKGROUND_CYCLE_ATTEMPTS:
-            storage.block_exhausted(raw, operation_id)
+            storage.block_exhausted(receipt_writer, operation_id)
             return False, saved_payload, None, cycle_attempts
         attempt_token = uuid.uuid4().hex
-        storage.start_attempt(raw, attempt_token, lambda: now + timedelta(minutes=5 if not background else 1), operation_id)
+        storage.start_attempt(receipt_writer, attempt_token, lambda: now + timedelta(minutes=5 if not background else 1), operation_id)
         return True, saved_payload, attempt_token, cycle_attempts + 1
 
 
@@ -204,11 +204,11 @@ def _execute_command(
     from .services.activity_gate import activity_gate
     write_admission = activity_gate.foreground() if command_name == 'repertoire.prefix_transition.apply' else nullcontext()
     with write_admission, command_connection as database:
-        raw = storage.receipt_writer(database)
+        receipt_writer = storage.receipt_writer(database)
         # Serialize two deliveries of one command across worker processes.
-        storage.lock_operation(raw, operation_id)
-        storage.insert_pending(raw, operation_id, command_name, request_hash)
-        receipt = storage.locked_publication(raw, operation_id)
+        storage.lock_operation(receipt_writer, operation_id)
+        storage.insert_pending(receipt_writer, operation_id, command_name, request_hash)
+        receipt = storage.locked_publication(receipt_writer, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         if receipt[2] == "complete":
@@ -217,7 +217,7 @@ def _execute_command(
             raise RuntimeError(json.loads(receipt[4])["message"])
         if attempt_token is not None and (receipt[2] != "executing" or receipt[5] != attempt_token):
             return None
-        storage.begin_handler(raw)
+        storage.begin_handler(receipt_writer)
         try:
             if preparation_error is not None:
                 if (command_name == 'repertoire.prefix_transition.apply' and
@@ -230,7 +230,7 @@ def _execute_command(
             # converted into a permanent failed receipt.
             raise
         except Exception as error:
-            storage.rollback_handler(raw)
+            storage.rollback_handler(receipt_writer)
             if storage.is_transition_in_progress(error):
                 error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': storage.primary_error_message(error)})
             committed_transition = False
@@ -257,16 +257,16 @@ def _execute_command(
                     pass
             error_json = json.dumps(error_payload)
             if committed_transition:
-                storage.block_transition(raw, error_json, operation_id)
+                storage.block_transition(receipt_writer, error_json, operation_id)
                 return None
-            storage.fail_operation(raw, error_json, operation_id)
+            storage.fail_operation(receipt_writer, error_json, operation_id)
             return None
-        storage.release_handler(raw)
+        storage.release_handler(receipt_writer)
         if command_name == 'repertoire.prefix_transition.apply' and result.get('status') == 'pending':
-            storage.keep_transition_pending(raw, operation_id)
+            storage.keep_transition_pending(receipt_writer, operation_id)
             return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
-        storage.complete_operation(raw, response_json, operation_id)
+        storage.complete_operation(receipt_writer, response_json, operation_id)
         return result
 
 
