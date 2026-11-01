@@ -24,9 +24,15 @@ owner.lock_current_slice = lambda db, task: locks.append(task) or False
 claimed = {{'kind':{kind!r},'id':'retained','generation':8,'lease_token':'original-lease',
     'payload':{{'game_id':'game','analysis_version':1,'cursor':0,'candidate_id':'candidate'}}}}
 events = []
+completed = []
+tasks.complete_task = lambda *args, **kwargs: completed.append((args, kwargs))
 tasks.current_delivery = lambda task: events.append(task) or True
 assert tasks._execute_claimed_background_slice(claimed,None) is False
 assert events == [claimed] and events[0] is claimed
+if {kind!r} in ('defensive_threat_report_audit','defensive_threat_scan'):
+    assert completed == [(('retained',8,'original-lease'), {{'kind':{kind!r}}})]
+else:
+    assert completed == []
 if {kind!r} in ('defensive_threat_backfill','defensive_threat_validate'):
     assert locks == [claimed] and locks[0] is claimed
 ''')
