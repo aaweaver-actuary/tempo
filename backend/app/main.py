@@ -1307,31 +1307,37 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
         rows = queue_projection_storage.queue_rows(db, day, limit, miss_reason=MISS_REASON)
         cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
-        badge_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        fen_keys = {" ".join(card["start_fen"].split()[:4]) for card in cards}
-        encounter_by_fen = {}
-        unique_fen_keys = list(fen_keys)
-        for offset in range(0, len(unique_fen_keys), 400):
-            fen_key_batch = unique_fen_keys[offset:offset + 400]
-            encounter_rows = queue_projection_storage.encounter_rows(db, fen_key_batch, badge_cutoff)
-            encounter_by_fen.update({row["fen_key"]: row for row in encounter_rows})
         for card in cards:
             card["prefix_split_offer_available"] = (
                 card["latest_failed_review_id"] > card["prefix_split_rejected_after_review_id"]
             )
-            fen_key = " ".join(card["start_fen"].split()[:4])
-            encounters = encounter_by_fen.get(fen_key)
-            encounter_count = int(encounters["encounter_count"]) if encounters else 0
-            last_seen_at = encounters["last_seen_at"] if encounters else None
-            card["encounter_count_30d"] = encounter_count
-            card["last_encountered_at"] = last_seen_at
-            badges = []
-            if last_seen_at and last_seen_at >= (datetime.now(timezone.utc) - timedelta(days=7)).isoformat():
-                badges.append("Seen recently")
-            if encounter_count >= 3:
-                badges.append("Frequent")
-            card["encounter_badges"] = badges
         total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
+    # Advisory Games evidence owns a separate bounded read. A failed projection
+    # must close/rollback its own transaction before core issuance proceeds.
+    encounter_by_fen = None
+    if cards:
+        try:
+            with read_connection() as evidence_database:
+                encounter_by_fen = queue_projection_storage.encounter_badges(
+                    evidence_database, cards,
+                    (datetime.now(timezone.utc) - timedelta(days=30)).isoformat())
+        except Exception:
+            logging.getLogger(__name__).warning('Optional queue encounter evidence unavailable')
+    for card in cards:
+        card['encounter_evidence_status'] = 'available' if encounter_by_fen is not None else 'unavailable'
+        fen_key = " ".join(card["start_fen"].split()[:4])
+        encounters = encounter_by_fen.get(fen_key) if encounter_by_fen is not None else None
+        encounter_count = int(encounters["encounter_count"]) if encounters else 0
+        last_seen_at = encounters["last_seen_at"] if encounters else None
+        if encounter_by_fen is not None:
+            card["encounter_count_30d"] = encounter_count
+        card["last_encountered_at"] = last_seen_at
+        badges = []
+        if last_seen_at and last_seen_at >= (datetime.now(timezone.utc) - timedelta(days=7)).isoformat():
+            badges.append("Seen recently")
+        if encounter_count >= 3:
+            badges.append("Frequent")
+        card["encounter_badges"] = badges
     if cards:
         _issue_returned_queue_head(day, cards[0])
     else:

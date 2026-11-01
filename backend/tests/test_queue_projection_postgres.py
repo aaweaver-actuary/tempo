@@ -76,3 +76,48 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
             database.execute_native('DELETE FROM frozen_opening_runs WHERE run_id=%s', (repertoire,))
             database.execute_native('DELETE FROM cards WHERE id=ANY(%s)', (cards,))
             database.execute_native('DELETE FROM repertoires WHERE id=%s', (repertoire,))
+
+
+def test_optional_encounter_sql_failure_closes_separate_read_and_preserves_core_transaction(owned_postgres, monkeypatch):
+    """An actual PostgreSQL error cannot poison Study's separate core read."""
+    import psycopg
+    def broken(database, *_args):
+        return database.execute_native('SELECT * FROM tempo_b_absent_optional_projection').fetchall()
+    monkeypatch.setattr(queue_projection, 'encounter_rows', broken)
+    with owned_postgres() as core:
+        xid = core.execute_native('SELECT txid_current()').fetchone()[0]
+        with pytest.raises(psycopg.errors.UndefinedTable):
+            with owned_postgres() as optional:
+                queue_projection.encounter_badges(optional, [{'start_fen': chess.STARTING_FEN}], '2026-01-01')
+        assert core.execute_native('SELECT txid_current()').fetchone()[0] == xid
+        assert core.execute_native('SELECT 1').fetchone()[0] == 1
+
+
+def test_accepted_authority_hold_does_not_become_issuance_blocker_when_retry_expires(case):
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+    from test_product_game_lapse import qualification_for
+    from test_product_game_lapse_postgres import _qualified_policy_owner
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore, pending_feedback_preparation, next_feedback_preparation)
+    qualification = qualification_for(case.lapse)
+    with case.transaction() as database:
+        _qualified_policy_owner(case, database, qualification).accept_qualified(case.lapse, qualification=qualification)
+    with case.transaction() as database:
+        store = PostgresGameFeedbackStore(database)
+        accepted = store.get(case.lapse.key)
+        assert accepted is not None and accepted.qualification is not None
+        assert pending_feedback_preparation(database, '2026-10-30')
+        for reason, deferred in (('first_departure_qualification_unavailable', 'authority_unavailable'),
+                                 ('later_review_clock', None),
+                                 ('encounter_introduction_policy_pending', None)):
+            store.save(replace(accepted, reason=reason, deferred_reason=deferred,
+                preparation_retry_at=datetime.now(timezone.utc)-timedelta(seconds=1)),
+                datetime.now(timezone.utc))
+            assert not pending_feedback_preparation(database, '2026-10-30')
+            assert next_feedback_preparation(database, '2026-10-30').key == accepted.key
+        store.save(replace(accepted, deferred_reason=None, preparation_retry_at=None), datetime.now(timezone.utc))
+        assert pending_feedback_preparation(database, '2026-10-30')
+
+
+from test_product_game_lapse_postgres import case

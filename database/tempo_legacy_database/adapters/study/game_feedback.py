@@ -527,7 +527,7 @@ def feedback_preparation_admitted(database, *, lock=False, task_id=None):
     return bool(row and row[0])
 
 
-def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
+def next_feedback_preparation(database, day, *, now=None, qualified_only=False, blocking_only=False):
     """One bounded local preparation, including acknowledged old missed work.
 
     Selecting a raw historical command grants no urgency or mutation authority;
@@ -581,7 +581,11 @@ def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
             OR NOT EXISTS(SELECT 1 FROM daily_queue queued
               WHERE queued.card_id=card.id AND queued.queue_date=%s AND queued.status='queued'))
         """ + ("""AND COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
-        """ if qualified_only else '') + """ORDER BY CASE COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'stream',
+        """ if qualified_only else '') + ("""AND COALESCE(effect.payload_json::jsonb->'owner'->>'deferred_reason','')
+            NOT IN ('authority_unavailable','source_hold')
+          AND (effect.reason IS NULL OR effect.reason IN ('study_priority_pending','due_queue_refresh_pending'))
+          AND COALESCE(effect.payload_json::jsonb->'owner'->'qualification','null'::jsonb)<>'null'::jsonb
+        """ if blocking_only else '') + """ORDER BY CASE COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'stream',
                               effect.payload_json::jsonb->'owner'->'qualification'->>'stream')
                        WHEN 'forward' THEN 0 ELSE 1 END,
           COALESCE(effect.payload_json::jsonb->'owner'->'progress'->>'determined_at',
@@ -593,7 +597,7 @@ def next_feedback_preparation(database, day, *, now=None, qualified_only=False):
 
 
 def pending_feedback_preparation(database, day, *, before_priority=None):
-    observed = next_feedback_preparation(database,day,qualified_only=before_priority is not None)
+    observed = next_feedback_preparation(database,day,qualified_only=before_priority is not None,blocking_only=True)
     if observed is None:
         return False
     if before_priority is None:

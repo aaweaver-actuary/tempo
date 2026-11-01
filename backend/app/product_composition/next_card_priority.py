@@ -40,16 +40,18 @@ class PreparedCurrentStudyWork:
             if has_missing_due_card(database, day):
                 from app.services.queue_application import ensure_due_refresh_in_transaction
                 ensure_due_refresh_in_transaction(database, day)
-                return NextCardPreparation(False, True, 'due_queue_refresh_pending')
+                return NextCardPreparation(False, True, 'due_queue_refresh_pending', blocks_issuance=True)
         receipt = apply_prepared_feedback_effect(database, self.effect, clock=self.clock,
                                                  operation_admitted=self.admitted)
         if receipt is None and self.effect.reason:
             # A retained recoverable debt is still pending even though this
             # command has completed. A terminal owner hold permits other work.
-            return NextCardPreparation(False, not self.effect.terminal, self.effect.reason)
+            return NextCardPreparation(False, not self.effect.terminal, self.effect.reason, blocks_issuance=False)
         progressed = bool(receipt is not None and receipt.admission_status == 'available')
         return NextCardPreparation(progressed, bool(receipt is not None and not progressed),
-            receipt.reason if receipt is not None and not progressed else None)
+            receipt.reason if receipt is not None and not progressed else None,
+            blocks_issuance=bool(receipt is not None and not progressed and
+                receipt.reason in {'due_queue_refresh_pending', 'encounter_preparation_required'}))
 
 
 def _observed_priority(observed):
@@ -86,7 +88,14 @@ def register_current_next_card_priority(*, read=read_connection,
         # The optional owner selects controls or earlier source work by cheap
         # metadata before projecting/capturing it. Only the winning unit pays
         # preparation cost; all reads close before the gateway writer opens.
-        delivery = local_handoff_prepare(before_priority=priority) if local_handoff_prepare else None
+        try:
+            delivery = local_handoff_prepare(before_priority=priority) if local_handoff_prepare else None
+        except Exception:
+            # This optional preparation has closed its own reads; accepted
+            # Study preparation below must still run under its required owner.
+            import logging
+            logging.getLogger(__name__).warning('Optional next-card source preparation unavailable')
+            delivery = None
         if delivery is not None and delivery.is_control:
             return delivery
         if not available:

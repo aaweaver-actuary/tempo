@@ -361,3 +361,57 @@ def test_queue_issuance_is_only_queue_get_write_exception():
         '/api/queue/today': False, '/api/queue/prepared': False, '/api/queue/window': False,
         '/api/queue/entries/1/state': True, '/api/settings': True,
     }
+
+
+def test_optional_encounter_projection_failure_keeps_core_queue_and_issuance(queued_attempts, monkeypatch):
+    def unavailable(*_args):
+        raise RuntimeError('optional Games projection unavailable')
+    monkeypatch.setattr(main.queue_projection_storage, 'encounter_rows', unavailable)
+    response = TestClient(main.app).get('/api/queue/window?limit=2')
+    assert response.status_code == 200, response.text
+    cards = response.json()['cards']
+    assert [card['id'] for card in cards] == ['active-a', 'later-b']
+    assert all(card['encounter_evidence_status'] == 'unavailable' and
+               'encounter_count_30d' not in card and card['encounter_badges'] == [] for card in cards)
+    with database.read_connection() as connection:
+        assert [tuple(row) for row in connection.execute(
+            'SELECT card_id,issued_as_head FROM queue_attempt_origins ORDER BY queue_entry_id'
+        )] == [('active-a', 1), ('later-b', 0)]
+
+
+def test_core_queue_projection_failure_remains_visible(queued_attempts, monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError('required Study projection unavailable')
+    monkeypatch.setattr(main.queue_projection_storage, 'queue_rows', unavailable)
+    with pytest.raises(RuntimeError, match='required Study projection unavailable'):
+        TestClient(main.app).get('/api/queue/window?limit=2')
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT count(*) FROM queue_attempt_origins WHERE issued_as_head=1').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_nonblocking_optional_pending_does_not_veto_populated_or_empty_queue(queued_attempts, monkeypatch, empty):
+    from app.services import queue_next_card
+    from app.study.interfaces.next_card import NextCardPreparation
+    monkeypatch.setattr(queue_next_card, '_source_pending', lambda *_args, **_kwargs:
+                        NextCardPreparation(False, True, 'graph_not_ready', blocks_issuance=False))
+    if empty:
+        with database.connection() as connection:
+            connection.execute("UPDATE daily_queue SET status='complete'")
+    response = TestClient(main.app).get('/api/queue/window?limit=2')
+    assert response.status_code == 200, response.text
+    assert len(response.json()['cards']) == (0 if empty else 2)
+
+
+def test_ready_optional_pending_still_precedes_unissued_head_and_preserves_issued_head(queued_attempts, monkeypatch):
+    from app.services import queue_next_card
+    from app.study.interfaces.next_card import NextCardPreparation
+    client = TestClient(main.app)
+    monkeypatch.setattr(queue_next_card, '_source_pending', lambda *_args, **_kwargs:
+                        NextCardPreparation(False, True, 'ready', blocks_issuance=True))
+    assert client.get('/api/queue/window?limit=2').status_code == 503
+    monkeypatch.setattr(queue_next_card, '_source_pending', None)
+    assert client.get('/api/queue/window?limit=2').status_code == 200
+    monkeypatch.setattr(queue_next_card, '_source_pending', lambda *_args, **_kwargs:
+                        NextCardPreparation(False, True, 'ready', blocks_issuance=True))
+    assert client.get('/api/queue/window?limit=2').status_code == 200

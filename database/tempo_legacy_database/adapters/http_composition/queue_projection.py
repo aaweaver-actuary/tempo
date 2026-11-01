@@ -157,6 +157,19 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
     ).fetchall()
 
 
+def encounter_badges(database, cards, badge_cutoff):
+    """Advisory batch projection on an exclusively owned short read."""
+    if isinstance(database, postgres_store.PostgresConnection):
+        database.execute_native("SELECT set_config('statement_timeout', '100ms', true)")
+        database.execute_native("SELECT set_config('lock_timeout', '25ms', true)")
+    keys = sorted({" ".join(card['start_fen'].split()[:4]) for card in cards})
+    result = {}
+    for offset in range(0, len(keys), 400):
+        result.update({row['fen_key']: dict(row)
+                       for row in encounter_rows(database, keys[offset:offset + 400], badge_cutoff)})
+    return result
+
+
 def encounter_rows(database, fen_key_batch, badge_cutoff):
     placeholders = ",".join("?" for _ in fen_key_batch)
     return database.execute(

@@ -178,3 +178,12 @@ The canonical [owner interface/transaction drawings](../../../../backend/app/stu
 and its hook manifest describe the receiver, queue recovery and settlement.
 Native fixture/cleanup instructions belong with
 [`test_product_game_lapse_postgres.py`](../../../../backend/tests/test_product_game_lapse_postgres.py).
+
+### Issuance readiness versus retained preparation (#659)
+
+`pending_feedback_preparation` uses the same owner selector with `blocking_only=True`:
+only a currently qualified obligation with a ready priority/queue-refresh reason
+can defer a new ordinary attempt. A known authority/source hold or an unqualified
+old command remains recoverable through `next_feedback_preparation`; an expired
+retry deadline does not grant readiness. Original payload, determination clock,
+accepted disposition and scheduling receipts remain unchanged. No schema changes.

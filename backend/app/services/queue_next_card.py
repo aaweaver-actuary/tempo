@@ -7,14 +7,14 @@ producer, projects repertoire content or runs optional preparation in a review.
 """
 from collections.abc import Callable
 
-from app.study.interfaces.next_card import PreparedNextCardWork, NoNextCardWork
+from app.study.interfaces.next_card import PreparedNextCardWork, NoNextCardWork, NextCardPreparation, next_card_preparation_payload
 
 _prepare: Callable[[], PreparedNextCardWork] | None = None
-_source_pending: Callable[..., bool] | None = None
+_source_pending: Callable[..., bool | NextCardPreparation] | None = None
 
 
 def configure_next_card_work(*, prepare: Callable[[], PreparedNextCardWork],
-                             source_pending: Callable[..., bool] | None = None):
+                             source_pending: Callable[..., bool | NextCardPreparation] | None = None):
     global _prepare, _source_pending
     _prepare, _source_pending = prepare, source_pending
 
@@ -28,7 +28,10 @@ def pending_next_card_preparation(database, day, *, candidate_card_id=None):
             priority = feedback_queue_priorities(database, (candidate_card_id,)).get(candidate_card_id)
         if pending_feedback_preparation(database, day, before_priority=priority):
             return True
-    return bool(_source_pending and _source_pending(database, day, before_priority=priority))
+    source = _source_pending(database, day, before_priority=priority) if _source_pending else False
+    # Pending optional obligations are not themselves an issuance veto. Old
+    # bool callbacks keep their previous conservative meaning until upgraded.
+    return source.issuance_blocked if isinstance(source, NextCardPreparation) else bool(source)
 
 
 def prepare_next_card_command(payload):
@@ -40,4 +43,4 @@ def prepare_next_card_command(payload):
 
 def prepared_next_card_result(database, prepared: PreparedNextCardWork):
     result = prepared.apply(database)
-    return dict(progressed=result.progressed, pending=result.pending, reason=result.reason)
+    return next_card_preparation_payload(result)
