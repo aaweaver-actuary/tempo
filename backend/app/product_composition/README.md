@@ -501,7 +501,8 @@ flowchart LR
   Routes --> Proof["Repertoire-owned exact-game legal execution over every applicable route"]
   Proof --> Bindings["Elect first boundary; read complete bindings for every surviving route"]
   Bindings --> Prepare["Repertoire-owned snapshot; current Study target preparation outside writer"]
-  Prepare --> Fence["Gateway request hash / attempt token / receipt"]
+  Prepare --> Exact["Study exact current target + integrity facts; no catalogue export"]
+  Exact --> Fence["Gateway request hash / attempt token / receipt"]
   Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
   Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
   Accept --> Study["Independent accepted Study preparation / issuance / settlement"]
@@ -658,3 +659,20 @@ Study-only currently permits only daily-queue task kinds. A queued graph/scan
 cannot progress under that policy without an explicit supported repair operation;
 ordinary Study must remain available while that prerequisite is held. No optional
 producer is enabled by this observer.
+
+
+### Current qualified target authority (#662)
+
+The first-departure path uses Study's `CurrentQualifiedOwnerDecisions`, prepared
+from canonical Games source, complete configured Repertoire-owned legal execution
+and candidate bindings, and one exact current target read. It performs no broad
+legacy capture or `project_capture`. The current target retains card definition,
+all of that card's memberships, graph uses, and current graph/integrity evidence;
+full selection, source/configuration, publication, physical and lineage checks
+still run through the existing borrowed transaction before accepting an effect.
+Canonical introduction and Again/settlement retain their existing Study owners.
+
+The legacy constructor, `capture_game`, `capture_source_scope`, `project_capture`
+and explicit `accept_encounter` compatibility route remain for old consumers;
+they are not used by new qualified intake or accepted qualified preparation.
+The optional root keeps legacy capture as a lazy compatibility callback only.

@@ -187,3 +187,30 @@ can defer a new ordinary attempt. A known authority/source hold or an unqualifie
 old command remains recoverable through `next_feedback_preparation`; an expired
 retry deadline does not grant readiness. Original payload, determination clock,
 accepted disposition and scheduling receipts remain unchanged. No schema changes.
+
+## Current qualified feedback without legacy catalogue capture
+
+[`current_feedback_authority.py`](current_feedback_authority.py) supplies
+`CurrentQualifiedOwnerDecisions` with an explicit current-only constructor. It
+shares Study's complete-scope reselection and final selected-publication/candidate/
+lineage fences while retaining a narrow exact-target proof instead of the old
+export token/catalogue format. Its target read selects one card, its memberships
+and graph uses, and current integrity facts; no table, stored payload or migration
+changes. Legacy `CurrentOwnerDecisions` and old accepted effects remain readable.
+
+```mermaid
+flowchart LR
+  Source["Canonical Games source + original command / witness"] --> Scope["Complete configured Repertoire publications + candidate bindings"]
+  Scope --> Preparation["Study closed-read current authority; validate executable"]
+  Target["One target card + memberships + graph uses + integrity"] --> Preparation
+  Preparation --> Fence["Borrowed writer: source/config + selected headers + candidate freshness"]
+  Fence --> Current["Locked exact target or explicit recombination lineage"]
+  Current --> Effect["Existing Study effect / Again / canonical introduction / settlement"]
+  Legacy["Retained legacy consumers"] --> Compatibility["Existing capture + legacy authority constructor"]
+```
+
+The final target check omits introduction time from immutable definition
+comparison, then observes actual introduction under its card lock. Source,
+publication, membership, content revision, integrity or lineage changes grant no
+effect. This is a modular-monolith source boundary, not separate deployment or
+database isolation.
