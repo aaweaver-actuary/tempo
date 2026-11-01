@@ -6540,3 +6540,16 @@ modules blocked before import. It verifies core HTTP/task registration, real iso
 SQLite queue reads and idempotent review saving, optional-only failure, original
 retained task identity, and absence from loaded modules. Missing Learning/storage
 is still a core bootstrap failure; this is not a PostgreSQL/resource-isolation claim.
+
+### Packaged current-feedback tripwires (#662 / #668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py` adds
+`test_packaged_current_feedback_without_legacy_capture[unseen]` and
+`[introduced-with-target-rollback]` to the existing `study-recovery` suite.
+The existing browser journey must reach actual same-key settlement with legacy
+capture/projection tripwires installed before consumer imports. The introduced
+case injects one controlled revision change inside the actual owner transaction,
+immediately before the new narrow target fence; it requires durable refusal,
+rollback of the revision/effect/ack and unchanged-key/clock recovery after clearing
+the marker. This case does not claim to simulate external concurrency. The normal
+R1 thirty-transition cases and production deadlines/resource caps stay unchanged.
