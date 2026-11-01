@@ -148,3 +148,11 @@ legal reply; the real browser plays only trained-color decisions. Shared root
 prefixes are deliberately deduplicated and cannot alone supply that backlog.
 The ten complete configured repertoires and all persisted shape assertions remain
 unchanged; no inert cards or extra routes are added to reach the count.
+
+The browser measurement correlates the original attempt POST and its exact
+`review-attempt:<attempt_id>` command identity with the supported persisted
+card/queue/review receipt. The public receipt does not echo `attempt_id`. After
+the measured boundary the existing host check reads that immutable attempt's
+owner receipt and requires exact result JSON, matching review/card/queue and both
+authoritative issuance origins. Asynchronous responses must retain the original
+command identity; these checks do not invent an API field or weaken settlement.
