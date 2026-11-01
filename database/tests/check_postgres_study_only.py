@@ -8,6 +8,9 @@ sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
 from datetime import date
+from dataclasses import replace
+from copy import deepcopy
+import json
 import os
 from pathlib import Path
 import sys
@@ -23,9 +26,56 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, tasks
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
-from app.command_gateway import execute_command, claim_recoverable_operation, read_operation
+from app.command_gateway import CommandConflict, execute_command, claim_recoverable_operation, read_operation, request_digest
+from app import command_gateway, settings_commands
 from app.services import durable_tasks, study_mode
 from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations
+
+
+def prove_settings_descriptor_original_identity():
+    """Real SQL receipt/queue proof; only derived preparation is varied on replay."""
+    assert 'settings.update' in command_gateway._registry.preparers
+    operation = uuid4().hex
+    values = main.get_settings().model_dump(mode='json')
+    values['new_cards_per_day'] = 12 if values['new_cards_per_day'] != 12 else 13
+    original = {'settings': values, 'supplied_fields': ['new_cards_per_day']}
+    original_copy = deepcopy(original)
+    prepare = command_gateway._preparers['settings.update']
+    def changed_preparation(payload):
+        prepared = prepare(payload)
+        return replace(prepared, settings=prepared.settings.model_copy(update={'new_cards_per_day': 19}))
+    def snapshot():
+        with postgres_store.connection() as database:
+            settings_value = database.execute('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]
+            task = database.execute("SELECT id,generation,state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+            receipt = database.execute('SELECT command_name,request_hash,state,response_json FROM operation_receipts WHERE operation_id=?', (operation,)).fetchone()
+            return settings_value, tuple(task) if task else None, tuple(receipt) if receipt else None
+    before_task = snapshot()[1]
+    with patch.object(settings_commands.storage, 'store_settings', wraps=settings_commands.storage.store_settings) as write:
+        first = execute_command(operation, 'settings.update', original)
+        baseline = snapshot()
+        assert baseline[0] == values['new_cards_per_day'] and baseline[1] is not None
+        assert baseline[1][2] == 'queued'
+        if before_task is None:
+            assert baseline[1][1] == 1
+        else:
+            assert baseline[1][0] == before_task[0] and baseline[1][1] == before_task[1] + 1
+        assert baseline[2][:3] == ('settings.update', request_digest('settings.update', original), 'complete')
+        assert json.loads(baseline[2][3]) == first
+        with patch.dict(command_gateway._preparers, {'settings.update': changed_preparation}):
+            assert execute_command(operation, 'settings.update', original) == first
+            changed = deepcopy(original)
+            changed['settings']['new_cards_per_day'] = 14 if values['new_cards_per_day'] != 14 else 15
+            try:
+                execute_command(operation, 'settings.update', changed)
+            except CommandConflict:
+                pass
+            else:
+                raise AssertionError('changed original payload did not conflict')
+        assert original == original_copy
+        assert write.call_count == 1
+        assert snapshot() == baseline
+    print('PASS settings_descriptor_original_identity_replay_and_conflict')
 
 
 def proof():
@@ -70,6 +120,7 @@ def proof():
             assert execute_command(uuid4().hex, 'settings.update',
                 {'settings': omitted, 'supplied_fields': sorted(omitted)})['study_only_mode'] is True
             print('PASS study_only_toggle_persists_and_omitted_field_preserves_value')
+            prove_settings_descriptor_original_identity()
 
             optional = durable_tasks.enqueue_task('opening_graph_rebuild', 'preserved-mode-work', {'cursor': 7})
             assert durable_tasks.claim_task(kind='opening_graph_rebuild') is None
