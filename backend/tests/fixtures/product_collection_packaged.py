@@ -15,6 +15,18 @@ import time
 
 import httpx
 
+provider_path = Path('/tmp/tempo-qualification-provider.json')
+if not provider_path.exists():
+    # Assembly roles receive an immutable initial snapshot in their launch env.
+    # The separate bounded collect-only fixture has no live reader at startup.
+    initial = os.environ.get('TEMPO_QUALIFICATION_PROVIDER_INITIAL')
+    if initial is None:
+        initial = Path('/qualification/provider.json').read_text()
+    json.loads(initial)
+    temporary = provider_path.with_suffix('.next')
+    temporary.write_text(initial)
+    temporary.replace(provider_path)
+
 def install_r2_current_feedback_guards(path=Path('/qualification/r2-current-feedback.json')):
     """Install deepest guards before consumer imports/closures, never change authority.
 
@@ -242,7 +254,7 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
         *(['--beat', '--schedule=/tmp/qualification-celerybeat-schedule'] if foreground else [])])
     raise SystemExit(0)
 
-inputs = json.loads(Path('/qualification/provider.json').read_text())
+inputs = json.loads(provider_path.read_text())
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -290,7 +302,7 @@ def feedback_admitted():
         if time.monotonic() >= deadline:
             raise RuntimeError('feedback_fixture_start_not_released')
         time.sleep(.05)
-    inputs = json.loads(Path('/qualification/provider.json').read_text())
+    inputs = json.loads(provider_path.read_text())
     yield
 
 try:
@@ -320,7 +332,7 @@ try:
                 if time.monotonic() >= deadline:
                     raise RuntimeError('recovery_fixture_configuration_not_released')
                 time.sleep(.05)
-            inputs = json.loads(Path('/qualification/provider.json').read_text())
+            inputs = json.loads(provider_path.read_text())
             recovery_runtime = True
             @contextmanager
             def recovery_admitted():
@@ -330,7 +342,7 @@ try:
                     if time.monotonic() >= deadline:
                         raise RuntimeError('recovery_fixture_actual_admission_not_released')
                     time.sleep(.05)
-                inputs = json.loads(Path('/qualification/provider.json').read_text())
+                inputs = json.loads(provider_path.read_text())
                 # Preserve the original production controls and resource lease.
                 # Only HTTP inputs/clock and the start barrier are synthetic.
                 with actual_admission():

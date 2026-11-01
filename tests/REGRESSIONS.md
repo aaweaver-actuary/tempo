@@ -6610,3 +6610,7 @@ logical identities, determination clocks, retained pages and completed checkpoin
 ### Recovery provider snapshots publish atomically (#668)
 
 The existing packaged feedback and thirty-transition recovery cases publish every live `provider.json` update through their existing atomic marker boundary. The afe run exposed a truncated provider string in the actual container reader before full-scope configure. No parse retry, fabricated input, deadline change or product patch is used; concurrent readers must receive complete old or new synthetic snapshots.
+
+### Recovery control snapshots remain coherent across host/guest filesystems (#668)
+
+Existing packaged feedback/recovery cases publish live provider JSON via verified stdin into each existing role's Linux tmpfs, with same-directory replacement and digest readback. The5f30 run exposed a missing host-renamed file at the guest admission barrier; no host parse retry is used. Paused deferral is allowed only before both recovery release markers, and the full-scope publication strictly refreshes all roles before release. A finite actual Linux guest proof exercised100 concurrent64KiB updates with1,412 complete reads and no errors; it is transport evidence, not packaged acceptance.
