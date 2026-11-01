@@ -16,8 +16,8 @@ from .services.engine_diagnostics import record_engine_outcome
 from .services.background_metrics import increment
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
-from .services.threat_pipeline import (
-    _request_from_json, report_from_json, validate_analysis_report,
+from tempo_learning_runtime.defense_decode import (
+    request_from_json as _request_from_json, report_from_json, validate_analysis_report,
 )
 
 from .services.engine_scheduling import (

@@ -16,7 +16,11 @@ from .threat_validation import (
 )
 
 
-def _request_from_json(raw: dict) -> AnalysisRequest:
+ENGINE_VERSION = "Stockfish 19 WASM"
+NETWORK_VERSION = "nn-61e7af4bb97d.nnue"
+
+
+def request_from_json(raw: dict) -> AnalysisRequest:
     return AnalysisRequest(
         **{**raw, "position_prefix_uci": tuple(raw["position_prefix_uci"])}
     )
@@ -24,7 +28,7 @@ def _request_from_json(raw: dict) -> AnalysisRequest:
 
 def report_from_json(raw: dict) -> AnalysisReport:
     return AnalysisReport(
-        request=_request_from_json(raw["request"]),
+        request=request_from_json(raw["request"]),
         lines=tuple(
             AnalysisLine(
                 root_move_uci=line["root_move_uci"],
@@ -71,7 +75,7 @@ def validate_analysis_report(request: AnalysisRequest, report: AnalysisReport) -
             position.push(move)
 
 
-def _seed_from_json(raw: dict) -> ThreatSeed:
+def seed_from_json(raw: dict) -> ThreatSeed:
     geometry = raw["geometry"]
     return ThreatSeed(
         raw["seed_id"],
@@ -97,7 +101,7 @@ def _seed_from_json(raw: dict) -> ThreatSeed:
     )
 
 
-def _anchor_from_json(raw: dict) -> ExerciseAnchor:
+def anchor_from_json(raw: dict) -> ExerciseAnchor:
     position = raw["position"]
     return ExerciseAnchor(
         raw["seed_id"],
@@ -110,3 +114,9 @@ def _anchor_from_json(raw: dict) -> ExerciseAnchor:
         raw["historical_move_uci"],
         raw["decisions_before_event"],
     )
+
+
+# Compatibility names for existing Learning callers.
+_request_from_json = request_from_json
+_seed_from_json = seed_from_json
+_anchor_from_json = anchor_from_json

@@ -9,6 +9,20 @@ peer documents link to them instead of maintaining copies. See the
 [diagram index and source/status baseline](../../../docs/architecture/diagrams/README.md) and
 [maintenance procedure](../../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
 
+### Defense evidence codecs
+
+`defense_decode` owns the shared pure request, report, seed and anchor decoders,
+engine version facts and report validation. Legacy threat and game-analysis
+consumers use these directly; the threat producer reexports its former names.
+Importing the codecs does not start the producer, a database or an engine.
+
+```mermaid
+flowchart LR
+  Producer["Threat producer"] --> Codec["Learning defense evidence codecs"]
+  Consumers["Threat / game semantic consumers"] --> Codec
+  Codec --> Models["Learning defense models and validation"]
+```
+
 ### Command registry selection (proposed G1)
 
 The independent runtime constructs an immutable command registry per app from
