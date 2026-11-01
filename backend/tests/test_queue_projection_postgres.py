@@ -121,3 +121,88 @@ def test_accepted_authority_hold_does_not_become_issuance_blocker_when_retry_exp
 
 
 from test_product_game_lapse_postgres import case
+
+
+def test_native_packaged_seed_progresses_through_real_queue_owner(case, monkeypatch):
+    """Diagnostic for #668's initial empty head; no browser/package claim."""
+    import json
+    from types import SimpleNamespace
+    from app import queue_commands
+    from app.services import durable_tasks, postgres_queue_refresh, study_mode
+    from tempo_legacy_database.adapters.queue_refresh import reads
+    from tempo_legacy_database.adapters.queue_refresh.eligibility import _DUE_CARD_ELIGIBILITY
+    from test_product_game_lapse_postgres import retained_owner_case
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    with case.transaction() as database:
+        database.execute_native("UPDATE settings SET timezone='UTC',new_cards_per_day=0,study_only_mode=1 WHERE id=1")
+    retained_owner_case(case, False)
+    target_id = 'native-packaged-target-' + uuid.uuid4().hex
+    with case.transaction() as database:
+        database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
+            SELECT %s,repertoire_id,kind,start_fen,moves_json,'locked',CURRENT_DATE,'opening'
+            FROM cards WHERE id=%s""", (target_id,case.card_id))
+        database.execute_native("""UPDATE cards SET due_date=CURRENT_DATE,
+            introduced_at=split_part(introduced_at,'T',1) WHERE id=%s""", (case.card_id,))
+    target_case = SimpleNamespace(transaction=case.transaction,card_id=target_id,
+        decisions=SimpleNamespace(mappings=(case.decisions.mappings[0].model_copy(update={'presentation_id':target_id}),)),
+        lapse=case.lapse.model_copy(update={'key':case.lapse.key.model_copy(update={'game_id':uuid.uuid4().hex}),
+            'finding':case.lapse.finding.model_copy(update={'presentation_id':target_id})}))
+    retained_owner_case(target_case, True)
+    with case.transaction() as database:
+        database.execute_native("""UPDATE cards target SET state='mature',due_date=CURRENT_DATE+30,
+            interval_days=original.interval_days,stability=original.stability,
+            fsrs_card_json=original.fsrs_card_json,first_correct_at=original.first_correct_at,
+            introduced_at=split_part(target.introduced_at,'T',1)
+            FROM cards original WHERE target.id=%s AND original.id=%s""", (target_id,case.card_id))
+        day = queue_commands.current_study_day(database)
+
+    def write(operation, **kwargs):
+        with case.transaction() as database:
+            return operation(database)
+    monkeypatch.setattr(durable_tasks, 'submit_background_write', write)
+    monkeypatch.setattr(postgres_queue_refresh, 'connection', lambda **kwargs: case.transaction())
+    monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', case.transaction)
+    monkeypatch.setattr(reads, 'background_read_connection', case.transaction)
+    monkeypatch.setattr(study_mode, 'read_connection', case.transaction)
+    monkeypatch.setattr(study_mode, 'background_read_connection', case.transaction)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, 'wait_for_foreground', lambda: None)
+    observations = []
+    def observe(stage):
+        with case.transaction() as database:
+            clock = dict(database.execute_native("SELECT CURRENT_DATE AS pg_day,current_setting('TimeZone') AS pg_timezone").fetchone())
+            cards = [dict(row) for row in database.execute_native("""SELECT id,state,due_date,introduced_at,
+                pending_validation,archived FROM cards WHERE id=ANY(%s) ORDER BY id""", ([case.card_id,target_id],))]
+            eligible = [row[0] for row in database.execute_native('SELECT c.id FROM cards c WHERE ' + _DUE_CARD_ELIGIBILITY,
+                (day,day,day))]
+            queue = [dict(row) for row in database.execute_native('SELECT * FROM daily_queue ORDER BY id LIMIT 20')]
+            projection = [dict(row) for row in database.execute_native('SELECT * FROM queue_projections ORDER BY queue_date LIMIT 5')]
+            tasks = [dict(row) for row in database.execute_native("""SELECT id,generation,state,phase,payload_json,last_error
+                FROM background_tasks WHERE kind='daily_queue' LIMIT 5""")]
+            served = [dict(row) for row in queue_projection.queue_rows(database,day,20,miss_reason=MISS_REASON)]
+        value = dict(stage=stage,clock=clock,study_day=day,cards=cards,eligible=eligible,
+            queue=queue,projection=projection,tasks=tasks,served=served)
+        observations.append(value)
+        print('native_seed_probe '+json.dumps(value,default=str),flush=True)
+        return value
+    before = observe('authored_setup')
+    with case.transaction() as database:
+        queue_commands.request_queue_refresh_in_transaction(database,day)
+    try:
+        for index in range(64):
+            task = durable_tasks.claim_task('daily_queue')
+            if task is None:
+                break
+            phase = task['payload'].get('_queue_phase','unlock_opening')
+            more = postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+            observe(str(index)+':'+phase)
+            if not more:
+                break
+        final = observe('after_owner')
+        assert case.card_id in before['eligible'], 'Authored packaged head is not due/eligible'
+        assert any(row['id']==case.card_id for row in final['served']), 'Actual owner did not serve authored protected head'
+    finally:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2]/'test-results/collection-release/native-initial-queue-probe.json'
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_text(json.dumps(observations,indent=2,default=str))
