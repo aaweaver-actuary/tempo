@@ -35,7 +35,7 @@ tasks.activity_gate.foreground = lambda: nullcontext()
 tasks._preparation_capacity = lambda *_: nullcontext(True)
 background_runtime.measure_training_timing = lambda *_: nullcontext(None)
 def attempt(operation_id, name, original, **kw):
-    assert command_gateway.is_command_registered(name)
+    assert not command_gateway.is_command_registered(name)
     seen.append(('receipt', operation_id, name, original, kw))
     return True, original, 'original-token', 1
 tasks.record_operation_attempt = attempt
@@ -112,4 +112,82 @@ try:
 finally:
     release.set(); optional.join(5); worker.join(5)
 assert not optional.is_alive() and not worker.is_alive()
+''')
+
+
+def test_failed_import_follows_receipt_and_records_original_fenced_failure():
+    run_fresh('''
+from contextlib import nullcontext
+from app import tasks, command_gateway
+from app.services import background_runtime
+payload = {'lichess_username': 'alice'}
+events = []
+tasks.activity_gate.foreground = lambda: nullcontext()
+tasks._preparation_capacity = lambda *_: nullcontext(True)
+background_runtime.measure_training_timing = lambda *_: nullcontext(None)
+def attempt(operation_id, name, original, **kw):
+    events.append(('receipt', operation_id, name, original, kw))
+    return True, original, 'fenced-token', 1
+tasks.record_operation_attempt = attempt
+error = ImportError('synthetic missing sync dependency')
+def unavailable(name):
+    assert events[0][0] == 'receipt'
+    events.append(('resolve', name))
+    raise error
+tasks.resolve_worker_game_sync_command = unavailable
+tasks.execute_command = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError('unexpected publication'))
+def retry(operation_id, token, exc, **kw):
+    events.append(('failure', operation_id, token, exc, kw))
+tasks.record_operation_retry = retry
+try:
+    tasks.execute_foreground_command.run('retained-id', 'games.sync.enqueue', payload)
+except ImportError as caught:
+    assert caught is error
+else: raise AssertionError('import failure was hidden')
+assert events[0][1:4] == ('retained-id', 'games.sync.enqueue', payload)
+assert events[1] == ('resolve', 'games.sync.enqueue')
+assert events[2] == ('failure', 'retained-id', 'fenced-token', error, {'retryable': False, 'background': False})
+assert not command_gateway.is_command_registered('games.sync.enqueue')
+''')
+
+
+def test_finished_receipt_does_not_import_optional_command():
+    run_fresh('''
+from contextlib import nullcontext
+from app import tasks, command_gateway
+from app.services import background_runtime
+tasks.activity_gate.foreground = lambda: nullcontext()
+tasks._preparation_capacity = lambda *_: nullcontext(True)
+background_runtime.measure_training_timing = lambda *_: nullcontext(None)
+tasks.record_operation_attempt = lambda *_a, **_k: (False, {}, None, 1)
+tasks.resolve_worker_game_sync_command = lambda *_: (_ for _ in ()).throw(AssertionError('unexpected import'))
+assert tasks.execute_foreground_command.run('completed', 'games.sync.enqueue', {}) is None
+def conflict(*_a, **_k): raise command_gateway.CommandConflict('changed payload')
+tasks.record_operation_attempt = conflict
+try:
+    tasks.execute_foreground_command.run('conflict', 'games.sync.enqueue', {})
+except command_gateway.CommandConflict:
+    pass
+else: raise AssertionError('conflict was hidden')
+assert not command_gateway.is_command_registered('games.sync.enqueue')
+''')
+
+
+def test_retained_queued_delivery_resolves_after_dependency_recovers():
+    run_fresh('''
+from contextlib import nullcontext
+from app import tasks, command_gateway
+from app.services import background_runtime
+payload = {'lichess_username': 'alice'}
+tasks.activity_gate.foreground = lambda: nullcontext()
+tasks._preparation_capacity = lambda *_: nullcontext(True)
+background_runtime.measure_training_timing = lambda *_: nullcontext(None)
+tasks.record_operation_attempt = lambda op, name, original, **kw: (True, original, 'recovered-token', 2)
+def execute(op, name, original, **kw):
+    from app import game_sync_commands
+    assert command_gateway._handlers[name] is game_sync_commands.enqueue_game_sync
+    assert (op, original, kw['attempt_token']) == ('queued-id', payload, 'recovered-token')
+    return {'accepted': True}
+tasks.execute_command = execute
+assert tasks.execute_foreground_command.run('queued-id', 'games.sync.enqueue', payload) == {'accepted': True}
 ''')

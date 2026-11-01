@@ -229,7 +229,6 @@ def execute_foreground_command(
 
 
 def _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle=None):
-    resolve_worker_game_sync_command(command_name)
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
@@ -249,6 +248,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
             if command_name in PAUSED_IMPORT_COMMANDS and study_only_enabled():
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
+            resolve_worker_game_sync_command(command_name)
             result = execute_command(operation_id, command_name, saved_payload,
                                      attempt_token=attempt_token)
         except BackgroundAdmissionDeferred:
@@ -276,7 +276,6 @@ def execute_background_command(
     expected_retry_cycle: int | None = None,
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
-    resolve_worker_game_sync_command(command_name)
 
     with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(command_name, operation_id, yielding=True):
@@ -295,6 +294,7 @@ def execute_background_command(
             with (activity_gate.background_control() if command_name in _CONTROL_BACKGROUND_COMMANDS
                   else nullcontext()):
                 activity_gate.check_background_admission()
+                resolve_worker_game_sync_command(command_name)
                 return execute_command(operation_id, command_name, saved_payload,
                                        background=True, attempt_token=attempt_token)
         except BackgroundAdmissionDeferred:
