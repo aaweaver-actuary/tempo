@@ -187,3 +187,24 @@ can defer a new ordinary attempt. A known authority/source hold or an unqualifie
 old command remains recoverable through `next_feedback_preparation`; an expired
 retry deadline does not grant readiness. Original payload, determination clock,
 accepted disposition and scheduling receipts remain unchanged. No schema changes.
+
+## Qualified feedback target authority
+
+`current_feedback_authority.py` prepares one exact current target from canonical
+Games facts and complete Repertoire-owned publications and candidate bindings.
+The final borrowed writer rechecks source/configuration, selected publications,
+candidate bindings and the exact card, memberships, graph uses and block status.
+Legacy capture remains available for unqualified compatibility paths. The current
+integrity certificate and matching completed graph and scan task generations
+remain required; this change does not establish their equivalence to a narrower
+invalidation contract or complete C09. Native and installed proof remain pending.
+
+```mermaid
+flowchart LR
+  Source[Canonical Games source and witness] --> Selection[Complete Repertoire selection and candidate bindings]
+  Target[Exact target and current integrity] --> Owner[Study closed-read authority]
+  Selection --> Owner
+  Owner --> Fence[Borrowed writer source, publication and target fences]
+  Fence --> Effect[Existing Study effect and receipt]
+  Legacy[Unqualified compatibility] --> Capture[Existing legacy capture]
+```

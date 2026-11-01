@@ -658,3 +658,12 @@ Study-only currently permits only daily-queue task kinds. A queued graph/scan
 cannot progress under that policy without an explicit supported repair operation;
 ordinary Study must remain available while that prerequisite is held. No optional
 producer is enabled by this observer.
+
+### Qualified target source boundary
+
+Qualified feedback preparation uses Study's exact current-target authority with
+canonical Games source and Repertoire-owned complete selection and candidate
+bindings; it does not invoke the broad legacy capture. The existing writer fences,
+current integrity certificate and completed graph/scan generation requirements
+remain in force. Legacy unqualified paths retain their capture. This is a source
+change; native acceptance and deployed behavior remain unverified.
