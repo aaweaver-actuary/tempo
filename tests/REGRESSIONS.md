@@ -6596,3 +6596,7 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Recovery assembly uses the production PostgreSQL connection profile (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py` uses the pinned image's production-default connection limit for its seven-role assembly and records actual maximum/reserved settings. The smaller native-owner fixture keeps16. The f21b run exposed the artificial assembly cap before source enqueue: its real collector failed a new connection with ordinary slots exhausted. Memory/PID/shared-buffer limits, pool defaults and deadlines remain unchanged; no connection leak is inferred from that observation.
+
+### Recovery readback checks both actual receipt contracts (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` binds the original command payload and exact full `operation_receipts.response_json` to the browser receipt, then compares the immutable Learning attempt receipt after removing only the adapter's known after-save `recombination` annotation. Prepared continuation and all other fields, review identity and actual issuance origins remain exact. The 4d53 first transition completed with a persisted receipt and next board; comparing its enriched public response directly to the core attempt row exposed the fixture contract error.
