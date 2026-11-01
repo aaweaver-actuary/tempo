@@ -1145,14 +1145,18 @@ def test_page_index_reuse_preserves_results_invalidates_mutation_and_dies_with_p
     from app.product_composition import game_sync
     h = harness()
     snapshot = h.coordinator.snapshots.snapshot('white')
+    from tempo_game_review_contracts import ReentryAuthority
+    snapshot = snapshot.model_copy(update={'membership': snapshot.membership.model_copy(update={
+        'routes': tuple(route.model_copy(update={'reentries': (ReentryAuthority(ply=0, authority_id='explicit-anchor'),)})
+                        for route in snapshot.membership.routes)})})
     original_record = record()
     game = h.coordinator.normalizer.normalize(original_record,spec())
     builds = []
-    real = game_sync.build_index
+    real = game_sync.build_reentry_index
     def build(value):
         builds.append(value.membership.revision)
         return real(value)
-    monkeypatch.setattr(game_sync,'build_index',build)
+    monkeypatch.setattr(game_sync,'build_reentry_index',build)
     comparer = game_sync.WorkflowComparer()
     expected = comparer.compare(game,snapshot,record=original_record,spec=spec())
     with comparer.page_scope():
@@ -1185,3 +1189,48 @@ def test_swallowed_normalization_failure_records_stage_without_private_source(ca
     assert diagnostic['failures'][0]['stage'] == 'normalization'
     assert diagnostic['failures'][0]['error_class'] == 'ValueError'
     assert 'PRIVATE_PROVIDER_PAYLOAD' not in line
+
+
+def test_workflow_skips_unusable_reentry_index_without_changing_complete_findings(monkeypatch):
+    from app.product_composition import game_sync
+    from app.repertoire import build_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"))
+    captured = snapshot(authored)
+    original = source_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    full = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                 snapshot=captured, reentry_lookup=build_index(captured))
+    absent = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                   snapshot=captured, reentry_lookup=None)
+    assert full == absent and [(item.kind, item.ply) for item in full] == [('opponent_gap', 2)]
+    from app.repertoire import position_index
+    def forbidden(*args):
+        raise AssertionError('unanchored source must not allocate a position index')
+    monkeypatch.setattr(position_index, '_build_validated_index', forbidden)
+    comparer = game_sync.WorkflowComparer()
+    with comparer.page_scope():
+        actual = comparer.compare(game, captured, record=original,
+                                                      spec=SimpleNamespace(provider='lichess'))
+    assert actual == full
+
+
+def test_workflow_explicit_reentry_still_builds_real_index_and_resumes_anchor():
+    from app.product_composition import game_sync
+    from app.repertoire import build_index, build_reentry_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored)
+    original = source_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    optional = build_reentry_index(captured)
+    candidate = optional.reentry_candidate('rep', optional.routes['rep', 'route'][4].full_fen)
+    assert candidate.ply == 4 and candidate.reentry_authority_id == 'anchor'
+    expected = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                     snapshot=captured, reentry_lookup=build_index(captured))
+    actual = game_sync.WorkflowComparer().compare(game, captured, record=original,
+                                                 spec=SimpleNamespace(provider='lichess'))
+    assert actual == expected
+    assert [(item.kind, item.ply) for item in actual] == [('opponent_gap', 2), ('confirmed_miss', 5)]

@@ -6654,3 +6654,8 @@ The existing transition7 actual worker/source/jobs/admission checks set the term
 ### Recovery capture fits an explicit unchanged aggregate fixture budget (#668)
 
 `backend/tests/test_study_recovery_acceptance.py::test_recovery_assembly_allocation_fits_existing_budget_without_changing_global_roles` checks the explicit PG384/Redis32/API192/foreground384/background512/Games512/web32 allocation, exact2048MiB total, unchanged global configuration and rejection below that total. The prior full-scope capture exhausted background448; Redis/web observed peaks were19.77/19.46MiB. This transfers existing fixture headroom only; all-role memory/OOM and full four-case qualification remain required, with no production budget or deadline change.
+
+
+### Unanchored comparison retains all findings without an unused reentry index
+
+`test_product_feedback_jobs.py::test_workflow_skips_unusable_reentry_index_without_changing_complete_findings` proves exact semantic Finding equality against a full index and no index across departure/transposition, while refusing any index allocation for an unanchored snapshot. `test_workflow_explicit_reentry_still_builds_real_index_and_resumes_anchor` uses the real physical mapping and explicit authority to resume at the same ply and retain the later confirmed miss. The existing page-cache lifetime/mutation/cancellation regression now supplies explicit anchors. `test_product_position_index.py::test_unanchored_reentry_index_preserves_full_source_bounds_and_revalidation` retains route/ply limits and invalid nested schema refusal on both public factories. Actual full-scope helper timing/memory and registered packaged acceptance remain separate evidence gates.
