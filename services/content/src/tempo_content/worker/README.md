@@ -35,7 +35,7 @@ describes stored data and relationships.
 failure-write boundary without a database. Installed artifact checks cover
 package/import/resource closure. Native PostgreSQL and the five unchanged,
 previously denied loopback HTTP cases are unverified for this slice. The public
-Content package still eagerly exports its concrete `ContentService`.
+Content package resolves its concrete `ContentService` lazily when requested.
 
 [`route_segment`](routes.py) holds the existing four-statement traversal
 preparation: choose at most 16 plies, determine terminality and reuse a completed
