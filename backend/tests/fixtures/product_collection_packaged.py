@@ -136,6 +136,11 @@ def feedback_admitted():
     inputs = json.loads(Path('/qualification/provider.json').read_text())
     yield
 
+# Standalone fixture operations use the same explicit database composition as
+# the application and worker entry points.
+from app.product_composition.database_infrastructure import bind_database_infrastructure
+bind_database_infrastructure()
+
 try:
     if sys.argv[1] in {'worker', 'feedback-worker'}:
         feedback = sys.argv[1] == 'feedback-worker'
