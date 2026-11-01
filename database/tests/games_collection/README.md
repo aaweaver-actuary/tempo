@@ -156,3 +156,11 @@ the measured boundary the existing host check reads that immutable attempt's
 owner receipt and requires exact result JSON, matching review/card/queue and both
 authoritative issuance origins. Asynchronous responses must retain the original
 command identity; these checks do not invent an API field or weaken settlement.
+
+The seven-role recovery PostgreSQL profile inherits the pinned production
+image's connection default, matching the checked-in production composition.
+The smaller native-owner fixture retains its explicit 16-connection cap. Actual
+maximum and reserved-slot settings are read from the owned database into
+`fixture.json`; the assembly keeps its 384MiB memory cap, 128-PID limit, 32MiB
+shared buffers and all existing transaction/acquisition deadlines. This aligns
+the test profile without changing production pool settings or claiming a leak.

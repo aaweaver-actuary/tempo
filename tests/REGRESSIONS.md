@@ -6594,3 +6594,7 @@ logical identities, determination clocks, retained pages and completed checkpoin
 ### Recovery observer correlates the supported review receipt (#668)
 
 `tests/browser/study-recovery.spec.ts::packaged recovery records thirty authoritative playable transitions` retains original POST attempt/command identity and supported persisted card/queue/positive review identity, with exact host `review_attempt_receipts` lookup by attempt after measurement. A fixture observer must not demand a nonexistent echoed attempt field: the bacd run committed review586 and advanced to the next real board in the first transition, but the observer threw before recording persistence. Full thirty-transition success still requires the unchanged latency, failure and owner-origin assertions.
+
+### Recovery assembly uses the production PostgreSQL connection profile (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py` uses the pinned image's production-default connection limit for its seven-role assembly and records actual maximum/reserved settings. The smaller native-owner fixture keeps16. The f21b run exposed the artificial assembly cap before source enqueue: its real collector failed a new connection with ordinary slots exhausted. Memory/PID/shared-buffer limits, pool defaults and deadlines remain unchanged; no connection leak is inferred from that observation.
