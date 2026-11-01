@@ -39,14 +39,15 @@ flowchart LR
 This is source-level composition, not a deployment or PostgreSQL isolation
 claim. It does not alter transaction ownership or maintenance failure policy.
 
-### Maintenance shutdown ownership (proposed G2)
+### Maintenance lifecycle ownership (G2 / proposed G3)
 
 The app signals the existing maintenance loop to stop between bounded slices
 and waits for its current thread to return before closing the activity owner and
-then the database. An unexpected maintenance failure remains visible when the
-lifespan exits; nested cleanup still closes both resources. Temporary contention
+then the database. A terminal maintenance failure records only its error class
+for that app and immediately makes readiness unavailable; liveness remains alive.
+The original failure remains visible when the lifespan exits; nested cleanup still closes both resources. Temporary contention
 continues to yield under `safe_run_once`. This does not claim that cancellation
-stops an in-flight transaction, supervise or restart a failed loop, or change
+stops an in-flight transaction, restart a failed loop, or change
 lease and durable-work semantics.
 
 ```mermaid
@@ -57,6 +58,7 @@ sequenceDiagram
   participant D as Learning database
   L->>M: Signal stop between slices
   M-->>L: Current slice returns or task fails
+  Note over M,L: Terminal failure marks app readiness unavailable
   L->>A: Close activity
   L->>D: Close database
   Note over L,M: Propagate terminal task failure after cleanup
@@ -249,6 +251,7 @@ services/learning/runtime/.venv/bin/tempo-learning maintain --once
 - `/health/live` proves process liveness only.
 - `/health/ready` returns:
   - `200 {"status":"ready","workspace_id":"..."}` only after sequential metadata checks through both pools (reader probe first, then writer), with restricted roles, workspace/timezone binding and migration state all valid.
+  - `503 {"status":"unavailable","domain":"maintenance","reason":"essential_maintenance_failed","error_class":"..."}` when the configured essential maintenance loop terminates with an error. No error message or payload is returned.
   - `503 {"status":"unavailable","domain":"database","reason":"connection_unavailable"|"query_failed"}` for connection/query failures.
   - `503 {"status":"unavailable","domain":"schema","reason":"migration_state_unavailable"|"migration_history_outdated"}` when schema objects are missing or checksums differ.
   - `503 {"status":"unavailable","domain":"credentials","reason":"restricted_role_required"|"workspace_binding_mismatch"|"insufficient_privileges"}` when runtime credentials or workspace binding are invalid.
