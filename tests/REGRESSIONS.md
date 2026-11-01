@@ -6626,3 +6626,11 @@ The existing packaged same-source reconciliation replay derives its controlled c
 ### Complete snapshot serialization avoids nested JSONB aggregate memory (#668)
 
 `backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` executes full/authored/candidate snapshot documents against the released JSONB encoding and requires identical decoded facts, budget metadata and canonical fingerprints, including escaped text and null values. The full-scope PostgreSQL-only diagnostic reproduced the largest valid9526-card/27600-graph snapshot OOM under the unchanged384MiB cap with one client and no JIT; the wire-only reader repair must preserve all rows, ordering and one-MVCC-view semantics. No database capacity, timeouts, source/row bounds or graph scope is changed.
+
+The same native owner suite now follows the already-released three-parameter
+snapshot API: obsolete `MAX_SNAPSHOT_BYTES`/`facts_json` assertions from the
+retired aggregate-cap contract are replaced by complete-facts/estimate checks.
+`test_complete_snapshot_above_retired_aggregate_limit_preserves_all_rows` admits
+561 valid authored lines whose full document exceeds the retired32MiB limit;
+`test_serialized_byte_accounting_still_refuses_true_row_byte_overflow` retains
+the actual64KiB refusal. Existing row-count sentinels/MVCC/fences are unchanged.
