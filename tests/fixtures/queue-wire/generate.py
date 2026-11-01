@@ -4,6 +4,7 @@ The AST extraction avoids importing the server composition root and starting its
 providers. All storage reads and issuance are replaced with disposable inputs.
 Run from the repository root with backend dependencies and Learning runtime on PYTHONPATH.
 """
+import argparse
 import ast
 import json
 import logging
@@ -82,4 +83,13 @@ state.available = False
 unavailable = ns['_queue_payload'](include_opening_evidence=True)
 state.rows = []
 empty = ns['_queue_payload']()
-Path(__file__).with_name('producer.json').write_text(json.dumps(dict(available=available, unavailable=unavailable, empty=empty), indent=2, sort_keys=True) + '\n')
+parser = argparse.ArgumentParser()
+parser.add_argument('--check', action='store_true', help='compare without modifying the fixture')
+parser.add_argument('--fixture', type=Path, default=Path(__file__).with_name('producer.json'))
+arguments = parser.parse_args()
+output = json.dumps(dict(available=available, unavailable=unavailable, empty=empty), indent=2, sort_keys=True) + '\n'
+if arguments.check:
+    if arguments.fixture.read_text() != output:
+        raise SystemExit('Queue producer fixture is stale; regenerate producer.json')
+else:
+    arguments.fixture.write_text(output)
