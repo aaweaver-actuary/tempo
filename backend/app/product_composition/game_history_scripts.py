@@ -358,7 +358,7 @@ def run_history(manifest, *, store, review, clock, admission, stopped,
                         raise ValueError("historical_saved_configuration_changed")
                     # Leave earlier live urgent work to its owning worker.
                     head = store.pending_delivery(clock.now(), workspace=manifest.workspace_id,
-                        priority_order=True)
+                        ready_only=True, priority_order=True)
                     if head is not None and head.control is None and head.stream == "forward":
                         return units
                     runner.coordinator.deliver(delivery)
