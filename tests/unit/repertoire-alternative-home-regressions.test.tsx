@@ -1,5 +1,5 @@
 import { studyIntentStore } from "../../database/browser/study-intent-storage";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Home from "../../app/views/legacy-home";
@@ -175,16 +175,17 @@ async function finishPreparation(count: number) {
 }
 async function mutate(kind: string) {
   if (kind === "import" || kind === "re-import") {
-    act(() => useTrainingStore.getState().setShowImport(true));
+    fireEvent.click(screen.getByRole("button", { name: "Open local data menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import or transfer data" }));
     await waitFor(() => expect(importCallback).toBeTypeOf("function"));
-    await act(async () => { await importCallback(); useTrainingStore.getState().setShowImport(false); });
+    await act(async () => { await importCallback(); });
   } else if (kind === "edit" || kind === "delete") {
-    act(() => useTrainingStore.getState().setEditorCard(kind === "edit" ? card : otherCard));
+    if (kind === "delete") act(() => useTrainingStore.getState().hydrateLocalQueue([otherCard], true));
+    fireEvent.click(screen.getByRole("button", { name: /Edit card/ }));
     await waitFor(() => expect(editorCallbacks?.onSave).toBeTypeOf("function"));
     await act(async () => {
       if (kind === "edit") editorCallbacks.onSave(card);
       else await editorCallbacks.onDelete(otherCard);
-      useTrainingStore.getState().setEditorCard(null);
     });
   } else act(() => reconcileCallback("issue36"));
 }

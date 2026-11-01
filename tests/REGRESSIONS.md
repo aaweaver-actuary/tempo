@@ -6507,3 +6507,4 @@ opening manifest without diagnostics. `optional_encounter_status_keeps_unknown_v
 preserves strict rejection of malformed status values and unrecognized fields.
 This repairs the real packaged baseline failure where a valid issued queue head
 was dropped because the strict browser codec omitted the new backend field.
+- Workspace authoring state ownership (#711 H1): `import_editor_state_is_workspace_owned_and_unmounting_preserves_active_attempt`, `deletion_recovery_closes_only_the_matching_current_editor`, and `deletion_recovery_closes_the_matching_editor` in `tests/unit/workspace-study-boundary.test.tsx` exercise workspace controls, preserve a retained pending review and Study state across unmount, and fence a delayed deletion against a newer editor.
