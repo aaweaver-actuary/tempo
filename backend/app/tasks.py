@@ -20,6 +20,9 @@ from psycopg_pool import PoolTimeout
 from functools import wraps
 from .services.feedback_diagnostics import diagnose_feedback, feedback_stage, feedback_failure
 
+from .product_composition.database_infrastructure import bind_database_infrastructure
+bind_database_infrastructure()
+
 from .celery_app import celery_app
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,

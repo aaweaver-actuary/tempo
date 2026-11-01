@@ -145,3 +145,24 @@ def test_composition_helper_import_is_inert():
             "assert 'app.services.background_runtime' not in sys.modules; "
             "assert 'tempo_legacy_database.connections' not in sys.modules")
     subprocess.run([sys.executable, "-c", code], check=True, env=os.environ.copy())
+
+
+@pytest.mark.parametrize('entrypoint', ['app.main', 'app.tasks'])
+def test_application_entrypoint_binds_database_after_storage_first(entrypoint, tmp_path):
+    code = '''
+import importlib
+from pathlib import Path
+import sys
+from tempo_legacy_database import connections, infrastructure
+assert 'app.services.activity_gate' not in sys.modules
+importlib.import_module(sys.argv[1])
+from app.services.activity_gate import activity_gate
+from app.services.background_runtime import database_stage
+assert infrastructure.database_admission() is activity_gate
+assert infrastructure._measurement is database_stage
+connections.DB_PATH = Path(sys.argv[2])
+with connections.connection() as database:
+    database.execute('CREATE TABLE proof (value INTEGER)')
+'''
+    subprocess.run([sys.executable, '-c', code, entrypoint, str(tmp_path / 'entry.sqlite')],
+                   check=True, env=os.environ.copy())

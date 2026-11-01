@@ -25,8 +25,7 @@ The connection router and SQLite writer consume the admission and measurement
 capabilities in [infrastructure.py](infrastructure.py). [Application composition](../../backend/app/product_composition/database_infrastructure.py) binds the
 existing activity gate singleton and `database_stage` before controlled access;
 missing binding fails explicitly. The gate, measurement context, compatibility
-lock and transaction ownership remain unchanged. This source increment needs the
-separate composition binding before application integration.
+lock and transaction ownership remain unchanged. API and task-worker composition bind before their controlled operations.
 
 ```mermaid
 flowchart LR
@@ -39,5 +38,4 @@ flowchart LR
 The direct tooling entrypoints `frozen-maia-order` and `writer_latency` bind
 explicitly, as do the standalone background workload, engine fairness,
 scheduling turns, prefix transition and study priority test harnesses. Backend
-pytest composes the same binding in its configuration. API and task worker
-entrypoints require their separate reserved-file binding before integration.
+pytest composes the same binding in its configuration. API and task worker entrypoints bind the same helper before their own setup.
