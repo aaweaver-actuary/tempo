@@ -6507,3 +6507,5 @@ opening manifest without diagnostics. `optional_encounter_status_keeps_unknown_v
 preserves strict rejection of malformed status values and unrecognized fields.
 This repairs the real packaged baseline failure where a valid issued queue head
 was dropped because the strict browser codec omitted the new backend field.
+
+- Queue wire compatibility (#713 J1): `actual_queue_producer_payload_preserves_family_and_attempt_authority`, `producer_advisory_unavailable_and_legacy_absence_keep_cards_usable`, and `invalid_issued_identity_is_rejected_and_invalid_manifest_is_not_used` in `tests/unit/queue-producer-wire-regressions.test.ts` decode synthetic outputs of the current producer assembly. `tests/fixtures/queue-wire/worker-proof.mjs` runs the production worker in Chromium against that fixture. The generator stubs storage and issuance; it does not prove database issuance or review settlement. The existing decoder discards a malformed optional manifest with a diagnostic while retaining an otherwise valid card.
