@@ -297,7 +297,8 @@ def retained_database(database, monkeypatch):
     """
     import chess
     from app.chess.cards import card_id
-    from app.services import postgres_opening_graph, repertoire_integrity
+    from app.services import postgres_opening_graph
+    from app.repertoire.changes import retained_mutations
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
     connection, _, schema, _, _ = database
     connection.row_factory = tempo_row_factory
@@ -348,7 +349,7 @@ def retained_database(database, monkeypatch):
         lambda db, rep, day: graph_requests.append((rep,day)) or {'id':'task-graph','state':'queued'})
     # Existing compatibility helper is public-schema-specific; exercise the same
     # ordered introspection for this isolated task schema, not another writer.
-    monkeypatch.setattr(repertoire_integrity, 'card_columns', lambda db: [row[0] for row in connection.execute(
+    monkeypatch.setattr(retained_mutations, 'card_columns', lambda db: [row[0] for row in connection.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='cards' ORDER BY ordinal_position")])
     yield database_adapter, losing, graph_requests
 

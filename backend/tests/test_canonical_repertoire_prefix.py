@@ -645,7 +645,7 @@ def test_canonical_prefix_admission_rechecks_source_version_before_inserting(pre
 
 
 def test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire(prefix_database):
-    from app.services.repertoire_integrity import _rewrite_card
+    from app.repertoire.changes.retained_mutations import rewrite_card
     add_line(ITALIAN)
     apply_preview(prepare_prefix())
     with database.connection() as connection:
@@ -654,7 +654,7 @@ def test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire(
         for repertoire_id in ('italian', 'other'):
             connection.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (repertoire_id, 'shared-stub'))
         source_card = connection.execute("SELECT * FROM cards WHERE id='shared-stub'").fetchone()
-        assert _rewrite_card(connection, 'italian', source_card, ITALIAN)
+        assert rewrite_card(connection, 'italian', source_card, ITALIAN)
         replacement = connection.execute("SELECT * FROM cards WHERE id<>'shared-stub'").fetchone()
         assert replacement['repertoire_id'] == 'italian'
         assert connection.execute("SELECT archived FROM cards WHERE id='shared-stub'").fetchone()[0] == 0

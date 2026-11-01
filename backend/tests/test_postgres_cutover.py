@@ -1018,14 +1018,14 @@ def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch, un
 
 
 def test_postgres_integrity_repair_copies_line_training_depth_before_delete(unscoped_canonical_prefix):
-    from app.integrity_repair_commands import _replace_repertoire_line
+    from app.repertoire.changes.retained_mutations import replace_repertoire_line
 
     statements = []
     class RecordingDatabase:
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
 
-    assert _replace_repertoire_line(RecordingDatabase(), {
+    assert replace_repertoire_line(RecordingDatabase(), {
         "id": "old", "repertoire_id": "rep", "name": "Opening",
         "trained_color": "white", "start_fen": chess.STARTING_FEN,
         "created_at": "2026-09-27",
