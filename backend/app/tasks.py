@@ -94,14 +94,6 @@ from .services.threat_pipeline import (
 from .services.threat_training import (
     execute_defense_admission_slice, execute_defense_rubric_audit_slice,
 )
-from .services.postgres_next_opponent import execute_profile_slice
-from .services.postgres_game_derivation import execute_game_position_index_slice
-from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
-from .services.postgres_game_findings import execute_game_findings_slice
-from .services.postgres_game_misses import execute_game_miss_slice
-from .services.postgres_game_events import execute_game_event_slice
-from .services.postgres_game_features import execute_game_feature_slice
-from .services.postgres_game_priorities import execute_game_priority_handoff_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.postgres_opening_segmentation import execute_segmentation_slice
@@ -122,6 +114,46 @@ from .services.study_mode import STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PA
 def study_only_enabled(database=None):
     """Compatibility seam; always consult the current Study policy owner."""
     return study_mode.study_only_enabled() if database is None else study_mode.study_only_enabled(database)
+
+
+def execute_profile_slice(claimed_task):
+    from .services.postgres_next_opponent import execute_profile_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_position_index_slice(claimed_task):
+    from .services.postgres_game_derivation import execute_game_position_index_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_repertoire_comparison_slice(claimed_task):
+    from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_findings_slice(claimed_task):
+    from .services.postgres_game_findings import execute_game_findings_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_miss_slice(claimed_task):
+    from .services.postgres_game_misses import execute_game_miss_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_event_slice(claimed_task):
+    from .services.postgres_game_events import execute_game_event_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_feature_slice(claimed_task):
+    from .services.postgres_game_features import execute_game_feature_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_priority_handoff_slice(claimed_task):
+    from .services.postgres_game_priorities import execute_game_priority_handoff_slice as execute
+    return execute(claimed_task)
 
 
 def execute_game_sync_record_slice(claimed_task):
