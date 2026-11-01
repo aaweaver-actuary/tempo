@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "exclude": [
+    "node_modules", "local-dist", "pages-dist", "public/tempo-core", "static-dist", "contracts/consumer-examples/**",
+    "app/**", "static/**", "database/browser/**", "database/browser-intents/src/**",
+    "packages/board-ui/src/**", "packages/chess-line/src/**", "packages/study-session/src/**"
+  ]
+}

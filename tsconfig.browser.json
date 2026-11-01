@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "app/**/*.ts", "app/**/*.tsx", "app/**/*.mts",
+    "static/**/*.ts", "static/**/*.tsx", "static/**/*.mts",
+    "database/browser/**/*.ts", "database/browser/**/*.tsx", "database/browser/**/*.mts",
+    "database/browser-intents/src/**/*.ts", "database/browser-intents/src/**/*.mts",
+    "packages/board-ui/src/**/*.ts", "packages/board-ui/src/**/*.tsx",
+    "packages/chess-line/src/**/*.ts", "packages/study-session/src/**/*.ts"
+  ]
+}
