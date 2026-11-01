@@ -5,6 +5,7 @@ commit together in the caller's existing command transaction.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Callable
 
 from fastapi import HTTPException
 from tempo_game_evidence_contracts import v3
@@ -14,7 +15,7 @@ from tempo_legacy_database.adapters.games.authority import acceptance as storage
 from tempo_legacy_database.adapters.games.authority import driver, headers
 from tempo_legacy_database.adapters.games.authority.driver import BorrowedTupleConnection
 
-from .command_gateway import register_command
+from .command_gateway import CommandHandler
 from .services import legacy_game_authority as authority_owner
 from .services.legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
@@ -160,9 +161,6 @@ def receive_legacy_delivery(database, prepared):
     return response.model_dump(mode="json")
 
 
-register_command("game_evidence.receive_legacy", receive_legacy_delivery, prepare=prepare_legacy_delivery)
-
-
 def admit_legacy_card(database, payload):
     if set(payload) != {"card_id"} or not isinstance(payload["card_id"], str) or not 1 <= len(payload["card_id"]) <= 128:
         raise HTTPException(422, "One accepted physical card identity is required")
@@ -170,4 +168,16 @@ def admit_legacy_card(database, payload):
     return admit_card(database, payload)
 
 
-register_command("game_evidence.admit_legacy", admit_legacy_card)
+@dataclass(frozen=True)
+class LegacyEvidenceRegistration:
+    handler: CommandHandler
+    prepare: Callable[[dict], object] | None = None
+
+
+def legacy_evidence_registration(name: str) -> LegacyEvidenceRegistration:
+    """Build only the selected registration without changing the gateway."""
+    if name == 'game_evidence.receive_legacy':
+        return LegacyEvidenceRegistration(receive_legacy_delivery, prepare_legacy_delivery)
+    if name == 'game_evidence.admit_legacy':
+        return LegacyEvidenceRegistration(admit_legacy_card)
+    raise ValueError(f'Unknown legacy evidence command: {name}')

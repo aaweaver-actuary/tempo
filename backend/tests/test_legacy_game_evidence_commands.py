@@ -181,6 +181,8 @@ def test_backend_source_or_scope_changes_fail_closed(fault, reason):
 
 
 def test_prepare_is_registered_outside_command_write_and_known_receipt_avoids_recapture(monkeypatch):
+    from app.product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
+    resolve_worker_legacy_evidence('game_evidence.receive_legacy')
     value, captured = fixture()
     assert command_gateway._handlers["game_evidence.receive_legacy"] is commands.receive_legacy_delivery
     assert command_gateway._preparers["game_evidence.receive_legacy"] is commands.prepare_legacy_delivery

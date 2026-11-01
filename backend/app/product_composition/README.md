@@ -698,6 +698,18 @@ flowchart LR
   fence -->|"daily queue"| queue["Existing Study queue slice"]
 ```
 
+Legacy evidence receive and card-admission registrations are selected per
+command after the original worker attempt is recorded. Each selected command
+uses the existing gateway registry; Study commands do not wait for its family
+lock. The separate product feedback registration is unchanged.
+
+```mermaid
+flowchart LR
+  receipt["Existing attempt receipt"] --> select["Selected legacy evidence registration"]
+  select --> registry["Existing gateway registry"]
+  receipt --> study["Other Study command"]
+```
+
 ### SQLite compatibility coordinator selection
 
 The PostgreSQL API does not compose the SQLite coordinator at import or startup.
