@@ -58,7 +58,6 @@ def _queue_game_analysis_publication(
     return {"status": "preparing", "task_id": task["id"]}
 
 
-register_command("games.analysis.finalize.admit", admit_game_analysis_publication)
 
 
 def admit_manual_game_analysis(
@@ -101,7 +100,6 @@ def admit_manual_game_analysis(
     }, now)
 
 
-register_command("games.analysis.manual.admit", admit_manual_game_analysis)
 
 
 PUBLICATION_SLICE_PLIES = 8
@@ -306,3 +304,12 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
             database, task, next_phase="repertoires",
             next_payload={**payload, "cursor": next_repertoire_id},
         )
+
+def register_commands(name: str | None = None) -> None:
+    """Explicitly register the selected command or all commands for assembly."""
+    if name is not None and name not in {'games.analysis.finalize.admit', 'games.analysis.manual.admit'}:
+        raise ValueError(f"Unknown command: {name}")
+    if name is None or name == 'games.analysis.finalize.admit':
+        register_command('games.analysis.finalize.admit', admit_game_analysis_publication)
+    if name is None or name == 'games.analysis.manual.admit':
+        register_command('games.analysis.manual.admit', admit_manual_game_analysis)

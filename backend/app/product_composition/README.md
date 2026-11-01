@@ -725,3 +725,17 @@ flowchart LR
   Worker[SQLite compatibility worker] --> Compose
   Compose --> Owner[Existing coordinator singleton and handlers]
 ```
+
+Retained Games configuration, analysis and publication commands select their
+existing registration after the original worker attempt. Publication slices
+select their existing implementations after the task's admission and lease
+fence. Each family uses its own lock; the existing gateway and durable receipt
+remain authoritative.
+
+```mermaid
+flowchart LR
+  Attempt["Retained command attempt"] --> Selected["Selected Games command"]
+  Selected --> Registry["Existing command registry"]
+  Task["Retained publication task"] --> Fence["Admission and lease fence"]
+  Fence --> Slice["Existing publication slice"]
+```

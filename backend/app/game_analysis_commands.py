@@ -42,7 +42,6 @@ def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) 
                     "lease_id": lease_id, "lease_expires_at": expires_at}}
 
 
-register_command("games.analysis.claim", claim_game_analysis)
 
 
 def prepare_position_claim(preferred_game_id: str | None = None) -> dict[str, Any] | None:
@@ -154,7 +153,6 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
                     "lease_id": position_lease_id, "request": plan["request"]}}
 
 
-register_command("games.analysis.position.claim", claim_game_analysis_position)
 
 
 def prepare_position_report(report_id: str, raw_report: dict[str, Any]) -> str:
@@ -212,8 +210,6 @@ def release_position_report(database: PostgresConnection, payload: dict[str, Any
     return {"status": "failed" if failed else "queued"}
 
 
-register_command("games.analysis.position.report", publish_position_report)
-register_command("games.analysis.position.release", release_position_report)
 
 
 def fail_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -257,10 +253,6 @@ def retry_parent_analysis(database: PostgresConnection, payload: dict[str, Any])
     return {"status": "queued"}
 
 
-register_command("games.analysis.failure", fail_parent_analysis)
-register_command("games.analysis.heartbeat", heartbeat_parent_analysis)
-register_command("games.analysis.release", release_parent_analysis)
-register_command("games.analysis.retry", retry_parent_analysis)
 
 
 def repair_one_stockfish_timeout(
@@ -290,6 +282,27 @@ def repair_one_legacy_network_identity(
     storage.record_position_error(database, f"legacy-network:{row['game_id']}", row["game_id"], "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now)
     return {"requeued": True, "game_id": row["game_id"]}
 
-
-register_command("games.analysis.repair_timeout", repair_one_stockfish_timeout)
-register_command("games.analysis.repair_provenance", repair_one_legacy_network_identity)
+def register_commands(name: str | None = None) -> None:
+    """Explicitly register the selected command or all commands for assembly."""
+    if name is not None and name not in {'games.analysis.claim', 'games.analysis.position.claim', 'games.analysis.position.report', 'games.analysis.position.release', 'games.analysis.failure', 'games.analysis.heartbeat', 'games.analysis.release', 'games.analysis.retry', 'games.analysis.repair_timeout', 'games.analysis.repair_provenance'}:
+        raise ValueError(f"Unknown command: {name}")
+    if name is None or name == 'games.analysis.claim':
+        register_command('games.analysis.claim', claim_game_analysis)
+    if name is None or name == 'games.analysis.position.claim':
+        register_command('games.analysis.position.claim', claim_game_analysis_position)
+    if name is None or name == 'games.analysis.position.report':
+        register_command('games.analysis.position.report', publish_position_report)
+    if name is None or name == 'games.analysis.position.release':
+        register_command('games.analysis.position.release', release_position_report)
+    if name is None or name == 'games.analysis.failure':
+        register_command('games.analysis.failure', fail_parent_analysis)
+    if name is None or name == 'games.analysis.heartbeat':
+        register_command('games.analysis.heartbeat', heartbeat_parent_analysis)
+    if name is None or name == 'games.analysis.release':
+        register_command('games.analysis.release', release_parent_analysis)
+    if name is None or name == 'games.analysis.retry':
+        register_command('games.analysis.retry', retry_parent_analysis)
+    if name is None or name == 'games.analysis.repair_timeout':
+        register_command('games.analysis.repair_timeout', repair_one_stockfish_timeout)
+    if name is None or name == 'games.analysis.repair_provenance':
+        register_command('games.analysis.repair_provenance', repair_one_legacy_network_identity)

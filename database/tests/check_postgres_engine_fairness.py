@@ -576,6 +576,8 @@ class EngineFairnessProof:
 
 
 def proof_engine_fairness(parent_database_url):
+    # This standalone proof directly executes the analysis command gateway.
+    game_analysis_commands.register_commands()
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':

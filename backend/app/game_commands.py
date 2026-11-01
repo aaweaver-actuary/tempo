@@ -53,6 +53,11 @@ def request_defensive_threat_scan(
     )
     return {"status": "queued", "analysis_version": analysis_version}
 
-
-register_command("games.exclusion.set", set_game_exclusion)
-register_command("games.defensive_threats.refresh", request_defensive_threat_scan)
+def register_commands(name: str | None = None) -> None:
+    """Explicitly register the selected command or all commands for assembly."""
+    if name is not None and name not in {'games.exclusion.set', 'games.defensive_threats.refresh'}:
+        raise ValueError(f"Unknown command: {name}")
+    if name is None or name == 'games.exclusion.set':
+        register_command('games.exclusion.set', set_game_exclusion)
+    if name is None or name == 'games.defensive_threats.refresh':
+        register_command('games.defensive_threats.refresh', request_defensive_threat_scan)
