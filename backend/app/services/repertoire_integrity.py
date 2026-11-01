@@ -14,7 +14,8 @@ import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from tempo_legacy_database.adapters.authored_repertoires.integrity import storage
-from tempo_legacy_database.connections import card_columns, read_connection
+from tempo_legacy_database.connections import read_connection
+from app.repertoire.changes.retained_mutations import rewrite_card
 from tempo_legacy_database.adapters.database_executor import submit_background_write
 
 from app.chess.cards import card_id
@@ -517,28 +518,6 @@ def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[st
     return True
 
 
-def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3.Row, moves: list[str], *, validated_route: dict | None = None, certify: bool = True) -> bool:
-    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
-    if validated_route is None:
-        validated_route = ensure_line_in_scope(database, repertoire_id, row["start_fen"], moves, remember=False)
-    new_id = card_id(row["start_fen"], moves)
-    if new_id == row["id"]:
-        return False
-    existing = storage.card_exists(database, (new_id,))
-    if not existing:
-        columns = card_columns(database)
-        values = dict(row)
-        values.update({"id": new_id, "repertoire_id": repertoire_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None, "canonical_route_source": 1})
-        storage.insert_replacement_card(database, columns, values)
-    storage.mark_card_authored(database, (new_id,))
-    storage.upsert_authored_membership(database, (repertoire_id, new_id))
-    storage.delete_membership(database, (repertoire_id, row["id"]))
-    remaining = storage.card_has_membership(database, (row["id"],))
-    if not remaining:
-        storage.archive_superseded_card(database, (new_id, row["id"]))
-    if certify:
-        certify_admitted_route(database, repertoire_id, validated_route)
-    return True
 
 
 def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -> int:
@@ -627,7 +606,7 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
             changed_lines += 1
             admitted_routes.append(validated_route)
     for source_row, moves, validated_route in card_changes:
-        if _rewrite_card(database, repertoire_id, source_row, moves, validated_route=validated_route, certify=False):
+        if rewrite_card(database, repertoire_id, source_row, moves, validated_route=validated_route, certify=False):
             changed_cards += 1
             admitted_routes.append(validated_route)
     changed_cards += _reconcile_derived_cards(database, repertoire_id)
@@ -760,7 +739,7 @@ def execute_durable_integrity_repair(task: dict) -> None:
             if _rewrite_line(database, source_row, moves, validated_route=validated_route, certify=False):
                 admitted_routes.append(validated_route)
         for source_row, moves, validated_route in card_changes:
-            if _rewrite_card(database, prepared["repertoire_id"], source_row, moves, validated_route=validated_route, certify=False):
+            if rewrite_card(database, prepared["repertoire_id"], source_row, moves, validated_route=validated_route, certify=False):
                 admitted_routes.append(validated_route)
         for card_identifier in prepared["unsupported_card_ids"]:
             _archive_unsupported_card(

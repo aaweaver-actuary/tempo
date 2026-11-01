@@ -335,3 +335,28 @@ disposable settings timezone is UTC. Both shared validation reservations and
 aggregate resource limits apply. Held rehearsal resources belong to their owner;
 no capacity reclamation or restart is performed by this lane. A passing owner
 case never establishes installation, genuine-file acceptance or assembled A05.
+
+
+## Retained mutation owner (F1)
+
+[Retained mutations](retained_mutations.py) owns the existing line replacement
+and physical-card rewrite implementations. The guided integrity repair command,
+the existing integrity service and the retained approved-change publisher call
+these same functions within their existing caller-owned transactions. The
+retained publisher no longer imports the repair command. Graph-task, transition
+reservation and rebuild locks, current source/display checks, membership
+reassignment, certification, invalidation and readback remain in their existing
+order. Single structural selection and no engine-evidence publication remain
+the supported retained cut. No schema or SQL ownership changed.
+
+```mermaid
+flowchart LR
+  R[Guided repair command] --> M[Repertoire retained mutations]
+  I[Existing integrity service] --> M
+  P[Approved retained publisher] --> M
+  M --> D[Existing database-owned mutation adapters]
+  P --> L[Existing graph locks and transaction owner]
+```
+
+Focused SQLite/shared-owner proofs do not establish PostgreSQL race, rollback
+or deployed behavior; those remain native integration evidence.

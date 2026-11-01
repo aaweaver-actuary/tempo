@@ -1,7 +1,7 @@
 """Current Repertoire mutation binding over #483's sole current snapshot read.
 
 No SQL/model/query duplicate, engine, connection or root app startup. Legacy
-canonical repair helpers retain content/history ownership; composition only
+canonical and integrity services retain their current responsibilities; composition
 selects this factory. The same-owner compatibility imports remain lazy.
 """
 from __future__ import annotations
@@ -18,19 +18,19 @@ from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import
 from .application import (RepertoireChanges, manual_resolution, resolution_card_updates,
                           validate_proposal, verify_retained_publication)
 from .ports import ChangeError, ValidatedChange
+from .retained_mutations import replace_repertoire_line, rewrite_card
 
 SnapshotReader = Callable[[object, str], RepertoireSnapshot]
 _shared_snapshot_reader = current_snapshot
 
 
 def _retained_operations():
-    from app import integrity_repair_commands as repairs
-    from app.services import canonical_prefix, repertoire_integrity, postgres_integrity
+    from app.services import canonical_prefix, postgres_integrity
     from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
     from tempo_legacy_database.adapters.authored_repertoires import integrity_commands
     from tempo_legacy_database.adapters.authored_repertoires.integrity import storage
     from tempo_legacy_database.adapters.opening_graph import worker
-    return repairs, canonical_prefix, repertoire_integrity, postgres_integrity, request_graph_rebuild_in_transaction, integrity_commands, storage, worker
+    return canonical_prefix, postgres_integrity, request_graph_rebuild_in_transaction, integrity_commands, storage, worker
 
 
 def lock_retained_sources(database, repertoire_id: str) -> None:
@@ -72,7 +72,7 @@ def publish_validated_change(database: BorrowedTransaction, change: ValidatedCha
     if not database.in_transaction:
         raise ChangeError('borrowed_transaction_required')
     reader = current_snapshot if current_snapshot is not None else _shared_snapshot_reader
-    repairs, canonical, integrity, certificate, request_graph, storage, integrity_storage, _ = _retained_operations()
+    canonical, certificate, request_graph, storage, integrity_storage, _ = _retained_operations()
     repertoire_id = change.proposal.repertoire_id
     lock_retained_sources(database,repertoire_id)
     if storage.locked_repertoire(database,repertoire_id) is None: raise ChangeError('repertoire_missing')
@@ -116,9 +116,9 @@ def publish_validated_change(database: BorrowedTransaction, change: ValidatedCha
     request_graph(database,repertoire_id,date.today().isoformat())
     admitted = []
     for source,moves,scoped in lines:
-        if repairs._replace_repertoire_line(database,source,moves,validated_route=scoped,certify=False): admitted.append(scoped)
+        if replace_repertoire_line(database,source,moves,validated_route=scoped,certify=False): admitted.append(scoped)
     for source,moves,scoped in cards:
-        if integrity._rewrite_card(database,repertoire_id,source,moves,validated_route=scoped,certify=False): admitted.append(scoped)
+        if rewrite_card(database,repertoire_id,source,moves,validated_route=scoped,certify=False): admitted.append(scoped)
         if source['repertoire_id'] == repertoire_id:
             remaining = integrity_storage.remaining_membership(database,(source['id'],repertoire_id))
             if remaining is not None: integrity_storage.reassign_card_owner(database,(remaining['repertoire_id'],source['id']))
