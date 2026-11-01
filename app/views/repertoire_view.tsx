@@ -38,7 +38,7 @@ export default function RepertoireView({
   theme = "brown",
   pieceSet = "cburnett",
 }: {
-  imported: LocalRepertoire[];
+  imported: readonly LocalRepertoire[];
   refreshRevision?: number;
   onImport: () => void;
   onPaste?: () => void;

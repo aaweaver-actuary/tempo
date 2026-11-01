@@ -1665,6 +1665,15 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     studyOnlyMode={studyOnlyMode} safeBreakCounter={safeBreakCounter}
     incrementSafeBreak={() => setSafeBreakCounter(count => count + 1)}
     attemptPhase={attempt.phase}
+    importedRepertoires={importedRepertoires} databaseQueue={databaseQueue} offlineQueue={offlineQueue}
+    onIntegrityReconciled={recheckIntegrity => {
+      invalidateTrainingQueueCache();
+      recheckIntegrity();
+      const currentTrainingState = useTrainingStore.getState();
+      const hasPlayableTrainingCard = currentTrainingState.cardsLeft > 0
+        && Boolean(currentTrainingState.practiceCards[currentTrainingState.activeCardIndex]);
+      if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
+    }}
     reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length}
     refreshDatabaseQueue={refreshDatabaseQueue} refreshQueueOnly={refreshQueueOnly}
     invalidateBranchEvidence={invalidateBranchEvidence}
