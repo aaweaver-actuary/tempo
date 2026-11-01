@@ -282,3 +282,15 @@ flowchart LR
   Fence --> Seed["Seed producer"]
   Recovery["Coverage recovery invocation"] --> Explorer["Explorer recovery owner"]
 ```
+
+Defensive threat derivation is selected by the worker only after its existing
+retained-task admission and lease fence. Defense grading and accepted engine
+callbacks use the shared Learning codecs separately and keep their existing
+transaction and receipt owners.
+
+```mermaid
+flowchart LR
+  Task["Retained threat task"] --> Fence["Admission and delivery fence"]
+  Fence --> Producer["Threat producer slice"]
+  Callback["Accepted engine callback"] --> Codec["Shared defense codecs"]
+```
