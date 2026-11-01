@@ -3,6 +3,8 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { nativeStudyRecords } from '../browser/native-study-storage';
+import { move } from '../browser/native-board';
+import { openingCard } from '../controlled-browser/fixtures';
 import startup from '../fixtures/controlled-browser/startup.json' with { type: 'json' };
 
 test('real worker upgrade retains and replays the original pending review', async ({ page, context }) => {
@@ -33,6 +35,8 @@ test('real worker upgrade retains and replays the original pending review', asyn
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing owned origin');
     const origin = `http://127.0.0.1:${address.port}`;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.clock.setFixedTime(new Date('2026-09-18T16:00:00Z'));
     await context.addInitScript(() => {
       localStorage.setItem('tempo-study-intents-cutover-v1', 'acknowledged');
       for (const key of ['tempo-sound', 'tempo-stockfish-on', 'tempo-maia-on', 'tempo-games-engine-on', 'tempo-explorer-on']) localStorage.setItem(key, 'false');
@@ -47,6 +51,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
         return route.fulfill({ json: { persisted: true, review_id: 601 } });
       }
       if (path.startsWith('/api/operations/')) return route.fulfill({ status: 404, json: { detail: 'Not found' } });
+      if (path === '/api/queue/window') return route.fulfill({ json: { cards: [openingCard('pending-london', 'London System', 'd2d4', 41)], count: 1 } });
       const fixture = (startup as Record<string, unknown>)[path];
       if (fixture !== undefined) return route.fulfill({ json: fixture });
       if (path.endsWith('/teaching')) return route.fulfill({ json: { states: [] } });
@@ -55,8 +60,8 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await page.goto(origin);
     await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
     await page.evaluate(async () => { await (await caches.open('unrelated-cache')).put('/sentinel', new Response('keep')); });
-    await expect(page.getByRole('button', { name: 'Correct' })).toBeVisible();
-    await page.getByRole('button', { name: 'Correct' }).click();
+    await expect(page.locator('.phone-study-heading h2')).toHaveText('London System');
+    await move(page, 'd2', 'd4');
     await expect.poll(async () => (await nativeStudyRecords(page)).filter(item => item.kind === 'review' && item.state !== 'committed').length).toBe(1);
     const original = (await nativeStudyRecords(page)).find(item => item.kind === 'review' && item.state !== 'committed')!;
     expect(original.key).toMatch(/^review:/);
@@ -73,6 +78,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     expect(await page.evaluate(async () => Boolean(await (await caches.open('unrelated-cache')).match('/sentinel')))).toBe(true);
     await context.setOffline(true);
     await page.reload();
+    await expect(page.getByRole('heading', { name: 'Daily training', exact: true })).toBeVisible();
     await expect.poll(async () => (await nativeStudyRecords(page)).find(item => item.key === original.key)).toMatchObject({ key: original.key, requestId: original.requestId, payload: original.payload });
     accept = true;
     await context.setOffline(false);
