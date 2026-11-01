@@ -159,3 +159,45 @@ def test_recovery_assembly_allocation_fits_existing_budget_without_changing_glob
     smaller['development']['memoryMiB'] = 2047
     with pytest.raises(AssertionError, match='study_recovery_assembly_exceeds_development_budget'):
         study_recovery_assembly_allocations(smaller)
+
+
+def test_packaged_recovery_helper_binds_database_before_integrity_connection():
+    """Execute the mounted fixture entry in a fresh process without storage."""
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    entry = Path(__file__).resolve().parent / 'fixtures/product_collection_packaged.py'
+    probe = r'''
+import contextlib, http.server, pathlib, runpy, sys, threading
+from tempo_legacy_database import connections, infrastructure
+from app.services.activity_gate import activity_gate
+assert infrastructure._admission is None and infrastructure._measurement is None
+class StopBeforeConnection(Exception): pass
+@contextlib.contextmanager
+def connection(*args, **kwargs):
+    assert infrastructure.database_admission() is activity_gate
+    assert infrastructure._measurement is not None
+    raise StopBeforeConnection()
+    yield
+connections.connection = connection
+class Server:
+    server_port = 12345
+    def __init__(self, *args): pass
+    def serve_forever(self): pass
+    def shutdown(self): pass
+    def server_close(self): pass
+http.server.ThreadingHTTPServer = Server
+threading.Thread.start = lambda self: None
+read_text = pathlib.Path.read_text
+pathlib.Path.read_text = lambda self, *args, **kwargs: '{}' if str(self) == '/qualification/provider.json' else read_text(self, *args, **kwargs)
+sys.argv = [sys.argv[1], 'hold-integrity', 'fixture']
+try:
+    runpy.run_path(sys.argv[0], run_name='__main__')
+except StopBeforeConnection:
+    pass
+else:
+    raise AssertionError('fixture never attempted the expected connection')
+'''
+    result = subprocess.run([sys.executable, '-c', probe, str(entry)], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
