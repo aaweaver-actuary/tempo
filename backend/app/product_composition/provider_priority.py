@@ -46,6 +46,9 @@ _CAPTURE_REASONS = frozenset({
     "qualification_original_command_mismatch",
     "managed_feedback_mode_not_active", "managed_feedback_runtime_identity_unavailable",
     "managed_feedback_runtime_identity_changed",
+    "integrity_graph_not_ready", "integrity_graph_generation_mismatch",
+    "integrity_state_missing", "integrity_scan_incomplete", "integrity_certificate_invalid",
+    "legacy_completed_current_integrity_required",
 })
 
 
@@ -176,6 +179,34 @@ def _current_feedback_targets(command, snapshots, *, connections, target_prepare
     return tuple(resolved), tuple(prepared)
 
 
+def _observe_retained_prerequisite(delivery, source, configuration, *, connections):
+    """A retained target is only a negative hint, never reusable authority.
+
+    Recheck owner version facts on each finite background retry. An unchanged
+    missing prerequisite skips every full publication projection; restoration
+    permits normal complete-scope qualification and its final writer fences.
+    Configuration/source changes bypass the hint to obtain a new disposition.
+    """
+    witness = delivery.qualification
+    if (witness is None or source is None or source.normalized is None
+            or configuration is None or not witness.matches(delivery.command)
+            or configuration.revision != witness.configuration_revision
+            or witness.selection.decision.repertoire_id not in configuration.repertoire_ids):
+        return
+    original = delivery.command.source if delivery.encounter is not None else delivery.command.finding
+    game = source.normalized
+    if (original.source_revision, original.source_digest) != (game.source_revision, game.source_digest):
+        return
+    from app.services.postgres_integrity import observe_feedback_integrity_prerequisite
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    with feedback_span('retained_prerequisite_observation'):
+        with connections() as raw:
+            observed = observe_feedback_integrity_prerequisite(
+                PostgresConnection(raw), witness.selection.decision.repertoire_id)
+    if not observed.ready:
+        raise DeliveryDeferred(observed.reason, retry_after=30)
+
+
 def _qualified_facts(command, *, connections, clock, delivery=None, selector=None, target_prepare=None):
     """Complete authored scope first, then complete bindings for elected routes."""
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
@@ -192,6 +223,7 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
             raise DeliveryDeferred("first_departure_source_unavailable")
         original = delivery_for(source.source_key, command)
         delivery = reads.delivery(original.operation_id) or original
+    _observe_retained_prerequisite(delivery, source, configuration, connections=connections)
     publications, unavailable = [], []
     game = source.normalized if source is not None else None
     if configuration is not None and game is not None:
@@ -627,9 +659,20 @@ class CurrentProviderPriorityIntake:
         """The coordinator persists this qualification before any Study call."""
         self._qualification_facts = None
         try:
+            if delivery.error == "owner_acknowledgment_uncertain":
+                # A previous call may have committed. Ask the receiving owner
+                # about the exact original key before any projection or retry.
+                receipt = self.reads.encounter_status(delivery.command.key)
+                if receipt is not None:
+                    return acknowledge_qualified_delivery(delivery, receipt)
             facts = _qualified_facts(delivery.command, connections=self.connections,
                 clock=self.clock, delivery=delivery, selector=self.selector)
+        except DeliveryDeferred as error:
+            return held_delivery(delivery, error.reason,
+                retry_at=self.clock.now() + error.retry_after, retryable=error.retryable)
         except Exception:
+            if delivery.error == "owner_acknowledgment_uncertain":
+                return delivery.model_copy(update={"next_attempt_at":self.clock.now() + 30})
             return held_delivery(delivery, "first_departure_preparation_unavailable",
                 retry_at=self.clock.now() + 30)
         qualified = facts[0]
