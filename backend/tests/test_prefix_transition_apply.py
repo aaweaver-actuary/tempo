@@ -54,7 +54,7 @@ def test_pr102_preparation_selects_first_step_for_each_card_and_root_role(monkey
     monkeypatch.setattr(application.postgres_store, 'connection', connection)
     monkeypatch.setattr(application.structural, 'diagnostic_request', lambda: nullcontext(float('inf')))
     monkeypatch.setattr(application.structural, 'load_snapshot', lambda *_args: captured.source)
-    monkeypatch.setattr(application.planner_api, '_calculate', lambda *_args: next(calculations))
+    monkeypatch.setattr(application.planner_api, 'calculate', lambda *_args: next(calculations))
     monkeypatch.setattr(application.planner_api, 'discover_memberships', lambda *_args: ())
     monkeypatch.setattr(application.planner_api, 'load_transition_snapshot', lambda *_args, **_kwargs: captured)
     monkeypatch.setattr(application, 'validate_approved_plan', lambda *_args, **_kwargs: None)

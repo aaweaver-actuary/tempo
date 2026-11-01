@@ -6542,7 +6542,6 @@ was dropped because the strict browser codec omitted the new backend field.
 
 - Opening evidence checkpoint registration (#706 C3): `test_opening_checkpoint_registration_imports_without_http_router` rejects HTTP router imports while verifying the existing checkpoint handler and preparer. `test_standalone_opening_checkpoint_reduces_outside_background_transaction` preserves its three timing and receipt cases and checks the current review handler and optional recombination preparer; the old no-preparer assertion failed on unchanged base 5e031834. Worker adoption remains pending the reserved import-line handoff.
 
-Engine image family-adapter packaging (#715): the background diagnostics unit
-case traverses the worker's relative module and child-process imports. Removing
+Engine image family-adapter packaging (#715): the `tests/runner/engine-image-packaging.test.mjs` Node case traverses the worker's relative module and child-process imports. Removing
 `engine-job-families.mjs` from its COPY inputs reproduces the missing-module
 condition; a real packaged engine startup remains a separate acceptance check.

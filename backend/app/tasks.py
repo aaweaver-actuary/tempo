@@ -38,10 +38,10 @@ from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from .product_composition.feedback_release import register_feedback_next_card_priority
 register_feedback_next_card_priority()
 from . import review_commands  # noqa: F401 - registers foreground review command
-from . import opening_evidence_api  # noqa: F401 - registers shadow checkpoint command
+from . import opening_evidence_commands  # noqa: F401 - registers shadow checkpoint command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
-from . import canonical_prefix_api  # noqa: F401 - registers canonical opening commands
+from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission

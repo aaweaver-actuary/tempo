@@ -254,12 +254,12 @@ owner function at call time; the normal-mode test fixture can patch that owner
 without importing task registrations. Task-specific tests may still override the
 compatibility function directly. This changes no task dispatch or claim policy.
 
-The HTTP router loads canonical prefix command registration. The worker still imports the HTTP router for that registration until its reserved import line is released.
+The HTTP router and worker both load the canonical prefix command registration.
 
 ```mermaid
 flowchart LR
   http["Canonical prefix HTTP router"] --> commands["Prefix command registration"]
-  worker["Worker (pending adoption)"] --> http
+  worker["Worker"] --> commands
   commands --> owner["Canonical prefix service"]
   owner --> storage["Existing prefix and coverage storage in caller transaction"]
 ```

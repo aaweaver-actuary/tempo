@@ -1814,6 +1814,33 @@
   ],
   "suites": [
     {
+      "id": "engine-image-packaging",
+      "owner": "engine worker",
+      "kind": "node",
+      "cwd": ".",
+      "command": "node tools/component-build/test-lane.mjs runners engine-image-packaging",
+      "inputs": [
+        "Dockerfile.engine",
+        ".dockerignore",
+        "components.json",
+        "package.json",
+        "tests/runner/engine-image-packaging.test.mjs",
+        "scripts/defense-engine-worker.mjs",
+        "scripts/stockfish-process.mjs",
+        "scripts/stockfish-child.mjs",
+        "scripts/engine-search.mjs",
+        "scripts/engine-worker-cycle.mjs",
+        "scripts/engine-attempt-diagnostics.mjs",
+        "scripts/maia-coverage-client.mjs",
+        "scripts/durable-engine-request.mjs",
+        "scripts/engine-job-recovery.mjs",
+        "scripts/engine-job-families.mjs",
+        "public/engines/sf_19_smallnet.js",
+        "public/engines/sf_19_smallnet.wasm",
+        "public/engines/nn-61e7af4bb97d.nnue"
+      ]
+    },
+    {
       "id": "postgres-backup-lifecycle",
       "owner": "database backup tooling",
       "kind": "node",
