@@ -68,7 +68,9 @@ from .services.tactical_catalog import (
     puzzle_membership,
     progress_pack_id,
 )
-from app.contracts.transport.game_sync import AccountSettings, GameSyncEnqueueResponse, GameSyncRequest, GameSyncStatusResponse
+from app.contracts.transport.game_sync import AccountSettings
+from app.games.sync.http import create_game_sync_router
+from .product_composition.game_sync_http import GameSyncHttpCapabilities, create_game_sync_http_binding
 from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, AnalysisPastePreviewRequest, BranchRequest, RemoveBranchRequest
 from app.contracts.transport.content import CardRevisionRequest, PrefixSplitRequest, PrefixSplitResponse
 from app.contracts.transport.authored_integrity import CoverageMaiaSubmission, IntegrityResolutionRequest
@@ -2933,63 +2935,25 @@ def accounts(a: AccountSettings,
     return a
 
 
-@app.post("/api/games/sync", response_model=GameSyncEnqueueResponse, status_code=202)
-def sync(request: GameSyncRequest,
-         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    users = (
-        ("lichess", request.lichess_username.strip()),
-        ("chess.com", request.chesscom_username.strip()),
-    )
-    if not any(user for _, user in users):
-        raise HTTPException(422, "Set a Lichess or Chess.com username in Settings")
-    normalized_request = request.model_copy(
-        update={
-            "lichess_username": users[0][1],
-            "chesscom_username": users[1][1],
-        }
-    )
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.sync.enqueue", normalized_request.model_dump(mode="json"),
-            idempotency_key=idempotency_key,
-        )
-    background = activity_gate.in_background
-    job_id = enqueue_sync(normalized_request, background=background)
-    coordinator.wake()
-    with connection(background=background) as db:
-        job = game_sync_storage.job_status(db, job_id)
-    return {
-        "imported": 0,
-        "job_id": job_id,
-        "status": job["status"],
-        "providers": {},
-    }
+def _dispatch_game_sync(name, payload, idempotency_key):
+    from .command_dispatch import dispatch_command
+    return dispatch_command(name, payload, idempotency_key=idempotency_key)
 
 
+_game_sync_enqueue, _game_sync_status = create_game_sync_http_binding(GameSyncHttpCapabilities(
+    postgres_configured=lambda: postgres_store.configured(),
+    dispatch=_dispatch_game_sync,
+    in_background=lambda: activity_gate.in_background,
+    enqueue=lambda request, **options: enqueue_sync(request, **options),
+    wake=lambda: coordinator.wake(),
+    connection=lambda **options: connection(**options),
+    job_status=lambda database, job_id: game_sync_storage.job_status(database, job_id),
+    provider_states=lambda database: game_sync_storage.provider_states(database),
+    latest_job=lambda database: game_sync_storage.latest_job(database),
+    serialize_job=lambda row: serialize_job(row),
+))
+app.include_router(create_game_sync_router(_game_sync_enqueue, _game_sync_status))
 app.include_router(create_next_opponent_router(read_next_opponent_profile))
-
-
-@app.get("/api/games/sync/status", response_model=GameSyncStatusResponse)
-def sync_status():
-    with connection(background=activity_gate.in_background) as db:
-        rows = game_sync_storage.provider_states(db)
-        job_row = game_sync_storage.latest_job(db)
-    providers = []
-    for row in rows:
-        provider = dict(row)
-        raw_result = provider.pop("last_result_json", None)
-        provider["last_result"] = json.loads(raw_result) if raw_result else None
-        providers.append(provider)
-    return {
-        "providers": providers,
-        "active_filters": {
-            "days": 90,
-            "speeds": ["blitz", "rapid", "classical"],
-            "rated_only": True,
-        },
-        "active_job": serialize_job(dict(job_row) if job_row else None),
-    }
 
 
 @app.post("/api/games/analysis/claim")
