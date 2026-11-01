@@ -192,9 +192,9 @@ def seed_scope(case, original_repertoire, directory):
     with case.transaction() as database:
         ordinary = [row[0] for row in database.execute_native("""SELECT id FROM cards
             WHERE id=ANY(%s) AND trained_color='white' AND content_type='opening'
-              AND kind='prefix' AND split_part(start_fen,' ',2)='w'
+              AND kind IN ('prefix','response')
               AND id<>%s ORDER BY id LIMIT 576""", (sorted(physical_ids), standard['card_id'])).fetchall()]
-    assert len(ordinary) == 576, 'recovery_fixture_needs_actual_executable_queue_backlog'
+    assert len(ordinary) == 576, ('recovery_fixture_needs_actual_executable_queue_backlog', len(ordinary))
     for offset in range(0, len(ordinary), 100):
         with case.transaction() as database:
             database.execute_native('UPDATE cards SET due_date=%s WHERE id=ANY(%s)',
@@ -220,6 +220,7 @@ def _marker(path, value):
 
 
 def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, foreground, root, web_url,
+                              publish_provider,
                               repertoire, target):
     """Actual missing owner certificate, stopped producer, save and same-key recovery.
 
@@ -315,7 +316,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
             end_at=(now-timedelta(seconds=60)).isoformat(), precision='second')
         inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now']-90)*1000), rated=True, speed='rapid', pgn=str(game)))
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        publish_provider(inputs, allow_paused=True)
         entry('foreground-worker', 'recovery-configure')
         entry('foreground-worker', 'worker')
         with case.transaction() as database:
@@ -360,7 +361,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         else:
             raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
         inputs['now'] = _wait_for_original_retry(held)
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        publish_provider(inputs, allow_paused=True)
         retry = entry('foreground-worker', 'retry-local-feedback')
         current = entry('api', 'feedback-state', operation)
         assert current['command'] == original and current['receipt'] is not None
@@ -415,6 +416,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
 
 
 def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, docker, containers,
+                 publish_provider,
                  original_repertoire, custom_target, web_url, study_only, mode_intent):
     """Continue the already verified roles/network/images; no second launcher."""
     # The setup collector switches to the original production admission for
@@ -440,12 +442,14 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
         for role, resource in containers.items()}
     held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
+        publish_provider=publish_provider,
         api=api, docker=docker, collector=collector['Id'], background=containers['background-worker']['id'],
         foreground=containers['foreground-worker']['id'],
         root=root, web_url=web_url, repertoire=original_repertoire, target=custom_target)
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']
     configuration_windows = []
+    producer_finished = False
     def configure_window():
         # Fixture source admission is explicit. Each fresh bounded window is
         # committed through the configuration owner, never by forging a job
@@ -454,7 +458,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['window'] = dict(start_at=(now - timedelta(seconds=120)).isoformat(),
             end_at=(now - timedelta(seconds=60)).isoformat(), precision='second')
-        (directory / 'provider.json').write_text(json.dumps(inputs))
+        publish_provider(inputs, allow_finished_collector=producer_finished)
         configured = entry('foreground-worker', 'recovery-configure')
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
@@ -475,7 +479,6 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                 break
             assert time.monotonic() < deadline, 'recovery_mode_command_not_complete'
             time.sleep(.05)
-    (directory / 'recovery-configuration-ready').write_text('current scope and mode committed\n')
     deadline = time.monotonic() + 45
     while True:
         initial = api('GET', '/api/queue/window?limit=20')
@@ -533,6 +536,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     inputs['lichess'].append(dict(id=gap_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn='[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 1-0\n'))
                     configure_window()
+                    (directory / 'recovery-configuration-ready').write_text('current scope and mode committed\n')
                     (directory / 'recovery-producer-start').write_text('original admission only\n')
                     producer_deadline = time.monotonic() + 45
                     while True:
@@ -556,7 +560,9 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert produced[0]['selection']['status'] == 'opponent_gap'
                     else:
                         assert (len(produced) == 1 and grants > 0) or (not produced and grants == 0)
-                    producer_progress = dict(control=policy['body'], original_admission_grants=grants,
+                    producer_finished = True
+                    producer_progress = dict(actual_worker_finished=True, container_id=collector['Id'],
+                        control=policy['body'], original_admission_grants=grants,
                         source_id=gap_id, source_rows=[dict(row) for row in produced],
                         optional_paused=not produced, runtime=expected,
                         jobs=jobs,
@@ -578,7 +584,12 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     # Real provider parsing/capture/comparison. This is explicit
                     # controlled fixture admission, not a claim that recurring
                     # optional collection is permitted in Study-only mode.
-                    captured = entry('foreground-worker', 'worker')
+                    producer_role = 'background-worker'
+                    producer = json.loads(docker('inspect', containers[producer_role]['id']).stdout)[0]
+                    assert producer['Id']==containers[producer_role]['id']
+                    assert producer['State']['Running'] and not producer['State']['Paused']
+                    assert producer['HostConfig']['Memory']==512*1024*1024
+                    captured = entry(producer_role, 'worker')
                     with case.transaction() as database:
                         source = database.execute_native("""SELECT source_key,payload->'first_departure' AS selection
                             FROM product_feedback_sources WHERE payload->'original'->>'source_game_id'=%s""", (source_id,)).fetchone()
@@ -589,7 +600,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert len(deliveries) == 1
                         staged.append(dict(index=index, source_id=source_id, target=target,
                             operation_id=deliveries[0]['operation_id'], command=deliveries[0]['payload'].get('encounter'),
-                            provider_run=captured, admission='explicit synthetic fixture admission'))
+                            provider_run=captured, execution_role=producer_role, memory_bytes=producer['HostConfig']['Memory'],
+                            admission='explicit synthetic fixture admission'))
                 if index != 7:
                     _marker(release, dict(stage='continue', index=index))
                 measured = wait_for('transition', index)['sample']
@@ -600,7 +612,26 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     # read AFTER the browser clock endpoint, so this inspection
                     # cannot make an unissued board pass the measured boundary.
                     assert receipt is not None
-                    assert json.loads(receipt['result_json']) == measured['receipt']
+                    operation = database.execute_native("""SELECT command_name,state,response_json,payload_json
+                        FROM operation_receipts WHERE operation_id=%s""", (measured['requestId'],)).fetchone()
+                    assert operation and operation['command_name']=='cards.review' and operation['state']=='complete'
+                    assert json.loads(operation['response_json']) == measured['receipt']
+                    from app.contracts.transport.study import ReviewRequest
+                    original_review = ReviewRequest.model_validate(measured['requestBody'])
+                    # This journey does not submit an opening checkpoint, which
+                    # would require separately prepared evidence in the command.
+                    assert original_review.opening_evidence_completion is None
+                    request = json.loads(operation['payload_json'])
+                    assert request == {'card_id': measured['cardId'], 'review': original_review.durable_payload()}
+                    assert request['card_id']==measured['cardId']
+                    assert request['review']['attempt_id']==measured['attemptId']
+                    assert request['review']['queue_entry_id']==measured['entryId']
+                    # The compatibility adapter appends only this owner result
+                    # after Learning stores its attempt receipt. The complete
+                    # command receipt above must retain the exact public JSON.
+                    core_receipt = dict(measured['receipt'])
+                    core_receipt.pop('recombination', None)
+                    assert json.loads(receipt['result_json']) == core_receipt
                     assert receipt['card_id'] == measured['cardId'] and receipt['queue_entry_id'] == measured['entryId']
                     assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE id=%s AND card_id=%s AND source_kind='study'",
                         (receipt['review_id'], measured['cardId'])).fetchone()[0] == 1

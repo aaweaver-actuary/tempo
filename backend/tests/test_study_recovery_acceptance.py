@@ -151,8 +151,8 @@ def test_recovery_assembly_allocation_fits_existing_budget_without_changing_glob
     before = deepcopy(configuration)
     selected = study_recovery_assembly_allocations(configuration)
     assert {role: value['memoryMiB'] for role, value in selected.items()} == {
-        'postgres': 384, 'redis': 64, 'api': 192, 'foreground-worker': 384,
-        'background-worker': 448, 'game-feedback-worker': 512, 'web': 64}
+        'postgres': 384, 'redis': 32, 'api': 192, 'foreground-worker': 384,
+        'background-worker': 512, 'game-feedback-worker': 512, 'web': 32}
     assert sum(value['memoryMiB'] for value in selected.values()) == 2048
     assert configuration == before
     smaller = deepcopy(configuration)
@@ -190,7 +190,9 @@ class Server:
 http.server.ThreadingHTTPServer = Server
 threading.Thread.start = lambda self: None
 read_text = pathlib.Path.read_text
-pathlib.Path.read_text = lambda self, *args, **kwargs: '{}' if str(self) == '/qualification/provider.json' else read_text(self, *args, **kwargs)
+exists = pathlib.Path.exists
+pathlib.Path.exists = lambda self: True if str(self) == '/tmp/tempo-qualification-provider.json' else exists(self)
+pathlib.Path.read_text = lambda self, *args, **kwargs: '{}' if str(self) == '/tmp/tempo-qualification-provider.json' else read_text(self, *args, **kwargs)
 sys.argv = [sys.argv[1], 'hold-integrity', 'fixture']
 try:
     runpy.run_path(sys.argv[0], run_name='__main__')
