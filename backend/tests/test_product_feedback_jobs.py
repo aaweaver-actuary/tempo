@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import ast
 import hashlib
 import json
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -213,6 +214,40 @@ def test_capture_attempts_every_selected_repertoire_and_retains_last_read_failur
     source, = h.store.sources.values()
     assert source.diagnostic == "comparison_unavailable:" + json.dumps([selected[-1]], separators=(",", ":"))
     assert not h.store.deliveries and not h.receiver.calls
+
+
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_capture_releases_supplied_snapshot_after_detachment_and_validation_failure(invalid_first):
+    h = harness(kinds=())
+    request = spec().model_copy(update={"repertoire_ids": ("invalid", "white") if invalid_first else ("white",)})
+    references, compared = [], []
+    expected = json.loads((FIXTURES / "snapshot.json").read_text())["payload"]
+
+    def snapshot(repertoire_id):
+        if references:
+            assert references[-1]() is None
+        value = RepertoireSnapshot.model_validate_json(json.dumps(expected))
+        # The first snapshot fails the requested repertoire scope check.
+        references.append(weakref.ref(value))
+        return value
+
+    def compare(game, detached, *, record, spec):
+        assert len(references) == 1 and all(ref() is None for ref in references)
+        assert detached.model_dump(mode="json") == RepertoireSnapshot.model_validate_json(
+            json.dumps(expected)).model_dump(mode="json")
+        compared.append(True)
+        return ()
+
+    h.coordinator.snapshots = SimpleNamespace(snapshot=snapshot)
+    h.coordinator.comparer = SimpleNamespace(compare=compare)
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    assert compared == ([] if invalid_first else [True])
+    assert len(references) == (2 if invalid_first else 1)
+    assert all(ref() is None for ref in references)
+    if invalid_first:
+        source, = h.store.sources.values()
+        assert source.diagnostic == "unresolved_parsing_or_comparison_boundary"
 
 
 def test_crash_before_checkpoint_replays_without_duplicates():
