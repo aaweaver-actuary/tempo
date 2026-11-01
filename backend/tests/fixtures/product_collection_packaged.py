@@ -181,6 +181,9 @@ def install_r2_current_feedback_guards(path=Path('/qualification/r2-current-feed
 
 r2_current_feedback_guards = install_r2_current_feedback_guards()
 
+from app.product_composition.database_infrastructure import bind_database_infrastructure
+bind_database_infrastructure()
+
 
 # Fault injection runs the real Celery application/queues after installing one
 # bounded observation/barrier around the actual local qualification stage. No
