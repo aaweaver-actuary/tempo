@@ -6589,3 +6589,7 @@ claim that an active SQL statement/source projection is preemptible.
 proves a due held live delivery cannot starve ready historical intake while a
 truly ready live delivery keeps priority. Both cases preserve original commands,
 logical identities, determination clocks, retained pages and completed checkpoints.
+
+### Packaged recovery clock stays behind genuine issuance (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` retains the held source/restoration and ten-repertoire sources under actual UTC determination time. The earlier settled-source reconciliation's accelerated clock must not freeze a future new delivery; retry waits for the original durable deadline, and actual browser issuance/save must settle that same key. The combined058 run exposed the fixture failure after genuine target review; its evidence remains a failed qualification, not a product settlement pass. The same fixture clock advances with wall time so the existing continuous R2 collector can reach its original +2s uncertainty and +30s held retry deadlines.
