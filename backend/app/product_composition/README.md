@@ -28,6 +28,8 @@ flowchart LR
   Intake --> Study["Study-owned Again / introduction<br/>priority, issuance and settlement"]
   Gate["Background admission / foreground priority<br/>bounded units and retained retries<br/>optional worker: 2048 MiB / 96 PIDs"] --> Import
   Gate --> Replay
+  Stop["CLI SIGINT / SIGTERM"] -->|"request_stop on actual owned runner"| Import
+  Stop -->|"cooperative page cancellation; retain checkpoint"| Replay
 ```
 
 Historical jobs use `purpose=history`, exact-job claims and manual provenance.
@@ -39,6 +41,10 @@ page subtype and cursor, preserving metadata and canonical source identity.
 It commits comparisons through the existing Games page transaction, then delivers
 only outbox entries attached to the imported source set after the full traversal.
 Original commands, owner receipts and determination clocks survive retries.
+The CLI forwards stop requests into its actual constructed acquisition/comparison
+runners as well as its outer event. The existing page owner checks cancellation
+between source/record/comparison units and never publishes a partial page. A
+single active SQL read or source projection is not preempted by this event.
 
 Missing scope remains unresolved; a later invocation can revisit a completed
 unresolved traversal. Opponent-first games produce no own-miss consequence.

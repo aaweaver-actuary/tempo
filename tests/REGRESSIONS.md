@@ -6560,3 +6560,12 @@ immediately before the new narrow target fence; it requires durable refusal,
 rollback of the revision/effect/ack and unchanged-key/clock recovery after clearing
 the marker. This case does not claim to simulate external concurrency. The normal
 R1 thirty-transition cases and production deadlines/resource caps stay unchanged.
+
+### Historical CLI cancellation propagation (#665)
+
+`backend/tests/test_game_history_scripts.py::test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoint`
+exercises SIGINT/SIGTERM through the real CLI handler and actual FeedbackRunner.
+Stopping during the first repertoire read prevents the second read and partial
+comparison checkpoint; original manifest, retained pages/sources/captures and
+signal handlers survive unchanged. This is a pure cancellation proof, not a
+claim that an active SQL statement/source projection is preemptible.

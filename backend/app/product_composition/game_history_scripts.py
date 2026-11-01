@@ -492,8 +492,14 @@ def main(compare=False, argv=None):
         from .game_sync_current import CurrentRepertoireSnapshots
         from app.services.redis_admission_gate import BackgroundAdmissionDeferred
         stopped = Event()
-        prior = {s: signal.signal(s, lambda *_: stopped.set()) for s in (signal.SIGINT, signal.SIGTERM)}
         owned = []
+        def request_stop(*_):
+            stopped.set()
+            # The page runner owns the cooperative stop event tested between
+            # source/record/comparison units; the CLI event alone is insufficient.
+            for resource in tuple(owned):
+                resource.request_stop()
+        prior = {s: signal.signal(s, request_stop) for s in (signal.SIGINT, signal.SIGTERM)}
         try:
             intake = None
             if compare:
@@ -509,13 +515,18 @@ def main(compare=False, argv=None):
 
             def factory(configuration):
                 if compare:
-                    return comparison_runner(store=store, snapshots=CurrentRepertoireSnapshots(connections),
+                    resource = comparison_runner(store=store, snapshots=CurrentRepertoireSnapshots(connections),
                         intake=intake, clock=clock, spec=manifest.job(configuration))
-                runtime = create_game_sync(policies=(configuration_policy(configuration),), store=store,
-                    snapshots=DeferredSnapshots(), learning=None, clock=clock, source_identity=store,
-                    encounter_feedback=True, delivery_enabled=False, preserve_existing_comparison=True)
-                owned.append(runtime)
-                return runtime.runner
+                    runner = resource
+                else:
+                    resource = create_game_sync(policies=(configuration_policy(configuration),), store=store,
+                        snapshots=DeferredSnapshots(), learning=None, clock=clock, source_identity=store,
+                        encounter_feedback=True, delivery_enabled=False, preserve_existing_comparison=True)
+                    runner = resource.runner
+                owned.append(resource)
+                if stopped.is_set():  # Signal may have arrived during construction.
+                    resource.request_stop()
+                return runner
 
             try:
                 if options.operation == "recover-precision":

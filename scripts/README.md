@@ -354,7 +354,10 @@ same arguments and a manifest path available to both invocations. A local source
 checkout alone cannot establish the installed worker's feedback identity.
 
 Both runs stop after `--max-units` bounded units (default 50). Repeat the same
-run command to resume. Exit 0 means the selected phase completed; 1 means
+run command to resume. SIGINT/SIGTERM also reaches the actual owned runner, so
+comparison stops at its next cooperative page boundary without publishing a
+partial page. A unit limit is not a wall-clock deadline and does not preempt one
+active SQL read or source projection. Exit 0 means the selected phase completed; 1 means
 incomplete/deferred work; 2 means an operation/input failure. Plan exits 0 when
 the scope was successfully inspected; this is not readiness or completion.
 No timers, automatic retries, recurrence changes, forward checkpoints or
