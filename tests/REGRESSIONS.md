@@ -6641,3 +6641,8 @@ retired aggregate-cap contract are replaced by complete-facts/estimate checks.
 561 valid authored lines whose full document exceeds the retired32MiB limit;
 `test_serialized_byte_accounting_still_refuses_true_row_byte_overflow` retains
 the actual64KiB refusal. Existing row-count sentinels/MVCC/fences are unchanged.
+
+
+### Position index legal replay facts (overnight source admission)
+
+`backend/tests/test_product_position_index.py::test_index_reuses_legal_replay_facts_without_reparsing_occurrences` covers legal and pinned/irrelevant EP, castling, exact initial/full FEN, illegal-prefix diagnostics, route aliases with distinct physical bindings/reentry authority, and route-local adjacency. Each route parses only its root; all occurrence keys match standalone validated lookup. This repairs repeated FEN parsing in complete-scope comparison without changing route/ply bounds, opening identity or public validation.
