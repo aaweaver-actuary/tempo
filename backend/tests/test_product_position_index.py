@@ -235,3 +235,21 @@ def test_index_reuses_legal_replay_facts_without_reparsing_occurrences(
     assert {(item.before.route_id, item.after.route_id) for item in index.adjacency} == {
         ("a", "a"), ("alias", "alias")}
     assert not index.complete
+
+
+@pytest.mark.parametrize("failure", ["routes", "plies", "schema"])
+def test_unanchored_reentry_index_preserves_full_source_bounds_and_revalidation(failure):
+    from app.repertoire import build_reentry_index
+    source = snapshot(route())
+    supplied = source.membership.routes[0]
+    if failure == "routes":
+        routes = (supplied,) * 10001
+    elif failure == "plies":
+        routes = (supplied.model_copy(update={"moves": ("g1f3",) * 1000}),) * 101
+    else:
+        routes = (supplied.model_copy(update={"learner_color": "invalid"}),)
+    invalid = source.model_copy(update={"membership": source.membership.model_copy(update={"routes": routes})})
+    for factory in (build_index, build_reentry_index):
+        with pytest.raises(ValueError, match="snapshot_index_exceeds_bound" if failure != "schema" else "learner_color"):
+            factory(invalid)
+    assert build_reentry_index(source) is None

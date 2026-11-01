@@ -26,7 +26,7 @@ from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import AcquisitionFailure, Clock, GamesStore, JobSpec
 from app.games.providers.chesscom_acquisition import ChesscomAcquisitionError, fetch_chesscom_page
 from app.games.providers.lichess_acquisition import LichessAcquisitionError, fetch_lichess_page
-from app.repertoire import build_index
+from app.repertoire import build_reentry_index
 
 class AcquisitionPolicy(Value):
     """Explicit user filters plus finite integration resource bounds.
@@ -191,10 +191,10 @@ class WorkflowComparer:
         identity = sha256(encoded).digest()
         index = self._page_indexes.get(identity) if self._page_indexes is not None else None
         if index is None:
-            index = build_index(snapshot)
+            index = build_reentry_index(snapshot)
             # Bound retained input-equivalent size and entries. A larger scope
             # remains complete and compared, simply without retained reuse.
-            if (self._page_indexes is not None and len(self._page_indexes) < 16
+            if (index is not None and self._page_indexes is not None and len(self._page_indexes) < 16
                     and self._page_bytes + len(encoded) <= 32 * 1024 * 1024):
                 self._page_indexes[identity] = index
                 self._page_bytes += len(encoded)
