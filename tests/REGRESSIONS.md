@@ -6513,3 +6513,12 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Disjoint essential and optional claims (#664 / #668)
 
 `backend/tests/test_daily_study_dispatch.py::test_optional_background_pool_failure_cannot_reserve_essential_queue` keeps a real queued SQLite task unleased across optional pool failure in both modes, then completes it through the essential owner while the browser is active. An empty Study-only primary filter skips the claim and preserves explicit-import fallback. `test_generic_receipt_recovery_reserves_only_background_identity` preserves background receipt identity and mode filters; `test_command_receipt_storage_boundary.py::test_background_recovery_filters_each_due_head_before_reservation` checks all three indexed recovery heads with unrestricted, empty, and finite allowlists. Existing already-leased legacy delivery/replay/deadline tests remain active. The observed packaged failure retained a `daily_queue` lease in the optional worker after a pool/deadline failure, blocking foreground progress until its 60-second expiry; no lease/deadline is shortened by this repair.
+
+### Current qualified feedback authority (#662)
+
+`backend/tests/test_current_feedback_authority.py` is selected by the regular
+`study-game-priority` suite. It covers current-only construction and complete-scope
+reuse, changed canonical source/time or exact executable rejection, and actual
+PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
+The existing handoff fixture uses the production bounded connection profile and a
+task-owned private passfile; all 250ms transaction limits remain unchanged.
