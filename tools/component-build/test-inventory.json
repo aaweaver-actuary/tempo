@@ -111,6 +111,7 @@
       "tests/unit/repertoire-rename-pending-regressions.test.ts",
       "tests/unit/review-attempt-confirmation-regressions.test.tsx",
       "tests/unit/review-conflict-ui-regressions.test.tsx",
+      "tests/unit/review-client-capability.test.ts",
       "tests/unit/review-outbox-regressions.test.ts",
       "tests/unit/service-status-panel-regressions.test.tsx",
       "tests/unit/settings-loading-regressions.test.tsx",
