@@ -25,6 +25,7 @@ bind_database_infrastructure()
 
 from .celery_app import celery_app
 from .product_composition.worker_game_sync import resolve_worker_game_sync_command
+from .product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
     record_operation_retry, defer_operation_for_foreground,
@@ -46,7 +47,6 @@ from . import canonical_prefix_commands  # noqa: F401 - registers canonical open
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_commands  # noqa: F401 - registers foreground game changes
-from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
 from .product_composition.feedback_commands import register_commands as register_product_feedback_commands
 register_product_feedback_commands()
 from .product_composition.game_review_commands import register_commands as register_product_review_commands
@@ -291,6 +291,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
             resolve_worker_game_sync_command(command_name)
+            resolve_worker_legacy_evidence(command_name)
             result = execute_command(operation_id, command_name, saved_payload,
                                      attempt_token=attempt_token)
         except BackgroundAdmissionDeferred:
@@ -337,6 +338,7 @@ def execute_background_command(
                   else nullcontext()):
                 activity_gate.check_background_admission()
                 resolve_worker_game_sync_command(command_name)
+                resolve_worker_legacy_evidence(command_name)
                 return execute_command(operation_id, command_name, saved_payload,
                                        background=True, attempt_token=attempt_token)
         except BackgroundAdmissionDeferred:
