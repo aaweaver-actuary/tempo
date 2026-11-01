@@ -197,3 +197,38 @@ def test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow(dat
     with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
         storage.read_repertoire(connection, "rep")
     assert any(item["dimension"] == "row_bytes" for item in caught.value.diagnostic()["violations"])
+
+
+@pytest.mark.parametrize("variant", ["full", "authored", "candidate"])
+def test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint(database, variant):
+    """Execute both wire encodings; complete source facts and budgets must agree."""
+    from tempo_game_evidence_contracts.legacy import fingerprint
+    connection, _ = database
+    connection.execute("UPDATE repertoire_lines SET name=%s", ('Quoted " \\ \n café',))
+    connection.execute("UPDATE cards SET introduced_at=NULL")
+    statements = {"full": storage.STATEMENT, "authored": storage._AUTHORED_STATEMENT,
+                  "candidate": storage._CANDIDATE_STATEMENT}
+    statement = statements[variant]
+    parameters = ("rep", storage.MAX_SOURCE_ROWS, storage.MAX_ROW_BYTES)
+    if variant == "candidate":
+        parameters += (["route"],)
+    # Reconstruct only the released JSONB wire encoding, leaving its complete
+    # physical source SELECT unchanged. This is an executed native oracle, not
+    # a source-shape assertion or a producer-supplied snapshot.
+    released = (statement.replace("json_build_object(", "jsonb_build_object(")
+        .replace("json_agg(", "jsonb_agg(").replace("row_to_json(", "to_jsonb(")
+        .replace("'[]'::json", "'[]'::jsonb"))
+    before = connection.execute(released, parameters).fetchone()["snapshot"]
+    after = connection.execute(statement, parameters).fetchone()["snapshot"]
+    assert after == before
+    assert fingerprint(after) == fingerprint(before)
+    assert after["bounded"] and after["card_count"] == after["membership_count"] == 1
+    if variant == "full":
+        facts = storage.read_repertoire(connection, "rep")
+        assert facts["cards"][0]["introduced_at"] is None
+    elif variant == "authored":
+        facts = storage.read_authored_scope(connection, "rep")
+    else:
+        facts = storage.read_candidate_bindings(connection, repertoire_id="rep",
+            expected_header=before["facts"]["repertoire"], route_ids=("route",))
+    assert facts == before["facts"]
