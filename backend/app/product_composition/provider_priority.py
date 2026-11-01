@@ -66,7 +66,7 @@ def _failure_code(error):
 @dataclass(frozen=True)
 class PreparedProviderFeedback:
     command: object
-    target_capture: dict
+    target_capture: dict | None
     target_snapshot: object
     qualification: FirstDepartureWitness
     prepared_decisions: object

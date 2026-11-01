@@ -107,6 +107,24 @@ class CurrentQualifiedOwnerDecisions(CurrentOwnerDecisions):
         self._prepared_encounter = command.model_dump_json()
         return self
 
+    def _mapping_for_target(self, command, actual, graphs):
+        target = command.decision
+        mappings = tuple(item for item in self.snapshot.decision_presentations
+                         if item.decision_id == command.key.decision_id)
+        _require(mappings and len({item.model_dump_json(exclude={'route_id', 'route_ply'})
+                                   for item in mappings}) == 1,
+                 'current_owner_conflicting_decision_bindings')
+        if len(mappings) > 1 or len(graphs) > 1:
+            routes = {item.route_id for item in mappings}
+            _require(None not in routes and routes == {row['line_id'] for row in graphs},
+                     'current_owner_incomplete_decision_bindings')
+        supplied = tuple(item for item in mappings
+                         if (item.route_id, item.route_ply) == (target.route_id, target.route_ply))
+        _require(supplied, 'current_owner_supplied_route_unproved')
+        mapping = supplied[0]
+        _require(mapping.presentation_revision == actual['revision'], 'current_owner_card_revision_changed')
+        return mapping
+
     def _current_prepared_qualified(self, command):
         """Exact locked target/currentness checks; no chess, capture or provider."""
         database, expected = self.database, self._target
@@ -149,7 +167,8 @@ class CurrentQualifiedOwnerDecisions(CurrentOwnerDecisions):
         _require(not blocked and actual['content_type'] == 'opening' and not any(actual[field]
             for field in ('archived','pending_validation','superseded_by')),
             'current_owner_card_unavailable_or_changed_content_introduction_unproved')
+        mapping = self._mapping_for_target(command, actual, graphs)
         introduced = actual['introduced_at']
-        return (target.model_copy(update=dict(introduction='introduced' if introduced else 'unintroduced',
+        return (mapping.model_copy(update=dict(introduction='introduced' if introduced is not None else 'unintroduced',
             introduced_at=introduced if introduced and len(introduced)>10 else None,
             introduced_before_game=None,introduction_game=None)),)

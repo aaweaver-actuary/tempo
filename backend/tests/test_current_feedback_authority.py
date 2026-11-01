@@ -80,3 +80,33 @@ def test_native_current_feedback_accepts_with_broad_legacy_capture_unavailable(n
         effect = PostgresGameFeedbackStore(database).get(case.original.command.key)
         assert effect is not None and effect.key == case.original.command.key
     assert case.store.delivery(case.original.operation_id).state == 'acknowledged'
+
+
+@pytest.mark.parametrize('fault', ['ambiguous', 'missing_graph_route', 'wrong_ply', 'revision'])
+def test_exact_target_requires_complete_equivalent_route_and_revision(fault):
+    case, publication, delivery, target = prepared_case()
+    decisions = CurrentQualifiedOwnerDecisions(game=case.game, target_facts=target)
+    decisions._qualified_snapshots = (publication.snapshot,)
+    selected = delivery.qualification.selection.decision
+    current = case.command.model_copy(update={'decision': selected})
+    mappings = [item for item in publication.snapshot.decision_presentations
+                if item.decision_id == current.key.decision_id]
+    assert mappings
+    actual = dict(target['card'])
+    graphs = [{'line_id': item.route_id} for item in mappings]
+    if fault == 'ambiguous':
+        altered = mappings[0].model_copy(update={'presentation_id': 'other-card'})
+        decisions._qualified_snapshots = (publication.snapshot.model_copy(update={
+            'decision_presentations': (*publication.snapshot.decision_presentations, altered)}),)
+        expected = 'conflicting_decision_bindings'
+    elif fault == 'missing_graph_route':
+        graphs.append({'line_id': 'unrepresented-route'})
+        expected = 'incomplete_decision_bindings'
+    elif fault == 'wrong_ply':
+        current = current.model_copy(update={'decision': selected.model_copy(update={'route_ply': selected.route_ply + 1})})
+        expected = 'supplied_route_unproved'
+    else:
+        actual['revision'] += 1
+        expected = 'card_revision_changed'
+    with pytest.raises(CurrentDecisionUnavailable, match=expected):
+        decisions._mapping_for_target(current, actual, graphs)
