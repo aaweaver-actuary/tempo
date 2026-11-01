@@ -25,7 +25,11 @@ try {
     } finally { worker.terminate(); URL.revokeObjectURL(url); }
   }, { source: built.outputFiles[0].text, payload });
   assert.equal(result.error, undefined);
-  assert.equal(result.result.length, 3);
+  assert.equal(result.result.length, 6);
+  assert.deepEqual(result.result.map(card => card.kind), ['opening', 'puzzle', 'study', 'defense', 'endgame', 'middlegame']);
+  assert.equal(result.result[0].queueAttemptState, 'again');
+  assert.equal(result.result[0].attemptFailed, true);
+  assert.equal(result.result[3].defenseCandidateId, 'candidate-1');
   assert.equal(result.result[0].openingEvidenceParentAttemptId, 'original-attempt');
   assert.deepEqual(result.result[0].openingDecisionManifest, payload.cards[0].opening_decision_manifest);
   assert.deepEqual(result.result[2].studySnapshot, payload.cards[2].study_snapshot);
