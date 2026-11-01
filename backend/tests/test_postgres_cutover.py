@@ -20,6 +20,7 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 import pytest
 
 from app import command_dispatch
+from app.services.activity_gate import activity_gate
 from test_card_deletion import workspace as deletion_workspace
 from app.command_gateway import CommandConflict, request_digest
 from tempo_legacy_database.adapters.postgres_store import TempoRow, postgres_sql
@@ -4439,14 +4440,14 @@ def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypa
 
     monkeypatch.setattr(database.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(database.postgres_store, "connection", test_postgres_connection)
-    monkeypatch.setattr(database.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
 
     def read_in_background():
         with database.background_read_connection():
             read_finished.set()
 
-    with database.activity_gate.foreground():
+    with activity_gate.foreground():
         worker = threading.Thread(target=read_in_background)
         worker.start()
         assert not connection_opened.wait(0.05)

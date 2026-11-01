@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from tempo_legacy_database import connections as database
+from app.services.activity_gate import activity_gate
 from app.services import durable_tasks, background_diagnostics, background_runtime
 from app.services.background_metrics import increment, BackgroundDiagnostics
 from app.services.engine_diagnostics import record_engine_outcome
@@ -602,8 +603,8 @@ def test_background_delivery_preflight_uses_primary_and_read_only_transaction(di
     class Primary:
         def execute(self,statement,parameters=()):
             statements.append(statement)
-            assert database.activity_gate.active_background_sections==1
-            assert database.activity_gate.in_background
+            assert activity_gate.active_background_sections==1
+            assert activity_gate.in_background
             return SimpleNamespace(fetchone=lambda:claimed)
     class Pool:
         @contextmanager
@@ -616,7 +617,7 @@ def test_background_delivery_preflight_uses_primary_and_read_only_transaction(di
         return Pool()
     monkeypatch.setattr(postgres_store,'configured',lambda:True)
     monkeypatch.setattr(postgres_store,'_pool',select_pool)
-    with database.activity_gate.background_job('daily_queue',claimed['id']):
+    with activity_gate.background_job('daily_queue',claimed['id']):
         assert durable_tasks.current_delivery(claimed)
     assert pools==[False]
     assert 'SET TRANSACTION READ ONLY' in statements
@@ -640,7 +641,7 @@ def test_background_delivery_preflight_waits_for_foreground_admission(diagnostic
     monkeypatch.setattr(durable_tasks,'read_connection',observed_read)
     def worker():
         try:
-            with background_runtime.measure_handler('daily_queue') as measurement, database.activity_gate.background_job('daily_queue',claimed['id']):
+            with background_runtime.measure_handler('daily_queue') as measurement, activity_gate.background_job('daily_queue',claimed['id']):
                 started.set()
                 observed.append(durable_tasks.current_delivery(claimed))
                 observed.append(measurement.sample().admission_wait_seconds)
@@ -648,7 +649,7 @@ def test_background_delivery_preflight_waits_for_foreground_admission(diagnostic
             finished.set()
     thread=threading.Thread(target=worker)
     try:
-        with database.activity_gate.foreground():
+        with activity_gate.foreground():
             thread.start()
             assert started.wait(1)
             assert not query_opened.wait(0.05), 'preflight bypassed foreground admission'
@@ -665,7 +666,7 @@ def test_background_diagnostic_redis_io_never_runs_under_database_reservation(di
     violations=[]
     samples=[]
     clock=[0.0]
-    gate=database.activity_gate
+    gate=activity_gate
     @contextmanager
     def shared_lease():
         lease_active[0]=True

@@ -166,3 +166,27 @@ with connections.connection() as database:
 '''
     subprocess.run([sys.executable, '-c', code, entrypoint, str(tmp_path / 'entry.sqlite')],
                    check=True, env=os.environ.copy())
+
+
+def test_frozen_order_fixture_binds_before_controlled_connection():
+    code = '''
+import os, runpy, sys
+from contextlib import contextmanager
+from tempo_legacy_database import connections, infrastructure
+@contextmanager
+def controlled():
+    from app.services.activity_gate import activity_gate
+    assert infrastructure.database_admission() is activity_gate
+    raise RuntimeError('fixture reached controlled connection')
+    yield
+connections.background_connection = controlled
+os.environ['TEMPO_TEST_INSTANCE'] = 'disposable'
+sys.argv = ['database/tests/frozen-order-browser-fixture.py', 'seed']
+try:
+    runpy.run_path(sys.argv[0], run_name='__main__')
+except RuntimeError as error:
+    assert str(error) == 'fixture reached controlled connection'
+else:
+    raise AssertionError('fixture did not reach controlled connection')
+'''
+    subprocess.run([sys.executable, '-c', code], check=True, env=os.environ.copy())

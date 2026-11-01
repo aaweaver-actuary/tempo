@@ -39,3 +39,8 @@ The direct tooling entrypoints `frozen-maia-order` and `writer_latency` bind
 explicitly, as do the standalone background workload, engine fairness,
 scheduling turns, prefix transition and study priority test harnesses. Backend
 pytest composes the same binding in its configuration. API and task worker entrypoints bind the same helper before their own setup.
+The frozen-order browser fixture binds before its first controlled connection;
+the diagnostic and defensive-pause standalone checks bind in `main`. The
+study-priority overlap runner calls the study-priority `main` before the callback
+that starts its maintenance thread, so that thread sees the same process
+binding. The associated native/packaged runs remain separate evidence.
