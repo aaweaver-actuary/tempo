@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.contracts.tactic_capture import TacticCaptureConflict, TacticCaptureValidationError
 from app.contracts.transport.tactics import TacticCaptureRequest
 from app.services import tactic_capture
-from app.services.review_service import ensure_card_queued_after
+from app.study.queue_placement import ensure_card_queued_after
 from app.study.captured_tactic import CaptureCardFacts, CapturedTacticAdmissionOwner
 from tempo_legacy_database.adapters.study import captured_tactic as storage
 from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission

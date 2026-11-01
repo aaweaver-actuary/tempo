@@ -15,7 +15,7 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .queue_commands import request_queue_refresh_in_transaction
 from app.chess.cards import card_id
-from .services.review_service import ensure_card_queued_after
+from .study.queue_placement import ensure_card_queued_after
 from .services.tactical_catalog import activate
 from .product_composition.tactic_capture import capture_tactic
 from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
