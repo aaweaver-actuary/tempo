@@ -1,3 +1,4 @@
+import { Chess } from "chess.js";
 import type { FenKey, RepertoireId, UciMove } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
 import type { IndexedPosition } from "./position-similarity";
@@ -43,7 +44,12 @@ export function lookupRepertoireAlternative(
   nextUci: string,
 ): boolean | undefined {
   if (!snapshot || snapshot.generation !== generation) return undefined;
-  const positionKey = canonicalFenKey(fen) as FenKey;
+  let positionKey: FenKey;
+  try {
+    positionKey = canonicalFenKey(new Chess(fen.trim().replace(/\s+/g, " ")).fen()) as FenKey;
+  } catch {
+    return undefined;
+  }
   return repertoireId !== undefined &&
     (snapshot.movesByRepertoire.get(repertoireId)?.get(positionKey)?.has(nextUci as UciMove) ?? false);
 }

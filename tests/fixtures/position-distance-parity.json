@@ -58,5 +58,11 @@
     "left": "invalid",
     "right": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
     "distance": null
+  },
+  {
+    "name": "pinned en passant capture canonicalizes away",
+    "left": "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+    "right": "k3r3/8/8/3pP3/8/8/8/4K3 w - - 0 1",
+    "distance": 0
   }
 ]

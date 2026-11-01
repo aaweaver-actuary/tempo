@@ -70,9 +70,10 @@ it("issue36_lookup_matches_legacy_scan", () => {
   const transposition = positions.find(position => position.lineId === "transpose-a" && position.ply === 4)!;
   expect(lookupRepertoireAlternative(snapshot, 1, repertoireId, transposition.fen, "e2e4")).toBe(true);
   expect(lookupRepertoireAlternative(snapshot, 1, repertoireId, transposition.fen, "d2d4")).toBe(true);
-  // Exact four-field identity, rather than a new Chess-based query normalizer.
+  // A raw irrelevant en-passant field now resolves to the same legal position
+  // as the indexed board; persisted card IDs retain the supplied fields.
   const rawEnPassant = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-  expect(lookupRepertoireAlternative(snapshot, 1, repertoireId, rawEnPassant, "e7e5")).toBe(false);
+  expect(lookupRepertoireAlternative(snapshot, 1, repertoireId, rawEnPassant, "e7e5")).toBe(true);
   expect(lookupRepertoireAlternative(snapshot, 1, repertoireId, new Chess(rawEnPassant).fen(), "e7e5")).toBe(true);
 });
 

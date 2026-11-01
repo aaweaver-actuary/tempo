@@ -93,3 +93,48 @@ it("shared repertoire prefixes are traversed once without changing indexed line 
     moveSpy.mockRestore();
   }
 });
+
+it('pinned_and_irrelevant_en_passant_distinguish_exact_key_from_similarity', async () => {
+  const { canonicalFenKey } = await import('../../app/utils/canonical-line');
+  for (const withEp of [
+    'k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1',
+    'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+  ]) {
+    const withoutEp = withEp.replace(/ (d6|e3) /, ' - ');
+    expect(canonicalFenKey(withEp)).not.toBe(canonicalFenKey(withoutEp));
+    expect(chessPositionDistance(withEp, withoutEp)).toBe(0);
+  }
+});
+
+it.each([
+  ['pinned', 'k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e1f1', 'e1d1'],
+  ['irrelevant', 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1', 'e7e5', 'c7c5'],
+])('initial_opening_alternative_uses_same_legal_position_as_index: %s', async (_name, rawFen, expected, alternative) => {
+  const { initialTrainingState } = await import('../../app/domain/attempt');
+  const { queueCardsFromPayload } = await import('../../app/domain/adapters/practice-card-adapters');
+  const { buildRepertoireAlternativeSnapshot, lookupRepertoireAlternative } = await import('../../app/lib/repertoire-alternative-index');
+  const [card] = queueCardsFromPayload({ cards: [{ id:'card', queue_entry_id:1, start_fen:rawFen,
+    moves:[expected], content_type:'opening', repertoire_name:'Rep', repertoire_source:'test',
+    repertoire_id:'rep', trained_color: _name === 'pinned' ? 'white' : 'black' }] });
+  const line = { id:'line', repertoireId:'rep', repertoireName:'Rep', title:'Alternative',
+    side: _name === 'pinned' ? 'white' : 'black', startingFen:rawFen, moves:[alternative] } as AnalysisLine;
+  const snapshot = buildRepertoireAlternativeSnapshot(1, indexRepertoirePositions([line]));
+  expect(lookupRepertoireAlternative(snapshot, 1, card.repertoireId, initialTrainingState(card).fen, alternative)).toBe(true);
+});
+
+
+it('alternative_lookup_keeps_legal_ep_and_castling_distinct_and_invalid_unknown', async () => {
+  const { buildRepertoireAlternativeSnapshot, lookupRepertoireAlternative } = await import('../../app/lib/repertoire-alternative-index');
+  const legal = '4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1';
+  const line = { id:'line', repertoireId:'rep', repertoireName:'Rep', title:'line',
+    side:'white', startingFen:legal, moves:['e1d1'] } as AnalysisLine;
+  const snapshot = buildRepertoireAlternativeSnapshot(1, indexRepertoirePositions([line]));
+  const rep = snapshot.positions[0].repertoireId as import('../../app/types').RepertoireId;
+  expect(lookupRepertoireAlternative(snapshot, 1, rep, legal, 'e1d1')).toBe(true);
+  expect(lookupRepertoireAlternative(snapshot, 1, rep, legal.replace(' d6 ', ' - '), 'e1d1')).toBe(false);
+  expect(lookupRepertoireAlternative(snapshot, 1, rep, 'invalid', 'e1d1')).toBeUndefined();
+  const castle = 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1';
+  const castled = buildRepertoireAlternativeSnapshot(2, indexRepertoirePositions([{ ...line, startingFen:castle, moves:['e1g1'] } as AnalysisLine]));
+  expect(lookupRepertoireAlternative(castled, 2, rep, castle, 'e1g1')).toBe(true);
+  expect(lookupRepertoireAlternative(castled, 2, rep, castle.replace(' KQkq ', ' - '), 'e1g1')).toBe(false);
+});
