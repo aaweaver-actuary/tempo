@@ -120,6 +120,18 @@ or arbitrary-Markdown exemption is added. The owner test files must exist on
 the candidate; a missing selected file still forces FULL. These prospective
 mappings do not retroactively qualify #518/#530 or change infrastructure gates.
 
+The unchanged root `npm run typecheck` remains the aggregate check for every
+previously included TypeScript root. After the existing workspace package
+preparation, `npm run typecheck:browser` checks app and static code, browser
+storage and browser-facing package source; `npm run typecheck:tooling` checks
+the remaining root files, including test/config tooling and Workbench sources.
+Imports can overlap these root sets. `npm run typecheck:scope` compares the two
+resolved root sets with the aggregate, including generated Next types when
+present, and fails for missing or extra roots. Both programs inherit the existing
+DOM and Node ambient types and compiler flags, so they do not establish runtime
+environment isolation or a reduced Study artifact closure. They do not replace
+the aggregate gate or any affected-consumer check.
+
 Separate local development evidence, configured CI execution, actually enforced hosted requirements, and installation qualification. Verify hosted settings when a merge claim depends on them; do not infer requirements solely from a historical document or infer permission to bypass project acceptance from an absent setting. Current classification/freshness rules may force broader work than local policy. Report that mismatch for a separately assigned correction. Do not change or bypass those rules in an ordinary feature or instruction task.
 
 The following exact paths retain FULL because their component qualification is not
