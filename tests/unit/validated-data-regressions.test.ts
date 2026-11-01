@@ -2,6 +2,7 @@ import { beforeEach, expect, it } from "vitest";
 import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
+import { computeStudyTask } from "../../app/lib/study-computation";
 import {
   adaptEngineMoves,
   adaptExplorerMoves,
@@ -103,6 +104,32 @@ const rawCard = {
   repertoire_name: "Prep",
   repertoire_source: "PGN",
 };
+
+it.each(["available", "unavailable", undefined])("optional_encounter_evidence_status_preserves_authoritative_worker_head: %s", (status) => {
+  const startingFen = "rnb1kbnr/1ppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const card = { ...rawCard, start_fen: startingFen, revision: 1,
+    ...(status === undefined ? {} : { encounter_evidence_status: status }),
+    encounter_badges: [], last_encountered_at: null,
+    ...(status === "available" ? { encounter_count_30d: 0 } : {}),
+    opening_decision_manifest: { manifest_version: 1, policy_version: 1,
+      manifest_id: "a".repeat(64), presentation_snapshot_id: 2, repertoire_id: "rep",
+      card_id: rawCard.id, card_revision: 1, trained_color: "white",
+      decisions: [{ decision_id: "b".repeat(64), decision_index: 0, move_offset: 0,
+        fen: startingFen, expected_uci: "e2e4" }] } };
+  const cards = computeStudyTask({ kind: "queue", payload: { cards: [card], count: 1 } });
+  expect(cards).toMatchObject([{ backendId: rawCard.id, queueEntryId: rawCard.queue_entry_id,
+    openingEvidenceOriginEntryId: rawCard.queue_entry_id,
+    startingFen, moves: ["e4"], openingDecisionManifest: card.opening_decision_manifest }]);
+  expect(dataDiagnostics()).toEqual([]);
+});
+
+it("optional_encounter_status_keeps_unknown_values_and_fields_quarantined", () => {
+  expect(computeStudyTask({ kind: "queue", payload: { cards: [
+    { ...rawCard, encounter_evidence_status: "unknown" },
+    { ...rawCard, encounter_evidence_status: "available", unexpected: true },
+  ], count: 2 } })).toEqual([]);
+  expect(dataDiagnostics()).toHaveLength(2);
+});
 
 const rawRepertoire = {
   id: "rep",

@@ -41,6 +41,7 @@ export type BackendQueueCard = {
   study_review_count?: number;
   admission_kind?: string | null;
   admission_source?: string | null;
+  encounter_evidence_status?: "available" | "unavailable";
   encounter_badges?: Array<"Seen recently" | "Frequent">;
   encounter_count_30d?: number;
   last_encountered_at?: string | null;
