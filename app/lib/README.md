@@ -79,3 +79,16 @@ status. Existing custom fetch/base URL callers retain their own transport;
 background polling keeps its work-class classification. This cut does not bind
 outbox or retained intent stores to arbitrary custom authorities: those remain
 owned by the existing default session and storage composition.
+
+Study command delivery is composed with an explicit client and intent-store
+supplier. The registered default uses the existing default client and the sole
+session's existing store; it keeps the authority generation fixed through the
+original command and its receipt checks.
+
+```mermaid
+flowchart LR
+  session["Existing Study session"] --> delivery["Command delivery adapter"]
+  delivery --> client["Selected Study client"]
+  delivery --> store["Supplied existing intent store"]
+  client --> receipt["Original operation receipt"]
+```
