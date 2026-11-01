@@ -48,6 +48,10 @@ export type LegacyWorkspaceProps = {
   safeBreakCounter: number;
   incrementSafeBreak: () => void;
   attemptPhase: string;
+  readonly importedRepertoires: readonly LocalRepertoire[];
+  databaseQueue: boolean;
+  offlineQueue: boolean;
+  onIntegrityReconciled: (recheckIntegrity: () => void) => void;
   reviewed: number;
   cardsLeft: number;
   totalCards: number;

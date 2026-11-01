@@ -495,3 +495,18 @@ it('study_priority_opening_membership_remains_essential_while_optional_index_is_
   expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
   expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/move-membership?'))).toBe(true);
 });
+
+it('integrity_reconciliation_reads_the_current_head_before_refreshing', async () => {
+  await readyHome();
+  await waitFor(() => expect(reconcileCallback).toBeTypeOf('function'));
+  const initialCalls = initializeQueueMock.mock.calls.length;
+  act(() => reconcileCallback('issue36'));
+  expect(initializeQueueMock).toHaveBeenCalledTimes(initialCalls);
+  // Change the store and invoke the workspace callback in the same turn: a
+  // render-captured head would still see the previous playable card.
+  act(() => {
+    useTrainingStore.setState({ cardsLeft: 0 });
+    reconcileCallback('issue36');
+  });
+  await waitFor(() => expect(initializeQueueMock).toHaveBeenCalledTimes(initialCalls + 1));
+});

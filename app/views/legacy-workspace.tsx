@@ -9,8 +9,6 @@ import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } fro
 import { usesLocalApi } from "../utils/local";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { invalidateWorkspaceData } from "../lib/workspace-data";
-import { invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
-import { useTrainingStore } from "../state/training-store";
 import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import { View, type PracticeCard } from "../types";
@@ -50,17 +48,15 @@ export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View 
 export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   const { currentView, changeWorkspace, boardTheme, pieceSet, soundOn, changeBoardTheme,
     changePieceSet, changeSound, studyOnlyMode, incrementSafeBreak,
+    importedRepertoires, databaseQueue, offlineQueue, onIntegrityReconciled,
     reviewed, cardsLeft, totalCards,
     refreshDatabaseQueue, refreshQueueOnly, invalidateBranchEvidence,
     refreshQueueAfterRepertoireChange, refreshDatabaseQueueAfterRepertoireChange,
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
     onCardSaved, finishPermanentDeletion } = props;
-  const importedRepertoires = useTrainingStore(state => state.importedRepertoires);
   const [showImport, setShowImport] = useState(false);
   const [showTree, setShowTree] = useState(false);
   const [editorCard, setEditorCard] = useState<PracticeCard | null>(null);
-  const databaseQueue = useTrainingStore(state => state.isDatabaseQueueActive);
-  const offlineQueue = useTrainingStore(state => state.isOfflineQueueActive);
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
   const deletionRecoveryStarted = useRef(false);
   const recoverCardDeletion = useCallback(async () => {
@@ -307,12 +303,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           invalidateBranchEvidence();
           deferredRepairIds.current.delete(repertoireId);
           invalidateWorkspaceData();
-          invalidateTrainingQueueCache();
-          void checkPendingIntegrity(undefined, true);
-          const currentTrainingState = useTrainingStore.getState();
-          const hasPlayableTrainingCard = currentTrainingState.cardsLeft > 0
-            && Boolean(currentTrainingState.practiceCards[currentTrainingState.activeCardIndex]);
-          if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
+          onIntegrityReconciled(() => { void checkPendingIntegrity(undefined, true); });
         }}
         onResume={openRepairDialog}
       />}

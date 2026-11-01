@@ -55,8 +55,9 @@ flowchart TB
   Remediation -->|"Learning-owned obligation settlement"| DB
   Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
   Legacy -->|"same Home; narrow facts and callbacks"| Home
-  Legacy -->|"H1 proposed: owns import, tree and editor UI state"| AuthoringUI["Workspace-local authoring state"]
-  Legacy -->|"reads imported content and Study mode facts"| TrainingStore["Study training store (remaining H1 coupling)"]
+  Legacy -->|"owns import, tree and editor UI state"| AuthoringUI["Workspace-local authoring state"]
+  Home -->|"H2 proposed: supplies imported content, mode facts and reconciliation command"| Legacy
+  Home -->|"owns attempt, queue and imported content"| TrainingStore["Study training store"]
   Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, repertoire, studies, administration and dialogs"]
   Boundary -.->|"optional user navigation only; no readiness wait"| WB["Independent Workbench URL"]
 ```
