@@ -6546,3 +6546,5 @@ was dropped because the strict browser codec omitted the new backend field.
 Engine image family-adapter packaging (#715): the `tests/runner/engine-image-packaging.test.mjs` Node case traverses the worker's relative module and child-process imports. Removing
 `engine-job-families.mjs` from its COPY inputs reproduces the missing-module
 condition; a real packaged engine startup remains a separate acceptance check.
+
+- Study recovery packaged qualification: preserve executable opening backlog, exact review receipt and successor identity, and coherent provider inputs across the owned assembly; use the existing bounded role allocation and drain browser response observers before teardown. This is fixture evidence only and does not change product admission or runtime policy.
