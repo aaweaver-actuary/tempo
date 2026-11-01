@@ -709,3 +709,19 @@ flowchart LR
   select --> registry["Existing gateway registry"]
   receipt --> study["Other Study command"]
 ```
+
+### SQLite compatibility coordinator selection
+
+The PostgreSQL API does not compose the SQLite coordinator at import or startup.
+SQLite lifespan and its external compatibility worker select the existing
+coordinator and register its handlers before use. The `main.coordinator`
+compatibility export resolves that same singleton on demand; no second worker
+or coordinator is created.
+
+```mermaid
+flowchart LR
+  PG[PostgreSQL API] --> Queue[Existing startup queue command]
+  SQLite[SQLite API lifespan] --> Compose[Compatibility coordinator composition]
+  Worker[SQLite compatibility worker] --> Compose
+  Compose --> Owner[Existing coordinator singleton and handlers]
+```
