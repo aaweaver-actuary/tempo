@@ -84,7 +84,8 @@ test('real worker upgrade retains and replays the original pending review', asyn
     expect(await page.evaluate(async () => Boolean(await (await caches.open('unrelated-cache')).match('/sentinel')))).toBe(true);
     await context.setOffline(true);
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Daily training', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Tempo home' })).toBeVisible();
+    await expect(page.getByText('A previous result needs confirmation or attention.', { exact: false })).toBeVisible();
     await expect.poll(async () => (await nativeStudyRecords(page)).find(item => item.key === original.key)).toMatchObject({ key: original.key, requestId: original.requestId, payload: original.payload });
     accept = true;
     await context.setOffline(false);
