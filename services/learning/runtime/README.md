@@ -9,6 +9,59 @@ peer documents link to them instead of maintaining copies. See the
 [diagram index and source/status baseline](../../../docs/architecture/diagrams/README.md) and
 [maintenance procedure](../../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
 
+### Command registry selection (proposed G1)
+
+The independent runtime constructs an immutable command registry per app from
+queue, typed-study and Learning command handler definitions. The handler factory
+resides in `command_handlers`, outside HTTP composition. Functions are stateless and may
+be shared. Request middleware and the maintenance loop select the app registry
+alongside the existing database scope; context propagation carries both into
+worker threads, and the selecting scope resets its token. CLI publication and
+maintenance commands select their own registry. Direct gateway callers use a
+lazily constructed immutable default; this does not start an app or database.
+Publication activation, retry and fence paths stay inside their caller's scope.
+
+```mermaid
+flowchart LR
+  Definitions["Stateless command definitions"] --> Factory["Registry construction"]
+  Factory --> App["One immutable registry per app"]
+  Factory --> CLI["CLI registry"]
+  Factory --> Default["Lazy immutable default registry"]
+  App --> Scope["Request / maintenance context scope"]
+  CLI --> Scope
+  Scope --> Gateway["Gateway dispatch / execute"]
+  Gateway --> DB[("Existing Learning transaction and receipts")]
+  Direct["Direct gateway caller"] --> Gateway
+  Gateway -->|"lazy fallback construction"| Factory
+  Default --> Gateway
+```
+
+This is source-level composition, not a deployment or PostgreSQL isolation
+claim. It does not alter transaction ownership or maintenance failure policy.
+
+### Maintenance shutdown ownership (proposed G2)
+
+The app signals the existing maintenance loop to stop between bounded slices
+and waits for its current thread to return before closing the activity owner and
+then the database. An unexpected maintenance failure remains visible when the
+lifespan exits; nested cleanup still closes both resources. Temporary contention
+continues to yield under `safe_run_once`. This does not claim that cancellation
+stops an in-flight transaction, supervise or restart a failed loop, or change
+lease and durable-work semantics.
+
+```mermaid
+sequenceDiagram
+  participant L as App lifespan
+  participant M as Maintenance loop / thread
+  participant A as Host activity
+  participant D as Learning database
+  L->>M: Signal stop between slices
+  M-->>L: Current slice returns or task fails
+  L->>A: Close activity
+  L->>D: Close database
+  Note over L,M: Propagate terminal task failure after cleanup
+```
+
 ### Shared Learning request execution gaps (MAIN)
 
 **MAIN baseline:** `04361d35` includes the earlier HostActivity, endgame

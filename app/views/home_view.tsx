@@ -536,7 +536,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
           if (!response.ok) throw new Error(`Could not load repertoire lines (HTTP ${response.status}).`);
           const payload = await response.text();
           if (!isCurrent()) return;
-          const indexedPositions = await runStudyTask<RepertoireAlternativeSnapshot>({
+          const indexedPositions = await runStudyTask({
             kind: "repertoirePreparation", generation, payload,
           }, controller.signal, isCurrent);
           if (isCurrent()) {

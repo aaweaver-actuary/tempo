@@ -24,7 +24,6 @@ def test_v2_raw_stream_stops_over_16_mib_before_json_model_or_backend(monkeypatc
     async def no_json(self):
         pytest.fail('Oversized or unauthorized input reached JSON/model parsing')
     monkeypatch.setattr(api, 'Database', lambda _: NoBackend())
-    monkeypatch.setattr(api, 'register_handlers', lambda: None)
     monkeypatch.setattr(api.Request, 'json', no_json)
     configuration = Configuration('limit-test', 'unused', 'unused', 'u' * 40,
                                   operator_token='o' * 40, maintenance=False, host_activity_directory=None)

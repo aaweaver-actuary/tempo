@@ -402,6 +402,7 @@ def recover_operations() -> bool:
         operation = claim_recoverable_operation(
             allowed_background_commands=STUDY_BACKGROUND_COMMANDS if study_only_mode else None,
             paused_commands=PAUSED_IMPORT_COMMANDS if study_only_mode else (),
+            background_only=True,
         )
     if operation is None:
         return False
@@ -443,8 +444,12 @@ def poll_background_tasks(self) -> bool:
     try:
         activity_gate.check_background_admission()
         with activity_gate.background_job('dispatch', 'one-run', yielding=True):
-            claimed_task = claim_task(allowed_kinds=(STUDY_TASK_KINDS if study_only_enabled()
-                                                   else _SUPPORTED_BACKGROUND_KINDS))
+            # New essential leases belong to the foreground owner. Keep the
+            # already-queued legacy executor below for fenced old deliveries.
+            allowed_kinds = tuple(kind for kind in (STUDY_TASK_KINDS if study_only_enabled()
+                                                   else _SUPPORTED_BACKGROUND_KINDS)
+                                  if kind != 'daily_queue')
+            claimed_task = claim_task(allowed_kinds=allowed_kinds) if allowed_kinds else None
     except BackgroundAdmissionDeferred as error:
         _LOGGER.info('background admission deferred: %s', error)
         if queue_refresh_wake:

@@ -1,0 +1,235 @@
+{
+  "available": {
+    "cards": [
+      {
+        "content_type": "opening",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "opening-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "opening_decision_manifest": {
+          "card_id": "opening-1",
+          "card_revision": 2,
+          "decisions": [
+            {
+              "decision_id": "496c214b800db37ac313c9e32e39981056ea2cb201c92e81d1e487cf4134038f",
+              "decision_index": 0,
+              "expected_uci": "e2e4",
+              "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "move_offset": 0
+            }
+          ],
+          "manifest_id": "a61472db7ed352a27eeb3a17edadd4f02311793b043d0a3cd6db95b67fe8681b",
+          "manifest_version": 1,
+          "policy_version": 1,
+          "presentation_snapshot_id": 4,
+          "repertoire_id": "rep-1",
+          "trained_color": "white"
+        },
+        "opening_evidence_origin_queue_entry_id": 20,
+        "opening_evidence_parent_attempt_id": "original-attempt",
+        "opening_evidence_study_timezone": "UTC",
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 21,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "tactic",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "tactic-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 22,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "study_exercise",
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "encounter_evidence_status": "available",
+        "id": "exercise-card",
+        "kind": "exercise",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 23,
+        "repertoire_id": null,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "study_exercise_id": "exercise-1",
+        "study_id": "study-1",
+        "study_snapshot": {
+          "exercise_id": "exercise-1",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "grader_version": 1,
+          "revision": 3,
+          "schema_version": 1,
+          "specification": {
+            "candidate_region": null,
+            "criterion": "e4",
+            "explanation": "",
+            "hint": "",
+            "optional": [],
+            "prompt": "Select e4",
+            "required": [
+              "e4"
+            ],
+            "type": "square_set"
+          }
+        },
+        "trained_color": "white"
+      }
+    ],
+    "count": 3,
+    "diagnostics": [],
+    "local_date": "2026-11-01",
+    "prepared_at": "2026-11-01T12:00:00+00:00",
+    "projection": {
+      "blocked_count": 0,
+      "generation": 0,
+      "last_error": null,
+      "refresh_pending": 1,
+      "state": "refreshing",
+      "updated_at": null
+    }
+  },
+  "empty": {
+    "cards": [],
+    "count": 0,
+    "diagnostics": [],
+    "local_date": "2026-11-01",
+    "projection": {
+      "blocked_count": 0,
+      "generation": 0,
+      "last_error": null,
+      "refresh_pending": 1,
+      "state": "refreshing",
+      "updated_at": null
+    }
+  },
+  "unavailable": {
+    "cards": [
+      {
+        "content_type": "opening",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "opening-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "opening_decision_manifest": {
+          "card_id": "opening-1",
+          "card_revision": 2,
+          "decisions": [
+            {
+              "decision_id": "496c214b800db37ac313c9e32e39981056ea2cb201c92e81d1e487cf4134038f",
+              "decision_index": 0,
+              "expected_uci": "e2e4",
+              "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "move_offset": 0
+            }
+          ],
+          "manifest_id": "a61472db7ed352a27eeb3a17edadd4f02311793b043d0a3cd6db95b67fe8681b",
+          "manifest_version": 1,
+          "policy_version": 1,
+          "presentation_snapshot_id": 4,
+          "repertoire_id": "rep-1",
+          "trained_color": "white"
+        },
+        "opening_evidence_origin_queue_entry_id": 20,
+        "opening_evidence_parent_attempt_id": "original-attempt",
+        "opening_evidence_study_timezone": "UTC",
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 21,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "tactic",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "tactic-1",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 22,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      },
+      {
+        "content_type": "study_exercise",
+        "encounter_badges": [],
+        "encounter_evidence_status": "unavailable",
+        "id": "exercise-card",
+        "kind": "exercise",
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "moves": [
+          "e2e4"
+        ],
+        "prefix_split_offer_available": false,
+        "prefix_split_rejected_after_review_id": 0,
+        "queue_entry_id": 23,
+        "repertoire_id": null,
+        "repertoire_name": "Fixture",
+        "repertoire_source": "synthetic",
+        "revision": 2,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "study_exercise_id": "exercise-1",
+        "study_id": "study-1",
+        "trained_color": "white"
+      }
+    ],
+    "count": 3,
+    "diagnostics": [],
+    "local_date": "2026-11-01",
+    "projection": {
+      "blocked_count": 0,
+      "generation": 0,
+      "last_error": null,
+      "refresh_pending": 1,
+      "state": "refreshing",
+      "updated_at": null
+    }
+  }
+}
