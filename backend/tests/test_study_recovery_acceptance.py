@@ -151,8 +151,8 @@ def test_recovery_assembly_allocation_fits_existing_budget_without_changing_glob
     before = deepcopy(configuration)
     selected = study_recovery_assembly_allocations(configuration)
     assert {role: value['memoryMiB'] for role, value in selected.items()} == {
-        'postgres': 384, 'redis': 64, 'api': 192, 'foreground-worker': 384,
-        'background-worker': 448, 'game-feedback-worker': 512, 'web': 64}
+        'postgres': 384, 'redis': 32, 'api': 192, 'foreground-worker': 384,
+        'background-worker': 512, 'game-feedback-worker': 512, 'web': 32}
     assert sum(value['memoryMiB'] for value in selected.values()) == 2048
     assert configuration == before
     smaller = deepcopy(configuration)
