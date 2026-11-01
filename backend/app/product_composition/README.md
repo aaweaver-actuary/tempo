@@ -694,8 +694,11 @@ logging failure never replaces the original error or job retry result.
 ```mermaid
 flowchart LR
   Page[One claimed page / retained cursor] --> Snapshots[Complete configured snapshots]
-  Snapshots --> Scope[Page-local index reuse: max 16 entries / 32 MiB encoded inputs]
+  Snapshots --> Reentry{Explicit authored reentry authority?}
+  Reentry -->|yes| Scope[Page-local index reuse: max 16 entries / 32 MiB encoded inputs]
+  Reentry -->|no| Complete[Compare complete snapshot without optional index]
   Scope --> Compare[Every source and applicable repertoire compared]
+  Complete --> Compare
   Compare --> Commit[Existing atomic page / outbox / cursor commit]
   Scope --> Clear[Completion / failure / cancellation clears reuse]
   Page --> Diag[Payload-free stage and bounded failure frames]
@@ -708,3 +711,13 @@ writer currentness fences remain unchanged. Cancellation is checked before each
 snapshot and comparison; no partial provider cursor is committed. This is not a
 claim that the original historical incident exception or full-scope latency has
 been reproduced or repaired; exact packaged/incident evidence remains separate.
+
+
+Complete-source comparison does not build an optional reentry index when the
+validated snapshot has no explicit authored reentry authority. The Repertoire
+owner's public `build_reentry_index` retains schema detachment and the existing
+10,000-route/100,000-ply bounds before that decision. Normal comparison, source
+scope and first-boundary selection still receive the complete snapshot. An
+explicit anchor follows the same index/reentry path and page-local cache as
+before; other `build_index` consumers are unchanged. This removes unused retained
+index allocations, not route evidence or reentry safety checks.

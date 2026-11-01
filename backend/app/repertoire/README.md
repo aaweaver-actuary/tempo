@@ -9,6 +9,11 @@ The public API in [__init__.py](__init__.py) is:
 - `build_index(RepertoireSnapshot) -> PositionIndex`: consumes the shared
   [T01 interface 0.2.0](../contracts/product_v02/repertoire.py), revalidates and
   copies it into immutable tuples, frozen records and read-only mappings.
+- `build_reentry_index(RepertoireSnapshot) -> PositionIndex | None`: applies the
+  same complete-source schema detachment and 10,000-route/100,000-ply bounds as
+  `build_index`. It allocates the same immutable index only when at least one
+  route supplies explicit reentry authority; otherwise it returns `None`.
+  Comparison still consumes every route and mapping in the complete snapshot.
 - `position_key(repertoire_id, full_fen, variant='standard') -> PositionKey` and
   `index.lookup(...) -> PositionNode | None`: board, turn, castling, legal EP and
   repertoire define exact identity. Clocks are ignored for lookup. Original
@@ -40,7 +45,7 @@ owner mapping. All competing applicable mappings remain in `occurrence.bindings`
 
 ```mermaid
 flowchart LR
-  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / lookup / reentry_candidate"]
+  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / build_reentry_index / lookup"]
   DTO["Shared T01 RepertoireSnapshot\nimmutable copied input facts"] --> API
   API --> Math["Shared evidence-math\nopening_position_key"]
   Compose["Integration owner\nnot implemented here"] --> Adapter["CapturedSnapshotAdapter\nproject_capture"]
