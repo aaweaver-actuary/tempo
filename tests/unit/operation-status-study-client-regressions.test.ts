@@ -78,3 +78,29 @@ it('supplied_independent_client_rejects_a_different_receipt_identity', async () 
   await client.connectStudy('https://a.example', 'alpha', 'a'.repeat(40));
   await expect(readOperationResponse('original', { client })).rejects.toMatchObject({ name:'PendingOperationError', operationId:'original' });
 });
+
+it('confirmation_captures_original_client_before_async_202_body_and_refuses_reconnect', async () => {
+  const { confirmOperationResponse } = await import('../../app/lib/operation-status');
+  const { subscribeOperationStatusChange } = await import('../../app/lib/operation-status-events');
+  const urls: string[] = [];
+  const transport: typeof fetch = async (input, init) => {
+    const request = new Request(input, init); urls.push(request.url);
+    return request.url.endsWith('/api/study/bootstrap') ? Response.json(bootstrap(request.headers.get('X-Tempo-Workspace')!))
+      : Response.json({ operation_id:'original', state:'complete', response:{ saved:true } });
+  };
+  const client = createStudyClient({ independent:true, baseUrl:'', storage:storage(), transport });
+  await client.connectStudy('https://a.example', 'alpha', 'a'.repeat(40));
+  let finish!: (chunk: Uint8Array) => void;
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    finish = chunk => { controller.enqueue(chunk); controller.close(); };
+  } });
+  const notice = vi.fn(); const unsubscribe = subscribeOperationStatusChange(notice);
+  try {
+    const confirmation = confirmOperationResponse(new Response(body, { status:202 }), { client });
+    await client.connectStudy('https://b.example', 'beta', 'b'.repeat(40));
+    finish(new TextEncoder().encode(JSON.stringify({ operation_id:'original' })));
+    await expect(confirmation).rejects.toThrow('authority changed');
+    expect(urls.filter(url => url.includes('/api/operations/'))).toEqual([]);
+    expect(notice).not.toHaveBeenCalled();
+  } finally { unsubscribe(); }
+});

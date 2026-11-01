@@ -29,17 +29,22 @@ export class FailedOperationError extends Error {
 
 export async function confirmOperationResponse(response: Response, options: OperationResponseOptions = {}): Promise<Response> {
   if (response.status !== 202) return response;
+  const binding = operationBinding(options);
   const pending = await response.clone().json() as { operation_id?: string };
+  requireBinding(binding);
   // Existing discovery admissions also return 202, with an intent ID that
   // their own status endpoint confirms. Preserve that response for its caller.
   if (!pending.operation_id) return response;
-  return readOperationResponse(pending.operation_id, options);
+  return readReceipt(pending.operation_id, options, binding);
 }
 
 // Resolve a known command through the same receipt semantics as a 202 response.
-export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
+function operationBinding(options: OperationResponseOptions): ClientBinding | undefined {
   if (options.client && options.fetch) throw new Error("Choose one operation transport capability.");
-  return readReceipt(operationId, options, bindClient(options.client ?? (options.fetch ? undefined : defaultStudyClient)));
+  return bindClient(options.client ?? (options.fetch ? undefined : defaultStudyClient));
+}
+export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
+  return readReceipt(operationId, options, operationBinding(options));
 }
 async function readReceipt(operationId: string, options: OperationResponseOptions, binding?: ClientBinding): Promise<Response> {
   requireBinding(binding);
