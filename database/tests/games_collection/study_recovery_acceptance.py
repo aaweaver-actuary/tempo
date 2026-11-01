@@ -211,6 +211,7 @@ def _marker(path, value):
 
 
 def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, foreground, root, web_url,
+                              publish_provider,
                               repertoire, target):
     """Actual missing owner certificate, stopped producer, save and same-key recovery.
 
@@ -306,7 +307,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
             end_at=(now-timedelta(seconds=60)).isoformat(), precision='second')
         inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now']-90)*1000), rated=True, speed='rapid', pgn=str(game)))
-        _marker(directory/'provider.json', inputs)
+        publish_provider(inputs, allow_paused=True)
         entry('foreground-worker', 'recovery-configure')
         entry('foreground-worker', 'worker')
         with case.transaction() as database:
@@ -358,7 +359,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             assert time.monotonic() < retry_deadline, 'held_original_retry_deadline_not_reached'
             time.sleep(.1)
         inputs['now'] = datetime.now(timezone.utc).timestamp()
-        _marker(directory/'provider.json', inputs)
+        publish_provider(inputs, allow_paused=True)
         retry = entry('foreground-worker', 'retry-local-feedback')
         current = entry('api', 'feedback-state', operation)
         assert current['command'] == original and current['receipt'] is not None
@@ -401,6 +402,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
 
 
 def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, docker, containers,
+                 publish_provider,
                  original_repertoire, custom_target, web_url, study_only, mode_intent):
     """Continue the already verified roles/network/images; no second launcher."""
     # The setup collector switches to the original production admission for
@@ -426,6 +428,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
         for role, resource in containers.items()}
     held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
+        publish_provider=publish_provider,
         api=api, docker=docker, collector=collector['Id'], background=containers['background-worker']['id'],
         foreground=containers['foreground-worker']['id'],
         root=root, web_url=web_url, repertoire=original_repertoire, target=custom_target)
@@ -440,7 +443,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['window'] = dict(start_at=(now - timedelta(seconds=120)).isoformat(),
             end_at=(now - timedelta(seconds=60)).isoformat(), precision='second')
-        _marker(directory / 'provider.json', inputs)
+        publish_provider(inputs)
         configured = entry('foreground-worker', 'recovery-configure')
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
