@@ -107,12 +107,7 @@ from .services.game_analysis_worker import (
     build_game_evaluations, claim_position, release_position, save_position_report,
 )
 from .services.game_findings import motif_recommendations
-from .services.threat_pipeline import (
-    claim_analysis_request, enqueue_candidate_validation, enqueue_threat_scan,
-    enqueue_threat_backfill, execute_threat_backfill_slice,
-    execute_threat_report_audit, execute_threat_scan_slice,
-    execute_threat_validation, save_analysis_report,
-)
+
 from .services.threat_training import (
     approve_defense_candidate, dismiss_defense_candidate, pause_defense_candidate,
     train_defense_candidate_now, read_defense_exercise,
@@ -150,6 +145,51 @@ from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
     recommend_missing_continuations,
 )
+
+
+def claim_analysis_request() -> dict | None:
+    from .services.threat_pipeline import claim_analysis_request as owner
+    return owner()
+
+
+def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None:
+    from .services.threat_pipeline import enqueue_candidate_validation as owner
+    return owner(candidate_id, background=background)
+
+
+def enqueue_threat_scan(game_id: str, analysis_version: int, *, background: bool) -> None:
+    from .services.threat_pipeline import enqueue_threat_scan as owner
+    return owner(game_id, analysis_version, background=background)
+
+
+def enqueue_threat_backfill() -> dict:
+    from .services.threat_pipeline import enqueue_threat_backfill as owner
+    return owner()
+
+
+def execute_threat_backfill_slice(task: dict) -> bool:
+    from .services.threat_pipeline import execute_threat_backfill_slice as owner
+    return owner(task)
+
+
+def execute_threat_report_audit(task: dict) -> bool:
+    from .services.threat_pipeline import execute_threat_report_audit as owner
+    return owner(task)
+
+
+def execute_threat_scan_slice(task: dict) -> bool:
+    from .services.threat_pipeline import execute_threat_scan_slice as owner
+    return owner(task)
+
+
+def execute_threat_validation(task: dict) -> bool | None:
+    from .services.threat_pipeline import execute_threat_validation as owner
+    return owner(task)
+
+
+def save_analysis_report(request_id: str, lease_id: str, raw_report: dict) -> tuple[str, ...]:
+    from .services.threat_pipeline import save_analysis_report as owner
+    return owner(request_id, lease_id, raw_report)
 
 
 def claim_maia_coverage_node() -> dict | None:

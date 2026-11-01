@@ -30,6 +30,7 @@ flowchart TB
   API -->|"SQLite prefix wake capability"| Compat["Compatibility coordinator"]
   API -->|"Games selection / source facts"| Facts["Public Games contracts and<br/>pure retained source facts"]
   API -->|"on coverage request"| Coverage["Optional coverage owner"]
+  API -->|"on threat operation"| Threat["Optional threat producer"]
   API -->|"reader capabilities"| ReadStorage["Root database read adapters"]
   ReadStorage -->|"existing shared database"| DB
   Compose["docker-compose.yml"] -->|"declares startup health<br/>dependencies"| API
