@@ -39,6 +39,29 @@ flowchart LR
 This is source-level composition, not a deployment or PostgreSQL isolation
 claim. It does not alter transaction ownership or maintenance failure policy.
 
+### Maintenance shutdown ownership (proposed G2)
+
+The app signals the existing maintenance loop to stop between bounded slices
+and waits for its current thread to return before closing the activity owner and
+then the database. An unexpected maintenance failure remains visible when the
+lifespan exits; nested cleanup still closes both resources. Temporary contention
+continues to yield under `safe_run_once`. This does not claim that cancellation
+stops an in-flight transaction, supervise or restart a failed loop, or change
+lease and durable-work semantics.
+
+```mermaid
+sequenceDiagram
+  participant L as App lifespan
+  participant M as Maintenance loop / thread
+  participant A as Host activity
+  participant D as Learning database
+  L->>M: Signal stop between slices
+  M-->>L: Current slice returns or task fails
+  L->>A: Close activity
+  L->>D: Close database
+  Note over L,M: Propagate terminal task failure after cleanup
+```
+
 ### Shared Learning request execution gaps (MAIN)
 
 **MAIN baseline:** `04361d35` includes the earlier HostActivity, endgame

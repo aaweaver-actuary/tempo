@@ -70,12 +70,14 @@ def create_app(configuration: Configuration):
             yield
         finally:
             stopping.set()
-            if task:
-                await task
             try:
-                activity.close()
+                if task:
+                    await task
             finally:
-                database.close()
+                try:
+                    activity.close()
+                finally:
+                    database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
     app.state.command_registry = registry
