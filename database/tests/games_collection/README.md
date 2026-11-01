@@ -193,3 +193,10 @@ The settled-source reconciliation replay advances its controlled schedule from
 the actual last completed reconciliation checkpoint, matching production's
 completion-based interval. New semantic sources still reset to actual UTC before
 qualification; no original command or receipt timestamp is rewritten.
+
+The three full-scope controlled collection calls at transitions4/14/24 execute
+in the existing448MiB optional background role, verified running and unpaused.
+They use the same collect-only owner/HTTP fixture and writer credentials, leaving
+the384MiB foreground role's two command workers and beat reserved for Study.
+Small held-case source calls remain in foreground while optional roles are
+paused. No allocation, service, lifecycle, admission policy or deadline changes.
