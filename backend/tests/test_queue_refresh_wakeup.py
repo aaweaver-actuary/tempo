@@ -164,8 +164,8 @@ def test_issue135_queue_wake_publish_failure_preserves_committed_result(
             raise broker_error
 
     def unavailable_wake(name, **options):
-        assert name == "app.tasks.poll_background_tasks"
-        assert options["queue"] == "background" and options["ignore_result"] is True
+        assert name == "app.tasks.progress_study_queue"
+        assert options["queue"] == "foreground" and options["ignore_result"] is True
         assert options["retry"] is False
         observed_stages.append("publish")
         with sqlite3.connect(queue_wakeup_store) as observer:

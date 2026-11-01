@@ -93,3 +93,17 @@ def test_issue558_failed_recovery_retains_lease_without_retry_loop(claimed_slice
     monkeypatch.setattr(tasks.celery_app, 'send_task', lambda *_, **__: pytest.fail('no immediate wake on failed recovery'))
     assert tasks.maintain_game_feedback.run() is False
     assert calls == ['one fresh recovery attempt'] and saved()['lease_token'] == 'original'
+
+
+def test_accepted_study_maintenance_progresses_under_browser_activity_without_games(claimed_slice, monkeypatch):
+    task, _saved = claimed_slice
+    observed = []
+    def execute(claimed):
+        tasks.activity_gate.check_background_admission()
+        observed.append(claimed['id'])
+        return True
+    monkeypatch.setattr(feedback_maintenance, 'execute_feedback_sweep', execute)
+    monkeypatch.setattr(tasks.celery_app, 'send_task', lambda *_args, **_kwargs: pytest.fail('Completed sweep self-woke'))
+    with tasks.activity_gate.foreground():
+        assert tasks.maintain_game_feedback.run()
+    assert observed == [task['id']]

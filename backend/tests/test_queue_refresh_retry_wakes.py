@@ -16,7 +16,7 @@ from app.services import durable_tasks, queue_refresh_wakeup
 
 
 @pytest.fixture
-def retry_wakes(tmp_path, monkeypatch):
+def retry_wakes(tmp_path, monkeypatch, request):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "retry-wakes.sqlite")
     database.initialize()
     observed_clock = [datetime(2026, 10, 9, 8, tzinfo=timezone.utc)]
@@ -56,7 +56,7 @@ def retry_wakes(tmp_path, monkeypatch):
 
     def publish(name, **options):
         assert not connection_open
-        assert name == "app.tasks.poll_background_tasks" and options["queue"] == "background"
+        assert name == "app.tasks.progress_study_queue" and options["queue"] == "foreground"
         assert not options.get("args") and not options.get("kwargs") and "task_id" not in options
         delivery_at = options.get("eta", observed_clock[0])
         assert delivery_at.tzinfo is not None
@@ -100,11 +100,15 @@ def retry_wakes(tmp_path, monkeypatch):
                 return
             delivery_at, publication_number = heapq.heappop(deliveries)
             delivery_options = publications[publication_number - 1][1]
-            tasks.poll_background_tasks.push_request(headers=delivery_options.get("headers"))
+            # Default cases retain pre-upgrade marked-poll delivery semantics
+            # for mixed-version broker messages. Essential cases execute the
+            # actual newly published queue-only task and its unchanged fences.
+            delivered = tasks.progress_study_queue if getattr(request, 'param', 'legacy') == 'essential' else tasks.poll_background_tasks
+            delivered.push_request(headers=delivery_options.get("headers"))
             try:
-                poll_results.append((delivery_at, tasks.poll_background_tasks.run()))
+                poll_results.append((delivery_at, delivered.run()))
             finally:
-                tasks.poll_background_tasks.pop_request()
+                delivered.pop_request()
             if one:
                 return
         raise AssertionError("Unexpected unbounded capacity wake loop")
@@ -444,3 +448,21 @@ def test_issue135_delayed_wake_failure_retains_committed_deferral(retry_wakes, m
     assert projection["last_error"] == "Deadline"
     assert "Controlled delayed wake failure" in caplog.text
     assert str(datetime.fromisoformat(saved_task["next_attempt_at"])) in caplog.text
+
+
+@pytest.mark.parametrize('retry_wakes', ['essential'], indirect=True)
+def test_essential_wake_preserves_deadline_retry_and_recovers_during_foreground_activity(retry_wakes):
+    driver = retry_wakes
+    with tasks.activity_gate.foreground():
+        assert command_gateway.execute_command('request', 'settings.update', {}) == {'saved':True}
+        driver.deliver_due()
+        saved, projection = driver.state()
+        eligibility = datetime.fromisoformat(saved['next_attempt_at'])
+        assert saved['state'] == 'retrying' and saved['lease_token'] is None
+        assert len(driver.executions) == 1
+        assert projection['last_error'] == 'Controlled first queue slice deadline'
+        driver.clock[0] = eligibility
+        driver.deliver_due()
+        saved, projection = driver.state()
+        assert saved['state'] == 'complete' and projection['state'] == 'ready'
+        assert len(driver.executions) == 2 and driver.deliveries == []

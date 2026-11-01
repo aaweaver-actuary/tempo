@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
+import fcntl
+import os
+import tempfile
 
 import logging
 import time
@@ -162,9 +165,10 @@ _SUPPORTED_BACKGROUND_KINDS = (
 def ensure_daily_queue() -> bool:
     """Start the new day's queue even when the API stays up past midnight."""
 
-    queue_date = date.today().isoformat()
+    from .queue_commands import current_study_day
     with activity_gate.foreground():
         with read_connection() as database:
+            queue_date = current_study_day(database)
             projection = daily_queue_projection(database, queue_date)
         if (projection and projection["state"] == "ready" and not projection["refresh_pending"]
                 and (not projection["has_queued_entries"]
@@ -176,6 +180,30 @@ def ensure_daily_queue() -> bool:
         if result is None:
             raise RuntimeError("Could not request today's queue refresh")
         return bool(result["refresh_pending"])
+
+
+@contextmanager
+def _preparation_capacity(required=True):
+    """One potentially expensive preparation across this worker's processes.
+
+    A nonblocking process lock leaves the second foreground process available
+    for saves and issuance. Crash/termination closes the descriptor automatically.
+    Containers have distinct temporary directories; no live/test state is shared.
+    """
+    if not required:
+        yield True
+        return
+    path = os.path.join(tempfile.gettempdir(), 'tempo-study-preparation.lock')
+    with open(path, 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
@@ -196,13 +224,16 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
     scope = nullcontext() if command_name == prefix_transition_application.COMMAND else activity_gate.foreground()
-    with scope:
+    with scope, _preparation_capacity(command_name == 'queue.prepare_next') as preparation_admitted:
         with (activity_gate.foreground() if command_name == prefix_transition_application.COMMAND else nullcontext()):
             should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
                 operation_id, command_name, payload, background=False,
                 expected_retry_cycle=expected_retry_cycle,
             )
         if not should_execute:
+            return None
+        if not preparation_admitted:
+            defer_operation_for_foreground(operation_id, attempt_token)
             return None
         try:
             if command_name in PAUSED_IMPORT_COMMANDS and study_only_enabled():
@@ -318,7 +349,11 @@ def maintain_game_feedback() -> bool:
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
     task = None
     try:
-        with activity_gate.background_job("study_game_feedback", "one-slice", yielding=True):
+        with _preparation_capacity() as preparation_admitted, \
+                activity_gate.essential_study_progress('study_game_feedback'), \
+                activity_gate.background_job("study_game_feedback", "one-slice", yielding=True):
+            if not preparation_admitted:
+                return False
             task = claim_feedback_sweep()
             if task is None:
                 return False
@@ -382,6 +417,23 @@ def recover_operations() -> bool:
     return True
 
 
+@celery_app.task(name="app.tasks.recover_study_operations", base=CoalescedWakeTask)
+@bounded_maintenance
+def recover_study_operations() -> bool:
+    """Recover one foreground receipt without optional worker/idle dependence."""
+    with activity_gate.background_job('operation_recovery', 'essential', yielding=True), activity_gate.background_control():
+        operation = claim_recoverable_operation(allowed_background_commands=(),
+            paused_commands=PAUSED_IMPORT_COMMANDS if study_only_enabled() else ())
+    if operation is None:
+        return False
+    if operation['background']:
+        raise ValueError('Essential recovery cannot dispatch optional background work')
+    celery_app.send_task('app.tasks.execute_foreground_command',
+        args=[operation['operation_id'], operation['command_name'], operation['payload']],
+        task_id=operation['operation_id'], queue='foreground', headers={'submitted_at':time.time()})
+    return True
+
+
 @celery_app.task(name="app.tasks.poll_background_tasks", bind=True, base=CoalescedWakeTask)
 @bounded_maintenance
 def poll_background_tasks(self) -> bool:
@@ -411,6 +463,19 @@ def poll_background_tasks(self) -> bool:
         claimed_task, (self.request.headers or {}).get("submitted_at"),
         queue_refresh_wake=queue_refresh_wake,
     )
+
+
+@celery_app.task(name="app.tasks.progress_study_queue", base=CoalescedWakeTask)
+@bounded_maintenance
+def progress_study_queue() -> bool:
+    """Claim exactly one essential queue slice without optional idle admission."""
+    with activity_gate.essential_study_progress('daily_queue'), activity_gate.background_job('daily_queue', 'essential', yielding=True):
+        claimed = claim_task('daily_queue')
+        if claimed is None:
+            return False
+        if claimed['kind'] != 'daily_queue':
+            raise ValueError('Essential queue dispatch cannot execute an optional task')
+        return _execute_claimed_background_slice(claimed, None, queue_refresh_wake=True)
 
 
 @celery_app.task(name="app.tasks.recover_active_coverage", base=CoalescedWakeTask)

@@ -52,7 +52,7 @@ def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:
             "max_retries": 0, "retry_on_timeout": False,
         }
         with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
-            celery_app.send_task("app.tasks.poll_background_tasks", queue="background",
+            celery_app.send_task("app.tasks.progress_study_queue", queue="foreground",
                                  connection=connection, retry=False, ignore_result=True,
                                  headers={"queue_refresh_wake": True},
                                  **delivery_options)

@@ -2507,6 +2507,8 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(mo
 def test_postgres_daily_queue_rollover_requests_refresh_until_ready(monkeypatch, receipt_kind, queued, ready):
     from app import tasks
 
+    from app import queue_commands
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda _database: date.today().isoformat())
     projection = None
     submitted = []
     class QueueDatabase:
