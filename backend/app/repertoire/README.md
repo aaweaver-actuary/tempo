@@ -6,6 +6,7 @@ conflict resolution, content edit, migration, provider or engine runs here.
 
 The public API in [__init__.py](__init__.py) is:
 
+- `build_reentry_index(RepertoireSnapshot) -> PositionIndex | None`: validates the complete source and builds an index only when explicit reentry authority exists.
 - `build_index(RepertoireSnapshot) -> PositionIndex`: consumes the shared
   [T01 interface 0.2.0](../contracts/product_v02/repertoire.py), revalidates and
   copies it into immutable tuples, frozen records and read-only mappings.
@@ -40,7 +41,7 @@ owner mapping. All competing applicable mappings remain in `occurrence.bindings`
 
 ```mermaid
 flowchart LR
-  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / lookup / reentry_candidate"]
+  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / build_reentry_index / lookup / reentry_candidate"]
   DTO["Shared T01 RepertoireSnapshot\nimmutable copied input facts"] --> API
   API --> Math["Shared evidence-math\nopening_position_key"]
   Compose["Integration owner\nnot implemented here"] --> Adapter["CapturedSnapshotAdapter\nproject_capture"]
