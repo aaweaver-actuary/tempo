@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import ast
 import hashlib
 import json
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -213,6 +214,40 @@ def test_capture_attempts_every_selected_repertoire_and_retains_last_read_failur
     source, = h.store.sources.values()
     assert source.diagnostic == "comparison_unavailable:" + json.dumps([selected[-1]], separators=(",", ":"))
     assert not h.store.deliveries and not h.receiver.calls
+
+
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_capture_releases_supplied_snapshot_after_detachment_and_validation_failure(invalid_first):
+    h = harness(kinds=())
+    request = spec().model_copy(update={"repertoire_ids": ("invalid", "white") if invalid_first else ("white",)})
+    references, compared = [], []
+    expected = json.loads((FIXTURES / "snapshot.json").read_text())["payload"]
+
+    def snapshot(repertoire_id):
+        if references:
+            assert references[-1]() is None
+        value = RepertoireSnapshot.model_validate_json(json.dumps(expected))
+        # The first snapshot fails the requested repertoire scope check.
+        references.append(weakref.ref(value))
+        return value
+
+    def compare(game, detached, *, record, spec):
+        assert len(references) == 1 and all(ref() is None for ref in references)
+        assert detached.model_dump(mode="json") == RepertoireSnapshot.model_validate_json(
+            json.dumps(expected)).model_dump(mode="json")
+        compared.append(True)
+        return ()
+
+    h.coordinator.snapshots = SimpleNamespace(snapshot=snapshot)
+    h.coordinator.comparer = SimpleNamespace(compare=compare)
+    h.store.enqueue(request)
+    assert h.runner.run_once() == "page"
+    assert compared == ([] if invalid_first else [True])
+    assert len(references) == (2 if invalid_first else 1)
+    assert all(ref() is None for ref in references)
+    if invalid_first:
+        source, = h.store.sources.values()
+        assert source.diagnostic == "unresolved_parsing_or_comparison_boundary"
 
 
 def test_crash_before_checkpoint_replays_without_duplicates():
@@ -1090,3 +1125,147 @@ def test_corrected_held_source_cannot_create_or_inherit_determination_clock(orig
     assert changed_capture.first_departure.status == "own_actionable"
     assert changed_capture.determined_at is None
     assert changed_capture.diagnostic == "changed_source_requires_D08_resolution"
+
+
+def test_optional_page_exception_emits_safe_stage_and_frames_without_private_error(caplog):
+    h = harness()
+    h.page[0] = RuntimeError('PRIVATE_PGN_ACCOUNT_AND_SQL')
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING', logger='tempo.games.page'):
+        assert h.runner.run_once() == 'page'
+    saved = h.store.jobs['job']
+    assert saved.status == 'retryable' and saved.error == 'optional_unit_failed'
+    assert saved.next_attempt_at > h.clock.now()
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ',1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'acquisition'
+    assert diagnostic['failures'][0]['error_class'] == 'RuntimeError'
+    assert diagnostic['failures'][0]['frames']
+    assert 'PRIVATE_PGN_ACCOUNT_AND_SQL' not in line and 'Learner' not in line
+    assert 'job' not in diagnostic.values()
+
+
+def test_swallowed_comparison_failure_is_diagnosed_and_remains_unresolved(caplog):
+    h = harness()
+    def broken(*args, **kwargs):
+        raise RuntimeError('PRIVATE_SOURCE')
+    h.coordinator.comparer.compare = broken
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING',logger='tempo.games.page'):
+        h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.diagnostic.startswith('comparison_unavailable:')
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ',1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'comparison'
+    assert 'PRIVATE_SOURCE' not in line
+
+
+def test_page_cancellation_before_each_snapshot_does_not_publish_partial_checkpoint():
+    h = harness()
+    request = spec().model_copy(update={'repertoire_ids':('white','second')})
+    job = h.store.enqueue(request)
+    read = h.coordinator.snapshots.snapshot
+    calls = []
+    def snapshot(identity):
+        calls.append(identity)
+        return read(identity)
+    h.coordinator.snapshots.snapshot = snapshot
+    h.coordinator.capture_page(job,stopped=lambda:len(calls) == 1)
+    assert calls == ['white'] and not h.store.sources and not h.store.pages
+    assert h.store.jobs['job'].status == 'queued'
+
+
+def test_page_index_reuse_preserves_results_invalidates_mutation_and_dies_with_page(monkeypatch):
+    from app.product_composition import game_sync
+    h = harness()
+    snapshot = h.coordinator.snapshots.snapshot('white')
+    from tempo_game_review_contracts import ReentryAuthority
+    snapshot = snapshot.model_copy(update={'membership': snapshot.membership.model_copy(update={
+        'routes': tuple(route.model_copy(update={'reentries': (ReentryAuthority(ply=0, authority_id='explicit-anchor'),)})
+                        for route in snapshot.membership.routes)})})
+    original_record = record()
+    game = h.coordinator.normalizer.normalize(original_record,spec())
+    builds = []
+    real = game_sync.build_reentry_index
+    def build(value):
+        builds.append(value.membership.revision)
+        return real(value)
+    monkeypatch.setattr(game_sync,'build_reentry_index',build)
+    comparer = game_sync.WorkflowComparer()
+    expected = comparer.compare(game,snapshot,record=original_record,spec=spec())
+    with comparer.page_scope():
+        assert comparer.compare(game,snapshot,record=original_record,spec=spec()) == expected
+        assert comparer.compare(game,snapshot,record=original_record,spec=spec()) == expected
+        changed = snapshot.model_copy(update={'membership':snapshot.membership.model_copy(update={'revision':2}),
+            'decision_presentations':tuple(item.model_copy(update={'repertoire_revision':2})
+                                           for item in snapshot.decision_presentations)})
+        comparer.compare(game,changed,record=original_record,spec=spec())
+    assert len(builds) == 3
+    with pytest.raises(RuntimeError), comparer.page_scope():
+        comparer.compare(game,snapshot,record=original_record,spec=spec())
+        raise RuntimeError('cancel')
+    comparer.compare(game,snapshot,record=original_record,spec=spec())
+    assert len(builds) == 5
+
+
+def test_swallowed_normalization_failure_records_stage_without_private_source(caplog):
+    h = harness()
+    def broken(*args, **kwargs):
+        raise ValueError('PRIVATE_PROVIDER_PAYLOAD')
+    h.coordinator.normalizer.normalize = broken
+    h.store.enqueue(spec())
+    with caplog.at_level('WARNING', logger='tempo.games.page'):
+        h.runner.run_once()
+    source, = h.store.sources.values()
+    assert source.quarantined and source.diagnostic == 'unresolved_parsing_or_comparison_boundary'
+    line = next(item.message for item in caplog.records if item.name == 'tempo.games.page')
+    diagnostic = json.loads(line.split('games_page ', 1)[1])
+    assert diagnostic['failures'][0]['stage'] == 'normalization'
+    assert diagnostic['failures'][0]['error_class'] == 'ValueError'
+    assert 'PRIVATE_PROVIDER_PAYLOAD' not in line
+
+
+def test_workflow_skips_unusable_reentry_index_without_changing_complete_findings(monkeypatch):
+    from app.product_composition import game_sync
+    from app.repertoire import build_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"))
+    captured = snapshot(authored)
+    original = source_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    full = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                 snapshot=captured, reentry_lookup=build_index(captured))
+    absent = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                   snapshot=captured, reentry_lookup=None)
+    assert full == absent and [(item.kind, item.ply) for item in full] == [('opponent_gap', 2)]
+    from app.repertoire import position_index
+    def forbidden(*args):
+        raise AssertionError('unanchored source must not allocate a position index')
+    monkeypatch.setattr(position_index, '_build_validated_index', forbidden)
+    comparer = game_sync.WorkflowComparer()
+    with comparer.page_scope():
+        actual = comparer.compare(game, captured, record=original,
+                                                      spec=SimpleNamespace(provider='lichess'))
+    assert actual == full
+
+
+def test_workflow_explicit_reentry_still_builds_real_index_and_resumes_anchor():
+    from app.product_composition import game_sync
+    from app.repertoire import build_index, build_reentry_index
+    from test_product_game_findings import record as source_record, route, snapshot
+    authored = route(("g1f3", "d7d5", "g2g3", "c7c5", "f1g2"), reentry=4)
+    captured = snapshot(authored)
+    original = source_record(("g1f3", "c7c5", "g2g3", "d7d5", "f1h3"))
+    game = game_sync.WorkflowNormalizer().normalize(original, SimpleNamespace(
+        provider='lichess', account='learner', workspace_id='workspace'))
+    optional = build_reentry_index(captured)
+    candidate = optional.reentry_candidate('rep', optional.routes['rep', 'route'][4].full_fen)
+    assert candidate.ply == 4 and candidate.reentry_authority_id == 'anchor'
+    expected = game_sync.compare_game(game, provider='lichess', time_precision=original.time_precision,
+                                     snapshot=captured, reentry_lookup=build_index(captured))
+    actual = game_sync.WorkflowComparer().compare(game, captured, record=original,
+                                                 spec=SimpleNamespace(provider='lichess'))
+    assert actual == expected
+    assert [(item.kind, item.ply) for item in actual] == [('opponent_gap', 2), ('confirmed_miss', 5)]

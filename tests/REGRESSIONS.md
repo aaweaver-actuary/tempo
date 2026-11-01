@@ -6539,3 +6539,154 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Direct recovery CLI binds database infrastructure before owner work
 
 `backend/tests/test_opening_graph_recovery.py::test_recovery_cli_binds_existing_database_authorities_before_any_owner_work` starts with the neutral infrastructure unbound, imports the supported CLI without startup, and invokes each actual parsed recovery mode. It proves the existing activity gate and measurement adapter are bound before owner preflight/execution, and a binding failure prevents all owner work. Red4failed before the explicit composition call. Arguments, task/source guards, owners and transaction deadlines are unchanged; the standalone historical path continues using its supplied DedicatedGamesConnections.
+
+### Current qualified feedback authority (#662)
+
+`backend/tests/test_current_feedback_authority.py` is selected by the regular
+`study-game-priority` suite. It covers current-only construction and complete-scope
+reuse, changed canonical source/time or exact executable rejection, and actual
+PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
+The existing handoff fixture uses the production bounded connection profile and a
+task-owned private passfile; all 250ms transaction limits remain unchanged.
+
+
+## Bounded Games page diagnostics and reuse (#665)
+
+`test_product_feedback_jobs.py` owns safe page exception class/stage/frame logging,
+swallowed comparison failures remaining unresolved, snapshot-boundary cancellation
+without partial checkpoints, and equal-result index reuse invalidated by changed
+snapshot facts and cleared after failed/completed page scope. Original durable
+retry/provider fairness/page atomicity regressions remain applicable.
+
+## Optional Games startup isolation (#667)
+
+`backend/tests/test_nonblocking_admission.py::test_optional_game_modules_absent_at_process_bootstrap_preserve_study_queue_and_saved_review`
+starts fresh processes with selected provider, engine-analysis and retained producer
+modules blocked before import. It verifies core HTTP/task registration, real isolated
+SQLite queue reads and idempotent review saving, optional-only failure, original
+retained task identity, and absence from loaded modules. Missing Learning/storage
+is still a core bootstrap failure; this is not a PostgreSQL/resource-isolation claim.
+
+### Packaged current-feedback tripwires (#662 / #668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py` adds
+`test_packaged_current_feedback_without_legacy_capture[unseen-config-rollback-lost-ack-games-absent]` and
+`[introduced-target-rollback-lost-ack-games-absent]` to the existing `study-recovery` suite.
+The existing browser journey must reach actual same-key settlement with legacy
+capture/projection tripwires installed before consumer imports. The introduced
+case injects one controlled revision change inside the actual owner transaction,
+immediately before the new narrow target fence; it requires durable refusal,
+rollback of the revision/effect/ack and unchanged-key/clock recovery after clearing
+the marker. This case does not claim to simulate external concurrency. The normal
+R1 thirty-transition cases and production deadlines/resource caps stay unchanged.
+
+The same two bounded journeys also require a real receiving-owner commit followed
+by a lost first outbox acknowledgment, a durable `owner_acknowledgment_uncertain`
+row, and same-key/clock/owner-receipt reconciliation with the actual retry count.
+An outside-writer barrier applies only to the exact original key after its genuine
+owner receipt exists. With accepted debt still pending, the host stops the exact
+owned collector and records supported inactive generation 2 before releasing that
+barrier; foreground preparation, real browser issuance/save/replay and settlement
+must preserve that same owner receipt while Games stays stopped/inactive. The
+unseen case mutates the actual configuration revision inside its borrowed final
+fence and requires complete configuration/selection rollback before same-key retry.
+These are controlled fixture failures, not external concurrency simulations or
+executed acceptance evidence until the packaged cases run.
+
+### Historical CLI cancellation propagation (#665)
+
+`backend/tests/test_game_history_scripts.py::test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoint`
+exercises SIGINT/SIGTERM through the real CLI handler and actual FeedbackRunner.
+Stopping during the first repertoire read prevents the second read and partial
+comparison checkpoint; original manifest, retained pages/sources/captures and
+signal handlers survive unchanged. This is a pure cancellation proof, not a
+claim that an active SQL statement/source projection is preemptible.
+
+### Historical intake yields to actual ready urgency (#665)
+
+`backend/tests/test_game_history_scripts.py::test_historical_delivery_yields_only_to_ready_live_urgency_without_changing_identity`
+proves a due held live delivery cannot starve ready historical intake while a
+truly ready live delivery keeps priority. Both cases preserve original commands,
+logical identities, determination clocks, retained pages and completed checkpoints.
+
+### Packaged recovery clock stays behind genuine issuance (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` retains the held source/restoration and ten-repertoire sources under actual UTC determination time. The earlier settled-source reconciliation's accelerated clock must not freeze a future new delivery; retry waits for the original durable deadline, and actual browser issuance/save must settle that same key. The combined058 run exposed the fixture failure after genuine target review; its evidence remains a failed qualification, not a product settlement pass. The same fixture clock advances with wall time so the existing continuous R2 collector can reach its original +2s uncertainty and +30s held retry deadlines.
+
+### Recovery backlog includes executable response segments (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` selects 576 actual generated opening prefix/response cards, including response segments with an initial opponent cue. Restricting to white-start shared prefixes left only two candidates in the first representative publication despite 1,261 executable non-target cards. The actual generator's selected 576 cards all replay legally and contain a trained-color decision; complete ten-repertoire shape assertions and the thirty actual browser transitions remain required.
+
+### Recovery observer correlates the supported review receipt (#668)
+
+`tests/browser/study-recovery.spec.ts::packaged recovery records thirty authoritative playable transitions` retains original POST attempt/command identity and supported persisted card/queue/positive review identity, with exact host `review_attempt_receipts` lookup by attempt after measurement. A fixture observer must not demand a nonexistent echoed attempt field: the bacd run committed review586 and advanced to the next real board in the first transition, but the observer threw before recording persistence. Full thirty-transition success still requires the unchanged latency, failure and owner-origin assertions.
+
+### Recovery assembly uses the production PostgreSQL connection profile (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py` uses the pinned image's production-default connection limit for its seven-role assembly and records actual maximum/reserved settings. The smaller native-owner fixture keeps16. The f21b run exposed the artificial assembly cap before source enqueue: its real collector failed a new connection with ordinary slots exhausted. Memory/PID/shared-buffer limits, pool defaults and deadlines remain unchanged; no connection leak is inferred from that observation.
+
+### Recovery readback checks both actual receipt contracts (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` binds the original command payload and exact full `operation_receipts.response_json` to the browser receipt, then compares the immutable Learning attempt receipt after removing only the adapter's known after-save `recombination` annotation. Prepared continuation and all other fields, review identity and actual issuance origins remain exact. The 4d53 first transition completed with a persisted receipt and next board; comparing its enriched public response directly to the core attempt row exposed the fixture contract error.
+
+### Native legacy settlement fixture uses the authoritative Study clock (#668)
+
+`backend/tests/test_product_feedback_integration.py::test_normal_study_review_settles_obligation` and `::test_producer_absence_does_not_block_study` retain their fixed October26 policy clock at the current `queue_commands.datetime.now` seam as well as the legacy date seam. The selected4d native run accepted the legacy effect but correctly refused issuance when its old fixture patched only `date.today`, leaving the current Study-day clock at November1. No production policy, original command, issuance/settlement assertion or database deadline changes.
+
+### Recovery provider snapshots publish atomically (#668)
+
+The existing packaged feedback and thirty-transition recovery cases publish every live `provider.json` update through their existing atomic marker boundary. The afe run exposed a truncated provider string in the actual container reader before full-scope configure. No parse retry, fabricated input, deadline change or product patch is used; concurrent readers must receive complete old or new synthetic snapshots.
+
+### Recovery control snapshots remain coherent across host/guest filesystems (#668)
+
+Existing packaged feedback/recovery cases publish live provider JSON via verified stdin into each existing role's Linux tmpfs, with same-directory replacement and digest readback. The5f30 run exposed a missing host-renamed file at the guest admission barrier; no host parse retry is used. Paused deferral is allowed only before both recovery release markers, and the full-scope publication strictly refreshes all roles before release. A finite actual Linux guest proof exercised100 concurrent64KiB updates with1,412 complete reads and no errors; it is transport evidence, not packaged acceptance.
+
+### Settled-source replay follows its durable completion deadline (#668)
+
+The existing packaged same-source reconciliation replay derives its controlled clock from the actual latest completed reconciliation checkpoint plus the existing601-second advance. Production spaces repeats from completion, so adding601 to an older host snapshot can miss the deadline after the fixture clock begins following wall time. The a5aa run passed real initial browser settlement and coherent guest publication before exposing this fixture timing error. New semantic source clocks and all product intervals/deadlines remain unchanged.
+
+### Held browser drains its queue observers before teardown (#668)
+
+`tests/browser/real-game-feedback.spec.ts::packaged held prerequisite preserves Study through essential worker recovery` detaches its named response observer and awaits all tracked queue JSON reads while the page is alive, then asserts every recorded parse error. The9ac run completed the genuine target save but an untracked listener continued into Playwright teardown and raised “Test ended”. No response failure is ignored and all original product assertions/timeouts remain unchanged.
+
+### Complete snapshot serialization avoids nested JSONB aggregate memory (#668)
+
+`backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` executes full/authored/candidate snapshot documents against the released JSONB encoding and requires identical decoded facts, budget metadata and canonical fingerprints, including escaped text and null values. The full-scope PostgreSQL-only diagnostic reproduced the largest valid9526-card/27600-graph snapshot OOM under the unchanged384MiB cap with one client and no JIT; the wire-only reader repair must preserve all rows, ordering and one-MVCC-view semantics. No database capacity, timeouts, source/row bounds or graph scope is changed.
+
+The same native owner suite now follows the already-released three-parameter
+snapshot API: obsolete `MAX_SNAPSHOT_BYTES`/`facts_json` assertions from the
+retired aggregate-cap contract are replaced by complete-facts/estimate checks.
+`test_complete_snapshot_above_retired_aggregate_limit_preserves_all_rows` admits
+561 valid authored lines whose full document exceeds the retired32MiB limit;
+`test_serialized_byte_accounting_still_refuses_true_row_byte_overflow` retains
+the actual64KiB refusal. Existing row-count sentinels/MVCC/fences are unchanged.
+
+
+### Position index legal replay facts (overnight source admission)
+
+`backend/tests/test_product_position_index.py::test_index_reuses_legal_replay_facts_without_reparsing_occurrences` covers legal and pinned/irrelevant EP, castling, exact initial/full FEN, illegal-prefix diagnostics, route aliases with distinct physical bindings/reentry authority, and route-local adjacency. Each route parses only its root; all occurrence keys match standalone validated lookup. This repairs repeated FEN parsing in complete-scope comparison without changing route/ply bounds, opening identity or public validation.
+
+### Full-scope fixture collection uses the optional role allocation (#668)
+
+`study_recovery_acceptance.py::run_recovery` executes only the three ten-repertoire controlled collection calls in the existing running/unpaused448MiB background role and records that allocation. The720 run proved placing this large optional helper beside two Study command workers and beat exhausted the384MiB foreground cgroup (exit137/oom_kill1). No memory cap, product policy, deadline or held-case foreground call changes.
+
+### Recovery publication recognizes only verified terminal collectors (#668)
+
+The existing transition7 actual worker/source/jobs/admission checks set the terminal-consumer flag. Subsequent full-scope publication accepts the same stopped collector only with exit0/noOOM while requiring fresh API/foreground/background digests. Initial publication and producer-release still require all4; this neither extends collector lifetime nor fabricates an active managed identity.
+
+
+
+
+### Recovery capture fits an explicit unchanged aggregate fixture budget (#668)
+
+`backend/tests/test_study_recovery_acceptance.py::test_recovery_assembly_allocation_fits_existing_budget_without_changing_global_roles` checks the explicit PG384/Redis32/API192/foreground384/background512/Games512/web32 allocation, exact2048MiB total, unchanged global configuration and rejection below that total. The prior full-scope capture exhausted background448; Redis/web observed peaks were19.77/19.46MiB. This transfers existing fixture headroom only; all-role memory/OOM and full four-case qualification remain required, with no production budget or deadline change.
+
+
+### Unanchored comparison retains all findings without an unused reentry index
+
+`test_product_feedback_jobs.py::test_workflow_skips_unusable_reentry_index_without_changing_complete_findings` proves exact semantic Finding equality against a full index and no index across departure/transposition, while refusing any index allocation for an unanchored snapshot. `test_workflow_explicit_reentry_still_builds_real_index_and_resumes_anchor` uses the real physical mapping and explicit authority to resume at the same ply and retain the later confirmed miss. The existing page-cache lifetime/mutation/cancellation regression now supplies explicit anchors. `test_product_position_index.py::test_unanchored_reentry_index_preserves_full_source_bounds_and_revalidation` retains route/ply limits and invalid nested schema refusal on both public factories. Actual full-scope helper timing/memory and registered packaged acceptance remain separate evidence gates.
+
+
+### Anchorless workflow avoids unused cache serialization
+
+`backend/tests/test_product_game_findings.py::test_anchorless_workflow_preserves_full_findings_without_unused_cache_serialization` compares actual complete Findings with the full-index path for misses, agreements and departure/transposition while refusing full-snapshot cache JSON; repeated calls retain no negative cache. `test_anchorless_cache_bypass_still_refuses_oversized_or_mutated_source` preserves route/ply limits and nested schema refusal after a prior successful comparison. The existing explicit-anchor cache lifetime/mutation/cancellation regression remains active. Only unused anchorless cache representation is removed; complete comparison, validation, identity bytes and positive-cache policy are unchanged.

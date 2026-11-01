@@ -343,3 +343,92 @@ def test_native_historical_import_saved_page_replay_and_checkpoint_isolation(own
             FROM product_feedback_pages WHERE job_id=%s LIMIT 1""", (manifest.job(configuration).job_id,))
     with pytest.raises(ValueError, match="historical_page_missing_or_ambiguous"):
         restored.retained_page(manifest.job(configuration).job_id, None)
+
+
+@pytest.mark.parametrize('stop_signal',['SIGINT','SIGTERM'])
+def test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoint(monkeypatch,tmp_path,capsys,stop_signal):
+    from app.product_composition import game_history_scripts as history,game_review,game_sync_current,managed_runtime,provider_priority
+    from tempo_legacy_database.adapters.games import product_review,product_sources,managed_mode
+    store,configuration,_,_ = setup_scope()
+    configuration = configuration.model_copy(update={'repertoire_ids':('rep','second')})
+    manifest = new_manifest('fixture',(configuration,),now=datetime(2026,10,30,tzinfo=timezone.utc))
+    review = SimpleNamespace(configuration=lambda *args:configuration,
+        deliveries=lambda key:tuple(item for item in store.deliveries.values() if item.source_key==key))
+    collect(store,configuration,manifest,review,records=rows(('d4','e4 e5 2. Nf3')))
+    original_pages,original_sources,original_captures = dict(store.pages),dict(store.sources),dict(store.captures)
+    path=tmp_path/'same-history.json'
+    save_manifest(path,manifest)
+    old_handlers={history.signal.SIGINT:object(),history.signal.SIGTERM:object()}
+    handlers=dict(old_handlers)
+    def signal(number,handler):
+        previous=handlers[number]
+        handlers[number]=handler
+        return previous
+    monkeypatch.setattr(history.signal,'signal',signal)
+    reads=[]
+    class Snapshots:
+        def snapshot(self,repertoire_id):
+            reads.append(repertoire_id)
+            if len(reads)==1:
+                handlers[getattr(history.signal,stop_signal)](getattr(history.signal,stop_signal),None)
+            return snapshot(repertoire=repertoire_id,introduction='introduced')
+    monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL','pure-fixture-no-database')
+    monkeypatch.setattr(product_review,'DedicatedGamesConnections',lambda *args,**kwargs:object())
+    monkeypatch.setattr(product_review,'PostgresReviewStore',lambda _:review)
+    monkeypatch.setattr(product_sources,'PostgresCanonicalGamesStore',lambda _:store)
+    monkeypatch.setattr(game_review,'SystemClock',FakeClock)
+    monkeypatch.setattr(game_sync_current,'CurrentRepertoireSnapshots',lambda _:Snapshots())
+    monkeypatch.setattr(managed_runtime,'current_managed_runtime_identity',lambda:'pure-runtime')
+    monkeypatch.setattr(managed_mode,'read_feedback_mode',lambda *args:SimpleNamespace(mode='feedback',phase='active'))
+    intake=Intake()
+    intake.prepare_first_boundary=lambda game,**kwargs:SimpleNamespace(snapshots=kwargs['snapshots'],diagnostic=None)
+    monkeypatch.setattr(provider_priority,'CurrentProviderPriorityIntake',lambda **kwargs:intake)
+    monkeypatch.setattr(history,'historical_admission',lambda **kwargs:nullcontext())
+    assert history.main(compare=True,argv=['run','--manifest',str(path),'--workspace','fixture','--max-units','1']) == 1
+    result=json.loads(capsys.readouterr().out)
+    assert result['interrupted'] is True and result['complete'] is False
+    assert reads==['rep']  # H's inside-page cancellation sees the CLI signal.
+    current=store.load_job(manifest.job(configuration,compare=True).job_id)
+    assert current.status=='queued' and current.continuation is None and current.pages_committed==0
+    assert store.pages==original_pages and store.sources==original_sources and store.captures==original_captures
+    assert not store.deliveries and handlers==old_handlers
+    assert load_manifest(path)==manifest
+@pytest.mark.parametrize('live_ready',[False,True],ids=['held-live','ready-live'])
+def test_historical_delivery_yields_only_to_ready_live_urgency_without_changing_identity(live_ready):
+    from app.games.feedback.ports import delivery_blocks_issuance
+    from test_product_delivery_qualification import setup_case,qualify,QualifiedReceiver
+    store,configuration,manifest,review=setup_scope()
+    collect(store,configuration,manifest,review)
+    class QualifiedIntake(Intake,QualifiedReceiver):
+        def __init__(self): QualifiedReceiver.__init__(self)
+        def prepare(self,delivery): return delivery
+    intake=QualifiedIntake()
+    compare(store,configuration,manifest,review,maximum_units=1,intake=intake)
+    original,=store.deliveries.values()
+    live=qualify(setup_case())
+    live=live.model_copy(update={'stream':'forward',
+        'qualification':live.qualification.model_copy(update={'stream':'forward'})})
+    assert live.operation_id!=original.operation_id
+    if not live_ready:
+        live=live.model_copy(update={'qualification_status':'held','qualification_reason':'integrity_scan_incomplete',
+            'error':'integrity_scan_incomplete','next_attempt_at':0})
+    store.deliveries[live.operation_id]=live
+    observed=[]
+    def pending(now,**options):
+        observed.append(options)
+        # The actual store's existing A/C policy excludes a known held item
+        # only when the consumer explicitly asks for current ready urgency.
+        return live if not options.get('ready_only') or delivery_blocks_issuance(live) else None
+    store.pending_delivery=pending
+    checkpoint=store.load_job(manifest.job(configuration,compare=True).job_id)
+    pages,sources,captures=dict(store.pages),dict(store.sources),dict(store.captures)
+    units=compare(store,configuration,manifest,review,maximum_units=1,intake=intake)
+    actual=store.delivery(original.operation_id)
+    assert actual.state==('pending' if live_ready else 'acknowledged')
+    assert units==(0 if live_ready else 1) and len(intake.calls)==(0 if live_ready else 1)
+    assert actual.operation_id==original.operation_id and actual.command==original.command
+    assert actual.determined_at==original.determined_at and actual.qualification==original.qualification
+    assert store.delivery(live.operation_id)==live
+    assert store.load_job(checkpoint.spec.job_id)==checkpoint
+    assert store.pages==pages and store.sources==sources and store.captures==captures
+    assert observed and observed[0]['priority_order'] is True

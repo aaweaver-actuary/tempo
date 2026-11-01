@@ -60,7 +60,9 @@ test("packaged recovery records thirty authoritative playable transitions", asyn
     const operations = new Map<string, Sample>();
     function saved(sample: Sample, value: unknown) {
       const receipt = value as Record<string, unknown> | undefined;
-      if (receipt?.persisted !== true || receipt.attempt_id !== sample.attemptId)
+      if (receipt?.persisted !== true || receipt.card_id !== sample.cardId
+          || receipt.queue_entry_id !== sample.entryId || typeof receipt.review_id !== "number"
+          || !Number.isSafeInteger(receipt.review_id) || receipt.review_id <= 0)
         throw new Error("Recovery measurement did not receive the exact persisted attempt receipt");
       if (sample.persistedMs === undefined) {
         sample.persistedMs = performance.now();
@@ -77,7 +79,10 @@ test("packaged recovery records thirty authoritative playable transitions", asyn
         const body = JSON.parse(typeof options?.body === "string" ? options.body : "null") as Record<string, unknown>;
         if (!body || typeof body.attempt_id !== "string" || typeof body.queue_entry_id !== "number")
           throw new Error("Recovery measurement requires the actual immutable review request");
-        review = { requestId: headers.get("Idempotency-Key") ?? "", attemptId: body.attempt_id,
+        const requestId = headers.get("Idempotency-Key") ?? "";
+        if (requestId !== `review-attempt:${body.attempt_id}`)
+          throw new Error("Recovery measurement requires the original attempt command identity");
+        review = { requestId, attemptId: body.attempt_id,
           cardId: decodeURIComponent(url.pathname.split("/")[3]), entryId: body.queue_entry_id,
           submittedMs: performance.now() };
         trace.samples.push(review);
@@ -92,8 +97,11 @@ test("packaged recovery records thirty authoritative playable transitions", asyn
           const value = await response.clone().json() as Record<string, unknown>;
           if (!response.ok || value.state === "blocked") trace.responses.push({ path: url.pathname, status: response.status, value, atMs: performance.now() });
           if (review) {
-            if (response.status === 202 && typeof value.operation_id === "string") operations.set(value.operation_id, review);
-            else if (response.ok) saved(review, value);
+            if (response.status === 202) {
+              if (value.operation_id !== review.requestId)
+                throw new Error("Recovery operation does not match the original attempt command");
+              operations.set(review.requestId, review);
+            } else if (response.ok) saved(review, value);
           } else if (url.pathname === "/api/queue/window" && response.ok && Array.isArray(value.cards)) {
             for (const card of value.cards as Card[]) trace.cards[String(card.queue_entry_id)] = card;
           } else if (url.pathname.startsWith("/api/operations/") && value.state === "complete") {

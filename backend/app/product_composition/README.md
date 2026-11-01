@@ -28,6 +28,8 @@ flowchart LR
   Intake --> Study["Study-owned Again / introduction<br/>priority, issuance and settlement"]
   Gate["Background admission / foreground priority<br/>bounded units and retained retries<br/>optional worker: 2048 MiB / 96 PIDs"] --> Import
   Gate --> Replay
+  Stop["CLI SIGINT / SIGTERM"] -->|"request_stop on actual owned runner"| Import
+  Stop -->|"cooperative page cancellation; retain checkpoint"| Replay
 ```
 
 Historical jobs use `purpose=history`, exact-job claims and manual provenance.
@@ -39,6 +41,10 @@ page subtype and cursor, preserving metadata and canonical source identity.
 It commits comparisons through the existing Games page transaction, then delivers
 only outbox entries attached to the imported source set after the full traversal.
 Original commands, owner receipts and determination clocks survive retries.
+The CLI forwards stop requests into its actual constructed acquisition/comparison
+runners as well as its outer event. The existing page owner checks cancellation
+between source/record/comparison units and never publishes a partial page. A
+single active SQL read or source projection is not preempted by this event.
 
 Missing scope remains unresolved; a later invocation can revisit a completed
 unresolved traversal. Opponent-first games produce no own-miss consequence.
@@ -501,7 +507,8 @@ flowchart LR
   Routes --> Proof["Repertoire-owned exact-game legal execution over every applicable route"]
   Proof --> Bindings["Elect first boundary; read complete bindings for every surviving route"]
   Bindings --> Prepare["Repertoire-owned snapshot; current Study target preparation outside writer"]
-  Prepare --> Fence["Gateway request hash / attempt token / receipt"]
+  Prepare --> Exact["Study exact current target + integrity facts; no catalogue export"]
+  Exact --> Fence["Gateway request hash / attempt token / receipt"]
   Fence --> Apply["Borrowed writer: shared mode + source/current owner fences"]
   Apply --> Accept["Study accept + Games acknowledgment, one transaction"]
   Accept --> Study["Independent accepted Study preparation / issuance / settlement"]
@@ -658,3 +665,59 @@ Study-only currently permits only daily-queue task kinds. A queued graph/scan
 cannot progress under that policy without an explicit supported repair operation;
 ordinary Study must remain available while that prerequisite is held. No optional
 producer is enabled by this observer.
+
+
+### Current qualified target authority (#662)
+
+The first-departure path uses Study's `CurrentQualifiedOwnerDecisions`, prepared
+from canonical Games source, complete configured Repertoire-owned legal execution
+and candidate bindings, and one exact current target read. It performs no broad
+legacy capture or `project_capture`. The current target retains card definition,
+all of that card's memberships, graph uses, and current graph/integrity evidence;
+full selection, source/configuration, publication, physical and lineage checks
+still run through the existing borrowed transaction before accepting an effect.
+Canonical introduction and Again/settlement retain their existing Study owners.
+
+The legacy constructor, `capture_game`, `capture_source_scope`, `project_capture`
+and explicit `accept_encounter` compatibility route remain for old consumers;
+they are not used by new qualified intake or accepted qualified preparation.
+The optional root keeps legacy capture as a lazy compatibility callback only.
+
+### Historical page failure and index lifetime (#665)
+
+The Games page owner records fixed phase, elapsed time/counts, hashed work token,
+exception class, safe SQLSTATE and at most four six-frame traces. Arbitrary error
+messages, source content, account names and SQL parameters are excluded. Both
+swallowed snapshot/comparison failures and outer page failures remain observable;
+logging failure never replaces the original error or job retry result.
+
+```mermaid
+flowchart LR
+  Page[One claimed page / retained cursor] --> Snapshots[Complete configured snapshots]
+  Snapshots --> Reentry{Explicit authored reentry authority?}
+  Reentry -->|yes| Scope[Page-local index reuse: max 16 entries / 32 MiB encoded inputs]
+  Reentry -->|no| Complete[Compare complete snapshot without optional index]
+  Scope --> Compare[Every source and applicable repertoire compared]
+  Complete --> Compare
+  Compare --> Commit[Existing atomic page / outbox / cursor commit]
+  Scope --> Clear[Completion / failure / cancellation clears reuse]
+  Page --> Diag[Payload-free stage and bounded failure frames]
+```
+
+Indexes are keyed by all supplied snapshot bytes, so changed source or nested
+snapshot mutation cannot reuse an old index. Oversized scopes are still compared
+completely without retained reuse. No index or authority survives the page;
+writer currentness fences remain unchanged. Cancellation is checked before each
+snapshot and comparison; no partial provider cursor is committed. This is not a
+claim that the original historical incident exception or full-scope latency has
+been reproduced or repaired; exact packaged/incident evidence remains separate.
+
+
+Complete-source comparison does not build an optional reentry index when the
+validated snapshot has no explicit authored reentry authority. The Repertoire
+owner's public `build_reentry_index` retains schema detachment and the existing
+10,000-route/100,000-ply bounds before that decision. Normal comparison, source
+scope and first-boundary selection still receive the complete snapshot. An
+explicit anchor follows the same index/reentry path and page-local cache as
+before; other `build_index` consumers are unchanged. This removes unused retained
+index allocations, not route evidence or reentry safety checks.

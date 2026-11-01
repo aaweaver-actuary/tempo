@@ -354,7 +354,10 @@ same arguments and a manifest path available to both invocations. A local source
 checkout alone cannot establish the installed worker's feedback identity.
 
 Both runs stop after `--max-units` bounded units (default 50). Repeat the same
-run command to resume. Exit 0 means the selected phase completed; 1 means
+run command to resume. SIGINT/SIGTERM also reaches the actual owned runner, so
+comparison stops at its next cooperative page boundary without publishing a
+partial page. A unit limit is not a wall-clock deadline and does not preempt one
+active SQL read or source projection. Exit 0 means the selected phase completed; 1 means
 incomplete/deferred work; 2 means an operation/input failure. Plan exits 0 when
 the scope was successfully inspected; this is not readiness or completion.
 No timers, automatic retries, recurrence changes, forward checkpoints or
@@ -435,13 +438,13 @@ node /absolute/qualified/source/scripts/game-review-collection.mjs enable --cand
 node /absolute/qualified/source/scripts/game-review-collection.mjs disable --candidate <40-character-commit> --apply
 ```
 
-Plan/status first run `game_collection_status --identity-only`, then the full
-reader, through the verified installed API's reader profile. The two commands
-retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`, and
-`json_status`). Identity and other operator commands retain the existing 30,000 ms timeout.
-The full snapshot report has no fixed subprocess deadline; both reader commands
-retain the 4 MiB subprocess output bound. A full-reader failure does not erase independently
-observed schema, but still blocks enable. Complete JSON from a nonzero exit remains
+Status and disable use the verified installed API's identity-only reader and
+leave activation readiness unassessed. Plan and enable additionally run the full
+reader and feedback preview, each with a finite 30-second deadline. The reader
+commands retain separate sanitized `reader_probes` outcomes (`status`, `exit_status`,
+and `json_status`) and the 4 MiB subprocess output bound. A full-reader failure
+does not erase independently observed schema, but still blocks enable.
+Complete JSON from a nonzero exit remains
 diagnostic evidence, never a successful probe. Malformed/truncated output is not
 accepted. Conflicting schema observations block explicitly.
 A successful JSON read does not imply launch readiness. Missing fields, truncated

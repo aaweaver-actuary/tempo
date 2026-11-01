@@ -79,6 +79,11 @@ connection; it owns no connection, commit, policy selector or learning effect.
 Stored FEN discovery hints do not filter candidate bindings. Graphs with missing
 physical cards remain observable. The prior removal of a graph-count ceiling
 and whole-snapshot byte cap remains effective; no graph prefix is certified.
+Wire-only full/authored/candidate snapshot documents use text JSON builders and
+ordered aggregates, decoded to the same Python mappings and canonical fingerprints.
+This avoids retaining nested binary JSON aggregate trees for valid large graph
+relations. Complete scope, one-statement MVCC, row/count sentinels and row-byte
+refusals are unchanged; there is no new graph ceiling or whole-snapshot cap.
 
 ```mermaid
 flowchart LR

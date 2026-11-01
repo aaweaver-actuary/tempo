@@ -40,8 +40,8 @@ it does not raise any application transaction deadline. Allocation, exact
 mount/label checks, memory evidence and container-before-volume cleanup are
 retained in the fixture receipt. Build and run it under the existing resource
 admission workflow. The recovery-only allocation is PostgreSQL 384 MiB,
-API 192 MiB, foreground 384 MiB, background 448 MiB, Games producer 512 MiB,
-Redis 64 MiB and web 64 MiB: exactly the existing 2,048 MiB development budget.
+API 192 MiB, foreground 384 MiB, background 512 MiB, Games producer 512 MiB,
+Redis 32 MiB and web 32 MiB: exactly the existing 2,048 MiB development budget.
 No global service budget changes. Foreground/background concurrency remains 2/1.
 Cgroup current/peak/events, process RSS and container OOM/exit state are retained.
 These finite candidate caps differ from installed unbounded API/foreground
@@ -117,6 +117,14 @@ same original delivery must reach real target issuance and clean browser
 settlement. Each pause/process/resource belongs to the verified disposable
 assembly and is covered by its existing teardown. The separate unchanged
 thirty-transition loop retains the representative latency targets and raw samples.
+New semantic feedback sources use the actual UTC clock before capture and
+qualification, including the three ten-repertoire sources. The earlier settled
+source reconciliation may accelerate its collection schedule, but that clock
+must not carry into a new determination ahead of actual browser issuance. Held
+retry waits for the original retained retry deadline within the existing 45s
+orchestration bound; it never advances the original command's semantic time.
+The fixture clock continues with actual wall time after each snapshot, allowing
+the continuous collector's original uncertainty/held retries to become due.
 
 The recovery foreground worker uses Celery's supported embedded beat with its
 schedule file under `/tmp`, retaining two prefork command workers and the same
@@ -133,3 +141,71 @@ Collector startup follows protected browser acquisition and API/foreground role
 verification. Only its own real runtime/profile verification, managed-mode
 commit and provider release run inside the unchanged 45-second collector
 admission window; unrelated setup does not consume that window.
+
+The 576-card recovery backlog selects actual generated opening prefixes and
+response segments. A response starts with an opponent cue before the learner's
+legal reply; the real browser plays only trained-color decisions. Shared root
+prefixes are deliberately deduplicated and cannot alone supply that backlog.
+The ten complete configured repertoires and all persisted shape assertions remain
+unchanged; no inert cards or extra routes are added to reach the count.
+
+The browser measurement correlates the original attempt POST and its exact
+`review-attempt:<attempt_id>` command identity with the supported persisted
+card/queue/review receipt. The public receipt does not echo `attempt_id`. After
+the measured boundary the existing host check reads that immutable attempt's
+owner receipt and requires exact result JSON, matching review/card/queue and both
+authoritative issuance origins. Asynchronous responses must retain the original
+command identity; these checks do not invent an API field or weaken settlement.
+
+The seven-role recovery PostgreSQL profile inherits the pinned production
+image's connection default, matching the checked-in production composition.
+The smaller native-owner fixture retains its explicit 16-connection cap. Actual
+maximum and reserved-slot settings are read from the owned database into
+`fixture.json`; the assembly keeps its 384MiB memory cap, 128-PID limit, 32MiB
+shared buffers and all existing transaction/acquisition deadlines. This aligns
+the test profile without changing production pool settings or claiming a leak.
+
+Post-measurement readback checks the complete command owner's stored response
+against the exact public browser receipt, including its recombination annotation,
+and binds its original card/attempt/queue payload. The Learning attempt receipt
+is compared exactly after removing only that known after-save annotation; its
+prepared continuation and every other field remain required. This follows the
+existing adapter's two receipt contracts rather than discarding unknown fields.
+
+Live synthetic provider input updates are published by writing a complete sibling
+file and atomically replacing `provider.json`, using the same boundary as the
+existing ready markers. Readers observe one complete snapshot; parse failures
+remain real failures rather than being caught or retried. Initial prelaunch
+creation and all provider/owner/receipt assertions remain unchanged.
+
+Live provider snapshots are now published inside each existing role's Linux
+`/tmp` through verified Docker input, atomic replacement and checksum readback.
+Assembly roles bootstrap once from their immutable launch environment; subsequent
+helper reads use that guest snapshot. The separate bounded collect-only fixture
+may bootstrap once from its prelaunch host file. The host provider copy is
+evidence, not live consumer authority. Paused roles may defer only during the
+held case while both recovery release markers are absent; the next default
+publication must update every running recovery role before either marker is
+released. The existing child crash preserves `/tmp`; selected flows never restart
+a stopped collector. No service, volume, credentials or resource cap is added.
+
+The settled-source reconciliation replay advances its controlled schedule from
+the actual last completed reconciliation checkpoint, matching production's
+completion-based interval. New semantic sources still reset to actual UTC before
+qualification; no original command or receipt timestamp is rewritten.
+
+The three full-scope controlled collection calls at transitions4/14/24 execute
+in the existing optional background role, verified running and unpaused with
+the assembly's explicit 512 MiB allocation. This fixture allocation transfers
+64 MiB from Redis/web after their observed peaks of 19.77/19.46 MiB; it changes
+no production budget and remains subject to actual all-role OOM checks.
+They use the same collect-only owner/HTTP fixture and writer credentials, leaving
+the384MiB foreground role's two command workers and beat reserved for Study.
+Small held-case source calls remain in foreground while optional roles are
+paused. No allocation, service, lifecycle, admission policy or deadline changes.
+
+After transition7 verifies the original collector's actual finished marker,
+source/jobs and production-admission outcome, later publications may treat that
+same collector as terminal only with exit0 and no OOM. API/foreground/background
+still require the exact fresh snapshot digest. Before that verified completion,
+all four roles remain required; no idle substitute or collector restart is used.

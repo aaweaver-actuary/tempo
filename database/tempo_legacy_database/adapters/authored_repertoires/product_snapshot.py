@@ -77,16 +77,19 @@ WITH limits AS (
 )
 """
 
-STATEMENT = _SOURCE_CTES + """SELECT jsonb_build_object(
+# These are wire documents, not stored JSONB. Text JSON aggregation avoids
+# retaining a binary value tree for every row and rebuilding it at each outer
+# level; psycopg still returns the same decoded mapping. Keep every source row.
+STATEMENT = _SOURCE_CTES + """SELECT json_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
-    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
-        'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
-        'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
-        'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM cards c),'[]'::jsonb),
-        'memberships',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY card_id) FROM memberships m),'[]'::jsonb),
-        'graphs',coalesce((SELECT jsonb_agg(to_jsonb(g) ORDER BY line_id,decision_index) FROM graphs g),'[]'::jsonb)
+    'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
+        'repertoire',(SELECT row_to_json(r) FROM repertoire r),
+        'lines',coalesce((SELECT json_agg(row_to_json(s) ORDER BY id) FROM lines s),'[]'::json),
+        'cards',coalesce((SELECT json_agg(row_to_json(c) ORDER BY id) FROM cards c),'[]'::json),
+        'memberships',coalesce((SELECT json_agg(row_to_json(m) ORDER BY card_id) FROM memberships m),'[]'::json),
+        'graphs',coalesce((SELECT json_agg(row_to_json(g) ORDER BY line_id,decision_index) FROM graphs g),'[]'::json)
     ) ELSE NULL END
 ) snapshot FROM allowed
 """
@@ -155,13 +158,13 @@ def current_published_snapshot(database, repertoire_id: str):
 _HEADER_FIELDS = ('id', 'scope_source_revision', 'canonical_prefix_revision',
                   'canonical_prefix_moves_json', 'graph_generation', 'graph_state', 'workspace_id')
 
-_AUTHORED_STATEMENT = _SOURCE_CTES + """SELECT jsonb_build_object(
+_AUTHORED_STATEMENT = _SOURCE_CTES + """SELECT json_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
-    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
-        'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
-        'lines',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM lines s),'[]'::jsonb),
+    'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
+        'repertoire',(SELECT row_to_json(r) FROM repertoire r),
+        'lines',coalesce((SELECT json_agg(row_to_json(s) ORDER BY id) FROM lines s),'[]'::json),
         'card_count',card_count,'membership_count',membership_count,'graph_count',graph_count
     ) ELSE NULL END
 ) snapshot FROM allowed
@@ -183,17 +186,17 @@ _CANDIDATE_STATEMENT = _SOURCE_CTES + """, requested AS (
         (SELECT count(*) FROM requested wanted JOIN lines source ON source.id=wanted.line_id) requested_line_count
     FROM candidate_graphs
 )
-SELECT jsonb_build_object(
+SELECT json_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
     'candidate_graph_count',candidate_graph_count,'requested_line_count',requested_line_count,
-    'facts',CASE WHEN bounded AND repertoire_count=1 THEN jsonb_build_object(
-        'repertoire',(SELECT to_jsonb(r) FROM repertoire r),
-        'route_ids',coalesce((SELECT jsonb_agg(line_id ORDER BY line_id) FROM requested),'[]'::jsonb),
-        'cards',coalesce((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM candidate_cards c),'[]'::jsonb),
-        'memberships',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY card_id) FROM candidate_memberships m),'[]'::jsonb),
-        'graphs',coalesce((SELECT jsonb_agg(to_jsonb(g) ORDER BY line_id,decision_index) FROM candidate_graphs g),'[]'::jsonb)
+    'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
+        'repertoire',(SELECT row_to_json(r) FROM repertoire r),
+        'route_ids',coalesce((SELECT json_agg(line_id ORDER BY line_id) FROM requested),'[]'::json),
+        'cards',coalesce((SELECT json_agg(row_to_json(c) ORDER BY id) FROM candidate_cards c),'[]'::json),
+        'memberships',coalesce((SELECT json_agg(row_to_json(m) ORDER BY card_id) FROM candidate_memberships m),'[]'::json),
+        'graphs',coalesce((SELECT json_agg(row_to_json(g) ORDER BY line_id,decision_index) FROM candidate_graphs g),'[]'::json)
     ) ELSE NULL END
 ) snapshot FROM allowed CROSS JOIN candidate_budget
 """

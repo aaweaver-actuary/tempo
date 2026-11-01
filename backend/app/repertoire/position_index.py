@@ -12,6 +12,7 @@ from typing import Mapping
 
 import chess
 from tempo_evidence_math import opening_position_key
+from tempo_chess_core import canonical_fen_key
 
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot
 
@@ -136,13 +137,32 @@ class PositionIndex:
         return item
 
 
-def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
-    """Copy the public T01 snapshot into a deeply immutable exact-position index."""
+def _validated_snapshot(snapshot: RepertoireSnapshot) -> RepertoireSnapshot:
     if (len(snapshot.membership.routes) > 10000
             or sum(len(route.moves) for route in snapshot.membership.routes) > 100000):
         raise ValueError("snapshot_index_exceeds_bound")
     # Revalidate even frozen models: legacy membership contains mutable lists.
-    source = RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
+    return RepertoireSnapshot.model_validate(snapshot.model_dump(mode="python"))
+
+
+def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
+    """Copy the public T01 snapshot into a deeply immutable exact-position index."""
+    return _build_validated_index(_validated_snapshot(snapshot))
+
+
+def build_reentry_index(snapshot: RepertoireSnapshot) -> PositionIndex | None:
+    """Validate full source bounds, indexing only explicitly authorized reentry.
+
+    Without an authored anchor, PositionIndex.reentry_candidate cannot grant
+    reentry. Ordinary comparison still consumes the complete source snapshot.
+    """
+    source = _validated_snapshot(snapshot)
+    if not any(route.reentries for route in source.membership.routes):
+        return None
+    return _build_validated_index(source)
+
+
+def _build_validated_index(source: RepertoireSnapshot) -> PositionIndex:
     membership = source.membership
     boundaries = {item.route_id: item for item in source.boundaries}
     mappings = defaultdict(list)
@@ -178,7 +198,14 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
         if len(moves) > 1000:
             diagnose("route_exceeds_bound")
             continue
-        frames = [raw["starting_fen"]]
+        # Capture immutable facts from this validated replay board. Re-parsing
+        # each occurrence would repeat validation and canonicalization several
+        # times per authored ply. Full FEN retains the supplied/raw EP state;
+        # opening identity retains only legally capturable EP, as in the public
+        # opening_position_key function.
+        def frame(full_fen):
+            return full_fen, board.turn, canonical_fen_key(board.fen(en_passant="legal"))
+        frames = [frame(raw["starting_fen"])]
         valid_moves = []
         for ply, uci in enumerate(moves):
             try:
@@ -190,7 +217,7 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
                 diagnose("illegal_move", ply)
                 break
             valid_moves.append(uci)
-            frames.append(board.fen(en_passant="fen"))
+            frames.append(frame(board.fen(en_passant="fen")))
         complete = boundaries[route_id].deliberate and len(valid_moves) == len(moves)
         if not boundaries[route_id].deliberate:
             diagnose("incomplete_route", len(valid_moves))
@@ -202,11 +229,10 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
                 authorities[authority.ply].append(authority.authority_id)
         occurrences = []
         legal_moves = tuple(valid_moves)
-        for ply, fen in enumerate(frames):
-            current = chess.Board(fen)
-            own_turn = current.turn == (raw["learner_color"] == "white")
+        for ply, (fen, turn, canonical_position) in enumerate(frames):
+            own_turn = turn == (raw["learner_color"] == "white")
             next_move = valid_moves[ply] if ply < len(valid_moves) else None
-            raw_bindings = [item for item in mappings[repertoire_id, opening_position_key(fen), next_move]
+            raw_bindings = [item for item in mappings[repertoire_id, canonical_position, next_move]
                             if item.route_id is None or (item.route_id == route_id and item.route_ply == ply)]
             bindings = tuple({item.model_dump_json(): item for item in raw_bindings}.values())
             if len(bindings) > 1:
@@ -215,7 +241,7 @@ def build_index(snapshot: RepertoireSnapshot) -> PositionIndex:
                 diagnose("binding_on_opponent_turn", ply)
                 bindings = ()
             occurrence = RouteOccurrence(
-                position_key(repertoire_id, fen, variant), route_id, route.policy_id,
+                PositionKey(repertoire_id, variant, canonical_position), route_id, route.policy_id,
                 source_revision, raw["learner_color"], ply,
                 fen, raw["starting_fen"], legal_moves,
                 next_move, own_turn, complete and ply == len(valid_moves),

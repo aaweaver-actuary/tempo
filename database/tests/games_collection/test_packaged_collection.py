@@ -376,7 +376,12 @@ def feedback_case(feedback_postgres):
 
 @pytest.mark.parametrize("introduced", [False, True], ids=["unseen", "introduced"])
 def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(feedback_case, tmp_path, introduced,
-                                                                          recovery_mode=None):
+                                                                          recovery_mode=None, *,
+                                                                          forbid_legacy_capture=False,
+                                                                          changed_target_rollback=False,
+                                                                          changed_configuration_rollback=False,
+                                                                          lose_owner_ack=False,
+                                                                          games_absent_after_acceptance=False):
     """One real provider → role-separated command → Study journey, no source overlay."""
     from types import SimpleNamespace
     from app.games.feedback.ports import Delivery
@@ -386,6 +391,10 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     candidate = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     web_image = _candidate_web_image(candidate)
     case = feedback_case
+    assert not any((changed_target_rollback,changed_configuration_rollback,lose_owner_ack,
+        games_absent_after_acceptance)) or forbid_legacy_capture
+    assert not (changed_target_rollback and changed_configuration_rollback), 'one_controlled_fence_fault_per_journey'
+    assert not forbid_legacy_capture or recovery_mode is None, 'r2_functional_guard_is_separate_from_thirty_transition_run'
     with case.transaction() as database:
         info = database.raw.info
         admin_dsn = make_conninfo(info.dsn, password=info.password)
@@ -431,6 +440,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         else:
             database.execute_native("""UPDATE cards SET introduced_at=NULL,first_correct_at=NULL,fsrs_card_json=NULL,
                 state='locked',interval_days=0,stability=0 WHERE id=%s""", (target_id,))
+        original_target_revision = database.execute_native('SELECT revision FROM cards WHERE id=%s',(target_id,)).fetchone()[0]
         assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0] == 0
         assert database.execute_native('SELECT COUNT(*) FROM daily_queue').fetchone()[0] == 0
     roles_spec = importlib.util.spec_from_file_location('feedback_fixture_roles',ROOT/'database/tooling/provision_postgres_roles.py')
@@ -441,6 +451,16 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     writer_dsn = make_conninfo(host='postgres',port=5432,dbname=database_name,user='tempo_writer',password=writer_password)
     directory = tmp_path/'feedback-qualification'; directory.mkdir()
     shutil.copyfile(ROOT/'backend/tests/fixtures/product_collection_packaged.py',directory/'entry.py')
+    r2_marker = directory/'r2-current-feedback.json'
+    from tempo_game_evidence_contracts.legacy import decision_identity
+    expected_r2_key = dict(workspace_id='legacy',provider='lichess',game_id='lichess:'+source_id,
+        decision_id=decision_identity(target_id,0,[]),occurrence_ply=1)
+    r2_configuration = dict(schema_version=1,target_id=target_id,target_revision=original_target_revision,
+        expected_key=expected_r2_key,
+        inject_target_change=changed_target_rollback,inject_configuration_change=changed_configuration_rollback,
+        lose_owner_ack=lose_owner_ack,hold_accepted_debt=games_absent_after_acceptance)
+    if forbid_legacy_capture:
+        r2_marker.write_text(json.dumps(r2_configuration))
     now = datetime.now(timezone.utc)
     from datetime import timedelta
     pgn = '[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n[SetUp "1"]\n[FEN "'+capture['game']['start_fen']+'"]\n\n1. d4 1-0\n'
@@ -457,7 +477,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     assert nginx.count('proxy_pass http://api:8000;')==1
     (directory/'nginx.conf').write_text(nginx)
     resource_configuration = json.loads((ROOT/'config/resource-budgets.json').read_text())
-    if recovery_mode is None:
+    if recovery_mode is None and not forbid_legacy_capture:
         budgets = resource_configuration['developmentServices']
     else:
         from test_product_game_lapse_postgres import study_recovery_assembly_allocations
@@ -495,7 +515,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         secret = tmp_path/(role+'.env')
         common = ['TEMPO_TEST_INSTANCE=disposable','TZ=UTC','TEMPO_COORDINATOR_MODE=external',
             'TEMPO_PRODUCT_GAME_SYNC_ENABLED=1','TEMPO_REDIS_URL=redis://redis:6379/0',
-            'PYTHONDONTWRITEBYTECODE=1','TEMPO_DATABASE_READ_URL='+(reader_dsn if role=='api' else writer_dsn)]
+            'PYTHONDONTWRITEBYTECODE=1','TEMPO_QUALIFICATION_PROVIDER_INITIAL='+json.dumps(inputs),'TEMPO_DATABASE_READ_URL='+(reader_dsn if role=='api' else writer_dsn)]
         if role != 'api':
             common.append('TEMPO_DATABASE_WRITE_URL='+writer_dsn)
         secret.write_text('\n'.join(common)); secret.chmod(0o600)
@@ -521,7 +541,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         inspected = json.loads(docker('inspect',identifier).stdout)[0]
         assert inspected['Image'] == selected_image and inspected['State']['Running']
         assert inspected['Config']['Labels']['tempo.owner'] == owner
-        if recovery_mode is not None:
+        if recovery_mode is not None or forbid_legacy_capture:
             labels = inspected['Config']['Labels']
             assert labels['tempo.resource-class'] == 'development'
             assert labels['tempo.resource-owner'] == os.environ['TEMPO_DEVELOPMENT_BUDGET_TOKEN']
@@ -579,6 +599,8 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
 
     def queue():
         result = api('GET','/api/queue/window?limit=2')
+        report.setdefault('first_protected_queue_response', result)
+        report['last_protected_queue_response'] = result
         if result['status']==503:
             detail = result['body'].get('detail')
             assert (isinstance(detail,dict) and detail.get('code')=='study_feedback_preparation_pending'
@@ -587,11 +609,60 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert result['status']==200, 'packaged_feedback_queue_rejected'
         return result['body'] if result['body'].get('cards') else None
 
-    def provider_ready(value):
-        path = directory/'provider-ready.json'
+    def publish_json(path, value):
         temporary = path.with_suffix('.next')
         temporary.write_text(json.dumps(value))
         temporary.replace(path)
+
+    def provider_ready(value):
+        publish_json(directory/'provider-ready.json', value)
+
+    def publish_provider(value, *, allow_paused=False, allow_finished_collector=False):
+        # Host copy is evidence only. Every live consumer reads its Linux tmpfs.
+        publish_json(directory/'provider.json', value)
+        payload = json.dumps(value)
+        expected = hashlib.sha256(payload.encode()).hexdigest()
+        observed = {}
+        code = """import hashlib,json,sys
+from pathlib import Path
+value=sys.stdin.read();json.loads(value)
+path=Path('/tmp/tempo-qualification-provider.json')
+temporary=path.with_suffix('.next');temporary.write_text(value);temporary.replace(path)
+print(hashlib.sha256(path.read_bytes()).hexdigest())
+"""
+        for role in ('api','foreground-worker','background-worker','game-feedback-worker'):
+            if role not in containers:
+                continue
+            resource = containers[role]
+            actual = json.loads(docker('inspect',resource['id']).stdout)[0]
+            assert actual['Id']==resource['id'] and actual['Config']['Labels']['tempo.owner']==owner
+            if actual['State']['Paused']:
+                assert allow_paused and recovery_mode is not None
+                assert not (directory/'recovery-configuration-ready').exists()
+                assert not (directory/'recovery-producer-start').exists()
+                assert role in {'background-worker','game-feedback-worker'}, 'provider_reader_paused_'+role
+                observed[role] = 'paused; next scope publication precedes its existing release barrier'
+                continue
+            if not actual['State']['Running']:
+                assert role=='game-feedback-worker', 'provider_reader_stopped_'+role
+                if recovery_mode is not None:
+                    assert allow_finished_collector
+                    assert actual['State']['ExitCode']==0 and not actual['State']['OOMKilled']
+                    observed[role] = dict(completed=True,container_id=actual['Id'],exit_code=0,oom_killed=False)
+                else:
+                    observed[role] = 'already stopped; selected flow never restarts this collector'
+                continue
+            digest = execute(role,'python','-B','-c',code,input=payload).strip()
+            assert digest==expected, 'guest_provider_snapshot_mismatch_'+role
+            observed[role] = digest
+        if recovery_mode is not None and not allow_paused:
+            assert all(observed.get(role)==expected for role in
+                ('api','foreground-worker','background-worker')), 'recovery_provider_not_published_to_active_roles'
+            collector = observed.get('game-feedback-worker')
+            assert collector==expected or (allow_finished_collector and isinstance(collector,dict)
+                and collector.get('completed') is True), 'recovery_collector_snapshot_not_published'
+        report.setdefault('provider_input_publications',[]).append(dict(sha256=expected,roles=observed,
+            transport='stdin to existing role Linux tmpfs; atomic same-directory replace'))
 
     def browser_ready(expected_stage):
         path = directory/'browser-ready.json'
@@ -616,7 +687,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         docker('network','connect','--alias','postgres',network_id,pg['Id'])
         postgres_attached=True
         launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
-        if recovery_mode is None:
+        if recovery_mode is None and not forbid_legacy_capture:
             launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
                 '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
             launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
@@ -627,6 +698,11 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         launch('api',['uvicorn','app.main:app','--host','0.0.0.0','--port','8000'])
         launch('web',['nginx','-g','daemon off;'],kind='web')
         entry('foreground-worker','feedback-configure')
+        original_configuration = None
+        if changed_target_rollback or changed_configuration_rollback:
+            with case.transaction() as database:
+                original_configuration = database.execute_native("""SELECT revision,payload FROM product_feedback_configuration
+                    WHERE workspace_id='legacy' AND provider='lichess'""").fetchone()
         wait_for(health_ready,'packaged_feedback_api_not_ready')
         stage = 'genuine_protected_head'
         protected_queue = wait_for(queue,'packaged_feedback_protected_head_pending')
@@ -706,7 +782,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
         assert recorded['applied'] and recorded['mode']=='feedback'
         inputs['now'] = datetime.now(timezone.utc).timestamp()
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        publish_provider(inputs)
         (directory/'feedback-start').write_text('actual_mode_verified\n')
         stage = 'provider_first_departure'
         def bounded(value):
@@ -778,11 +854,143 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 return None
             observed = Delivery.model_validate_json(json.dumps(rows[0][1]))
             return rows[0] if observed.qualification_status=='ready' and observed.determined_at else None
+        rejected_original = None
+        if changed_target_rollback or changed_configuration_rollback:
+            stage = 'controlled_configuration_rollback' if changed_configuration_rollback else 'controlled_current_target_rollback'
+            target_token = hashlib.sha256(target_id.encode()).hexdigest()[:16]
+            event_name = 'r2_configuration_fence_rejected' if changed_configuration_rollback else 'r2_current_target_fence_rejected'
+            def target_rollback():
+                refusal = None
+                for role in ('game-feedback-worker','foreground-worker','background-worker'):
+                    logs = docker('logs',containers[role]['id'],check=False)
+                    text = logs.stdout+'\n'+logs.stderr
+                    assert 'r2_legacy_capture_forbidden_call' not in text, 'r2_current_feedback_used_legacy_capture'
+                    for line in text.splitlines():
+                        offset = line.find('{"'+event_name+'"')
+                        if offset >= 0:
+                            try:
+                                event = json.loads(line[offset:])
+                            except ValueError:
+                                continue
+                            if event.get(event_name) is True and (changed_configuration_rollback or event.get('target_token') == target_token):
+                                refusal = dict(role=role,**event)
+                if refusal is None:
+                    return None
+                with case.transaction() as database:
+                    rows = database.execute_native("""SELECT delivery.payload FROM product_feedback_deliveries delivery
+                        JOIN product_feedback_sources source USING(source_key)
+                        WHERE source.payload->'original'->>'source_game_id'=%s LIMIT 2""",(source_id,)).fetchall()
+                    if len(rows) != 1:
+                        return None
+                    actual = Delivery.model_validate_json(json.dumps(rows[0][0]))
+                    if actual.qualification_status != 'held':
+                        return None  # Wait for the real owner rollback and durable hold.
+                    assert actual.state == 'pending' and actual.receipt is None, 'r2_failed_target_was_acknowledged'
+                    assert database.execute_native('SELECT revision FROM cards WHERE id=%s',(target_id,)).fetchone()[0] == original_target_revision, \
+                        'r2_injected_target_change_did_not_rollback'
+                    actual_configuration = database.execute_native("""SELECT revision,payload FROM product_feedback_configuration
+                        WHERE workspace_id='legacy' AND provider='lichess'""").fetchone()
+                    assert tuple(actual_configuration) == tuple(original_configuration), 'r2_configuration_or_complete_selection_did_not_rollback'
+                    assert database.execute_native('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s',(target_id,)).fetchone()[0] == 0, \
+                        'r2_failed_target_left_an_effect'
+                    assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0] == 0, \
+                        'r2_failed_target_left_a_review'
+                return dict(refusal=refusal,operation_id=actual.operation_id,
+                    command=actual.command.model_dump(mode='json'),determined_at=actual.determined_at)
+            rejected_original = wait_for(target_rollback,'r2_current_target_rollback_not_demonstrated')
+            report[stage] = dict(refusal=rejected_original['refusal'],
+                target_revision_unchanged=True,no_effect_or_ack=True,
+                complete_configuration_unchanged=True,
+                classification='controlled in-transaction owner-fact mutation immediately before actual final fence; not external concurrency')
+            r2_configuration['inject_target_change'] = False
+            r2_configuration['inject_configuration_change'] = False
+            temporary = r2_marker.with_suffix('.tmp')
+            temporary.write_text(json.dumps(r2_configuration)); temporary.replace(r2_marker)
+            stage = 'provider_first_departure'
+        lost_ack_original = None
+        if lose_owner_ack:
+            stage = 'real_owner_commit_before_lost_ack'
+            def actual_lost_ack():
+                row = actual_delivery()
+                if row is None:
+                    return None
+                actual = Delivery.model_validate_json(json.dumps(row[1]))
+                if actual.error != 'owner_acknowledgment_uncertain':
+                    return None
+                assert actual.state == 'pending' and actual.receipt is None and actual.attempts>=1
+                observed = entry('api','feedback-state',actual.operation_id)
+                owner_receipt = observed['receipt']
+                assert owner_receipt is not None and owner_receipt['status']=='pending'
+                assert owner_receipt['key']==actual.command.model_dump(mode='json')['key']
+                logs = docker('logs',containers['game-feedback-worker']['id'],check=False)
+                events = []
+                for line in (logs.stdout+'\n'+logs.stderr).splitlines():
+                    offset = line.find('{"r2_owner_ack_lost_after_commit"')
+                    if offset >= 0:
+                        events.append(json.loads(line[offset:]))
+                assert len(events)==1 and events[0]['operation_id']==actual.operation_id
+                assert events[0]['owner_receipt_id']==owner_receipt['owner_receipt_id']
+                with case.transaction() as database:
+                    assert database.execute_native('SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s',(target_id,)).fetchone()[0]==1
+                    assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(target_id,)).fetchone()[0]==0
+                return dict(operation_id=actual.operation_id,command=actual.command.model_dump(mode='json'),
+                    determined_at=actual.determined_at,owner_receipt_id=owner_receipt['owner_receipt_id'],
+                    uncertain_attempts=actual.attempts)
+            lost_ack_original = wait_for(actual_lost_ack,'r2_real_owner_commit_lost_ack_not_observed')
+            report['owner_commit_before_ack_loss'] = dict(operation_id=lost_ack_original['operation_id'],
+                genuine_pending_owner_receipt=True,uncertain_original_outbox=True,one_effect_no_review=True,
+                uncertain_attempts=lost_ack_original['uncertain_attempts'])
+            (directory/'r2-release-lost-ack').write_text('observed_actual_committed_owner_and_uncertain_outbox\n')
         delivery = wait_for(actual_delivery,'packaged_feedback_original_delivery_missing')
         original_delivery = Delivery.model_validate_json(json.dumps(delivery[1]))
         assert original_delivery.command_kind=='encounter'
         operation_id, original = delivery[0], original_delivery.command.model_dump(mode='json')
         assert original_delivery.operation_id==operation_id and delivery[1]['encounter']==original
+        if forbid_legacy_capture:
+            assert original['key']==expected_r2_key, 'r2_controlled_fixture_key_differs_from_actual_owner_command'
+        if rejected_original is not None:
+            assert operation_id == rejected_original['operation_id'] and original == rejected_original['command']
+            assert original_delivery.determined_at == rejected_original['determined_at'], 'r2_target_retry_restarted_clock'
+        if lost_ack_original is not None:
+            assert (operation_id,original,original_delivery.determined_at)==(lost_ack_original['operation_id'],
+                lost_ack_original['command'],lost_ack_original['determined_at']), 'r2_ack_retry_changed_original_identity'
+            def recovered_ack():
+                observed = entry('api','feedback-state',operation_id)
+                if observed['delivery_state'] != 'acknowledged':
+                    return None
+                current_delivery = Delivery.model_validate_json(json.dumps(actual_delivery()[1]))
+                assert current_delivery.attempts==lost_ack_original['uncertain_attempts']+1
+                assert current_delivery.error is None and current_delivery.receipt.owner_receipt_id==lost_ack_original['owner_receipt_id']
+                assert observed['receipt']['owner_receipt_id']==lost_ack_original['owner_receipt_id']
+                assert observed['command']==original and observed['receipt']['status']=='pending'
+                return observed
+            wait_for(recovered_ack,'r2_original_ack_not_recovered_from_real_owner_receipt')
+            report['lost_ack_same_key_recovered'] = True
+        if games_absent_after_acceptance:
+            stage = 'accepted_debt_without_games'
+            accepted = entry('api','feedback-state',operation_id)
+            assert accepted['delivery_state']=='acknowledged'
+            assert accepted['receipt']['status']=='pending' and accepted['receipt']['admission_status']=='pending'
+            assert accepted['receipt']['progress']['schedule_applied_at'] is None
+            assert accepted['receipt']['progress']['introduction_applied_at'] is None
+            owned = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
+            assert owned['Config']['Labels']['tempo.owner']==owner and owned['Config']['Labels']['tempo.disposable']=='true'
+            docker('stop','--time','10',owned['Id'])
+            assert not json.loads(docker('inspect',owned['Id']).stdout)[0]['State']['Running']
+            actual_mode = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'status','--workspace','legacy'))['intent']
+            assert actual_mode['generation']==1 and actual_mode['phase']=='active'
+            inactive_mode = actual_mode | dict(generation=2,phase='inactive',runtimes=[],verified_at=None,
+                operation_id='r2-accepted-debt-inactive:'+uuid.uuid4().hex,updated_at=datetime.now(timezone.utc).isoformat())
+            inactive = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'record','--workspace','legacy','--expected-generation','1','--intent-json',json.dumps(inactive_mode),'--apply'))
+            assert inactive['applied'] and inactive['generation']==2 and inactive['phase']=='inactive'
+            r2_configuration['hold_accepted_debt'] = False
+            temporary = r2_marker.with_suffix('.tmp')
+            temporary.write_text(json.dumps(r2_configuration)); temporary.replace(r2_marker)
+            report['accepted_debt_without_games'] = dict(real_pending_owner_receipt=True,
+                exact_collector_stopped=True,supported_inactive_generation=2,
+                owner_receipt_id=accepted['receipt']['owner_receipt_id'])
         assert original['observation']=='missed' and original['played_uci']=='d2d4' and original['expected_uci']=='e2e4'
         with case.transaction() as database:
             # One statement captures the task generation and event boundary
@@ -827,6 +1035,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert protected_review['response']['persisted'] and protected_review['replay']==protected_review['response']
         before_review = entry('api','feedback-state',operation_id)
         receipt = before_review['receipt']
+        if games_absent_after_acceptance:
+            assert receipt['owner_receipt_id']==report['accepted_debt_without_games']['owner_receipt_id']
+            assert not json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]['State']['Running']
+            inactive_status = json.loads(execute('foreground-worker','python','-m','app.product_composition.game_feedback_mode',
+                'status','--workspace','legacy'))
+            assert inactive_status['intent']['phase']=='inactive' and inactive_status['intent']['generation']==2
+            report['accepted_debt_without_games']['same_owner_receipt_reached_real_issuance'] = True
         assert receipt['key']==original['key'] and receipt['disposition']==('introduced_again' if introduced else 'first_introduction')
         assert before_review['qualification']['selection']['status']=='own_actionable'
         assert before_review['qualification']['selection']['ply']==original['key']['occurrence_ply']==1
@@ -1034,6 +1249,9 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         settled = entry('api','feedback-state',operation_id)
         assert settled['command']==original and settled['receipt']['key']==original['key']
         assert settled['receipt']['status']=='settled'
+        if games_absent_after_acceptance:
+            assert settled['receipt']['owner_receipt_id']==report['accepted_debt_without_games']['owner_receipt_id']
+            report['accepted_debt_without_games']['same_owner_receipt_genuinely_settled'] = True
         assert settled['receipt']['progress']['settlement']['review_id']==clean['response']['review_id']
         with case.transaction() as database:
             from tempo_legacy_database.adapters.study.issuance import attempt_issuance
@@ -1051,12 +1269,41 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         # Revisit retained provider history through the existing collection-only
         # worker. It cannot dispatch, and repeated capture must preserve the same
         # original command, receipt, application and genuine settlement.
+        if forbid_legacy_capture:
+            # The controlled retry uses the actual continuous producer. Stop it
+            # before the existing collection-only replay, never run two collectors.
+            owned_collector = json.loads(docker('inspect',containers['game-feedback-worker']['id']).stdout)[0]
+            assert owned_collector['Config']['Labels']['tempo.owner'] == owner
+            assert owned_collector['Config']['Labels']['tempo.disposable'] == 'true'
+            docker('stop','--time','10',owned_collector['Id'])
+            stopped_collector = json.loads(docker('inspect',owned_collector['Id']).stdout)[0]
+            assert stopped_collector['State']['Running'] is False
+            report['r2_collector_stopped_before_source_replay'] = True
+            guards = {}
+            for role in ('game-feedback-worker','foreground-worker','background-worker'):
+                logs = docker('logs',containers[role]['id'],check=False)
+                text = logs.stdout+'\n'+logs.stderr
+                assert 'r2_legacy_capture_forbidden_call' not in text, 'r2_current_feedback_used_legacy_capture'
+                assert '"r2_current_feedback_guards_installed": true' in text, 'r2_capture_guards_not_installed'
+                guards[role] = dict(installed_before_consumer_imports=True,
+                    actual_child_observed='"r2_current_feedback_child_guard": true' in text,
+                    actual_producer_observed='"r2_current_feedback_producer_guard": true' in text)
+            assert guards['game-feedback-worker']['actual_producer_observed']
+            assert guards['foreground-worker']['actual_child_observed']
+            report['r2_current_feedback_tripwires'] = guards
         stage = 'same_source_reconciliation_replay'
         with case.transaction() as database:
             captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
-            reconciliation_before = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
-        inputs['now'] += 601
-        (directory/'provider.json').write_text(json.dumps(inputs))
+            reconciliation = database.execute_native("""SELECT COUNT(*),
+                MAX((payload->>'last_checkpoint_at')::timestamptz) FROM product_feedback_jobs
+                WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'""").fetchone()
+            reconciliation_before, reconciliation_completed_at = reconciliation
+        assert reconciliation_completed_at is not None
+        # Production spaces repeat scans from actual completion, not enqueue or
+        # the older host snapshot. This advances only the settled-source replay.
+        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp(),
+            reconciliation_completed_at.timestamp()) + 601
+        publish_provider(inputs)
         replay_run = entry('foreground-worker','worker')
         assert replay_run['durable_checkpoints_retained'] and replay_run['bounded_units']>1
         report['source_replay_run'] = replay_run
@@ -1078,12 +1325,38 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             from study_recovery_acceptance import run_recovery
             run_recovery(case, root=ROOT, directory=directory, report=report, inputs=inputs,
                 entry=entry, api=api, execute=execute, docker=docker, containers=containers,
+                publish_provider=publish_provider,
                 original_repertoire=repertoire, web_url=web_url, study_only=recovery_mode,
                 mode_intent=mode,
                 custom_target=dict(card_id=target_id, repertoire_id=repertoire, occurrence_ply=1,
                     prefix=[], expected='e2e4', wrong='d2d4', starting_fen=capture['game']['start_fen']))
     except BaseException as error:
         report['first_failure'] = dict(stage=stage,error=type(error).__name__)
+        if stage == 'genuine_protected_head':
+            try:
+                # Read only this labelled synthetic fixture before teardown;
+                # diagnostics never repair eligibility or manufacture a head.
+                with case.transaction() as database:
+                    database.execute_native("SET LOCAL statement_timeout='100ms'")
+                    observed = database.execute_native("""SELECT jsonb_build_object(
+                        'cards',(SELECT jsonb_agg(item) FROM (
+                            SELECT id,state,due_date,introduced_at,first_correct_at,archived,
+                                pending_validation,superseded_by,content_type
+                            FROM cards ORDER BY id LIMIT 20) item),
+                        'queue',(SELECT jsonb_agg(item) FROM (
+                            SELECT * FROM daily_queue ORDER BY id LIMIT 20) item),
+                        'projection',(SELECT jsonb_agg(item) FROM (
+                            SELECT * FROM queue_projections ORDER BY queue_date LIMIT 5) item),
+                        'tasks',(SELECT jsonb_agg(item) FROM (
+                            SELECT id,kind,generation,state,phase,payload_json,attempt_count,
+                                next_attempt_at,last_error FROM background_tasks
+                            WHERE kind='daily_queue' ORDER BY id LIMIT 5) item))""").fetchone()[0]
+                diagnostic = json.dumps(observed,default=str)
+                for private in (admin_dsn,reader_dsn,writer_dsn,reader_password,writer_password):
+                    diagnostic = diagnostic.replace(private,'<redacted>')
+                report['protected_queue_state_at_failure'] = json.loads(diagnostic)
+            except Exception as diagnostic_error:
+                report['protected_queue_observation_error'] = type(diagnostic_error).__name__
         if stage in ('natural_refresh_before_explicit_request','browser_requests_fresh_refresh',
                 'actual_unseen_refresh_before_browser_completion'):
             try:
@@ -1135,7 +1408,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 inspected = json.loads(found.stdout)[0]
                 assert inspected['Config']['Labels']['tempo.owner']==owner
                 assert inspected['Config']['Labels']['tempo.disposable']=='true' and inspected['Image']==resource['image']
-                if recovery_mode is not None:
+                if recovery_mode is not None or forbid_legacy_capture:
                     from study_recovery_acceptance import memory_observation
                     report.setdefault('runtime_memory_before_cleanup', {})[role] = dict(
                         state={key: inspected['State'].get(key) for key in ('Running', 'ExitCode', 'OOMKilled', 'Error')},
@@ -1144,7 +1417,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
                 logs = docker('logs',resource['id'],check=False)
                 text = (logs.stdout+'\n'+logs.stderr).replace(reader_password,'<reader-secret>').replace(writer_password,'<writer-secret>')
                 report.setdefault('runtime_logs',{})[role]=text[-12000:]
-                if recovery_mode is not None:
+                if recovery_mode is not None or forbid_legacy_capture:
                     for private in (admin_dsn, reader_dsn, writer_dsn):
                         text = text.replace(private, '<redacted-connection>')
                     (evidence/('recovery-'+owner+'-'+role+'.log')).write_text(text)

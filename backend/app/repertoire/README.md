@@ -9,6 +9,11 @@ The public API in [__init__.py](__init__.py) is:
 - `build_index(RepertoireSnapshot) -> PositionIndex`: consumes the shared
   [T01 interface 0.2.0](../contracts/product_v02/repertoire.py), revalidates and
   copies it into immutable tuples, frozen records and read-only mappings.
+- `build_reentry_index(RepertoireSnapshot) -> PositionIndex | None`: applies the
+  same complete-source schema detachment and 10,000-route/100,000-ply bounds as
+  `build_index`. It allocates the same immutable index only when at least one
+  route supplies explicit reentry authority; otherwise it returns `None`.
+  Comparison still consumes every route and mapping in the complete snapshot.
 - `position_key(repertoire_id, full_fen, variant='standard') -> PositionKey` and
   `index.lookup(...) -> PositionNode | None`: board, turn, castling, legal EP and
   repertoire define exact identity. Clocks are ignored for lookup. Original
@@ -40,7 +45,7 @@ owner mapping. All competing applicable mappings remain in `occurrence.bindings`
 
 ```mermaid
 flowchart LR
-  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / lookup / reentry_candidate"]
+  Caller["Comparer / audit / join policy\nouter composition injects capabilities"] --> API["Repertoire public read API\nbuild_index / build_reentry_index / lookup"]
   DTO["Shared T01 RepertoireSnapshot\nimmutable copied input facts"] --> API
   API --> Math["Shared evidence-math\nopening_position_key"]
   Compose["Integration owner\nnot implemented here"] --> Adapter["CapturedSnapshotAdapter\nproject_capture"]
@@ -58,8 +63,12 @@ introduction evidence, schedules, queues and mutations. Optional consumers do
 not become a Study dependency.
 
 The existing donor conflict scanner remains untouched: it silently stops on an
-illegal tail and lacks route occurrences. This index reuses the public
-`tempo_evidence_math.opening_position_key` instead of copying that normalization.
+illegal tail and lacks route occurrences. Standalone position lookup reuses the public
+`tempo_evidence_math.opening_position_key`. Index construction captures immutable
+full FEN, turn and canonical legal-EP identity from each already-validated replay
+board, then reuses those facts for physical bindings and occurrences. It does not
+parse each authored position again. Supplied initial FEN, subsequent raw EP FEN,
+route-local provenance and illegal-prefix diagnostics remain intact.
 The existing read capture already supplies finite consistent route/card/graph
 facts, so no new SQL projection is added. Capture owns 64-row pages, the
 32,768-row / 520-page / 20-second / 32-MiB traversal budget and per-stream

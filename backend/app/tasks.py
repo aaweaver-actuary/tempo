@@ -96,14 +96,12 @@ from .services.threat_training import (
 )
 from .services.postgres_next_opponent import execute_profile_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
-from .services.postgres_game_derivation import execute_game_position_index_slice
 from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from .services.postgres_game_findings import execute_game_findings_slice
 from .services.postgres_game_misses import execute_game_miss_slice
 from .services.postgres_game_events import execute_game_event_slice
 from .services.postgres_game_features import execute_game_feature_slice
 from .services.postgres_game_priorities import execute_game_priority_handoff_slice
-from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.postgres_opening_segmentation import execute_segmentation_slice
@@ -114,6 +112,18 @@ from .services.postgres_coverage_seed import execute_coverage_seed_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
 from .services.postgres_coverage_recovery import recover_one_explorer_run
+
+
+def execute_game_position_index_slice(task):
+    """Retained optional task loads only when that exact delivery executes."""
+    from .services.postgres_game_derivation import execute_game_position_index_slice as execute
+    return execute(task)
+
+
+def execute_game_sync_window_slice(task):
+    """Provider clients are unnecessary for essential queue/receipt bootstrap."""
+    from .services.postgres_game_sync_windows import execute_game_sync_window_slice as execute
+    return execute(task)
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
