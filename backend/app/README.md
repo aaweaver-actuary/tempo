@@ -113,3 +113,23 @@ flowchart LR
   Executor["Existing gateway executor"] --> Maps
   Identity["B1 original-payload identity"] --> Executor
 ```
+
+### Proposed settings descriptor adoption (#705 B3a)
+
+`settings.update` now registers its typed settings request, identity
+preparation and transactional apply function with the existing descriptor
+registry. Its compatibility `update_settings` entry uses the same decoder and
+apply function. The gateway hashes the original payload before decoding; settings
+validation now occurs during existing preparation, with definitive errors still
+recorded through the existing receipt path. Settings writes, queue requests and
+post-commit policy/wake decisions retain their existing owners.
+
+```mermaid
+flowchart LR
+  original["Original settings payload"] --> digest["Original-payload receipt identity"]
+  original --> decode["Typed settings decode and identity preparation"]
+  digest --> gateway["Existing gateway receipt / transaction"]
+  decode --> gateway
+  gateway --> apply["Settings transactional apply"]
+  apply --> effects["Existing settings, provider and queue effects"]
+```
