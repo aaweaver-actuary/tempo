@@ -144,6 +144,8 @@ def main():
     parser.add_argument('--max-seconds', type=float, default=1200)
     parser.add_argument('--max-slices', type=int, default=20000)
     args = parser.parse_args()
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if args.mode == QUEUED_REBUILD_MODE:
         return selected_rebuild_main(args)
     output = Path(args.output)
