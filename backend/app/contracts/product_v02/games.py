@@ -10,6 +10,12 @@ from .repertoire import DecisionPresentation, IntroductionGameScope
 TimePrecision = Literal["unknown", "day", "hour", "minute", "second", "millisecond"]
 
 
+class ImportedFeedbackSelection(Value):
+    repertoire_id: Identifier
+    game_id: Identifier
+    occurrence_ply: int = Field(ge=1, le=1000)
+
+
 class GameWindow(Value):
     start_at: UtcTimestamp
     end_at: UtcTimestamp

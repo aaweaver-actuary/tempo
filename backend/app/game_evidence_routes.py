@@ -10,7 +10,7 @@ from .command_dispatch import dispatch_command
 router = APIRouter()
 
 
-from .product_composition.feedback_commands import ImportedFeedbackSelection
+from .contracts.product_v02.games import ImportedFeedbackSelection
 
 
 @router.post("/api/game-evidence/product/feedback")

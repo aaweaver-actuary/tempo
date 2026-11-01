@@ -9,7 +9,7 @@ from app.games.feedback.comparison import compare_game
 from app.games.feedback.coordinator import project_encounters
 from app.repertoire import build_index, project_capture
 
-from ..feedback_commands import retained_time_precision
+from app.games.ingestion.source_facts import retained_time_precision
 from ..retained_game import retained_canonical_game
 
 

@@ -81,7 +81,10 @@ from contextlib import contextmanager
 class Guard(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname in {'app.services.game_sync_coordinator', 'app.services.game_sync',
-                        'app.games.providers.lichess', 'app.games.providers.chesscom'}:
+                        'app.games.providers.lichess', 'app.games.providers.chesscom',
+                        'app.product_composition.feedback_commands',
+                        'app.product_composition.game_history_runtime',
+                        'app.product_composition.game_sync'}:
             raise AssertionError('legacy import: ' + fullname)
 def forbidden(*args, **kwargs): raise AssertionError('network or process startup')
 sys.meta_path.insert(0, Guard())
@@ -105,6 +108,7 @@ study_priority.policy_publisher = policy
 async def run():
     async with main.lifespan(main.app): calls.append('serving')
 asyncio.run(run())
+assert {'/api/game-evidence/product/feedback', '/api/product/game-history/preview'} <= {route.path for route in main.app.routes}
 assert calls[0] == 'initialize'
 assert calls[1][0:2] == ('dispatch','queue.ensure_current') and calls[1][2]['queue_date'] and calls[1][3] is None
 assert calls[2:] == ['policy-enter','serving','policy-exit']
