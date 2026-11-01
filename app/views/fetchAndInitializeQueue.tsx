@@ -55,7 +55,7 @@ export async function loadEligibleOfflineQueue(prepared: PreparedTraining): Prom
       !prepared.attempts.some((attempt) => attempt.cardId === card.id && attempt.conflict);
   }).map((card) => Number(card.queue_entry_id)));
   const supportedCards = prepared.cards.filter((card) => !requiresConnectedGrading(card));
-  const cards = await runStudyTask<PracticeCard[]>({
+  const cards = await runStudyTask({
     kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
   });
   return eligibleQueueCards(retainPendingFailures(cards), prepared.attempts, localRepeatQueueIds);
@@ -325,7 +325,7 @@ export async function fetchAndInitializeQueue(
         try {
           const cached = JSON.parse(stored) as QueuePayload;
           if (cached.local_date === localDayKey() && cached.cards?.length) {
-            const cachedCards = await awaitQueueStage(runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached }, controller.signal), controller.signal);
+            const cachedCards = await awaitQueueStage(runStudyTask({ kind: "queue", payload: cached }, controller.signal), controller.signal);
             if (generation === requestGeneration && expectedAttemptMatches() && !controller.signal.aborted) {
               const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards, pendingFailureContexts), savedPreparedQueue?.attempts);
               useTrainingStore.getState().hydrateLocalQueue(
@@ -414,7 +414,7 @@ export async function fetchAndInitializeQueue(
       throw error;
     }
     const processingStarted = performance.now();
-    const cards = await awaitQueueStage(runStudyTask<PracticeCard[]>({
+    const cards = await awaitQueueStage(runStudyTask({
       kind: "queue",
       payload: raw,
     }, controller.signal), controller.signal);
@@ -514,7 +514,7 @@ export async function fetchAndInitializeQueue(
             (windowCard as { queue_entry_id?: unknown }).queue_entry_id === prepared.cards[index]?.queue_entry_id);
         if (liveWindowMatchesPrepared &&
             !useTrainingStore.getState().serviceError.includes("no longer in today's queue")) {
-          const completeCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: {
+          const completeCards = await runStudyTask({ kind: "queue", payload: {
             cards: payload.cards, count: payload.count, local_date: payload.local_date,
             projection: payload.projection,
           } }, controller.signal);
