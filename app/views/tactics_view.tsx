@@ -14,7 +14,7 @@ import {
   useCallback,
 } from "react";
 import { OutcomeFlash } from "../components/board/OutcomeFlash";
-import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { STANDARD_FEN } from "../const";
 import { playChessMoveSound } from "../lib/move-sound";
@@ -35,7 +35,9 @@ import {
   type TacticalCatalog,
   type TacticalPack,
 } from "../lib/tactical-catalog";
-import { asCardId, asFenString, PackagedPuzzle, PracticeCard } from "../types";
+import { asCardId, asFenString } from "../domain/shared";
+import type { PackagedPuzzle } from "../domain/transport";
+import type { PracticeCard } from "../domain/cards";
 import { usesLocalApi } from "../utils/local";
 import {
   loadTacticsDeck,

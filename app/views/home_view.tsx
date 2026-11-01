@@ -25,7 +25,7 @@ import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance
 import { isCurrentAttempt } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
-import { BoardTheme, PieceSet } from "../components/chessboard";
+import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../lib/teaching-state-outbox";
 import {
   invalidateWorkspaceData,
@@ -40,16 +40,9 @@ import {
   prepareMoveSounds,
 } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
-import {
-  View,
-  LocalRepertoire,
-  CardId,
-  asFenString,
-  asTeachingCardKey,
-  asTeachingMoveKey,
-  asUciMove,
-  asSanMove,
-} from "../types";
+import { asFenString, asTeachingCardKey, asTeachingMoveKey, asUciMove, asSanMove,
+  type View, type CardId } from "../domain/shared";
+import type { LocalRepertoire } from "../domain/repertoire";
 import { canonicalFenKey } from "../utils/canonical-line";
 import { lookupRepertoireAlternative, type RepertoireAlternativeSnapshot } from "../lib/repertoire-alternative-index";
 import { usesLocalApi, localDayKey } from "../utils/local";

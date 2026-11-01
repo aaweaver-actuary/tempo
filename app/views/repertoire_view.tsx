@@ -1,12 +1,8 @@
 import { ActionMenu, Surface } from "../components/ui";
 import { Button } from "../components/buttons/BaseButton";
 import { useState, useCallback, useEffect } from "react";
-import {
-  LocalRepertoire,
-  PieceColor,
-  RepertoireItem,
-  asRepertoireId,
-} from "../types";
+import { asRepertoireId, type PieceColor } from "../domain/shared";
+import type { LocalRepertoire, RepertoireItem } from "../domain/repertoire";
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";

@@ -8,13 +8,13 @@ import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { loadExplorer } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
 import { adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
-import type { CandidateMove } from "../domain";
+import type { CandidateMove } from "../domain/analysis";
 import {
   repertoireIntegritySchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { enqueueIntegrityRepair, pendingIntegrityRepairs, subscribeIntegrityRepairs, INTEGRITY_REPAIR_CONFIRMED, type PendingIntegrityRepair } from "../lib/integrity-repair-outbox";
-import { asFenString, asUciMove } from "../types";
+import { asFenString, asUciMove } from "../domain/shared";
 import { MoveComparisonTable } from "./move-comparison-table";
 import { reportDebugError } from "../lib/debug-reporting";
 

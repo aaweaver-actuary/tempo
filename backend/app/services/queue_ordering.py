@@ -8,10 +8,10 @@ SavedQueueOrder = _owned.SavedQueueOrder
 QueueOrderPlan = _owned.QueueOrderPlan
 PRESENTATION_VERSION = _owned.PRESENTATION_VERSION
 urgent_priority_key = _owned.urgent_priority_key
-_queue_membership_hash = _owned._queue_membership_hash
-_queue_order_fingerprint = _owned._queue_order_fingerprint
-_preserved_queue_fingerprint = _owned._preserved_queue_fingerprint
-_queue_order_provenance = _owned._queue_order_provenance
+_queue_membership_hash = _owned.queue_membership_hash
+_queue_order_fingerprint = _owned.queue_order_fingerprint
+_preserved_queue_fingerprint = _owned.preserved_queue_fingerprint
+_queue_order_provenance = _owned.queue_order_provenance
 _queue_presentation_state = _owned._queue_presentation_state
 
 

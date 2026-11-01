@@ -49,28 +49,28 @@ def _digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _queue_membership_hash(rows: Sequence[QueueOrderingRow]) -> str:
+def queue_membership_hash(rows: Sequence[QueueOrderingRow]) -> str:
     """Policy identity fits the existing TEXT fingerprint, without a migration."""
     members = sorted((row["id"], row["card_id"]) for row in rows)
     return PRESENTATION_VERSION + ":" + _digest(members)
 
 
-def _queue_order_fingerprint(membership_hash: str, frozen_token) -> str:
+def queue_order_fingerprint(membership_hash: str, frozen_token) -> str:
     if list(frozen_token) == [None, 0]:
         return membership_hash
     return PRESENTATION_VERSION + ":" + _digest([membership_hash, list(frozen_token)])
 
 
-def _queue_order_provenance(rows, saved, frozen_token):
-    fingerprint = _queue_order_fingerprint(_queue_membership_hash(rows), frozen_token)
+def queue_order_provenance(rows, saved, frozen_token):
+    fingerprint = queue_order_fingerprint(queue_membership_hash(rows), frozen_token)
     if saved and saved["membership_hash"] == fingerprint:
         return {"fingerprint": fingerprint, "frozen_token": list(frozen_token)}
     return None
 
 
-def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) -> str:
-    fingerprint = _queue_order_fingerprint(_queue_membership_hash(rows), frozen_token)
-    if _queue_order_provenance(rows, saved, frozen_token) or (
+def preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) -> str:
+    fingerprint = queue_order_fingerprint(queue_membership_hash(rows), frozen_token)
+    if queue_order_provenance(rows, saved, frozen_token) or (
         previous and saved and saved["membership_hash"] == previous["fingerprint"]
         and previous["frozen_token"] == list(frozen_token)
     ):
@@ -79,6 +79,13 @@ def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) ->
     # positioned insertion. A policy prefix alone cannot certify new admissions or
     # a replacement frozen publication that has not yet been presented.
     return "unmixed:" + fingerprint
+
+
+# Retained compatibility aliases for existing runtime consumers.
+_queue_membership_hash = queue_membership_hash
+_queue_order_fingerprint = queue_order_fingerprint
+_queue_order_provenance = queue_order_provenance
+_preserved_queue_fingerprint = preserved_queue_fingerprint
 
 
 def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
@@ -221,4 +228,4 @@ def _plan_daily_queue_order(
                      and row["gameplay_priority_reason"] != MISS_REASON]
         ordered = iter(priority + openings + remainder)
         result = [row if row["id"] in protected else next(ordered) for row in result]
-    return seed, _queue_membership_hash(rows), result
+    return seed, queue_membership_hash(rows), result
