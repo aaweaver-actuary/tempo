@@ -2,6 +2,14 @@
 
 [Database overview](../README.md) · [Source schema charts and dictionary](../schema/README.md)
 
+Reserved background PostgreSQL connections disable JIT transaction-locally in
+the existing timeout setup query. Compilation must not consume the default
+250ms transaction budget; the 25ms lock and 100ms pool acquisition limits stay
+unchanged. Foreground and unreserved repertoire-snapshot profiles retain their
+existing settings. Commit or rollback restores the pooled session settings.
+The disposable `background_budget` scenario owns the compiler counterfactual,
+exact-result, rollback and same-session reset proof; it does not use live data.
+
 | File | Role |
 | --- | --- |
 | [database_executor.py](database_executor.py) | Single-owner SQLite writer with foreground-priority scheduling. |

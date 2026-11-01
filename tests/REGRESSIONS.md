@@ -1,3 +1,13 @@
+## Reserved background compiler admission
+
+`backend/tests/test_product_game_review_commands.py::test_only_reserved_background_profile_disables_jit_in_original_setup_roundtrip`
+preserves the single setup query, original 250ms/25ms limits and 100ms acquisition,
+and excludes foreground/unreserved snapshot profiles. The existing disposable
+`database/tests/check_postgres_background_budget.py::check_background_jit_admission`
+adds a high-cost, tiny-result compiler counterfactual under the unchanged real
+250ms writer, exact-result success without JIT, atomic timeout rollback and
+same-session settings reset. Pure red/green passed; native execution pending.
+
 ## Lichess export application identification
 
 `backend/tests/test_product_continuous_sync.py::test_lichess_export_identifies_tempo_to_provider`
