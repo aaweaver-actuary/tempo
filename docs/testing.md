@@ -1057,3 +1057,8 @@ gates remain. The owner result is bound to the plan's candidate/base, declared
 source hashes, exact case identity and a fresh disposable fixture report; a
 missing or mismatched report fails the layer. This does not enable hosted CI or
 claim a narrowed FAST/FULL selection.
+
+The existing browser families classify frozen opening order, Study recombination
+and recovery with training; product feedback with Games; and repertoire review
+with Repertoire. These are their actual journey owners, not exemptions from
+packaged fixture requirements or permission to skip their assertions.

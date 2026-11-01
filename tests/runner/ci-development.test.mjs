@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
+import { verificationPlan, inventory, validateInventory } from '../../scripts/ci-verification-plan.mjs';
 import { evaluateQuality, layerFailures } from '../../scripts/ci-quality.mjs';
 function temporaryContractDirectory(prefix, parent = join(process.cwd(),'test-results')) {
   mkdirSync(parent,{recursive:true});
@@ -559,4 +559,20 @@ test('ui_and_unknown_paths_preserve_existing_selection', () => {
   const unknown = draft(['unknown/new-source.xyz']);
   for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(unknown.jobs[layer].required);
   assert.deepEqual(unknown.jobs.postgres.owner_suites, []);
+});
+
+
+test('programme_browser_specs_have_one_owner_and_queue_qualification_keeps_them', () => {
+  const owners = { 'frozen-opening-order.spec.ts': 'training', 'product-recombination.spec.ts': 'training',
+    'study-recovery.spec.ts': 'training', 'product-game-feedback.spec.ts': 'games',
+    'product-repertoire-review.spec.ts': 'repertoire' };
+  for (const [file, family] of Object.entries(owners)) {
+    assert.deepEqual(Object.entries(inventory.families).filter(([, entries]) => entries.includes(file)).map(([name]) => name), [family]);
+  }
+  const qualified = verificationPlan({ files, cases, paths: ['backend/app/services/queue_presentation.py'], tier: 'qualification' });
+  for (const file of Object.keys(owners)) assert(qualified.families.includes(owners[file]));
+  assert.throws(() => validateInventory([...files, 'unknown-programme.spec.ts']), /Unclassified browser spec/);
+  const unknown = draft(['unknown/new-source.xyz']);
+  assert.equal(unknown.core.backend, 'all');
+  assert(unknown.jobs.postgres.required && unknown.jobs.browser.required);
 });
