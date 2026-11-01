@@ -1,6 +1,7 @@
 import { createEngineSearch } from "./engine-search.mjs";
 import { createStockfishProcess } from "./stockfish-process.mjs";
 import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "./durable-engine-request.mjs";
+import { createEngineFamilyRequest } from "./engine-job-families.mjs";
 import { runEngineWorkerCycle } from "./engine-worker-cycle.mjs";
 
 const api = process.env.TEMPO_API_URL ?? "http://api:8000";
@@ -16,15 +17,7 @@ engine.uci("isready");
 
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 
-async function request(path, options = {}, deliveryOptions = {}) {
-  const journal = path === "/api/defensive-threats/analysis/claim"
-    ? defenseClaimRequest : durableRequest;
-  return journal.send(path, {
-    ...options,
-    ...(path === "/api/defensive-threats/analysis/claim" ? { pollAttempts: 20 } : {}),
-    headers: { ...options.headers, "X-Tempo-Engine-Worker": "docker" },
-  }, deliveryOptions);
-}
+const request = createEngineFamilyRequest(durableRequest, defenseClaimRequest);
 
 const searches = createEngineSearch(engine, request);
 const evaluate = searches.evaluate;

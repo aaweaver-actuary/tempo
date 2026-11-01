@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { expect, it, vi } from "vitest";
+import { createEngineJobFamilies } from "../../scripts/engine-job-families.mjs";
 import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
 
 it("handles a recovered game job before clearing a defensive claim journal", async () => {
@@ -11,11 +12,12 @@ it("handles a recovered game job before clearing a defensive claim journal", asy
   const defenseJournal = { recover: vi.fn().mockResolvedValue({
     path: "/api/defensive-threats/analysis/claim", result: { job: defense },
   }) };
-  const first = await recoverNextEngineJob(gameJournal, defenseJournal);
-  expect(first).toMatchObject({ job: game, jobKind: "game" });
+  const { game: gameFamily, defense: defenseFamily } = createEngineJobFamilies({ request: vi.fn(), durableRequest: gameJournal, defenseClaimRequest: defenseJournal });
+  const first = await recoverNextEngineJob(gameFamily, defenseFamily);
+  expect(first).toMatchObject({ job: game, family: gameFamily });
   expect(defenseJournal.recover).not.toHaveBeenCalled();
-  const second = await recoverNextEngineJob(gameJournal, defenseJournal);
-  expect(second).toMatchObject({ job: defense, jobKind: "defense" });
+  const second = await recoverNextEngineJob(gameFamily, defenseFamily);
+  expect(second).toMatchObject({ job: defense, family: defenseFamily });
 });
 
 it("a defensive null result cannot overwrite a recovered game job", async () => {
@@ -26,7 +28,8 @@ it("a defensive null result cannot overwrite a recovered game job", async () => 
   const defenseJournal = { recover: vi.fn().mockResolvedValue({
     path: "/api/defensive-threats/analysis/claim", result: { job: null },
   }) };
-  expect(await recoverNextEngineJob(gameJournal, defenseJournal))
-    .toMatchObject({ job: game, jobKind: "game" });
+  const { game: gameFamily, defense: defenseFamily } = createEngineJobFamilies({ request: vi.fn(), durableRequest: gameJournal, defenseClaimRequest: defenseJournal });
+  expect(await recoverNextEngineJob(gameFamily, defenseFamily))
+    .toMatchObject({ job: game, family: gameFamily });
   expect(defenseJournal.recover).not.toHaveBeenCalled();
 });
