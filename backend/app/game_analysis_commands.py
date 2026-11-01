@@ -17,8 +17,8 @@ from tempo_legacy_database.connections import background_read_connection
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import analysis_leases as storage
 from .services.game_analysis_worker import _confirmed_indices, _positions
-from .services.threat_pipeline import ENGINE_VERSION, NETWORK_VERSION
-from .services.threat_pipeline import report_from_json, validate_analysis_report
+from tempo_learning_runtime.defense_decode import ENGINE_VERSION, NETWORK_VERSION
+from tempo_learning_runtime.defense_decode import report_from_json, validate_analysis_report
 from .services.threat_validation import AnalysisRequest
 from .services.engine_scheduling import ordinary_selection_allowed, record_ordinary_selection
 

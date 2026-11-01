@@ -29,8 +29,8 @@ from .review_service import (
     rebuild_defense_schedule,
 )
 from .threat_grading import DefenseExercise, grade_defense_move
-from .threat_pipeline import (
-    _anchor_from_json, _request_from_json, _seed_from_json,
+from tempo_learning_runtime.defense_decode import (
+    anchor_from_json as _anchor_from_json, request_from_json as _request_from_json, seed_from_json as _seed_from_json,
     report_from_json, validate_analysis_report,
 )
 from .threat_validation import (

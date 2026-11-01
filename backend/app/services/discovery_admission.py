@@ -27,7 +27,7 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from app.study.queue_placement import ensure_card_queued_after
-from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
+from tempo_learning_runtime.defense_decode import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
 
 
