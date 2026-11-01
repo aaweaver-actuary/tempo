@@ -30,7 +30,7 @@ storage, not dynamically discovered.
 | Per-game feature calculation | [statistics.py](statistics.py) retains `refresh_game_features`; [feature storage](../../../database/tempo_legacy_database/adapters/statistics/README.md) supplies inputs and the single canonical feature writer. It no longer materializes daily statistics. |
 | Native game completion | [postgres_game_priorities.py](postgres_game_priorities.py) retains `execute_game_priority_handoff_slice`, registered by `tasks.py` as `game_derivation_priorities`. It advances the bounded repertoire cursor and completes the existing derivation; the legacy name does not mean an adaptive-priority producer survives. |
 | Authored Discovery acceptance | [discovery_commands.py](../discovery_commands.py) retains `prepare_discovery_acceptance`, `accept_discovery` and `discovery.accept`. Recommendation/admission is separate from the retired opportunity feed/state/train producer. |
-| Canonical source and coverage | [canonical_prefix_api.py](../canonical_prefix_api.py) retains preview/save commands and source validation/invalidation; [coverage_maia_commands.py](../coverage_maia_commands.py) retains `coverage.maia.claim`, `heartbeat`, `release`, `failure` and `submit` under the same `coverage.maia.` prefix, candidate publication and progress. Neither recreates retired refresh producers. |
+| Canonical source and coverage | [canonical_prefix.py](canonical_prefix.py) owns preview/save commands and source validation/invalidation; [canonical_prefix_commands.py](../canonical_prefix_commands.py) registers them, and the HTTP router re-exports them; [coverage_maia_commands.py](../coverage_maia_commands.py) retains `coverage.maia.claim`, `heartbeat`, `release`, `failure` and `submit` under the same `coverage.maia.` prefix, candidate publication and progress. Neither recreates retired refresh producers. |
 
 **Coupling is reduced, not eliminated.** Removed producers no longer contribute
 their import/callback/worker/recovery paths, but saved-score/opportunity readers,
@@ -77,7 +77,7 @@ flowchart LR
   game["Native game derivation handoff"] --> completion["Existing per-repertoire cursor and derivation completion"]
 ```
 
-Concrete owners are [`save_prefix`](../canonical_prefix_api.py),
+Concrete owners are [`save_prefix`](canonical_prefix.py),
 [`submit_maia_node`](../coverage_maia_commands.py),
 [`_publish_node`](postgres_coverage_explorer.py),
 [`execute_coverage_node` and `submit_maia_coverage`](repertoire_coverage.py),
@@ -253,3 +253,13 @@ module's `study_only_enabled` compatibility function delegates to the current
 owner function at call time; the normal-mode test fixture can patch that owner
 without importing task registrations. Task-specific tests may still override the
 compatibility function directly. This changes no task dispatch or claim policy.
+
+The HTTP router loads canonical prefix command registration. The worker still imports the HTTP router for that registration until its reserved import line is released.
+
+```mermaid
+flowchart LR
+  http["Canonical prefix HTTP router"] --> commands["Prefix command registration"]
+  worker["Worker (pending adoption)"] --> http
+  commands --> owner["Canonical prefix service"]
+  owner --> storage["Existing prefix and coverage storage in caller transaction"]
+```

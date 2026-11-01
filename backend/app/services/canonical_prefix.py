@@ -7,6 +7,10 @@ import re
 import sqlite3
 
 import chess
+from fastapi import HTTPException
+from app.contracts.transport.authored_repertoire import CanonicalPrefixSaveRequest
+from tempo_legacy_database.adapters.authored_repertoires import prefix_commands as command_storage
+from .durable_tasks import enqueue_task_in_transaction
 from ..chess.position_identity import position_key
 from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import scope as storage
 
@@ -254,3 +258,43 @@ def store_positions(database, preview_id: str, positions: list[dict], *, source_
     # Rank only within one verified source epoch. Old short routes must not
     # prevent recertification, and delayed old writes cannot renew stale proof.
     storage.write_positions(database, preview_id, positions, source_revision)
+
+
+def preview_command(database, payload: dict) -> dict:
+    from .canonical_prefix_preview import request_preview
+    try:
+        return request_preview(database, payload["repertoire_id"], payload["moves"])
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
+def save_prefix(database, payload: dict) -> dict:
+    repertoire_id = payload["repertoire_id"]
+    request = CanonicalPrefixSaveRequest.model_validate(payload["request"])
+    if not command_storage.repertoire_presence(database, repertoire_id):
+        raise HTTPException(404, "Repertoire not found")
+    current = read_prefix(database, repertoire_id, lock=True)
+    preview = command_storage.prefix_preview(database, request.preview_id, repertoire_id)
+    if (not preview or preview["state"] != "ready" or current["revision"] != request.expected_revision
+            or preview["expected_revision"] != current["revision"]
+            or preview["source_revision"] != current["source_revision"]):
+        raise HTTPException(409, "Resolve conflicting lines and check the current prefix again before saving.")
+    moves = json.loads(preview["moves_json"])
+    if moves == current["moves"] and not moves:
+        command_storage.set_empty_prefix_preview(database, request.preview_id, repertoire_id)
+        return prefix_projection(moves, current["revision"])
+    revision = current["revision"] + int(moves != current["moves"])
+    command_storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
+    if moves != current["moves"]:
+        enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
+    if not command_storage.postgres_is_configured():
+        command_storage.fail_active_local_coverage(database, repertoire_id)
+    if command_storage.postgres_is_configured():
+        from .postgres_coverage_seed import request_coverage_seed_in_transaction
+        command_storage.advance_priority_source_epoch(database, repertoire_id)
+        request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
+        command_storage.delete_priority_publication(database, repertoire_id)
+        command_storage.delete_introduction_priorities(database, repertoire_id)
+    return prefix_projection(moves, revision)

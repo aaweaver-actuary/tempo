@@ -396,3 +396,19 @@ flowchart LR
   owner --> reads["Existing review storage and frozen activation"]
   reads --> tx["Caller-owned transaction and existing receipt"]
 ```
+
+### Opening evidence checkpoint registration (C3 preparation)
+
+The existing opening-evidence service retains checkpoint preparation and
+transactional publication. The checkpoint command module registers those
+functions, and the HTTP router loads that module for compatibility. The worker
+still imports the HTTP router for registration until its reserved import line
+is released and switched to the command module.
+
+```mermaid
+flowchart LR
+  http["Opening evidence HTTP router"] --> commands["Checkpoint command registration"]
+  worker["Worker (pending adoption)"] --> http
+  commands --> owner["Existing opening-evidence service"]
+  owner --> storage["Existing evidence storage and caller transaction"]
+```
