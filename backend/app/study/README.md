@@ -334,3 +334,20 @@ Specific lock/deadlock/serialization handlers retain precedence over generic
 connection failures. Preparation, queue refresh/serving and diagnostics remain
 with #580/#581's separate owner. Existing regression sources were retained;
 no new tests, builds or runtime checks were run for this extracted candidate.
+
+## Proposed queue serving projection (#708)
+
+`queue_serving.py` shapes the existing flat queue cards, optional encounter
+facts, envelope and prepared exercise snapshot from supplied values. The HTTP
+composition retains connection/clock ownership, optional-read isolation,
+manifest and authoritative head issuance. The database adapter selects the
+current finite card fields explicitly; eligibility, ordering, count and head
+queries remain owned by the existing database operations.
+
+```mermaid
+flowchart LR
+  queue["Database queue projection"] -->|"finite serving rows"| shaping["Study queue serving assembler"]
+  optional["Separate optional encounter read"] -->|"available or unavailable facts"| shaping
+  http["HTTP composition"] -->|"clock, head issuance, manifest and exercise revision"| shaping
+  shaping --> wire["Existing flat queue response"]
+```

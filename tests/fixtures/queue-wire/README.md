@@ -10,7 +10,7 @@ PYTHONPATH=backend:database:services/learning/runtime/src:packages/scheduling/sr
 
 Run `python -m pytest -q tests/fixtures/queue-wire/test_freshness.py` with the same dependencies to verify both freshness and drift detection. Remove `--check` to regenerate the fixture.
 
-`prepared_at` is removed before queue computation, as in `savePreparedTraining`; the snapshot itself stays in the card. Run `npx vitest run tests/unit/queue-producer-wire-regressions.test.ts` for pure computation, and `node tests/fixtures/queue-wire/worker-proof.mjs` for the bundled production entry point in a real Chromium Worker. The latter needs the installed Playwright Chromium browser.
+The fixture invokes the actual Study queue assembler and checks the head identity passed to the fake issuer; it does not issue an attempt. `prepared_at` is removed before queue computation, as in `savePreparedTraining`; the snapshot itself stays in the card. Run `npx vitest run tests/unit/queue-producer-wire-regressions.test.ts` for pure computation, and `node tests/fixtures/queue-wire/worker-proof.mjs` for the bundled production entry point in a real Chromium Worker. The latter needs the installed Playwright Chromium browser.
 
 ## E1 field and predicate manifest
 

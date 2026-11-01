@@ -71,7 +71,15 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
                                   COALESCE(q.admission_source,
                                     (SELECT 'defense:' || candidate.id
                                      FROM threat_training_candidates candidate
-                                     WHERE candidate.card_id=c.id LIMIT 1)) admission_source,c.*,
+                                     WHERE candidate.card_id=c.id LIMIT 1)) admission_source,
+                                  c.id,c.repertoire_id,c.kind,c.start_fen,c.moves_json,c.state,c.due_date,
+                                  c.interval_days,c.ease,c.repetitions,c.lapses,c.unlock_after_card_id,
+                                  c.fsrs_card_json,c.first_correct_at,c.reinforcement_pending,c.stability,
+                                  c.guided_review,c.maximum_interval,c.content_type,c.scheduling_mode,
+                                  c.hard_correct_streak,c.recent_attempts_json,c.archived,c.superseded_by,
+                                  c.source_ref,c.source_fen,c.revision,c.introduced_at,c.trained_color,
+                                  c.pending_validation,c.prefix_split_rejected_after_review_id,
+                                  c.study_exercise_id,c.canonical_route_source,
                                   COALESCE(r.name,study.title,'Study') repertoire_name,
                                   COALESCE(r.source_name,'Study') repertoire_source,
                                   COALESCE(r.is_main,0) is_main,study.id study_id,

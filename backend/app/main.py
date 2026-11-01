@@ -1302,6 +1302,7 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
 
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     from .queue_commands import current_study_day
+    from .study.queue_serving import assemble_queue_cards, add_encounter_evidence, finalize_queue_cards, queue_payload
     with read_connection() as day_database:
         day = current_study_day(day_database)
     with read_connection() as db:
@@ -1309,11 +1310,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         projection_row = queue_projection_storage.queue_projection(db, day)
         diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
         rows = queue_projection_storage.queue_rows(db, day, limit, miss_reason=MISS_REASON)
-        cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
-        for card in cards:
-            card["prefix_split_offer_available"] = (
-                card["latest_failed_review_id"] > card["prefix_split_rejected_after_review_id"]
-            )
+        cards = assemble_queue_cards(rows)
         total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
     # Advisory Games evidence owns a separate bounded read. A failed projection
     # must close/rollback its own transaction before core issuance proceeds.
@@ -1327,20 +1324,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         except Exception:
             logging.getLogger(__name__).warning('Optional queue encounter evidence unavailable')
     for card in cards:
-        card['encounter_evidence_status'] = 'available' if encounter_by_fen is not None else 'unavailable'
-        fen_key = " ".join(card["start_fen"].split()[:4])
-        encounters = encounter_by_fen.get(fen_key) if encounter_by_fen is not None else None
-        encounter_count = int(encounters["encounter_count"]) if encounters else 0
-        last_seen_at = encounters["last_seen_at"] if encounters else None
-        if encounter_by_fen is not None:
-            card["encounter_count_30d"] = encounter_count
-        card["last_encountered_at"] = last_seen_at
-        badges = []
-        if last_seen_at and last_seen_at >= (datetime.now(timezone.utc) - timedelta(days=7)).isoformat():
-            badges.append("Seen recently")
-        if encounter_count >= 3:
-            badges.append("Frequent")
-        card["encounter_badges"] = badges
+        add_encounter_evidence(card, encounter_by_fen,
+                               (datetime.now(timezone.utc) - timedelta(days=7)).isoformat())
     if cards:
         _issue_returned_queue_head(day, cards[0])
     else:
@@ -1350,33 +1335,14 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         if pending_priority:
             raise HTTPException(503, {'code':'study_feedback_preparation_pending',
                 'message':'Local Study priority work must prepare before the next new attempt'})
-    for card in cards:
-        card.pop("moves_json", None)
-        card["trained_color"] = card.pop("effective_trained_color")
+    finalize_queue_cards(cards)
     if include_opening_evidence and postgres_store.configured():
         from .services.postgres_opening_evidence import queue_manifests
         queue_manifests(cards)
         for card in cards:
             if "opening_decision_manifest" in card:
                 card["opening_evidence_study_timezone"] = evidence_timezone or "local"
-    return {
-        "local_date": day,
-        "cards": cards,
-        "count": total_count,
-        "diagnostics": [dict(row) for row in diagnostic_rows],
-        "projection": (
-            dict(projection_row)
-            if projection_row
-            else {
-                "state": "refreshing",
-                "generation": 0,
-                "updated_at": None,
-                "refresh_pending": 1,
-                "last_error": None,
-                "blocked_count": 0,
-            }
-        ),
-    }
+    return queue_payload(day, cards, total_count, diagnostic_rows, projection_row)
 
 
 @app.get("/api/queue/today")
@@ -1395,6 +1361,7 @@ def prepare_next_queue_head(idempotency_key: str | None = Header(None, alias='Id
 
 @app.get("/api/queue/prepared")
 def prepared_queue(include_opening_evidence: bool = False):
+    from .study.queue_serving import exercise_snapshot
     payload = _queue_payload(include_opening_evidence=include_opening_evidence)
     study_cards = [card for card in payload["cards"] if card["content_type"] == "study_exercise"]
     if study_cards:
@@ -1403,13 +1370,7 @@ def prepared_queue(include_opening_evidence: bool = False):
                 row = queue_projection_storage.exercise_revision(database, card["study_exercise_id"])
                 if not row:
                     raise HTTPException(409, f"Study exercise {card['study_exercise_id']} has no current revision")
-                card["study_snapshot"] = {
-                    "schema_version": 1, "grader_version": 1,
-                    "exercise_id": card["study_exercise_id"],
-                    "revision": row["current_revision"],
-                    "fen": card["start_fen"],
-                    "specification": json.loads(row["specification_json"]),
-                }
+                card["study_snapshot"] = exercise_snapshot(card, row)
     return {**payload, "prepared_at": datetime.now(timezone.utc).isoformat()}
 
 
