@@ -117,7 +117,13 @@ from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
-from .services.study_mode import study_only_enabled, STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PAUSED_IMPORT_COMMANDS
+from .services import study_mode
+from .services.study_mode import STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PAUSED_IMPORT_COMMANDS
+
+
+def study_only_enabled(database=None):
+    """Compatibility seam; always consult the current Study policy owner."""
+    return study_mode.study_only_enabled() if database is None else study_mode.study_only_enabled(database)
 # Only bounded accepted results/releases may bypass foreground admission.
 # These handlers publish bounded receipts; none starts a search or traversal.
 # Maia submit aggregates a whole run; threat report fans out to all candidates.

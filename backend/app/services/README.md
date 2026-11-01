@@ -247,3 +247,9 @@ reservation; existing operation IDs, tokens and reservation intervals remain unc
 failure remains after the committed receipt and cannot turn a saved review into
 failure. No schema, schedule writer, provider activation or general Study-only
 permission changed.
+
+The Study-only admission policy remains owned by `study_mode`. The legacy task
+module's `study_only_enabled` compatibility function delegates to the current
+owner function at call time; the normal-mode test fixture can patch that owner
+without importing task registrations. Task-specific tests may still override the
+compatibility function directly. This changes no task dispatch or claim policy.
