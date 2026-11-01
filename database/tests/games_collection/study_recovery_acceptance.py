@@ -616,7 +616,13 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         FROM operation_receipts WHERE operation_id=%s""", (measured['requestId'],)).fetchone()
                     assert operation and operation['command_name']=='cards.review' and operation['state']=='complete'
                     assert json.loads(operation['response_json']) == measured['receipt']
+                    from app.contracts.transport.study import ReviewRequest
+                    original_review = ReviewRequest.model_validate(measured['requestBody'])
+                    # This journey does not submit an opening checkpoint, which
+                    # would require separately prepared evidence in the command.
+                    assert original_review.opening_evidence_completion is None
                     request = json.loads(operation['payload_json'])
+                    assert request == {'card_id': measured['cardId'], 'review': original_review.durable_payload()}
                     assert request['card_id']==measured['cardId']
                     assert request['review']['attempt_id']==measured['attemptId']
                     assert request['review']['queue_entry_id']==measured['entryId']

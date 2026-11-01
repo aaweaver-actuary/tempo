@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 
 type Card = { id: string; queue_entry_id: number; start_fen: string; moves: string[]; trained_color: "white" | "black" };
 type Sample = {
-  requestId: string; attemptId: string; cardId: string; entryId: number;
+  requestId: string; attemptId: string; cardId: string; entryId: number; requestBody: Record<string, unknown>;
   submittedMs: number; persistedMs?: number; interactiveMs?: number;
   nextEntryId?: number; nextCardId?: string; nextFen?: string; receipt?: Record<string, unknown>;
 };
@@ -81,7 +81,7 @@ test("packaged recovery records thirty authoritative playable transitions", asyn
         const requestId = headers.get("Idempotency-Key") ?? "";
         if (requestId !== `review-attempt:${body.attempt_id}`)
           throw new Error("Recovery measurement requires the original attempt command identity");
-        review = { requestId, attemptId: body.attempt_id,
+        review = { requestId, requestBody: body, attemptId: body.attempt_id,
           cardId: decodeURIComponent(url.pathname.split("/")[3]), entryId: body.queue_entry_id,
           submittedMs: performance.now() };
         trace.samples.push(review);
