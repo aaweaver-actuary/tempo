@@ -350,3 +350,107 @@ def test_transaction_deadline_bookkeeping_does_not_wait_for_raced_foreground(dis
         release_foreground.set()
         worker.join(1)
     assert not worker.is_alive()
+
+
+def test_essential_queue_progress_bypasses_waiting_browser_and_never_claims_optional_work(dispatch_store, monkeypatch):
+    queued = enqueue_daily()
+    optional = durable_tasks.enqueue_task('opening_graph_rebuild', 'optional-poison', {}, priority=-100, foreground=False)
+    def finish(claimed):
+        assert claimed['kind'] == 'daily_queue'
+        with database.connection(background=True) as connection:
+            durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', finish)
+    with tasks.activity_gate.foreground():
+        assert tasks.poll_background_tasks.run() is False
+        assert tasks.progress_study_queue.run() is False  # False means no remaining queue slice.
+    assert task_row(queued['id'])['state'] == 'complete'
+    assert task_row(optional['id'])['state'] == 'queued'
+    assert task_row(optional['id'])['lease_token'] is None
+
+
+def test_essential_queue_crash_recovery_keeps_same_generation_and_rejects_old_lease(dispatch_store, monkeypatch):
+    clock, _wakes = dispatch_store
+    queued = enqueue_daily()
+    crashed = durable_tasks.claim_task('daily_queue')
+    clock[0] += timedelta(seconds=61)
+    observed = []
+    def finish(claimed):
+        observed.append(claimed)
+        with database.connection(background=True) as connection:
+            durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', finish)
+    with tasks.activity_gate.foreground():
+        tasks.progress_study_queue.run()
+        assert tasks.execute_background_slice.run(crashed) is False
+    assert len(observed) == 1
+    assert observed[0]['generation'] == crashed['generation'] == queued['generation']
+    assert observed[0]['lease_token'] != crashed['lease_token']
+    assert task_row(queued['id'])['state'] == 'complete'
+
+
+def test_essential_scope_rejects_optional_kinds_and_releases_on_exception():
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    with pytest.raises(ValueError):
+        with tasks.activity_gate.essential_study_progress('opening_graph_rebuild'):
+            pytest.fail('Optional task obtained essential admission')
+    with tasks.activity_gate.foreground():
+        with pytest.raises(RuntimeError):
+            with tasks.activity_gate.essential_study_progress('daily_queue'):
+                tasks.activity_gate.check_background_admission()
+                raise RuntimeError('owned slice failed')
+        with pytest.raises(BackgroundAdmissionDeferred):
+            tasks.activity_gate.check_background_admission()
+
+
+def test_optional_preparation_capacity_leaves_ordinary_foreground_command_available(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr(tasks.tempfile, 'gettempdir', lambda: str(tmp_path))
+    monkeypatch.setattr(tasks, 'record_operation_attempt', lambda *_args, **_kwargs: (True, {}, 'original-token', 1))
+    deferred, executed = [], []
+    monkeypatch.setattr(tasks, 'defer_operation_for_foreground', lambda *args: deferred.append(args))
+    monkeypatch.setattr(tasks, 'execute_command', lambda *_args, **_kwargs: executed.append(True) or {'persisted':True})
+    fake = SimpleNamespace(request=SimpleNamespace(headers={}))
+    with tasks._preparation_capacity() as acquired:
+        assert acquired
+        assert tasks._execute_foreground_command(fake, 'same-operation', 'queue.prepare_next', {}) is None
+        assert deferred == [('same-operation', 'original-token')]
+        assert tasks._execute_foreground_command(fake, 'review', 'cards.review', {}) == {'persisted':True}
+    assert len(executed) == 1
+    with tasks._preparation_capacity() as acquired:
+        assert acquired
+
+
+def test_foreground_receipt_recovery_uses_existing_essential_only_filter_and_original_identity(monkeypatch):
+    from types import SimpleNamespace
+    claims, deliveries = [], []
+    monkeypatch.setattr(tasks, '_maintenance_cooldowns', {})
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
+    def claim(**options):
+        claims.append(options)
+        return dict(operation_id='original-operation', command_name='cards.review', payload={'original':'bytes'}, background=False)
+    monkeypatch.setattr(tasks, 'claim_recoverable_operation', claim)
+    monkeypatch.setattr(tasks.celery_app, 'send_task', lambda *args, **kwargs: deliveries.append((args, kwargs)))
+    with tasks.activity_gate.foreground():
+        assert tasks.recover_study_operations.run()
+    assert claims == [dict(allowed_background_commands=(), paused_commands=tasks.PAUSED_IMPORT_COMMANDS)]
+    assert deliveries[0][0] == ('app.tasks.execute_foreground_command',)
+    assert deliveries[0][1]['queue'] == 'foreground'
+    assert deliveries[0][1]['args'] == ['original-operation', 'cards.review', {'original':'bytes'}]
+    assert deliveries[0][1]['task_id'] == 'original-operation'
+
+
+def test_essential_rollover_uses_authoritative_study_day_instead_of_worker_host_day(monkeypatch):
+    from app import queue_commands
+    from contextlib import contextmanager
+    observed = []
+    @contextmanager
+    def read():
+        yield object()
+    monkeypatch.setattr(tasks, 'read_connection', read)
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda _database: '2026-10-31')
+    monkeypatch.setattr(tasks, 'daily_queue_projection', lambda _database, day: observed.append(day) or None)
+    monkeypatch.setattr(tasks, 'execute_command', lambda _id, _name, payload: observed.append(payload) or {'refresh_pending':True})
+    assert tasks.ensure_daily_queue.run()
+    assert observed == ['2026-10-31', {'queue_date':'2026-10-31'}]

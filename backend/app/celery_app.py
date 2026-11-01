@@ -32,10 +32,12 @@ celery_app.conf.update(
         "app.tasks.execute_foreground_command": {"queue": "foreground"},
         "app.tasks.execute_background_command": {"queue": "background"},
         "app.tasks.ensure_daily_queue": {"queue": "foreground"},
+        "app.tasks.progress_study_queue": {"queue": "foreground"},
         "app.tasks.maintain_game_feedback": {"queue": "foreground"},
         "app.tasks.execute_background_slice": {"queue": "background"},
         "app.tasks.poll_background_tasks": {"queue": "background"},
         "app.tasks.recover_operations": {"queue": "background"},
+        "app.tasks.recover_study_operations": {"queue": "foreground"},
         "app.tasks.recover_active_coverage": {"queue": "background"},
     },
     beat_schedule={
@@ -47,9 +49,17 @@ celery_app.conf.update(
             "task": "app.tasks.recover_active_coverage",
             "schedule": 30.0,
         },
+        "recover-essential-study-operations": {
+            "task": "app.tasks.recover_study_operations",
+            "schedule": 5.0,
+        },
         "recover-operations": {
             "task": "app.tasks.recover_operations",
             "schedule": 5.0,
+        },
+        "progress-essential-study-queue": {
+            "task": "app.tasks.progress_study_queue",
+            "schedule": 1.0,
         },
         "ensure-current-daily-queue": {
             "task": "app.tasks.ensure_daily_queue",

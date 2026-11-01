@@ -25,6 +25,7 @@ _background_job: ContextVar[tuple[str, str] | None] = ContextVar(
     "tempo_background_job", default=None
 )
 _yield_admission: ContextVar[bool] = ContextVar('tempo_yield_admission', default=False)
+_essential_study: ContextVar[bool] = ContextVar("tempo_essential_study_work", default=False)
 _control_section: ContextVar[bool] = ContextVar('tempo_background_control', default=False)
 
 
@@ -95,7 +96,7 @@ class ApplicationActivityGate:
             _yield_admission.reset(admission_token)
 
     def wait_for_foreground(self) -> None:
-        if _control_section.get():
+        if _control_section.get() or _essential_study.get():
             return
         if _yield_admission.get() or redis_admission_gate.configured():
             self.check_background_admission()
@@ -117,7 +118,7 @@ class ApplicationActivityGate:
 
     def check_background_admission(self) -> None:
         """Check once before claiming or computing; unavailable evidence denies."""
-        if _control_section.get():
+        if _control_section.get() or _essential_study.get():
             return
         if self.foreground_waiting:
             raise BackgroundAdmissionDeferred('Waiting for foreground activity')
@@ -137,6 +138,21 @@ class ApplicationActivityGate:
                 raise BackgroundAdmissionDeferred('Foreground admission is unavailable') from error
             if active:
                 raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+
+    @contextmanager
+    def essential_study_progress(self, kind):
+        """Exact Study-owned work progresses while the browser awaits it.
+
+        This grants no new task or database budget; optional dispatch never
+        enters this scope and cannot select its kind through a request header.
+        """
+        if kind not in {'daily_queue', 'study_game_feedback'}:
+            raise ValueError('Only essential Study owners bypass idle admission')
+        token = _essential_study.set(True)
+        try:
+            yield
+        finally:
+            _essential_study.reset(token)
 
     @contextmanager
     def background_control(self):
@@ -164,7 +180,7 @@ class ApplicationActivityGate:
 
         shared_lease = (
             redis_admission_gate.background_lease()
-            if redis_admission_gate.configured() and not _control_section.get() else nullcontext()
+            if redis_admission_gate.configured() and not (_control_section.get() or _essential_study.get()) else nullcontext()
         )
         from .background_runtime import admission_wait, reserved_database_telemetry, heartbeat
         # Acquire before suppressing so admission-wait heartbeats remain visible.
@@ -175,9 +191,9 @@ class ApplicationActivityGate:
                 telemetry.enter_context(reserved_database_telemetry())
                 self.wait_for_foreground()
                 with self._condition:
-                    if _yield_admission.get() or redis_admission_gate.configured() or _control_section.get():
-                        if (self._active_background_sections and not _control_section.get()) or (
-                            self._foreground_requests and not _control_section.get()
+                    if _yield_admission.get() or redis_admission_gate.configured() or _control_section.get() or _essential_study.get():
+                        if (self._active_background_sections and not (_control_section.get() or _essential_study.get())) or (
+                            self._foreground_requests and not (_control_section.get() or _essential_study.get())
                         ):
                             raise BackgroundAdmissionDeferred('Waiting for a database section')
                     else:

@@ -187,3 +187,54 @@ The old producer-only cases and native benchmarks retire with their capability;
 modified native fixture readers are source preparation, not native acceptance.
 No migration, database/file cleanup, snapshot, service operation or deployment
 is performed. Shared legacy resource coupling above remains unqualified.
+
+## Essential Study progress (#664)
+
+The existing foreground worker has two prefork processes; the optional worker
+has one. `progress_study_queue` consumes one exact `daily_queue` slice on the
+foreground queue while the browser is waiting. It retains the existing durable
+claim generation/token, task-first locks, short PostgreSQL transaction/lock
+budgets and cursor. It cannot dispatch provider or graph work. Its coalesced
+post-commit wake has a one-second periodic fallback, independent of the optional
+worker's reservation. Rollover uses the authoritative Study day, including timezone.
+
+| Work | Queue and admission | Bound / identity |
+| --- | --- | --- |
+| Save / issue / other foreground commands | Existing foreground | Original command receipt, attempt token and gateway transaction |
+| Daily queue construction | Foreground `progress_study_queue`; trusted exact owner bypasses browser-idle admission | One durable slice per delivery, existing 250 ms transaction / 25 ms lock defaults and 100 ms pool admission |
+| Foreground receipt recovery | Foreground `recover_study_operations`; short existing control section | One indexed abandoned foreground receipt; original operation ID; five-second periodic fallback |
+| Accepted Study feedback | Foreground `maintain_game_feedback`; trusted accepted owner bypasses browser-idle admission | One effect/cursor per slice; existing pause and owner eligibility checks; same finite database budgets |
+| New local Games preparation | Explicit `queue.prepare_next` command only | Closed reads before writer; one preparation slot across the foreground worker processes |
+| Provider, comparison and old derivation work | Existing optional/background lanes | Existing leases/admission and bounded owner slices; no essential-work grant |
+| Pinned graph/integrity recovery | Existing `recover-opening-publication.py --mode queued-rebuild` | Exact target/source/task/generation/day scope, resumable preservation evidence; general Study-only allowlist remains unchanged |
+
+One nonblocking operating-system process lock covers potentially expensive
+next-card and accepted-effect preparation. A second preparation retains its
+original receipt and defers; ordinary saves/issuance do not acquire this lock.
+Process death releases the descriptor automatically. This reserves foreground
+execution capacity without another service, and does not isolate shared host CPU
+or PostgreSQL locks. PostgreSQL still uses the existing per-process pools and
+unchanged resource/transaction limits. Deployment contention/latency is separate
+assembled evidence.
+
+```mermaid
+flowchart LR
+  request[Committed queue request] --> wake[Coalesced exact queue wake]
+  periodic[One-second essential fallback] --> wake
+  wake --> essential[Foreground worker: daily_queue claim only]
+  browser[Browser waiting for Study] --> essential
+  essential --> slice[Existing bounded fenced queue slice]
+  slice -->|more committed work| wake
+  save[Saved review / issuance] --> foreground[Existing foreground receipt]
+  recovery[Five-second foreground-only recovery] --> foreground
+  prepare[Next-card / accepted-effect preparation] --> slot[One process-shared preparation slot]
+  slot --> owner[Existing source / Study owner preparation]
+  optional[Optional background worker] --> producers[Provider / analysis / old derivation]
+```
+
+The remaining marked legacy poll entrypoint stays compatible during a mixed
+release. Its denial/retry/lease regressions still run as old broker deliveries;
+the new essential retry case executes the actual new task. Advisory broker
+failure remains after the committed receipt and cannot turn a saved review into
+failure. No schema, schedule writer, provider activation or general Study-only
+permission changed.

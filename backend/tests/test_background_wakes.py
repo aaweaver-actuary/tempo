@@ -224,13 +224,13 @@ def test_wake_classes_are_independent_and_payload_commands_never_coalesce(wake_b
     for task_name in background_wakes.WAKE_TASK_NAMES:
         for _ in range(10):
             celery_app.send_task(task_name)
-    assert len(published) == 5  # Study feedback now participates in the same owner protocol.
+    assert len(published) == 7  # Independent essential queue and receipt recovery owners.
     for _ in range(10):
         celery_app.send_task('app.tasks.execute_background_command', args=['receipt', 'command', {}])
         celery_app.send_task('app.tasks.poll_background_tasks', args=['legacy-payload'])
-    assert len(published) == 25
+    assert len(published) == 27
     assert all(background_wakes.WAKE_HEADER not in options.get('headers', {})
-               for _name, _args, _kwargs, options in published[5:])
+               for _name, _args, _kwargs, options in published[7:])
 
 
 def test_failed_wake_publication_releases_only_its_reservation(wake_broker, monkeypatch):
@@ -585,7 +585,9 @@ def test_upgraded_poll_foreground_denial_retains_only_bounded_marked_opportunity
     assert delayed['headers']['queue_refresh_wake'] is True
     from datetime import datetime, timezone
     assert 0 < (delayed['eta'] - datetime.now(timezone.utc)).total_seconds() <= 1
-    assert celery_app.send_task(task.name).id == delayed['task_id']
+    assert published[-1][0] == 'app.tasks.progress_study_queue'
+    assert delayed['queue'] == 'foreground'
+    assert celery_app.send_task('app.tasks.progress_study_queue').id == delayed['task_id']
     assert len(published) == 2
 
 
