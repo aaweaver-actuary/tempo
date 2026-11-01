@@ -98,3 +98,21 @@ point. Later independent integrity or competing-card commits may order after
 acceptance; no absent global phantom lock is claimed. Existing selected-target
 currentness/lineage locks and atomic Study effects remain mandatory. No new
 all-card lock set, read deadline, table, field, index or migration is introduced.
+
+### Borrowed Repertoire change store
+
+`PostgresChangeStore.from_borrowed` accepts the existing `PostgresConnection`
+wrapper and unwraps its native connection inside this database owner. The
+retained Repertoire factory supplies the same wrapper to its existing callbacks;
+the store keeps the existing nested transaction/savepoint and lock order. The
+raw-connection constructor remains for the existing native owner test fixture.
+No independent connection, commit or close is added. This source boundary is not
+native rollback or deployment qualification.
+
+```mermaid
+flowchart LR
+  A[Retained factory] -->|existing wrapper| F[Database-owned borrowed constructor]
+  F --> S[Existing change store]
+  S -->|nested transaction on same connection| T[Caller-owned transaction]
+  S -->|callbacks retain wrapper| A
+```

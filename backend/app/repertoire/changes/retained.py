@@ -147,7 +147,7 @@ def retained_changes(database, repertoire_id: str, *, current_snapshot: Snapshot
     """Concrete factory; all reads use #483 and all mutations use current owners."""
     from tempo_legacy_database.adapters.authored_repertoires.product_changes import PostgresChangeStore
     reader = current_snapshot if current_snapshot is not None else _shared_snapshot_reader
-    store = PostgresChangeStore(database.raw,repertoire_id,
+    store = PostgresChangeStore.from_borrowed(database,repertoire_id,
         reader=lambda _connection,selected:reader(database,selected),
         publisher=lambda _connection,change:publish_validated_change(database,change,current_snapshot=reader),
         before_lock=lambda _connection,selected:lock_retained_sources(database,selected),
