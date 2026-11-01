@@ -2,7 +2,6 @@
 from fastapi import APIRouter, Header, HTTPException, Query
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.controls import opening_evidence as storage
-from . import opening_evidence_commands  # noqa: F401 - registers the checkpoint command
 from tempo_legacy_database.connections import background_read_connection
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from .services.activity_gate import activity_gate

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.authored_repertoires import prefix_commands as storage
-from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
 from .contracts.transport.authored_repertoire import CanonicalPrefixSaveRequest
 from tempo_legacy_database.connections import connection, read_connection
 from .services.canonical_prefix import parse_prefix, prefix_projection, read_prefix, preview_command, save_prefix

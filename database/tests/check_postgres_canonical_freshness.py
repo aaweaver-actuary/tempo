@@ -682,7 +682,7 @@ def prove_deterministic_route_certification():
 
 def prove_canonical_scope_lifecycle():
     """CF-15 / CP-4/5/6: normal publication, source mutation and recovery."""
-    from app import main as api, coverage_commands, card_commands, repertoire_commands
+    from app import main as api, coverage_commands, card_commands, repertoire_commands, canonical_prefix_commands  # noqa: F401 - explicit direct gateway assembly
     from app.command_gateway import execute_command, read_operation
     from app.services import postgres_coverage_explorer as explorer, repertoire_coverage as coverage
     from app.chess.cards import card_id
