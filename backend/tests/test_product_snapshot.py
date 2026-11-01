@@ -644,9 +644,9 @@ def test_snapshot_route_replay_is_local_lazy_and_once_per_needed_route(monkeypat
         route_moves_ids.clear()
         route_moves_ids.update(id(route.moves) for route in routes.values())
         return original_mappings(capture, routes, *args, **kwargs)
-    def tracked(start, moves):
+    def tracked(start, moves, memo):
         if id(moves) in route_moves_ids: calls.append(tuple(moves))
-        return original(start, moves)
+        return original(start, moves, memo)
     monkeypatch.setattr(projection, "_mappings", mappings)
     monkeypatch.setattr(projection, "_frames", tracked)
     first = projection.project_repertoire(facts, captured_at="2026-10-26T12:00:00Z")
@@ -723,9 +723,9 @@ def test_snapshot_shared_executable_replay_scales_with_content_not_graph_uses(mo
     facts['lines'] = [line | dict(id='alias-' + str(index)) for index in range(64)]
     facts['graphs'] = [graph | dict(line_id=item['id']) for item in facts['lines']]
     original, calls = projection._frames, []
-    def replay(start, moves):
+    def replay(start, moves, memo):
         calls.append((start, tuple(moves)))
-        return original(start, moves)
+        return original(start, moves, memo)
     monkeypatch.setattr(projection, '_frames', replay)
     result = projection.project_published_repertoire(facts)
     assert len(result.decision_presentations) == 128
@@ -795,9 +795,9 @@ def test_snapshot_physical_slice_uses_its_proved_legal_authored_frames(monkeypat
     facts['cards'][0].update(start_fen=' '.join(card_start), moves_json=json.dumps(route_moves[2:5]))
     facts['graphs'][0].update(starting_fen=board.fen(), moves_json=json.dumps(route_moves[2:5]))
     original, calls = projection._frames, []
-    def replay(start, moves):
+    def replay(start, moves, memo):
         calls.append((start, tuple(moves)))
-        return original(start, moves)
+        return original(start, moves, memo)
     monkeypatch.setattr(projection, '_frames', replay)
     result = projection.project_published_repertoire(facts)
     assert [(item.route_ply, item.selected_response_uci) for item in result.decision_presentations] == [
@@ -832,3 +832,59 @@ def test_snapshot_physical_root_normalization_and_validity_share_one_parse(monke
     assert len(result.decision_presentations) == 2
     # One legal authored replay and one physical-root validation/normalization.
     assert starts.count(chess.STARTING_FEN) == 2
+
+
+@pytest.mark.parametrize('variant', ['base', 'repeated', 'conflict', 'ambiguous', 'illegal-route',
+                                     'illegal-card', 'unused-illegal-route', 'legal-ep', 'pinned-ep', 'castling'])
+def test_projection_prefix_facts_match_prior_complete_snapshot(monkeypatch, variant):
+    import app.repertoire.snapshot as projection
+    special = {
+        'legal-ep': ('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5d6'),
+        'pinned-ep': ('4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5e6'),
+        'castling': ('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 17 42', 'e1g1'),
+    }
+    facts = route_reuse_facts('base' if variant in special else variant)
+    if variant in special:
+        fen, move = special[variant]
+        for item in (*facts['lines'], *facts['cards']):
+            item['start_fen'], item['moves_json'] = fen, json.dumps([move])
+        facts['graphs'][0].update(starting_fen=fen, moves_json=json.dumps([move]))
+    original = deepcopy(facts)
+    actual = projection.project_published_repertoire(facts, captured_at='2026-10-26T12:00:00Z')
+    def old_frames(start, moves, _memo):
+        board = chess.Board(start)
+        if not board.is_valid():
+            raise ValueError('invalid_source_position')
+        values = [(board.turn, projection.canonical_fen_key(board.fen(en_passant='legal')))]
+        for uci in moves:
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                raise ValueError('illegal_source_move')
+            board.push(move)
+            values.append((board.turn, projection.canonical_fen_key(board.fen(en_passant='legal'))))
+        return tuple(values)
+    monkeypatch.setattr(projection, '_frames', old_frames)
+    expected = projection.project_published_repertoire(facts, captured_at='2026-10-26T12:00:00Z')
+    assert actual.model_dump(mode='json') == expected.model_dump(mode='json')
+    assert fingerprint(actual.model_dump(mode='json')) == fingerprint(expected.model_dump(mode='json'))
+    assert facts == original
+
+
+def test_prefix_facts_reuse_is_local_bounded_and_rejects_invalid_routes():
+    import app.repertoire.snapshot as projection
+    memo = projection._PrefixFacts(limit=2)
+    first = projection._frames(chess.STARTING_FEN, ('e2e4', 'e7e5'), memo)
+    assert not memo.facts  # Capacity fallback publishes no partial route.
+    assert first == projection._frames(chess.STARTING_FEN, ('e2e4', 'e7e5'), projection._PrefixFacts())
+    valid = projection._PrefixFacts()
+    with pytest.raises(ValueError, match='illegal_source_move'):
+        projection._frames(chess.STARTING_FEN, ('e2e4', 'e7e5', 'e4e6'), valid)
+    assert not valid.facts
+    with pytest.raises(ValueError):
+        projection._frames('not a FEN', (), valid)
+    assert not valid.facts
+    projection._frames(chess.STARTING_FEN, ('e2e4', 'e7e5'), valid)
+    before = len(valid.facts)
+    projection._frames(chess.STARTING_FEN, ('e2e4', 'c7c5'), valid)
+    assert len(valid.facts) == before + 1
+    assert not projection._PrefixFacts().facts
