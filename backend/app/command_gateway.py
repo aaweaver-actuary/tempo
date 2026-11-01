@@ -52,6 +52,7 @@ def register_command(
     """Register publication and optional non-persisted preparation before its transaction."""
     if name in _handlers:
         raise ValueError(f"Duplicate command: {name}")
+    _registry.clear_after_commit(name)
     _handlers[name] = handler
     if prepare is not None:
         _preparers[name] = prepare
@@ -162,9 +163,8 @@ def execute_command(
     with capture_queue_refresh_request() as queue_request:
         result = _execute_command(operation_id, command_name, payload,
                                   background=background, attempt_token=attempt_token)
-    if result is not None and command_name == 'settings.update':
-        from .services.study_priority import refresh_policy
-        refresh_policy()  # Post-commit generation fences any older policy read.
+    if result is not None:
+        _registry.after_commit(command_name, result)
     # The inner boundary commits and closes before returning. Failed handlers
     # return None after rollback; their transient enqueue must never emit a wake.
     if result is not None and (queue_request.requested or

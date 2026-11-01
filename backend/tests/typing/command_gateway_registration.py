@@ -23,3 +23,13 @@ invalid: CommandDescriptor[AlienTransaction, int, str, bool] = CommandDescriptor
 register_descriptor(valid)
 register_descriptor(invalid)  # type: ignore[arg-type]  # an unrelated transaction must remain rejected
 CommandRegistry().register(invalid)  # independent registries retain generic transactions
+
+def bool_hook(result: bool) -> None:
+    pass
+
+def wrong_hook(result: str) -> None:
+    pass
+
+with_hook: CommandDescriptor[PostgresConnection, int, str, bool] = CommandDescriptor('hook', decode, prepare, supported, bool_hook)
+bad_hook: CommandDescriptor[PostgresConnection, int, str, bool] = CommandDescriptor('bad-hook', decode, prepare, supported, wrong_hook)  # type: ignore[arg-type]  # hook must accept the result type
+register_descriptor(with_hook)
