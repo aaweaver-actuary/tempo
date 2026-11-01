@@ -9,7 +9,7 @@ from psycopg.errors import LockNotAvailable, SerializationFailure
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_application import storage
-from app import prefix_evaluation_api as structural, prefix_transition_api as planner_api
+from . import prefix_evaluation_source as structural, prefix_transition_source as planner_api
 from ..command_gateway import register_command
 from app.contracts.prefix_transition import PrefixTransitionApplyRequest, PrefixTransitionPlan
 from tempo_legacy_database.adapters.snapshot_reads import SnapshotRead, snapshot_rows
@@ -64,14 +64,14 @@ def prepare_application(payload):
         if snapshot_identity(source) != request.snapshot_id:
             raise conflict('stale_plan', 'The repertoire source changed. Approve a fresh plan.')
         validate_shortening(source, request.selected_line_ids, request.candidate_depths)
-        evaluation = planner_api._calculate(structural.iter_prefix_evaluation(source, request.selected_line_ids, request.candidate_depths), deadline)
+        evaluation = planner_api.calculate(structural.iter_prefix_evaluation(source, request.selected_line_ids, request.candidate_depths), deadline)
         lookup_ids = {step['card_id'] for phase in ('current', 'proposed') for step in evaluation['whole_repertoire'][phase]['steps']}
         lookup_ids.update(planner_api.discover_memberships(payload['repertoire_id'], deadline))
         for split in source.prefix_overrides:
             lookup_ids.update((split.source_card_id, split.shortened_card_id, split.continuation_card_id))
         reads = []
         snapshot = planner_api.load_transition_snapshot(payload['repertoire_id'], lookup_ids, request.study_day, deadline, reads=reads)
-        plan = planner_api._calculate(iter_transition_plan(snapshot, request.selected_line_ids, request.candidate_depths, evaluation), deadline)
+        plan = planner_api.calculate(iter_transition_plan(snapshot, request.selected_line_ids, request.candidate_depths, evaluation), deadline)
         refreshed = planner_api.load_transition_snapshot(payload['repertoire_id'], lookup_ids, request.study_day, deadline)
         if transition_snapshot_identity(refreshed) != plan.transition_snapshot_id:
             raise conflict('stale_plan', 'Study or source state changed during preparation. Approve a fresh plan.')

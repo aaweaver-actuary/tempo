@@ -24,3 +24,19 @@ The complete [source schema index and bounded ER/dictionaries](../../schema/READ
 Connections retain `read_only=True`, `background=True`, `repeatable_read=True`; application admission still precedes acquisition. Concrete driver/error classes and SQL stay here; the API retains the same public helper signatures and compatibility module alias. Snapshot capture returns native rows after the same complete projection/size/transfer logic. No generic SQL port, dispatch layer, new context framework, connection/transaction owner, independent commit or serving Study dependency is introduced. Resource/deployment isolation and actual native permissions remain unverified.
 
 One-time named expansion restores both complete non-import application ASTs, the whole transition-capture body, all query/parameter/dynamic query-building values, driver kwargs and error classes. Five Python sources compile. The initial38-case owning selection reports35passes and3pre-existing failures; verified unchanged API source reproduces the same three. The final affected connection/deadline/size/order selection passes9cases, overlapping those35. No assertions were skipped/weakened or test fakes repaired. [Validation and baseline limitations](../../../VALIDATION.md) give the exact commands, original-source hash and failure details. Native PostgreSQL, installed-wheel execution, live/deployed resources and full-system checks remain unverified. [Remaining extraction inventory](../../../INVENTORY.md).
+
+Transition source capture and cooperative iteration are owned by
+`app.services.prefix_transition_source`; the same diagnostic source owner
+provides its single deadline and activity context. HTTP and command preparation
+consume those owners while the existing read adapter remains unchanged.
+
+```mermaid
+flowchart LR
+  http["Prefix HTTP routes"] --> source["Evaluation source owner"]
+  apply["Transition preparation"] --> source
+  http --> transition["Transition source owner"]
+  apply --> transition
+  transition --> source
+  source --> snapshot["Existing repeatable-read snapshot adapter"]
+  transition --> snapshot
+```
