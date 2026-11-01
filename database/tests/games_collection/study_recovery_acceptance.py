@@ -306,7 +306,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
             end_at=(now-timedelta(seconds=60)).isoformat(), precision='second')
         inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now']-90)*1000), rated=True, speed='rapid', pgn=str(game)))
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        _marker(directory/'provider.json', inputs)
         entry('foreground-worker', 'recovery-configure')
         entry('foreground-worker', 'worker')
         with case.transaction() as database:
@@ -358,7 +358,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             assert time.monotonic() < retry_deadline, 'held_original_retry_deadline_not_reached'
             time.sleep(.1)
         inputs['now'] = datetime.now(timezone.utc).timestamp()
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        _marker(directory/'provider.json', inputs)
         retry = entry('foreground-worker', 'retry-local-feedback')
         current = entry('api', 'feedback-state', operation)
         assert current['command'] == original and current['receipt'] is not None
@@ -440,7 +440,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['window'] = dict(start_at=(now - timedelta(seconds=120)).isoformat(),
             end_at=(now - timedelta(seconds=60)).isoformat(), precision='second')
-        (directory / 'provider.json').write_text(json.dumps(inputs))
+        _marker(directory / 'provider.json', inputs)
         configured = entry('foreground-worker', 'recovery-configure')
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
