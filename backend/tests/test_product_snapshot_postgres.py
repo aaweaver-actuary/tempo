@@ -153,7 +153,7 @@ def test_current_snapshot_scope_is_parameter_bound(database):
 
 
 @pytest.mark.parametrize("name", ["Plain authored name " * 20, 'Quoted " \\ \n\t café ' * 20])
-def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts(database, monkeypatch, name):
+def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts(database, name):
     """Worst-case escape multiplication must not reject ordinary complete facts."""
     from app.repertoire import project_repertoire
     connection, _ = database
@@ -163,14 +163,13 @@ def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_fa
     expected = storage.read_repertoire(connection, "rep")
     before = project_repertoire(expected)
     actual_bytes = len(json.dumps(expected, ensure_ascii=False).encode())
-    # Lower the fixture cap rather than increasing the production 32 MiB cap.
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", actual_bytes + 1024)
-    row = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()
+    # Aggregate caps were intentionally retired before this repair. Current
+    # three-parameter reads return complete facts, retaining row/count guards.
+    row = connection.execute(storage.STATEMENT,
+        ("rep", storage.MAX_SOURCE_ROWS, storage.MAX_ROW_BYTES)).fetchone()
     envelope = row["snapshot"]
-    assert envelope["bounded"] and envelope["facts"] is None
-    assert json.loads(row["facts_json"]) == expected
-    assert len(row["facts_json"].encode()) == actual_bytes
-    assert actual_bytes <= envelope["estimated_bytes"] <= actual_bytes + 1024
+    assert envelope["bounded"] and envelope["facts"] == expected
+    assert actual_bytes <= envelope["estimated_bytes"]
     actual = storage.read_repertoire(connection, "rep")
     assert actual == expected and actual["lines"][0]["name"] == name
     after = project_repertoire(actual)
@@ -179,20 +178,13 @@ def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_fa
     assert after.decision_presentations == before.decision_presentations
 
 
-def test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow(database, monkeypatch):
+def test_serialized_byte_accounting_still_refuses_true_row_byte_overflow(database):
     from app.repertoire import RepertoireSnapshotBoundExceeded
     connection, _ = database
     connection.execute("SET LOCAL statement_timeout='250ms'")
     connection.execute("SET LOCAL lock_timeout='100ms'")
-    facts = storage.read_repertoire(connection, "rep")
-    actual_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", actual_bytes - 1)
-    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
-        storage.read_repertoire(connection, "rep")
-    assert caught.value.diagnostic()["violations"][0]["dimension"] == "estimated_snapshot_bytes"
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", 32 * 1024 * 1024)
     connection.execute("UPDATE repertoire_lines SET moves_json=%s", ("x" * 65537,))
-    envelope = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()["snapshot"]
+    envelope = connection.execute(storage.STATEMENT, ("rep", storage.MAX_SOURCE_ROWS, storage.MAX_ROW_BYTES)).fetchone()["snapshot"]
     assert not envelope["bounded"] and envelope["facts"] is None and envelope["largest_row"] > 65536
     with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
         storage.read_repertoire(connection, "rep")
@@ -232,3 +224,18 @@ def test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint(
         facts = storage.read_candidate_bindings(connection, repertoire_id="rep",
             expected_header=before["facts"]["repertoire"], route_ids=("route",))
     assert facts == before["facts"]
+
+
+def test_complete_snapshot_above_retired_aggregate_limit_preserves_all_rows(database):
+    """The prior no-total-cap contract admits complete valid per-row sources."""
+    connection, _ = database
+    # 560 real legal authored aliases, each below the retained64KiB row bound;
+    # their complete document exceeds the retired32MiB aggregate ceiling.
+    connection.execute("""INSERT INTO repertoire_lines
+        SELECT 'large-'||number,'rep',repeat('x',60000),'white',%s,'["e2e4"]'
+        FROM generate_series(1,560) number""", (chess.STARTING_FEN,))
+    facts = storage.read_repertoire(connection, "rep")
+    assert len(facts["lines"]) == 561
+    assert sum(line["id"].startswith("large-") for line in facts["lines"]) == 560
+    assert len(json.dumps(facts, ensure_ascii=False).encode()) > 32 * 1024 * 1024
+    assert len(facts["cards"]) == len(facts["memberships"]) == len(facts["graphs"]) == 1
