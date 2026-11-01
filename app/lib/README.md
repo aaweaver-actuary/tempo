@@ -92,3 +92,15 @@ flowchart LR
   delivery --> store["Supplied existing intent store"]
   client --> receipt["Original operation receipt"]
 ```
+
+Review delivery captures the selected client generation and existing intent
+store before its guided marker, review and receipt checks. Evidence fallback
+and reconciliation retain their original journal identities.
+
+```mermaid
+flowchart LR
+  session["Existing Study session"] --> review["Review delivery"]
+  review --> client["Selected Study client and generation"]
+  review --> journal["Existing intent journal"]
+  client --> receipt["Original or retained fallback receipt"]
+```
