@@ -166,7 +166,8 @@ class Coordinator:
                 if (snapshot.membership.workspace_id != spec.workspace_id
                         or repertoire_id not in snapshot.membership.scope_repertoire_ids):
                     raise ValueError("snapshot_scope_mismatch")
-            except ValueError:
+            except ValueError as error:
+                page_failure(error)
                 snapshot_integrity_error = True
                 unavailable_snapshots.add(repertoire_id)
                 continue
@@ -214,7 +215,8 @@ class Coordinator:
                 positions += len(normalized.moves)
                 if positions > self.max_page_positions:
                     raise AcquisitionFailure("page_position_budget_exceeded", retryable=False)
-            except ValueError:
+            except ValueError as error:
+                page_failure(error)
                 integrity_error = True
             if normalized is not None and not integrity_error:
                 compatible = tuple(snapshot for snapshot in snapshots
@@ -247,7 +249,8 @@ class Coordinator:
                             compared_findings.append(finding)
                             if finding.diagnostic == "snapshot_incomplete_or_unavailable":
                                 unresolved.add(finding.repertoire_id)
-                    except ValueError:
+                    except ValueError as error:
+                        page_failure(error)
                         integrity_error = True
                 findings = tuple(sorted(set(compared_findings),
                     key=lambda finding: (finding.ply, finding.repertoire_id, finding.model_dump_json())))
@@ -272,7 +275,8 @@ class Coordinator:
                             encounters = _encounter_for_selection(first_departure, detected_at=self.clock.utc_now(),
                                 occurred_at=(normalized.played_at if record.time_precision in {"second", "millisecond"} else None),
                                 payload_digest=normalized.source_digest)
-                    except ValueError:
+                    except ValueError as error:
+                        page_failure(error)
                         integrity_error = True
             if integrity_error:
                 diagnostic = "unresolved_parsing_or_comparison_boundary"
