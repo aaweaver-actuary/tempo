@@ -46,8 +46,9 @@ The former 384 MiB PostgreSQL assembly OOM is not claimed fixed; the 448 MiB Gam
 producer allocation requires the complete two-mode journey and zero-OOM evidence.
 No global service budget changes. Foreground/background concurrency remains 2/1.
 Cgroup current/peak/events, process RSS and container OOM/exit state are retained.
-These finite candidate caps differ from installed unbounded API/foreground
-roles; a passing allocation check is not memory or performance proof.
+These are fixture-only caps. Compose source declares no API or foreground memory
+limit; installed cgroup limits are unknown. A passing allocation check is not
+memory or performance proof.
 
 The synthetic workload preserves ten selected repertoires, 8,268 legal authored
 routes, 242,235 authored plies and 94,929 executable graph uses. Physical cards
