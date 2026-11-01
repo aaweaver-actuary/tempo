@@ -82,7 +82,7 @@ def test_next_card_preparation_is_an_explicit_command_not_a_queue_read(queued_at
     assert client.get('/api/queue/window?limit=2').status_code == 200
     assert prepared == []
     result = client.post('/api/queue/prepare-next')
-    assert result.status_code == 200 and result.json() == dict(progressed=True,pending=False,reason=None)
+    assert result.status_code == 200 and result.json() == dict(progressed=True,pending=False,reason=None,blocks_issuance=False)
     assert prepared == [True]
 
 
@@ -269,3 +269,44 @@ def test_prepared_continuation_requires_current_head_and_matching_identity(queue
         assert "prepared_continuation" not in result
         assert connection.execute("SELECT count(*) FROM reviews WHERE card_id='active-a'").fetchone()[0] == 1
         assert connection.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE card_id='later-b'").fetchone()[0] == 0
+
+
+def test_held_optional_feedback_allows_saved_review_and_exact_continuation_replay(queued_attempts, monkeypatch):
+    from app.services import queue_next_card
+    from app.study.interfaces.next_card import NextCardPreparation
+    monkeypatch.setattr(main.coordinator, 'wake', lambda: None)
+    monkeypatch.setattr(queue_next_card, '_source_pending', lambda *_args, **_kwargs:
+        NextCardPreparation(False, True, 'integrity_prerequisite_held', blocks_issuance=False))
+    monkeypatch.setattr(queue_next_card, '_prepare', lambda: pytest.fail('optional preparation entered saved-review writer'))
+    with database.connection() as connection:
+        command = CommandConnection(connection)
+        result = review_commands.submit_review(command, payload(queued_attempts))
+        assert result['persisted'] and result['prepared_continuation']['card_id'] == 'later-b'
+        assert review_commands.submit_review(command, payload(queued_attempts)) == result
+        assert connection.execute("SELECT count(*) FROM reviews WHERE card_id='active-a'").fetchone()[0] == 1
+        assert connection.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE card_id='later-b'").fetchone()[0] == 1
+
+
+def test_optional_preparation_exception_does_not_hide_accepted_study_work(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.product_composition import next_card_priority as composition
+    from app.study import game_feedback
+    prepared, applied = {}, []
+    observed = SimpleNamespace(key=object(),qualification=None,
+        progress=SimpleNamespace(determined_at='2026-01-01T00:00:00Z',stream='forward'))
+    @contextmanager
+    def read():
+        yield object()
+    def optional(**_kwargs):
+        raise ImportError('optional Games module absent')
+    monkeypatch.setattr(composition,'configure_next_card_work',lambda **work:prepared.update(work))
+    monkeypatch.setattr(composition,'installed',lambda _db:True)
+    monkeypatch.setattr(composition,'feedback_preparation_admitted',lambda _db:True)
+    monkeypatch.setattr(composition,'next_feedback_preparation',lambda *_args,**_kwargs:observed)
+    monkeypatch.setattr(composition,'PostgresGameFeedbackStore',lambda _db:SimpleNamespace(study_day=lambda _now:date(2026,1,1)))
+    monkeypatch.setattr(game_feedback,'effect_id',lambda _key:'accepted-study')
+    monkeypatch.setattr(composition,'prepare_feedback_effect',lambda *args,**kwargs:applied.append(args[0]) or object())
+    composition.register_current_next_card_priority(read=read,local_handoff_prepare=optional)
+    work = prepared['prepare']()
+    assert isinstance(work, composition.PreparedCurrentStudyWork) and applied == [observed]

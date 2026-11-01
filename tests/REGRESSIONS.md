@@ -6458,3 +6458,8 @@ safe disable never invoke expensive readiness/preview, retain candidate ownershi
 report unassessed activation as unknown and use finite explicit-read deadlines.
 Older readiness assertions now invoke explicit plan, matching the new operation
 contract; all activation refusal and identity invariants remain intact.
+### Study reliability B — optional hold and encounter-read isolation (#659)
+
+- `backend/tests/test_queue_attempt_issuance.py`: `test_optional_encounter_projection_failure_keeps_core_queue_and_issuance`, `test_core_queue_projection_failure_remains_visible`, `test_nonblocking_optional_pending_does_not_veto_populated_or_empty_queue`, `test_ready_optional_pending_still_precedes_unissued_head_and_preserves_issued_head`.
+- `backend/tests/test_prepared_review_continuation.py`: `test_held_optional_feedback_allows_saved_review_and_exact_continuation_replay`, `test_optional_preparation_exception_does_not_hide_accepted_study_work`.
+- `backend/tests/test_queue_projection_postgres.py`: `test_optional_encounter_sql_failure_closes_separate_read_and_preserves_core_transaction`, `test_accepted_authority_hold_does_not_become_issuance_blocker_when_retry_expires`.

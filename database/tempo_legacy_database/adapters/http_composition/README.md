@@ -26,6 +26,8 @@ flowchart LR
   http -->|existing scheduling and refresh decisions| jobs[Queue, coverage, discovery and defense helpers]
   store --> settings[Settings and provider accounts]
   store --> queue[Queue projections, attempts and durable task facts]
+  http -->|separate bounded read; failure closes only this transaction| badges[Advisory encounter counts and badges]
+  badges --> games
   store --> source[Repertoire integrity, discovery, coverage and defense facts]
   store --> authoring[Existing lines, card revisions, annotations, teaching state and portable sources]
   store --> games[Games sync, analysis leases, repair errors and parent facts]
@@ -35,11 +37,11 @@ flowchart LR
   jobs --> lifecycle[Existing coordinator and shared legacy lifecycle]
 ```
 
-Queries that were consumed by cursor iteration still yield one row at a time at the original comprehension points. Fixed settings arguments are evaluated in the application in their original order. Queue projection writes discard their otherwise unused internal driver cursor; existing callers discard the submitted callback result. No new connection, transaction, queue writer, schema/migration or generic SQL interface is introduced.
+Queries that were consumed by cursor iteration still yield one row at a time at the original comprehension points. Fixed settings arguments are evaluated in the application in their original order. Queue projection writes discard their otherwise unused internal driver cursor; existing callers discard the submitted callback result. Queue encounter badges use their own read transaction; all authoritative projections retain the caller transaction. No new queue writer, schema/migration or generic SQL interface is introduced.
 
 ## Queue projection and head issuance
 
-`queue_rows` retains both original query shapes, conditional availability fragments, repeated configured-mode checks, limits and parameter order. The application still performs the existing 400-key encounter batches, cutoff/badge clocks and response assembly; the adapter owns each complete parameter-bound batch read. `available_head` accepts only the application-owned current-day capability so its original clock read stays after availability SQL construction. It does not accept a SQL string or query callback.
+`queue_rows` retains both original query shapes, conditional availability fragments, repeated configured-mode checks, limits and parameter order. The application supplies cutoff/badge clocks and response assembly; `encounter_badges` owns the 400-key batches on a separate read with a 100 ms statement and 25 ms lock deadline on PostgreSQL. Optional SQL failure closes that read before issuance; the response marks `encounter_evidence_status=unavailable` and omits its count instead of presenting a known zero. Core queue and required attempt projections still fail visibly. `available_head` accepts only the application-owned current-day capability so its original clock read stays after availability SQL construction. It does not accept a SQL string or query callback.
 
 Head issuance still reads the immutable identity first, returns on an already issued head, and uses the existing PostgreSQL worker command or SQLite caller-owned transaction. The named `begin_head_issuance` operation executes the original `BEGIN IMMEDIATE` at the same point; it does not open/commit/rollback a connection or become another issuance authority. Existing `queue_commands.issue_queue_head`, validation, first-issuance binding, failure conflict checks and capture/preserve queue-order callbacks are unchanged. Prepared Study exercise snapshots and optional opening evidence remain application composition.
 

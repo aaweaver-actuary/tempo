@@ -491,7 +491,8 @@ separate operator gates.
 ```mermaid
 flowchart LR
   Head["Issue head / saved review"] --> Hint["Borrowed read: verified mode + ready source or control"]
-  Hint --> Pending["503 or omit new ordinary successor; preserve issued board/save"]
+  Hint -->|ready urgency only| Pending["503 or omit new ordinary successor; preserve issued board/save"]
+  Hint -->|optional hold or unavailable| Ordinary["Unrelated valid Study continues; obligation remains durable"]
   Pending --> Select["Read accepted Study responsibility and original priority"]
   Select --> Choice["Compare cheap local delivery metadata; controls first"]
   Choice --> Prerequisite["Cheap retained-target prerequisite observation"]
@@ -522,7 +523,11 @@ reason. A retry deadline only allows reconsideration; it does not restore ready
 authority. Old non-null priority sidecars are filtered against current payload
 status/error at reads and cleared lazily on owner writes. Retained qualified
 targets get a cheap current graph/integrity observation before any scope replay;
-restoration permits full qualification, never acceptance from the hint alone. Accepted Study preparation uses bounded foreground reads
+restoration permits full qualification, never acceptance from the hint alone.
+The accepted Study blocking selector excludes unqualified and known authority-held
+work even when its retry time expires; the independent preparation selector still
+recovers it under the original identity. Optional preparation failures cannot hide
+accepted Study work. Accepted Study preparation uses bounded foreground reads
 and continues independently of Games mode/process.
 
 Qualification uses the owning adapter's two finite reads: complete authored
