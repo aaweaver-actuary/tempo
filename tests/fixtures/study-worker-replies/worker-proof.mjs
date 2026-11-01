@@ -36,8 +36,11 @@ try {
   assert.deepEqual(results[0], { id: 3, error: 'Invalid study worker request' });
   assert.ok(results[1].workerError);
   assert.equal(results[2].id, 4); assert.deepEqual(results[2].result, []);
-  assert.deepEqual(results[3].map(cards => cards.map(card => card.kind)), [['opening', 'puzzle', 'study'], ['opening', 'puzzle', 'study'], []]);
+  assert.deepEqual(results[3].map(cards => cards.map(card => card.kind)), [['opening', 'puzzle', 'study', 'defense', 'endgame', 'middlegame'], ['opening', 'puzzle', 'study', 'defense', 'endgame', 'middlegame'], []]);
   assert.equal(results[3][0][0].openingEvidenceParentAttemptId, 'original-attempt');
   assert.equal(results[3][0][2].studySnapshot.exercise_id, 'exercise-1');
+  assert.equal(results[3][0][3].defenseCandidateId, 'candidate-1');
+  assert.deepEqual(results[3][0][0].openingDecisionManifest, fixtures.available.cards[0].opening_decision_manifest);
+  assert.deepEqual(results[3][0].map(card => card.revision), [2, 2, 2, 2, 2, 2]);
   console.log('PASS actual_worker_malformed_request_and_producer_result_decoding');
 } finally { await browser.close(); }
