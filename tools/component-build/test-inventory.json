@@ -132,6 +132,7 @@
       "tests/unit/study-client-factory-regressions.test.ts",
       "tests/unit/study-composition-regressions.test.ts",
       "tests/unit/study-exercise-grading.test.ts",
+      "tests/unit/study-command-client-capability.test.ts",
       "tests/unit/study-intent-storage-regressions.test.ts",
       "tests/unit/study-interaction-priority.test.ts",
       "tests/unit/study-learning-connection-regressions.test.ts",

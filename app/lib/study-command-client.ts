@@ -1,4 +1,4 @@
-import { learningFetch as fetch } from "./study-connection";
+import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
@@ -33,54 +33,80 @@ async function predecessorSettled(record: IntentRecord, store: IntentStore): Pro
     (parentScope ? (candidate.payload as FrozenStudyRequest).scope === parentScope : (candidate.payload as FrozenStudyRequest).scope.endsWith(":recognition")));
   return parent?.state === "committed";
 }
-async function deliver(record: IntentRecord, signal: AbortSignal) {
-  const request = record.payload as FrozenStudyRequest;
-  const store = await studyIntentStore();
-  const started = Boolean((record.data as { started?: boolean } | undefined)?.started);
-  await store.update(record.key, current => ({ ...current, data: { ...current.data as object, started: true } }));
-  try {
-    let response = started ? await readOperationResponse(record.requestId, { allowMissing: true, signal }) : new Response(null, { status: 404 });
-    let body: Record<string, unknown> | undefined;
-    if (response.ok) body = await response.clone().json() as Record<string, unknown>;
-    // A completed transport response requesting analysis is not a completed exercise.
-    if (response.status === 404 || body?.status === "needs_analysis") {
-      if (!await predecessorSettled(record, store)) throw new PendingOperationError(record.requestId, "Confirm the original answer before recovering its dependent submission.");
-      response = await fetch(record.endpoint, { method: "POST", signal, headers: request.headers, body: JSON.stringify(request.body) });
-    }
-    if (response.status === 202) {
-      const operation = await response.clone().json() as { operation_id?: string };
-      if (operation.operation_id && operation.operation_id !== record.requestId) throw new Error("The service did not confirm the original study operation.");
-    }
-    response = await confirmOperationResponse(response, { signal });
-    if (response.status === 202) throw new PendingOperationError(record.requestId);
-    body = await response.json() as Record<string, unknown>;
-    if (!response.ok) {
-      const message = typeof body.detail === "string" ? body.detail : `Study save returned HTTP ${response.status}.`;
-      if (record.kind === "study-command" && response.status === 422) return rejected(record, 422, message, body);
-      throw new Error(message + " Retry the original request.");
-    }
-    return assessResponse(record, body);
-  } catch (error) { return rejectionFromError(record, error); }
+function bindAuthority(client: StudyClient) {
+  const generation = client.generation, origin = client.origin;
+  return () => {
+    if (client.generation !== generation || client.origin !== origin)
+      throw new Error("Study authority changed. Recover the original operation with its original service.");
+  };
 }
-function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
-  if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
-  if (record.kind === "defense-command" && !["correct", "incorrect", "needs_analysis", "ambiguous", "illegal", "ready_for_move"].includes(String(body.status)))
-    throw new Error("The service did not return a recognized defense assessment.");
-  if (record.kind === "endgame-command") endgameAttemptSchema.parse(body);
-  if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
-  if (record.kind === "settings-command") studySettingsSchema.parse(body);
-  if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
-    throw new Error("Learning did not confirm the original burial.");
-  return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
+
+export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>) {
+  async function deliver(record: IntentRecord, signal: AbortSignal) {
+    const requireAuthority = bindAuthority(client);
+    const request = record.payload as FrozenStudyRequest;
+    const store = await getStore();
+    requireAuthority();
+    const started = Boolean((record.data as { started?: boolean } | undefined)?.started);
+    await store.update(record.key, current => ({ ...current, data: { ...current.data as object, started: true } }));
+    requireAuthority();
+    try {
+      let response = started ? await readOperationResponse(record.requestId, { allowMissing: true, signal, client }) : new Response(null, { status: 404 });
+      requireAuthority();
+      let body: Record<string, unknown> | undefined;
+      if (response.ok) body = await response.clone().json() as Record<string, unknown>;
+      requireAuthority();
+      // A completed transport response requesting analysis is not a completed exercise.
+      if (response.status === 404 || body?.status === "needs_analysis") {
+        if (!await predecessorSettled(record, store)) throw new PendingOperationError(record.requestId, "Confirm the original answer before recovering its dependent submission.");
+        requireAuthority();
+        response = await client.learningFetch(record.endpoint, { method: "POST", signal, headers: request.headers, body: JSON.stringify(request.body) });
+      }
+      requireAuthority();
+      if (response.status === 202) {
+        const operation = await response.clone().json() as { operation_id?: string };
+        requireAuthority();
+        if (operation.operation_id && operation.operation_id !== record.requestId) throw new Error("The service did not confirm the original study operation.");
+      }
+      response = await confirmOperationResponse(response, { signal, client });
+      requireAuthority();
+      if (response.status === 202) throw new PendingOperationError(record.requestId);
+      body = await response.json() as Record<string, unknown>;
+      requireAuthority();
+      if (!response.ok) {
+        const message = typeof body.detail === "string" ? body.detail : `Study save returned HTTP ${response.status}.`;
+        if (record.kind === "study-command" && response.status === 422) return rejected(record, 422, message, body);
+        throw new Error(message + " Retry the original request.");
+      }
+      return assessResponse(record, body);
+    } catch (error) { return rejectionFromError(record, error); }
+  }
+  function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
+    if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
+    if (record.kind === "defense-command" && !["correct", "incorrect", "needs_analysis", "ambiguous", "illegal", "ready_for_move"].includes(String(body.status)))
+      throw new Error("The service did not return a recognized defense assessment.");
+    if (record.kind === "endgame-command") endgameAttemptSchema.parse(body);
+    if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
+    if (record.kind === "settings-command") studySettingsSchema.parse(body);
+    if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
+      throw new Error("Learning did not confirm the original burial.");
+    return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
+  }
+  async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
+    const requireAuthority = bindAuthority(client);
+    try {
+      const response = await readOperationResponse(record.requestId, { allowMissing: true, signal, client });
+      requireAuthority();
+      if (response.status === 404) return undefined;
+      const body = await response.json() as Record<string, unknown>;
+      requireAuthority();
+      return assessResponse(record, body);
+    } catch (error) { return rejectionFromError(record, error); }
+  }
+  return { deliver, checkReceipt };
 }
-async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
-  try {
-    const response = await readOperationResponse(record.requestId, { allowMissing: true, signal });
-    if (response.status === 404) return undefined;
-    return assessResponse(record, await response.json() as Record<string, unknown>);
-  } catch (error) { return rejectionFromError(record, error); }
-}
-for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, deliver, checkReceipt);
+const defaultDelivery = createStudyCommandDelivery(defaultStudyClient, studyIntentStore);
+for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, defaultDelivery.deliver, defaultDelivery.checkReceipt);
 
 function practiceScope(scope: string) { return scope.endsWith(":self-assess") ? scope.slice(0, -12) : scope; }
 function boundaryKey(scope: string) { return `practice-reset:${practiceScope(scope)}`; }
