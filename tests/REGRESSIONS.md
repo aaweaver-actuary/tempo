@@ -6531,3 +6531,12 @@ swallowed comparison failures remaining unresolved, snapshot-boundary cancellati
 without partial checkpoints, and equal-result index reuse invalidated by changed
 snapshot facts and cleared after failed/completed page scope. Original durable
 retry/provider fairness/page atomicity regressions remain applicable.
+
+## Optional Games startup isolation (#667)
+
+`backend/tests/test_nonblocking_admission.py::test_optional_game_modules_absent_at_process_bootstrap_preserve_study_queue_and_saved_review`
+starts fresh processes with selected provider, engine-analysis and retained producer
+modules blocked before import. It verifies core HTTP/task registration, real isolated
+SQLite queue reads and idempotent review saving, optional-only failure, original
+retained task identity, and absence from loaded modules. Missing Learning/storage
+is still a core bootstrap failure; this is not a PostgreSQL/resource-isolation claim.

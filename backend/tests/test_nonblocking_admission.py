@@ -433,3 +433,84 @@ def test_control_result_failure_rolls_back_before_receipt_recovery(control_comma
     assert database.execute('SELECT state,report_json FROM game_analysis_position_reports').fetchone()[:] == ('leased', None)
     assert database.execute('SELECT status,lease_id FROM game_analysis_jobs').fetchone()[:] == ('leased', 'parent-lease')
     assert database.execute('SELECT state FROM operation_receipts').fetchone()[0] == ('retrying' if transaction_timeout else 'failed')
+
+
+@pytest.mark.parametrize('failure', ['missing', 'construction_failed'])
+def test_optional_game_modules_absent_at_process_bootstrap_preserve_study_queue_and_saved_review(tmp_path, failure):
+    """A fresh process catches imports before any optional module is cached."""
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[2]
+    script = r'''
+import importlib.abc, json, os, sys
+from datetime import date, datetime, timezone
+from pathlib import Path
+blocked = {'app.services.game_sync', 'app.services.game_analysis_worker',
+           'app.services.postgres_game_derivation', 'app.services.postgres_game_sync_windows',
+           'app.games.providers.lichess', 'app.games.providers.chesscom',
+           'app.games.providers.lichess_acquisition', 'app.games.providers.chesscom_acquisition'}
+class Unavailable(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in blocked:
+            if os.environ['OPTIONAL_BOOT_FAILURE'] == 'missing':
+                raise ImportError('optional unavailable', name=fullname)
+            raise RuntimeError('optional construction failed')
+sys.meta_path.insert(0, Unavailable())
+from app import main, tasks
+from app.command_gateway import _handlers
+from tempo_legacy_database import connections as database
+assert not blocked.intersection(sys.modules)
+assert {'queue.issue_head', 'queue.prepare_next', 'cards.review', 'queue.ensure_current'} <= _handlers.keys()
+paths = {route.path for route in main.app.routes}
+assert {'/api/queue/window', '/api/queue/prepare-next', '/api/games/analysis/position/claim'} <= paths
+assert {'daily_queue', 'game_derivation_positions', 'game_sync_window'} <= set(tasks._SUPPORTED_BACKGROUND_KINDS)
+database.DB_PATH = Path(os.environ['OPTIONAL_BOOT_DATABASE'])
+database.initialize()
+assert main.queue_window(limit=20)['cards'] == []
+today = date.today().isoformat()
+with database.connection() as db:
+    db.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES('boot','Boot','synthetic',?,10)", (today,))
+    db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES('boot-card','boot','prefix',?,'[\"e2e4\"]','learning',?,?)", ('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',today,today))
+    db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('boot','boot-card')")
+    entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,'boot-card',0,'new','boot')",(today,)).lastrowid
+from app.contracts.transport.study import ReviewRequest
+request = ReviewRequest(queue_entry_id=entry,outcome='correct',attempt_id='original-bootstrap-review',expected_revision=1,recorded_at=datetime.now(timezone.utc).isoformat())
+review = main._apply_review('boot-card',request)
+assert review['persisted'] and main._apply_review('boot-card',request) == review
+with database.read_connection() as db:
+    assert db.execute("SELECT count(*) FROM reviews WHERE card_id='boot-card'").fetchone()[0] == 1
+from app.services.game_analysis_runtime import build_game_evaluations
+from fastapi import HTTPException
+try:
+    build_game_evaluations({})
+except HTTPException as error:
+    assert os.environ['OPTIONAL_BOOT_FAILURE'] == 'missing' and error.status_code == 503
+except RuntimeError as error:
+    assert os.environ['OPTIONAL_BOOT_FAILURE'] == 'construction_failed'
+else:
+    raise AssertionError('unavailable optional feature pretended success')
+original = {'kind':'game_derivation_positions','id':'retained-original','generation':3,'lease_token':'same-token','payload':{'game_id':'same-game'}}
+before = json.dumps(original,sort_keys=True)
+try:
+    tasks.execute_game_position_index_slice(original)
+except (ImportError,RuntimeError):
+    pass
+else:
+    raise AssertionError('unavailable retained producer pretended success')
+assert json.dumps(original,sort_keys=True) == before
+assert not blocked.intersection(sys.modules)
+'''
+    environment = dict(os.environ)
+    for name in ('TEMPO_DATABASE_WRITE_URL', 'TEMPO_DATABASE_READ_URL', 'TEMPO_REDIS_URL', 'TEMPO_FOREGROUND_ACTIVITY_URL'):
+        environment.pop(name, None)
+    environment['OPTIONAL_BOOT_FAILURE'] = failure
+    environment['OPTIONAL_BOOT_DATABASE'] = str(tmp_path / 'bootstrap.db')
+    sources = [root / 'backend', root / 'database', *sorted((root / 'packages').glob('*/src')),
+        *sorted((root / 'contracts').glob('*/src')), *sorted((root / 'services/learning').glob('*/src')),
+        root / 'services/content/src']
+    environment['PYTHONPATH'] = os.pathsep.join(map(str, sources))
+    result = subprocess.run([sys.executable, '-c', script], cwd=root, env=environment,
+        capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stderr
