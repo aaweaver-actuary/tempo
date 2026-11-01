@@ -40,8 +40,8 @@ it does not raise any application transaction deadline. Allocation, exact
 mount/label checks, memory evidence and container-before-volume cleanup are
 retained in the fixture receipt. Build and run it under the existing resource
 admission workflow. The recovery-only allocation is PostgreSQL 384 MiB,
-API 192 MiB, foreground 384 MiB, background 448 MiB, Games producer 512 MiB,
-Redis 64 MiB and web 64 MiB: exactly the existing 2,048 MiB development budget.
+API 192 MiB, foreground 384 MiB, background 512 MiB, Games producer 512 MiB,
+Redis 32 MiB and web 32 MiB: exactly the existing 2,048 MiB development budget.
 No global service budget changes. Foreground/background concurrency remains 2/1.
 Cgroup current/peak/events, process RSS and container OOM/exit state are retained.
 These finite candidate caps differ from installed unbounded API/foreground
@@ -195,7 +195,10 @@ completion-based interval. New semantic sources still reset to actual UTC before
 qualification; no original command or receipt timestamp is rewritten.
 
 The three full-scope controlled collection calls at transitions4/14/24 execute
-in the existing448MiB optional background role, verified running and unpaused.
+in the existing optional background role, verified running and unpaused with
+the assembly's explicit 512 MiB allocation. This fixture allocation transfers
+64 MiB from Redis/web after their observed peaks of 19.77/19.46 MiB; it changes
+no production budget and remains subject to actual all-role OOM checks.
 They use the same collect-only owner/HTTP fixture and writer credentials, leaving
 the384MiB foreground role's two command workers and beat reserved for Study.
 Small held-case source calls remain in foreground while optional roles are
