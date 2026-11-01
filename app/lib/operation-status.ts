@@ -1,8 +1,16 @@
-import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
-import { backgroundFetch } from "./background-fetch";
+import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
-type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string };
+type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string; client?: StudyClient };
+type ClientBinding = { client: StudyClient; generation: number; origin: string };
+function bindClient(client?: StudyClient): ClientBinding | undefined {
+  return client ? { client, generation: client.generation, origin: client.origin } : undefined;
+}
+function requireBinding(binding?: ClientBinding): void {
+  if (binding && (binding.client.generation !== binding.generation || binding.client.origin !== binding.origin))
+    throw new Error("Study authority changed. Recover the original operation with its original service.");
+}
+
 
 export class PendingOperationError extends Error {
   constructor(readonly operationId: string, message?: string, readonly blocked = false) {
@@ -30,9 +38,17 @@ export async function confirmOperationResponse(response: Response, options: Oper
 
 // Resolve a known command through the same receipt semantics as a 202 response.
 export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
-  const request = options.fetch ?? (options.background ? backgroundFetch : fetch);
-  const status = await request(`${options.baseUrl ?? API_URL}/api/operations/${encodeURIComponent(operationId)}`,
-    options.signal ? { signal: options.signal } : undefined);
+  if (options.client && options.fetch) throw new Error("Choose one operation transport capability.");
+  return readReceipt(operationId, options, bindClient(options.client ?? (options.fetch ? undefined : defaultStudyClient)));
+}
+async function readReceipt(operationId: string, options: OperationResponseOptions, binding?: ClientBinding): Promise<Response> {
+  requireBinding(binding);
+  const request = binding ? binding.client.learningFetch : options.fetch!;
+  const init: RequestInit | undefined = options.background && binding
+    ? { ...(options.signal ? { signal: options.signal } : {}), headers: { "X-Tempo-Work-Class": "background" } }
+    : options.signal ? { signal: options.signal } : undefined;
+  const status = await request(`${options.baseUrl ?? binding?.origin ?? defaultStudyClient.origin}/api/operations/${encodeURIComponent(operationId)}`, init);
+  requireBinding(binding);
   if (status.status === 404 && options.allowMissing) return status;
   if (!status.ok)
     throw new PendingOperationError(operationId);
@@ -44,7 +60,8 @@ export async function readOperationResponse(operationId: string, options: Operat
     last_error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
     message?: string;
   };
-  if ((independentStudy || receipt.operation_id !== undefined) && receipt.operation_id !== operationId)
+  requireBinding(binding);
+  if (((binding?.client.independent ?? defaultStudyClient.independent) || receipt.operation_id !== undefined) && receipt.operation_id !== operationId)
     throw new PendingOperationError(operationId, "Learning did not confirm the original operation identity.");
   // A lost admission response can leave no receipt at all. Only callers that
   // retain the original immutable command may replay that missing admission.
@@ -70,11 +87,14 @@ export async function readOperationResponse(operationId: string, options: Operat
 
 // Retry conflicts and delivery failures are ambiguous: resolve the same receipt
 // before classifying the command, rather than treating endpoint 4xx as terminal.
-export async function retryBlockedOperation(operationId: string): Promise<Response> {
+export async function retryBlockedOperation(operationId: string, options: { client?: StudyClient } = {}): Promise<Response> {
+  const binding = bindClient(options.client ?? defaultStudyClient)!;
+  requireBinding(binding);
   try {
-    await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}/retry`, { method: "POST" });
+    await binding.client.learningFetch(`${binding.origin}/api/operations/${encodeURIComponent(operationId)}/retry`, { method: "POST" });
   } catch {
     // The retry request may have been delivered despite a lost response.
   }
-  return readOperationResponse(operationId);
+  requireBinding(binding);
+  return readReceipt(operationId, {}, binding);
 }

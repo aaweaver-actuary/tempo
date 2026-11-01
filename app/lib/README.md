@@ -63,8 +63,19 @@ flowchart LR
   Client --> Gate
   Gate --> Transport["Injected or ordinary fetch transport"]
   Default --> Storage["Existing connection / authority storage"]
+  Legacy --> Status["Operation receipt and retry"]
+  Status --> Default
+  Custom --> Status
   Legacy --> Session["Existing session and intent owner"]
 ```
 
 This is a source-level capability change, not a live authority migration or
 proof that durable session consumers have adopted explicit client injection.
+
+`operation-status` now consumes the composed default client directly, or an
+explicitly supplied Study client for receipt polling and retry. It binds the
+selected origin and generation across a request before publishing receipt
+status. Existing custom fetch/base URL callers retain their own transport;
+background polling keeps its work-class classification. This cut does not bind
+outbox or retained intent stores to arbitrary custom authorities: those remain
+owned by the existing default session and storage composition.

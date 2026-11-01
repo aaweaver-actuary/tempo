@@ -4,9 +4,10 @@ import { subscribeOperationStatusChange } from "../../app/lib/operation-status-e
 import { createGameReviewApi } from "../../app/features/game-review/api";
 
 vi.hoisted(() => vi.resetModules());
-vi.mock("../../app/lib/study-connection", async importOriginal => ({
-  ...await importOriginal<typeof import("../../app/lib/study-connection")>(), LEARNING_URL: "https://learning.example",
-}));
+vi.mock("../../app/lib/study-connection", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../app/lib/study-connection")>();
+  return { ...actual, defaultStudyClient: { ...actual.defaultStudyClient, origin: "https://learning.example" } };
+});
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
