@@ -477,7 +477,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
             window=inputs['configuration']['window'], controlled_source_admission=True))
-    inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp()) + 61
+    inputs['now'] = datetime.now(timezone.utc).timestamp()
     configure_window()
     settings = api('GET', '/api/settings')
     assert settings['status'] == 200
@@ -546,7 +546,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert time.monotonic() < quiet_deadline, 'recovery_genuine_visibility_did_not_release_foreground'
                         time.sleep(.05)
                     gap_id = 'g' + uuid.uuid4().hex[:7]
-                    inputs['now'] += 61
+                    inputs['now'] = datetime.now(timezone.utc).timestamp()
                     inputs['lichess'].append(dict(id=gap_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn='[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 1-0\n'))
                     configure_window()
@@ -591,7 +591,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     game_node = game
                     for uci in [*target['prefix'], target['wrong']]:
                         game_node = game_node.add_variation(chess.Move.from_uci(uci))
-                    inputs['now'] += 61
+                    inputs['now'] = datetime.now(timezone.utc).timestamp()
                     inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn=str(game)))
                     configure_window()
