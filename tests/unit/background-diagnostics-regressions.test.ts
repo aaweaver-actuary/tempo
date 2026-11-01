@@ -85,10 +85,26 @@ it("engine Docker image includes every relative worker module including diagnost
   const dockerfile = readFileSync("Dockerfile.engine", "utf8");
   const copiedSources = dockerfile.split("\n").filter(line => line.startsWith("COPY "))
     .flatMap(line => line.split(/\s+/).slice(1, -1));
-  const worker = readFileSync("scripts/defense-engine-worker.mjs", "utf8");
-  for (const imported of worker.matchAll(/^import .*?from ["']([^"']+)["']/gm)) {
-    if (imported[1].startsWith(".")) {
-      expect(copiedSources, `missing runtime module ${imported[1]}`).toContain(posix.join("scripts", imported[1]));
+  const missing = (copied: string[]) => {
+    const visited = new Set<string>();
+    const pending = ["scripts/defense-engine-worker.mjs"];
+    const absent: string[] = [];
+    while (pending.length) {
+      const file = pending.pop()!;
+      if (visited.has(file)) continue;
+      visited.add(file);
+      if (!copied.includes(file)) absent.push(file);
+      const source = readFileSync(file, "utf8");
+      const imports = source.matchAll(/(?:^import\s+(?:[^\n]*?\s+from\s+)?|^export\s+[^\n]*?\s+from\s+|new URL\()(["'])(\.[^"']+)\1/gm);
+      for (const match of imports) {
+        const dependency = posix.normalize(posix.join(posix.dirname(file), match[2]));
+        if (dependency.endsWith(".mjs")) pending.push(dependency);
+        else if (!copied.includes(dependency)) absent.push(dependency);
+      }
     }
-  }
+    return absent;
+  };
+  expect(missing(copiedSources.filter(file => file !== "scripts/engine-job-families.mjs")))
+    .toContain("scripts/engine-job-families.mjs");
+  expect(missing(copiedSources)).toEqual([]);
 });
