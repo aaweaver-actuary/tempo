@@ -343,3 +343,75 @@ def test_uncertain_ack_reconciles_original_owner_receipt_before_any_projection(m
     assert resolved.state == 'acknowledged' and resolved.receipt == receipt
     assert resolved.command.model_dump_json() == original.command.model_dump_json()
     assert resolved.operation_id == original.operation_id and resolved.determined_at == original.determined_at
+
+
+@pytest.mark.parametrize('owner',['review','feedback','mode'])
+@pytest.mark.parametrize('profile',['dedicated','callback'])
+def test_games_store_reuses_exact_bounded_owner_and_preserves_callback_savepoint(monkeypatch,owner,profile):
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections,PostgresReviewStore
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from tempo_legacy_database.adapters.games.managed_mode import ManagedGamesModeStore
+    import psycopg
+    events=[]
+    class Database:
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        @contextmanager
+        def transaction(self):
+            events.append('transaction')
+            try:
+                yield
+            except Exception:
+                events.append('rollback')
+                raise
+        def execute(self,statement,*args):
+            events.append(statement)
+    database=Database()
+    monkeypatch.setattr(psycopg,'connect',lambda *args,**kwargs:database)
+    dedicated=DedicatedGamesConnections('unused-dsn')
+    @contextmanager
+    def callback():
+        with database.transaction():
+            yield database
+    connections=dedicated if profile == 'dedicated' else callback
+    store={'review':PostgresReviewStore,'feedback':PostgresGamesStore,'mode':ManagedGamesModeStore}[owner](connections)
+    transaction=store._writer if owner == 'mode' else store._transaction
+    with pytest.raises(RuntimeError,match='owner_rollback'):
+        with transaction() as current:
+            assert current is database
+            raise RuntimeError('owner_rollback')
+    expected=1 if profile == 'dedicated' else 2
+    assert events.count('transaction') == events.count('rollback') == expected
+    if profile == 'dedicated':
+        limits=[event for event in events if 'set_config' in event]
+        assert len(limits) == 1 and "transaction_timeout','250ms'" in limits[0]
+
+
+@pytest.mark.parametrize('owner',['review','feedback','mode'])
+def test_native_games_owner_transaction_retains_deadline_and_atomic_rollback(owned_postgres,tmp_path,owner):
+    from psycopg.conninfo import make_conninfo
+    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections,PostgresReviewStore
+    from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from tempo_legacy_database.adapters.games.managed_mode import ManagedGamesModeStore
+    import uuid
+    secret=tmp_path/'owned.pgpass'
+    with owned_postgres() as database:
+        info=database.raw.info
+        escape=lambda value:str(value).replace('\\','\\\\').replace(':','\\:')
+        secret.touch(mode=0o600,exist_ok=False)
+        secret.write_text(':'.join(map(escape,(info.host,info.port,info.dbname,info.user,info.password)))+'\n')
+        dsn=make_conninfo(info.dsn,passfile=str(secret))
+    connections=DedicatedGamesConnections(dsn)
+    store={'review':PostgresReviewStore,'feedback':PostgresGamesStore,'mode':ManagedGamesModeStore}[owner](connections)
+    transaction=store._writer if owner == 'mode' else store._transaction
+    workspace='owned-rollback-'+uuid.uuid4().hex
+    try:
+        with pytest.raises(RuntimeError,match='owner_rollback'):
+            with transaction() as database:
+                assert database.execute("SELECT current_setting('transaction_timeout')").fetchone()[0] == '250ms'
+                database.execute('''INSERT INTO product_feedback_configuration(workspace_id,provider,revision,next_run_at,payload)
+                    VALUES(%s,'lichess',1,0,'{}')''',(workspace,))
+                raise RuntimeError('owner_rollback')
+        assert PostgresReviewStore(connections).configuration(workspace,'lichess') is None
+    finally:
+        secret.unlink(missing_ok=True)

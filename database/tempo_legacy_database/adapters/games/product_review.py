@@ -81,6 +81,11 @@ class PostgresReviewStore:
     @contextmanager
     def _transaction(self):
         with self._connections() as database:
+            if type(self._connections) is DedicatedGamesConnections:
+                # This exact owner has already opened/configured its bounded
+                # transaction. Do not spend its budget on another savepoint.
+                yield database
+                return
             with database.transaction():
                 database.execute("""SELECT set_config('transaction_timeout','250ms',true),
                     set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")

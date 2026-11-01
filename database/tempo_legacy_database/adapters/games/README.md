@@ -88,3 +88,9 @@ recovery keeps the original capture, adds resolution evidence, fences the
 saved configuration and source identities, and authorizes replay of the exact
 saved page only for the proven effect-free daily mapping conflict. A missing
 canonical game is created in that same transaction.
+
+The Review, Feedback and managed-mode stores reuse the transaction already opened
+and bounded by the exact `DedicatedGamesConnections` owner. They do not nest a
+second savepoint or reissue limits inside that same 250ms budget. Injected callback
+connections retain their existing savepoint/limit wrapper. No deadline, mutation,
+lock, receipt or outer commit ownership changes.

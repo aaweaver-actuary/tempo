@@ -6469,3 +6469,12 @@ contract; all activation refusal and identity invariants remain intact.
 - `backend/tests/test_feedback_maintenance_recovery.py`: `test_accepted_study_maintenance_progresses_under_browser_activity_without_games`.
 - `backend/tests/test_queue_refresh_retry_wakes.py`: `test_essential_wake_preserves_deadline_retry_and_recovers_during_foreground_activity` executes the new essential task. Existing marked-poll cases retain legacy broker-delivery coverage; transport assertions now require the new foreground queue-only wake. The old assumption that a waiting browser must deny *new essential queue work* is superseded by #664, while old delivery fencing and bounded retries remain required.
 - `backend/tests/test_background_wakes.py`: existing owner-class/coalescing proofs now include independent essential queue/foreground receipt recovery; a denied old marked poll upgrades to the exact essential wake.
+
+### Bounded Games transaction ownership (#665 / #668)
+
+`backend/tests/test_product_feedback_release.py` owns
+`test_games_store_reuses_exact_bounded_owner_and_preserves_callback_savepoint`
+and `test_native_games_owner_transaction_retains_deadline_and_atomic_rollback`.
+They cover Review, Feedback and managed-mode stores: exact production connections
+retain their existing 250ms transaction once; supplied callbacks retain their
+savepoint/configuration; exceptions roll back the complete owner mutation.
