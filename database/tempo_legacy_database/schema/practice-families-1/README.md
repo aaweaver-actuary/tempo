@@ -144,6 +144,10 @@ Primary key: (`fen_key`). DDL: [001_initial.sql](../../ddl/migrations/001_initia
 
 ### `public.tactic_captures`
 
+Capture receipt writes remain with Tactics. Study's captured-tactic adapter owns
+the associated card and queue operations on the same borrowed transaction; no
+schema or foreign-key relationship changed.
+
 Primary key: (`id`). DDL: [025_tactic_capture.sql](../../ddl/migrations/025_tactic_capture.sql).
 
 | Field | SQL type | Null allowed | Keys |

@@ -17,7 +17,7 @@ from .queue_commands import request_queue_refresh_in_transaction
 from app.chess.cards import card_id
 from .services.review_service import ensure_card_queued_after
 from .services.tactical_catalog import activate
-from .services.tactic_capture import capture_tactic
+from .product_composition.tactic_capture import capture_tactic
 from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
 from tempo_legacy_database.adapters.tactics import attempts as storage
 
