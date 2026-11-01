@@ -1,4 +1,4 @@
-import type { StudyTask } from './study-computation';
+import type { StudyTask, StudyTaskResult } from './study-computation';
 import { studyReplySchema } from '../domain/schemas';
 import { parseData, reportDataDiagnostic } from './validated-data';
 import { recordTempoDuration } from './performance';
@@ -92,11 +92,11 @@ subscribeStudyPriority(() => {
   } else pump();
 });
 
-export function runBulkStudyTask<T>(task: StudyTask, signal?: AbortSignal, current?: () => boolean): Promise<T> {
+export function runBulkStudyTask<Task extends StudyTask>(task: Task, signal?: AbortSignal, current?: () => boolean): Promise<StudyTaskResult<Task>> {
   if (signal?.aborted) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<StudyTaskResult<Task>>((resolve, reject) => {
     const request: Request = { id: ++nextId, task, signal, current, queuedAt: performance.now(),
-      resolve: value => resolve(value as T), reject, abort: () => {
+      resolve: value => resolve(value as StudyTaskResult<Task>), reject, abort: () => {
         if (active === request) { active = undefined; stopWorker(); }
         else { const index = queued.indexOf(request); if (index >= 0) queued.splice(index, 1); }
         settle(request, new DOMException('Cancelled', 'AbortError'));
