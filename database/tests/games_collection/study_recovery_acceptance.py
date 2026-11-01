@@ -233,7 +233,6 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
     controls = ['held-control-' + uuid.uuid4().hex for _ in range(2)]
     hold_scenario = directory/'hold-scenario.json'
     hold_scenario.write_text(json.dumps(dict(version=1, controls=controls, target=target['card_id'])))
-    (directory/'essential-crash-after-slice').write_text('crash once after genuine committed queue slice\n')
     held_browser = None
     evidence = root/'test-results/collection-release'/('held-'+uuid.uuid4().hex)
     evidence.mkdir(parents=True)
@@ -284,6 +283,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         assert json.loads(docker('inspect',background).stdout)[0]['State']['Paused'] is True
         settings = api('GET', '/api/settings')
         assert settings['status'] == 200
+        (directory/'essential-crash-after-slice').write_text('crash once after genuine committed queue slice\n')
         confirmed(api('PUT', '/api/settings', settings['body'], 'held-queue:' + uuid.uuid4().hex))
         release('controls')
         deadline = time.monotonic() + 45
