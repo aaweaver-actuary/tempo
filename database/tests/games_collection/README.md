@@ -200,3 +200,9 @@ They use the same collect-only owner/HTTP fixture and writer credentials, leavin
 the384MiB foreground role's two command workers and beat reserved for Study.
 Small held-case source calls remain in foreground while optional roles are
 paused. No allocation, service, lifecycle, admission policy or deadline changes.
+
+After transition7 verifies the original collector's actual finished marker,
+source/jobs and production-admission outcome, later publications may treat that
+same collector as terminal only with exit0 and no OOM. API/foreground/background
+still require the exact fresh snapshot digest. Before that verified completion,
+all four roles remain required; no idle substitute or collector restart is used.
