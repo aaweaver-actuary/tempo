@@ -38,7 +38,7 @@ class BorrowedFeedbackStore:
         storage.lock_queue_day(self._database, queue_day)
 
     def enqueue_review(self, card_id: str, queue_day: str, reason: str) -> None:
-        from app.services.review_service import ensure_card_queued_after
+        from app.study.queue_placement import ensure_card_queued_after
         ensure_card_queued_after(self._database, card_id, 0, priority_reason=reason,
                                  queue_date=queue_day, protect_presented=True, preserve_order=False)
 

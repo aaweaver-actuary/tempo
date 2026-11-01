@@ -26,7 +26,7 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from .review_service import ensure_card_queued_after
+from app.study.queue_placement import ensure_card_queued_after
 from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
 

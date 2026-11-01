@@ -88,7 +88,7 @@ _queue_order_provenance = queue_order_provenance
 _preserved_queue_fingerprint = preserved_queue_fingerprint
 
 
-def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
+def priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
     """Urgent FIFO precedes unissued ordinary work, retaining genuine attempts."""
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
     protected = _protected_queue_ids(rows, urgent=any(_movable_urgent(row) for row in rows))
@@ -98,6 +98,9 @@ def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderin
     ordered = iter(priority + [row for row in movable if row["gameplay_priority_reason"] != MISS_REASON])
     return [row if row["id"] in protected else next(ordered) for row in slots]
 
+
+# Compatibility for existing callers of the former private name.
+_priority_queue_order = priority_queue_order
 
 def _queue_presentation_state(rows: Sequence[QueueOrderingRow]) -> str:
     """Fence a prepared plan against changed positions, eligibility or issuance."""
