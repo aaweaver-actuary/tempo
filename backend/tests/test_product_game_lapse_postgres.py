@@ -110,13 +110,16 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
                    if volume else ['--tmpfs', '/var/lib/postgresql:rw,size=512m'])
         image = docker("image", "inspect", IMAGE, "--format", "{{.Id}}").stdout.strip()
         report["image_id"] = image
+        # The seven-role assembly inherits the pinned image's production
+        # connection default; the smaller native owner keeps its explicit cap.
+        connection_limit = [] if profile == 'study-recovery-assembly' else ['-c', 'max_connections=16']
         report["container_id"] = docker("run", "--detach", "--name", container,
             "--label", "tempo.owner=" + identity, "--label", "tempo.disposable=true",
             "--memory", str(allocation['memory_mib']) + 'm',
             "--memory-swap", str(allocation['memory_mib']) + 'm', "--pids-limit", "128",
             *storage, "--publish", "127.0.0.1::5432", *published,
             "--env-file", str(secret), image, "postgres", "-c", "shared_buffers=32MB",
-            "-c", "max_connections=16").stdout.strip()
+            *connection_limit).stdout.strip()
         inventory = json.loads(docker("inspect", container).stdout)[0]
         if profile == 'study-recovery-assembly':
             labels = inventory['Config']['Labels']
@@ -176,6 +179,15 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
         with psycopg.connect(**options) as raw:
             report["system_identifier"] = str(raw.execute("SELECT system_identifier FROM pg_control_system()").fetchone()[0])
             report["database_oid"] = raw.execute("SELECT oid FROM pg_database WHERE datname=current_database()").fetchone()[0]
+            limits = raw.execute("SELECT current_setting('max_connections')::int, "
+                "current_setting('superuser_reserved_connections')::int, "
+                "current_setting('reserved_connections')::int").fetchone()
+            report['connection_settings'] = dict(zip(
+                ('max_connections','superuser_reserved_connections','reserved_connections'), limits))
+            report['connection_limit_source'] = ('pinned image production default'
+                if profile == 'study-recovery-assembly' else 'explicit native owner limit')
+            if profile != 'study-recovery-assembly':
+                assert limits[0] == 16
             raw.execute("INSERT INTO settings(id) VALUES(1)")
             raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('white','Synthetic','fixture',%s)", (NOW.isoformat(),))
         (evidence / "fixture.json").write_text(json.dumps(report, indent=2))
