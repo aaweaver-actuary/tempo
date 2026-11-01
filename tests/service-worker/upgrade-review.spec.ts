@@ -7,7 +7,11 @@ import { move } from '../browser/native-board';
 import { openingCard } from '../controlled-browser/fixtures';
 import startup from '../fixtures/controlled-browser/startup.json' with { type: 'json' };
 
-test('real worker upgrade retains and replays the original pending review', async ({ page, context }) => {
+test('real worker upgrade retains and replays the original pending review', async ({ page, context }, testInfo) => {
+  const diagnostics: string[] = [];
+  page.on('pageerror', error => diagnostics.push(`pageerror: ${error.message}`));
+  page.on('requestfailed', request => diagnostics.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`));
+  page.on('response', response => { if (response.status() >= 400) diagnostics.push(`response ${response.status()}: ${response.url()}`); });
   const root = process.env.TEMPO_SW_CANDIDATE_ARTIFACT;
   if (!root) throw new Error('TEMPO_SW_CANDIDATE_ARTIFACT must name the task-owned candidate build');
   const directory = resolve(root);
@@ -95,6 +99,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await page.reload();
     expect(delivered).toHaveLength(1);
   } finally {
+    await testInfo.attach('browser-diagnostics', { body: JSON.stringify(diagnostics, null, 2), contentType: 'application/json' });
     await new Promise<void>((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose()));
   }
 });
