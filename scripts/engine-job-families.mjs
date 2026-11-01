@@ -18,11 +18,29 @@ function callback(request, prefix, job, action, payload, deliveryOptions) {
   return request(`${prefix}/${job.id}/${action}`, options, deliveryOptions);
 }
 
+async function allowed(request, path, predicate) {
+  try {
+    const control = await request(path, { signal: AbortSignal.timeout(75), requestAttempts: 1 });
+    return predicate(control);
+  } catch {
+    return false;
+  }
+}
+
 export function createEngineJobFamilies({ request, durableRequest, defenseClaimRequest }) {
   const gamePrefix = "/api/games/analysis/position";
   const defensePrefix = "/api/defensive-threats/analysis";
   const game = {
     kind: "game", workClass: "engine_game",
+    allowed: () => allowed(request, "/api/system/foreground-active",
+      control => control.active === false && control.available !== false && control.study_only_mode !== true),
+    async admit(job) {
+      if (await this.allowed(job)) return true;
+      await request(`${gamePrefix}/${encodeURIComponent(job.id)}/release`, {
+        method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
+      });
+      return false;
+    },
     async recover() {
       const recovered = await durableRequest.recover();
       return recovered?.path === `${gamePrefix}/claim` ? recovered.result.job : null;
@@ -48,6 +66,16 @@ export function createEngineJobFamilies({ request, durableRequest, defenseClaimR
   };
   const defense = {
     kind: "defense", workClass: "engine_defense",
+    allowed: job => allowed(request,
+      `${defensePrefix}/${encodeURIComponent(job.id)}/control?lease_id=${encodeURIComponent(job.lease_id)}`,
+      control => control.search_allowed === true && control.foreground_active === false),
+    async admit(job) {
+      if (await this.allowed(job)) return true;
+      await request(`${defensePrefix}/${encodeURIComponent(job.id)}/release`, {
+        method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
+      });
+      return false;
+    },
     async recover() { return (await defenseClaimRequest.recover())?.result; },
     claim: () => request(`${defensePrefix}/claim`, { method: "POST" }),
     // Preserve the existing finalize discriminator even for malformed recovered work.
