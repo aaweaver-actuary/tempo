@@ -15,11 +15,13 @@ from pathlib import Path
 import sys
 import threading
 import uuid
+from unittest.mock import patch
 
 import chess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.tactics import captures as capture_storage
 from app import tactic_commands  # registers the production handler
 from app.command_gateway import execute_command, read_operation
 from app.services.postgres_queue_refresh import _publish_tactical_introduction
@@ -27,10 +29,12 @@ from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_i
 from app.chess.cards import card_id
 
 
-def main():
+def main(database_url="postgresql://postgres@postgres:5432/tempo"):
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Capture proof requires the disposable PostgreSQL instance")
-    os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = database_url
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
     day = date.today().isoformat()
     request = {"capture_id": str(uuid.uuid4()), "starting_fen": chess.STARTING_FEN,
@@ -82,6 +86,37 @@ def main():
         with postgres_store.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (invalid["capture_id"],)).fetchone()[0] == 0
             assert entries_before == [tuple(row) for row in database.execute("SELECT * FROM daily_queue ORDER BY id")]
+        # Failure immediately before the capture receipt rolls back every borrowed
+        # card/queue effect while the gateway retains its own failed operation receipt.
+        fault = {**request, "capture_id": str(uuid.uuid4()), "moves": ["d2d4"]}
+        def business_rows():
+            with postgres_store.connection(read_only=True) as database:
+                return {table: [tuple(row) for row in database.execute(f"SELECT * FROM {table} ORDER BY {order}")]
+                        for table, order in (("repertoires", "id"), ("cards", "id"),
+                            ("repertoire_cards", "repertoire_id,card_id"), ("daily_queue", "id"),
+                            ("tactic_captures", "id"))}
+        before_fault = business_rows()
+        fault_card_id = card_id(fault["starting_fen"], fault["moves"])
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (fault_card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (fault["capture_id"],)).fetchone()[0] == 0
+        observed_admission = []
+        def fail_after_admission(writer, capture_id, actual_card_id, *_):
+            assert capture_id == fault["capture_id"] and actual_card_id == fault_card_id
+            assert writer.execute("SELECT COUNT(*) FROM cards WHERE id=? AND content_type='tactic'", (fault_card_id,)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+                                  ("__captured_tactics__", fault_card_id)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='queued' AND attempt_state='guided'",
+                                  (fault_card_id,)).fetchone()[0] == 1
+            assert writer.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (capture_id,)).fetchone()[0] == 0
+            observed_admission.append(True)
+            raise RuntimeError("synthetic receipt failure")
+        with patch.object(capture_storage, "save_capture_receipt", side_effect=fail_after_admission) as failing_receipt:
+            assert execute_command(fault["capture_id"], "tactics.capture.create", {"request": fault}) is None
+            assert failing_receipt.call_count == 1
+        assert observed_admission == [True]
+        assert read_operation(fault["capture_id"])["state"] == "failed"
+        assert business_rows() == before_fault
         # Existing-card collision rolls back the repertoire/event/schedule/queue changes.
         with postgres_store.connection() as database:
             database.execute("UPDATE cards SET archived=1 WHERE id=?", (captured["card_id"],))

@@ -667,3 +667,21 @@ bindings; it does not invoke the broad legacy capture. The existing writer fence
 current integrity certificate and completed graph/scan generation requirements
 remain in force. Legacy unqualified paths retain their capture. This is a source
 change; native acceptance and deployed behavior remain unverified.
+
+### Worker Games sync registration
+
+After the attempt receipt is recorded and its transaction closes, the worker
+resolves `games.sync.enqueue` through the existing command module and default
+gateway registry before command preparation and publication. Import failure is
+recorded through the existing fenced failure path; no automatic retry is claimed. Other command names do not wait
+for this selection. The worker still imports other Games and optional features;
+this one registration cut does not establish whole-worker isolation.
+
+```mermaid
+flowchart LR
+  dispatch["Worker command dispatch"] --> receipt["Existing attempt receipt"]
+  receipt -->|"games.sync.enqueue only"| selection["Games sync selection"]
+  selection --> registration["Existing Games sync registration"]
+  registration --> registry["Existing gateway registry"]
+  dispatch -->|"other commands"| registry
+```

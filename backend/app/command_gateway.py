@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 from tempo_legacy_database.adapters.commands.receipts import storage
 from tempo_legacy_database.adapters.commands.receipts.storage import (
     psycopg, DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
-    _writer_connection,
+    receipt_write_scope as _writer_connection,
 )
 from fastapi import HTTPException
 
@@ -20,6 +20,7 @@ from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
 from .contracts.command_registry import CommandDescriptor, CommandRegistry
+from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
@@ -46,12 +47,19 @@ class CommandConflict(ValueError):
     """An operation ID was reused for a different command or payload."""
 
 
+def is_command_registered(name: str) -> bool:
+    """Report whether the existing default registry contains a command."""
+    return name in _handlers
+
+
 def register_command(
     name: str, handler: CommandHandler, *, prepare: Callable[[dict[str, Any]], Any] | None = None,
 ) -> None:
     """Register publication and optional non-persisted preparation before its transaction."""
     if name in _handlers:
         raise ValueError(f"Duplicate command: {name}")
+    _registry.clear_after_commit(name)
+    _registry.transition_lifecycles.pop(name, None)
     _handlers[name] = handler
     if prepare is not None:
         _preparers[name] = prepare
@@ -78,9 +86,9 @@ def record_operation_attempt(
     """Persist retry identity before work; a crash can then be recovered."""
     request_hash = request_digest(command_name, payload)
     with _writer_connection(background) as database:
-        raw = storage.receipt_writer(database)
-        storage.insert_queued(raw, operation_id, command_name, request_hash, payload, background)
-        receipt = storage.locked_attempt(raw, operation_id)
+        receipt_writer = storage.receipt_writer(database)
+        storage.insert_queued(receipt_writer, operation_id, command_name, request_hash, payload, background)
+        receipt = storage.locked_attempt(receipt_writer, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         saved_payload = json.loads(receipt[3]) if receipt[3] else payload
@@ -88,10 +96,10 @@ def record_operation_attempt(
         if receipt[2] in {"complete", "failed"}:
             return False, saved_payload, None, receipt[7]
         if receipt[3] is None:
-            storage.save_missing_payload(raw, saved_payload, background, operation_id)
+            storage.save_missing_payload(receipt_writer, saved_payload, background, operation_id)
         now = datetime.now(timezone.utc)
         if receipt[2] == "blocked" and expected_retry_cycle == receipt[8]:
-            storage.restart_blocked(raw, operation_id)
+            storage.restart_blocked(receipt_writer, operation_id)
             cycle_attempts = 0
         elif expected_retry_cycle is not None:
             return False, saved_payload, None, receipt[7]
@@ -102,10 +110,10 @@ def record_operation_attempt(
         ) or (receipt[2] == "executing" and receipt[5] and receipt[5] > now):
             return False, saved_payload, None, cycle_attempts
         if background and cycle_attempts >= MAX_BACKGROUND_CYCLE_ATTEMPTS:
-            storage.block_exhausted(raw, operation_id)
+            storage.block_exhausted(receipt_writer, operation_id)
             return False, saved_payload, None, cycle_attempts
         attempt_token = uuid.uuid4().hex
-        storage.start_attempt(raw, attempt_token, lambda: now + timedelta(minutes=5 if not background else 1), operation_id)
+        storage.start_attempt(receipt_writer, attempt_token, lambda: now + timedelta(minutes=5 if not background else 1), operation_id)
         return True, saved_payload, attempt_token, cycle_attempts + 1
 
 
@@ -162,9 +170,8 @@ def execute_command(
     with capture_queue_refresh_request() as queue_request:
         result = _execute_command(operation_id, command_name, payload,
                                   background=background, attempt_token=attempt_token)
-    if result is not None and command_name == 'settings.update':
-        from .services.study_priority import refresh_policy
-        refresh_policy()  # Post-commit generation fences any older policy read.
+    if result is not None:
+        _registry.after_commit(command_name, result)
     # The inner boundary commits and closes before returning. Failed handlers
     # return None after rollback; their transient enqueue must never emit a wake.
     if result is not None and (queue_request.requested or
@@ -194,21 +201,20 @@ def _execute_command(
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             raise
         except Exception as error:
-            from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
             if isinstance(error, PrefixEvaluationForegroundDeferred):
                 raise BackgroundAdmissionDeferred('Waiting for foreground activity') from error
             # Persist definitive preparation failures through the same receipt
             # envelope, after checking delivery identity and the attempt fence.
             preparation_error = error
     command_connection = _writer_connection(background)
-    from .services.activity_gate import activity_gate
-    write_admission = activity_gate.foreground() if command_name == 'repertoire.prefix_transition.apply' else nullcontext()
+    lifecycle = _registry.transition_lifecycles.get(command_name)
+    write_admission = lifecycle.writer_admission() if lifecycle is not None else nullcontext()
     with write_admission, command_connection as database:
-        raw = storage.receipt_writer(database)
+        receipt_writer = storage.receipt_writer(database)
         # Serialize two deliveries of one command across worker processes.
-        storage.lock_operation(raw, operation_id)
-        storage.insert_pending(raw, operation_id, command_name, request_hash)
-        receipt = storage.locked_publication(raw, operation_id)
+        storage.lock_operation(receipt_writer, operation_id)
+        storage.insert_pending(receipt_writer, operation_id, command_name, request_hash)
+        receipt = storage.locked_publication(receipt_writer, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         if receipt[2] == "complete":
@@ -217,12 +223,13 @@ def _execute_command(
             raise RuntimeError(json.loads(receipt[4])["message"])
         if attempt_token is not None and (receipt[2] != "executing" or receipt[5] != attempt_token):
             return None
-        storage.begin_handler(raw)
+        storage.begin_handler(receipt_writer)
         try:
             if preparation_error is not None:
-                if (command_name == 'repertoire.prefix_transition.apply' and
-                        isinstance(preparation_error, HTTPException) and preparation_error.status_code == 503):
-                    raise SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation') from preparation_error
+                if lifecycle is not None:
+                    transformed = lifecycle.delayed_preparation_error(preparation_error)
+                    if transformed is not preparation_error:
+                        raise transformed from preparation_error
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
@@ -230,13 +237,12 @@ def _execute_command(
             # converted into a permanent failed receipt.
             raise
         except Exception as error:
-            storage.rollback_handler(raw)
+            storage.rollback_handler(receipt_writer)
             if storage.is_transition_in_progress(error):
                 error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': storage.primary_error_message(error)})
             committed_transition = False
-            if command_name == 'repertoire.prefix_transition.apply':
-                from .services.prefix_transition_application import reject_unactivated_application
-                committed_transition = reject_unactivated_application(database, operation_id, error)
+            if lifecycle is not None:
+                committed_transition = lifecycle.reject_after_rollback(database, operation_id, error)
             error_payload = {
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
@@ -257,16 +263,16 @@ def _execute_command(
                     pass
             error_json = json.dumps(error_payload)
             if committed_transition:
-                storage.block_transition(raw, error_json, operation_id)
+                storage.block_transition(receipt_writer, error_json, operation_id)
                 return None
-            storage.fail_operation(raw, error_json, operation_id)
+            storage.fail_operation(receipt_writer, error_json, operation_id)
             return None
-        storage.release_handler(raw)
-        if command_name == 'repertoire.prefix_transition.apply' and result.get('status') == 'pending':
-            storage.keep_transition_pending(raw, operation_id)
+        storage.release_handler(receipt_writer)
+        if lifecycle is not None and lifecycle.is_pending(result):
+            storage.keep_transition_pending(receipt_writer, operation_id)
             return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
-        storage.complete_operation(raw, response_json, operation_id)
+        storage.complete_operation(receipt_writer, response_json, operation_id)
         return result
 
 

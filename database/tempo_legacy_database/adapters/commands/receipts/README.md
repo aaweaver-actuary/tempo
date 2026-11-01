@@ -16,7 +16,7 @@ sequenceDiagram
   participant Wake as Existing queue wake
   App->>Prep: Prepare before writer creation or entry
   App->>DB: Enter original admission and writer contexts
-  App->>DB: Capture same writer, advisory lock, insert and locked receipt read
+  App->>DB: Capture opaque receipt token, advisory lock, insert and locked receipt read
   alt Complete failed conflicting or obsolete receipt
     App->>App: Original replay error or fenced outcome
   else Current delivery
@@ -38,13 +38,13 @@ sequenceDiagram
 
 | Storage operations | Existing boundary retained |
 | --- | --- |
-| `_writer_connection`, `foreground_receipt_reader`, `receipt_writer` | Same foreground/background factory and read-only option; no new context wrapper. The raw writer is captured exactly once at each original capture point, then passed only to fixed receipt operations. The existing background reader import/call remains at its original application composition point. |
+| `receipt_write_scope`, `foreground_receipt_reader`, `receipt_writer` | Same foreground/background factory and read-only option; no new context wrapper. An opaque token captures the same native connection once at the original capture point; only fixed receipt operations unwrap it inside this owner. The existing background reader import/call remains at its original application composition point. |
 | `insert_queued`, `locked_attempt`, `save_missing_payload`, `restart_blocked`, `block_exhausted`, `start_attempt` | Complete original attempt/retry-cycle/lease statements. Application retains terminal-PGN protection, matching request/retry cycle, future lease checks, attempt limit, token and duration choice. Lease arithmetic runs at its original parameter point through an application callback. |
 | `blocked_operation`, `locked_retry`, `save_retry`, `defer_for_foreground` | Original guarded reads/writes and affected-row fact. Retry/exhaustion/backoff choices stay outside; clock and error serialization callbacks run after driver method lookup in their original order. Foreground deferral retains its exact counter decrement and one-second deadline. |
 | `recoverable_receipt`, `reserve_recovery` | Optional `background_only=True` restricts each indexed due-state head before `LIMIT 1 FOR UPDATE SKIP LOCKED`; the default preserves legacy selection. Existing allowed/paused filters and sorted arrays compose with this predicate, including distinct `None` and empty allowlists. Oldest-head selection and reservation remain unchanged. No generic query builder or dispatch layer. Application still decides filters and decodes/resubmits the selected envelope. |
 | `lock_operation`, `insert_pending`, `locked_publication`, handler savepoint operations and terminal/pending writes | Same advisory lock, receipt row lock and savepoint statements at the same application call points. Error/HTTP/transition rejection decisions remain between rollback and the selected fixed receipt write. |
 | `operation_status`, `transition_progress` | Original read projections. Application retains identity checking, historical position-claim recovery, JSON decoding, pending/blocked messages and transition recovery instructions after leaving the original read context. |
-| Driver predicates and exception exports | Same transient exception classes, SQL-state and constraint-name facts. HTTP status/detail construction remains in the gateway, including structured-detail limits and legacy fallback. Original exception/module and `_writer_connection` exports remain compatible. |
+| Driver predicates and exception exports | Same transient exception classes, SQL-state and constraint-name facts. HTTP status/detail construction remains in the gateway, including structured-detail limits and legacy fallback. Original exception/module exports remain compatible; the gateway keeps its local `_writer_connection` test seam as an alias of the public scope. |
 
 The gateway still owns the original outer `with`/exception scopes and coordinates
 existing handler, activity/admission, prefix-transition, policy-refresh and queue
@@ -122,3 +122,11 @@ read imports remain at the original point. Native locking, rollback, resource
 isolation, service startup, full-system, live schema and installed artifacts
 remain unverified for this slice. No native/SQLite integration, previously
 denied loopback operation or full-system campaign ran.
+
+
+The receipt token exposes no public driver, execution, commit or close capability.
+The handler still receives the same borrowed connection from the outer scope;
+receipt statements and handler work remain in that one transaction. The retained
+import adapter supplies its existing borrowed connection to the same token before
+its operation lock. This is a source capability boundary, not a native rollback or
+commit-uncertainty qualification.

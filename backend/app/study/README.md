@@ -352,6 +352,33 @@ flowchart LR
   shaping --> wire["Existing flat queue response"]
 ```
 
+
+## Captured tactic admission (proposed E3)
+
+Tactics validates source and legal moves and retains capture identity/replay.
+Composition binds its borrowed admission capability to the existing transaction;
+Study owns card/repertoire admission, guided queue placement and reopening.
+The daily lock precedes the capture lock, and the capture receipt follows all
+admission effects in the same transaction. The existing queue placement function
+remains the supported legacy implementation. SQLite's subsequent refresh and the
+PostgreSQL command's transactional refresh keep their existing boundaries.
+
+```mermaid
+sequenceDiagram
+  participant T as Tactics capture
+  participant A as Bound Study admission
+  participant D as Borrowed transaction
+  T->>A: lock_daily(day)
+  A->>D: Daily admission lock
+  T->>D: Capture lock and replay receipt
+  T->>A: admit(validated facts, day, now)
+  A->>D: Card / queue / guided effects
+  T->>D: Capture receipt
+  Note over T,D: Caller commits or rolls back all effects
+```
+
+Native failure-before-receipt and live deployment remain unverified by this
+source change.
 ### Proposed queue order capture and preservation (#708 E2a)
 
 `queue_order.capture_daily_queue_order` and `preserve_daily_queue_order` use

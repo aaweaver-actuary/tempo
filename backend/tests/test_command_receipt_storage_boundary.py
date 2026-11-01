@@ -153,3 +153,28 @@ def test_terminal_attempt_does_not_restore_removed_payload_or_consume_clock(monk
                                                 background=True) == (False, payload, None, 3)
     assert len(raw.calls) == 2 and events.count('raw') == 1
     assert events[-2:] == ['commit_exit', 'closed']
+
+
+def test_receipt_writer_is_opaque_and_uses_original_connection():
+    from tempo_legacy_database.adapters.commands.receipts import storage
+    events = []
+    raw = Raw(events, [None])
+    database = Borrowed(raw, events)
+    writer = storage.receipt_writer(database)
+    assert events == ['raw']
+    for attribute in ('raw', 'execute', 'commit', 'close'):
+        assert not hasattr(writer, attribute)
+    storage.lock_operation(writer, 'same-operation')
+    assert raw.calls == [('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))', ('same-operation',))]
+    assert events.count('raw') == 1
+
+
+def test_receipt_write_scope_preserves_original_context_selection(monkeypatch):
+    from tempo_legacy_database.adapters.commands.receipts import storage
+    from tempo_legacy_database import connections
+    from tempo_legacy_database.adapters import postgres_store
+    foreground, background = object(), object()
+    monkeypatch.setattr(postgres_store, 'connection', lambda **options: (foreground, options))
+    monkeypatch.setattr(connections, 'background_connection', lambda: background)
+    assert storage.receipt_write_scope(False) == (foreground, {'read_only': False})
+    assert storage.receipt_write_scope(True) is background

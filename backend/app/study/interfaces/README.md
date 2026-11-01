@@ -1,7 +1,7 @@
 # Study game-priority interface
 
 Study owns acceptance, control tombstones, effect receipts and later learning/
-queue changes. Consumers import only [`game_priority.py`](game_priority.py).
+queue changes. Game feedback consumers import [`game_priority.py`](game_priority.py). Captured Tactics uses the separate [`captured_tactic.py`](captured_tactic.py) borrowed admission capability.
 Its explicit exports are `LearningFeedbackPort`, `EncounterFeedbackPort`,
 `GameLapse`, `GameEncounter`, `GameEffectKey`, `GameEffectControl`,
 `LearningReceipt` and `EncounterReceipt`. These are semantic commands and frozen
@@ -116,3 +116,10 @@ Schema55 records actual origins once. See the [canonical data dictionary](../../
 Read-only status may hydrate a missed optional receipt projection from that same
 ledger; no read invents issuance or mutates the receipt. The final provider/mode
 assembly and installed proof remain #624 responsibilities.
+
+
+The captured-tactic capability accepts immutable validated Tactics facts. Its
+composition binds one existing writer: daily admission lock precedes Tactics'
+capture lock and replay read; Study then owns card and queue admission before
+Tactics saves the capture receipt on that same writer. No implementation or
+connection is imported by the public protocol.
