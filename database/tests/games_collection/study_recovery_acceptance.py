@@ -23,6 +23,20 @@ from fsrs import Card
 from fixtures.study_recovery_content import OBSERVED, publication
 
 
+def assert_original_review_command(request, card_id, original_body):
+    """Compare the exact original command and validate any derived manifest."""
+    from app.contracts.review_command_identity import original_review_identity
+    from app.contracts.transport.study import ReviewRequest
+    from app.services.opening_decision_evidence import validate_checkpoint
+
+    review = ReviewRequest.model_validate(original_body)
+    checkpoint = review.opening_evidence_completion
+    assert set(request) == ({'card_id', 'review', 'prepared_manifest'} if checkpoint else {'card_id', 'review'})
+    assert original_review_identity(request) == {'card_id': card_id, 'review': review.durable_payload()}
+    if checkpoint:
+        validate_checkpoint(checkpoint, request['prepared_manifest'])
+
+
 def memory_observation(docker, container):
     """Bounded read-only cgroup/process observations; never change teardown."""
     command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'CPU\\n'; cat /sys/fs/cgroup/cpu.stat; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
@@ -616,13 +630,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         FROM operation_receipts WHERE operation_id=%s""", (measured['requestId'],)).fetchone()
                     assert operation and operation['command_name']=='cards.review' and operation['state']=='complete'
                     assert json.loads(operation['response_json']) == measured['receipt']
-                    from app.contracts.transport.study import ReviewRequest
-                    original_review = ReviewRequest.model_validate(measured['requestBody'])
-                    # This journey does not submit an opening checkpoint, which
-                    # would require separately prepared evidence in the command.
-                    assert original_review.opening_evidence_completion is None
                     request = json.loads(operation['payload_json'])
-                    assert request == {'card_id': measured['cardId'], 'review': original_review.durable_payload()}
+                    assert_original_review_command(request, measured['cardId'], measured['requestBody'])
                     assert request['card_id']==measured['cardId']
                     assert request['review']['attempt_id']==measured['attemptId']
                     assert request['review']['queue_entry_id']==measured['entryId']

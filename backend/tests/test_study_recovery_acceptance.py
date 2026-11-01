@@ -242,3 +242,36 @@ def test_packaged_fixture_clock_advances_with_wall_time():
     assert clock.now() == 101.0
     inputs['now'] = 102.0
     assert clock.now() == 102.0
+
+
+def test_recovery_review_command_checks_original_and_prepared_manifest(monkeypatch):
+    import copy
+    from pathlib import Path
+    from app.contracts.transport.study import ReviewRequest
+    from app.services.opening_decision_evidence import EvidenceConflict
+    from test_opening_decision_evidence import manifest
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'database/tests/games_collection'))
+    from study_recovery_acceptance import assert_original_review_command
+
+    base = {'outcome': 'correct', 'attempt_id': 'attempt', 'queue_entry_id': 1}
+    for checkpoint in (None, {'attempt_id': 'attempt', 'manifest': manifest(), 'origin_queue_entry_id': 1,
+                              'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC', 'events': []}):
+        body = {**base, **({'opening_evidence_completion': checkpoint} if checkpoint else {})}
+        request = {'card_id': 'card', 'review': ReviewRequest.model_validate(body).durable_payload()}
+        if checkpoint:
+            request['prepared_manifest'] = copy.deepcopy(checkpoint['manifest'])
+        assert_original_review_command(request, 'card', body)
+        tampered = copy.deepcopy(request)
+        tampered['review']['outcome'] = 'again'
+        with pytest.raises(AssertionError):
+            assert_original_review_command(tampered, 'card', body)
+        if checkpoint:
+            missing = copy.deepcopy(request)
+            del missing['prepared_manifest']
+            with pytest.raises(AssertionError):
+                assert_original_review_command(missing, 'card', body)
+            mismatched = copy.deepcopy(request)
+            mismatched['prepared_manifest']['card_revision'] += 1
+            with pytest.raises(EvidenceConflict):
+                assert_original_review_command(mismatched, 'card', body)
