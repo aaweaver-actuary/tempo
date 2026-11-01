@@ -703,3 +703,51 @@ def test_selected_cli_pool_readiness_precedes_preflight_and_never_claims_on_fail
         assert events == ['pool_ready', 'preflight', 'lease',
             ('transaction', {'read_only':True,'authoritative':True,'background':True})]
     claims.assert_not_called()
+
+
+@pytest.mark.parametrize('mode', ['queued-rebuild', 'failed-first-publication'])
+@pytest.mark.parametrize('binding_fails', [False, True])
+def test_recovery_cli_binds_existing_database_authorities_before_any_owner_work(
+        monkeypatch, tmp_path, mode, binding_fails):
+    """A fresh direct CLI must not claim a task with an unbound handler gate."""
+    import sys
+    from app.product_composition import database_infrastructure as composition
+    from app.services.activity_gate import activity_gate
+    from app.services.background_runtime import database_stage
+    from tempo_legacy_database import infrastructure
+    monkeypatch.setattr(infrastructure, '_admission', None)
+    monkeypatch.setattr(infrastructure, '_measurement', None)
+    events = []
+    bind = composition.bind_database_infrastructure
+    def startup():
+        events.append('bind')
+        if binding_fails:
+            raise RuntimeError('controlled_database_bootstrap_failure')
+        bind()
+    monkeypatch.setattr(composition, 'bind_database_infrastructure', startup)
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('bound_recovery_cli', path)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    assert not events and infrastructure._admission is None  # Import remains inert.
+    class BeforeOwnerWork(Exception):
+        pass
+    def owner(*args, **kwargs):
+        assert events == ['bind']
+        assert infrastructure.database_admission() is activity_gate
+        assert infrastructure._measurement is database_stage
+        events.append('owner')
+        raise BeforeOwnerWork()
+    monkeypatch.setattr(cli, 'selected_rebuild_main', owner)
+    monkeypatch.setattr(cli, 'preflight', owner)
+    monkeypatch.setattr(sys, 'argv', [str(path), '--mode', mode, '--task-id', 'task',
+        '--repertoire-id', 'repertoire', '--generation', '1', '--target', 'target',
+        '--output', str(tmp_path / 'evidence'), '--apply'])
+    if binding_fails:
+        with pytest.raises(RuntimeError, match='controlled_database_bootstrap_failure'):
+            cli.main()
+        assert events == ['bind']
+    else:
+        with pytest.raises(BeforeOwnerWork):
+            cli.main()
+        assert events == ['bind', 'owner']

@@ -35,8 +35,10 @@ flowchart LR
     R --> S[(Legacy database)]
 ```
 
-The direct tooling entrypoints `frozen-maia-order` and `writer_latency` bind
-explicitly, as do the standalone background workload, engine fairness,
+The direct tooling entrypoints `frozen-maia-order`, `writer_latency` and
+`recover-opening-publication.py` bind explicitly. The recovery CLI binds after
+argument parsing and before either mode enters owner preflight or execution;
+importing it remains inert. The same binding is supplied by the standalone background workload, engine fairness,
 scheduling turns, prefix transition and study priority test harnesses. Backend
 pytest composes the same binding in its configuration. API and task worker entrypoints bind the same helper before their own setup.
 The frozen-order browser fixture binds before its first controlled connection;
