@@ -10,7 +10,8 @@ from psycopg.errors import LockNotAvailable, SerializationFailure
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_application import storage
 from app import prefix_evaluation_api as structural, prefix_transition_api as planner_api
-from ..command_gateway import register_command
+from ..command_gateway import register_descriptor
+from ..contracts.command_registry import CommandDescriptor
 from app.contracts.prefix_transition import PrefixTransitionApplyRequest, PrefixTransitionPlan
 from tempo_legacy_database.adapters.snapshot_reads import SnapshotRead, snapshot_rows
 from .durable_tasks import enqueue_task_in_transaction, lock_current_slice, advance_task_slice_in_transaction, complete_task_slice_in_transaction
@@ -328,4 +329,26 @@ def record_linked_failure(database, task_id, generation, error):
         storage.record_receipt_failure(database, 'blocked' if committed else 'failed', None if committed else error_json, error_json if committed else None, application['operation_id'])
 
 
-register_command(COMMAND, apply_command, prepare=prepare_application)
+@dataclass(frozen=True)
+class PrefixTransitionLifecycle:
+    def writer_admission(self):
+        from .activity_gate import activity_gate
+        return activity_gate.foreground()
+
+    def delayed_preparation_error(self, error: Exception) -> Exception:
+        if isinstance(error, HTTPException) and error.status_code == 503:
+            return SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation')
+        return error
+
+    def reject_after_rollback(self, database: postgres_store.PostgresConnection, operation_id: str, error: Exception) -> bool:
+        return reject_unactivated_application(database, operation_id, error)
+
+    def is_pending(self, result: dict) -> bool:
+        return result.get('status') == 'pending'
+
+
+PREFIX_TRANSITION_COMMAND: CommandDescriptor[postgres_store.PostgresConnection, dict, PreparedApplication, dict] = CommandDescriptor(
+    name=COMMAND, decode=lambda payload: payload, prepare=prepare_application, apply=apply_command,
+    transition_lifecycle=PrefixTransitionLifecycle(),
+)
+register_descriptor(PREFIX_TRANSITION_COMMAND)

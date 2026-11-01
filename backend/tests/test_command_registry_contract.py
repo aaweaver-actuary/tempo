@@ -110,3 +110,24 @@ def test_pure_contract_import_does_not_start_or_import_runtime():
     code = '''\nimport builtins\noriginal = builtins.__import__\ndef guarded(name, *args, **kwargs):\n    if name in {"app.main", "app.tasks", "app.command_gateway"} or name.startswith(("tempo_legacy_database", "psycopg", "redis", "celery")):\n        raise AssertionError(name)\n    return original(name, *args, **kwargs)\nbuiltins.__import__ = guarded\nfrom app.contracts.command_registry import CommandDescriptor, CommandRegistry\nassert CommandRegistry().handlers == {}\n'''
     subprocess.run([sys.executable, '-c', code], cwd=root,
         env={**os.environ, 'PYTHONPATH': str(root / 'backend')}, check=True)
+
+
+def test_descriptor_retains_and_clears_both_callback_and_transition_lifecycle():
+    registry = CommandRegistry()
+    events = []
+    lifecycle = object()
+    descriptor = CommandDescriptor('both', lambda payload: payload, lambda value: value,
+                                   lambda _tx, value: value, after_commit=events.append,
+                                   transition_lifecycle=lifecycle)
+    registry.register(descriptor)
+    assert registry.transition_lifecycles['both'] is lifecycle
+    registry.after_commit('both', {'saved': True})
+    assert events == [{'saved': True}]
+    with pytest.raises(ValueError, match='Duplicate command: both'):
+        registry.register(descriptor)
+    registry.handlers.pop('both')
+    registry.register(CommandDescriptor('both', lambda payload: payload, lambda value: value,
+                                        lambda _tx, value: value))
+    assert 'both' not in registry.transition_lifecycles
+    registry.after_commit('both', {'saved': False})
+    assert events == [{'saved': True}]

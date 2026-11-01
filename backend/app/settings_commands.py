@@ -90,6 +90,6 @@ def _refresh_policy_after_commit(_result: dict[str, object]) -> None:
 
 
 SETTINGS_COMMAND: CommandDescriptor[PostgresConnection, SettingsRequest, SettingsRequest, dict[str, object]] = CommandDescriptor(
-    "settings.update", decode_settings_request, _prepare_settings, apply_settings, _refresh_policy_after_commit,
+    "settings.update", decode_settings_request, _prepare_settings, apply_settings, after_commit=_refresh_policy_after_commit,
 )
 register_descriptor(SETTINGS_COMMAND)
