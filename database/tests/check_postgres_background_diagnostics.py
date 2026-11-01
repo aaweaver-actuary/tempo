@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from database.tooling.apply_postgres_migrations import apply_migrations
 from tempo_legacy_database import connections as database
+from app.services.activity_gate import activity_gate
 from tempo_legacy_database.adapters import postgres_store
 from app.services import durable_tasks, background_diagnostics, background_runtime
 from app.services.background_metrics import increment
@@ -39,7 +40,7 @@ def check_admitted_primary_preflight(claimed):
     try:
         with database.read_connection() as connection:
             assert connection.execute('SELECT current_database()').fetchone()[0] == 'postgres'
-        with background_runtime.measure_handler('daily_queue'), database.activity_gate.background_job('daily_queue', claimed['id']):
+        with background_runtime.measure_handler('daily_queue'), activity_gate.background_job('daily_queue', claimed['id']):
             assert durable_tasks.current_delivery(claimed)
             try:
                 with database.background_read_connection(authoritative=True) as connection:
@@ -56,12 +57,12 @@ def check_admitted_primary_preflight(claimed):
         def observed_read(**options):
             with original_read(**options) as connection:
                 opened.set()
-                assert database.activity_gate.in_background
-                assert database.activity_gate.active_background_sections == 1
+                assert activity_gate.in_background
+                assert activity_gate.active_background_sections == 1
                 yield connection
 
         def worker():
-            with background_runtime.measure_handler('daily_queue') as measurement, database.activity_gate.background_job('daily_queue', claimed['id']):
+            with background_runtime.measure_handler('daily_queue') as measurement, activity_gate.background_job('daily_queue', claimed['id']):
                 started.set()
                 outcomes.append(durable_tasks.current_delivery(claimed))
                 outcomes.append(measurement.sample().admission_wait_seconds)
@@ -69,7 +70,7 @@ def check_admitted_primary_preflight(claimed):
         with patch.object(durable_tasks, 'background_read_connection', observed_read):
             thread = threading.Thread(target=worker)
             try:
-                with database.activity_gate.foreground():
+                with activity_gate.foreground():
                     thread.start()
                     assert started.wait(2)
                     assert not opened.wait(0.05), 'Preflight bypassed admission'
@@ -96,7 +97,7 @@ def check_runtime_publication_boundaries(claimed):
 
     class DiagnosticRedis:
         def set(self, key, value, ex):
-            if database.activity_gate.active_background_sections or shared_reserved[0]:
+            if activity_gate.active_background_sections or shared_reserved[0]:
                 violations.append('reserved publication')
             assert ex == 15
             samples.append(json.loads(value))
@@ -105,7 +106,7 @@ def check_runtime_publication_boundaries(claimed):
          patch.object(background_runtime.redis_admission_gate, 'background_lease', shared_lease), \
          patch.object(background_runtime.redis_admission_gate, 'foreground_present', return_value=False), \
          patch.object(background_runtime, '_diagnostic_client', return_value=DiagnosticRedis()):
-        with background_runtime.measure_handler('daily_queue') as measurement, database.activity_gate.background_job('daily_queue', claimed['id']):
+        with background_runtime.measure_handler('daily_queue') as measurement, activity_gate.background_job('daily_queue', claimed['id']):
             with database.background_read_connection(authoritative=True) as connection:
                 assert connection.execute('SELECT 1').fetchone()[0] == 1
                 assert measurement.stage == 'database'
@@ -114,6 +115,8 @@ def check_runtime_publication_boundaries(claimed):
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Background diagnostics proof requires the disposable test runner')
     database_name='tempo_diagnostics_'+uuid.uuid4().hex

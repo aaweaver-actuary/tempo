@@ -117,6 +117,8 @@ def benchmark_writer(writer: DatabaseWriter, database_path: Path,
 
 
 def main() -> None:
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     original_database_path = database_module.DB_PATH
     with TemporaryDirectory(prefix="tempo-writer-benchmark-") as directory:
         database_path = Path(directory) / "writer.sqlite3"

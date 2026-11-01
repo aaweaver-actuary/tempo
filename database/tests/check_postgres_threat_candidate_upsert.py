@@ -31,6 +31,8 @@ from issue12_persistence_scenario import verify_three_anchor_persistence
 
 def verify_issue12_three_anchors_on_postgres(database_url: str) -> None:
     """Use migrated tables in a private database, never the runner's active product data."""
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Issue 12 persistence proof requires the disposable test runner")
     database_name = "tempo_issue12_" + uuid.uuid4().hex
@@ -55,6 +57,8 @@ def verify_issue12_three_anchors_on_postgres(database_url: str) -> None:
 
 
 def main() -> None:
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     database_url = os.getenv(
         "TEMPO_DATABASE_WRITE_URL", "postgresql://postgres@postgres:5432/tempo"
     )

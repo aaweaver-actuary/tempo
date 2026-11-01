@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from database.tooling.apply_postgres_migrations import apply_migrations
 from app import activity_commands, main as application, settings_commands, threat_analysis_commands
 from tempo_legacy_database import connections as database
+from app.services.activity_gate import activity_gate
 from tempo_legacy_database.adapters import postgres_store
 from app.contracts.transport.settings import Settings
 from app.services import background_activity, background_diagnostics, durable_tasks
@@ -217,7 +218,7 @@ def verify_pause():
         def delayed_slice():
             started.set()
             return durable_tasks.defer_paused_defensive_task(claimed_slice)
-        with database.activity_gate.foreground():
+        with activity_gate.foreground():
             future=executor.submit(delayed_slice)
             assert started.wait(2)
             # Foreground reads remain available while the slice waits for admission.
@@ -252,6 +253,8 @@ def verify_pause():
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE')!='disposable':
         raise RuntimeError('Defensive pause proof requires the disposable test runner')
     database_name='tempo_defensive_pause_'+uuid.uuid4().hex

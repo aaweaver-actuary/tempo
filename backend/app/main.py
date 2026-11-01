@@ -23,6 +23,9 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, 
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.product_composition.database_infrastructure import bind_database_infrastructure
+bind_database_infrastructure()
+
 from tempo_legacy_database.connections import background_read_connection, connection, initialize, query_only_request, read_connection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.http_composition import (

@@ -13,7 +13,7 @@ import time
 from typing import Callable, Generic, TypeVar
 
 from tempo_legacy_database import connections as database_module
-from app.services.activity_gate import activity_gate
+from tempo_legacy_database.infrastructure import database_admission
 
 
 Result = TypeVar("Result")
@@ -117,7 +117,7 @@ class DatabaseWriter:
             raise RuntimeError("database writer is unavailable")
         future: Future[Result] = Future()
         pending = _PendingWrite(operation, future, label, time.perf_counter(), background,
-                                activity_gate.in_background_control)
+                                database_admission().in_background_control)
         with self._condition:
             (self._background if background else self._foreground).append(pending)
             self._condition.notify_all()
@@ -157,7 +157,7 @@ class DatabaseWriter:
                 try:
                     if pending.background and not pending.control and os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
                         gate_started_at = time.perf_counter()
-                        activity_gate.check_background_admission()
+                        database_admission().check_background_admission()
                         gate_wait_seconds = time.perf_counter() - gate_started_at
                     compatibility_lock_started_at = time.perf_counter()
                     with database_module.write_compatibility_lock:

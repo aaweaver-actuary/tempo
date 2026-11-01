@@ -32,6 +32,8 @@ def measure(call, repetitions=30):
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if postgres_store.configured():
         raise RuntimeError("Compatibility benchmark requires an environment without PostgreSQL URLs")
     with tempfile.TemporaryDirectory(prefix='tempo-diagnostic-benchmark-') as directory:

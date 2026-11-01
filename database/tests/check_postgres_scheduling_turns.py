@@ -33,6 +33,8 @@ KINDS = ('opening_graph_rebuild', 'game_derivation_positions',
 
 
 def proof_scheduling_turns(parent_database_url):
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Scheduling proof requires an explicitly disposable PostgreSQL instance')
     identity = 'tempo_turns_' + uuid.uuid4().hex

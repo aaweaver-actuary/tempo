@@ -395,6 +395,8 @@ def _prove_postgres_concurrent_retention(fixture):
 
 def prove_canonical_retention(*, mode='candidate', service_module=previews):
     """Run inside an exclusively owned PostgreSQL/Redis rehearsal namespace."""
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     report = {'mode': mode, 'slice_budget': 64, 'victim_budget': 4, 'proofs': []}
     fixture = _new_postgres_fixture()
     try:

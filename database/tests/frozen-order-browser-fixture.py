@@ -19,6 +19,8 @@ from app.services.queue_application import randomize_daily_queue
 from datetime import date
 
 if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable': raise RuntimeError('Disposable fixture required')
+from app.product_composition.database_infrastructure import bind_database_infrastructure
+bind_database_infrastructure()
 action=sys.argv[1]
 with background_connection() as database:
     day=date.today().isoformat()

@@ -193,6 +193,8 @@ def test_postgres_incident_measurements_retain_parent_admission_and_actual_budge
 
 
 def main() -> None:
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("This check requires the disposable PostgreSQL test instance")
     os.environ["TEMPO_DATABASE_WRITE_URL"] = DATABASE_URL

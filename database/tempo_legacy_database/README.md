@@ -18,3 +18,36 @@ Fields such as `source_ref`, publication generation, JSON payload identities and
 The dictionaries distinguish nullable fields, primary/composite keys, enforced FKs and uniqueness. Defaults/checks/triggers/partial or expression indexes remain authoritative in the linked DDL; they are not restated as extra relationships.
 
 [Native bridge proofs](tests/legacy_bridge/README.md),[Discovery acceptance proofs](tests/discovery_acceptance/README.md),[queue admission proofs](tests/queue_admission/README.md) and their [finite qualification/resource tooling](tooling/legacy_bridge/README.md) now live under this owner. Source paths and discovery change; native execution remains unverified and is not triggered by navigation or ordinary application tests.
+
+## Supplied database infrastructure (D1)
+
+The connection router and SQLite writer consume the admission and measurement
+capabilities in [infrastructure.py](infrastructure.py). [Application composition](../../backend/app/product_composition/database_infrastructure.py) binds the
+existing activity gate singleton and `database_stage` before controlled access;
+missing binding fails explicitly. The gate, measurement context, compatibility
+lock and transaction ownership remain unchanged. API and task-worker composition bind before their controlled operations.
+
+```mermaid
+flowchart LR
+    C[Application composition] -->|supplies existing gate and stage| P[Database infrastructure port]
+    R[Legacy connection router and writer] -->|admission and measurement| P
+    P --> G[Existing activity gate and measurement context]
+    R --> S[(Legacy database)]
+```
+
+The direct tooling entrypoints `frozen-maia-order` and `writer_latency` bind
+explicitly, as do the standalone background workload, engine fairness,
+scheduling turns, prefix transition and study priority test harnesses. Backend
+pytest composes the same binding in its configuration. API and task worker entrypoints bind the same helper before their own setup.
+The frozen-order browser fixture binds before its first controlled connection;
+the diagnostic and defensive-pause standalone checks bind in `main`. The
+study-priority overlap runner calls the study-priority `main` before the callback
+that starts its maintenance thread, so that thread sees the same process
+binding. The associated native/packaged runs remain separate evidence.
+The SQLite diagnostic benchmark binds in `main`, canonical-retention's reusable
+proof binds on entry, and the threat-candidate standalone runner and its reusable
+three-anchor proof bind before controlled access. Background-admission imports
+the task composition before its connections; opening-evidence imports the task
+or API composition before its selected controlled routes. Direct read-only
+`read_connection` and direct concrete `postgres_store` scopes retain their
+existing paths; they do not require the controlled router's binding.

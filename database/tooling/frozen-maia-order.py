@@ -499,6 +499,8 @@ def target_id(metadata):
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation',choices=['plan','apply','verify','rollback'],nargs='?',default='plan')
     parser.add_argument('--config',default=str(ROOT/'scripts/frozen-maia-order.json'))
