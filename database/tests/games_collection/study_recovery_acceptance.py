@@ -241,6 +241,9 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
     hold_scenario.write_text(json.dumps(dict(version=1, controls=controls, target=target['card_id'])))
     (directory/'essential-crash-after-slice').write_text('crash once after genuine committed queue slice\n')
     held_browser = None
+    evidence = root/'test-results/collection-release'/('held-'+uuid.uuid4().hex)
+    evidence.mkdir(parents=True)
+    report['held_prerequisite_evidence'] = str(evidence)
     def release(stage):
         _marker(directory/'hold-provider-ready.json', dict(stage=stage))
     def wait_browser(stage):
@@ -260,16 +263,21 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
       paused_background = True
       docker('pause', collector)
       paused_collector = True
-      with (directory/'hold-browser.log').open('w') as output:
+      with (evidence/'runner.log').open('w') as output:
         held_browser = subprocess.Popen([shutil.which('node'), str(root/'node_modules/@playwright/test/cli.js'),
             'test','tests/browser/real-game-feedback.spec.ts','--config=playwright.config.ts','--project=chromium',
             '--grep','packaged held prerequisite preserves Study through essential worker recovery','--trace=on'],
             cwd=root, env=os.environ|dict(TEMPO_DOCKER_URL=web_url,TEMPO_PACKAGED_HOLD_SCENARIO=str(hold_scenario),
-                TEMPO_TEST_OUTPUT_DIR=str(directory/'hold-browser-artifacts'),TEMPO_CI_REPORT=str(directory/'hold-playwright.json')),
+                TEMPO_TEST_OUTPUT_DIR=str(evidence/'artifacts'),TEMPO_CI_REPORT=str(evidence/'playwright.json')),
             stdout=output,stderr=subprocess.STDOUT,text=True,start_new_session=True)
         wait_browser('waiting')
-        policy = api('GET','/api/system/foreground-active')
-        assert policy['status']==200 and policy['body']['active'] is True
+        deadline = time.monotonic()+45
+        while True:
+            policy = api('GET','/api/system/foreground-active')
+            if policy['status']==200 and policy['body'].get('available') is True and policy['body'].get('active') is True:
+                break
+            assert time.monotonic()<deadline, 'held_browser_waiting_activity_not_observed'
+            time.sleep(.1)
         assert json.loads(docker('inspect',background).stdout)[0]['State']['Paused'] is True
         settings = api('GET', '/api/settings')
         assert settings['status'] == 200
