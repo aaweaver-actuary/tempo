@@ -35,7 +35,6 @@ def gateway_context(monkeypatch):
     monkeypatch.setattr(gateway.storage,"rollback_command_handler",lambda *_: events.append("savepoint rollback"))
     monkeypatch.setattr(gateway.storage,"release_command_handler",lambda *_: events.append("release"))
     monkeypatch.setattr(gateway.storage,"complete_operation",lambda *_: events.append("complete"))
-    monkeypatch.setattr(gateway,"_handlers",{})
     return events
 
 
@@ -60,7 +59,7 @@ def test_handler_failure_retains_savepoint_receipt_vs_outer_retry_semantics(monk
         events.append("handler")
         if database_failure:raise gateway.psycopg.OperationalError("busy")
         raise ReviewConflict("changed","Changed",retryable=False)
-    gateway.register_command("study.command",handler)
+    monkeypatch.setattr(gateway,"current_registry",lambda: gateway.CommandRegistry((("study.command",handler),)))
     def failed(_db,payload,_operation):
         data=json.loads(payload)
         assert (data["code"],data["retryable"],data["status_code"])==("changed",False,409)
@@ -81,7 +80,7 @@ def test_logical_attempt_conflict_prevents_handler_before_failure_receipt(monkey
     monkeypatch.setattr(gateway.storage,"bind_logical_request",lambda *_: events.append("bind"))
     monkeypatch.setattr(gateway.storage,"logical_request_identity",lambda *_: ("different",))
     monkeypatch.setattr(gateway.storage,"fail_operation",lambda *_: events.append("failed receipt"))
-    gateway.register_command("tactics.attempt.submit",lambda *_: pytest.fail("Conflicting logical attempt reached handler"))
+    monkeypatch.setattr(gateway,"current_registry",lambda: gateway.CommandRegistry((("tactics.attempt.submit",lambda *_: pytest.fail("Conflicting logical attempt reached handler")),)))
     gateway.execute("operation")
     assert events==[("begin",dict(background=False)),"lock","savepoint","bind","savepoint rollback","failed receipt","commit"]
 
@@ -95,7 +94,7 @@ def test_terminal_operation_does_not_reexecute_handler(monkeypatch,gateway_conte
 
 def test_intent_identity_conflict_rolls_back_own_transaction(monkeypatch,gateway_context):
     events=gateway_context
-    gateway.register_command("study.command",lambda *_: None)
+    monkeypatch.setattr(gateway,"current_registry",lambda: gateway.CommandRegistry((("study.command",lambda *_: None),)))
     monkeypatch.setattr(gateway.storage,"insert_operation_intent",lambda *_: events.append("intent"))
     monkeypatch.setattr(gateway.storage,"intent_identity",lambda *_: ("other","digest"))
     with pytest.raises(ReviewConflict) as error:gateway.record_intent("operation","study.command",{})

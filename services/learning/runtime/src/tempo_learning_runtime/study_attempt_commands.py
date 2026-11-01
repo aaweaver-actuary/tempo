@@ -11,7 +11,6 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 
-from .gateway import register_command
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
@@ -189,6 +188,8 @@ def self_assess_study_attempt(
     return result
 
 
-def register_handlers():
-    register_command("studies.attempts.submit", submit_study_attempt)
-    register_command("studies.attempts.self_assess", self_assess_study_attempt)
+def handler_definitions():
+    return (
+        ("studies.attempts.submit", submit_study_attempt),
+        ("studies.attempts.self_assess", self_assess_study_attempt),
+    )
