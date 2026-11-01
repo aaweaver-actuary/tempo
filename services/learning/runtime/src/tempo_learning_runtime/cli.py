@@ -44,7 +44,7 @@ def main():
                 )
             from tempo_learning_database.connections import connection
             from . import gateway, publications
-            from .api import register_handlers
+            from .command_handlers import register_handlers
 
             registry = register_handlers()
             database = Database(configuration)
@@ -76,7 +76,7 @@ def main():
         else:
             from .maintenance import run_once
             from . import gateway
-            from .api import register_handlers
+            from .command_handlers import register_handlers
 
             registry = register_handlers()
 

@@ -14,12 +14,18 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from types import MappingProxyType
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
+
+Handler = Callable[[Any, dict], Any]
 
 
 @dataclass(frozen=True, init=False, eq=False)
 class CommandRegistry:
     """Immutable command definitions selected by one execution composition."""
-    def __init__(self, definitions):
+    _definitions: Mapping[str, Handler]
+
+    def __init__(self, definitions: Iterable[tuple[str, Handler]]):
         handlers = {}
         for name, handler in definitions:
             if name in handlers:
@@ -27,14 +33,14 @@ class CommandRegistry:
             handlers[name] = handler
         object.__setattr__(self, "_definitions", MappingProxyType(handlers))
 
-    def __contains__(self, name):
+    def __contains__(self, name: str) -> bool:
         return name in self._definitions
 
-    def handler(self, name):
+    def handler(self, name: str) -> Handler:
         return self._definitions[name]
 
     @property
-    def names(self):
+    def names(self) -> frozenset[str]:
         return frozenset(self._definitions)
 
 
@@ -44,7 +50,7 @@ _selected_registry = ContextVar("learning_command_registry", default=None)
 @lru_cache(maxsize=1)
 def default_registry():
     # Direct callers retain a complete immutable registry without an app startup.
-    from .api import register_handlers
+    from .command_handlers import register_handlers
     return register_handlers()
 
 

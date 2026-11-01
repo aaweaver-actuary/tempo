@@ -143,3 +143,27 @@ def test_publication_fence_selects_request_app_registry(monkeypatch):
                                headers={'Authorization': 'Bearer ' + 'o' * 40})
     assert response.status_code == 200
     assert observed == [app.state.command_registry]
+
+
+def test_direct_gateway_default_does_not_import_http_composition():
+    import subprocess
+    import sys
+    code = '''
+import importlib.abc
+import sys
+from contextlib import nullcontext
+class RejectHTTP(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'tempo_learning_runtime.api':
+            raise AssertionError('gateway imported HTTP composition')
+sys.meta_path.insert(0, RejectHTTP())
+from tempo_learning_runtime import gateway
+registry = gateway.default_registry()
+assert callable(registry.handler('queue.issue_head'))
+gateway.connection = lambda **kwargs: nullcontext(None)
+gateway.storage.insert_operation_intent = lambda *args: None
+gateway.storage.intent_identity = lambda *_: ('queue.issue_head', gateway.request_digest('queue.issue_head', {}))
+gateway.record_intent('original-operation', 'queue.issue_head', {})
+assert 'tempo_learning_runtime.api' not in sys.modules
+'''
+    subprocess.run([sys.executable, '-c', code], check=True)
