@@ -15,7 +15,7 @@ from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
-from .services.review_service import capture_daily_queue_order, preserve_daily_queue_order
+from .study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
 
 _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL

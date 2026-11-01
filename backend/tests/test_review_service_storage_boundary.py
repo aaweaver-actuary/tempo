@@ -123,16 +123,17 @@ def test_review_protected_insert_keeps_nested_position_read_and_positional_order
 
 
 def test_review_receipt_clock_and_seed_follow_provenance_and_precede_borrowed_write(monkeypatch):
+    from app.study import queue_order
     events = []
     database = Borrowed([Cursor()], events)
-    fake_module(monkeypatch, 'app.services.queue_ordering',
-                _preserved_queue_fingerprint=lambda *facts, previous: events.append(('fingerprint', facts, previous)) or 'hash')
-    monkeypatch.setattr(application, '_queue_order_inputs', lambda connection, day: ('entries', 'saved', 'activation'))
+    monkeypatch.setattr(queue_order, 'preserved_queue_fingerprint',
+        lambda *facts, previous: events.append(('fingerprint', facts, previous)) or 'hash')
+    monkeypatch.setattr(queue_order, '_queue_order_inputs', lambda connection, day: ('entries', 'saved', 'activation'))
     def now(zone):
         events.append('clock')
         return SimpleNamespace(isoformat=lambda: 'timestamp')
-    monkeypatch.setattr(application, 'datetime', SimpleNamespace(now=now))
-    application.preserve_daily_queue_order(database, 'day', previous='before')
+    monkeypatch.setattr(queue_order, 'datetime', SimpleNamespace(now=now))
+    queue_order.preserve_daily_queue_order(database, 'day', previous='before')
     seed = int(hashlib.sha256(b'day').hexdigest()[:15], 16)
     assert events == [('fingerprint', ('entries', 'saved', 'activation'), 'before'),
                       'execute_lookup', 'clock', ('execute', ('day', seed, 'hash', 'timestamp'))]

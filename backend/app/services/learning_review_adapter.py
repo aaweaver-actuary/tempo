@@ -14,7 +14,8 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application
-from .review_service import apply_scheduling_review, capture_daily_queue_order, preserve_daily_queue_order
+from .review_service import apply_scheduling_review
+from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 from .review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .background_runtime import training_timing_stage
 

@@ -19,7 +19,7 @@ from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
 from .real_game_feedback import MISS_REASON
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from .real_game_feedback_adapter import has_outstanding_real_game_miss, promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses
-from .review_service import preserve_daily_queue_order
+from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 from .tactical_catalog import seed_tactical_introductions
 
 
@@ -229,7 +229,6 @@ def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry
 
 
 def requeue(db, day, cid, after, attempt):
-    from .review_service import capture_daily_queue_order
     previous_order = capture_daily_queue_order(db, day)
     cycle = requeue_storage.next_cycle(db, day, cid)
     if after is None:
