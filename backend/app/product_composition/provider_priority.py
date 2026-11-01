@@ -293,10 +293,12 @@ def _qualified_facts(command, *, connections, clock, delivery=None, selector=Non
 
 
 def _prepare_qualified_owner(command, qualification, *, source, configuration,
-                             publications, selector, capture, require_active_mode=False, prepared_targets=()):
+                             publications, selector, capture, connections, require_active_mode=False, prepared_targets=()):
     """Prepare global publication proof and exact target proof separately."""
     from tempo_legacy_database.adapters.games.product_feedback import fence_qualified_feedback
-    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
+    from tempo_legacy_database.adapters.study.current_feedback_authority import (
+        CurrentQualifiedOwnerDecisions, read_current_feedback_target)
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     runtime_id = None
     if require_active_mode:
         from .managed_runtime import current_managed_runtime_identity
@@ -304,23 +306,23 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
         if runtime_id is None:
             raise DeliveryDeferred("managed_feedback_runtime_identity_unavailable")
     decision = qualification.selection.decision
-    with feedback_span('target_capture'):
-        target_capture = capture(decision.repertoire_id, command.key.game_id,
-            (command.key.occurrence_ply - 1,))
-    with feedback_span('target_projection'):
-        game = retained_canonical_game(target_capture)
-        target_snapshot = project_capture(target_capture, comparison_game=game)
+    # SourceState is owned by canonical Games storage; the existing final source
+    # fence rechecks its exact imported row, account, configuration and command.
+    game = source.normalized
+    with feedback_span('current_target_read'):
+        with connections() as raw:
+            target_facts = read_current_feedback_target(PostgresConnection(raw), decision)
     source_fence = partial(fence_qualified_feedback,
         expected_configuration=configuration, expected_source=source,
         require_active_mode=require_active_mode, mode_runtime_id=runtime_id)
     with feedback_span('current_owner_validation'):
-        decisions = CurrentOwnerDecisions(None, retained_owner_capture=target_capture,
-            snapshot=target_snapshot).prepare_qualified(command, qualification,
+        decisions = CurrentQualifiedOwnerDecisions(game=game,
+            target_facts=target_facts).prepare_qualified(command, qualification,
                 qualified_publications=publications,
                 prepared_targets=prepared_targets,
                 qualification_fence=source_fence,
                 game=game, select_first_boundary=selector)
-    return PreparedProviderFeedback(command, target_capture, target_snapshot, qualification, decisions,
+    return PreparedProviderFeedback(command, None, None, qualification, decisions,
         require_active_mode, runtime_id, source_fence, prepared_targets)
 
 
@@ -356,7 +358,6 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
                     raise DeliveryDeferred("first_departure_aware_clock_required")
                 return value.isoformat()
         clock = OwnerClock()
-    capture = _owner_capture(connections, capture)
     source = PostgresReviewStore(connections).source_detail(
         command.key.workspace_id, command.key.provider, command.key.game_id)
     if source is None:
@@ -386,7 +387,7 @@ def prepare_feedback_qualification(command, *, connections=None, read=None, cloc
             retryable=(qualified.qualification_status != "ineligible"
                 and qualified.qualification_retryable and not changed_authority))
     return _prepare_qualified_owner(command, qualified.qualification, source=source,
-        configuration=configuration, publications=publications, selector=selector, capture=capture,
+        configuration=configuration, publications=publications, selector=selector, capture=capture, connections=connections,
         require_active_mode=require_active_mode, prepared_targets=prepared_targets)
 
 
@@ -502,7 +503,7 @@ def prepare_delivery_feedback(original, *, connections, clock, admitted, capture
         if qualified.qualification_status == "ready":
             provider = _prepare_qualified_owner(original.command, qualified.qualification,
                 source=source, configuration=configuration, publications=publications,
-                selector=selected, capture=_owner_capture(connections, capture), require_active_mode=True,
+                selector=selected, capture=capture, connections=connections, require_active_mode=True,
                 prepared_targets=targets)
     except DeliveryDeferred as error:
         qualified = held_delivery(qualified, error.reason,
@@ -635,7 +636,7 @@ class CurrentProviderPriorityIntake:
         if not callable(operation_stopped):
             raise ValueError("explicit_provider_operation_control_required")
         self.connections, self.clock = connections, clock
-        self.operation_stopped, self.capture = operation_stopped, _owner_capture(connections, capture)
+        self.operation_stopped, self.capture = operation_stopped, capture
         self.admitted, self.selector = admitted, selector
         self._qualification_facts = None  # One unit only, never a TTL/global cache.
         self.reads = CurrentStudyReceiptReads(connections, clock)
@@ -691,7 +692,7 @@ class CurrentProviderPriorityIntake:
         _, source, configuration, publications, selector, targets = facts
         return _prepare_qualified_owner(command, qualification, source=source,
             configuration=configuration, publications=publications, selector=selector, capture=self.capture,
-            require_active_mode=True, prepared_targets=targets)
+            connections=self.connections, require_active_mode=True, prepared_targets=targets)
 
     def _require_local_admission(self):
         if self.admitted is not None:
@@ -745,7 +746,7 @@ class CurrentProviderPriorityIntake:
         try:
             _require_current_sync_controls()
             stage = "capture"
-            captured = self.capture(command.decision.repertoire_id, command.key.game_id,
+            captured = _owner_capture(self.connections, self.capture)(command.decision.repertoire_id, command.key.game_id,
                                     (command.key.occurrence_ply - 1,))
             stage = "projection"
             snapshot = project_capture(captured, comparison_game=retained_canonical_game(captured))

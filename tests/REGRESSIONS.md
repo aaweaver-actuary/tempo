@@ -6478,3 +6478,11 @@ and `test_native_games_owner_transaction_retains_deadline_and_atomic_rollback`.
 They cover Review, Feedback and managed-mode stores: exact production connections
 retain their existing 250ms transaction once; supplied callbacks retain their
 savepoint/configuration; exceptions roll back the complete owner mutation.
+### Current qualified feedback authority (#662)
+
+`backend/tests/test_current_feedback_authority.py` is selected by the regular
+`study-game-priority` suite. It covers current-only construction and complete-scope
+reuse, changed canonical source/time or exact executable rejection, and actual
+PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
+The existing handoff fixture uses the production bounded connection profile and a
+task-owned private passfile; all 250ms transaction limits remain unchanged.

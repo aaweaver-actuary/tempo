@@ -137,15 +137,7 @@ class CurrentOwnerDecisions:
         snapshots = tuple(snapshot.model_copy(update={'decision_presentations':tuple(
             replacements.get(mapping.model_dump_json(),mapping) for mapping in snapshot.decision_presentations)})
             for snapshot in snapshots)
-        raw = self.source['game']
-        _require(game.workspace_id == self.authority.workspace_id
-                 and game.game_id == raw['id'] and game.source_digest == fingerprint(raw)
-                 and game.starting_fen == raw['start_fen']
-                 and tuple(game.moves) == tuple(json.loads(raw['moves_json']))
-                 and game.learner_color == raw['color'] and game.played_at == raw['played_at']
-                 and command.occurred_at is not None
-                 and instant(command.occurred_at) == instant(raw['played_at']),
-                 'first_departure_canonical_source_unproved')
+        self._validate_qualified_game(game, command)
         selection = select_first_boundary(game, snapshots=snapshots,
             source=qualification.selection.source,
             selected_repertoire_ids=tuple(item['repertoire']['id'] for item in publications))
@@ -156,6 +148,7 @@ class CurrentOwnerDecisions:
                  'first_departure_incomplete_relevant_scope')
         # Keep every configured publication, including proven opposite-color
         # exclusions. Its source/color cannot change unnoticed before intake.
+        self._qualified_snapshots = snapshots
         self._qualified_captures = tuple(item['repertoire'] for item in publications)
         self._qualification_fence = qualification_fence
         self._qualified = (command.model_dump_json(), qualification.model_dump_json())
@@ -163,6 +156,21 @@ class CurrentOwnerDecisions:
         if self.prepared_target(qualification.selection.decision) is None:
             self.prepare_encounter(qualified_encounter_view(command,qualification))
         return self
+
+    def _validate_qualified_game(self, game, command):
+        raw = self.source['game']
+        _require(game.workspace_id == self.authority.workspace_id
+                 and game.game_id == raw['id'] and game.source_digest == fingerprint(raw)
+                 and game.starting_fen == raw['start_fen']
+                 and tuple(game.moves) == tuple(json.loads(raw['moves_json']))
+                 and game.learner_color == raw['color'] and game.played_at == raw['played_at']
+                 and command.occurred_at is not None
+                 and instant(command.occurred_at) == instant(raw['played_at']),
+                 'first_departure_canonical_source_unproved')
+
+    def introduction_revision(self, repertoire_id):
+        _require(repertoire_id == self.authority.repertoire_id, 'current_owner_command_scope_mismatch')
+        return self.authority.scope_source_revision + 1
 
     def prepared_target(self, target):
         """Exact trusted logical occurrence; physical scheduling remains separate."""
@@ -199,7 +207,10 @@ class CurrentOwnerDecisions:
             raise CurrentDecisionUnavailable(str(error)) from error
         # The legacy lapse becomes only an in-memory factual view. Its stored
         # bytes, payload digest, occurrence and logical identity stay original.
-        return self._current(qualified_encounter_view(command,qualification),priority_only=True)
+        return self._current_prepared_qualified(qualified_encounter_view(command,qualification))
+
+    def _current_prepared_qualified(self, command):
+        return self._current(command, priority_only=True)
 
     def _fence_selected_publication(self, expected):
         """Fence the complete prepared read with source/publication ownership.
@@ -415,7 +426,7 @@ def current_owner_game_feedback(database, *, retained_owner_capture, snapshot, c
         clock=clock, light_first_interval_days=light_first_interval_days)
 
 
-def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot, clock,
+def current_owner_encounter_intake(database, *, retained_owner_capture=None, snapshot=None, clock,
                                    prepared_decisions=None, qualification=None):
     """Internal intake factory. No queue policy or mutation capability."""
     from app.study.encounter_feedback import EncounterFeedback
@@ -427,7 +438,7 @@ def current_owner_encounter_intake(database, *, retained_owner_capture, snapshot
         clock=clock,introductions=None,introduction_policy=None)
 
 
-def current_owner_encounter_feedback(database, *, retained_owner_capture, snapshot, clock,
+def current_owner_encounter_feedback(database, *, retained_owner_capture=None, snapshot=None, clock,
                                      introductions, introduction_policy, prepared_priority=None, prepared_decisions=None):
     """Internal Study refresh factory on its own borrowed writer transaction.
 
@@ -445,7 +456,7 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture, snapsh
             # facts checked under the same source fence above, not a guessed
             # revision or new physical mapping. Preserve every decision field.
             current = target.model_copy(update={
-                'repertoire_revision': decisions.authority.scope_source_revision + 1})
+                'repertoire_revision': decisions.introduction_revision(repertoire_id)})
             return introductions.admit_encounter(day,repertoire_id=repertoire_id,
                                                 decision_id=decision_id,target=current)
 

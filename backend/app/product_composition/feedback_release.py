@@ -86,7 +86,7 @@ def register_feedback_next_card_priority(*, workspace="legacy",read=None,clock=N
             runtime_id=runtime_id,before_priority=before_priority)
 
     register_current_next_card_priority(read=read,
-        capture=_owner_capture(connections),
+        capture=lambda *args: _owner_capture(connections)(*args),
         clock=lambda:datetime.fromisoformat(clock.utc_now().replace("Z","+00:00")),
         local_handoff_prepare=prepare,source_pending=source_pending)
 

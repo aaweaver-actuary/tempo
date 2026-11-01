@@ -124,7 +124,8 @@ def qualified_feedback_source(transaction, *, capture, command, clock=lambda:NOW
         def reprepare():
             prepared = prepare(command)
             target = prepared.qualification.selection.decision.model_copy(update={
-                'repertoire_revision':prepared.prepared_decisions.authority.scope_source_revision+1})
+                'repertoire_revision':prepared.prepared_decisions.introduction_revision(
+                    prepared.qualification.selection.decision.repertoire_id)})
             result.prepared = prepared
             result.prepared_introduction = prepare_encounter_introduction(target,read=transaction,
                 prepared_target=prepared.prepared_decisions.prepared_target(target))
