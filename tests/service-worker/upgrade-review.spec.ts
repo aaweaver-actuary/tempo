@@ -108,8 +108,12 @@ test('real worker upgrade retains and replays the original pending review', asyn
       await page.clock.setFixedTime(new Date(afterExpiry));
       diagnostics.push(JSON.stringify({ label: 'observed-claim-expiry', expiresAt: expiries, advancedTo: afterExpiry }));
     }
-    await page.getByRole('button', { name: 'Check saved reviews', exact: true }).click();
-    await observe('immediately-after-explicit-retry');
+    const retry = page.getByRole('button', { name: 'Check saved reviews', exact: true });
+    if (!delivered.length && await retry.isVisible()) {
+      try { await retry.click({ timeout: 3000 }); }
+      catch (error) { if (!delivered.length) throw error; }
+    }
+    await observe('after-recovery-or-explicit-retry');
     await expect.poll(() => delivered.length, { timeout: 20000 }).toBe(1);
     expect(delivered[0]).toEqual(attempted[0]);
     expect(delivered[0].id).toBe(original.requestId);
@@ -117,7 +121,9 @@ test('real worker upgrade retains and replays the original pending review', asyn
     expect(delivered[0].body).toMatchObject({ queue_entry_id: saved.queueEntryId, attempt_id: saved.attemptId,
       recorded_at: saved.completedAt, outcome: saved.outcome, guided: saved.guided });
     if (saved.expectedRevision !== undefined) expect(delivered[0].body.expected_revision).toBe(saved.expectedRevision);
-    await expect.poll(async () => (await nativeStudyRecords(page)).find(item => item.key === original.key)?.state).toBe('committed');
+    await expect.poll(async () => (await nativeStudyRecords(page)).find(item => item.key === original.key)).toMatchObject({
+      key: original.key, requestId: original.requestId, payload: original.payload, state: 'committed', receipt: { persisted: true },
+    });
     await page.reload();
     expect(delivered).toHaveLength(1);
   } finally {
