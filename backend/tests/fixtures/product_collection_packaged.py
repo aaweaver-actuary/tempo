@@ -222,6 +222,7 @@ try:
         from app.services.opening_graph_recovery import claim_exact_task
         from app.services.postgres_integrity import execute_postgres_integrity_slice
         from app.services.redis_admission_gate import background_lease
+        postgres_store.prepare_authoritative_background_pool()
         complete, phases = False, []
         # A pinned fixture maintenance unit uses the actual integrity handler;
         # it never writes completion/certificate flags or changes global mode.

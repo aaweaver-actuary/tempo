@@ -231,12 +231,6 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             assert time.monotonic() < deadline, 'held_prerequisite_operation_pending'
             time.sleep(.05)
     controls = ['held-control-' + uuid.uuid4().hex for _ in range(2)]
-    for control in controls:
-        with case.transaction() as database:
-            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-            introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type,trained_color)
-            SELECT %s,repertoire_id,kind,start_fen,moves_json,'mature',CURRENT_DATE,introduced_at,1,interval_days,
-                fsrs_card_json,first_correct_at,stability,'tactic','white' FROM cards WHERE id=%s""", (control, case.card_id))
     hold_scenario = directory/'hold-scenario.json'
     hold_scenario.write_text(json.dumps(dict(version=1, controls=controls, target=target['card_id'])))
     (directory/'essential-crash-after-slice').write_text('crash once after genuine committed queue slice\n')
@@ -270,7 +264,16 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
             cwd=root, env=os.environ|dict(TEMPO_DOCKER_URL=web_url,TEMPO_PACKAGED_HOLD_SCENARIO=str(hold_scenario),
                 TEMPO_TEST_OUTPUT_DIR=str(evidence/'artifacts'),TEMPO_CI_REPORT=str(evidence/'playwright.json')),
             stdout=output,stderr=subprocess.STDOUT,text=True,start_new_session=True)
-        wait_browser('waiting')
+        waiting = wait_browser('waiting')
+        assert waiting['empty'] is True and waiting['playable'] is False
+        empty = api('GET','/api/queue/window?limit=2')
+        assert empty['status']==200 and empty['body']['cards']==[], empty
+        for control in controls:
+            with case.transaction() as database:
+                database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type,trained_color)
+                SELECT %s,repertoire_id,kind,start_fen,moves_json,'mature',CURRENT_DATE,introduced_at,1,interval_days,
+                    fsrs_card_json,first_correct_at,stability,'tactic','white' FROM cards WHERE id=%s""", (control, case.card_id))
         deadline = time.monotonic()+45
         while True:
             policy = api('GET','/api/system/foreground-active')
@@ -282,6 +285,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         settings = api('GET', '/api/settings')
         assert settings['status'] == 200
         confirmed(api('PUT', '/api/settings', settings['body'], 'held-queue:' + uuid.uuid4().hex))
+        release('controls')
         deadline = time.monotonic() + 45
         while True:
             queue = api('GET', '/api/queue/window?limit=20')

@@ -325,7 +325,29 @@ test("packaged held prerequisite preserves Study through essential worker recove
   }
   await page.addInitScript(() => localStorage.setItem("tempo-sound", "false"));
   await page.goto("/");
-  await marker({ stage: "waiting" });
+  // Preserve and finish any real repeat retained by the preceding journey.
+  // Only normal UI reviews/replays may make the initial queue empty.
+  let empty = false;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const queue = await page.evaluate(async () => {
+      const response = await fetch("/api/queue/window?limit=2");
+      if (!response.ok) throw new Error(`Initial queue authority unavailable: ${response.status}`);
+      return response.json() as Promise<{ cards: Array<{ id: string; queue_entry_id: number; revision: number }> }>;
+    });
+    if (!queue.cards.length) {
+      await expect.poll(async () => await board.count() > 0 && await board.getAttribute("data-input-enabled") === "true").toBe(false);
+      empty = true;
+      break;
+    }
+    const existing = queue.cards[0];
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(existing.queue_entry_id));
+    await saved(existing);
+    await page.reload();
+  }
+  expect(empty, "Initial genuine owner queue must become empty without resetting rows").toBe(true);
+  await marker({ stage: "waiting", empty: true, playable: false });
+  await released("controls");
+  await page.reload();
   await expect(board).toHaveAttribute("data-input-enabled", "true", { timeout: 45_000 });
   const current = async () => {
     let card: { id: string; queue_entry_id: number; revision: number } | undefined;
