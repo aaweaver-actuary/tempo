@@ -43,6 +43,7 @@ export const queueCardSchema = z.strictObject({
   study_review_count: integer.optional(),
   admission_kind: z.string().nullable().optional(),
   admission_source: z.string().nullable().optional(),
+  encounter_evidence_status: z.enum(["available", "unavailable"]).optional(),
   encounter_badges: z.array(z.enum(["Seen recently", "Frequent"])).optional(),
   encounter_count_30d: integer.optional(),
   last_encountered_at: z.string().nullable().optional(),

@@ -6496,3 +6496,14 @@ normal runtime pool/transaction limits are unchanged.
 ### Packaged collector startup admission ordering (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` owns the startup regression: establish the genuine protected browser attempt and verify API/foreground identities before constructing the collector. Its existing 45-second admission window then covers only actual collector preparation/identity/profile, the three-runtime managed-mode commit, and release. The first 41f21 packaged attempt failed before browser acceptance because unrelated setup consumed this window; collector exit was not an OOM. Deadlines, actual worker execution, mode checks and full browser/recovery assertions remain unchanged.
+
+### Queue encounter-evidence transport compatibility (#659 / #668)
+
+`tests/unit/validated-data-regressions.test.ts` owns
+`optional_encounter_evidence_status_preserves_authoritative_worker_head` for
+available, unavailable and legacy-absent optional Games evidence. The actual
+worker queue computation must retain the issued card/entry, evidence origin and
+opening manifest without diagnostics. `optional_encounter_status_keeps_unknown_values_and_fields_quarantined`
+preserves strict rejection of malformed status values and unrecognized fields.
+This repairs the real packaged baseline failure where a valid issued queue head
+was dropped because the strict browser codec omitted the new backend field.
