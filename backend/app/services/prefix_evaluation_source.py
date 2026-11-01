@@ -102,5 +102,3 @@ def verify_snapshot(snapshot, deadline):
     current = load_snapshot(snapshot.repertoire_id, deadline)
     if snapshot_identity(current) != snapshot_identity(snapshot):
         raise diagnostic_error('stale_snapshot', 'The structural source changed. Refresh the source and compare again.')
-
-

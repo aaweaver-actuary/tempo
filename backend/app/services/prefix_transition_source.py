@@ -42,5 +42,3 @@ def calculate(generator, deadline):
                 return completed.value
     finally:
         generator.close()
-
-
