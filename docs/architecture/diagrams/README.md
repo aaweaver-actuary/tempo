@@ -101,6 +101,27 @@ not its tables. Existing evidence supports bounded separability, **not** a blank
 claim of robust arbitrary plugins, eliminated coupling or deployed failure/resource
 isolation.
 
+## Selected source boundaries — November 1
+
+At source [`f5bdbeee`](https://github.com/aaweaver-actuary/tempo/commit/f5bdbeeeaac4bc579cb97eba841a8c6ba5e12bff),
+these selected changes supplement the dated October 26 views; they do not
+requalify the other rows or establish an installation:
+
+- [Intelligence public imports](../../../services/intelligence/README.md#public-import-boundary)
+  resolve `create_app` lazily while preserving its supported root export.
+- [Study queue order](../../../backend/app/study/queue_order.py) owns capture and
+  preservation of the queue receipt; the existing placement function and
+  compatibility imports still have separate callers.
+- [Study client composition](../../../app/lib/README.md) supplies explicit client
+  instances alongside the retained default client and aliases.
+- [Games feedback maintenance](../../../backend/app/product_composition/README.md)
+  remains a bounded composition with retained feedback obligations; it does not
+  establish deployed resource isolation or replacement of every legacy reader.
+
+The last verified installed revision is `1ece5e17`; the #657 `4a4` build and
+acceptance remain pending, not installed. These are source and reported status
+facts, not a new runtime or deployment inspection.
+
 ## Bounded resumption priorities
 
 The table contains dated candidate follow-ups, not prerequisites or automatically active assignments.
