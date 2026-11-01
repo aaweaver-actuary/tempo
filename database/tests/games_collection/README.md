@@ -188,3 +188,8 @@ held case while both recovery release markers are absent; the next default
 publication must update every running recovery role before either marker is
 released. The existing child crash preserves `/tmp`; selected flows never restart
 a stopped collector. No service, volume, credentials or resource cap is added.
+
+The settled-source reconciliation replay advances its controlled schedule from
+the actual last completed reconciliation checkpoint, matching production's
+completion-based interval. New semantic sources still reset to actual UTC before
+qualification; no original command or receipt timestamp is rewritten.

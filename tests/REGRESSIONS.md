@@ -6621,3 +6621,7 @@ The existing packaged feedback and thirty-transition recovery cases publish ever
 ### Recovery control snapshots remain coherent across host/guest filesystems (#668)
 
 Existing packaged feedback/recovery cases publish live provider JSON via verified stdin into each existing role's Linux tmpfs, with same-directory replacement and digest readback. The5f30 run exposed a missing host-renamed file at the guest admission barrier; no host parse retry is used. Paused deferral is allowed only before both recovery release markers, and the full-scope publication strictly refreshes all roles before release. A finite actual Linux guest proof exercised100 concurrent64KiB updates with1,412 complete reads and no errors; it is transport evidence, not packaged acceptance.
+
+### Settled-source replay follows its durable completion deadline (#668)
+
+The existing packaged same-source reconciliation replay derives its controlled clock from the actual latest completed reconciliation checkpoint plus the existing601-second advance. Production spaces repeats from completion, so adding601 to an older host snapshot can miss the deadline after the fixture clock begins following wall time. The a5aa run passed real initial browser settlement and coherent guest publication before exposing this fixture timing error. New semantic source clocks and all product intervals/deadlines remain unchanged.
