@@ -10,7 +10,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
-import { parseArguments } from "../../scripts/tempo-cli.mjs";
+import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2522,4 +2522,17 @@ for (const boundary of ["redis", "application"]) test(`CLI Redis readiness and a
   await assert.rejects(boundary === "redis" ? fixture.runtime.ensureDatabase() : fixture.runtime.verifyReady(),
     error => error === publicationFailure);
   if (boundary === "redis") { assert.equal(fixture.probes.length, 1); assert.deepEqual(fixture.waits, []); }
+});
+
+
+test('Docker availability uses bounded server endpoint without optional info diagnostics', async () => {
+  const calls = [];
+  await ensureDocker({context:'owned-context'}, async (program,args,options) => {
+    calls.push({program,args,options});
+    assert.deepEqual(args, ['--context','owned-context','version','--format','{{.Server.Version}}']);
+    assert.equal(options.timeout,5000);
+    return {code:0,stdout:'29.9.2'};
+  },false,() => assert.fail('unexpected Docker launch'));
+  assert.equal(calls.length,1);
+  await assert.rejects(ensureDocker({context:'owned-context'}, async () => ({code:1}),false,() => {}),/Docker is unavailable/);
 });

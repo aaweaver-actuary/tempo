@@ -1510,7 +1510,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         {slots.trainingNotice}
         {currentView === "train" && (
           <>
-            {studyOnlyMode === true && <div className="ui-notice" role="status">Study-only mode is on. Optional analysis and imports are paused. Review saves and the daily queue remain available.</div>}
+            {studyOnlyMode === true && <div className="ui-notice" role="status">Study-only mode pauses optional analysis and imports handled by the task scheduler. Review saves and the daily queue remain available. Games collection is controlled separately.</div>}
             <OfflineReviewConflicts />
             {queueReconciliationError && <div role="status">
               {queueReconciliationError}{" "}

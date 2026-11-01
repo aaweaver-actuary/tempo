@@ -372,6 +372,7 @@ export async function main(
   const docker = (args, settings) => runCommand('docker', ['--context', target.context, ...args], settings);
   let compose, snapshot, last;
   const operationId = randomUUID();
+  const assessActivation = operation === 'enable' || operation === 'plan';
   const inspect = async () => {
     const registrationText = readFileSync(configPath, 'utf8'), receiptText = readFileSync(receiptPath, 'utf8');
     const release = JSON.parse(receiptText);
@@ -421,8 +422,10 @@ export async function main(
     if (apiRevisionVerified) {
       const readerCommand = ['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_collection_status'];
       identityProbe = readProbe(() => compose([...readerCommand, '--identity-only']));
-      fullReaderProbe = readProbe(() => compose([...readerCommand, '--workspace', 'legacy', '--limit', '20'], {timeout: 0}));
-      report = fullReaderProbe.evidence;
+      if (assessActivation) {
+        fullReaderProbe = readProbe(() => compose([...readerCommand, '--workspace', 'legacy', '--limit', '20'], {timeout: 30000}));
+        report = fullReaderProbe.evidence;
+      }
       if (release.schema >= 56) {
         try {
           const result = JSON.parse(compose(modeStatusArgs('legacy')));
@@ -430,7 +433,7 @@ export async function main(
             modeEvidence = {availability: 'available', intent: result.intent};
         } catch { /* Exact missing mode evidence blocks feedback, never ordinary Study. */ }
       }
-      if (service?.command?.includes('--overlap-seconds')) {
+      if (assessActivation && service?.command?.includes('--overlap-seconds')) {
         try { preview = JSON.parse(compose(['exec', '-T', 'api', 'python', '-B', '-m', 'app.product_composition.game_sync_current', '--preview', '--follow', '--overlap-seconds', service.command[service.command.indexOf('--overlap-seconds') + 1]])); } catch { /* Block enable. */ }
       }
     }
@@ -438,7 +441,7 @@ export async function main(
     const owned = containers.filter(c => labels(c)['com.docker.compose.project'] === target.project && labels(c)['com.docker.compose.service'] === serviceName);
     const running = owned.some(active);
     const observedMode = running ? collectorMode(owned.find(active)?.Config?.Cmd) : null;
-    const stopSafe = owned.every(c => own(c, target) && (!active(c) || c.Image === release.images?.[serviceName] &&
+    const stopSafe = release.revision === candidate && apiRevisionVerified && owned.every(c => own(c, target) && (!active(c) || c.Image === release.images?.[serviceName] &&
       JSON.stringify(c.Config?.Cmd) === JSON.stringify(currentService?.command)));
     if (modeEvidence.availability === 'available') {
       for (const name of ['api', 'foreground-worker', serviceName]) {
@@ -459,9 +462,16 @@ export async function main(
         } catch { /* Missing/restarted identity leaves new Games handoff unverified. */ }
       }
     }
-    const blockers = collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
+    const blockers = assessActivation ? collectionBlockers({ candidate, release, service, image, report, preview, containers, hostCommands, target,
       fingerprint: configurationFingerprint(configuration), maintenance, identityProbe, fullReaderProbe, allowances,
-      mode, currentService, allowModeTransition: true });
+      mode, currentService, allowModeTransition: true }) : [
+        ...(maintenance.status !== 'clear' ? [maintenance.code] : []),
+        ...(release.revision !== candidate ? ['installed_candidate_mismatch'] : []),
+        ...(!probeSuccessful(identityProbe) || identityProbe.evidence?.identity?.availability !== 'available'
+          || !Number.isSafeInteger(identityProbe.evidence.identity.schema_version) || identityProbe.evidence.identity.schema_version < 1
+          ? ['collection_schema_unverified'] : identityProbe.evidence.identity.schema_version !== release.schema
+            ? ['collection_schema_mismatch'] : []),
+      ];
     if (api.length !== 1 || api[0].Image !== release.images?.api) blockers.push('installed_api_identity_unverified');
     else if (!apiRevisionVerified) blockers.push('installed_api_revision_mismatch');
     if (mode === 'feedback') {
@@ -493,11 +503,13 @@ export async function main(
           : null,
       collector_image: release.images?.[serviceName] ?? null, mode, observed_mode: observedMode,
       intended_mode: recorded?.mode ?? release.gamesMode?.mode ?? 'collect-only',
-      managed_mode: {availability: modeEvidence.availability, phase: recorded?.phase ?? 'inactive',
+      managed_mode: {availability: modeEvidence.availability, phase: modeEvidence.availability === 'available' ? recorded?.phase ?? 'inactive' : 'unknown',
         generation: recorded?.generation ?? null, verified_for_current_runtime: modeIntentVerified},
       runtime_verification: Object.fromEntries(['api', 'foreground-worker', serviceName].map(name =>
         [name, verifiedRuntimes.some(runtime => runtime.service === name)])),
-      running, activation_ready: !blockers.length,
+      observed_at: new Date().toISOString(),
+      running, activation_ready: assessActivation ? !blockers.length : null,
+      readiness_assessed: assessActivation,
       blockers, evidence: report, preview, resources: service ? { cpus: service.cpus ?? null, memory: service.mem_limit, pids: service.pids_limit } : null,
       retained_legacy_producers: containers.filter(c => active(c) && /background-worker|foreground-worker|background-scheduler/.test(labels(c)['com.docker.compose.service'] ?? '')).map(c => ({ id: c.Id, image: c.Image, service: labels(c)['com.docker.compose.service'] })) } };
   };
