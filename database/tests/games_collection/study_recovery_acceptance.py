@@ -210,7 +210,7 @@ def _marker(path, value):
     temporary.replace(path)
 
 
-def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, root, web_url,
+def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, foreground, root, web_url,
                               repertoire, target):
     """Actual missing owner certificate, stopped producer, save and same-key recovery.
 
@@ -365,7 +365,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
         entry('foreground-worker','retry-local-feedback')
         assert entry('api','feedback-state',operation)['receipt']==settled['receipt']
-        crash = json.loads((directory/'essential-crashed.json').read_text())
+        crash = json.loads(docker('exec', foreground, 'cat', '/tmp/tempo-essential-crashed.json').stdout)
         with case.transaction() as database:
             events = [dict(row) for row in database.execute_native("SELECT event,phase,generation FROM background_task_events WHERE task_id=%s AND generation=%s ORDER BY id", (crash['task_id'],crash['generation'])).fetchall()]
             assert any(item['event']=='slice_complete' for item in events) and any(item['event']=='published' for item in events)
@@ -420,6 +420,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         for role, resource in containers.items()}
     held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
         api=api, docker=docker, collector=collector['Id'], background=containers['background-worker']['id'],
+        foreground=containers['foreground-worker']['id'],
         root=root, web_url=web_url, repertoire=original_repertoire, target=custom_target)
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']

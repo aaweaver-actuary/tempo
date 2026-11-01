@@ -62,7 +62,7 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
         def observed_queue_slice(task):
             more = original_queue_slice(task)
             fault = Path('/qualification/essential-crash-after-slice')
-            marker = Path('/qualification/essential-crashed.json')
+            marker = Path('/tmp/tempo-essential-crashed.json')
             if fault.exists() and more:
                 try:
                     with marker.open('x') as output:

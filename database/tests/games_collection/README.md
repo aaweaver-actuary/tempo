@@ -125,3 +125,6 @@ periodic fallback after a consumed coalesced wake loses its child, rather than
 assuming a retry hint can replace the scheduler. Startup is asserted from the
 actual beat log; process/cgroup memory and OOM evidence cover the added process.
 The background worker has no embedded beat. No extra service or budget is added.
+The one-shot crash marker also lives in that worker's existing `/tmp` mount;
+the host reads it through bounded `docker exec`. The provider/source fixture
+mount stays read-only.
