@@ -79,10 +79,6 @@ from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refres
 from .services.queue_ordering import PRESENTATION_VERSION
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
-from .services.threat_pipeline import (
-    execute_threat_backfill_slice, execute_threat_report_audit,
-    execute_threat_scan_slice, execute_threat_validation,
-)
 from .services.threat_training import (
     execute_defense_admission_slice, execute_defense_rubric_audit_slice,
 )
@@ -168,6 +164,26 @@ def execute_coverage_explorer_slice(claimed_task):
 def recover_one_explorer_run():
     from .services.postgres_coverage_recovery import recover_one_explorer_run as execute
     return execute()
+
+
+def execute_threat_report_audit(claimed_task):
+    from .services.threat_pipeline import execute_threat_report_audit as execute
+    return execute(claimed_task)
+
+
+def execute_threat_scan_slice(claimed_task):
+    from .services.threat_pipeline import execute_threat_scan_slice as execute
+    return execute(claimed_task)
+
+
+def execute_threat_backfill_slice(claimed_task):
+    from .services.threat_pipeline import execute_threat_backfill_slice as execute
+    return execute(claimed_task)
+
+
+def execute_threat_validation(claimed_task):
+    from .services.threat_pipeline import execute_threat_validation as execute
+    return execute(claimed_task)
 
 
 def execute_game_sync_record_slice(claimed_task):
