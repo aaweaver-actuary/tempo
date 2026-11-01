@@ -68,7 +68,7 @@ from .services.tactical_catalog import (
     puzzle_membership,
     progress_pack_id,
 )
-from app.contracts.transport.game_sync import AccountSettings
+from app.contracts.transport.game_sync import AccountSettings, GameSyncRequest
 from app.games.sync.http import create_game_sync_router
 from .product_composition.game_sync_http import GameSyncHttpCapabilities, create_game_sync_http_binding
 from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, AnalysisPastePreviewRequest, BranchRequest, RemoveBranchRequest
@@ -122,14 +122,7 @@ from .services.threat_training import (
 from .services.tactical_opportunities import tactical_statistics
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
-from .services.game_sync_coordinator import (
-    coordinator,
-    enqueue_game_derivation,
-    enqueue_sync,
-    register_durable_task_handler,
-    register_maintenance_handler,
-    serialize_job,
-)
+from app.games.ingestion.serialization import serialize_job
 from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
 from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import list_activity, report_progress, set_control
@@ -167,6 +160,26 @@ from .services.discovery_admission import (
 )
 
 
+def _compatibility_coordinator():
+    return compose_compatibility_coordinator()
+
+
+def __getattr__(name):
+    if name == "coordinator":
+        return _compatibility_coordinator()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def enqueue_sync(request: GameSyncRequest, *, background: bool = False) -> str:
+    from .services.game_sync_coordinator import enqueue_sync as operation
+    return operation(request, background=background)
+
+
+def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
+    from .services.game_sync_coordinator import enqueue_game_derivation as operation
+    return operation(game_id, background=background)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Lifespan context manager for the FastAPI application. Initializes the database and starts the coordinator on startup, and stops the coordinator on shutdown."""
@@ -201,6 +214,7 @@ async def lifespan(_: FastAPI):
         raise RuntimeError(
             "Tempo requires one API worker while SQLite has an in-process database owner"
         )
+    compose_compatibility_coordinator()
     initialize()
     database_writer.start()
     if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "external":
@@ -213,14 +227,14 @@ async def lifespan(_: FastAPI):
             lambda database: materialize_daily_queue(database, date.today().isoformat()),
             label="startup-daily-queue",
         )
-        await coordinator.start()
+        await _compatibility_coordinator().start()
     try:
         from .services.study_priority import policy_publisher
         with policy_publisher():
             yield
     finally:
         if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "embedded":
-            await coordinator.stop()
+            await _compatibility_coordinator().stop()
         database_writer.stop()
 
 
@@ -946,7 +960,7 @@ def control_system_activity(request: dict,
         )
     if not set_control(source, work_id, action):
         raise HTTPException(404, "Background activity not found")
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"ok": True}
 
 
@@ -994,7 +1008,7 @@ def retry_system_task(task_id: str,
         raise HTTPException(404, "Terminal task not found")
     # Explicit Retry keeps its existing pause reset, like the PostgreSQL retry handler.
     set_control("durable", task_id, "resume", allow_settings_blocked_resume=True)
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return retried
 
 
@@ -1088,7 +1102,7 @@ def put_settings(s: Settings,
         except (KeyError, sqlite3.OperationalError):
             continue
     if enqueued_coverage:
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     from .services.study_priority import refresh_policy
     refresh_policy()
     return get_settings()
@@ -1183,9 +1197,6 @@ def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]
 
 def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry_id: int | None = None) -> None:
     return queue_application.materialize_daily_queue(database, queue_date, preserve_through_entry_id=preserve_through_entry_id)
-
-
-compose_compatibility_coordinator()
 
 
 def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
@@ -1410,7 +1421,7 @@ async def import_pgn(
         enqueue_opening_graph_rebuild(rid, local_day=date.today().isoformat())
         enqueue_integrity_scans(rid)
         enqueue_coverage_refresh(rid, automatic=True)
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         enqueue_status = "failed"
     enqueued_at = time.perf_counter()
@@ -1577,7 +1588,7 @@ def resolve_repertoire_integrity(
         priority=5,
         max_attempts=1,
     )
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return JSONResponse(
         status_code=202,
         content={
@@ -1948,7 +1959,7 @@ def commit_analysis_paste(request: AnalysisPasteCommitRequest,
         enqueue_integrity_scans(repertoire_id)
         enqueue_coverage_refresh(repertoire_id, automatic=True)
     if result["affected_repertoire_ids"]:
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     return result
 
 
@@ -2008,7 +2019,7 @@ def branch(request: BranchRequest,
         )
         enqueue_integrity_scans(request.repertoire_id)
         enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass
     with connection() as db:
@@ -2069,7 +2080,7 @@ def remove_branch(request: RemoveBranchRequest,
         )
         enqueue_integrity_scans(request.repertoire_id)
         enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass
     with connection() as db:
@@ -2200,7 +2211,7 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
                     )
             except (RuntimeError, sqlite3.OperationalError) as error:
                 raise HTTPException(503, "Could not save the prefix split and queue its follow-up work. Retry.") from error
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return result
 
 
@@ -2312,7 +2323,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
             enqueue_integrity_scans(repertoire_id)
         except (KeyError, sqlite3.OperationalError):
             continue
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {
         "card_id": replacement,
         "replaced": replacement != identifier,
@@ -2360,7 +2371,7 @@ def archive_card(identifier: str, permanent: bool = False, expected_revision: in
             enqueue_integrity_scans(repertoire_id)
         except (KeyError, sqlite3.OperationalError):
             continue
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"archived": True, "integrity": integrity}
 
 
@@ -2481,7 +2492,7 @@ def refresh_repertoire_coverage(identifier: str,
         run_id = enqueue_coverage_refresh(identifier)
     except KeyError as error:
         raise HTTPException(404, str(error)) from error
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"run_id": run_id, "status": "queued"}
 
 
@@ -2552,7 +2563,7 @@ def accept_discovery_continuation(
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"status": "preparing", "intent_id": intent["id"]}
 
 
@@ -2600,7 +2611,7 @@ def coverage_explorer_session(authorization: str | None = Header(None)):
     except RedisError as error:
         raise HTTPException(503, "Explorer token store unavailable; retry registration") from error
     if token and not postgres_store.configured():
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     return {"registered": bool(token)}
 
 
@@ -2945,7 +2956,7 @@ _game_sync_enqueue, _game_sync_status = create_game_sync_http_binding(GameSyncHt
     dispatch=_dispatch_game_sync,
     in_background=lambda: activity_gate.in_background,
     enqueue=lambda request, **options: enqueue_sync(request, **options),
-    wake=lambda: coordinator.wake(),
+    wake=lambda: _compatibility_coordinator().wake(),
     connection=lambda **options: connection(**options),
     job_status=lambda database, job_id: game_sync_storage.job_status(database, job_id),
     provider_states=lambda database: game_sync_storage.provider_states(database),
@@ -3430,7 +3441,7 @@ def save_game_analysis(
     with read_connection() as database:
         threat_analysis_version = analysis_publication_storage.published_version(database, game_id)[0]
     enqueue_threat_scan(game_id, threat_analysis_version, background=background)
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return result
 
 
@@ -3483,7 +3494,7 @@ def audit_defensive_threat_reports(
     task = enqueue_task(
         "defensive_threat_report_audit", "saved-reports", {"cursor": ""}, priority=135,
     )
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"status": "queued", "task_id": task["id"]}
 
 
@@ -3498,7 +3509,7 @@ def backfill_defensive_threats(
             "defensive.backfill", {}, idempotency_key=idempotency_key,
         )
     task = enqueue_threat_backfill()
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"status": "queued", "task_id": task["id"]}
 
 
@@ -3525,7 +3536,7 @@ def submit_defensive_threat_analysis(
     for candidate_id in candidate_ids:
         enqueue_candidate_validation(candidate_id, background=activity_gate.in_background)
     if candidate_ids:
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     return {"status": "complete", "candidate_count": len(candidate_ids)}
 
 
@@ -3607,7 +3618,7 @@ def refresh_game_defensive_threats(
     if not row:
         raise HTTPException(404, "Analyzed game not found")
     enqueue_threat_scan(game_id, row["analysis_version"], background=False)
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"status": "queued", "analysis_version": row["analysis_version"]}
 
 
@@ -3725,7 +3736,7 @@ def resume_defensive_threat_candidate(
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     enqueue_defense_admission(background=True)
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"status": "eligible"}
 
 
@@ -3764,7 +3775,7 @@ def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest,
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     if result["status"] == "needs_analysis":
-        coordinator.wake()
+        _compatibility_coordinator().wake()
     return result
 
 
@@ -3949,7 +3960,7 @@ def exclude_game_from_adaptation(
         else:
             game_findings_storage.restore_excluded_findings(db, game_id, datetime.now(timezone.utc).isoformat())
     enqueue_game_derivation(game_id)
-    coordinator.wake()
+    _compatibility_coordinator().wake()
     return {"game_id": game_id, "excluded": request.excluded}
 
 
