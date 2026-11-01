@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { nativeStudyRecords } from '../browser/native-study-storage';
 import { move } from '../browser/native-board';
@@ -122,6 +122,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     expect(delivered).toHaveLength(1);
   } finally {
     try { diagnostics.push(JSON.stringify({ label: 'final-state', now: await page.evaluate(() => Date.now()), records: await nativeStudyRecords(page), notifications: await page.evaluate(() => localStorage.getItem('tempo-notifications-v1')) })); } catch (error) { diagnostics.push(`final-state-error: ${String(error)}`); }
+    await writeFile(testInfo.outputPath('browser-diagnostics.json'), JSON.stringify(diagnostics, null, 2));
     await testInfo.attach('browser-diagnostics', { body: JSON.stringify(diagnostics, null, 2), contentType: 'application/json' });
     await new Promise<void>((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose()));
   }
