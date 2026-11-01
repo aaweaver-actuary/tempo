@@ -81,7 +81,12 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(no
     assert observed_sections == [0], "Standalone reduction held the command gateway's database transaction"
     assert active_sections == 0
     assert read_options == [{'authoritative': True}]
-    assert "cards.review" not in command_gateway._preparers, "Foreground review must retain its atomic handler"
+    # Optional recombination pre-reading precedes the writer; the ordinary
+    # review and opening evidence still publish through the atomic handler.
+    from app import review_commands
+    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    assert command_gateway._handlers["cards.review"] is review_commands.submit_review
+    assert command_gateway._preparers["cards.review"] is prepare_recombination_review
 
 
 def large_request():
