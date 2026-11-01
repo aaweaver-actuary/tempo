@@ -393,3 +393,42 @@ def test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoi
     assert store.pages==original_pages and store.sources==original_sources and store.captures==original_captures
     assert not store.deliveries and handlers==old_handlers
     assert load_manifest(path)==manifest
+@pytest.mark.parametrize('live_ready',[False,True],ids=['held-live','ready-live'])
+def test_historical_delivery_yields_only_to_ready_live_urgency_without_changing_identity(live_ready):
+    from app.games.feedback.ports import delivery_blocks_issuance
+    from test_product_delivery_qualification import setup_case,qualify,QualifiedReceiver
+    store,configuration,manifest,review=setup_scope()
+    collect(store,configuration,manifest,review)
+    class QualifiedIntake(Intake,QualifiedReceiver):
+        def __init__(self): QualifiedReceiver.__init__(self)
+        def prepare(self,delivery): return delivery
+    intake=QualifiedIntake()
+    compare(store,configuration,manifest,review,maximum_units=1,intake=intake)
+    original,=store.deliveries.values()
+    live=qualify(setup_case())
+    live=live.model_copy(update={'stream':'forward',
+        'qualification':live.qualification.model_copy(update={'stream':'forward'})})
+    assert live.operation_id!=original.operation_id
+    if not live_ready:
+        live=live.model_copy(update={'qualification_status':'held','qualification_reason':'integrity_scan_incomplete',
+            'error':'integrity_scan_incomplete','next_attempt_at':0})
+    store.deliveries[live.operation_id]=live
+    observed=[]
+    def pending(now,**options):
+        observed.append(options)
+        # The actual store's existing A/C policy excludes a known held item
+        # only when the consumer explicitly asks for current ready urgency.
+        return live if not options.get('ready_only') or delivery_blocks_issuance(live) else None
+    store.pending_delivery=pending
+    checkpoint=store.load_job(manifest.job(configuration,compare=True).job_id)
+    pages,sources,captures=dict(store.pages),dict(store.sources),dict(store.captures)
+    units=compare(store,configuration,manifest,review,maximum_units=1,intake=intake)
+    actual=store.delivery(original.operation_id)
+    assert actual.state==('pending' if live_ready else 'acknowledged')
+    assert units==(0 if live_ready else 1) and len(intake.calls)==(0 if live_ready else 1)
+    assert actual.operation_id==original.operation_id and actual.command==original.command
+    assert actual.determined_at==original.determined_at and actual.qualification==original.qualification
+    assert store.delivery(live.operation_id)==live
+    assert store.load_job(checkpoint.spec.job_id)==checkpoint
+    assert store.pages==pages and store.sources==sources and store.captures==captures
+    assert observed and observed[0]['priority_order'] is True

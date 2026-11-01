@@ -6562,3 +6562,10 @@ Stopping during the first repertoire read prevents the second read and partial
 comparison checkpoint; original manifest, retained pages/sources/captures and
 signal handlers survive unchanged. This is a pure cancellation proof, not a
 claim that an active SQL statement/source projection is preemptible.
+
+### Historical intake yields to actual ready urgency (#665)
+
+`backend/tests/test_game_history_scripts.py::test_historical_delivery_yields_only_to_ready_live_urgency_without_changing_identity`
+proves a due held live delivery cannot starve ready historical intake while a
+truly ready live delivery keeps priority. Both cases preserve original commands,
+logical identities, determination clocks, retained pages and completed checkpoints.
