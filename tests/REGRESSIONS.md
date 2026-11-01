@@ -6426,3 +6426,9 @@ thirty-transition recovery acceptance or genuine installed observations.
 
 - `backend/tests/test_product_contracts.py`: `test_pending_feedback_is_not_issuance_blocking_by_itself`, `test_preparation_contract_rejects_invalid_shared_receipts`, `test_legacy_preparation_receipt_remains_recoverable`, `test_held_retry_deadline_does_not_imply_ready`, `test_uncertain_ack_keeps_original_identity_and_controls_keep_precedence`.
 - `tests/unit/product-contracts.test.ts`: `pending_feedback_is_not_issuance_blocking_by_itself`, `preparation_contract_rejects_invalid_shared_receipts`; shared valid/invalid wire fixtures at `contracts/product-v02/fixtures/study-reliability/preparation.json`.
+## Feedback integrity prerequisite observation (#661)
+
+`backend/tests/test_feedback_integrity_prerequisites.py` covers current clean and
+needs-repair certificates, absent joins, queued newer graph generations, malformed
+scan evidence, stable dependency fingerprints and one-read nonmutating observation.
+The hint never replaces the final owner transaction's certificate/target fence.

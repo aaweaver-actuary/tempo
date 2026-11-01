@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import json
+from hashlib import sha256
 from typing import Any
 
 from tempo_legacy_database.connections import background_read_connection
@@ -72,6 +73,47 @@ def integrity_certificate_from_row(row: dict, repertoire_id: str, graph_generati
         return {key: value for key, value in row.items() if key != "payload_json"}
     except (ValueError, KeyError, TypeError, AttributeError):
         return None
+
+
+@dataclass(frozen=True)
+class FeedbackIntegrityPrerequisite:
+    """Readiness hint only: never a reusable write certificate."""
+    ready: bool
+    reason: str
+    fingerprint: str
+
+
+def inspect_feedback_integrity_prerequisite(row: dict | None, repertoire_id: str) -> FeedbackIntegrityPrerequisite:
+    facts = dict(row or {})
+    # Dependency identity changes wake a held delivery; do not expose private task
+    # payloads/errors. Stable hashing also handles malformed persisted values.
+    identity = json.dumps(facts, sort_keys=True, default=str, separators=(",", ":"))
+    digest = sha256((repertoire_id + ":" + identity).encode()).hexdigest()
+    generation = facts.get("graph_generation")
+    if facts.get("graph_state") != "ready" or type(generation) is not int or generation < 0:
+        reason = "integrity_graph_not_ready"
+    elif facts.get("graph_task_generation") != generation or facts.get("graph_task_state") != "complete":
+        reason = "integrity_graph_generation_mismatch"
+    elif not facts.get("integrity_repertoire_id"):
+        reason = "integrity_state_missing"
+    elif (facts.get("integrity_status") not in {"clean", "needs_repair"}
+          or facts.get("scan_status") != "idle" or facts.get("scan_task_state") != "complete"):
+        reason = "integrity_scan_incomplete"
+    elif integrity_certificate_from_row(facts, repertoire_id, generation) is None:
+        reason = "integrity_certificate_invalid"
+    else:
+        reason = "integrity_current"
+    return FeedbackIntegrityPrerequisite(reason == "integrity_current", reason, digest)
+
+
+def observe_feedback_integrity_prerequisite(database, repertoire_id: str) -> FeedbackIntegrityPrerequisite:
+    """Borrow one bounded read. No enqueue, source projection or feature startup.
+
+    The caller closes its connection before expensive preparation. Final writers
+    still revalidate the original owner certificate and target under their locks.
+    """
+    row = storage.feedback_prerequisite_facts(database, (repertoire_id,))
+    return inspect_feedback_integrity_prerequisite(dict(row) if row else None, repertoire_id)
 
 
 def request_integrity_scan_in_transaction(
