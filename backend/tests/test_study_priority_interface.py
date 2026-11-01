@@ -191,3 +191,30 @@ def test_priority_qualifier_requires_exact_native_identity_before_reporting(monk
         mode[0] = value
         assert owner.main() == 1
         assert 'Priority proof evidence invalid' in capsys.readouterr().err
+
+
+def test_queue_presentation_flag_selects_only_owned_case_and_default_keeps_required(monkeypatch, tmp_path, capsys):
+    from types import SimpleNamespace
+    from app.study import qualify_priority as owner
+    monkeypatch.setenv('TEMPO_VALIDATION_LOCK_PATH', str(tmp_path / 'absent-lock'))
+    monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+    monkeypatch.setattr(owner, 'source_binding', lambda **kwargs: {'suite': kwargs['suite_id']})
+    monkeypatch.setattr(owner.platform, 'platform', lambda: 'fixture-platform')
+    seen = []
+    def run(command, **kwargs):
+        seen.append(command)
+        report = Path(next(value.split('=', 1)[1] for value in command if value.startswith('--junitxml=')))
+        name = owner.QUEUE_PROOF.split('::')[1]
+        report.write_text(f'<testsuite><testcase classname="backend.tests.test_study_encounter_intake_boundary" name="{name}" /></testsuite>')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(owner.subprocess, 'run', run)
+    assert owner.main(['--queue-presentation-only']) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['suite'] == 'study-queue-presentation'
+    assert output['expectedIdentities'] == output['executedIdentities'] == [owner.QUEUE_PROOF]
+    assert [arg for arg in seen[-1] if arg.startswith('backend/tests/')] == [owner.QUEUE_PROOF]
+    assert '--queue-presentation-only' not in seen[-1]
+    assert owner.main() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['suite'] == 'study-game-priority'
+    assert [arg for arg in seen[-1] if arg.startswith('backend/tests/')] == list(owner.REQUIRED)

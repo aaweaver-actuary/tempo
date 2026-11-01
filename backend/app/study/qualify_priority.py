@@ -78,7 +78,7 @@ def queue_proof_passed(report):
     return QUEUE_PROOF
 
 
-def source_binding(root=ROOT, base="origin/main"):
+def source_binding(root=ROOT, base="origin/main", suite_id="study-game-priority"):
     """Bind the existing declared suite inputs to actual source bytes and git endpoints."""
     def git(*args):
         return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True).stdout
@@ -87,7 +87,7 @@ def source_binding(root=ROOT, base="origin/main"):
     merge_base = git("merge-base", head, resolved_base).decode().strip()
     manifest_path = root / "components.json"
     manifest = json.loads(manifest_path.read_text())
-    suite = next(item for item in manifest["suites"] if item["id"] == "study-game-priority")
+    suite = next(item for item in manifest["suites"] if item["id"] == suite_id)
     inputs = ["components.json", *suite["inputs"]]
     tracked = git("ls-files", "-z", "--", *inputs).decode().split("\0")
     files = sorted(path for path in tracked if path)
@@ -128,17 +128,24 @@ def main(arguments=()):
         "packages/scheduling/src", "packages/chess-core/src",
         "services/learning/runtime/src", "services/learning/application/src",
         "services/learning/remediation/src", "contracts/game-evidence/src",
-        "contracts/analysis-jobs/src",
+        "contracts/analysis-jobs/src", "packages/chess-line/src", "packages/board-ui/src",
+        "packages/game-actions/src", "packages/study-session/src", "services/intelligence/src",
+        "services/game-evidence/src", "services/content/src", "contracts/content-publication/src",
+        "contracts/intelligence/src", "contracts/learning/src", "contracts/consumer-examples/src",
     )
     paths = [ROOT / source for source in sources]
     environment = os.environ | {"PYTHONPATH": os.pathsep.join(map(str, paths)), "PYTHONDONTWRITEBYTECODE": "1"}
-    command = [sys.executable, "-m", "pytest", "-q", *REQUIRED, *arguments]
+    queue_only = "--queue-presentation-only" in arguments
+    arguments = tuple(argument for argument in arguments if argument != "--queue-presentation-only")
+    suite_id = "study-queue-presentation" if queue_only else "study-game-priority"
+    selection = (QUEUE_PROOF,) if queue_only else REQUIRED
+    command = [sys.executable, "-m", "pytest", "-q", *selection, *arguments]
     collecting = "--collect-only" in arguments
     lock_path = Path(environment.get("TEMPO_VALIDATION_LOCK_PATH", "/tmp/tempo-mac-validation-20261025.lock"))
     def execute():
         if collecting:
             return subprocess.run(command, cwd=ROOT, env=environment).returncode
-        before = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"))
+        before = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"), suite_id=suite_id)
         with tempfile.TemporaryDirectory(prefix="tempo-priority-junit-") as temporary:
             report = junit_path(arguments, environment)
             effective_command = command
@@ -152,13 +159,14 @@ def main(arguments=()):
                 return outcome
             try:
                 identity = queue_proof_passed(report)
-                after = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"))
+                after = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"), suite_id=suite_id)
                 if before != after:
                     raise ValueError("Priority proof inputs or candidate changed during execution")
             except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
                 print("Priority proof evidence invalid: " + str(error), file=sys.stderr)
                 return 1
-            print(json.dumps({"suite": "study-game-priority", "scope": "queue-presentation-native-case",
+            print(json.dumps({"suite": suite_id, "scope": "queue-presentation-native-case",
+                              "expectedIdentities": [QUEUE_PROOF],
                               "executedIdentities": [identity], "passed": 1,
                               "python": sys.version, "platform": platform.platform(),
                               "fixture": "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture",

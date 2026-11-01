@@ -427,3 +427,13 @@ flowchart LR
     Placement --> Normalize[Backend priority normalization]
     Normalize --> Policy[Learning priority ordering]
 ```
+
+### Queue-presentation native proof selection
+
+The registered `study-queue-presentation` suite invokes the existing priority
+qualifier with `--queue-presentation-only`, selecting its one mandatory native
+queue-presentation case. `study-game-priority` retains its full selection.
+The qualifier records candidate/base and hashes of declared suite inputs; those
+hashes are not a claim of an exhaustive Python import closure. Each source overlay
+is rooted at the selected checkout. A passed case does not establish deployment or
+full-suite acceptance.
