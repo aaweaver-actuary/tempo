@@ -177,3 +177,14 @@ file and atomically replacing `provider.json`, using the same boundary as the
 existing ready markers. Readers observe one complete snapshot; parse failures
 remain real failures rather than being caught or retried. Initial prelaunch
 creation and all provider/owner/receipt assertions remain unchanged.
+
+Live provider snapshots are now published inside each existing role's Linux
+`/tmp` through verified Docker input, atomic replacement and checksum readback.
+Assembly roles bootstrap once from their immutable launch environment; subsequent
+helper reads use that guest snapshot. The separate bounded collect-only fixture
+may bootstrap once from its prelaunch host file. The host provider copy is
+evidence, not live consumer authority. Paused roles may defer only during the
+held case while both recovery release markers are absent; the next default
+publication must update every running recovery role before either marker is
+released. The existing child crash preserves `/tmp`; selected flows never restart
+a stopped collector. No service, volume, credentials or resource cap is added.

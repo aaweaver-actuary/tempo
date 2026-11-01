@@ -515,7 +515,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         secret = tmp_path/(role+'.env')
         common = ['TEMPO_TEST_INSTANCE=disposable','TZ=UTC','TEMPO_COORDINATOR_MODE=external',
             'TEMPO_PRODUCT_GAME_SYNC_ENABLED=1','TEMPO_REDIS_URL=redis://redis:6379/0',
-            'PYTHONDONTWRITEBYTECODE=1','TEMPO_DATABASE_READ_URL='+(reader_dsn if role=='api' else writer_dsn)]
+            'PYTHONDONTWRITEBYTECODE=1','TEMPO_QUALIFICATION_PROVIDER_INITIAL='+json.dumps(inputs),'TEMPO_DATABASE_READ_URL='+(reader_dsn if role=='api' else writer_dsn)]
         if role != 'api':
             common.append('TEMPO_DATABASE_WRITE_URL='+writer_dsn)
         secret.write_text('\n'.join(common)); secret.chmod(0o600)
@@ -616,6 +616,45 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
 
     def provider_ready(value):
         publish_json(directory/'provider-ready.json', value)
+
+    def publish_provider(value, *, allow_paused=False):
+        # Host copy is evidence only. Every live consumer reads its Linux tmpfs.
+        publish_json(directory/'provider.json', value)
+        payload = json.dumps(value)
+        expected = hashlib.sha256(payload.encode()).hexdigest()
+        observed = {}
+        code = """import hashlib,json,sys
+from pathlib import Path
+value=sys.stdin.read();json.loads(value)
+path=Path('/tmp/tempo-qualification-provider.json')
+temporary=path.with_suffix('.next');temporary.write_text(value);temporary.replace(path)
+print(hashlib.sha256(path.read_bytes()).hexdigest())
+"""
+        for role in ('api','foreground-worker','background-worker','game-feedback-worker'):
+            if role not in containers:
+                continue
+            resource = containers[role]
+            actual = json.loads(docker('inspect',resource['id']).stdout)[0]
+            assert actual['Id']==resource['id'] and actual['Config']['Labels']['tempo.owner']==owner
+            if actual['State']['Paused']:
+                assert allow_paused and recovery_mode is not None
+                assert not (directory/'recovery-configuration-ready').exists()
+                assert not (directory/'recovery-producer-start').exists()
+                assert role in {'background-worker','game-feedback-worker'}, 'provider_reader_paused_'+role
+                observed[role] = 'paused; next scope publication precedes its existing release barrier'
+                continue
+            if not actual['State']['Running']:
+                assert role=='game-feedback-worker', 'provider_reader_stopped_'+role
+                observed[role] = 'already stopped; selected flow never restarts this collector'
+                continue
+            digest = execute(role,'python','-B','-c',code,input=payload).strip()
+            assert digest==expected, 'guest_provider_snapshot_mismatch_'+role
+            observed[role] = digest
+        if recovery_mode is not None and not allow_paused:
+            assert all(observed.get(role)==expected for role in
+                ('api','foreground-worker','background-worker','game-feedback-worker')), 'recovery_provider_not_published_to_all_roles'
+        report.setdefault('provider_input_publications',[]).append(dict(sha256=expected,roles=observed,
+            transport='stdin to existing role Linux tmpfs; atomic same-directory replace'))
 
     def browser_ready(expected_stage):
         path = directory/'browser-ready.json'
@@ -735,7 +774,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
         assert recorded['applied'] and recorded['mode']=='feedback'
         inputs['now'] = datetime.now(timezone.utc).timestamp()
-        publish_json(directory/'provider.json', inputs)
+        publish_provider(inputs)
         (directory/'feedback-start').write_text('actual_mode_verified\n')
         stage = 'provider_first_departure'
         def bounded(value):
@@ -1249,7 +1288,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
             reconciliation_before = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
         inputs['now'] += 601
-        publish_json(directory/'provider.json', inputs)
+        publish_provider(inputs)
         replay_run = entry('foreground-worker','worker')
         assert replay_run['durable_checkpoints_retained'] and replay_run['bounded_units']>1
         report['source_replay_run'] = replay_run
@@ -1271,6 +1310,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             from study_recovery_acceptance import run_recovery
             run_recovery(case, root=ROOT, directory=directory, report=report, inputs=inputs,
                 entry=entry, api=api, execute=execute, docker=docker, containers=containers,
+                publish_provider=publish_provider,
                 original_repertoire=repertoire, web_url=web_url, study_only=recovery_mode,
                 mode_intent=mode,
                 custom_target=dict(card_id=target_id, repertoire_id=repertoire, occurrence_ply=1,
