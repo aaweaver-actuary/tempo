@@ -65,11 +65,11 @@ def defer_for_foreground(database, operation_id, attempt_token):
     return bool(database.raw.execute("UPDATE operation_receipts SET state='retrying',attempt_count=GREATEST(0,attempt_count-1),cycle_attempt_count=GREATEST(0,cycle_attempt_count-1),next_retry_at=NOW()+INTERVAL '1 second',lease_expires_at=NULL,attempt_token=NULL,updated_at=NOW() WHERE operation_id=%s AND state='executing' AND attempt_token=%s", (operation_id, attempt_token)).rowcount)
 
 
-def recoverable_receipt(database, allowed_background_commands, paused_commands):
-    admission_clause = ''
+def recoverable_receipt(database, allowed_background_commands, paused_commands, *, background_only=False):
+    admission_clause = ' AND background' if background_only else ''
     admission_parameters = ()
     if allowed_background_commands is not None:
-        admission_clause = ' AND (NOT background OR command_name=ANY(%s))'
+        admission_clause += ' AND (NOT background OR command_name=ANY(%s))'
         admission_parameters = (sorted(allowed_background_commands),)
     if paused_commands:
         admission_clause += ' AND NOT (command_name=ANY(%s))'

@@ -62,7 +62,7 @@ def task_row(identifier):
         return dict(connection.execute("SELECT * FROM background_tasks WHERE id=?", (identifier,)).fetchone())
 
 
-def test_background_lease_starts_when_slice_execution_begins(dispatch_store, monkeypatch):
+def test_essential_queue_lease_starts_when_slice_execution_begins(dispatch_store, monkeypatch):
     observed_clock, wakes = dispatch_store
     queued = enqueue_daily()
     observed_clock[0] += timedelta(seconds=120)
@@ -75,13 +75,13 @@ def test_background_lease_starts_when_slice_execution_begins(dispatch_store, mon
             durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", execute_one_slice)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert len(executed) == 1
     assert task_row(queued["id"])["state"] == "complete"
     assert wakes == []
 
 
-def test_background_legacy_deliveries_preserve_restart_and_replay(dispatch_store, monkeypatch):
+def test_essential_queue_legacy_deliveries_preserve_restart_and_replay(dispatch_store, monkeypatch):
     observed_clock, wakes = dispatch_store
     queued = enqueue_daily()
     crashed_delivery = durable_tasks.claim_task("daily_queue")
@@ -93,15 +93,15 @@ def test_background_legacy_deliveries_preserve_restart_and_replay(dispatch_store
             durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_one)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert task_row(queued["id"])["state"] == "complete"
     assert tasks.execute_background_slice.run(crashed_delivery) is False
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert len(executed) == 1 and executed[0] != crashed_delivery["lease_token"]
     assert not any(args[0] == "app.tasks.execute_background_slice" for args, _ in wakes)
 
 
-def test_background_continuation_broker_failure_retains_committed_slice(dispatch_store, monkeypatch):
+def test_essential_queue_continuation_broker_failure_retains_committed_slice(dispatch_store, monkeypatch):
     observed_clock, _wakes = dispatch_store
     queued = enqueue_daily()
     executed_phases = []
@@ -119,10 +119,10 @@ def test_background_continuation_broker_failure_retains_committed_slice(dispatch
     def unavailable(*args, **kwargs):
         raise BrokerUnavailable("controlled missing continuation wake")
     monkeypatch.setattr(tasks.celery_app, "send_task", unavailable)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert task_row(queued["id"])["state"] == "queued"
     observed_clock[0] += timedelta(seconds=1)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert executed_phases == ["unlock_opening", "admit_due"]
     assert task_row(queued["id"])["state"] == "complete"
 
@@ -144,7 +144,7 @@ def test_background_current_legacy_delivery_commits_once_before_duplicate_wake(d
     assert executions == [legacy_delivery["id"]]
 
 
-def test_background_crash_during_slice_rolls_back_then_recovers_after_lease(dispatch_store, monkeypatch):
+def test_essential_queue_crash_during_slice_rolls_back_then_recovers_after_lease(dispatch_store, monkeypatch):
     observed_clock, _wakes = dispatch_store
     queued = enqueue_daily()
     class WorkerLost(BaseException):
@@ -155,7 +155,7 @@ def test_background_crash_during_slice_rolls_back_then_recovers_after_lease(disp
             raise WorkerLost()
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", interrupted)
     with pytest.raises(WorkerLost):
-        tasks.poll_background_tasks.run()
+        tasks.progress_study_queue.run()
     assert task_row(queued["id"])["phase"] != "uncommitted"
     assert task_row(queued["id"])["state"] == "leased"
     observed_clock[0] += timedelta(seconds=61)
@@ -164,11 +164,11 @@ def test_background_crash_during_slice_rolls_back_then_recovers_after_lease(disp
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", recovered)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert task_row(queued["id"])["state"] == "complete"
 
 
-def test_background_execution_preserves_pause_priority_promotion_and_delayed_eligibility(dispatch_store, monkeypatch):
+def test_essential_queue_execution_preserves_pause_priority_promotion_and_delayed_eligibility(dispatch_store, monkeypatch):
     observed_clock, _wakes = dispatch_store
     queued_tasks = [durable_tasks.enqueue_task("daily_queue", identifier, {}, priority=priority,
         delay_seconds=delay, foreground=False) for identifier, priority, delay in
@@ -185,10 +185,10 @@ def test_background_execution_preserves_pause_priority_promotion_and_delayed_eli
         return False
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_one)
     for _ in range(4):
-        tasks.poll_background_tasks.run()
+        tasks.progress_study_queue.run()
     assert executed == ["study", "promoted", "normal"]
     observed_clock[0] += timedelta(seconds=120)
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert executed[-1] == "delayed"
     assert task_row(queued_tasks[0]["id"])["state"] == "queued"
 
@@ -208,12 +208,12 @@ def test_background_execution_capacity_yields_to_foreground_without_leasing(disp
         assert task_row(queued['id'])['lease_token'] is None
         assert task_row(queued['id'])['attempt_count'] == 0
         assert dispatch_store[1] == []
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
     assert executed == [queued['id']]
     assert task_row(queued['id'])['state'] == 'complete'
 
 
-def test_background_congested_wakes_complete_without_broker_lease_expiries(dispatch_store, monkeypatch):
+def test_essential_queue_congested_wakes_complete_without_broker_lease_expiries(dispatch_store, monkeypatch):
     observed_clock, wakes = dispatch_store
     queued_tasks = [durable_tasks.enqueue_task("daily_queue", f"delayed-wake-{number}", {},
         foreground=False) for number in range(5)]
@@ -227,7 +227,7 @@ def test_background_congested_wakes_complete_without_broker_lease_expiries(dispa
     for _ in queued_tasks:
         # Broker delay belongs to an unleased wake, even beyond the old lease.
         observed_clock[0] += timedelta(seconds=120)
-        tasks.poll_background_tasks.run()
+        tasks.progress_study_queue.run()
     with database.read_connection() as connection:
         counters = connection.execute("SELECT COALESCE(SUM(lease_expiries),0),COALESCE(SUM(stale_deliveries),0),COALESCE(SUM(completed_generations),0) FROM background_metric_buckets WHERE kind='daily_queue'").fetchone()
     assert tuple(counters) == (0, 0, 5)
@@ -269,7 +269,8 @@ def test_foreground_arriving_after_claim_preserves_checkpoint_and_resumes(dispat
             with database.connection(background=True) as connection:
                 pytest.fail('database admission must yield after foreground arrives')
     monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', raced_slice)
-    assert tasks.poll_background_tasks.run() is False
+    legacy = durable_tasks.claim_task('daily_queue')
+    assert tasks.execute_background_slice.run(legacy) is False
     saved = task_row(queued['id'])
     assert saved['state'] == 'retrying' and saved['attempt_count'] == 0
     assert saved['phase'] == 'admit_due' and 'saved' in saved['payload_json']
@@ -281,8 +282,8 @@ def test_foreground_arriving_after_claim_preserves_checkpoint_and_resumes(dispat
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
     monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', complete)
-    tasks.poll_background_tasks.run()
-    tasks.poll_background_tasks.run()
+    tasks.progress_study_queue.run()
+    tasks.progress_study_queue.run()
     assert executions == ['saved'] and task_row(queued['id'])['state'] == 'complete'
 
 
@@ -340,8 +341,9 @@ def test_transaction_deadline_bookkeeping_does_not_wait_for_raced_foreground(dis
         assert foreground_started.wait(1)
         raise TransactionTimeout('controlled deadline after foreground arrival')
     monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', timed_out)
+    legacy = durable_tasks.claim_task('daily_queue')
     try:
-        assert tasks.poll_background_tasks.run() is True
+        assert tasks.execute_background_slice.run(legacy) is True
         saved = task_row(queued['id'])
         assert saved['state'] == 'retrying' and saved['transaction_timeout_count'] == 1
         assert saved['attempt_count'] == 0 and saved['lease_token'] is None
@@ -454,3 +456,63 @@ def test_essential_rollover_uses_authoritative_study_day_instead_of_worker_host_
     monkeypatch.setattr(tasks, 'execute_command', lambda _id, _name, payload: observed.append(payload) or {'refresh_pending':True})
     assert tasks.ensure_daily_queue.run()
     assert observed == ['2026-10-31', {'queue_date':'2026-10-31'}]
+
+
+@pytest.mark.parametrize('study_only', [False, True])
+def test_optional_background_pool_failure_cannot_reserve_essential_queue(dispatch_store, monkeypatch, study_only):
+    from psycopg_pool import PoolTimeout
+    monkeypatch.setattr(tasks, '_maintenance_cooldowns', {})
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: study_only)
+    original_claim = tasks.claim_task
+    claims = []
+    def claim(*args, **options):
+        claims.append(options)
+        # Explicit-import predicates are native PostgreSQL receipt joins. This
+        # SQLite fixture has no such import; preserve and observe that fallback.
+        return None if options.get('explicit_imports_only') else original_claim(*args, **options)
+    monkeypatch.setattr(tasks, 'claim_task', claim)
+    with database.connection(background=True) as connection:
+        connection.execute('UPDATE settings SET study_only_mode=? WHERE id=1', (int(study_only),))
+    queued = enqueue_daily()
+    optional = durable_tasks.enqueue_task('opening_graph_rebuild', 'optional-pool-failure', {},
+        priority=100, foreground=False)
+    failures = []
+    def fail_optional(claimed):
+        failures.append(claimed['id'])
+        raise PoolTimeout('controlled optional pool failure after its own claim')
+    def finish_essential(claimed):
+        assert claimed['id'] == queued['id']
+        with database.connection(background=True) as connection:
+            durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+    monkeypatch.setattr(tasks, 'execute_postgres_opening_graph_slice', fail_optional)
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', finish_essential)
+    assert tasks.poll_background_tasks.run() is False
+    head = task_row(queued['id'])
+    assert head['state']=='queued' and head['lease_token'] is None and head['attempt_count']==0
+    assert failures == ([] if study_only else [optional['id']])
+    if study_only:
+        assert claims == [dict(explicit_imports_only=True)]
+    with tasks.activity_gate.foreground():
+        tasks.progress_study_queue.run()
+    assert task_row(queued['id'])['state']=='complete'
+
+
+@pytest.mark.parametrize('study_only', [False, True])
+def test_generic_receipt_recovery_reserves_only_background_identity(monkeypatch, study_only):
+    claims, deliveries = [], []
+    monkeypatch.setattr(tasks, '_maintenance_cooldowns', {})
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: study_only)
+    def claim(**options):
+        claims.append(options)
+        return dict(operation_id='original-background', command_name='game_evidence.product_accept',
+            payload={'original':'bytes'}, background=True)
+    monkeypatch.setattr(tasks, 'claim_recoverable_operation', claim)
+    monkeypatch.setattr(tasks.celery_app, 'send_task', lambda *args, **kwargs: deliveries.append((args,kwargs)))
+    assert tasks.recover_operations.run()
+    assert claims == [dict(background_only=True,
+        allowed_background_commands=tasks.STUDY_BACKGROUND_COMMANDS if study_only else None,
+        paused_commands=tasks.PAUSED_IMPORT_COMMANDS if study_only else ())]
+    assert deliveries[0][0] == ('app.tasks.execute_background_command',)
+    assert deliveries[0][1]['task_id']=='original-background'
+    assert deliveries[0][1]['args']==['original-background','game_evidence.product_accept',{'original':'bytes'}]
