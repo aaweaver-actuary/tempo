@@ -6520,3 +6520,12 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Direct recovery CLI binds database infrastructure before owner work
 
 `backend/tests/test_opening_graph_recovery.py::test_recovery_cli_binds_existing_database_authorities_before_any_owner_work` starts with the neutral infrastructure unbound, imports the supported CLI without startup, and invokes each actual parsed recovery mode. It proves the existing activity gate and measurement adapter are bound before owner preflight/execution, and a binding failure prevents all owner work. Red4failed before the explicit composition call. Arguments, task/source guards, owners and transaction deadlines are unchanged; the standalone historical path continues using its supplied DedicatedGamesConnections.
+
+### Current qualified feedback authority (#662)
+
+`backend/tests/test_current_feedback_authority.py` is selected by the regular
+`study-game-priority` suite. It covers current-only construction and complete-scope
+reuse, changed canonical source/time or exact executable rejection, and actual
+PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
+The existing handoff fixture uses the production bounded connection profile and a
+task-owned private passfile; all 250ms transaction limits remain unchanged.
