@@ -288,16 +288,16 @@ export function ServiceStatusPanel({ studyOnlyMode = false }: { studyOnlyMode?: 
       onClick={event => { event.currentTarget.focus(); setOpen(value => !value); }}>
       <span className="tempo-activity-trigger-desktop">Analysis activity</span>
       <span className="tempo-activity-trigger-mobile">Jobs</span>
-      {studyOnlyMode ? <span> · Paused</span> : activeCount > 0 && <span> · {activeCount}</span>}
+      {studyOnlyMode ? <span> · Study-only</span> : activeCount > 0 && <span> · {activeCount}</span>}
       {((status?.counts.failed ?? 0) > 0 || status?.writer?.healthy === false || error) && <span className="tempo-activity-attention" aria-label="needs attention"> !</span>}
     </Button>
     {open && <section ref={popupRef} id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
       <div className="tempo-activity-heading"><strong>Background activity</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></div>
-      {studyOnlyMode && <p>Study-only mode is on. Optional analysis and imports are paused; pending work is preserved. Turn it off in Settings to resume.</p>}
+      {studyOnlyMode && <p>Study-only mode pauses optional analysis and imports handled by Tempo’s task scheduler. Review saves and queue maintenance continue. Games collection has a separate control; its status is not checked here. Pending work is preserved.</p>}
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
-      {studyOnlyMode && status && <p>Last activity snapshot before the pause:</p>}
+      {studyOnlyMode && status && <p>Last activity snapshot; current worker state has not been checked:</p>}
       {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
       {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
       {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}

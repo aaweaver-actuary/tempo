@@ -706,7 +706,7 @@ test('collection main blocks persisted pending migration before compose up', asy
   assert.deepEqual(maintenanceBytes(fixture.stateDirectory), before);
 });
 
-test('collection full snapshot read has no fixed subprocess deadline while other commands remain bounded', async t => {
+test('explicit collection readiness has a finite subprocess deadline', async t => {
   const fixture = collectionMainFixture(t);
   await fixture.invoke('plan');
   const reads = fixture.calls.filter(call => call.args.includes('app.product_composition.game_collection_status'));
@@ -714,8 +714,8 @@ test('collection full snapshot read has no fixed subprocess deadline while other
   const identity = reads.find(call => call.args.includes('--identity-only'));
   const full = reads.find(call => !call.args.includes('--identity-only'));
   assert.equal(identity.settings.timeout ?? 30000, 30000);
-  assert.equal(full.settings.timeout, 0);
-  assert.equal(fixture.calls.filter(call => call.settings.timeout === 0).length, 1);
+  assert.equal(full.settings.timeout, 30000);
+  assert.equal(fixture.calls.filter(call => call.settings.timeout === 0).length, 0);
 });
 
 test('collection main blocks observed schema mismatch before compose up', async t => {
@@ -747,7 +747,7 @@ test('collection main reports launch blockers without mutating on plan or status
   for (const operation of ['plan', 'status']) {
     const output = await fixture.invoke(operation);
     assert.equal(output.operation, operation); assert.equal(output.changed, false);
-    assert.equal(output.activation_ready, false); assert.equal(output.schema, 54); assert.equal(output.observed_schema, 53);
+    assert.equal(output.activation_ready, operation === 'status' ? null : false); assert.equal(output.schema, 54); assert.equal(output.observed_schema, 53);
     assert.deepEqual(output.maintenance, {status: 'blocked', code: 'migration_pending'});
     assert.deepEqual(output.blockers, ['migration_pending', 'collection_schema_mismatch']);
     assert.equal(JSON.stringify(output).includes('fixture-only.dump'), false);
@@ -755,7 +755,7 @@ test('collection main reports launch blockers without mutating on plan or status
   assert.deepEqual(maintenanceBytes(fixture.stateDirectory), before);
   writeFileSync(join(fixture.stateDirectory, 'migration-guard.json'), JSON.stringify(verifiedGuard(fixture.target)));
   fixture.input.report.identity.schema_version = undefined;
-  const refreshed = await fixture.invoke('status');
+  const refreshed = await fixture.invoke('plan');
   assert.deepEqual(refreshed.maintenance, {status: 'clear'});
   assert.equal(refreshed.observed_schema, null);
   assert.deepEqual(refreshed.blockers, ['full_reader_identity_invalid', 'collection_schema_unverified']);
@@ -887,7 +887,7 @@ function readerFailure(failure, stdout, exitStatus = null) {
 test('collection main independently preserves schema when full reader times out', async t => {
   const fixture = collectionMainFixture(t);
   fixture.input.fullRead = () => {throw readerFailure('timeout', '{');};
-  const output = await fixture.invoke('status');
+  const output = await fixture.invoke('plan');
   assert.equal(output.observed_schema, 54);
   assert.equal(output.activation_ready, false);
   assert.equal(output.evidence, null);
@@ -902,13 +902,13 @@ test('collection main independently preserves schema when full reader times out'
 test('collection main requires independent identity and blocks conflicting schema', async t => {
   const fixture = collectionMainFixture(t);
   fixture.input.identityRead = () => {throw readerFailure('nonzero_exit', '{}', 2);};
-  let output = await fixture.invoke('status');
+  let output = await fixture.invoke('plan');
   assert.equal(output.observed_schema, null);
   assert.ok(output.blockers.includes('collection_schema_unverified'));
   assert.equal(output.reader_probes.full.status, 'success');
   fixture.input.identityRead = () => JSON.stringify({...fixture.input.identityProbe.evidence,
     identity: {...fixture.input.report.identity, schema_version: 53}});
-  output = await fixture.invoke('status');
+  output = await fixture.invoke('plan');
   assert.ok(output.blockers.includes('collection_schema_observations_conflict'));
   assert.ok(output.blockers.includes('collection_schema_mismatch'));
   await assert.rejects(fixture.invoke('enable'), /collection_schema_observations_conflict/);
@@ -918,13 +918,13 @@ test('collection main requires independent identity and blocks conflicting schem
 test('collection main retains nonzero reader diagnostics without accepting failed or incomplete output', async t => {
   const fixture = collectionMainFixture(t);
   fixture.input.fullRead = () => {throw readerFailure('nonzero_exit', JSON.stringify(fixture.input.report), 2);};
-  let output = await fixture.invoke('status');
+  let output = await fixture.invoke('plan');
   assert.deepEqual(output.evidence, fixture.input.report);
   assert.deepEqual(output.reader_probes.full, {status: 'nonzero_exit', exit_status: 2, json_status: 'valid'});
   assert.equal(output.activation_ready, false);
   for (const stdout of ['{', JSON.stringify({...fixture.input.report, truncated: true}), '{}', 'null', 'x'.repeat(4 * 1024 * 1024 + 1)]) {
     fixture.input.fullRead = () => stdout;
-    output = await fixture.invoke('status');
+    output = await fixture.invoke('plan');
     assert.equal(output.activation_ready, false);
     assert.equal(output.evidence, null);
   }
@@ -944,7 +944,7 @@ test('collection main allowance is invocation scoped deduplicated and permits on
   assert.deepEqual(output.deferred_comparisons[0].providers, ['lichess', 'chesscom']);
   assert.equal(fixture.actionCalls('up').length, 1);
   assert.equal(readFileSync(join(fixture.stateDirectory, 'deployment.json'), 'utf8'), before);
-  assert.equal((await fixture.invoke('status')).activation_ready, false);
+  assert.equal((await fixture.invoke('plan')).activation_ready, false);
   assert.equal((await fixture.invoke('disable')).running, false);
 });
 
@@ -963,13 +963,13 @@ test('collection probe failures expose only fixed classifications and complete J
 
 test('collection main healthy allowance is unused and invalid installed API never runs probes', async t => {
   const fixture = collectionMainFixture(t);
-  let output = await fixture.invoke('status', {allowances: ['redacted:111111111111']});
+  let output = await fixture.invoke('plan', {allowances: ['redacted:111111111111']});
   assert.equal(output.activation_ready, true);
   assert.equal(output.comparison_coverage, 'complete');
   assert.deepEqual(output.unused_bound_allowances, ['redacted:111111111111']);
   fixture.input.apiRevision = 'f'.repeat(40);
   const before = fixture.calls.length;
-  output = await fixture.invoke('status');
+  output = await fixture.invoke('plan');
   assert.ok(output.blockers.includes('installed_api_revision_mismatch'));
   assert.equal(output.reader_probes.identity.status, 'unavailable');
   assert.equal(output.reader_probes.full.status, 'unavailable');
@@ -981,7 +981,7 @@ test('collection main blocks malformed full-reader identity while retaining inde
   for (const schema_version of [undefined, null, '54', 0, -1, 54.5, Number.MAX_SAFE_INTEGER + 1]) {
     fixture.input.fullRead = () => JSON.stringify({...fixture.input.report,
       identity: {...fixture.input.report.identity, schema_version}});
-    const output = await fixture.invoke('status');
+    const output = await fixture.invoke('plan');
     assert.equal(output.observed_schema, 54);
     assert.equal(output.reader_probes.identity.status, 'success');
     assert.equal(output.reader_probes.full.status, 'success');
@@ -990,4 +990,31 @@ test('collection main blocks malformed full-reader identity while retaining inde
     await assert.rejects(fixture.invoke('enable'), /full_reader_identity_invalid/);
   }
   assert.equal(fixture.actionCalls('up').length, 0);
+});
+
+
+test('minimal disable and routine status never invoke failed expensive readiness or preview', async t => {
+  const fixture = collectionMainFixture(t, {modern: true, running: true});
+  fixture.input.fullRead = () => assert.fail('minimal inspection projected repertoire scope');
+  const status = await fixture.invoke('status');
+  assert.equal(status.activation_ready, null);
+  assert.equal(status.readiness_assessed, false);
+  assert.equal(typeof status.observed_at, 'string');
+  const disabled = await fixture.invoke('disable');
+  assert.equal(disabled.running, false);
+  assert.equal(disabled.managed_mode.phase, 'inactive');
+  await fixture.invoke('disable');
+  const reads = fixture.calls.filter(call => call.args.includes('app.product_composition.game_collection_status'));
+  assert.ok(reads.length > 0);
+  assert.ok(reads.every(call => call.args.includes('--identity-only')));
+  assert.ok(!fixture.calls.some(call => call.args.includes('--preview')));
+});
+
+
+test('minimal disable refuses a different installed API candidate', async t => {
+  const fixture = collectionMainFixture(t, {modern: true, running: true});
+  fixture.input.apiRevision = 'f'.repeat(40);
+  await assert.rejects(fixture.invoke('disable'), /identity\/ownership/);
+  assert.equal(fixture.actionCalls('stop').length, 0);
+  assert.equal(fixture.actionCalls('run').length, 0);
 });

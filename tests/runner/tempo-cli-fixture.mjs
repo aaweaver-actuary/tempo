@@ -173,6 +173,7 @@ async function fakeCommand() {
     if(!builder?.bootstrapped){console.error(`No such container: ${container}`);process.exit(1);}
     output([{ Config:{User:"1000:1000",Env:[`TEMPO_RESOURCE_OWNER=${builder.owner}`]}, HostConfig: { Memory: builder.memory, NanoCpus: 0, CpuQuota: builder.cpuQuota, CpuPeriod: builder.cpuPeriod } }]); process.exit(0);
   }
+  if (args.includes("version") && !args.includes("compose")) { output("29.9.2"); process.exit(0); }
   if (args.includes("info")) {
     if (args.includes("--format")) {
       if (machine.stopDuringInspection) {

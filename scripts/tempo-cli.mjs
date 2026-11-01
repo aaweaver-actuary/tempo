@@ -90,8 +90,10 @@ async function install(options, sourceRoot, log) {
   log("Tempo CLI installed. Open a new terminal, then run tempo start. In this terminal, ./tempo start also works.");
 }
 
-async function ensureDocker(target, run, allowLaunch, log) {
-  const args = ["--context", target.context, "info"];
+export async function ensureDocker(target, run, allowLaunch, log) {
+  // The server version endpoint avoids Docker info's optional plugin diagnostics.
+  // Target daemon identity is still checked by the subsequent runtime preflight.
+  const args = ["--context", target.context, "version", "--format", "{{.Server.Version}}"];
   if ((await run("docker", args, { allowFailure: true, timeout: 5000 })).code === 0) return;
   if (!allowLaunch || process.platform !== "darwin") throw new TempoProblem("docker_unavailable", "Docker is unavailable.", { action: "Next: start Docker Desktop, then run tempo start." });
   log("Starting Docker Desktop…"); await run("open", ["-a", "Docker"]);

@@ -404,6 +404,14 @@ Architecture: [finite history composition](../backend/app/product_composition/RE
 
 ### Managed recurring worker
 
+Routine `status` and `disable` inspect only installed identity, owned collector and
+managed mode. They never project repertoire scope or call provider preview.
+`activation_ready: null` means readiness was not assessed; use explicit `plan`
+for the finite, full activation check. All reader subprocesses have finite
+30-second deadlines. Unknown mode-read evidence reports phase `unknown`.
+Disable first persists inactive admission, then stops the verified owned collector;
+accepted Study obligations and original deliveries remain durable.
+
 `scripts/game-review-collection.mjs` is the thin operator for the explicitly
 optional Games service in an existing frozen managed release. It reuses Tempo's
 registration, deployment receipt, target validation and maintenance lock. It does
@@ -559,7 +567,8 @@ flowchart LR
     ManagedRelease --> Maintenance[Stop Games before protected maintenance]
     FrozenProfile --> Registration
     Wrapper --> Identity[Installed identity-only reader / independent schema evidence]
-    Wrapper --> Reader[Installed full reader / complete selected readiness]
+    Wrapper -->|explicit plan / enable only| Reader[Installed full reader / complete selected readiness]
+    Wrapper -->|status / disable| Minimal[Identity and mode only: activation readiness unassessed]
     Identity --> EnableChecks
     Reader --> EnableChecks
     Wrapper --> Inventory[Image, resource and competing-process inspection]

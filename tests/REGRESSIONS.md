@@ -6451,3 +6451,10 @@ while retaining retryable debt and serving later ready live/history work.
 - `tests/unit/next-card-preparation-regressions.test.ts`: `nonblocking_preparation_hold_reuses_completed_identity_until_paced_explicit_retry`, `preparation_wrong_202_identity_retains_original_unresolved_operation`, `preparation_cancelled_late_completion_stays_recoverable_under_original_identity`.
 - `tests/unit/prepared-review-continuation-regressions.test.ts`: `completed_preparation_hold_yields_to_fresh_server_authority`, `completed_nonblocking_hold_cannot_override_a_second_server_issuance_refusal`, `legacy_completed_hold_survives_reload_and_inactive_mode_releases_queue_without_reposting`.
 - `tests/unit/review-attempt-confirmation-regressions.test.tsx`: `saved_review_nonblocking_feedback_hold_loads_server_head_without_second_review`.
+## Minimal managed Games disable/status (#666)
+
+`tests/runner/game-review-collection.test.mjs` verifies that routine status and
+safe disable never invoke expensive readiness/preview, retain candidate ownership,
+report unassessed activation as unknown and use finite explicit-read deadlines.
+Older readiness assertions now invoke explicit plan, matching the new operation
+contract; all activation refusal and identity invariants remain intact.
