@@ -409,6 +409,13 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     assert expected['container_id'] == collector['Id'] and expected['image'] == collector['Image']
     assert identity['hostname'] == expected['hostname'] and identity['boot_nonce'] == expected['boot_nonce']
     report['recovery_producer_identity'] = expected
+    scheduler_logs = docker('logs', containers['foreground-worker']['id'])
+    scheduler_evidence = [line for line in (scheduler_logs.stdout+'\n'+scheduler_logs.stderr).splitlines()
+                          if 'beat: Starting' in line]
+    assert scheduler_evidence, 'recovery_actual_essential_scheduler_missing'
+    report['essential_scheduler'] = dict(runtime='supported embedded Celery beat in existing foreground worker',
+        schedule='/tmp/qualification-celerybeat-schedule', startup=scheduler_evidence[-1],
+        memory_limit_mib=384, additional_service=False)
     report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
         for role, resource in containers.items()}
     held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
