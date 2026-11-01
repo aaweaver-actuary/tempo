@@ -208,6 +208,8 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
   let failedRequests = 0;
   let retryDeferred = retryPreparation;
   let localPriorityPending = false;
+  let completedPreparationHold: string | null = null;
+  let nonblockingPreparationHold = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending);
     if (response.ok) {
@@ -220,9 +222,11 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
       if (payload.projection?.state !== "refreshing" || payload.cards.length) {
         const validated = queueEnvelopeSchema.safeParse(responsePayload);
         if (!validated.success) throw new QueueProcessingError("The local queue returned an invalid queue response. Retry loading the queue.");
+        if (nonblockingPreparationHold) publishNotification({ severity: "info", source: "training queue",
+          key: "optional-feedback-hold", message: "Game feedback is pending. Ordinary Study remains available and the pending work is retained." });
         return validated.data;
       }
-      if (attempt === 19) throw new QueueProcessingError("Daily queue is still preparing. Check the analysis worker and retry.");
+      if (attempt === 19) throw new QueueProcessingError("Daily queue is still preparing. Check Tempo’s queue maintenance status and retry.");
       await waitForQueueRetry(250, signal);
       continue;
     }
@@ -243,15 +247,26 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
     if (!independentStudy && response.status === 503 &&
         priorityFailure?.detail?.code === 'study_feedback_preparation_pending') {
       localPriorityPending = true;
+      // One fresh server read can supersede an old completed hold after mode
+      // disable or recovery. If still blocked, retain it without another POST.
+      if (completedPreparationHold) throw new QueueProcessingError(completedPreparationHold);
       // The server has declined new attempt authority. Existing work and saved
       // results are intact. Advance one bounded local owner unit explicitly;
       // neither a queue GET nor client-side prefetch may perform this write.
       const allowDeferredRetry = retryDeferred;
       retryDeferred = false;
       try {
-        await awaitQueueStage(prepareNextCard({ progression, signal, retryDeferred: allowDeferredRetry }), signal);
+        const prepared = await awaitQueueStage(prepareNextCard({ progression, signal, retryDeferred: allowDeferredRetry }), signal);
+        if (!prepared.progressed && prepared.pending) {
+          completedPreparationHold = "Study preparation is still pending. Saved results are retained. Retry loading the queue after its prerequisite is restored.";
+          nonblockingPreparationHold = prepared.blocks_issuance === false;
+          continue;
+        }
       } catch (error) {
-        if (error instanceof NextCardPreparationDeferredError) throw new QueueProcessingError(error.message);
+        if (error instanceof NextCardPreparationDeferredError) {
+          completedPreparationHold = error.message;
+          continue;
+        }
         if (!(error instanceof PendingOperationError)) throw error;
       }
       if (attempt === 19) throw new QueueProcessingError('Local Study priority work is still preparing. Retry loading the queue.');

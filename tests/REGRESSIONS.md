@@ -6445,3 +6445,9 @@ and `test_native_poisoned_priority_cannot_hide_later_ready_delivery` in
 `backend/tests/test_product_delivery_qualification.py` prove PostgreSQL read-side
 policy rejects stale priority sidecars and expired retry deadlines as authority,
 while retaining retryable debt and serving later ready live/history work.
+
+### Browser feedback-hold recovery (#663)
+
+- `tests/unit/next-card-preparation-regressions.test.ts`: `nonblocking_preparation_hold_reuses_completed_identity_until_paced_explicit_retry`, `preparation_wrong_202_identity_retains_original_unresolved_operation`, `preparation_cancelled_late_completion_stays_recoverable_under_original_identity`.
+- `tests/unit/prepared-review-continuation-regressions.test.ts`: `completed_preparation_hold_yields_to_fresh_server_authority`, `completed_nonblocking_hold_cannot_override_a_second_server_issuance_refusal`, `legacy_completed_hold_survives_reload_and_inactive_mode_releases_queue_without_reposting`.
+- `tests/unit/review-attempt-confirmation-regressions.test.tsx`: `saved_review_nonblocking_feedback_hold_loads_server_head_without_second_review`.

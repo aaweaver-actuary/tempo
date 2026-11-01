@@ -156,3 +156,58 @@ it("preparation_authority_change_retains_old_command_without_delivering_to_new_a
   expect(records[0]).toMatchObject({ requestId, state: "pending" });
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+it("nonblocking_preparation_hold_reuses_completed_identity_until_paced_explicit_retry", async () => {
+  let now = 1_000;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const held = { progressed: false, pending: true, reason: "integrity_not_current", blocks_issuance: false };
+  const posts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, options?: RequestInit) => {
+    posts.push(new Headers(options?.headers).get("Idempotency-Key")!);
+    return Response.json(held);
+  }));
+  await expect(invoke()).resolves.toEqual(held);
+  const pointer = await (await studyIntentStore()).checkpoint("next-card-preparation:current");
+  await expect(invoke()).resolves.toEqual(held);
+  await expect(invoke(true)).resolves.toEqual(held);
+  expect(posts).toHaveLength(1);
+  expect(await (await studyIntentStore()).checkpoint("next-card-preparation:current")).toEqual(pointer);
+  now += preparationRetryDelayMs;
+  await expect(invoke()).resolves.toEqual(held);
+  await expect(invoke(true)).resolves.toEqual(held);
+  expect(posts).toHaveLength(2);
+  expect(posts[0]).not.toBe(posts[1]);
+});
+
+it("preparation_wrong_202_identity_retains_original_unresolved_operation", async () => {
+  const posts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: posts[0], state: "complete", response: completed });
+    posts.push(new Headers(options?.headers).get("Idempotency-Key")!);
+    return Response.json({ operation_id: "wrong-operation" }, { status: 202 });
+  }));
+  await expect(invoke()).rejects.toThrow("original preparation operation");
+  expect((await (await studyIntentStore()).list("next-card-preparation"))[0].state).toBe("pending");
+  await expect(invoke()).resolves.toEqual(completed);
+  expect(posts).toHaveLength(1);
+});
+
+it("preparation_cancelled_late_completion_stays_recoverable_under_original_identity", async () => {
+  let finish!: (response: Response) => void;
+  const posts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: posts[0], state: "complete", response: completed });
+    posts.push(new Headers(options?.headers).get("Idempotency-Key")!);
+    return new Promise<Response>(resolve => { finish = resolve; });
+  }));
+  const controller = new AbortController();
+  const pending = invoke(false, controller.signal);
+  const rejected = expect(pending).rejects.toThrow("cancelled acquisition");
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  controller.abort(new Error("cancelled acquisition"));
+  finish(Response.json(completed));
+  await rejected;
+  expect((await (await studyIntentStore()).list("next-card-preparation"))[0].state).toBe("pending");
+  await expect(invoke()).resolves.toEqual(completed);
+  expect(posts).toHaveLength(1);
+});

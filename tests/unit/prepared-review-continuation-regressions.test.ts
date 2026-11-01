@@ -474,3 +474,62 @@ it('study_priority_queue_body_remains_essential_until_queue_installation_settles
   await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
   priority.setStudyPriorityScope(false);
 });
+
+it.each(["nonblocking", "legacy"])("completed_preparation_hold_yields_to_fresh_server_authority: %s", async kind => {
+  const requests: string[] = [];
+  const fetcher = vi.fn(async (url: string) => {
+    requests.push(url);
+    if (url.endsWith("/api/queue/prepare-next")) return Response.json({ progressed: false, pending: true,
+      reason: "private optional exception must not render", ...(kind === "nonblocking" ? { blocks_issuance: false } : {}) });
+    return requests.length === 1
+      ? Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 })
+      : Response.json({ cards: [queue[2]], count: 1, local_date: localDayKey() });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).resolves.toBe("installed");
+  expect(requests.filter(url => url.includes("/api/queue/window"))).toHaveLength(2);
+  expect(requests.filter(url => url.endsWith("/api/queue/prepare-next"))).toHaveLength(1);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(503);
+  expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+  expect(useTrainingStore.getState().serviceError).not.toContain("private optional");
+});
+
+it("completed_nonblocking_hold_cannot_override_a_second_server_issuance_refusal", async () => {
+  const active = useTrainingStore.getState().attempt;
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    requests.push(url);
+    return url.endsWith("/api/queue/prepare-next")
+      ? Response.json({ progressed: false, pending: true, reason: "integrity_not_current", blocks_issuance: false })
+      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
+  }));
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).rejects.toThrow("preparation is still pending");
+  expect(requests.filter(url => url.includes("/api/queue/window"))).toHaveLength(2);
+  expect(requests.filter(url => url.endsWith("/api/queue/prepare-next"))).toHaveLength(1);
+  expect(useTrainingStore.getState().attempt).toEqual(active);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+});
+
+it("legacy_completed_hold_survives_reload_and_inactive_mode_releases_queue_without_reposting", async () => {
+  const { closeStudyIntentStorage, initializeStudyIntentStorage, studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  let inactive = false;
+  const preparationIds: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/api/queue/prepare-next")) {
+      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
+      return Response.json({ progressed: false, pending: true, reason: "source_unavailable" });
+    }
+    return inactive ? Response.json({ cards: [queue[2]], count: 1, local_date: localDayKey() })
+      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
+  }));
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).rejects.toThrow("preparation is waiting");
+  const records = await (await studyIntentStore()).list("next-card-preparation");
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("committed");
+  closeStudyIntentStorage(); await initializeStudyIntentStorage();
+  inactive = true;
+  await expect(fetchAndInitializeQueue(true, { replaySavedReviews: false })).resolves.toBe("installed");
+  expect(preparationIds).toHaveLength(1);
+  expect(await (await studyIntentStore()).get(records[0].key)).toEqual(records[0]);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(503);
+});

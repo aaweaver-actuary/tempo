@@ -942,3 +942,29 @@ it("pr285_teaching_cross_tab_demo_first_clean_does_not_write_the_legacy_cutover_
   expect(savedTeachingFacts()).toEqual(expect.arrayContaining([expect.objectContaining({ cardId: String(completed), kind: "first-clean" })]));
   expect(localStorage.getItem("tempo-first-clean-passes")).toBe(before);
 });
+
+it("saved_review_nonblocking_feedback_hold_loads_server_head_without_second_review", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let queueReads = 0;
+  const preparationIds: string[] = [];
+  fetcher.mockImplementation(async (input, options) => {
+    const url = String(input);
+    if (url.endsWith("/api/queue/prepare-next")) {
+      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
+      return Response.json({ progressed: false, pending: true, reason: "integrity_not_current", blocks_issuance: false });
+    }
+    if (url.includes("/api/queue/window")) return ++queueReads === 1
+      ? Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 })
+      : Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") });
+    return originalFetcher(input, options);
+  });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(reviewPosts()).toHaveLength(1);
+  expect(preparationIds).toHaveLength(1);
+  expect(queueReads).toBe(2);
+  expect(pendingReviews()).toEqual([]);
+  expect(notifications().find(record => record.key === "optional-feedback-hold")?.message).toContain("pending work is retained");
+});
