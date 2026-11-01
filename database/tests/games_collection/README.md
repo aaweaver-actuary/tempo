@@ -171,3 +171,9 @@ and binds its original card/attempt/queue payload. The Learning attempt receipt
 is compared exactly after removing only that known after-save annotation; its
 prepared continuation and every other field remain required. This follows the
 existing adapter's two receipt contracts rather than discarding unknown fields.
+
+Live synthetic provider input updates are published by writing a complete sibling
+file and atomically replacing `provider.json`, using the same boundary as the
+existing ready markers. Readers observe one complete snapshot; parse failures
+remain real failures rather than being caught or retried. Initial prelaunch
+creation and all provider/owner/receipt assertions remain unchanged.

@@ -609,11 +609,13 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
         assert result['status']==200, 'packaged_feedback_queue_rejected'
         return result['body'] if result['body'].get('cards') else None
 
-    def provider_ready(value):
-        path = directory/'provider-ready.json'
+    def publish_json(path, value):
         temporary = path.with_suffix('.next')
         temporary.write_text(json.dumps(value))
         temporary.replace(path)
+
+    def provider_ready(value):
+        publish_json(directory/'provider-ready.json', value)
 
     def browser_ready(expected_stage):
         path = directory/'browser-ready.json'
@@ -733,7 +735,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             'record','--workspace','legacy','--expected-generation','0','--intent-json',json.dumps(mode),'--apply'))
         assert recorded['applied'] and recorded['mode']=='feedback'
         inputs['now'] = datetime.now(timezone.utc).timestamp()
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        publish_json(directory/'provider.json', inputs)
         (directory/'feedback-start').write_text('actual_mode_verified\n')
         stage = 'provider_first_departure'
         def bounded(value):
@@ -1247,7 +1249,7 @@ with httpx.Client(base_url='http://127.0.0.1:8000',timeout=10) as client:
             captures_before_replay = database.execute_native('SELECT COUNT(*) FROM product_feedback_captures').fetchone()[0]
             reconciliation_before = database.execute_native("SELECT COUNT(*) FROM product_feedback_jobs WHERE status='complete' AND payload->'spec'->>'stream'='reconciliation'").fetchone()[0]
         inputs['now'] += 601
-        (directory/'provider.json').write_text(json.dumps(inputs))
+        publish_json(directory/'provider.json', inputs)
         replay_run = entry('foreground-worker','worker')
         assert replay_run['durable_checkpoints_retained'] and replay_run['bounded_units']>1
         report['source_replay_run'] = replay_run
