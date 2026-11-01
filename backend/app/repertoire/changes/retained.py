@@ -11,6 +11,7 @@ import json
 
 from app.contracts.product_v02.analysis import DisplayedCardChange
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
+from tempo_legacy_database.capabilities import BorrowedTransaction
 from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
     current_snapshot, read_repertoire,
 )
@@ -66,10 +67,9 @@ def current_card_definitions(database, repertoire_id: str) -> tuple[DisplayedCar
     return tuple(result)
 
 
-def publish_validated_change(database, change: ValidatedChange, *, current_snapshot: SnapshotReader | None = None) -> RepertoireSnapshot:
+def publish_validated_change(database: BorrowedTransaction, change: ValidatedChange, *, current_snapshot: SnapshotReader | None = None) -> RepertoireSnapshot:
     """Atomically publish one approved structural selection in the borrowed tx."""
-    from psycopg.pq import TransactionStatus
-    if database.raw.info.transaction_status != TransactionStatus.INTRANS:
+    if not database.in_transaction:
         raise ChangeError('borrowed_transaction_required')
     reader = current_snapshot if current_snapshot is not None else _shared_snapshot_reader
     repairs, canonical, integrity, certificate, request_graph, storage, integrity_storage, _ = _retained_operations()

@@ -51,3 +51,29 @@ the task composition before its connections; opening-evidence imports the task
 or API composition before its selected controlled routes. Direct read-only
 `read_connection` and direct concrete `postgres_store` scopes retain their
 existing paths; they do not require the controlled router's binding.
+
+## Connection capabilities and borrowed transactions
+
+[Capabilities](capabilities.py) describe the common row/cursor and connection
+operations supported by the SQLite compatibility connection and PostgreSQL
+wrapper. Reader and borrowed-transaction interfaces expose no commit or close;
+the context owner retains those operations. `connection()` can route a
+query-only request to the reader, so its return annotation includes both views.
+These are static interfaces: `execute` does not prove SQL is read-only, and the
+existing database roles and SQLite query-only setting enforce runtime access.
+
+`PostgresConnection.in_transaction` reports the existing exact `INTRANS` fact;
+retained Repertoire publication checks it before using the caller's transaction.
+No transaction is opened, committed or closed by this observation. SQLite's
+existing `in_transaction` reports its own transaction state; it does not imply
+PostgreSQL lock or isolation semantics. Native observation remains separately
+qualified against PostgreSQL.
+
+```mermaid
+flowchart LR
+  R[Read projection] --> RC[Read capability]
+  T[Retained publication] --> BT[Borrowed transaction capability]
+  C[Connection context owner] --> RC
+  C --> BT
+  BT --> P[PostgreSQL active transaction fact]
+```

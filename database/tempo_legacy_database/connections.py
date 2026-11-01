@@ -5,12 +5,13 @@ import sys
 import threading
 from contextvars import ContextVar
 import time
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 from tempo_legacy_database.infrastructure import database_admission, database_measurement
+from tempo_legacy_database.capabilities import BorrowedTransaction, ReadConnection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
@@ -51,7 +52,7 @@ def _measured_background_database_section():
 
 
 @contextmanager
-def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
+def connection(*, background: bool = False) -> Iterator[BorrowedTransaction | ReadConnection]:
     if _query_only_request.get():
         with read_connection() as database:
             yield database
@@ -126,20 +127,20 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
                 section.__exit__(*sys.exc_info())
 
 
-def foreground_connection() -> Iterator[sqlite3.Connection]:
+def foreground_connection() -> AbstractContextManager[BorrowedTransaction | ReadConnection]:
     """Open a normal foreground connection explicitly."""
 
     return connection(background=False)
 
 
-def background_connection() -> Iterator[sqlite3.Connection]:
+def background_connection() -> AbstractContextManager[BorrowedTransaction | ReadConnection]:
     """Open a short, foreground-preemptible background connection explicitly."""
 
     return connection(background=True)
 
 
 @contextmanager
-def read_connection(*, repertoire_snapshot: bool = False) -> Iterator[sqlite3.Connection]:
+def read_connection(*, repertoire_snapshot: bool = False) -> Iterator[ReadConnection]:
     """Open a query-only connection suitable for request projections."""
 
     if postgres_store.configured():
@@ -162,7 +163,7 @@ def read_connection(*, repertoire_snapshot: bool = False) -> Iterator[sqlite3.Co
 
 @contextmanager
 def background_read_connection(*, authoritative: bool = False,
-                               pool_timeout_seconds: float | None = None) -> Iterator[sqlite3.Connection]:
+                               pool_timeout_seconds: float | None = None) -> Iterator[ReadConnection]:
     """Admit a bounded background read only while foreground work is idle."""
 
     if postgres_store.configured():

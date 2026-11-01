@@ -22,6 +22,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import RowMaker
+from psycopg.pq import TransactionStatus
 from psycopg_pool import ConnectionPool
 import sqlglot
 
@@ -151,6 +152,11 @@ class PostgresConnection:
         self._database = database
         self.read_only = read_only
         self._background_metric_deltas: dict[tuple, dict] = {}
+
+    @property
+    def in_transaction(self) -> bool:
+        """True only while the caller owns an active, usable transaction."""
+        return self._database.info.transaction_status == TransactionStatus.INTRANS
 
     @property
     def raw(self) -> psycopg.Connection[TempoRow]:
