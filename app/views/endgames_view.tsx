@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Chess } from "chess.js";
 import { Button } from "../components/buttons/BaseButton";
-import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { STANDARD_FEN } from "../const";
-import { PracticeCard } from "../types";
+import type { PracticeCard } from "../domain/cards";
 
 export default function EndgamesView({ theme, pieceSet, scheduledCard, onBury,
   blocked = false, useSharedBoard = false,

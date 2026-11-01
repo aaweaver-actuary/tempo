@@ -2,7 +2,7 @@ import { canOpenWorkspace } from '../lib/study-workspace-policy';
 import { independentStudy } from "../lib/study-connection";
 import { Button } from "./buttons/BaseButton";
 import { useRef, useState } from "react";
-import type { View } from "@/app/types";
+import type { View } from "@/app/domain/shared";
 import { preloadView } from "../lib/workspace-data";
 
 import { usePopupKeyboard } from "../lib/keyboard-shortcuts";

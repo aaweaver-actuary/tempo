@@ -7,12 +7,9 @@ import { Chess } from "chess.js";
 import { useEffect, useState } from "react";
 import { usePositionSolutionEditor } from "../hooks/use-position-solution-editor";
 import { PositionSolutionTabs, PositionSolutionBoard, PositionFenField } from "../components/position-solution-editor";
-import { BoardTheme, PieceSet } from "../components/chessboard";
-import {
-  PracticeCard,
-  asFenString,
-  asSanMove,
-} from "../types";
+import type { BoardTheme, PieceSet } from "../components/chessboard";
+import type { PracticeCard } from "../domain/cards";
+import { asFenString, asSanMove } from "../domain/shared";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";

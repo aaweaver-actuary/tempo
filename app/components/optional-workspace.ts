@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import type { BoardTheme, PieceSet } from './chessboard';
-import type { View } from '../types';
+import type { View } from '../domain/shared';
 
 /** The full workspace supplies optional views; Study supplies no implementation. */
 export type OptionalWorkspaceProps = {
@@ -17,7 +17,7 @@ export type OptionalWorkspaceProps = {
 
 import type { MutableRefObject, ReactNode } from 'react';
 import type { PracticeCard } from '../domain/cards';
-import type { LocalRepertoire } from '../types';
+import type { LocalRepertoire } from '../domain/repertoire';
 
 /** Legacy-only operations invoked at the shared shell's navigation/queue boundary. */
 export type LegacyWorkspaceController = {
