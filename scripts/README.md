@@ -612,8 +612,9 @@ The engine cycle processes at most one recovered or newly claimed job. Its
 result callback routing. The ordinary durable journal retains Games operations
 and all callbacks; a separate journal retains uncertain Defense claims. Games
 recovery is attempted first, and a recovered claim is not claimed again.
-`engine-search.mjs` still owns the existing control polling and pre-search
-release calls; this increment does not claim a fully family-neutral search.
+The adapters own control requests and pre-search release. `engine-search.mjs`
+polls a supplied Boolean continuation capability and retains its existing stop,
+deadline and diagnostics behavior.
 
 ```mermaid
 flowchart LR
@@ -623,5 +624,7 @@ flowchart LR
   G --> J[Ordinary durable journal]
   D --> J
   D --> K[Defense claim journal]
-  C --> S[Existing engine search and control]
+  C -->|supplies continuation| S[Engine search]
+  G --> P[Games control and release]
+  D --> T[Defense control and release]
 ```

@@ -19,7 +19,7 @@ const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseco
 
 const request = createEngineFamilyRequest(durableRequest, defenseClaimRequest);
 
-const searches = createEngineSearch(engine, request);
+const searches = createEngineSearch(engine);
 const evaluate = searches.evaluate;
 
 if (process.env.TEMPO_ENGINE_SMOKE === "1") {
@@ -27,7 +27,7 @@ if (process.env.TEMPO_ENGINE_SMOKE === "1") {
     position_start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
     position_prefix_uci: [], root_move_uci: "a2a3", multipv: 1, depth: 4,
     engine_version: "Stockfish 19 WASM", network_version: "nn-61e7af4bb97d.nnue",
-  } });
+  } }, "engine_defense", async () => true);
   if (report.lines[0]?.root_move_uci !== "a2a3") throw new Error("Restricted search returned the wrong root");
   console.log("Restricted Stockfish search passed");
   process.exit(0);

@@ -166,11 +166,11 @@ test('real Maia inference yields to study and resumes the same full-quality lega
 test('real Stockfish search stops for study and a quiet search still reaches its requested depth', {timeout:30_000}, async()=>{
   const engine=await createStockfishProcess();
   let priority=false,startedAt;
-  const searches=createEngineSearch(engine,async()=>({active:priority,available:true,study_only_mode:false}));
+  const searches=createEngineSearch(engine);
   const job={request:{position_start_fen:fen,position_prefix_uci:[],depth:99,multipv:1}};
   try {
     engine.uci('uci');engine.uci('setoption name Threads value 1');engine.uci('setoption name Hash value 32');engine.uci('isready');
-    const cancelled=searches.evaluate(job,'engine_game').catch(error=>error);
+    const cancelled=searches.evaluate(job,'engine_game',async()=>!priority).catch(error=>error);
     const listener=engine.listen;
     engine.listen=text=>{listener(text);if(text.startsWith('info ') && text.includes(' pv ') && startedAt===undefined){startedAt=performance.now();priority=true;}};
     const error=await cancelled;
@@ -178,7 +178,7 @@ test('real Stockfish search stops for study and a quiet search still reaches its
     const yieldMs=performance.now()-startedAt;assert(yieldMs<=250,`Stockfish yield ${yieldMs} ms`);
     assert.equal(searches.fatalEngineError,false);
     priority=false;
-    const result=await searches.evaluate({...job,request:{...job.request,depth:4}},'engine_game');
+    const result=await searches.evaluate({...job,request:{...job.request,depth:4}},'engine_game',async()=>!priority);
     assert(result.report.complete && result.report.lines.every(line=>line.depth>=4));
     console.log(JSON.stringify({case:'real-stockfish-priority',yield_ms:yieldMs,depth:4}));
   } finally {engine.terminate();}
@@ -204,8 +204,8 @@ for (const kind of ['maia','stockfish']) {
       }else{
         launches++;engine=await createStockfishProcess();
         engine.uci('uci');engine.uci('setoption name Threads value 1');engine.uci('setoption name Hash value 32');engine.uci('isready');
-        const searches=createEngineSearch(engine,async()=>({active:held,available:true,study_only_mode:false}));
-        const pending=searches.evaluate({request:{position_start_fen:fen,position_prefix_uci:[],depth:99,multipv:1}},'engine_game').catch(error=>error);
+        const searches=createEngineSearch(engine);
+        const pending=searches.evaluate({request:{position_start_fen:fen,position_prefix_uci:[],depth:99,multipv:1}},'engine_game',async()=>!held).catch(error=>error);
         const listener=engine.listen;
         engine.listen=text=>{listener(text);if(inputAt===undefined&&text.startsWith('info ')&&text.includes(' pv ')){inputAt=Date.now();held=true;}};
         assert.equal((await pending).diagnostics.outcome,'preempted');assert.equal(searches.fatalEngineError,false);

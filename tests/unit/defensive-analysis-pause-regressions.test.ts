@@ -3,11 +3,27 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createEngineSearch, admitEngineJob, engineSearchAllowed, engineSearchWasPreempted } from "../../scripts/engine-search.mjs";
+import { createEngineSearch, engineSearchWasPreempted } from "../../scripts/engine-search.mjs";
 import { createEngineJobFamilies } from "../../scripts/engine-job-families.mjs";
 import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
 import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
 import { runEngineWorkerCycle } from "../../scripts/engine-worker-cycle.mjs";
+
+function familyFor(kind: string, request: (...args: any[]) => any) {
+  const families = createEngineJobFamilies({ request, durableRequest: {}, defenseClaimRequest: {} });
+  return kind === "engine_game" ? families.game : families.defense;
+}
+const admitEngineJob = (job: any, kind: string, request: (...args: any[]) => any) => familyFor(kind, request).admit(job);
+const engineSearchAllowed = (job: any, kind: string, request: (...args: any[]) => any) => familyFor(kind, request).allowed(job);
+function createControlledSearch(engine: any, request: (...args: any[]) => any) {
+  const search = createEngineSearch(engine);
+  return {
+    get fatalEngineError() { return search.fatalEngineError; },
+    evaluate(job: any, kind = "engine_defense", shouldContinue = () => familyFor(kind, request).allowed(job)) {
+      return search.evaluate(job, kind, shouldContinue);
+    },
+  };
+}
 
 it("study_only_mode_releases_recovered_game_work_before_computation", async () => {
   const recovered = { id: "study-mode-job", lease_id: "preserved-lease", kind: "position" };
@@ -44,7 +60,7 @@ it("pausing an active defensive search drains once and records preemption withou
   vi.useFakeTimers();
   const engine = new Engine();
   const control = vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: false });
-  const searches = createEngineSearch(engine, control);
+  const searches = createControlledSearch(engine, control);
   const outcome = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(750);
   expect(await outcome).toMatchObject({ message: "preempted", diagnostics: { outcome: "preempted" } });
@@ -118,7 +134,7 @@ it("ordinary game searches retain foreground control and complete while defense 
   const request = vi.fn().mockResolvedValue({ active: false });
   expect(await admitEngineJob(job, "engine_game", request)).toBe(true);
   expect(request).toHaveBeenCalledWith("/api/system/foreground-active", expect.any(Object));
-  const result = createEngineSearch(engine, request).evaluate(job, "engine_game");
+  const result = createControlledSearch(engine, request).evaluate(job, "engine_game");
   await vi.advanceTimersByTimeAsync(750);
   engine.finish();
   expect(await result).toMatchObject({ report: { complete: true }, diagnostics: { outcome: "success" } });
@@ -131,7 +147,7 @@ it("engine control polling stays single-flight and a stale pause cannot stop a c
   const engine = new Engine();
   let resolveControl!: (value: object) => void;
   const request = vi.fn().mockImplementation(() => new Promise(resolve => { resolveControl = resolve; }));
-  const result = createEngineSearch(engine, request).evaluate(job);
+  const result = createControlledSearch(engine, request).evaluate(job);
   await vi.advanceTimersByTimeAsync(2_250);
   expect(request).toHaveBeenCalledTimes(1);
   engine.finish();
@@ -151,7 +167,7 @@ it("a paused engine that cannot drain releases its lease without recording failu
   vi.useFakeTimers();
   const engine = new Engine();
   engine.drain = false;
-  const searches = createEngineSearch(engine, vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: false }));
+  const searches = createControlledSearch(engine, vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: false }));
   const result = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(150);
   const cancellation = await result;
@@ -168,7 +184,7 @@ it.each([true, false])("pause near depth deadline preserves preemption through d
   engine.drain = false;
   let paused = false;
   const control = vi.fn(async () => ({ foreground_active: false, search_allowed: !paused }));
-  const searches = createEngineSearch(engine, control);
+  const searches = createControlledSearch(engine, control);
   const outcome = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(53_250);
   paused = true;
@@ -198,7 +214,7 @@ it("depth deadline first remains timeout when a later outstanding control report
   const control = vi.fn(() => deferControl
     ? new Promise(resolve => { resolveLateControl = resolve; })
     : Promise.resolve({ foreground_active: false, search_allowed: true }));
-  const searches = createEngineSearch(engine, control);
+  const searches = createControlledSearch(engine, control);
   const result = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(54_000);
   deferControl = true;
@@ -220,7 +236,7 @@ it("old control response cannot stop the next search after the previous search c
   let resolveOldControl!: (value: object) => void;
   const control = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveOldControl = resolve; }))
     .mockResolvedValue({ foreground_active: false, search_allowed: true });
-  const searches = createEngineSearch(engine, control);
+  const searches = createControlledSearch(engine, control);
   const first = searches.evaluate(job);
   await vi.advanceTimersByTimeAsync(750);
   engine.finish();
@@ -256,7 +272,7 @@ async function createProductionCycleHarness(callbackTransport: (
     return { active: controls.foregroundActive, foreground_active: false, search_allowed: !controls.paused };
   });
   const engine = new Engine();
-  const searches = createEngineSearch(engine, request);
+  const searches = createControlledSearch(engine, request);
   let notifyStarted!: () => void;
   const started = new Promise<void>(resolve => { notifyStarted = resolve; });
   const originalEvaluate = searches.evaluate;
@@ -345,7 +361,7 @@ it('fatal cancellation bounds delivery and recovers the unchanged release before
     expect(callbacks).toHaveBeenCalledTimes(1);
     expect(harness.evaluate).toHaveBeenCalledTimes(1);
     hangDelivery = false;
-    const restarted = { ...harness.dependencies, searches: createEngineSearch(new Engine(), harness.dependencies.request) };
+    const restarted = { ...harness.dependencies, searches: createControlledSearch(new Engine(), harness.dependencies.request) };
     await runEngineWorkerCycle(restarted);
     expect(await restarted.durableRequest.pending()).toEqual(saved);
     expect(harness.recoverClaim).toHaveBeenCalledTimes(1);
@@ -442,4 +458,21 @@ it('a defense family outage without an uncertain receipt does not invent a game 
     sleep: vi.fn(), shutdown: vi.fn(), logError });
   expect(request.mock.calls.some(call => call[0].startsWith('/api/games/'))).toBe(false);
   expect(logError).toHaveBeenCalledWith('Could not claim engine request:', expect.any(Error));
+});
+
+it('a rejected semantic continuation stops a search without HTTP policy in the search owner', async () => {
+  vi.useFakeTimers();
+  const engine = new Engine();
+  const searches = createEngineSearch(engine);
+  const result = searches.evaluate(job, 'engine_defense', async () => { throw new Error('unavailable'); })
+    .catch((error: Error) => error);
+  await vi.advanceTimersByTimeAsync(75);
+  expect(await result).toMatchObject({ diagnostics: { outcome: 'preempted' } });
+  expect(engine.commands.filter(command => command === 'stop')).toHaveLength(1);
+});
+
+it('engine search source has no application URL or family adapter dependency', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../../scripts/engine-search.mjs', import.meta.url), 'utf8');
+  expect(source).not.toMatch(/\/api\/|engine-job-families|foreground_active|search_allowed|study_only_mode/);
 });

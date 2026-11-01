@@ -4,38 +4,9 @@ export function engineSearchWasPreempted(error) {
   return error.message === "preempted" || error.diagnostics?.outcome === "preempted";
 }
 
-export function engineControlPath(job, kind) {
-  return kind === "engine_defense"
-    ? `/api/defensive-threats/analysis/${encodeURIComponent(job.id)}/control?lease_id=${encodeURIComponent(job.lease_id)}`
-    : "/api/system/foreground-active";
-}
-
-export async function engineSearchAllowed(job, kind, request) {
-  try {
-    const control = await request(engineControlPath(job, kind), { signal: AbortSignal.timeout(75), requestAttempts:1 });
-    return kind === "engine_defense"
-      ? control.search_allowed === true && control.foreground_active === false
-      : control.active === false && control.available !== false && control.study_only_mode !== true;
-  } catch {
-    // A control outage cannot authorize continuing a background search.
-    return false;
-  }
-}
-
-export async function admitEngineJob(job, kind, request) {
-  if (await engineSearchAllowed(job, kind, request)) return true;
-  const releasePath = kind === "engine_defense"
-    ? `/api/defensive-threats/analysis/${encodeURIComponent(job.id)}/release`
-    : `/api/games/analysis/position/${encodeURIComponent(job.id)}/release`;
-  await request(releasePath, {
-    method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
-  });
-  return false;
-}
-
-export function createEngineSearch(engine, request) {
+export function createEngineSearch(engine) {
   let fatalEngineError = false;
-  function evaluate(job, kind = "engine_defense") {
+  function evaluate(job, kind, shouldContinue) {
     if (fatalEngineError) throw new Error("Stockfish is unavailable after a fatal engine error");
     engineWaitingStage(kind, "execution");
     const finishDiagnostic = startEngineAttempt(kind);
@@ -74,7 +45,8 @@ export function createEngineSearch(engine, request) {
         if (finished || preempted || controlPollPending) return;
         controlPollPending = true;
         try {
-          const allowed = await engineSearchAllowed(job, kind, request);
+          let allowed = false;
+          try { allowed = await shouldContinue(); } catch { /* A control outage stops work. */ }
           if (!finished && !preempted && !allowed) stopSearch("preempted");
         } finally {
           controlPollPending = false;

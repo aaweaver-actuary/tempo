@@ -1,4 +1,4 @@
-import { admitEngineJob, engineSearchWasPreempted } from "./engine-search.mjs";
+import { engineSearchWasPreempted } from "./engine-search.mjs";
 import { recoverNextEngineJob } from "./engine-job-recovery.mjs";
 import { createEngineJobFamilies } from "./engine-job-families.mjs";
 import { engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
@@ -41,11 +41,11 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
       job = undefined;
       return;
     }
-    if (!await admitEngineJob(job, family.workClass, request)) {
+    if (!await family.admit(job)) {
       job = undefined;
       return;
     }
-    const { report, diagnostics } = await searches.evaluate(job, family.workClass);
+    const { report, diagnostics } = await searches.evaluate(job, family.workClass, () => family.allowed(job));
     await family.complete(job, report, diagnostics);
   } catch (error) {
     if (error.operationId) {
