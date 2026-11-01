@@ -14,10 +14,23 @@ Execution is deliberately not exported through this surface. The existing
 re-exporting its coordinator would hide those edges. The newer
 `product_composition/game_sync.py` is a root implementation, never an inward
 domain dependency. #501 alone selects concrete worker implementations and public
-owner capabilities. The existing application remains unchanged; no placeholder
-is presented as an operational sync capability.
+owner capabilities. No placeholder is presented as an operational sync
+capability.
 
 `backend/tests/test_public_surface_game_sync.py` proves exact value identity,
 request/job validation, explicit exports and cold import with concrete worker/
 Study/provider/root modules blocked. The default continuous CLI remains blocked
 pending the separately qualified receiving/refresh and packaged-profile boundary.
+
+The adjacent `http.py` owns the two Games sync HTTP routes. It accepts typed
+enqueue and status capabilities; importing the router does not assemble the
+legacy coordinator or providers. Application composition retains the existing
+job serializer, PostgreSQL dispatch and SQLite coordinator/storage choices.
+
+```mermaid
+flowchart LR
+  Main["Application root"] --> HTTP["Games sync HTTP router"]
+  Main --> Binding["Games sync HTTP composition"]
+  HTTP --> Binding
+  Binding --> Runtime["Supplied dispatch / coordinator / storage"]
+```
