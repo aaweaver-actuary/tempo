@@ -300,7 +300,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         node = game
         for uci in [*target['prefix'], target['wrong']]:
             node = node.add_variation(chess.Move.from_uci(uci))
-        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp()) + 61
+        inputs['now'] = datetime.now(timezone.utc).timestamp()
         now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
         inputs['configuration']['revision'] += 1
         inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
@@ -350,7 +350,14 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
                 break
         else:
             raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
-        inputs['now'] += 31
+        # Preserve the original delivery's real retry deadline. Advancing the
+        # collection simulation would freeze a future determination that the
+        # genuine browser issuance cannot discharge.
+        retry_deadline = time.monotonic() + 45
+        while datetime.now(timezone.utc).timestamp() < held['next_attempt_at']:
+            assert time.monotonic() < retry_deadline, 'held_original_retry_deadline_not_reached'
+            time.sleep(.1)
+        inputs['now'] = datetime.now(timezone.utc).timestamp()
         (directory/'provider.json').write_text(json.dumps(inputs))
         retry = entry('foreground-worker', 'retry-local-feedback')
         current = entry('api', 'feedback-state', operation)
@@ -360,7 +367,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         final_browser = wait_browser('complete')
         assert held_browser.wait(timeout=5)==0
         settled = entry('api','feedback-state',operation)
-        assert settled['command']==original and settled['receipt']['status']=='settled'
+        assert settled['command']==original and settled['receipt']['status']=='settled', settled
         assert settled['receipt']['progress']['scheduling_review_id'] is not None
         assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
         entry('foreground-worker','retry-local-feedback')
@@ -438,7 +445,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
         assert configured['selected_repertoire_count'] == 10
         configuration_windows.append(dict(revision=inputs['configuration']['revision'],
             window=inputs['configuration']['window'], controlled_source_admission=True))
-    inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp()) + 61
+    inputs['now'] = datetime.now(timezone.utc).timestamp()
     configure_window()
     settings = api('GET', '/api/settings')
     assert settings['status'] == 200
@@ -508,7 +515,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert time.monotonic() < quiet_deadline, 'recovery_genuine_visibility_did_not_release_foreground'
                         time.sleep(.05)
                     gap_id = 'g' + uuid.uuid4().hex[:7]
-                    inputs['now'] += 61
+                    inputs['now'] = datetime.now(timezone.utc).timestamp()
                     inputs['lichess'].append(dict(id=gap_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn='[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 1-0\n'))
                     configure_window()
@@ -550,7 +557,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     game_node = game
                     for uci in [*target['prefix'], target['wrong']]:
                         game_node = game_node.add_variation(chess.Move.from_uci(uci))
-                    inputs['now'] += 61
+                    inputs['now'] = datetime.now(timezone.utc).timestamp()
                     inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn=str(game)))
                     configure_window()
