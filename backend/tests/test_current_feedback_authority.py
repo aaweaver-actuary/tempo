@@ -119,3 +119,49 @@ def test_exact_target_requires_complete_equivalent_route_and_revision(fault):
         expected = 'card_revision_changed'
     with pytest.raises(CurrentDecisionUnavailable, match=expected):
         decisions._mapping_for_target(current, actual, graphs)
+
+
+@pytest.mark.parametrize('change', ['target_revision', 'integrity_card_block'])
+def test_native_current_qualified_target_changes_hold_original_delivery(native_handoff, monkeypatch, change):
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+
+    case = native_handoff
+    prepared = provider_priority.prepare_determined_feedback(workspace=case.workspace,
+        connections=case.connections, clock=case.clock, admitted=lambda: True, capture=case.capture)
+    assert prepared.provider_feedback is not None
+    target = prepared.provider_feedback.qualification.selection.decision
+    reached = []
+    original = CurrentQualifiedOwnerDecisions._current_prepared_qualified
+    def observe(self, *args, **kwargs):
+        reached.append('entered')
+        try:
+            return original(self, *args, **kwargs)
+        except CurrentDecisionUnavailable as error:
+            reached.append(error.reason)
+            raise
+    monkeypatch.setattr(CurrentQualifiedOwnerDecisions, '_current_prepared_qualified', observe)
+    with case.case.transaction() as database:
+        if change == 'target_revision':
+            database.execute_native('UPDATE cards SET revision=revision+1 WHERE id=%s', (target.presentation_id,))
+        else:
+            issue_id = 'target-block-' + case.original.operation_id
+            database.execute_native("""INSERT INTO repertoire_integrity_issues
+                (id,repertoire_id,kind,signature,created_at,updated_at)
+                VALUES(%s,%s,'invalid_source','target-block','2026-01-01','2026-01-01')""",
+                (issue_id, target.repertoire_id))
+            database.execute_native("""INSERT INTO repertoire_integrity_card_blocks
+                (repertoire_id,card_id,issue_id,scan_generation,published_at)
+                VALUES(%s,%s,%s,'target-block','2026-01-01')""",
+                (target.repertoire_id, target.presentation_id, issue_id))
+    before = case.case.readback()
+    with case.case.transaction() as database:
+        result = provider_priority.apply_prepared_determined_feedback(database, prepared,
+            clock=case.clock, current_runtime_id=case.runtime_id)
+        assert not result.progressed and result.pending
+        assert PostgresGameFeedbackStore(database).get(case.original.command.key) is None
+    assert case.case.readback() == before
+    actual = case.store.delivery(case.original.operation_id)
+    assert actual.command == case.original.command and actual.state == 'pending'
+    assert actual.operation_id == case.original.operation_id and actual.receipt is None
+    assert actual.attempts == 0
+    print('TARGET_FENCE_OBSERVATION', change, reached, result.held_reason)
