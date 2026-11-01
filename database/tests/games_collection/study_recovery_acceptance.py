@@ -210,7 +210,7 @@ def _marker(path, value):
     temporary.replace(path)
 
 
-def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, root, web_url,
+def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, foreground, root, web_url,
                               repertoire, target):
     """Actual missing owner certificate, stopped producer, save and same-key recovery.
 
@@ -365,7 +365,7 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
         entry('foreground-worker','retry-local-feedback')
         assert entry('api','feedback-state',operation)['receipt']==settled['receipt']
-        crash = json.loads((directory/'essential-crashed.json').read_text())
+        crash = json.loads(docker('exec', foreground, 'cat', '/tmp/tempo-essential-crashed.json').stdout)
         with case.transaction() as database:
             events = [dict(row) for row in database.execute_native("SELECT event,phase,generation FROM background_task_events WHERE task_id=%s AND generation=%s ORDER BY id", (crash['task_id'],crash['generation'])).fetchall()]
             assert any(item['event']=='slice_complete' for item in events) and any(item['event']=='published' for item in events)
@@ -409,10 +409,18 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     assert expected['container_id'] == collector['Id'] and expected['image'] == collector['Image']
     assert identity['hostname'] == expected['hostname'] and identity['boot_nonce'] == expected['boot_nonce']
     report['recovery_producer_identity'] = expected
+    scheduler_logs = docker('logs', containers['foreground-worker']['id'])
+    scheduler_evidence = [line for line in (scheduler_logs.stdout+'\n'+scheduler_logs.stderr).splitlines()
+                          if 'beat: Starting' in line]
+    assert scheduler_evidence, 'recovery_actual_essential_scheduler_missing'
+    report['essential_scheduler'] = dict(runtime='supported embedded Celery beat in existing foreground worker',
+        schedule='/tmp/qualification-celerybeat-schedule', startup=scheduler_evidence[-1],
+        memory_limit_mib=384, additional_service=False)
     report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
         for role, resource in containers.items()}
     held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
         api=api, docker=docker, collector=collector['Id'], background=containers['background-worker']['id'],
+        foreground=containers['foreground-worker']['id'],
         root=root, web_url=web_url, repertoire=original_repertoire, target=custom_target)
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']

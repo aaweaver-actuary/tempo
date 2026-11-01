@@ -62,7 +62,7 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
         def observed_queue_slice(task):
             more = original_queue_slice(task)
             fault = Path('/qualification/essential-crash-after-slice')
-            marker = Path('/qualification/essential-crashed.json')
+            marker = Path('/tmp/tempo-essential-crashed.json')
             if fault.exists() and more:
                 try:
                     with marker.open('x') as output:
@@ -81,7 +81,8 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
     from app.celery_app import celery_app
     foreground = sys.argv[1] == 'recovery-foreground'
     celery_app.worker_main(['worker', '--queues=' + ('foreground' if foreground else 'background'),
-        '--concurrency=' + ('2' if foreground else '1'), '--prefetch-multiplier=1', '--loglevel=INFO'])
+        '--concurrency=' + ('2' if foreground else '1'), '--prefetch-multiplier=1', '--loglevel=INFO',
+        *(['--beat', '--schedule=/tmp/qualification-celerybeat-schedule'] if foreground else [])])
     raise SystemExit(0)
 
 inputs = json.loads(Path('/qualification/provider.json').read_text())

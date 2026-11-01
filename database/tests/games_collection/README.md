@@ -117,3 +117,14 @@ same original delivery must reach real target issuance and clean browser
 settlement. Each pause/process/resource belongs to the verified disposable
 assembly and is covered by its existing teardown. The separate unchanged
 thirty-transition loop retains the representative latency targets and raw samples.
+
+The recovery foreground worker uses Celery's supported embedded beat with its
+schedule file under `/tmp`, retaining two prefork command workers and the same
+384MiB container cap. This runs the actual checked-in one-second essential
+periodic fallback after a consumed coalesced wake loses its child, rather than
+assuming a retry hint can replace the scheduler. Startup is asserted from the
+actual beat log; process/cgroup memory and OOM evidence cover the added process.
+The background worker has no embedded beat. No extra service or budget is added.
+The one-shot crash marker also lives in that worker's existing `/tmp` mount;
+the host reads it through bounded `docker exec`. The provider/source fixture
+mount stays read-only.
