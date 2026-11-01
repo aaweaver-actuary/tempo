@@ -162,6 +162,8 @@ class Coordinator:
                 snapshot_integrity_error = True
                 unavailable_snapshots.add(repertoire_id)
                 continue
+            finally:
+                del supplied
             snapshots.append(snapshot)
         sources, captures, deliveries = [], [], []
         boundary = any(rejection.reason not in _SAFE_REJECTIONS[spec.provider]
