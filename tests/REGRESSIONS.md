@@ -6420,3 +6420,9 @@ These checks establish the candidate relation's MVCC freshness point, not global
 phantom locking. Existing selected-target and atomic Study effect fences remain
 mandatory. Adapter timing and this named proof do not establish the assembled
 thirty-transition recovery acceptance or genuine installed observations.
+
+
+### Study reliability readiness contract (#658)
+
+- `backend/tests/test_product_contracts.py`: `test_pending_feedback_is_not_issuance_blocking_by_itself`, `test_preparation_contract_rejects_invalid_shared_receipts`, `test_legacy_preparation_receipt_remains_recoverable`, `test_held_retry_deadline_does_not_imply_ready`, `test_uncertain_ack_keeps_original_identity_and_controls_keep_precedence`.
+- `tests/unit/product-contracts.test.ts`: `pending_feedback_is_not_issuance_blocking_by_itself`, `preparation_contract_rejects_invalid_shared_receipts`; shared valid/invalid wire fixtures at `contracts/product-v02/fixtures/study-reliability/preparation.json`.

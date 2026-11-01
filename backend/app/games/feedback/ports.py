@@ -131,6 +131,45 @@ class Delivery(Value):
         return self.control if self.control is not None else (self.encounter if self.encounter is not None else self.lapse)
 
 
+
+DeliveryReadiness = Literal["terminal", "control", "acknowledgment_uncertain", "ineligible",
+    "held", "unavailable", "unqualified", "ready"]
+
+
+def delivery_readiness(delivery: Delivery) -> DeliveryReadiness:
+    """Pure scheduling hint, never authority for a learning write.
+
+    Retry eligibility and retained priority sidecars do not grant readiness.
+    Final owner application must revalidate source, scope, target and controls.
+    """
+    if delivery.state != "pending":
+        return "terminal"
+    if delivery.control is not None:
+        return "control"
+    if delivery.error == "owner_acknowledgment_uncertain":
+        return "acknowledgment_uncertain"
+    if delivery.qualification_status == "ineligible":
+        return "ineligible"
+    if delivery.qualification_status == "held":
+        return "held"
+    if delivery.error is not None:
+        return "unavailable"
+    witness = delivery.qualification
+    if (delivery.qualification_status != "ready" or witness is None
+            or not witness.matches(delivery.command)):
+        return "unqualified"
+    return "ready"
+
+
+def delivery_blocks_issuance(delivery: Delivery) -> bool:
+    """Only current ready urgency/control enters bounded owner preparation.
+
+    Controls retain precedence; the owner scopes their fence to the affected
+    target. This hint must not itself invalidate an unrelated issued attempt.
+    """
+    return delivery_readiness(delivery) in {"ready", "control"}
+
+
 def stable_id(*parts: object) -> str:
     return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 

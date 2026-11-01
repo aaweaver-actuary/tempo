@@ -43,7 +43,8 @@ flowchart LR
   Refresh --> Queue[Canonical Study queue]
   Browser[Ordinary Study client] -->|explicit prepare-next command| Next[Bounded local preparation outside writer]
   Evidence --> Next
-  Next --> Receipt[Existing operation identity replay and attempt-token fence]
+  Next --> Classification[Pending and explicit issuance-blocking decision]
+  Classification --> Receipt[Existing operation identity replay and attempt-token fence]
   Receipt --> Apply[One prepared owner unit in borrowed command writer]
   Apply -->|Study-owned apply and promotion| Queue
   Queue --> Head[Existing head writer rechecks local pending work]
@@ -86,8 +87,15 @@ apply seam; the mutating optional-worker advance function is never a gateway
 preparer. Genuine head issuance only rechecks pending/ready facts and stamps
 actual attempt authority.
 
-A new ordinary prepared successor is declined while actionable local work needs
-preparation. The user's real review commits and replays normally. The next queue
+A new ordinary prepared successor is declined only while owner-observed ready
+urgency explicitly needs preparation. `NextCardPreparation.pending` reports durable
+work; `blocks_issuance` separately reports the owner decision. Known prerequisite
+holds and optional failures report `pending=True, blocks_issuance=False`; their unsafe
+targets remain ineligible. Legacy three-field receipts decode conservatively (absent
+`blocks_issuance` follows `pending`) and retain their original bytes and operation
+identity. The browser reacquires ordinary server issuance authority after recovery.
+New responses always include an explicit boolean. A retry deadline permits a recheck,
+never readiness or write authority. The user's real review commits and replays normally. The next queue
 acquisition receives the explicit `study_feedback_preparation_pending` response,
 performs `POST /api/queue/prepare-next` through the existing foreground worker,
 then rereads before installing a new card. Ordinary queue GETs never prepare an

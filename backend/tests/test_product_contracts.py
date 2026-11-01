@@ -195,6 +195,8 @@ import app.contracts.product_v02.repertoire
 import app.contracts.product_v02.learning
 import app.contracts.product_v02.presentation
 import app.contracts.product_v02.analysis
+import app.study.interfaces.next_card
+import app.games.feedback.ports
 '''
     result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, env={"PYTHONPATH": ":".join(map(str, (ROOT / "backend", ROOT / "packages/game-review-contracts/src", ROOT / "contracts/game-evidence/src", ROOT / "packages/chess-core/src", ROOT / "packages/evidence-math/src", ROOT / "contracts/analysis-jobs/src")))}, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -551,3 +553,62 @@ def test_remapped_receipt_keeps_actual_application_first_service_and_current_set
     detail = fixture("game-detail")
     detail.update(game_id=value.key.game_id, provider=value.key.provider, source_revision=value.source_revision, findings=[], receipts=[payload])
     assert json.loads(GameDetail.model_validate_json(json.dumps(detail)).model_dump_json())["receipts"] == [payload]
+
+
+RELIABILITY = json.loads((FIXTURES / "study-reliability/preparation.json").read_text())
+
+
+@pytest.mark.parametrize("case", RELIABILITY["cases"], ids=lambda case: case["name"])
+def test_pending_feedback_is_not_issuance_blocking_by_itself(case):
+    from app.study.interfaces.next_card import decode_next_card_preparation, next_card_preparation_payload
+    original = json.dumps(case["payload"], sort_keys=True)
+    value = decode_next_card_preparation(case["payload"])
+    assert value.issuance_blocked is case["blocks"]
+    assert next_card_preparation_payload(value)["blocks_issuance"] is case["blocks"]
+    assert json.dumps(case["payload"], sort_keys=True) == original
+
+
+@pytest.mark.parametrize("payload", RELIABILITY["invalid"])
+def test_preparation_contract_rejects_invalid_shared_receipts(payload):
+    from app.study.interfaces.next_card import decode_next_card_preparation
+    with pytest.raises(ValueError):
+        decode_next_card_preparation(payload)
+
+
+def test_legacy_preparation_receipt_remains_recoverable():
+    from app.study.interfaces.next_card import NextCardPreparation, decode_next_card_preparation
+    original = NextCardPreparation(False, True, "original")
+    assert original.reason == "original" and original.blocks_issuance is None
+    decoded = decode_next_card_preparation(dict(progressed=False, pending=True, reason="original"))
+    assert decoded == original and decoded.issuance_blocked
+
+
+@pytest.mark.parametrize("status,error,expected", [
+    ("ready", None, "ready"), ("held", None, "held"),
+    ("held", "preparation_failed", "held"),
+    ("ready", "preparation_failed", "unavailable"),
+    ("ready", "owner_acknowledgment_uncertain", "acknowledgment_uncertain"),
+    ("ineligible", None, "ineligible"), ("pending", None, "unqualified")])
+def test_held_retry_deadline_does_not_imply_ready(status, error, expected):
+    from app.games.feedback.ports import delivery_for, delivery_readiness, delivery_blocks_issuance
+    command = GameEncounter.model_validate(encounter_fixture("unintroduced-missed"))
+    witness = FirstDepartureWitness.model_validate_json(json.dumps(json.loads((FIRST_DEPARTURE / "own-introduced.json").read_text())["payload"]))
+    original = delivery_for("synthetic-source", command)
+    delivery = original.model_copy(update=dict(qualification_status=status, qualification=witness,
+        qualification_reason="current_integrity_required" if status in {"held", "ineligible"} else None,
+        error=error, determined_at=witness.determined_at, next_attempt_at=0))
+    assert delivery_readiness(delivery) == expected
+    assert delivery_blocks_issuance(delivery) is (expected == "ready")
+    assert delivery.command.model_dump_json() == original.command.model_dump_json()
+    assert delivery.operation_id == original.operation_id
+    assert delivery.determined_at == witness.determined_at
+    assert delivery_readiness(delivery.model_copy(update={"state": "acknowledged"})) == "terminal"
+
+
+def test_uncertain_ack_keeps_original_identity_and_controls_keep_precedence():
+    from app.games.feedback.ports import delivery_for, delivery_readiness, delivery_blocks_issuance
+    command = GameEncounter.model_validate(encounter_fixture("unintroduced-missed"))
+    control = GameEffectControl(key=command.key, source_revision=2, action="hold", reason="reanalysis")
+    delivery = delivery_for("synthetic-source", control)
+    assert delivery_readiness(delivery) == "control" and delivery_blocks_issuance(delivery)
+    assert delivery.command.key.logical_id() == command.key.logical_id()

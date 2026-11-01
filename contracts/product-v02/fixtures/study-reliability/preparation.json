@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "name": "legacy_pending",
+      "payload": {
+        "progressed": false,
+        "pending": true,
+        "reason": "first_departure_preparation_unavailable"
+      },
+      "blocks": true
+    },
+    {
+      "name": "legacy_done",
+      "payload": {
+        "progressed": true,
+        "pending": false,
+        "reason": null
+      },
+      "blocks": false
+    },
+    {
+      "name": "held_graph",
+      "payload": {
+        "progressed": false,
+        "pending": true,
+        "reason": "graph_not_ready",
+        "blocks_issuance": false
+      },
+      "blocks": false
+    },
+    {
+      "name": "held_integrity",
+      "payload": {
+        "progressed": false,
+        "pending": true,
+        "reason": "integrity_not_current",
+        "blocks_issuance": false
+      },
+      "blocks": false
+    },
+    {
+      "name": "ready_urgency",
+      "payload": {
+        "progressed": false,
+        "pending": true,
+        "reason": "ready_feedback",
+        "blocks_issuance": true
+      },
+      "blocks": true
+    },
+    {
+      "name": "uncertain_ack",
+      "payload": {
+        "progressed": false,
+        "pending": true,
+        "reason": "owner_acknowledgment_uncertain",
+        "blocks_issuance": false
+      },
+      "blocks": false
+    },
+    {
+      "name": "inactive_mode",
+      "payload": {
+        "progressed": false,
+        "pending": false,
+        "reason": "managed_feedback_mode_not_active",
+        "blocks_issuance": false
+      },
+      "blocks": false
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "progressed": 0,
+      "pending": true,
+      "reason": null
+    },
+    {
+      "progressed": false,
+      "pending": "yes",
+      "reason": null
+    },
+    {
+      "progressed": false,
+      "pending": true,
+      "reason": null,
+      "blocks_issuance": null
+    },
+    {
+      "progressed": false,
+      "pending": true,
+      "reason": 2
+    },
+    {
+      "progressed": false,
+      "pending": true
+    }
+  ]
+}

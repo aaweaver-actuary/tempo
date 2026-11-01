@@ -103,7 +103,7 @@ Explicit full manual pause, maintenance, source uncertainty, burial or current i
 
 ### G04 — Optional producers fail independently
 
-Provider outages, unavailable engines, and failed background jobs must not stop, restart, or block normal Study or tactics. Show pending/failed work and allow retry. Background scheduling controls when jobs run; it does not independently set learning due dates. Bound optional computation and database work so that it does not monopolize Study resources.
+Provider outages, unavailable engines, and failed background jobs must not stop, restart, or block normal Study or tactics. Show pending/failed work and allow retry. Durable pending feedback and a current issuance blocker are distinct: a known prerequisite hold or unavailable optional preparation does not veto unrelated eligible Study. Ready urgency still receives G03 service; the unsafe target remains held, with its original identity and service clock preserved. Background scheduling controls when jobs run; it does not independently set learning due dates. Bound optional computation and database work so that it does not monopolize Study resources.
 
 ## 4. Repertoire identity and integrity
 
