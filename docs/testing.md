@@ -128,7 +128,7 @@ mapping or evidence that native/cross-owner proof is dispensable.
 
 | Source | Owner proof and missing executable bridge |
 | --- | --- |
-| `backend/app/services/queue_presentation.py` | `test_queue_refresh_read_database_split.py` has callback/native-shape tests; actual PostgreSQL proof is `test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts`. Its owned PostgreSQL fixture and counted case are not in FAST/STUDY; even the registered priority qualifier's `REQUIRED` list does not select this case. |
+| `backend/app/services/queue_presentation.py` | `test_queue_refresh_read_database_split.py` has callback/native-shape tests; actual PostgreSQL proof is `test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts`. Its exact case is registered in the `study-game-priority` owner qualifier, which requires that case to pass and emits candidate/base, declared input hashes and runtime scope. This source registration has not yet been executed as native evidence; FAST/STUDY still does not run it. |
 | `backend/app/study/interfaces/game_priority.py` | Public cross-owner contract: `test_study_priority_interface.py`, the boundary case in `test_product_contracts.py`, and registered `study-game-priority` native qualification. FAST/STUDY does not invoke that suite, provision its owner fixtures/images/lock, or bind its expected/executed cases and runtime to the CI plan/report. |
 | `backend/app/product_composition/game_review.py` | `test_product_game_review_composition.py` and `test_product_game_review_receipts.py` need the actual `test_product_game_review_packaged_reader.py` proof. That test requires an already-owned disposable API/foreground-worker/PostgreSQL stack, budget token, packaged source hashes and reader/writer profiles; it creates none. Its schema-52 fixture expectation also needs reconciliation with newer schema metadata. Generic backend pytest is not this fixture bridge. |
 
@@ -136,9 +136,7 @@ The first two native owners use `test_product_game_lapse_postgres.py`'s capped,
 labelled PostgreSQL 18.6 fixture. Discover the priority suite with
 `node tools/component-build/test-lane.mjs --suite study-game-priority --list`;
 execute its existing qualifier only with its declared prerequisites. Listing or
-collecting is not execution. A future smaller-tier bridge must capture nonzero
-expected/executed identities, reject missing/skipped/failed evidence, and retain
-current-PR readiness/runtime/head/base rules. Do not put native cases in generic
+collecting is not execution. The priority qualifier binds its selected native case to the candidate, base and declared input bytes and rejects a missing, skipped or failed case. Its PostgreSQL execution remains to be qualified; a future smaller-tier bridge must retain current-PR readiness/runtime/head/base rules and bind that actual result to the plan. Do not put native cases in generic
 FAST backend selection without their fixture.
 
 The existing prefix-comparison dialog selection remains frontend FAST with root
