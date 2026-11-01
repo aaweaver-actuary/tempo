@@ -77,14 +77,15 @@ def test_registered_daily_queue_handler_preserves_task_payload(monkeypatch):
 def test_postgres_main_cold_lifespan_excludes_legacy_sync_and_providers():
     code = '''
 import asyncio, importlib.abc, os, socket, subprocess, sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 class Guard(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname in {'app.services.game_sync_coordinator', 'app.services.game_sync',
                         'app.games.providers.lichess', 'app.games.providers.chesscom',
                         'app.product_composition.feedback_commands',
                         'app.product_composition.game_history_runtime',
-                        'app.product_composition.game_sync'}:
+                        'app.product_composition.game_sync',
+                        'app.services.repertoire_coverage'}:
             raise AssertionError('legacy import: ' + fullname)
 def forbidden(*args, **kwargs): raise AssertionError('network or process startup')
 sys.meta_path.insert(0, Guard())
@@ -105,10 +106,21 @@ def policy():
     try: yield
     finally: calls.append('policy-exit')
 study_priority.policy_publisher = policy
+from app import queue_commands
+from app.services import queue_next_card
+queue_commands.current_study_day = lambda db: '2026-01-01'
+main.read_connection = lambda: nullcontext(object())
+main.queue_projection_storage.queue_projection = lambda *args: None
+main.queue_projection_storage.queue_diagnostics = lambda *args: []
+main.queue_projection_storage.queue_rows = lambda *args, **kwargs: []
+queue_next_card.pending_next_card_preparation = lambda *args: False
 async def run():
-    async with main.lifespan(main.app): calls.append('serving')
+    async with main.lifespan(main.app):
+        result = main.queue_today()
+        assert result['local_date'] == '2026-01-01' and result['cards'] == [] and result['count'] == 0
+        calls.append('serving')
 asyncio.run(run())
-assert {'/api/game-evidence/product/feedback', '/api/product/game-history/preview'} <= {route.path for route in main.app.routes}
+assert {'/api/game-evidence/product/feedback', '/api/product/game-history/preview', '/api/repertoires/{identifier}/coverage'} <= {route.path for route in main.app.routes}
 assert calls[0] == 'initialize'
 assert calls[1][0:2] == ('dispatch','queue.ensure_current') and calls[1][2]['queue_date'] and calls[1][3] is None
 assert calls[2:] == ['policy-enter','serving','policy-exit']
