@@ -50,20 +50,27 @@ def create_app(configuration: Configuration):
     registry = register_handlers()
     database = Database(configuration)
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
+    maintenance_status = {"failure": None}
 
     @asynccontextmanager
     async def lifespan(app):
+        maintenance_status["failure"] = None
         stopping = asyncio.Event()
         activity.start()
 
         async def maintain():
-            while not stopping.is_set():
-                with database.scope(), gateway.registry_scope(registry):
-                    await asyncio.to_thread(safe_run_once)
-                try:
-                    await asyncio.wait_for(stopping.wait(), timeout=0.1)
-                except asyncio.TimeoutError:
-                    pass
+            try:
+                while not stopping.is_set():
+                    with database.scope(), gateway.registry_scope(registry):
+                        await asyncio.to_thread(safe_run_once)
+                    try:
+                        await asyncio.wait_for(stopping.wait(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        pass
+            except Exception as error:
+                # Record only the error class; retain the original exception for shutdown.
+                maintenance_status["failure"] = type(error).__name__
+                raise
 
         task = asyncio.create_task(maintain()) if configuration.maintenance else None
         try:
@@ -83,6 +90,7 @@ def create_app(configuration: Configuration):
     app.state.command_registry = registry
     app.state.database = database
     app.state.host_activity = activity
+    app.state.maintenance_status = maintenance_status
 
     @asynccontextmanager
     async def request_activity():
@@ -204,8 +212,19 @@ def create_app(configuration: Configuration):
             return JSONResponse(status_code=503, content={"available": False})
         return {"available": True, "expires_in_ms": expires_in_ms}
 
+    def maintenance_unavailable():
+        failure = maintenance_status["failure"]
+        if failure is None:
+            return None
+        return JSONResponse(status_code=503, content={
+            "status": "unavailable", "domain": "maintenance",
+            "reason": "essential_maintenance_failed", "error_class": failure,
+        })
+
     @app.get("/health/ready")
     def ready():
+        if failure := maintenance_unavailable():
+            return failure
         try:
             for read_only in (True, False):
                 with connection(read_only=read_only) as db:
@@ -228,6 +247,8 @@ def create_app(configuration: Configuration):
             return readiness_unavailable("database", "connection_unavailable")
         except psycopg.Error:
             return readiness_unavailable("database", "query_failed")
+        if failure := maintenance_unavailable():
+            return failure
         return {"status": "ready", "workspace_id": configuration.workspace_id}
 
     @app.get("/api/operations/{operation_id}")
