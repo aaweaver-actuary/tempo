@@ -6596,3 +6596,7 @@ was dropped because the strict browser codec omitted the new backend field.
 ### Recovery assembly uses the production PostgreSQL connection profile (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py` uses the pinned image's production-default connection limit for its seven-role assembly and records actual maximum/reserved settings. The smaller native-owner fixture keeps16. The f21b run exposed the artificial assembly cap before source enqueue: its real collector failed a new connection with ordinary slots exhausted. Memory/PID/shared-buffer limits, pool defaults and deadlines remain unchanged; no connection leak is inferred from that observation.
+
+### Native legacy settlement fixture uses the authoritative Study clock (#668)
+
+`backend/tests/test_product_feedback_integration.py::test_normal_study_review_settles_obligation` and `::test_producer_absence_does_not_block_study` retain their fixed October26 policy clock at the current `queue_commands.datetime.now` seam as well as the legacy date seam. The selected4d native run accepted the legacy effect but correctly refused issuance when its old fixture patched only `date.today`, leaving the current Study-day clock at November1. No production policy, original command, issuance/settlement assertion or database deadline changes.
