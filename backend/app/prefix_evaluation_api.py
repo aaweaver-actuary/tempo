@@ -25,14 +25,7 @@ MAX_SOURCE_BYTES = 4 * 1024 * 1024
 COMPUTATION_SECONDS = 10
 
 
-class PrefixEvaluationForegroundDeferred(HTTPException):
-    """Keep the public retry response distinct from an execution deadline."""
-
-    def __init__(self):
-        super().__init__(503, {'code': 'evaluation_busy',
-                              'message': 'Study work is active. Retry the diagnostic when study is idle.'},
-                         headers={'Retry-After': '1'})
-
+from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
 
 def diagnostic_error(code, message, status=409):
     return HTTPException(status, {'code': code, 'message': message},
