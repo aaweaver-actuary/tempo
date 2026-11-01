@@ -57,13 +57,12 @@ def register_command(
         _preparers[name] = prepare
 
 
-_Transaction = TypeVar("_Transaction")
 _Original = TypeVar("_Original")
 _Prepared = TypeVar("_Prepared")
 _Result = TypeVar("_Result")
 
 
-def register_descriptor(descriptor: CommandDescriptor[_Transaction, _Original, _Prepared, _Result]) -> None:
+def register_descriptor(descriptor: CommandDescriptor[postgres_store.PostgresConnection, _Original, _Prepared, _Result]) -> None:
     """Register a correlated descriptor in the same default registry as legacy commands."""
     _registry.register(descriptor)
 

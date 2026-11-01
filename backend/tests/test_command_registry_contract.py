@@ -68,16 +68,21 @@ def test_default_legacy_registration_and_executor_maps_are_registry_owned(monkey
 
 def test_descriptor_registration_shares_legacy_execution_maps():
     from app import command_gateway as gateway
-    descriptor: CommandDescriptor[list, int, str, int] = CommandDescriptor(
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    observed = []
+    def apply(tx: PostgresConnection, value: str) -> int:
+        observed.append((tx, value))
+        return len(value)
+    descriptor: CommandDescriptor[PostgresConnection, int, str, int] = CommandDescriptor(
         'test.typed.contract', lambda payload: int(payload['value']),
-        lambda value: str(value + 1), lambda tx, value: tx.append(value) or len(value))
+        lambda value: str(value + 1), apply)
     gateway.register_descriptor(descriptor)
     try:
         assert gateway._handlers is gateway._registry.handlers
         prepared = gateway._preparers[descriptor.name]({'value': '12'})
-        transaction = []
+        transaction = PostgresConnection.__new__(PostgresConnection)
         assert gateway._handlers[descriptor.name](transaction, prepared) == 2
-        assert transaction == ['13']
+        assert observed == [(transaction, '13')]
         with pytest.raises(ValueError, match='Duplicate command: test.typed.contract'):
             gateway.register_command(descriptor.name, lambda *_: None)
     finally:
