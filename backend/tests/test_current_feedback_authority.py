@@ -94,6 +94,7 @@ def test_exact_target_requires_complete_equivalent_route_and_revision(fault):
     assert mappings
     actual = dict(target['card'])
     graphs = [{'line_id': item.route_id} for item in mappings]
+    assert decisions._mapping_for_target(current, actual, graphs) == selected
     if fault == 'ambiguous':
         altered = mappings[0].model_copy(update={'presentation_id': 'other-card'})
         decisions._qualified_snapshots = (publication.snapshot.model_copy(update={
