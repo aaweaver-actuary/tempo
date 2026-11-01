@@ -586,7 +586,20 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     # read AFTER the browser clock endpoint, so this inspection
                     # cannot make an unissued board pass the measured boundary.
                     assert receipt is not None
-                    assert json.loads(receipt['result_json']) == measured['receipt']
+                    operation = database.execute_native("""SELECT command_name,state,response_json,payload_json
+                        FROM operation_receipts WHERE operation_id=%s""", (measured['requestId'],)).fetchone()
+                    assert operation and operation['command_name']=='cards.review' and operation['state']=='complete'
+                    assert json.loads(operation['response_json']) == measured['receipt']
+                    request = json.loads(operation['payload_json'])
+                    assert request['card_id']==measured['cardId']
+                    assert request['review']['attempt_id']==measured['attemptId']
+                    assert request['review']['queue_entry_id']==measured['entryId']
+                    # The compatibility adapter appends only this owner result
+                    # after Learning stores its attempt receipt. The complete
+                    # command receipt above must retain the exact public JSON.
+                    core_receipt = dict(measured['receipt'])
+                    core_receipt.pop('recombination', None)
+                    assert json.loads(receipt['result_json']) == core_receipt
                     assert receipt['card_id'] == measured['cardId'] and receipt['queue_entry_id'] == measured['entryId']
                     assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE id=%s AND card_id=%s AND source_kind='study'",
                         (receipt['review_id'], measured['cardId'])).fetchone()[0] == 1
