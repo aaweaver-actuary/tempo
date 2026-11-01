@@ -370,11 +370,17 @@ def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, do
         assert held_browser.wait(timeout=5)==0
         settled = entry('api','feedback-state',operation)
         receipt = settled.get('receipt') or {}
-        progress = receipt.get('progress') or {}
+        progress = receipt.get('progress')
+        issuance = progress.get('first_issued') if isinstance(progress, dict) else None
         report['held_settlement_observation'] = dict(
             operation_id=operation, command_matches=settled['command'] == original,
-            receipt_status=receipt.get('status'), determined_at=progress.get('determined_at'),
-            first_issued=progress.get('first_issued'), retry_deadline=held['next_attempt_at'])
+            receipt_status=receipt.get('status'),
+            progress_available=isinstance(progress, dict),
+            determined_at=progress.get('determined_at') if isinstance(progress, dict) else None,
+            first_issuance_state=('unavailable' if not isinstance(progress, dict) else
+                'not_recorded' if issuance is None else 'observed'),
+            first_issued_at=issuance.get('issued_at') if isinstance(issuance, dict) else None,
+            retry_deadline=held['next_attempt_at'])
         assert settled['command']==original and settled['receipt']['status']=='settled'
         assert settled['receipt']['progress']['scheduling_review_id'] is not None
         assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
