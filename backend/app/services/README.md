@@ -238,3 +238,38 @@ the new essential retry case executes the actual new task. Advisory broker
 failure remains after the committed receipt and cannot turn a saved review into
 failure. No schema, schedule writer, provider activation or general Study-only
 permission changed.
+
+## Optional Games bootstrap boundary (#667)
+
+The retained HTTP/worker registration keeps every supported route, semantic command
+and old task kind. Provider acquisition and the game analysis worker load only when
+those explicit operations execute. `game_analysis_runtime.py` is a finite facade
+for the existing worker functions and evidence version; missing optional analysis
+returns HTTP 503 on that feature. Other runtime failures remain visible. Essential
+storage and Learning imports retain their normal fail-fast behavior.
+
+```mermaid
+flowchart LR
+  HTTP["HTTP bootstrap / core Study"] --> Facade["Inert game-analysis execution facade"]
+  Commands["Registered game analysis commands"] --> Facade
+  Facade -->|"only explicit execution"| Analysis["Optional game analysis worker"]
+  Worker["Worker bootstrap / essential queue and saved receipts"] --> Dormant["Named retained task callbacks"]
+  Dormant -->|"only selected delivery"| Positions["Legacy game position worker"]
+  Dormant -->|"only selected delivery"| Windows["Provider sync windows"]
+  Coordinator["Retained coordinator registration"] -->|"only explicit sync job"| Providers["Legacy provider acquisition"]
+```
+
+| Admission/caller | Decision and retained purpose |
+| --- | --- |
+| Current canonical Games `product_sources.PostgresCanonicalGamesStore.commit_page` | Already publishes source/page atomically without the legacy derivation producer; preserved unchanged. Source/comparison ownership and first-departure feedback remain current Games/Study contracts. |
+| Explicit old `/api/games/sync` / `game_sync_commands`, then provider-window callbacks | Retain supported explicit import and its original operation/job receipts; defer provider loading until execution. No second collector or automatic activation is introduced. |
+| `repertoire_game_refresh.refreshing_game_scope`, exclusion changes, and old sync-record publication | Retain bounded legacy derivation admission: this chain still publishes tactical findings, per-game features and next-opponent inputs. Complete replacement of those purposes is not established, so absence in `study_game_feedback` does not authorize retirement. |
+| `tasks.execute_game_position_index_slice` / `execute_game_sync_window_slice` | Retain old kind, generation, lease and payload; import only the selected producer. Unavailable work fails through existing task recovery, never a fake success or deletion. |
+| Explicit game analysis route/commands | Retain exact claims, report validation, publication and original evidence version; engine-worker code is optional until called. |
+| `learning_review_adapter`, old remediation and queue-presentation receipts | Retain accepted Study effects/replay/settlement and their existing identity. No ledger purge, schema change or new admission policy. |
+
+This slice proves selected provider/analysis/position modules may be absent or fail
+during construction while process bootstrap, ordinary queue read, actual synthetic
+Study review save and same-identity replay work. It does not claim every legacy
+module has been extracted or that source deferral alone isolates host resources.
+Native packaged PostgreSQL and deployed absence/failure proof belong to #668.
