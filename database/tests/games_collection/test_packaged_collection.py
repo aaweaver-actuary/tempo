@@ -24,6 +24,40 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'backend/tests'))
 from test_product_game_lapse_postgres import ROOT, owned_postgres, case, retained_owner_case
 
 
+def _retain_capture_markers(stderr, *, directory, owner, report, private_values=()):
+    """Keep only the fixed observer's bounded stderr, never change a command."""
+    text = stderr.decode('utf8', errors='replace') if isinstance(stderr, bytes) else (stderr or '')
+    lines = [line for line in text.splitlines() if '"capture_unit_diagnostic"' in line]
+    if not lines:
+        return
+    selected = '\n'.join(lines[:256]) + '\n'
+    for private in private_values:
+        if private:
+            selected = selected.replace(private, '<redacted>')
+    data = selected.encode('utf8')
+    bounded = data[:512 * 1024]
+    observations = report.setdefault('capture_unit_diagnostics', [])
+    path = directory / ('capture-unit-' + owner + '-' + str(len(observations) + 1) + '.stderr')
+    try:
+        path.write_bytes(bounded)
+        path.chmod(0o600)
+    except OSError as error:
+        report.setdefault('capture_unit_diagnostic_write_errors', []).append(type(error).__name__)
+        return
+    observations.append(dict(path=str(path), bytes=len(bounded), sha256=hashlib.sha256(bounded).hexdigest(),
+        marker_count=min(len(lines), 256), truncated=len(lines) > 256 or len(data) > len(bounded)))
+
+
+def _run_packaged_docker(arguments, *, input=None, retain_stderr):
+    try:
+        result = subprocess.run(['docker', *arguments], input=input, capture_output=True, text=True, timeout=45)
+    except subprocess.TimeoutExpired as error:
+        retain_stderr(error.stderr)
+        raise
+    retain_stderr(result.stderr)
+    return result
+
+
 def _candidate_image():
     image = os.environ.get('TEMPO_COLLECTION_TEST_IMAGE')
     assert image, 'Set TEMPO_COLLECTION_TEST_IMAGE to the immutable qualified candidate image ID'
@@ -451,6 +485,9 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     writer_dsn = make_conninfo(host='postgres',port=5432,dbname=database_name,user='tempo_writer',password=writer_password)
     directory = tmp_path/'feedback-qualification'; directory.mkdir()
     shutil.copyfile(ROOT/'backend/tests/fixtures/product_collection_packaged.py',directory/'entry.py')
+    diagnostic_source = ROOT/'backend/tests/fixtures/capture_unit_diagnostic.py'
+    shutil.copyfile(diagnostic_source, directory/'capture_diagnostic.py')
+    diagnostic_sha256 = hashlib.sha256(diagnostic_source.read_bytes()).hexdigest()
     r2_marker = directory/'r2-current-feedback.json'
     from tempo_game_evidence_contracts.legacy import decision_identity
     expected_r2_key = dict(workspace_id='legacy',provider='lichess',game_id='lichess:'+source_id,
@@ -485,6 +522,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
         image=image,web_image=web_image,schema=56,disposition='introduced_again' if introduced else 'first_introduction',
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
+    report['capture_unit_diagnostic_source_sha256'] = diagnostic_sha256
     if recovery_mode is not None:
         report['resource_profile'] = 'study-recovery-assembly'
         report['resource_allocations'] = budgets
@@ -497,7 +535,9 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     browser_evidence = evidence/('browser-'+owner); browser_evidence.mkdir()
 
     def docker(*arguments, check=True, input=None):
-        result = subprocess.run(['docker',*arguments],input=input,capture_output=True,text=True,timeout=45)
+        result = _run_packaged_docker(arguments, input=input,
+            retain_stderr=lambda value: _retain_capture_markers(value, directory=evidence, owner=owner,
+                report=report, private_values=(admin_dsn, reader_dsn, writer_dsn, reader_password, writer_password)))
         if check:
             if result.returncode:
                 diagnostic = result.stderr

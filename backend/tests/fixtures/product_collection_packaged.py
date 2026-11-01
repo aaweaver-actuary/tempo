@@ -184,6 +184,10 @@ r2_current_feedback_guards = install_r2_current_feedback_guards()
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 bind_database_infrastructure()
 
+if len(sys.argv) > 1 and sys.argv[1] == 'worker' and Path('/qualification/capture_diagnostic.py').is_file():
+    import runpy
+    runpy.run_path('/qualification/capture_diagnostic.py')['install']()
+
 
 # Fault injection runs the real Celery application/queues after installing one
 # bounded observation/barrier around the actual local qualification stage. No

@@ -159,3 +159,67 @@ def test_recovery_assembly_allocation_fits_existing_budget_without_changing_glob
     smaller['development']['memoryMiB'] = 2047
     with pytest.raises(AssertionError, match='study_recovery_assembly_exceeds_development_budget'):
         study_recovery_assembly_allocations(smaller)
+
+
+def test_capture_observer_preserves_command_result_stdout_and_limits(monkeypatch):
+    import subprocess
+    from test_packaged_collection import _run_packaged_docker
+    result = subprocess.CompletedProcess(['docker'], 0, '{"bounded_units":3}\n', 'ordinary stderr')
+    calls, retained = [], []
+    def run(arguments, **options):
+        calls.append((arguments, options))
+        return result
+    monkeypatch.setattr(subprocess, 'run', run)
+    observed = _run_packaged_docker(('exec', 'owned', 'worker'), input='input', retain_stderr=retained.append)
+    assert observed is result and observed.stdout == '{"bounded_units":3}\n'
+    assert calls == [(['docker', 'exec', 'owned', 'worker'], dict(input='input', capture_output=True, text=True, timeout=45))]
+    assert retained == ['ordinary stderr']
+
+
+def test_capture_observer_preserves_original_timeout_and_partial_markers(monkeypatch, tmp_path):
+    import subprocess
+    from pathlib import Path
+    from test_packaged_collection import _retain_capture_markers, _run_packaged_docker
+    stderr = b'ordinary stderr\n{"capture_unit_diagnostic":1,"event":"unit_start","private":"secret"}\n'
+    timeout = subprocess.TimeoutExpired(['docker'], 45, output=b'original stdout', stderr=stderr)
+    def run(*arguments, **options):
+        raise timeout
+    monkeypatch.setattr(subprocess, 'run', run)
+    report = {}
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        _run_packaged_docker(('exec', 'owned', 'worker'), retain_stderr=lambda value:
+            _retain_capture_markers(value, directory=tmp_path, owner='owned', report=report, private_values=('secret',)))
+    assert caught.value is timeout and timeout.output == b'original stdout' and timeout.stderr is stderr
+    retained = report['capture_unit_diagnostics'][0]
+    assert Path(retained['path']).read_text() == '{"capture_unit_diagnostic":1,"event":"unit_start","private":"<redacted>"}\n'
+    assert retained['marker_count'] == 1 and not retained['truncated']
+
+
+@pytest.mark.parametrize('stderr', [
+    ('{"capture_unit_diagnostic":1}\n' * 257),
+    ('{"capture_unit_diagnostic":1,"large":"' + 'x' * (1024 * 1024) + '"}\n'),
+])
+def test_capture_marker_retention_is_bounded(tmp_path, stderr):
+    from test_packaged_collection import _retain_capture_markers
+    report = {}
+    _retain_capture_markers(stderr, directory=tmp_path, owner='owned', report=report)
+    retained = report['capture_unit_diagnostics'][0]
+    assert retained['marker_count'] <= 256 and retained['bytes'] <= 512 * 1024 and retained['truncated']
+
+
+def test_capture_marker_write_failure_does_not_replace_timeout(monkeypatch, tmp_path):
+    import subprocess
+    from pathlib import Path
+    from test_packaged_collection import _retain_capture_markers, _run_packaged_docker
+    timeout = subprocess.TimeoutExpired(['docker'], 45, stderr=b'{"capture_unit_diagnostic":1}\n')
+    def run(*arguments, **options):
+        raise timeout
+    def write(*arguments, **options):
+        raise OSError('fixture disk full')
+    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(Path, 'write_bytes', write)
+    report = {}
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        _run_packaged_docker(('exec', 'owned', 'worker'), retain_stderr=lambda value:
+            _retain_capture_markers(value, directory=tmp_path, owner='owned', report=report))
+    assert caught.value is timeout and report['capture_unit_diagnostic_write_errors'] == ['OSError']

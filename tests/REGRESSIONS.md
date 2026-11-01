@@ -6690,3 +6690,14 @@ The existing transition7 actual worker/source/jobs/admission checks set the term
 ### Anchorless workflow avoids unused cache serialization
 
 `backend/tests/test_product_game_findings.py::test_anchorless_workflow_preserves_full_findings_without_unused_cache_serialization` compares actual complete Findings with the full-index path for misses, agreements and departure/transposition while refusing full-snapshot cache JSON; repeated calls retain no negative cache. `test_anchorless_cache_bypass_still_refuses_oversized_or_mutated_source` preserves route/ply limits and nested schema refusal after a prior successful comparison. The existing explicit-anchor cache lifetime/mutation/cancellation regression remains active. Only unused anchorless cache representation is removed; complete comparison, validation, identity bytes and positive-cache policy are unchanged.
+
+### Controlled capture retains bounded stage evidence without changing outcomes (#668)
+
+The fixed tracked `capture_unit_diagnostic.py` fixture is installed only by the
+controlled `worker` branch after guards and database binding. The runner records
+its SHA and preserves marker-only stderr even when the original45-second
+`TimeoutExpired` propagates. Named owning checks in
+`backend/tests/test_study_recovery_acceptance.py` cover unchanged command result,
+stdout and limits; original timeout identity/partial markers with redaction;
+line/byte retention bounds; and a retention write error preserving the timeout.
+Production code, source/owner identities, caps and journey assertions are unchanged.

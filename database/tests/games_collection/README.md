@@ -209,3 +209,15 @@ source/jobs and production-admission outcome, later publications may treat that
 same collector as terminal only with exit0 and no OOM. API/foreground/background
 still require the exact fresh snapshot digest. Before that verified completion,
 all four roles remain required; no idle substitute or collector restart is used.
+
+The controlled `worker` helper installs the fixed, tracked
+`backend/tests/fixtures/capture_unit_diagnostic.py` observer after the existing
+R2 guards and database binding. Its stderr-only unit/page/stage, process CPU/RSS
+and cgroup markers preserve real return values, exceptions and context semantics;
+no marker authorizes source capture or owner effects. The runner records the
+observer SHA and retains only its marker lines on success or timeout, redacting
+fixture credentials and bounding each retained file to256 lines/512KiB.
+`TimeoutExpired` is re-raised unchanged; stdout, the45-second command bound and
+all journey assertions remain unchanged. A retention write error is recorded in
+the report and never replaces the original command outcome. These observations
+explain an actual packaged failure; they do not substitute for its acceptance.
