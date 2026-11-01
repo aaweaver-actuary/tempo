@@ -313,10 +313,11 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                     "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS", 25,
                     minimum=1, maximum=1000,
                 )
-                # One round trip: the short transaction must not spend its
-                # budget waiting for a second setup query under host load.
+                # One round trip: keep compilation out of this short reserved
+                # transaction without changing its execution or lock budget.
                 database.execute("SELECT set_config('transaction_timeout', %s, true), "
-                                 "set_config('lock_timeout', %s, true)",
+                                 "set_config('lock_timeout', %s, true), "
+                                 "set_config('jit', 'off', true)",
                                  (f"{transaction_limit}ms", f"{lock_limit}ms"))
             configured_at = time.perf_counter()
             try:

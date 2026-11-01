@@ -502,7 +502,24 @@ selected readiness is healthy, and `unresolved` when readiness cannot be accepte
 Its scope is always `selected_repertoire_readiness`, never a claim that all stored
 games have been compared. `deferred_comparisons` lists token, affected providers,
 `diagnostic`, sanitized `bound` details, and `allowance_status=explicitly_allowed`.
-Collection-level unresolved counts remain independent. An allowance is unnecessary
+Collection-level unresolved counts remain independent. The additive `operational_status` output separates the recorded desired mode
+and its source, persisted phase/generation, observed collector process state,
+per-service runtime identity observations and the recorded/current identity
+comparison. `unknown` means a probe or source was unavailable; an observed
+identity mismatch is `unverified`, and an absent active service is `absent`.
+`running_or_restarting` follows the operator's existing container observation.
+`new_feedback_intake` reports `disabled_by_intent`, `no_active_intent`,
+`requires_admission_check`, or `unknown`; it is not an admission decision.
+Current accepted Study obligations remain unknown in this projection. A count
+of `accepted_pending_at_acknowledgment` is only historical receipt evidence,
+not current debt or settlement. `history_comparison` reports only the retained
+collection's existing `unresolved` or `not_asserted` observation, or `unknown`;
+selected-repertoire `comparison_coverage` is not historical completion.
+Routine status and disable retain their identity-only read: fields needing a
+full report remain unknown and do not block ordinary Study or safe disable.
+Existing raw fields remain compatibility diagnostics and do not grant authority.
+
+An allowance is unnecessary
 for an ownership-verified disable. This allowance is refused in feedback mode;
 deferred routes cannot establish negative membership in the configured union.
 

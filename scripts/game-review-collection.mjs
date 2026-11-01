@@ -236,6 +236,44 @@ export function collectionBlockers({ candidate, release, service, image, report,
   return [...new Set(blockers)];
 }
 
+// A reporting projection only: none of these observations grants admission.
+export function operationalStatus({modeEvidence, release, running, observedMode, runtimeObservations,
+  matchingRecordedRuntime, report, fullReaderSuccessful}) {
+  const validMode = value => modes.has(value);
+  const observed = modeEvidence.availability === 'available' ? modeEvidence.intent : null;
+  const validIntent = observed === null || (observed && validMode(observed.mode) &&
+    ['inactive', 'transitioning', 'active'].includes(observed.phase) &&
+    Number.isSafeInteger(observed.generation) && observed.generation > 0);
+  const available = modeEvidence.availability === 'available' && validIntent;
+  const recorded = available ? observed : null;
+  const desired = validMode(recorded?.mode) ? {value: recorded.mode, source: 'managed_intent'}
+    : validMode(release.gamesMode?.mode) ? {value: release.gamesMode.mode, source: 'release'}
+    : {value: null, source: 'unknown'};
+  const managed = available
+    ? {availability: 'available', phase: recorded?.phase ?? null, generation: recorded?.generation ?? null}
+    : {availability: 'unknown', phase: null, generation: null};
+  const admission = !available ? 'unknown'
+    : !recorded ? 'no_active_intent'
+    : recorded.phase !== 'active' || recorded.mode !== 'feedback' ? 'disabled_by_intent'
+    : 'requires_admission_check';
+  const delivery = fullReaderSuccessful && report?.delivery?.availability === 'available' ? report.delivery : null;
+  const acknowledged = delivery?.accepted_pending_at_acknowledgment;
+  const collection = fullReaderSuccessful && report?.collection?.availability === 'available' ? report.collection : null;
+  const history = ['unresolved', 'not_asserted'].includes(collection?.comparison_completeness)
+    ? collection.comparison_completeness : 'unknown';
+  return {
+    desired_mode: desired,
+    managed,
+    process: {state: running ? 'running_or_restarting' : 'stopped', observed_mode: observedMode},
+    runtime_identity: runtimeObservations,
+    intent_matches_current_runtime: matchingRecordedRuntime,
+    new_feedback_intake: admission,
+    accepted_study_obligations: {current: 'unknown',
+      accepted_pending_at_acknowledgment: Number.isSafeInteger(acknowledged) && acknowledged >= 0 ? acknowledged : null},
+    history_comparison: {scope: 'retained_collection', status: history},
+  };
+}
+
 export async function operateCollection(operation, { apply = false, inspect, lock, start, stop,
   mode = 'collect-only', prepareMode, deactivate, activate }) {
   if (!['plan', 'status', 'enable', 'disable'].includes(operation)) throw new Error('Expected plan, status, enable or disable');
@@ -413,6 +451,11 @@ export async function main(
     let report = null, preview = null, image = null, hostCommands = null;
     let modeEvidence = {availability: 'unavailable', intent: null};
     const verifiedRuntimes = [];
+    const runtimeObservations = Object.fromEntries(['api', 'foreground-worker', serviceName].map(name => {
+      const candidates = containers.filter(c => active(c) && labels(c)['com.docker.compose.project'] === target.project &&
+        labels(c)['com.docker.compose.service'] === name);
+      return [name, candidates.length ? 'unknown' : 'absent'];
+    }));
     if (release.images?.[serviceName]) image = JSON.parse(docker(['image', 'inspect', release.images[serviceName]]))[0];
     let apiRevisionVerified = false;
     if (api.length === 1 && api[0].Image === release.images?.api) {
@@ -448,13 +491,22 @@ export async function main(
         const matches = containers.filter(c => active(c) && labels(c)['com.docker.compose.project'] === target.project &&
           labels(c)['com.docker.compose.service'] === name && labels(c)['com.docker.compose.project.working_dir'] === target.root &&
           c.Image === release.images?.[name] && c.Config?.Hostname === c.Id?.slice(0, 12));
-        if (matches.length !== 1) continue;
+        if (matches.length !== 1) {
+          if (runtimeObservations[name] !== 'absent') runtimeObservations[name] = 'unverified';
+          continue;
+        }
         try {
           const candidateRuntime = matches[0];
           const imageFact = JSON.parse(docker(['image', 'inspect', candidateRuntime.Image]))[0];
-          if (imageFact.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate) continue;
+          if (imageFact.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate) { runtimeObservations[name] = 'unverified'; continue; }
           const read = JSON.parse(compose(['exec', '-T', name, 'python', '-B', '-m',
             'app.product_composition.managed_runtime', 'inspect']));
+          const observationUsable = read.schema_version === 1 && read.read_only === true && read.runtime?.schema_version === 1 &&
+            typeof read.runtime.hostname === 'string' && /^[0-9a-f]{12}$/.test(read.runtime.hostname) &&
+            typeof read.runtime.boot_nonce === 'string' && /^[0-9a-f]{32}$/.test(read.runtime.boot_nonce);
+          if (observationUsable)
+            runtimeObservations[name] = read.runtime.hostname === candidateRuntime.Config.Hostname ? 'verified' : 'unverified';
+          // Preserve the existing control/activation validation independently of the reporting projection.
           if (read.schema_version !== 1 || read.read_only !== true || read.runtime?.schema_version !== 1 ||
               read.runtime.hostname !== candidateRuntime.Config.Hostname || !/^[0-9a-f]{32}$/.test(read.runtime.boot_nonce ?? '')) continue;
           verifiedRuntimes.push({service: name, container_id: candidateRuntime.Id, image: candidateRuntime.Image,
@@ -488,10 +540,26 @@ export async function main(
       recorded.release_revision === candidate && recorded.collector_image === release.images?.[serviceName] &&
       recorded.configuration_fingerprint === configurationFingerprint(configuration) && recorded.target_fingerprint === targetFingerprint &&
       isDeepStrictEqual(recorded.runtimes, requiredRuntimes));
+    let matchingRecordedRuntime = null;
+    if (modeEvidence.availability === 'available' && recorded && modes.has(recorded.mode) &&
+        ['inactive', 'transitioning', 'active'].includes(recorded.phase) &&
+        Number.isSafeInteger(recorded.generation) && recorded.generation > 0) {
+      const required = recorded.mode === 'feedback' ? ['api', 'foreground-worker', serviceName] : [serviceName];
+      if (recorded.phase !== 'active' || !running || observedMode !== recorded.mode ||
+          required.some(name => ['absent', 'unverified'].includes(runtimeObservations[name]))) matchingRecordedRuntime = false;
+      else if (required.every(name => runtimeObservations[name] === 'verified')) {
+        const actual = verifiedRuntimes.filter(runtime => required.includes(runtime.service));
+        matchingRecordedRuntime = recorded.release_revision === candidate && recorded.collector_image === release.images?.[serviceName] &&
+          recorded.configuration_fingerprint === configurationFingerprint(configuration) && recorded.target_fingerprint === targetFingerprint &&
+          isDeepStrictEqual(recorded.runtimes, actual);
+      }
+    }
+    const operational = operationalStatus({modeEvidence, release, running, observedMode, runtimeObservations,
+      matchingRecordedRuntime, report, fullReaderSuccessful: probeSuccessful(fullReaderProbe)});
     snapshot = { registrationText, receiptText };
     last = {release, baseConfiguration, configuration, configuredMode, prefix, modeEvidence, verifiedRuntimes, targetFingerprint};
     return { blockers, running, stopSafe, observedMode, modeIntentVerified, output: { candidate, installed_revision: release.revision, schema: release.schema,
-      maintenance, release_verification: release.evidence ?? null,
+      maintenance, operational_status: operational, release_verification: release.evidence ?? null,
       ...Object.fromEntries(Object.entries(readiness).filter(([key]) => key !== 'blockers')),
       reader_probes: {identity: probeOutcome(identityProbe), full: probeOutcome(fullReaderProbe)},
       identity_evidence: identityProbe.evidence?.identity ?? null,
