@@ -567,7 +567,12 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     # Real provider parsing/capture/comparison. This is explicit
                     # controlled fixture admission, not a claim that recurring
                     # optional collection is permitted in Study-only mode.
-                    captured = entry('foreground-worker', 'worker')
+                    producer_role = 'background-worker'
+                    producer = json.loads(docker('inspect', containers[producer_role]['id']).stdout)[0]
+                    assert producer['Id']==containers[producer_role]['id']
+                    assert producer['State']['Running'] and not producer['State']['Paused']
+                    assert producer['HostConfig']['Memory']==448*1024*1024
+                    captured = entry(producer_role, 'worker')
                     with case.transaction() as database:
                         source = database.execute_native("""SELECT source_key,payload->'first_departure' AS selection
                             FROM product_feedback_sources WHERE payload->'original'->>'source_game_id'=%s""", (source_id,)).fetchone()
@@ -578,7 +583,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                         assert len(deliveries) == 1
                         staged.append(dict(index=index, source_id=source_id, target=target,
                             operation_id=deliveries[0]['operation_id'], command=deliveries[0]['payload'].get('encounter'),
-                            provider_run=captured, admission='explicit synthetic fixture admission'))
+                            provider_run=captured, execution_role=producer_role, memory_bytes=producer['HostConfig']['Memory'],
+                            admission='explicit synthetic fixture admission'))
                 if index != 7:
                     _marker(release, dict(stage='continue', index=index))
                 measured = wait_for('transition', index)['sample']
