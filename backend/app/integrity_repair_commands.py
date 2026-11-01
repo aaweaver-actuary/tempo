@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-import hashlib
-import json
 from typing import Any
 
 from fastapi import HTTPException
@@ -14,10 +12,10 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.authored_repertoires import integrity_commands as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from app.chess.cards import card_id
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
-from .services.repertoire_integrity import _archive_unsupported_card, _rewrite_card
+from .services.repertoire_integrity import _archive_unsupported_card
+from app.repertoire.changes.retained_mutations import replace_repertoire_line, rewrite_card
 
 
 class PreparedIntegrityRepair(BaseModel):
@@ -31,25 +29,6 @@ class PreparedIntegrityRepair(BaseModel):
     unsupported_card_ids: list[str]
 
 
-def _replace_repertoire_line(
-    database: PostgresConnection, source_line: Any, moves: list[str], *, validated_route: dict | None = None, certify: bool = True,
-) -> bool:
-    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
-    if validated_route is None:
-        validated_route = ensure_line_in_scope(database, source_line["repertoire_id"], source_line["start_fen"], moves, remember=False)
-    new_line_id = hashlib.sha256(
-        f"{source_line['repertoire_id']}\0{card_id(source_line['start_fen'], moves)}".encode(),
-    ).hexdigest()
-    if new_line_id == source_line["id"]:
-        return False
-    storage.insert_replacement_line(database, (new_line_id, source_line["repertoire_id"], source_line["name"],
-         source_line["trained_color"], source_line["start_fen"],
-         json.dumps(moves), source_line["created_at"]))
-    storage.copy_training_depth(database, new_line_id, source_line["id"])
-    storage.delete_replaced_line(database, source_line["id"])
-    if certify:
-        certify_admitted_route(database, source_line["repertoire_id"], validated_route)
-    return True
 
 
 @refresh_game_publications_after_mutation
@@ -92,10 +71,10 @@ def resolve_integrity_issue(
         card_changes.append((source_card, moves, ensure_line_in_scope(database, repertoire_id, source_card["start_fen"], moves, remember=False)))
     admitted_routes = []
     for source_line, moves, validated_route in line_changes:
-        if _replace_repertoire_line(database, source_line, moves, validated_route=validated_route, certify=False):
+        if replace_repertoire_line(database, source_line, moves, validated_route=validated_route, certify=False):
             admitted_routes.append(validated_route)
     for source_card, moves, validated_route in card_changes:
-        if _rewrite_card(database, repertoire_id, source_card, moves, validated_route=validated_route, certify=False):
+        if rewrite_card(database, repertoire_id, source_card, moves, validated_route=validated_route, certify=False):
             admitted_routes.append(validated_route)
     for card_identifier in prepared.unsupported_card_ids:
         _archive_unsupported_card(database, repertoire_id, card_identifier)

@@ -40,7 +40,7 @@ from app.services.repertoire_game_refresh import execute_repertoire_game_refresh
 from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
 from app.chess.pgn import ParsedLine
-from app.integrity_repair_commands import _replace_repertoire_line
+from app.repertoire.changes.retained_mutations import replace_repertoire_line
 
 ITALIAN = ['e2e4','e7e5','g1f3','b8c6','f1c4']
 NOW = datetime.now(timezone.utc).isoformat()
@@ -148,7 +148,7 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
                 assert not result['saved'][0]['duplicate']
             else:
                 source = database.execute('SELECT * FROM repertoire_lines WHERE id=?', (branch['id'],)).fetchone()
-                assert _replace_repertoire_line(database, source, ['g8f6', 'd2d3'])
+                assert replace_repertoire_line(database, source, ['g8f6', 'd2d3'])
             current = read_prefix(database, repertoire_id)
             assert line_origin(database, current['preview_id'], downstream) == route
     print('PASS CF-5 PostgreSQL downstream branch -> final source certificate -> original coverage seed; PGN, paste, repair current immediately; unrelated anchors remain stale', flush=True)
