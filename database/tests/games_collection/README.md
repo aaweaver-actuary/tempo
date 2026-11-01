@@ -141,3 +141,10 @@ Collector startup follows protected browser acquisition and API/foreground role
 verification. Only its own real runtime/profile verification, managed-mode
 commit and provider release run inside the unchanged 45-second collector
 admission window; unrelated setup does not consume that window.
+
+The 576-card recovery backlog selects actual generated opening prefixes and
+response segments. A response starts with an opponent cue before the learner's
+legal reply; the real browser plays only trained-color decisions. Shared root
+prefixes are deliberately deduplicated and cannot alone supply that backlog.
+The ten complete configured repertoires and all persisted shape assertions remain
+unchanged; no inert cards or extra routes are added to reach the count.
