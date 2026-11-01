@@ -7,7 +7,7 @@ import json
 from fastapi import HTTPException
 import pytest
 
-from tempo_learning_runtime import api,defense
+from tempo_learning_runtime import api,defense,command_handlers
 from tempo_learning_runtime.config import Configuration
 from tempo_learning_runtime.models import DefenseRecognitionRequest
 from tempo_learning_runtime.review_conflicts import ReviewConflict
@@ -31,7 +31,7 @@ def test_reconciliation_retains_handled_conflict_savepoint_order(monkeypatch,con
         assert db is database and payload=={'card':'card'};events.append('review')
         if conflict:raise ReviewConflict('changed','Changed')
         return dict(persisted=True)
-    monkeypatch.setattr(api,'submit_legacy_review',submit)
+    monkeypatch.setattr(command_handlers,'submit_legacy_review',submit)
     result=api.reconcile(database,dict(card='card'))
     assert result['persisted'] is (not conflict)
     assert events==['begin_reconciliation','review',*(['rollback_reconciliation'] if conflict else []),'release_reconciliation']
@@ -43,7 +43,7 @@ def test_saved_endgame_rechecks_retirement_under_card_lock_before_clock_or_inser
     monkeypatch.setattr(api.storage,'lock_endgame_card',lambda *_: events.append('card lock') or (1,))
     monkeypatch.setattr(api.storage,'endgame_enabled',lambda *_: events.append('template recheck') or (0,))
     monkeypatch.setattr(api.storage,'insert_endgame_attempt',lambda *_: pytest.fail('Retired template reached write'))
-    monkeypatch.setattr(api,'datetime',SimpleNamespace(now=lambda *_: pytest.fail('Retired template read clock')))
+    monkeypatch.setattr(command_handlers,'datetime',SimpleNamespace(now=lambda *_: pytest.fail('Retired template read clock')))
     with pytest.raises(HTTPException) as error:api.save_endgame_attempt(None,dict(template_id='template'))
     assert error.value.status_code==409 and events==['card lock','template recheck']
 

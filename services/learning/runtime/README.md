@@ -12,7 +12,8 @@ peer documents link to them instead of maintaining copies. See the
 ### Command registry selection (proposed G1)
 
 The independent runtime constructs an immutable command registry per app from
-queue, typed-study and API handler definitions. Functions are stateless and may
+queue, typed-study and Learning command handler definitions. The handler factory
+resides in `command_handlers`, outside HTTP composition. Functions are stateless and may
 be shared. Request middleware and the maintenance loop select the app registry
 alongside the existing database scope; context propagation carries both into
 worker threads, and the selecting scope resets its token. CLI publication and
@@ -25,11 +26,14 @@ flowchart LR
   Definitions["Stateless command definitions"] --> Factory["Registry construction"]
   Factory --> App["One immutable registry per app"]
   Factory --> CLI["CLI registry"]
+  Factory --> Default["Lazy immutable default registry"]
   App --> Scope["Request / maintenance context scope"]
   CLI --> Scope
   Scope --> Gateway["Gateway dispatch / execute"]
   Gateway --> DB[("Existing Learning transaction and receipts")]
-  Direct["Direct gateway caller"] --> Default["Lazy immutable default registry"] --> Gateway
+  Direct["Direct gateway caller"] --> Gateway
+  Gateway -->|"lazy fallback construction"| Factory
+  Default --> Gateway
 ```
 
 This is source-level composition, not a deployment or PostgreSQL isolation
