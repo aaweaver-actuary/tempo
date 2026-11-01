@@ -6466,3 +6466,12 @@ swallowed comparison failures remaining unresolved, snapshot-boundary cancellati
 without partial checkpoints, and equal-result index reuse invalidated by changed
 snapshot facts and cleared after failed/completed page scope. Original durable
 retry/provider fairness/page atomicity regressions remain applicable.
+
+### Historical CLI cancellation propagation (#665)
+
+`backend/tests/test_game_history_scripts.py::test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoint`
+exercises SIGINT/SIGTERM through the real CLI handler and actual FeedbackRunner.
+Stopping during the first repertoire read prevents the second read and partial
+comparison checkpoint; original manifest, retained pages/sources/captures and
+signal handlers survive unchanged. This is a pure cancellation proof, not a
+claim that an active SQL statement/source projection is preemptible.
