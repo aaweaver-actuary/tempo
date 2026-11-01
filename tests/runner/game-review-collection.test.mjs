@@ -433,6 +433,7 @@ function collectionMainFixture(t, {running = false, modern = false, observedSche
         if (modern && composeAction[0] === 'exec' && composeAction.includes('app.product_composition.managed_runtime')) {
           const name = composeAction[2];
           if (input.failRuntime === name) throw new Error('Synthetic runtime identity unavailable');
+          if (input.runtimeResponse?.[name]) return JSON.stringify(input.runtimeResponse[name]);
           const container = inventory.find(container => container.Config.Labels['com.docker.compose.service'] === name);
           return JSON.stringify({schema_version: 1, read_only: true, runtime: {schema_version: 1,
             hostname: container.Config.Hostname, boot_nonce: runtimeBoots[name]}});
@@ -1088,4 +1089,26 @@ test('malformed_managed_intent_remains_unknown', () => {
   assert.equal(result.managed.availability, 'unknown');
   assert.equal(result.new_feedback_intake, 'unknown');
   assert.deepEqual(result.desired_mode, {value: null, source: 'unknown'});
+});
+
+test('malformed_runtime_responses_are_unknown_without_changing_control_fields', async t => {
+  const fixture = collectionMainFixture(t, {modern: true});
+  await fixture.invoke('enable', {mode: 'feedback'});
+  const baseline = await fixture.invoke('status', {mode: 'feedback'});
+  for (const name of ['api', 'foreground-worker', serviceName]) {
+    for (const runtime of [null, {schema_version: 1, hostname: 'a'.repeat(12), boot_nonce: 'invalid'}]) {
+      fixture.input.runtimeResponse = {[name]: {schema_version: 1, read_only: true, runtime}};
+      const result = await fixture.invoke('status', {mode: 'feedback'});
+      assert.equal(result.operational_status.runtime_identity[name], 'unknown');
+      assert.equal(result.operational_status.intent_matches_current_runtime, null);
+      assert.equal(result.running, baseline.running);
+      assert.equal(result.observed_mode, baseline.observed_mode);
+      assert.equal(result.managed_mode.phase, baseline.managed_mode.phase);
+      assert.equal(result.managed_mode.generation, baseline.managed_mode.generation);
+      assert.equal(result.managed_mode.verified_for_current_runtime, false);
+      assert.equal(result.activation_ready, baseline.activation_ready);
+      assert.equal(result.operation, 'status');
+      assert.equal(result.changed, false);
+    }
+  }
 });

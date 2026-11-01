@@ -501,9 +501,14 @@ export async function main(
           if (imageFact.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate) { runtimeObservations[name] = 'unverified'; continue; }
           const read = JSON.parse(compose(['exec', '-T', name, 'python', '-B', '-m',
             'app.product_composition.managed_runtime', 'inspect']));
+          const observationUsable = read.schema_version === 1 && read.read_only === true && read.runtime?.schema_version === 1 &&
+            typeof read.runtime.hostname === 'string' && /^[0-9a-f]{12}$/.test(read.runtime.hostname) &&
+            typeof read.runtime.boot_nonce === 'string' && /^[0-9a-f]{32}$/.test(read.runtime.boot_nonce);
+          if (observationUsable)
+            runtimeObservations[name] = read.runtime.hostname === candidateRuntime.Config.Hostname ? 'verified' : 'unverified';
+          // Preserve the existing control/activation validation independently of the reporting projection.
           if (read.schema_version !== 1 || read.read_only !== true || read.runtime?.schema_version !== 1 ||
-              read.runtime.hostname !== candidateRuntime.Config.Hostname || !/^[0-9a-f]{32}$/.test(read.runtime.boot_nonce ?? '')) { runtimeObservations[name] = 'unverified'; continue; }
-          runtimeObservations[name] = 'verified';
+              read.runtime.hostname !== candidateRuntime.Config.Hostname || !/^[0-9a-f]{32}$/.test(read.runtime.boot_nonce ?? '')) continue;
           verifiedRuntimes.push({service: name, container_id: candidateRuntime.Id, image: candidateRuntime.Image,
             hostname: read.runtime.hostname, boot_nonce: read.runtime.boot_nonce});
         } catch { /* Missing/restarted identity leaves new Games handoff unverified. */ }
