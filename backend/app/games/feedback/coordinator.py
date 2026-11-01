@@ -13,6 +13,7 @@ from .ports import (Acquisition, AcquisitionFailure, Capture, Clock, Comparer, D
                     GamesStore, JobState, Normalizer, PageCommit, SourceIdentity, SourceState,
                     delivery_for, source_revision, stable_id)
 from .first_boundary import select_first_boundary
+from .diagnostics import diagnose_page, page_stage, page_failure
 from .qualification import acknowledge_qualified_delivery, selection_supports_original
 
 
@@ -124,11 +125,13 @@ class Coordinator:
         self.snapshots, self.store, self.learning, self.clock = snapshots, store, learning, clock
         self.max_page_records, self.max_page_bytes = max_page_records, max_page_bytes
 
+    @diagnose_page
     def capture_page(self, job: JobState, *, stopped=lambda: False) -> None:
         spec = job.spec
         if stopped():
             self.store.save_job(job.model_copy(update={"status": "queued", "lease_until": 0}))
             return
+        page_stage('acquisition')
         page = self.providers[spec.provider].fetch_page(account=spec.account, window=spec.window,
                                                        continuation=job.continuation)
         # Revalidate mutable nested data without losing provider subtype provenance.
@@ -144,10 +147,15 @@ class Coordinator:
             raise AcquisitionFailure("provider_page_filter_mismatch", retryable=False)
         snapshots, unavailable_snapshots = [], set()
         snapshot_integrity_error = False
-        for repertoire_id in spec.repertoire_ids:
+        for repertoire_index, repertoire_id in enumerate(spec.repertoire_ids):
+            if stopped():
+                self.store.save_job(job.model_copy(update={'status':'queued','lease_until':0}))
+                return
+            page_stage('snapshot', repertoire_index=repertoire_index, repertoire_count=len(spec.repertoire_ids))
             try:
                 supplied = self.snapshots.snapshot(repertoire_id)
             except Exception as error:
+                page_failure(error)
                 # Optional reads can fail independently of valid acquisition.
                 unavailable_snapshots.add(repertoire_id)
                 if str(error) in {"snapshot_scope_mismatch", "repertoire_snapshot_scope_mismatch"}:
@@ -169,7 +177,8 @@ class Coordinator:
         comparison_unavailable = False
         quarantined = False
         positions = 0
-        for record in page.records:
+        for record_index, record in enumerate(page.records):
+            page_stage('normalization', record_index=record_index, record_count=len(page.records))
             if stopped():
                 self.store.save_job(job.model_copy(update={"status": "queued", "lease_until": 0}))
                 return  # No checkpoint or partial page has been published.
@@ -214,8 +223,13 @@ class Coordinator:
                 for snapshot in compatible:
                     repertoire_ids = set(snapshot.membership.scope_repertoire_ids)
                     try:
+                        if stopped():
+                            self.store.save_job(job.model_copy(update={'status':'queued','lease_until':0}))
+                            return
+                        page_stage('comparison', compared_positions=positions)
                         result = tuple(self.comparer.compare(normalized, snapshot, record=comparison_record, spec=spec))
-                    except Exception:
+                    except Exception as error:
+                        page_failure(error)
                         unresolved.update(repertoire_ids)
                         continue
                     if len(result) > 1000:
@@ -239,6 +253,7 @@ class Coordinator:
                     key=lambda finding: (finding.ply, finding.repertoire_id, finding.model_dump_json())))
                 if not integrity_error:
                     try:
+                        page_stage('first_boundary')
                         first_departure = select_first_boundary(normalized, snapshots=snapshots,
                             source=IntroductionGameScope(provider=spec.provider, game_id=normalized.game_id,
                                 source_revision=normalized.source_revision, source_digest=normalized.source_digest),
@@ -413,6 +428,7 @@ class Coordinator:
                     updates.update(qualification_status="ready", qualification=witness,
                         determined_at=witness.determined_at)
             prepared_deliveries.append(delivery.model_copy(update=updates))
+        page_stage('page_commit', record_count=len(page.records), compared_positions=positions)
         self.store.commit_page(PageCommit(job=committed_job, sources=tuple(sources), captures=tuple(captures), deliveries=tuple(prepared_deliveries),
             provider_page_json=page_json, input_continuation=job.continuation))
 
