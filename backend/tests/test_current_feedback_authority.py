@@ -63,6 +63,13 @@ def test_native_current_feedback_accepts_with_broad_legacy_capture_unavailable(n
     from app.services import legacy_game_capture
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     case = native_handoff
+    original = CurrentQualifiedOwnerDecisions._mapping_for_target
+    observed = []
+    def observe_mapping(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        observed.append(result)
+        return result
+    monkeypatch.setattr(CurrentQualifiedOwnerDecisions, '_mapping_for_target', observe_mapping)
     def forbidden(*args,**kwargs):
         pytest.fail('current qualified feedback invoked broad legacy capture/projection')
     monkeypatch.setattr(legacy_game_observation,'capture_game',forbidden)
@@ -77,6 +84,7 @@ def test_native_current_feedback_accepts_with_broad_legacy_capture_unavailable(n
         result = provider_priority.apply_prepared_determined_feedback(database,prepared,clock=case.clock,
             current_runtime_id=prepared.mode_runtime_id)
         assert result.progressed,result.held_reason
+        assert observed, 'exact target mapping fence was not exercised'
         effect = PostgresGameFeedbackStore(database).get(case.original.command.key)
         assert effect is not None and effect.key == case.original.command.key
     assert case.store.delivery(case.original.operation_id).state == 'acknowledged'
