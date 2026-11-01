@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
 import threading
 import uuid
-from statistics import median
 
 import chess
 import httpx
@@ -60,69 +58,11 @@ def get_explorer_session_token() -> str | None:
         return _explorer_session_token
 
 
-@dataclass(frozen=True)
-class CoverageCandidate:
-    move_uci: str
-    probability: float
+from .coverage_probabilities import CoverageCandidate, blend_probabilities, required_reply_moves
 
 
 def fen_key(fen: str) -> str:
     return canonical_fen(fen)
-
-
-def blend_probabilities(
-    explorer_probability: float | None,
-    maia_probability: float | None,
-    *,
-    explorer_games: int,
-    prior_games: int = 200,
-) -> float | None:
-    if explorer_probability is None:
-        return maia_probability
-    if maia_probability is None:
-        return explorer_probability
-    explorer_weight = explorer_games / max(1, explorer_games + prior_games)
-    return (
-        explorer_weight * explorer_probability
-        + (1 - explorer_weight) * maia_probability
-    )
-
-
-def required_reply_moves(
-    candidates: list[CoverageCandidate],
-    *,
-    denominator: int,
-    cumulative_target: float,
-) -> set[str]:
-    if denominator < 2:
-        raise ValueError("Coverage denominator must be at least two")
-    if not 0 < cumulative_target <= 1:
-        raise ValueError("Cumulative coverage target must be between zero and one")
-    positive_candidates = [
-        candidate for candidate in candidates if candidate.probability > 0
-    ]
-    total_probability = sum(candidate.probability for candidate in positive_candidates)
-    if total_probability <= 0:
-        return set()
-    normalized = [
-        CoverageCandidate(candidate.move_uci, candidate.probability / total_probability)
-        for candidate in positive_candidates
-    ]
-    minimum_probability = 1 / denominator
-    required = {
-        candidate.move_uci
-        for candidate in normalized
-        if candidate.probability >= minimum_probability
-    }
-    cumulative_probability = 0.0
-    for candidate in sorted(
-        normalized, key=lambda item: (-item.probability, item.move_uci)
-    ):
-        if cumulative_probability >= cumulative_target:
-            break
-        required.add(candidate.move_uci)
-        cumulative_probability += candidate.probability
-    return required
 
 
 def discover_opponent_positions(
@@ -177,48 +117,14 @@ def discover_opponent_positions(
 
 
 EXPLORER_CACHE_MAX_AGE = timedelta(days=7)
-SUPPORTED_RATING_BUCKETS = (1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500)
-SUPPORTED_MAIA_ELOS = (1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900)
+from .coverage_cohort import (
+    SUPPORTED_RATING_BUCKETS, SUPPORTED_MAIA_ELOS,
+    _nearest_rating_bucket, recent_player_cohort,
+)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _nearest_rating_bucket(rating: int) -> int:
-    return min(
-        SUPPORTED_RATING_BUCKETS,
-        key=lambda candidate: (abs(candidate - rating), candidate),
-    )
-
-
-def recent_player_cohort(database, fallback_rating: int) -> dict:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-    rows = storage.recent_cohort_games(database, (cutoff,))
-    ratings = [
-        int(row["player_rating"]) for row in rows if row["player_rating"] is not None
-    ]
-    representative_rating = round(median(ratings)) if ratings else fallback_rating
-    speed_counts = {
-        speed: sum(row["speed"] == speed for row in rows)
-        for speed in ("blitz", "rapid", "classical")
-    }
-    speed_total = sum(speed_counts.values())
-    speed_weights = (
-        {speed: count / speed_total for speed, count in speed_counts.items() if count}
-        if speed_total
-        else {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3}
-    )
-    return {
-        "recent_median_rating": representative_rating,
-        "explorer_rating": _nearest_rating_bucket(representative_rating),
-        "maia_elo": min(
-            SUPPORTED_MAIA_ELOS,
-            key=lambda candidate: (abs(candidate - representative_rating), candidate),
-        ),
-        "speed_weights": speed_weights,
-        "games": len(rows),
-    }
 
 
 def enqueue_coverage_refresh(
