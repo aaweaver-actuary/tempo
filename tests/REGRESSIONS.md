@@ -6523,8 +6523,8 @@ is still a core bootstrap failure; this is not a PostgreSQL/resource-isolation c
 ### Packaged current-feedback tripwires (#662 / #668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py` adds
-`test_packaged_current_feedback_without_legacy_capture[unseen]` and
-`[introduced-with-target-rollback]` to the existing `study-recovery` suite.
+`test_packaged_current_feedback_without_legacy_capture[unseen-config-rollback-lost-ack-games-absent]` and
+`[introduced-target-rollback-lost-ack-games-absent]` to the existing `study-recovery` suite.
 The existing browser journey must reach actual same-key settlement with legacy
 capture/projection tripwires installed before consumer imports. The introduced
 case injects one controlled revision change inside the actual owner transaction,
@@ -6532,6 +6532,20 @@ immediately before the new narrow target fence; it requires durable refusal,
 rollback of the revision/effect/ack and unchanged-key/clock recovery after clearing
 the marker. This case does not claim to simulate external concurrency. The normal
 R1 thirty-transition cases and production deadlines/resource caps stay unchanged.
+
+The same two bounded journeys also require a real receiving-owner commit followed
+by a lost first outbox acknowledgment, a durable `owner_acknowledgment_uncertain`
+row, and same-key/clock/owner-receipt reconciliation with the actual retry count.
+An outside-writer barrier applies only to the exact original key after its genuine
+owner receipt exists. With accepted debt still pending, the host stops the exact
+owned collector and records supported inactive generation 2 before releasing that
+barrier; foreground preparation, real browser issuance/save/replay and settlement
+must preserve that same owner receipt while Games stays stopped/inactive. The
+unseen case mutates the actual configuration revision inside its borrowed final
+fence and requires complete configuration/selection rollback before same-key retry.
+These are controlled fixture failures, not external concurrency simulations or
+executed acceptance evidence until the packaged cases run.
+
 ### Historical CLI cancellation propagation (#665)
 
 `backend/tests/test_game_history_scripts.py::test_historical_cli_stop_cancels_actual_page_runner_without_partial_checkpoint`

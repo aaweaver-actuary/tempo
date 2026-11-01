@@ -30,8 +30,10 @@ def test_packaged_study_recovery_thirty_consecutive_transitions(recovery_case, t
     run_existing_feedback(recovery_case, tmp_path, introduced=True, recovery_mode=study_only)
 
 
-@pytest.mark.parametrize('introduced',[False,True],ids=['unseen','introduced-with-target-rollback'])
+@pytest.mark.parametrize('introduced',[False,True],ids=['unseen-config-rollback-lost-ack-games-absent',
+    'introduced-target-rollback-lost-ack-games-absent'])
 def test_packaged_current_feedback_without_legacy_capture(recovery_case,tmp_path,introduced):
-    """Existing real browser journey; fixed tripwires plus one target rollback."""
+    """Actual fences, committed-owner ACK loss and accepted debt with Games absent."""
     run_existing_feedback(recovery_case,tmp_path,introduced=introduced,
-        forbid_legacy_capture=True,changed_target_rollback=introduced)
+        forbid_legacy_capture=True,changed_target_rollback=introduced,
+        changed_configuration_rollback=not introduced,lose_owner_ack=True,games_absent_after_acceptance=True)
