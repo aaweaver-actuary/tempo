@@ -9,6 +9,7 @@ import { postgresTestStages } from "../database/tests/postgres-test-plan.mjs";
 import { dirname } from "node:path";
 import { cpus, totalmem } from "node:os";
 import { aggregateBrowserShards, browserShard, browserShardFingerprint, browserShardReportPath, validateBrowserShardPlan } from "./ci-browser-shards.mjs";
+import { withTaskBrowserBuild, isLocalQualificationBuild } from "./task-browser-build.mjs";
 import { suiteFingerprint } from "./ci-evidence.mjs";
 
 function postgresVerification(layer, plan) {
@@ -174,7 +175,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json", "test-results/ci/frontend-inventory.json", "test-results/ci/backend-inventory.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);
       }
-      return spawnSync(command, args, { stdio: "inherit", env: diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : env });
+      const environment = diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : env;
+      const run = selectedEnv => spawnSync(command, args, { stdio: "inherit", env: selectedEnv });
+      return isLocalQualificationBuild(command, args)
+        ? withTaskBrowserBuild(output => run({ ...environment, TEMPO_BROWSER_BUILD_DIR: output }))
+        : run(environment);
     }, process.env.TEMPO_DIAGNOSTIC_RETRY === "true"));
     if (["browser", "visual", "quarantine"].includes(layer)) {
       if (layer === "browser" && shardId === undefined && plan.browserShards?.count > 1) {

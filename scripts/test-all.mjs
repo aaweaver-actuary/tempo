@@ -6,6 +6,7 @@ import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { resolvePython } from "./resolve-python.mjs";
+import { withTaskBrowserBuild, isLocalQualificationBuild } from "./task-browser-build.mjs";
 import { assertNoTrackedConflicts } from "./check-merge-conflicts.mjs";
 
 
@@ -61,8 +62,12 @@ for (const [name, command, args] of selectedStages) {
     rmSync(unitProfilePath, { force: true });
   }
   const start = performance.now();
-  const result = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend:database",
-    ...(tier === "full" ? { TEMPO_FULL_TEST_RUN_TIMESTAMP: report.timestamp, TEMPO_FULL_TEST_RUN_COMMIT: report.commit } : {}) } });
+  const environment = { ...process.env, PYTHONPATH: "backend:database",
+    ...(tier === "full" ? { TEMPO_FULL_TEST_RUN_TIMESTAMP: report.timestamp, TEMPO_FULL_TEST_RUN_COMMIT: report.commit } : {}) };
+  const run = env => spawnSync(command, args, { stdio: "inherit", env });
+  const result = isLocalQualificationBuild(command, args)
+    ? withTaskBrowserBuild(output => run({ ...environment, TEMPO_BROWSER_BUILD_DIR: output }))
+    : run(environment);
   report.stages[name] = { duration_seconds: Math.round((performance.now() - start) / 10) / 100, exit_code: result.status, error: result.error?.message ?? null };
   saveReport();
   if (result.error) console.error(`Required check could not start: ${result.error.message}`);

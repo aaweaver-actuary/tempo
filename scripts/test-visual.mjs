@@ -2,6 +2,7 @@ import { cpus, totalmem } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { withTaskBrowserBuild } from "./task-browser-build.mjs";
 import { pinnedPlaywrightImage } from "./pinned-playwright-image.mjs";
 const update = process.argv.includes("--update");
 const performanceOnly = process.argv.includes("--performance-only");
@@ -30,7 +31,8 @@ writeFileSync(join(timingDirectory, "performance-run.json"), JSON.stringify({
     dockerCpus: diagnosticCpus ?? null, dockerMemoryBytes: diagnosticMemory ?? null,
     host: hostDetails, runner: "linux-pinned", buildMode: "production-local" },
 }, null, 2) + "\n");
-const result = spawnSync(
+mkdirSync("test-results", { recursive: true });
+const result = withTaskBrowserBuild((output) => spawnSync(
   "docker",
   [
     "run",
@@ -41,6 +43,7 @@ const result = spawnSync(
     "--ipc=host",
     "-e",
     "TEMPO_VISUAL_RUNNER=linux-pinned",
+    "-e", `TEMPO_BROWSER_BUILD_DIR=/workspace/${relative(process.cwd(), output).split(sep).join("/")}`,
     "-e",
     `TEMPO_COMMIT=${commit}`,
     "-e", `TEMPO_DIAGNOSTIC_DOCKER_CPUS=${diagnosticCpus ?? "unavailable"}`,
@@ -64,6 +67,6 @@ const result = spawnSync(
     `npm ci --no-audit && npx playwright test --config playwright.visual.config.ts${performanceOnly ? " performance.spec.ts" : ""}${update ? " --update-snapshots" : ""}`,
   ],
   { stdio: "inherit" },
-);
+), { parent: resolve("test-results"), target: "local" });
 if (result.error) console.error(result.error.message);
 process.exit(result.status ?? 1);
