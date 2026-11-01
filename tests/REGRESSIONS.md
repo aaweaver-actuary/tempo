@@ -6701,3 +6701,13 @@ its SHA and preserves marker-only stderr even when the original45-second
 stdout and limits; original timeout identity/partial markers with redaction;
 line/byte retention bounds; and a retention write error preserving the timeout.
 Production code, source/owner identities, caps and journey assertions are unchanged.
+
+### Recovery worker binds the final admitted configuration (#668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions[study-only-on]`
+reproduced a16's transition7 `sync_configuration_changed_restart_worker` refusal
+after seven authoritative transitions and a successful41.104s full-scope capture.
+The existing configuration-ready marker now follows transition7's final owner
+configuration commit and precedes producer-start; the second concrete runtime
+is built afterward. No worker identity, admission, assertion, cap, timeout or
+product configuration fence is changed.

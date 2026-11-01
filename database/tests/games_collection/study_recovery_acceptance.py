@@ -465,7 +465,6 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                 break
             assert time.monotonic() < deadline, 'recovery_mode_command_not_complete'
             time.sleep(.05)
-    (directory / 'recovery-configuration-ready').write_text('current scope and mode committed\n')
     deadline = time.monotonic() + 45
     while True:
         initial = api('GET', '/api/queue/window?limit=20')
@@ -523,6 +522,7 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
                     inputs['lichess'].append(dict(id=gap_id, createdAt=int((inputs['now'] - 90) * 1000),
                         rated=True, speed='rapid', pgn='[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 1-0\n'))
                     configure_window()
+                    (directory / 'recovery-configuration-ready').write_text('current scope and mode committed\n')
                     (directory / 'recovery-producer-start').write_text('original admission only\n')
                     producer_deadline = time.monotonic() + 45
                     while True:

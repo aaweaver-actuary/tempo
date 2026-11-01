@@ -221,3 +221,12 @@ fixture credentials and bounding each retained file to256 lines/512KiB.
 all journey assertions remain unchanged. A retention write error is recorded in
 the report and never replaces the original command outcome. These observations
 explain an actual packaged failure; they do not substitute for its acceptance.
+
+The second real recovery worker is constructed only after transition7 commits
+its final capture configuration. Its existing configuration-ready marker now
+precedes producer-start at that boundary, rather than preceding the later
+transition4/7 configuration edits. The prior a16 run passed the first full-scope
+capture and seven authoritative transitions, then the product correctly refused
+its stale concrete worker with `sync_configuration_changed_restart_worker`.
+The same process/boot identity, admission and configuration fence are retained;
+the named thirty-transition packaged case is the regression.
