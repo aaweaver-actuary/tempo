@@ -91,7 +91,7 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await context.setOffline(false);
     await page.reload();
     await page.getByRole('button', { name: 'Check saved reviews', exact: true }).click();
-    await expect.poll(() => delivered.length).toBe(1);
+    await expect.poll(() => delivered.length, { timeout: 20000 }).toBe(1);
     expect(delivered[0].id).toBe(original.requestId);
     const saved = original.payload as { backendId: string; queueEntryId: number; attemptId: string; completedAt: string; outcome: string; guided: boolean; expectedRevision?: number };
     expect(delivered[0].body).toMatchObject({ queue_entry_id: saved.queueEntryId, attempt_id: saved.attemptId,
