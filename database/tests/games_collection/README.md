@@ -76,7 +76,7 @@ fail the healthy run. Native readback after the endpoint checks the exact
 review receipt and monotonically newer committed issuance. Three separate
 transitions must enter explicit preparation; actual local preparer calls,
 retained original effects/settlement and admitted daily-queue background progress
-are checked. Every sample, first/cold sample and failure remains in the receipts.
+are checked. Every sample and failure remains in the receipts. The first measured transition is already warm from the preceding packaged journey; initial fresh-browser acquisition is recorded separately, without claiming an isolated cold-server measurement.
 
 The old setup collector's synthetic quiet-admission seam is separated from the
 measured run. Its recovery phase reconstructs the real managed worker with the
@@ -101,3 +101,19 @@ candidate. The first pure control is replaced by the actual retained disposable
 control; its geometry is recorded. Without that input, the deterministic generator
 runs once per mode pair and caches only authored fixture payloads in the test
 process. This checkpoint is content setup, never a qualification receipt.
+
+The #668 prerequisite variant reuses that same running assembly before the large
+fixture is added. Two synthetic existing mature tactic definitions become due;
+only the production queue owner admits/issues them. While the real browser waits
+and the optional background worker is paused, one essential Celery child exits
+just after a real committed queue slice and before acknowledgment. The existing
+worker must respawn/recover and publish the same durable queue generation.
+The fixture then captures a real qualifying source, invalidates its certificate
+through the owner, pauses its collector with managed mode unchanged, and requires
+actual unrelated browser save/replay plus a playable successor. Exact integrity
+maintenance claims run the installed scan handlers to restore authority; no
+successful certificate, task, effect, issuance or review is manufactured. The
+same original delivery must reach real target issuance and clean browser
+settlement. Each pause/process/resource belongs to the verified disposable
+assembly and is covered by its existing teardown. The separate unchanged
+thirty-transition loop retains the representative latency targets and raw samples.

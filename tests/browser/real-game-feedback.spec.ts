@@ -180,10 +180,11 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
   try {
     await page.setViewportSize({ width: 1280, height: 844 });
     await page.addInitScript(() => localStorage.setItem("tempo-sound", "false"));
+    const firstBrowserStarted = performance.now();
     await page.goto("/");
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(scenario.protected_queue_entry_id));
     const board = page.locator(".board-frame").first(), protectedFen = await board.getAttribute("data-fen");
-    await browserReady({ stage: "protected", entry_id: scenario.protected_queue_entry_id });
+    await browserReady({ stage: "protected", entry_id: scenario.protected_queue_entry_id, first_browser_load_ms: performance.now() - firstBrowserStarted });
     await providerReady("source");
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(scenario.protected_queue_entry_id));
     await expect(board).toHaveAttribute("data-fen", protectedFen!);
@@ -262,4 +263,112 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
       body: JSON.stringify({ scenario, reviews, refresh_requests: refreshRequests, game_reviews: gameReviews, network,
         console_errors: consoleErrors, page_errors: pageErrors }) });
   }
+});
+
+test("packaged held prerequisite preserves Study through essential worker recovery", async ({ page }, testInfo) => {
+  // Finite orchestration includes real child recovery and explicit owner scan;
+  // individual product requests and stage assertions retain their own bounds.
+  test.setTimeout(180_000);
+  const scenarioPath = process.env.TEMPO_PACKAGED_HOLD_SCENARIO;
+  test.skip(!scenarioPath, "Requires the owned packaged recovery assembly");
+  if (!scenarioPath) throw new Error("Owned prerequisite scenario required");
+  const scenario = JSON.parse(await readFile(scenarioPath, "utf8")) as { version: number; controls: string[]; target: string };
+  expect(scenario.version).toBe(1);
+  const directory = dirname(scenarioPath);
+  const board = page.locator('[data-view="train"] .persistent-board-shell[data-board-owner="train"] .board-frame:visible, #train .board-frame:visible').first();
+  const cards = new Map<number, { id: string; queue_entry_id: number; revision: number }>();
+  page.on("response", async response => {
+    if (new URL(response.url()).pathname === "/api/queue/window" && response.status() === 200) {
+      const body = await response.json() as { cards: Array<{ id: string; queue_entry_id: number; revision: number }> };
+      body.cards.forEach(card => cards.set(card.queue_entry_id, card));
+    }
+  });
+  async function marker(value: Record<string, unknown>) {
+    const path = join(directory, "hold-browser-ready.json");
+    await writeFile(path + ".next", JSON.stringify(value)); await rename(path + ".next", path);
+  }
+  async function released(stage: string) {
+    await expect.poll(async () => {
+      try { return (JSON.parse(await readFile(join(directory, "hold-provider-ready.json"), "utf8"))) as { stage: string }; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { stage: "pending" }; throw error; }
+    }, { timeout: 45_000 }).toMatchObject({ stage });
+  }
+  async function saved(card: { id: string; queue_entry_id: number; revision: number }) {
+    const received = page.waitForResponse(response => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/cards/${card.id}/review`);
+    await expect(board).toHaveAttribute("data-input-enabled", "true");
+    await move(page, "e2", "e4");
+    const response = await received, request = response.request();
+    const body = request.postDataJSON() as Record<string, unknown>, identity = request.headers()["idempotency-key"];
+    const result = await response.json() as Record<string, unknown>;
+    const complete = async (status: number, value: Record<string, unknown>) => {
+      if (status === 200) return value;
+      expect(status).toBe(202);
+      let receipt: { state?: string; response?: Record<string, unknown> } = {};
+      await expect.poll(async () => {
+        receipt = await page.evaluate(async id => {
+          const observed = await fetch(`/api/operations/${encodeURIComponent(id)}`);
+          if (!observed.ok) throw new Error(`Receipt unavailable: ${observed.status}`);
+          return observed.json();
+        }, String(value.operation_id));
+        return receipt.state;
+      }, { timeout: 45_000 }).toBe("complete");
+      return receipt.response!;
+    };
+    const receipt = await complete(response.status(), result);
+    expect(receipt.persisted).toBe(true); expect(body.guided).toBe(false);
+    const replay = await page.evaluate(async input => {
+      const result = await fetch(input.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": input.identity }, body: JSON.stringify(input.body) });
+      return { status: result.status, value: await result.json() };
+    }, { url: request.url(), identity, body });
+    expect(await complete(replay.status, replay.value)).toEqual(receipt);
+    return { receipt, replay: receipt, body, identity };
+  }
+  await page.addInitScript(() => localStorage.setItem("tempo-sound", "false"));
+  await page.goto("/");
+  // Preserve and finish any real repeat retained by the preceding journey.
+  // Only normal UI reviews/replays may make the initial queue empty.
+  let empty = false;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const queue = await page.evaluate(async () => {
+      const response = await fetch("/api/queue/window?limit=2");
+      if (!response.ok) throw new Error(`Initial queue authority unavailable: ${response.status}`);
+      return response.json() as Promise<{ cards: Array<{ id: string; queue_entry_id: number; revision: number }> }>;
+    });
+    if (!queue.cards.length) {
+      await expect.poll(async () => await board.count() > 0 && await board.getAttribute("data-input-enabled") === "true").toBe(false);
+      empty = true;
+      break;
+    }
+    const existing = queue.cards[0];
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(existing.queue_entry_id));
+    await saved(existing);
+    await page.reload();
+  }
+  expect(empty, "Initial genuine owner queue must become empty without resetting rows").toBe(true);
+  await marker({ stage: "waiting", empty: true, playable: false });
+  await released("controls");
+  await page.reload();
+  await expect(board).toHaveAttribute("data-input-enabled", "true", { timeout: 45_000 });
+  const current = async () => {
+    let card: { id: string; queue_entry_id: number; revision: number } | undefined;
+    await expect.poll(async () => { card = cards.get(Number(await page.locator("#train").getAttribute("data-queue-entry-id"))); return card?.id; }).toBeTruthy();
+    return card!;
+  };
+  const first = await current(); expect(scenario.controls).toContain(first.id);
+  await released("held");
+  const firstSave = await saved(first);
+  await expect.poll(() => page.locator("#train").getAttribute("data-queue-entry-id"), { timeout: 45_000 }).not.toBe(String(first.queue_entry_id));
+  const second = await current(); expect(scenario.controls).toContain(second.id); expect(second.id).not.toBe(first.id);
+  await marker({ stage: "saved", control: first.id, successor: second.id, saved: firstSave.receipt, replay: firstSave.replay });
+  await released("go-away");
+  const away = await page.context().newPage(); await away.goto("about:blank"); await away.bringToFront();
+  await marker({ stage: "away" });
+  await released("restored"); await page.bringToFront(); await away.close();
+  await saved(second);
+  await expect.poll(() => page.locator("#train").getAttribute("data-queue-entry-id"), { timeout: 45_000 }).not.toBe(String(second.queue_entry_id));
+  const target = await current(); expect(target.id).toBe(scenario.target);
+  const targetSave = await saved(target);
+  await marker({ stage: "complete", target_review: targetSave.receipt });
+  await testInfo.attach("held-prerequisite-correspondence", { contentType: "application/json", body: JSON.stringify({ first, second, target, firstSave, targetSave }) });
 });

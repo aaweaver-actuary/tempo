@@ -25,7 +25,7 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
     @task_prerun.connect(weak=False)
     def install_preparation_observer(sender=None, args=(), **unused):
         global patched
-        selected = (getattr(sender, 'name', '') == 'app.tasks.maintain_game_feedback'
+        selected = (getattr(sender, 'name', '') in {'app.tasks.maintain_game_feedback', 'app.tasks.progress_study_queue'}
             or getattr(sender, 'name', '') == 'app.tasks.execute_foreground_command'
             and len(args) > 1 and args[1] == 'queue.prepare_next')
         if patched or not selected:
@@ -56,6 +56,26 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
             return original_qualified_facts(*values, **kwargs)
 
         provider_priority._qualified_facts = observed_qualified_facts
+        from app import tasks
+        original_queue_slice = tasks.execute_postgres_queue_refresh_slice
+        @wraps(original_queue_slice)
+        def observed_queue_slice(task):
+            more = original_queue_slice(task)
+            fault = Path('/qualification/essential-crash-after-slice')
+            marker = Path('/qualification/essential-crashed.json')
+            if fault.exists() and more:
+                try:
+                    with marker.open('x') as output:
+                        json.dump(dict(task_id=task['id'], generation=task['generation'],
+                            phase=task['phase'], lease_token=task['lease_token'], pid=os.getpid(),
+                            after_committed_slice=True), output)
+                        output.flush()
+                        os.fsync(output.fileno())
+                except FileExistsError:
+                    return more
+                os._exit(19)  # Actual child loss after owner commit, before Celery acknowledgment.
+            return more
+        tasks.execute_postgres_queue_refresh_slice = observed_queue_slice
         patched = True
 
     from app.celery_app import celery_app
@@ -170,6 +190,61 @@ try:
         store.configure(configuration, previous.revision if previous else 0)
         print(json.dumps({'configured': True, 'revision': configuration.revision,
                           'selected_repertoire_count': len(configuration.repertoire_ids)}))
+    elif sys.argv[1] == 'qualify-local-feedback':
+        from app.product_composition.provider_priority import CurrentProviderPriorityIntake
+        from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+        from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+        connections = DedicatedGamesConnections(os.environ['TEMPO_DATABASE_WRITE_URL'])
+        store = PostgresGamesStore(connections)
+        original = store.delivery(sys.argv[2])
+        if original is None:
+            raise RuntimeError('Original fixture delivery unavailable')
+        intake = CurrentProviderPriorityIntake(connections=connections,clock=Clock(),operation_stopped=lambda:False)
+        qualified = intake.prepare(original)
+        assert qualified.qualification_status == 'ready' and qualified.qualification is not None
+        assert qualified.command == original.command and qualified.operation_id == original.operation_id
+        store.save_delivery(qualified)
+        print(json.dumps({'qualified':True,'operation_id':qualified.operation_id,'determined_at':qualified.determined_at}))
+    elif sys.argv[1] == 'hold-integrity':
+        from tempo_legacy_database.connections import connection
+        from app.services.postgres_integrity import invalidate_integrity_in_transaction
+        with connection() as database:
+            invalidate_integrity_in_transaction(database, sys.argv[2])
+        print(json.dumps({'invalidated': True}))
+    elif sys.argv[1] == 'request-integrity':
+        from tempo_legacy_database.connections import connection
+        from app.services.postgres_integrity import request_integrity_scan_in_transaction
+        with connection() as database:
+            queued = request_integrity_scan_in_transaction(database, sys.argv[2], int(sys.argv[3]), sys.argv[4])
+        print(json.dumps({'task_id':queued['id'], 'generation':queued['generation']}))
+    elif sys.argv[1] == 'step-integrity':
+        from tempo_legacy_database.adapters import postgres_store
+        from app.services.opening_graph_recovery import claim_exact_task
+        from app.services.postgres_integrity import execute_postgres_integrity_slice
+        from app.services.redis_admission_gate import background_lease
+        postgres_store.prepare_authoritative_background_pool()
+        complete, phases = False, []
+        # A pinned fixture maintenance unit uses the actual integrity handler;
+        # it never writes completion/certificate flags or changes global mode.
+        for _ in range(16):
+            with background_lease(), postgres_store.connection(background=True) as database:
+                task = claim_exact_task(database, sys.argv[2], 'integrity_scan', sys.argv[3], int(sys.argv[4]),
+                    day=sys.argv[5], graph_generation=int(sys.argv[6]))
+            if task is None:
+                complete = True
+                break
+            phases.append(task['phase'])
+            execute_postgres_integrity_slice(task)
+        print(json.dumps({'complete':complete, 'phases':phases}))
+    elif sys.argv[1] == 'retry-local-feedback':
+        from app.product_composition.game_sync_current import current_provider_worker
+        from app.product_composition.game_worker import run_optional_worker
+        from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+        runtime, schedule = current_provider_worker(workspace='legacy',
+            connections=DedicatedGamesConnections(os.environ['TEMPO_DATABASE_WRITE_URL']),
+            clock=Clock(), transport_factory=LocalHTTP, delivery_enabled=True)
+        units = run_optional_worker(runtime, enqueue_due=lambda:False, stop_when_idle=True, max_units=4)
+        print(json.dumps({'bounded_units':units, 'original_local_retry':True}))
     elif sys.argv[1] == 'feedback-capabilities':
         from app.product_composition.game_collection_status import feedback_release_capabilities
         print(json.dumps(feedback_release_capabilities()))

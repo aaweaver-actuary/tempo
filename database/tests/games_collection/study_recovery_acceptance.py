@@ -25,7 +25,7 @@ from fixtures.study_recovery_content import OBSERVED, publication
 
 def memory_observation(docker, container):
     """Bounded read-only cgroup/process observations; never change teardown."""
-    command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
+    command = "printf 'CURRENT\\n'; cat /sys/fs/cgroup/memory.current; printf 'PEAK\\n'; cat /sys/fs/cgroup/memory.peak; printf 'CPU\\n'; cat /sys/fs/cgroup/cpu.stat; printf 'EVENTS\\n'; cat /sys/fs/cgroup/memory.events; printf 'STAT\\n'; awk '$1==\"anon\" || $1==\"file\" || $1==\"kernel\" {print}' /sys/fs/cgroup/memory.stat; printf 'PROCESSES\\n'; awk '/^(Name|Pid|VmRSS):/ {print}' /proc/[0-9]*/status"
     try:
         result = docker('exec', container, 'sh', '-c', command, check=False)
         return dict(returncode=result.returncode, output=result.stdout[:32768], error=result.stderr[:2000])
@@ -210,6 +210,189 @@ def _marker(path, value):
     temporary.replace(path)
 
 
+def held_prerequisite_journey(case, *, directory, report, inputs, entry, api, docker, collector, background, root, web_url,
+                              repertoire, target):
+    """Actual missing owner certificate, stopped producer, save and same-key recovery.
+
+    Reuse the small packaged scope before representative full-scope seeding. All
+    starting card facts are synthetic; queue admission/reviews/effects are real
+    installed owner commands. No certificate or successful task is fabricated.
+    """
+    def confirmed(result):
+        if result['status'] == 200:
+            return result['body']
+        assert result['status'] == 202, result
+        deadline = time.monotonic() + 45
+        while True:
+            observed = api('GET', '/api/operations/' + result['body']['operation_id'])
+            assert observed['status'] == 200
+            if observed['body'].get('state') == 'complete':
+                return observed['body']['response']
+            assert time.monotonic() < deadline, 'held_prerequisite_operation_pending'
+            time.sleep(.05)
+    controls = ['held-control-' + uuid.uuid4().hex for _ in range(2)]
+    hold_scenario = directory/'hold-scenario.json'
+    hold_scenario.write_text(json.dumps(dict(version=1, controls=controls, target=target['card_id'])))
+    held_browser = None
+    evidence = root/'test-results/collection-release'/('held-'+uuid.uuid4().hex)
+    evidence.mkdir(parents=True)
+    report['held_prerequisite_evidence'] = str(evidence)
+    def release(stage):
+        _marker(directory/'hold-provider-ready.json', dict(stage=stage))
+    def wait_browser(stage):
+        deadline = time.monotonic()+45
+        while True:
+            marker = directory/'hold-browser-ready.json'
+            if marker.exists():
+                value = json.loads(marker.read_text())
+                if value['stage'] == stage:
+                    return value
+            assert held_browser.poll() is None, 'held_browser_failed_before_'+stage
+            assert time.monotonic()<deadline, 'held_browser_stage_timeout_'+stage
+            time.sleep(.05)
+    paused_background = paused_collector = False
+    try:
+      docker('pause', background)
+      paused_background = True
+      docker('pause', collector)
+      paused_collector = True
+      with (evidence/'runner.log').open('w') as output:
+        held_browser = subprocess.Popen([shutil.which('node'), str(root/'node_modules/@playwright/test/cli.js'),
+            'test','tests/browser/real-game-feedback.spec.ts','--config=playwright.config.ts','--project=chromium',
+            '--grep','packaged held prerequisite preserves Study through essential worker recovery','--trace=on'],
+            cwd=root, env=os.environ|dict(TEMPO_DOCKER_URL=web_url,TEMPO_PACKAGED_HOLD_SCENARIO=str(hold_scenario),
+                TEMPO_TEST_OUTPUT_DIR=str(evidence/'artifacts'),TEMPO_CI_REPORT=str(evidence/'playwright.json')),
+            stdout=output,stderr=subprocess.STDOUT,text=True,start_new_session=True)
+        waiting = wait_browser('waiting')
+        assert waiting['empty'] is True and waiting['playable'] is False
+        empty = api('GET','/api/queue/window?limit=2')
+        assert empty['status']==200 and empty['body']['cards']==[], empty
+        for control in controls:
+            with case.transaction() as database:
+                database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type,trained_color)
+                SELECT %s,repertoire_id,kind,start_fen,moves_json,'mature',CURRENT_DATE,introduced_at,1,interval_days,
+                    fsrs_card_json,first_correct_at,stability,'tactic','white' FROM cards WHERE id=%s""", (control, case.card_id))
+        deadline = time.monotonic()+45
+        while True:
+            policy = api('GET','/api/system/foreground-active')
+            if policy['status']==200 and policy['body'].get('available') is True and policy['body'].get('active') is True:
+                break
+            assert time.monotonic()<deadline, 'held_browser_waiting_activity_not_observed'
+            time.sleep(.1)
+        assert json.loads(docker('inspect',background).stdout)[0]['State']['Paused'] is True
+        settings = api('GET', '/api/settings')
+        assert settings['status'] == 200
+        (directory/'essential-crash-after-slice').write_text('crash once after genuine committed queue slice\n')
+        confirmed(api('PUT', '/api/settings', settings['body'], 'held-queue:' + uuid.uuid4().hex))
+        release('controls')
+        deadline = time.monotonic() + 45
+        while True:
+            queue = api('GET', '/api/queue/window?limit=20')
+            if queue['status'] == 200 and queue['body'].get('cards') and queue['body']['cards'][0]['id'] in controls:
+                card = queue['body']['cards'][0]
+                break
+            assert time.monotonic() < deadline, 'held_control_not_admitted_by_queue_owner'
+            time.sleep(.1)
+        source_id = 'held-' + uuid.uuid4().hex[:8]
+        game = chess.pgn.Game(); game.setup(chess.Board(target['starting_fen']))
+        game.headers.update(White='Learner', Black='Opponent', Result='1-0')
+        node = game
+        for uci in [*target['prefix'], target['wrong']]:
+            node = node.add_variation(chess.Move.from_uci(uci))
+        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp()) + 61
+        now = datetime.fromtimestamp(inputs['now'], timezone.utc).replace(microsecond=0)
+        inputs['configuration']['revision'] += 1
+        inputs['configuration']['window'] = dict(start_at=(now-timedelta(seconds=120)).isoformat(),
+            end_at=(now-timedelta(seconds=60)).isoformat(), precision='second')
+        inputs['lichess'].append(dict(id=source_id, createdAt=int((inputs['now']-90)*1000), rated=True, speed='rapid', pgn=str(game)))
+        (directory/'provider.json').write_text(json.dumps(inputs))
+        entry('foreground-worker', 'recovery-configure')
+        entry('foreground-worker', 'worker')
+        with case.transaction() as database:
+            rows = database.execute_native("""SELECT delivery.operation_id,delivery.payload FROM product_feedback_deliveries delivery
+                JOIN product_feedback_sources source USING(source_key)
+                WHERE source.payload->'original'->>'source_game_id'=%s""", (source_id,)).fetchall()
+            assert len(rows) == 1 and rows[0]['payload']['state'] == 'pending'
+            operation, original = rows[0]['operation_id'], rows[0]['payload']['encounter']
+            graph = database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s', (repertoire,)).fetchone()[0]
+        qualified = entry('foreground-worker','qualify-local-feedback',operation)
+        assert qualified['qualified'] and qualified['operation_id']==operation
+        assert entry('foreground-worker', 'hold-integrity', repertoire)['invalidated']
+        prepared = confirmed(api('POST', '/api/queue/prepare-next', {}, 'held-prepare:' + uuid.uuid4().hex))
+        assert prepared['pending'] and prepared['blocks_issuance'] is False, prepared
+        with case.transaction() as database:
+            held = database.execute_native('SELECT payload FROM product_feedback_deliveries WHERE operation_id=%s', (operation,)).fetchone()[0]
+            assert held['qualification_status'] == 'held' and held['encounter'] == original
+            assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE identity_json::jsonb->>'game_id'=%s", (original['key']['game_id'],)).fetchone()[0] == 0
+        release('held')
+        saved_marker = wait_browser('saved')
+        saved = saved_marker['saved']
+        assert saved['persisted'] and saved_marker['replay'] == saved
+        assert saved_marker['control'] == card['id']
+        assert saved_marker['successor'] in controls and saved_marker['successor'] != card['id']
+        ordinary = api('GET', '/api/queue/window?limit=2')
+        assert ordinary['status'] == 200 and ordinary['body']['cards'][0]['id'] == saved_marker['successor'], ordinary
+        day = ordinary['body']['local_date']
+        release('go-away')
+        wait_browser('away')
+        deadline = time.monotonic()+45
+        while api('GET','/api/system/foreground-active')['body'].get('active') is not False:
+            assert time.monotonic()<deadline, 'held_browser_visibility_lease_not_released'
+            time.sleep(.1)
+        scan = entry('foreground-worker', 'request-integrity', repertoire, str(graph), day)
+        phases = []
+        for _ in range(128):
+            recovered = entry('foreground-worker', 'step-integrity', scan['task_id'], repertoire,
+                str(scan['generation']), day, str(graph))
+            phases.extend(recovered['phases'])
+            if recovered['complete']:
+                break
+        else:
+            raise AssertionError('held_prerequisite_owner_recovery_exceeded_finite_work')
+        inputs['now'] += 31
+        (directory/'provider.json').write_text(json.dumps(inputs))
+        retry = entry('foreground-worker', 'retry-local-feedback')
+        current = entry('api', 'feedback-state', operation)
+        assert current['command'] == original and current['receipt'] is not None
+        assert current['receipt']['key'] == original['key']
+        release('restored')
+        final_browser = wait_browser('complete')
+        assert held_browser.wait(timeout=5)==0
+        settled = entry('api','feedback-state',operation)
+        assert settled['command']==original and settled['receipt']['status']=='settled'
+        assert settled['receipt']['progress']['scheduling_review_id'] is not None
+        assert settled['receipt']['progress']['settlement']['review_id']==final_browser['target_review']['review_id']
+        entry('foreground-worker','retry-local-feedback')
+        assert entry('api','feedback-state',operation)['receipt']==settled['receipt']
+        crash = json.loads((directory/'essential-crashed.json').read_text())
+        with case.transaction() as database:
+            events = [dict(row) for row in database.execute_native("SELECT event,phase,generation FROM background_task_events WHERE task_id=%s AND generation=%s ORDER BY id", (crash['task_id'],crash['generation'])).fetchall()]
+            assert any(item['event']=='slice_complete' for item in events) and any(item['event']=='published' for item in events)
+            from app.study.game_feedback import effect_id
+            from app.contracts.product_v02.learning import GameEffectKey
+            effect = effect_id(GameEffectKey.model_validate(original['key']))
+            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",(effect,)).fetchone()[0]==1
+        report['essential_queue_crash_recovery'] = dict(crash=crash, events=events, browser_waiting=policy['body']['active'], optional_worker_paused=True)
+        report['held_prerequisite_recovery'] = dict(source_id=source_id, operation_id=operation,
+            original=original, held=held, saved=saved, control_card_id=card['id'], browser=final_browser,
+            core_queue_after_save=ordinary['status'], owner_scan=scan, owner_phases=phases,
+            local_retry=retry, recovered_receipt=current['receipt'], settled_receipt=settled['receipt'], collector_stopped=True,
+            classification='synthetic packaged owner restoration and actual browser save; separate 30-transition browser measurements follow')
+
+    finally:
+        if held_browser and held_browser.poll() is None:
+            release('abort')
+            os.killpg(held_browser.pid, signal.SIGTERM)
+            try: held_browser.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(held_browser.pid, signal.SIGKILL); held_browser.wait(timeout=5)
+        if paused_collector:
+            docker('unpause', collector)
+        if paused_background:
+            docker('unpause', background)
+
+
 def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, docker, containers,
                  original_repertoire, custom_target, web_url, study_only, mode_intent):
     """Continue the already verified roles/network/images; no second launcher."""
@@ -228,6 +411,9 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
     report['recovery_producer_identity'] = expected
     report['recovery_memory_before_scope'] = {role: memory_observation(docker, resource['id'])
         for role, resource in containers.items()}
+    held_prerequisite_journey(case, directory=directory, report=report, inputs=inputs, entry=entry,
+        api=api, docker=docker, collector=collector['Id'], background=containers['background-worker']['id'],
+        root=root, web_url=web_url, repertoire=original_repertoire, target=custom_target)
     workload = seed_scope(case, original_repertoire, directory)
     inputs['configuration']['repertoire_ids'] = workload['scope']
     configuration_windows = []
@@ -445,7 +631,8 @@ def run_recovery(case, *, root, directory, report, inputs, entry, api, execute, 
             assert status['receipt']['status'] == 'settled'
             assert status['command'] == item['command']
             item['settled_receipt'] = status['receipt']
-        report['study_recovery'] = dict(mode=study_only, workload=workload, measurements=measurements,
+        report['study_recovery'] = dict(first_sample_context='warm: the preceding packaged browser journeys already used this candidate; initial browser acquisition is recorded separately',
+            cpu_observation_interval='cgroup CPU counters before scope/held case and after the complete acceptance; not exclusive per-review CPU', mode=study_only, workload=workload, measurements=measurements,
             transitions=transitions, background=background, staged=staged,
             background_events=progress,
             actual_managed_producer=producer_progress, controlled_configuration_windows=configuration_windows,
