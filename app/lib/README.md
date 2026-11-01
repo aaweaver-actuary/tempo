@@ -14,7 +14,7 @@ remains unknown until its URL-specific decoder; `transportLines` and `lines`
 return analysis lines; `index` returns indexed positions; both repertoire
 preparation kinds return an alternative snapshot; `matches` and `similarity`
 return ranked indexed positions with distances. The browser's essential and
-bulk worker lanes retain their existing routing and reply handling.
+bulk worker lanes retain their existing routing and reply handling. The essential entry imports queue, deck and workspace metadata computation; the optional entry imports repertoire and position computation. The shared wire/request schemas and URL-owned workspace validator remain shared; they are not workspace UI or engine startup.
 
 Worker replies are checked against the retained task by `study-result-decoder`;
 queue cards, deck pairs, lines, positions, ranked matches, and alternative
@@ -29,8 +29,8 @@ The two worker lanes, pause/termination behavior, and wire version are unchanged
 
 ```mermaid
 flowchart LR
-  E["Essential queue / deck pending requests"] --> W["Worker reply envelope"]
-  B["Optional bulk request, pause / retry lifecycle"] --> W
+  E["Essential queue / deck / metadata pending"] --> EW["Essential worker entry"] --> W["Worker reply envelope"]
+  B["Optional bulk request, pause / retry lifecycle"] --> BW["Optional repertoire / similarity worker entry"] --> W
   W --> D["Retained-task result decoder"]
   D -->|"valid for task"| R["Resolve that request"]
   D -->|"invalid result"| X["Reject that request"]

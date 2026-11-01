@@ -52,7 +52,7 @@ function pump() {
   if (!active) return;
   const request = active;
   try {
-    const runningWorker = new Worker(new URL('./study.worker.ts', import.meta.url),
+    const runningWorker = new Worker(new URL('./optional-study.worker.ts', import.meta.url),
       { type: 'module', name: 'tempo-optional-preparation' });
     worker = runningWorker;
     const current = () => worker === runningWorker && active === request;

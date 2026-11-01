@@ -1,4 +1,5 @@
-import { computeStudyTask, type StudyTask, type StudyTaskResult } from "./study-computation";
+import type { StudyTask, StudyTaskResult } from "./study-computation";
+import { computeEssentialStudyTask } from "./essential-study-computation";
 import { isBulkStudyTask, runBulkStudyTask } from './bulk-study';
 import { decodeStudyResult } from "./study-result-decoder";
 import { studyReplySchema } from "../domain/schemas";
@@ -46,7 +47,7 @@ export function runStudyTask<Task extends StudyTask>(
   // Test/server environments do not have workers; still yield before computing.
   if (typeof Worker === "undefined")
     return new Promise<StudyTaskResult<Task>>((resolve, reject) => {
-      setTimeout(() => {
+      setTimeout(async () => {
         updateBrowserActivity(activityId, title, "running", "Computing");
         if (signal?.aborted) {
           updateBrowserActivity(activityId, title, "complete", "Cancelled");
@@ -54,9 +55,17 @@ export function runStudyTask<Task extends StudyTask>(
           return;
         }
         try {
+          const optional = task.kind !== "workspace" && isBulkStudyTask(task)
+            ? await import("./optional-study-computation") : undefined;
+          if (signal?.aborted) {
+            updateBrowserActivity(activityId, title, "complete", "Cancelled");
+            reject(new DOMException("Cancelled", "AbortError"));
+            return;
+          }
           resolve((task.kind === "workspace"
             ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics)
-            : computeStudyTask(task)) as StudyTaskResult<Task>);
+            : optional ? optional.computeOptionalStudyTask(task)
+              : computeEssentialStudyTask(task)) as StudyTaskResult<Task>);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
