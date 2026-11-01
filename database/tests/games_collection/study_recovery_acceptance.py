@@ -183,9 +183,9 @@ def seed_scope(case, original_repertoire, directory):
     with case.transaction() as database:
         ordinary = [row[0] for row in database.execute_native("""SELECT id FROM cards
             WHERE id=ANY(%s) AND trained_color='white' AND content_type='opening'
-              AND kind='prefix' AND split_part(start_fen,' ',2)='w'
+              AND kind IN ('prefix','response')
               AND id<>%s ORDER BY id LIMIT 576""", (sorted(physical_ids), standard['card_id'])).fetchall()]
-    assert len(ordinary) == 576, 'recovery_fixture_needs_actual_executable_queue_backlog'
+    assert len(ordinary) == 576, ('recovery_fixture_needs_actual_executable_queue_backlog', len(ordinary))
     for offset in range(0, len(ordinary), 100):
         with case.transaction() as database:
             database.execute_native('UPDATE cards SET due_date=%s WHERE id=ANY(%s)',
