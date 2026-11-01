@@ -686,14 +686,14 @@ flowchart LR
   dispatch -->|"other commands"| registry
 ```
 
-Games sync record and window slices are selected at their existing worker
-handler seams only after the retained task passes admission and its lease fence.
-The essential queue path does not import either slice implementation; other
-optional worker imports remain outside this cut.
+Games sync, derivation and next-opponent slices are selected at their existing
+worker handler seams only after the retained task passes admission and its lease
+fence. The essential queue path does not import these ten slice implementations;
+other optional worker imports remain outside this cut.
 
 ```mermaid
 flowchart LR
   task["Retained worker slice"] --> fence["Existing admission and lease fence"]
-  fence -->|"Games sync kind"| load["Load matching sync slice"]
+  fence -->|"Games sync / derivation / profile kind"| load["Load matching owner slice"]
   fence -->|"daily queue"| queue["Existing Study queue slice"]
 ```
