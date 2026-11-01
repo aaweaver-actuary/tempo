@@ -10,11 +10,10 @@ import { usesLocalApi } from "../utils/local";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { invalidateWorkspaceData } from "../lib/workspace-data";
 import { invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
-import { useShallow } from "zustand/react/shallow";
 import { useTrainingStore } from "../state/training-store";
 import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
-import { View } from "../types";
+import { View, type PracticeCard } from "../types";
 import { RepertoireAuditMount } from "../features/product-api/RepertoireAuditMount";
 import { createGameReviewApi } from "../features/game-review/api";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
@@ -56,12 +55,10 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     refreshQueueAfterRepertoireChange, refreshDatabaseQueueAfterRepertoireChange,
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
     onCardSaved, finishPermanentDeletion } = props;
-  const { importedRepertoires, showImport, showTree, editorCard,
-    setShowImport, setShowTree, setEditorCard } = useTrainingStore(useShallow(state => ({
-      importedRepertoires: state.importedRepertoires, showImport: state.showImport,
-      showTree: state.showTree, editorCard: state.editorCard,
-      setShowImport: state.setShowImport, setShowTree: state.setShowTree, setEditorCard: state.setEditorCard,
-    })));
+  const importedRepertoires = useTrainingStore(state => state.importedRepertoires);
+  const [showImport, setShowImport] = useState(false);
+  const [showTree, setShowTree] = useState(false);
+  const [editorCard, setEditorCard] = useState<PracticeCard | null>(null);
   const databaseQueue = useTrainingStore(state => state.isDatabaseQueueActive);
   const offlineQueue = useTrainingStore(state => state.isOfflineQueueActive);
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
@@ -73,7 +70,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
       if (!pending) { setDeletionRecoveryError(""); return; }
       await deleteCardCommand(pending.cardId, pending.expectedRevision);
       await finishPermanentDeletion(pending.cardId);
-      if (useTrainingStore.getState().editorCard?.backendId === pending.cardId) setEditorCard(null);
+      setEditorCard(current => current?.backendId === pending.cardId ? null : current);
       setDeletionRecoveryError("");
     } catch (failure) { setDeletionRecoveryError(failure instanceof Error ? failure.message : "Could not confirm the earlier card deletion."); }
   }, [finishPermanentDeletion, setEditorCard]);
@@ -301,7 +298,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           onDelete={async deleted => {
             if (!deleted.backendId) throw new Error("The card has no database identity. Refresh training.");
             await finishPermanentDeletion(deleted.backendId);
-            setEditorCard(null);
+            setEditorCard(current => current?.backendId === deleted.backendId ? null : current);
           }}
         />
       )}

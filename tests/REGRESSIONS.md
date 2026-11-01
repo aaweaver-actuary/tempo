@@ -6507,6 +6507,7 @@ opening manifest without diagnostics. `optional_encounter_status_keeps_unknown_v
 preserves strict rejection of malformed status values and unrecognized fields.
 This repairs the real packaged baseline failure where a valid issued queue head
 was dropped because the strict browser codec omitted the new backend field.
+- Workspace authoring state ownership (#711 H1): `import_editor_state_is_workspace_owned_and_unmounting_preserves_active_attempt`, `deletion_recovery_closes_only_the_matching_current_editor`, and `deletion_recovery_closes_the_matching_editor` in `tests/unit/workspace-study-boundary.test.tsx` exercise workspace controls, preserve a retained pending review and Study state across unmount, and fence a delayed deletion against a newer editor.
 
 - Queue wire compatibility (#713 J1): `actual_queue_producer_payload_preserves_family_and_attempt_authority`, `producer_advisory_unavailable_and_legacy_absence_keep_cards_usable`, and `invalid_issued_identity_is_rejected_and_invalid_manifest_is_not_used` in `tests/unit/queue-producer-wire-regressions.test.ts` decode synthetic outputs of the current producer assembly. `tests/fixtures/queue-wire/worker-proof.mjs` runs the production worker in Chromium against that fixture. The generator stubs storage and issuance; it does not prove database issuance or review settlement. The existing decoder discards a malformed optional manifest with a diagnostic while retaining an otherwise valid card.
 ### Disjoint essential and optional claims (#664 / #668)

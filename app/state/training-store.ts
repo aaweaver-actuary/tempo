@@ -43,9 +43,6 @@ export type TrainingStoreState = {
   showHint: boolean;
   cardsLeft: number;
   reviewed: number;
-  showImport: boolean;
-  showTree: boolean;
-  editorCard: PracticeCard | null;
   suggestShorter: boolean;
   seenMoves: Set<TeachingMoveKey>;
   teachingEncounterKey: string | null;
@@ -99,14 +96,6 @@ export type TrainingStoreState = {
   setShowHint: (value: boolean | ((value: boolean) => boolean)) => void;
   setCardsLeft: (cardsLeft: number | ((current: number) => number)) => void;
   setReviewed: (reviewed: number | ((value: number) => number)) => void;
-  setShowImport: (show: boolean | ((current: boolean) => boolean)) => void;
-  setShowTree: (show: boolean | ((current: boolean) => boolean)) => void;
-  setEditorCard: (
-    card:
-      | PracticeCard
-      | null
-      | ((current: PracticeCard | null) => PracticeCard | null),
-  ) => void;
   setSuggestShorter: (value: boolean | ((current: boolean) => boolean)) => void;
   setSeenMoves: (
     moves: Set<TeachingMoveKey> | ((value: Set<TeachingMoveKey>) => Set<TeachingMoveKey>),
@@ -182,9 +171,6 @@ const defaultState = {
   showHint: false,
   cardsLeft: 0,
   reviewed: 0,
-  showImport: false,
-  showTree: false,
-  editorCard: null,
   suggestShorter: false,
   seenMoves: new Set<TeachingMoveKey>(),
   teachingEncounterKey: null,
@@ -244,9 +230,6 @@ export function selectHomeViewState(state: TrainingStoreState) {
     showHint: state.showHint,
     cardsLeft: state.cardsLeft,
     reviewed: state.reviewed,
-    showImport: state.showImport,
-    showTree: state.showTree,
-    editorCard: state.editorCard,
     suggestShorter: state.suggestShorter,
     seenMoves: state.seenMoves,
     teachingEncounterKey: state.teachingEncounterKey,
@@ -285,9 +268,6 @@ export const selectTrainingActions = (state: TrainingStoreState) => ({
   setShowHint: state.setShowHint,
   setCardsLeft: state.setCardsLeft,
   setReviewed: state.setReviewed,
-  setShowImport: state.setShowImport,
-  setShowTree: state.setShowTree,
-  setEditorCard: state.setEditorCard,
   setSuggestShorter: state.setSuggestShorter,
   setSeenMoves: state.setSeenMoves,
   setTeachingEncounterKey: state.setTeachingEncounterKey,
@@ -373,18 +353,6 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   setReviewed: (value) =>
     set((state) => ({
       reviewed: typeof value === "function" ? value(state.reviewed) : value,
-    })),
-  setShowImport: (value) =>
-    set((state) => ({
-      showImport: typeof value === "function" ? value(state.showImport) : value,
-    })),
-  setShowTree: (value) =>
-    set((state): { showTree: boolean } => ({
-      showTree: typeof value === "function" ? value(state.showTree) : value,
-    })),
-  setEditorCard: (value) =>
-    set((state) => ({
-      editorCard: typeof value === "function" ? value(state.editorCard) : value,
     })),
   setSuggestShorter: (value) =>
     set((state) => ({
