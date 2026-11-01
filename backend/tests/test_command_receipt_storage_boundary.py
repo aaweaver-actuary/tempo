@@ -126,6 +126,20 @@ def test_recovery_keeps_sorted_filters_for_each_due_stream_and_reserves_before_d
     assert events[-2:] == ['commit_exit', 'closed']
 
 
+@pytest.mark.parametrize('allowed', [None, (), {'b','a'}])
+def test_background_recovery_filters_each_due_head_before_reservation(monkeypatch, allowed):
+    events = []
+    raw, _ = writer(monkeypatch, events, [None])
+    assert application.claim_recoverable_operation(background_only=True,
+        allowed_background_commands=allowed, paused_commands={'paused'}) is None
+    statement, parameters = raw.calls[0]
+    assert statement.count(' AND background') == 3
+    assert statement.count('FOR UPDATE SKIP LOCKED') == 3
+    assert statement.count('NOT background OR command_name=ANY(%s)') == (0 if allowed is None else 3)
+    assert parameters == ((['paused'],) if allowed is None else (sorted(allowed),['paused']))*3
+    assert len(raw.calls)==1  # No foreground receipt can be reserved or decoded.
+
+
 @pytest.mark.parametrize('state', ['complete', 'failed'])
 def test_terminal_attempt_does_not_restore_removed_payload_or_consume_clock(monkeypatch, state):
     events = []

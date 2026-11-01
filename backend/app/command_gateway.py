@@ -144,10 +144,12 @@ def defer_operation_for_foreground(operation_id: str, attempt_token: str) -> boo
         return storage.defer_for_foreground(database, operation_id, attempt_token)
 
 
-def claim_recoverable_operation(*, allowed_background_commands=None, paused_commands=()) -> dict[str, Any] | None:
+def claim_recoverable_operation(*, allowed_background_commands=None, paused_commands=(),
+                                background_only: bool = False) -> dict[str, Any] | None:
     """Reserve one abandoned operation for broker redelivery."""
     with _writer_connection(True) as database:
-        row = storage.recoverable_receipt(database, allowed_background_commands, paused_commands)
+        row = storage.recoverable_receipt(database, allowed_background_commands, paused_commands,
+                                          background_only=background_only)
         if row is None:
             return None
         storage.reserve_recovery(database, row[0])
