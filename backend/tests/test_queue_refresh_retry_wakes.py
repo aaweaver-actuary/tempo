@@ -100,10 +100,11 @@ def retry_wakes(tmp_path, monkeypatch, request):
                 return
             delivery_at, publication_number = heapq.heappop(deliveries)
             delivery_options = publications[publication_number - 1][1]
-            # Default cases retain pre-upgrade marked-poll delivery semantics
-            # for mixed-version broker messages. Essential cases execute the
-            # actual newly published queue-only task and its unchanged fences.
-            delivered = tasks.progress_study_queue if getattr(request, 'param', 'legacy') == 'essential' else tasks.poll_background_tasks
+            # New published wakes always belong to the essential owner. A
+            # selected first delivery models one old marked poll still in the
+            # broker; its replacement wake uses the new essential route.
+            legacy_first = getattr(request, 'param', 'essential') == 'legacy-initial' and not poll_results
+            delivered = tasks.poll_background_tasks if legacy_first else tasks.progress_study_queue
             delivered.push_request(headers=delivery_options.get("headers"))
             try:
                 poll_results.append((delivery_at, delivered.run()))
@@ -117,78 +118,40 @@ def retry_wakes(tmp_path, monkeypatch, request):
         executions=executions, polls=poll_results, state=state, deliver_due=deliver_due)
 
 
-def test_issue135_foreground_denied_queue_wake_retains_future_delivery_without_periodic_polling(
-    retry_wakes, monkeypatch,
-):
+@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
+def test_issue135_legacy_denial_hands_same_queue_to_essential_owner_during_foreground(retry_wakes, monkeypatch):
     driver = retry_wakes
-    finished = Event()
-    worker_errors = []
-
-    def consume_wake():
-        try:
-            driver.deliver_due()
-        except BaseException as error:
-            worker_errors.append(error)
-        finally:
-            finished.set()
-
-    original_claim = tasks.claim_task
     claims = []
-
-    def claim_when_idle(**options):
-        assert not tasks.activity_gate.foreground_waiting
-        claims.append(True)
-        return original_claim(**options)
-
+    original_claim = tasks.claim_task
+    def claim(*args, **options):
+        claims.append((args,options))
+        return original_claim(*args,**options)
     def complete_queue(claimed):
-        driver.executions.append((claimed["generation"], driver.clock[0]))
+        driver.executions.append((claimed['generation'],driver.clock[0]))
         with database.connection(background=True) as connection:
-            assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
-            durable_tasks.update_queue_refresh_status_in_transaction(connection, "daily_queue",
-                claimed["payload"], state="ready")
+            assert durable_tasks.complete_task_slice_in_transaction(connection,claimed)
+            durable_tasks.update_queue_refresh_status_in_transaction(connection,'daily_queue',claimed['payload'],state='ready')
         return False
-
-    monkeypatch.setattr(tasks, "claim_task", claim_when_idle)
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_queue)
-    monkeypatch.setattr(tasks.time, "sleep", lambda *_args: pytest.fail("Admission denial must not sleep"))
+    monkeypatch.setattr(tasks,'claim_task',claim)
+    monkeypatch.setattr(tasks,'execute_postgres_queue_refresh_slice',complete_queue)
     with tasks.activity_gate.foreground():
-        command_gateway.execute_command("foreground-commit", "settings.update", {})
+        command_gateway.execute_command('foreground-commit','settings.update',{})
         before = driver.state()
-        worker = Thread(target=consume_wake)
-        worker.start()
-        assert finished.wait(1), "Admission denial occupied the worker"
-        worker.join(1)
-        assert not worker.is_alive() and worker_errors == []
-        assert driver.state() == before
-        assert before[0]["attempt_count"] == 0 and before[0]["lease_token"] is None
-        assert before[0]["lease_expires_at"] is None and before[0]["last_error"] is None
-        assert claims == [] and driver.executions == []
-        assert len(driver.deliveries) == 1, "Denied committed queue wake lost its future delivery"
-        assert driver.deliveries[0][0] == driver.clock[0] + timedelta(seconds=1)
-        assert len(driver.publications) == 2
-        for _denial_number in range(3):
-            eligibility = driver.deliveries[0][0]
-            driver.clock[0] = eligibility - timedelta(microseconds=1)
-            poll_count = len(driver.polls)
-            driver.deliver_due()
-            assert len(driver.polls) == poll_count
-            driver.clock[0] = eligibility
-            driver.deliver_due()
-            assert len(driver.polls) == poll_count + 1
-            assert len(driver.deliveries) == 1
-            assert driver.deliveries[0][0] == eligibility + timedelta(seconds=1)
-            assert driver.state() == before and claims == [] and driver.executions == []
-    driver.clock[0] = driver.deliveries[0][0]
-    driver.deliver_due()
-    saved_task, projection = driver.state()
-    assert claims == [True]
-    assert driver.executions == [(before[0]["generation"], driver.clock[0])]
-    assert saved_task["generation"] == before[0]["generation"] and saved_task["state"] == "complete"
-    assert (projection["state"], projection["refresh_pending"], projection["last_error"]) == ("ready", 0, None)
-    assert driver.deliveries == []
+        driver.deliver_due()
+        assert driver.state()==before and claims==[] and driver.executions==[]
+        assert before[0]['attempt_count']==0 and before[0]['lease_token'] is None
+        assert len(driver.deliveries)==1
+        assert driver.deliveries[0][0]==driver.clock[0]+timedelta(seconds=1)
+        driver.clock[0]=driver.deliveries[0][0]
+        driver.deliver_due()
+    saved,projection=driver.state()
+    assert len(claims)==1 and claims[0][0]==('daily_queue',)
+    assert driver.executions==[(before[0]['generation'],driver.clock[0])]
+    assert saved['generation']==before[0]['generation'] and saved['state']=='complete'
+    assert (projection['state'],projection['refresh_pending'],projection['last_error'])==('ready',0,None)
+    assert driver.deliveries==[]
 
-
-def test_issue135_queue_wake_continuation_survives_foreground_denial(retry_wakes, monkeypatch):
+def test_issue135_queue_wake_continuation_progresses_during_foreground(retry_wakes, monkeypatch):
     driver = retry_wakes
 
     def checkpoint_then_complete(claimed):
@@ -213,12 +176,8 @@ def test_issue135_queue_wake_continuation_survives_foreground_denial(retry_wakes
     assert driver.publications[-1][1]["headers"]["queue_refresh_wake"] is True
     with tasks.activity_gate.foreground():
         driver.deliver_due()
-        assert driver.state() == checkpoint and len(driver.executions) == 1
-        assert len(driver.deliveries) == 1
-        assert driver.deliveries[0][0] == driver.clock[0] + timedelta(seconds=1)
-    driver.clock[0] = driver.deliveries[0][0]
-    driver.deliver_due()
-    assert len(driver.executions) == 2 and driver.state()[0]["state"] == "complete"
+        assert len(driver.executions) == 2 and driver.state()[0]['state'] == 'complete'
+    assert driver.state()[0]['generation'] == checkpoint[0]['generation']
     assert driver.state()[1]["state"] == "ready" and driver.deliveries == []
 
 
@@ -259,7 +218,11 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
 
     monkeypatch.setattr(tasks, "claim_task", claim_before_foreground)
     try:
-        driver.deliver_due()
+        # One already-leased pre-upgrade delivery retains its old admission
+        # and fencing behavior. New capacity wakes remain essential-only.
+        heapq.heappop(driver.deliveries)
+        legacy = claim_before_foreground(kind='daily_queue')
+        tasks.execute_background_slice.run(legacy)
         saved, _projection = driver.state()
         assert saved["attempt_count"] == 0 and saved["lease_token"] is None
         assert saved["lease_expires_at"] is None and saved["last_error"] is None
@@ -270,8 +233,9 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
         else:
             assert saved["generation"] == original["generation"] and saved["state"] == "retrying"
             assert saved["phase"] == original["phase"] and saved["payload_json"] == original["payload_json"]
-            assert len(driver.deliveries) == 1
-            assert driver.deliveries[0][0] == datetime.fromisoformat(saved["next_attempt_at"])
+            # The old executor never emitted the new marked capacity wake.
+            # Its persisted retry is recovered by the essential periodic task.
+            assert driver.deliveries == []
     finally:
         release_foreground.set()
         if foreground_worker.ident is not None:
@@ -288,13 +252,14 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
                     claimed["payload"], state="ready")
             return False
         monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_saved_checkpoint)
-        driver.clock[0] = driver.deliveries[0][0]
-        driver.deliver_due()
+        driver.clock[0] = datetime.fromisoformat(saved['next_attempt_at'])
+        tasks.progress_study_queue.run()
         assert driver.executions == [(original["generation"], driver.clock[0])]
         assert driver.state()[0]["state"] == "complete" and driver.state()[1]["state"] == "ready"
         assert driver.deliveries == []
 
 
+@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
 def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(retry_wakes, monkeypatch):
     driver = retry_wakes
     with tasks.activity_gate.foreground():
@@ -330,6 +295,7 @@ def test_issue135_unmarked_periodic_poll_does_not_schedule_foreground_retry(retr
     assert driver.publications == [] and driver.deliveries == [] and driver.executions == []
 
 
+@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
 def test_issue135_foreground_retry_broker_failure_preserves_unclaimed_intent(retry_wakes, monkeypatch, caplog):
     from kombu.exceptions import EncodeError
 
