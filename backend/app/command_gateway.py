@@ -7,7 +7,7 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
-from typing import Any
+from typing import Any, TypeVar
 
 from tempo_legacy_database.adapters.commands.receipts import storage
 from tempo_legacy_database.adapters.commands.receipts.storage import (
@@ -19,11 +19,14 @@ from fastapi import HTTPException
 from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
+from .contracts.command_registry import CommandDescriptor, CommandRegistry
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
-_handlers: dict[str, CommandHandler] = {}
-_preparers: dict[str, Callable[[dict[str, Any]], Any]] = {}
+_registry = CommandRegistry()
+# Legacy registrations and the executor share these exact registry-owned maps.
+_handlers = _registry.handlers
+_preparers = _registry.preparers
 MAX_BACKGROUND_CYCLE_ATTEMPTS = 11
 MAX_HTTP_ERROR_DETAIL_BYTES = 16_384
 
@@ -52,6 +55,17 @@ def register_command(
     _handlers[name] = handler
     if prepare is not None:
         _preparers[name] = prepare
+
+
+_Transaction = TypeVar("_Transaction")
+_Original = TypeVar("_Original")
+_Prepared = TypeVar("_Prepared")
+_Result = TypeVar("_Result")
+
+
+def register_descriptor(descriptor: CommandDescriptor[_Transaction, _Original, _Prepared, _Result]) -> None:
+    """Register a correlated descriptor in the same default registry as legacy commands."""
+    _registry.register(descriptor)
 
 
 def request_digest(command_name: str, payload: dict[str, Any]) -> str:
