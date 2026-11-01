@@ -44,3 +44,10 @@ the diagnostic and defensive-pause standalone checks bind in `main`. The
 study-priority overlap runner calls the study-priority `main` before the callback
 that starts its maintenance thread, so that thread sees the same process
 binding. The associated native/packaged runs remain separate evidence.
+The SQLite diagnostic benchmark binds in `main`, canonical-retention's reusable
+proof binds on entry, and the threat-candidate standalone runner and its reusable
+three-anchor proof bind before controlled access. Background-admission imports
+the task composition before its connections; opening-evidence imports the task
+or API composition before its selected controlled routes. Direct read-only
+`read_connection` and direct concrete `postgres_store` scopes retain their
+existing paths; they do not require the controlled router's binding.
