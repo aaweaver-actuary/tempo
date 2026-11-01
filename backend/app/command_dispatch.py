@@ -13,7 +13,8 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 from redis import RedisError
 
 from .celery_app import celery_app
-from .command_gateway import CommandConflict, read_operation, request_digest
+from .command_gateway import CommandConflict, read_operation
+from .contracts.command_identity import request_digest
 
 
 def dispatch_command(

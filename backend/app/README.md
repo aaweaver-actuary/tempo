@@ -57,3 +57,22 @@ safe removal, failure independence or bounded shared-host resources.
 Database implementation belongs in the single [root database tree](../../database/README.md), with owner packaging and transaction authority retained. The remaining technical composition edges are tracked there; physical relocation is not proof of full independence. The former `app.database` and its SQLite-first description are obsolete: current connections retain explicit PostgreSQL/SQLite compatibility routing in the database owner, without changing deployment here.
 
 See [validation and existing limitations](../../database/VALIDATION.md), the [architecture index](../../docs/architecture/diagrams/README.md) and the single [proposal-only simplification list](../../database/SIMPLIFICATION.md).
+
+### Proposed B1 command identity boundary
+
+The pure [`command_identity`](contracts/command_identity.py) composition binds
+owner-specific original-request projections for review/checkpoint, paste and
+discovery to the historical digest format. The gateway keeps its public digest
+adapter; HTTP dispatch and retained import-receipt reading use the pure codec.
+Dispatch still imports the gateway for command errors and receipt access. No
+handler registration, transaction ownership, or startup behavior changes.
+
+```mermaid
+flowchart LR
+  dispatch["HTTP dispatch"] --> identity["Pure command identity composition"]
+  imports["Import receipt reader"] --> identity
+  gateway["Gateway digest adapter"] --> identity
+  identity --> review["Review/checkpoint projection"]
+  identity --> paste["Paste request projection"]
+  identity --> discovery["Discovery acceptance projection"]
+```
