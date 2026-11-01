@@ -519,3 +519,25 @@ test('PR214_FULL_quality_and_merge_gate_compose_exact_candidate_proof', () => {
     const evidence = results(planned); alter(evidence); assert(check(evidence).length);
   }
 });
+
+test('queue_presentation_remains_conservative_until_native_owner_is_bridged', () => {
+  const path = 'backend/app/services/queue_presentation.py';
+  const development = draft([path]);
+  assert.equal(development.scope, 'targeted');
+  assert.deepEqual(development.core, { frontend: [], backend: 'all' });
+  for (const layer of ['backend', 'postgres', 'browser', 'lifecycle']) assert(development.jobs[layer].required, layer);
+  for (const layer of ['frontend', 'build', 'visual']) assert.equal(development.jobs[layer].required, false, layer);
+  assert.equal(development.jobs.postgres.mode, 'durability');
+
+  const qualification = verificationPlan({ files, cases, paths: [path], tier: 'qualification' });
+  assert.equal(qualification.scope, 'complete');
+  assert.deepEqual(qualification.core, { frontend: 'all', backend: 'all' });
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(qualification.jobs[layer].required, layer);
+  assert.equal(makeFastPlan([path], { head: 'head', base: 'base' }).tier, 'FULL');
+
+  const missing = structuredClone(inventory);
+  missing.development.nonPersistenceBackend.push({ paths: [path], tests: ['backend/tests/test_missing_owner.py'], families: ['training'] });
+  const withoutFixture = draft([path], { sourceInventory: missing });
+  for (const layer of ['frontend', 'backend', 'build', 'postgres', 'browser', 'lifecycle', 'visual']) assert(withoutFixture.jobs[layer].required, layer);
+  assert.deepEqual(withoutFixture.core, { frontend: 'all', backend: 'all' });
+});
