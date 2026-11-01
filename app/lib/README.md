@@ -41,3 +41,30 @@ flowchart LR
 
 The lanes have separate worker and pending ownership. This is a source-level
 validation boundary; it does not establish packaged or live behavior.
+
+### Study client authority and transport (proposed J2)
+
+`createStudyClient` owns one connection, generation and injected transport per
+instance. Independent clients check origin and allowed API paths, attach only
+that client's credential and workspace, and fence stale authentication events.
+The local/full adapter uses ordinary fetch. Custom clients do not restore or
+persist session credentials unless explicitly configured to do so; callers
+that enable persistence must supply the intended session-scoped storage. The
+existing exported connection functions delegate to one default client, whose
+browser storage keys and `LEARNING_URL` compatibility binding remain. Session
+settlement and saved intents still belong to `study-session-runtime` and its
+existing storage owner; consumer capability injection remains J3.
+
+```mermaid
+flowchart LR
+  Legacy["Existing Study consumers"] --> Default["One composed default Study client"]
+  Custom["Future explicit consumer"] --> Client["Configured Study client"]
+  Default --> Gate["Selected origin / path and credential policy"]
+  Client --> Gate
+  Gate --> Transport["Injected or ordinary fetch transport"]
+  Default --> Storage["Existing connection / authority storage"]
+  Legacy --> Session["Existing session and intent owner"]
+```
+
+This is a source-level capability change, not a live authority migration or
+proof that durable session consumers have adopted explicit client injection.
