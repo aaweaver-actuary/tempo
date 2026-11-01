@@ -6548,3 +6548,7 @@ Engine image family-adapter packaging (#715): the `tests/runner/engine-image-pac
 condition; a real packaged engine startup remains a separate acceptance check.
 
 - Study recovery packaged qualification: preserve executable opening backlog, exact review receipt and successor identity, and coherent provider inputs across the owned assembly; use the existing bounded role allocation and drain browser response observers before teardown. This is fixture evidence only and does not change product admission or runtime policy.
+
+### Complete snapshot wire serialization under the existing PostgreSQL budget (#703)
+
+`backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` compares full, authored and candidate documents against the released JSONB encoding, including escaped text, nulls, budget metadata and fingerprints. Both packaged recovery modes reached four verified reviews before a 384 MiB PostgreSQL OOM during the complete-repertoire source query. The wire serialization change preserves source rows, ordering, one MVCC view and existing refusal bounds; packaged recovery remains to be rerun.
