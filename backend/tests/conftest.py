@@ -14,8 +14,6 @@ def normal_study_mode(monkeypatch):
 
     Study-only regressions use real saved settings and do not request this fixture.
     """
-    from app import tasks
     from app.services import study_mode
 
     monkeypatch.setattr(study_mode, "study_only_enabled", lambda database=None: False)
-    monkeypatch.setattr(tasks, "study_only_enabled", lambda database=None: False)
