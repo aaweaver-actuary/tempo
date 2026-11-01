@@ -559,7 +559,7 @@ def test_current_target_enrichment_requires_explicit_owner_and_keeps_complete_pu
 
 
 @pytest.fixture
-def native_handoff(owned_postgres, monkeypatch,request):
+def native_handoff(owned_postgres, monkeypatch,request,tmp_path):
     """Real publication/source, immutable outbox, mode and Study owner join."""
     import hashlib
     import chess
@@ -579,19 +579,25 @@ def native_handoff(owned_postgres, monkeypatch,request):
     monkeypatch.setattr(managed_runtime, "current_managed_runtime_identity", lambda: RUNTIME)
     legacy = getattr(request,"param",None) == "lapse"
     with retained_history_case(owned_postgres, state="introduced" if legacy else "unintroduced", ordinary_limit=0, study_only=True) as case:
-        @contextmanager
-        def connections():
-            with case.transaction() as database:
-                database.execute_native("""SELECT set_config('transaction_timeout','250ms',true),
-                    set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
-                yield database.raw
-        @contextmanager
-        def writer():
-            with case.transaction() as database:
-                database.execute_native("""SELECT set_config('transaction_timeout','250ms',true),
-                    set_config('lock_timeout','100ms',true),set_config('statement_timeout','250ms',true)""")
-                yield database
-        connections.writer = writer
+        # Use the actual bounded production connection profile. Reusing a
+        # fixture transaction after its identity/setup statements would start
+        # the 250ms budget on an already-aged transaction and nest another
+        # store savepoint, obscuring the boundary under test.
+        from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+        from psycopg.conninfo import make_conninfo
+        with case.transaction() as database:
+            info = database.raw.info
+            # libpq intentionally redacts passwords from info.dsn. Preserve
+            # secret material only in this task-owned private passfile so an
+            # exception/DSN diagnostic cannot serialize the password.
+            escape = lambda value:str(value).replace('\\','\\\\').replace(':','\\:')
+            passfile = tmp_path/'owned-postgres.pgpass'
+            passfile.touch(mode=0o600,exist_ok=False)
+            case.resources.callback(passfile.unlink,missing_ok=True)
+            passfile.write_text(':'.join(map(escape,(info.host,info.port,info.dbname,info.user,info.password)))+'\n')
+            passfile.chmod(0o600)
+            owned_dsn = make_conninfo(info.dsn,passfile=str(passfile))
+        connections = DedicatedGamesConnections(owned_dsn)
         captured = case.capture(case.game_ids[0])
         original, canonical = case.command(captured), retained_canonical_game(captured)
         if legacy:

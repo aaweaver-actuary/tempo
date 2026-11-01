@@ -6492,3 +6492,11 @@ normal runtime pool/transaction limits are unchanged.
 
 - `tests/browser/real-game-feedback.spec.ts`: `packaged held prerequisite preserves Study through essential worker recovery` runs only under the existing owned packaged recovery assembly. It requires actual browser waiting, two separately issued unrelated controls, real save/replay, original held delivery restoration through integrity owner handlers, actual target issuance and a genuine synthetic browser review/settlement.
 - `database/tests/games_collection/study_recovery_acceptance.py::held_prerequisite_journey` pauses only the verified disposable optional worker, injects one real essential child exit after an actual committed slice/before acknowledgment, and requires preserved same-generation cursor progress through publication. It invalidates through the owner and never writes successful certificate/task/effect/review rows. The unchanged full-scope thirty-transition measurements follow this finite small-scope failure case in each mode.
+### Current qualified feedback authority (#662)
+
+`backend/tests/test_current_feedback_authority.py` is selected by the regular
+`study-game-priority` suite. It covers current-only construction and complete-scope
+reuse, changed canonical source/time or exact executable rejection, and actual
+PostgreSQL acceptance with broad legacy capture and projection forced unavailable.
+The existing handoff fixture uses the production bounded connection profile and a
+task-owned private passfile; all 250ms transaction limits remain unchanged.
