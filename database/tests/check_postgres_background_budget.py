@@ -24,7 +24,7 @@ from tempo_legacy_database.adapters import postgres_store
 
 
 def check_background_jit_admission() -> dict:
-    """Real bounded writer, compiler counterfactual, rollback and pooled scope.
+    """Real bounded writer, compiler observation, rollback and pooled scope.
 
     Scalar-subquery bounds have conservative planner cardinality but return one
     row. The resulting many-subplan query crosses the ordinary JIT threshold
@@ -61,19 +61,33 @@ def check_background_jit_admission() -> dict:
             assert threshold < plan['Plan']['Total Cost'] < optimization_threshold
             assert plan.get('JIT', {}).get('Options', {}).get('Expressions') is True
             assert plan['JIT']['Options']['Optimization'] is False
-        # Restore only compiler admission as the released writer did. The same
-        # server-enforced 250ms/25ms profile must roll back the pending write.
+        # Observe the released compiler policy without inventing a required
+        # performance failure. This small query does not establish live speedup.
+        baseline_started = time.perf_counter()
         try:
             with postgres_store.connection(background=True) as database:
                 assert database.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
                 assert database.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
                 database.raw.execute("SELECT set_config('jit','on',true)")
+                assert [tuple(row) for row in database.raw.execute(query).fetchall()] == expected
+        except TransactionTimeout:
+            baseline = dict(outcome='transaction_timeout')
+        else:
+            baseline = dict(outcome='exact_result', rows=branches)
+        baseline['seconds'] = time.perf_counter() - baseline_started
+        postgres_store.prepare_authoritative_background_pool()
+        # Independently retain the real default server deadline and atomic
+        # rollback, without attributing the live queue timeout to compilation.
+        try:
+            with postgres_store.connection(background=True) as database:
+                assert database.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
+                assert database.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
                 database.raw.execute(sql.SQL('INSERT INTO {} VALUES (1)').format(table))
-                database.raw.execute(query).fetchall()
+                database.raw.execute('SELECT pg_sleep(0.30)')
         except TransactionTimeout:
             pass
         else:
-            raise AssertionError('Controlled high-cost JIT query did not reproduce the short-writer timeout')
+            raise AssertionError('Default 250ms background transaction deadline was not enforced')
         postgres_store.prepare_authoritative_background_pool()
         with postgres_store.connection() as database:
             assert database.raw.execute(sql.SQL('SELECT count(*) FROM {}').format(table)).fetchone()[0] == 0
@@ -96,7 +110,8 @@ def check_background_jit_admission() -> dict:
             assert [row[0] for row in database.raw.execute(sql.SQL('SELECT marker FROM {}').format(table)).fetchall()] == [2]
         return dict(query_seconds=query_seconds, planner_cost=plan['Plan']['Total Cost'],
                     transaction_timeout='250ms', lock_timeout='25ms', rows=branches,
-                    compiler_counterfactual_timed_out=True, rollback_and_session_reset=True)
+                    released_jit_observation=baseline, controlled_deadline_rollback=True,
+                    rollback_and_session_reset=True, live_performance_causality='unproven')
     finally:
         try:
             with postgres_store.connection() as database:

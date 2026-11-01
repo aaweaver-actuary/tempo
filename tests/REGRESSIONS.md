@@ -4,13 +4,18 @@
 preserves the single setup query, original 250ms/25ms limits and 100ms acquisition,
 and excludes foreground/unreserved snapshot profiles. The existing disposable
 `database/tests/check_postgres_background_budget.py::check_background_jit_admission`
-adds a high-cost, tiny-result compiler counterfactual under the unchanged real
-250ms writer, exact-result success without JIT, atomic timeout rollback and
-same-session settings reset. Pure red/green passed; native execution pending.
+adds a high-cost, tiny-result compiler observation under the unchanged real
+250ms writer, exact-result success without JIT, independent controlled deadline
+rollback and same-session settings reset. Pure red/green passed; corrected
+native profile proof execution pending. Live performance causality is unproven.
 The eight-subplan oracle must cross the unchanged compilation threshold while
 remaining below the unchanged optimization threshold, matching the observed
 queue eligibility cost class. The original 128-subplan counterfactual exceeded
 the bounded outer check during JIT compilation; it proved no rollback or fix.
+The eight-subplan released-policy query completed inside 250ms; it did not
+reproduce the live failure. Its result/timing is recorded without requiring a
+performance failure. An independent INSERT plus 300ms sleep must still roll
+back under the unchanged default 250ms server deadline.
 
 ## Lichess export application identification
 

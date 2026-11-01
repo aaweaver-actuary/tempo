@@ -7,8 +7,9 @@ the existing timeout setup query. Compilation must not consume the default
 250ms transaction budget; the 25ms lock and 100ms pool acquisition limits stay
 unchanged. Foreground and unreserved repertoire-snapshot profiles retain their
 existing settings. Commit or rollback restores the pooled session settings.
-The disposable `background_budget` scenario owns the compiler counterfactual,
+The disposable `background_budget` scenario owns the compiler observation,
 exact-result, rollback and same-session reset proof; it does not use live data.
+This profile check does not establish the cause or speed of live queue refresh.
 
 | File | Role |
 | --- | --- |
