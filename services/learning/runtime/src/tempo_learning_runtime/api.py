@@ -17,7 +17,8 @@ from tempo_learning_database.connections import (
     WorkspaceBindingError,
     connection,
 )
-from . import gateway, queue_commands, queue_application, study_attempt_commands
+from . import gateway, queue_application
+from .command_handlers import register_handlers, reconcile, save_endgame_attempt
 from .clock import date
 from tempo_learning_database.adapters import api as storage
 from .models import (
@@ -29,19 +30,13 @@ from .models import (
     DefenseRecognitionRequest,
 )
 from .study_contracts import StudyAttemptRequest, StudySelfAssessmentRequest
-from .review_adapter import submit_legacy_review
 from .review_conflicts import ReviewConflict
 from . import opening_evidence as evidence
 from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .maintenance import safe_run_once
-from .publications import PublicationBundle, stage, activate, retire
-from .tactic_commands import submit_tactic_attempt
+from .publications import PublicationBundle, stage
 from .puzzles import validate_puzzle_record
-from .defense import (
-    read_defense_exercise,
-    submit_defense_attempt,
-    submit_defense_recognition,
-)
+from .defense import read_defense_exercise
 from tempo_learning_database.adapters import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
@@ -50,71 +45,9 @@ from .host_activity import HostActivity
 from . import publication_bridge
 
 
-def reconcile(database, payload):
-    storage.begin_reconciliation(database)
-    try:
-        result = submit_legacy_review(database, payload)
-    except ReviewConflict as error:
-        storage.rollback_reconciliation(database)
-        result = {"persisted": False, "conflict": error.information()}
-    storage.release_reconciliation(database)
-    return result
-
-
-def save_endgame_attempt(db, payload):
-    template = storage.active_endgame_template(db, payload["template_id"])
-    if template is None:
-        raise HTTPException(409, "Endgame template unavailable")
-    card = storage.lock_endgame_card(db, template["card_id"])
-    # Retirement acquires this same card lock before disabling the template.
-    current = storage.endgame_enabled(db, payload["template_id"])
-    if not card or not card[0] or not current[0]:
-        raise HTTPException(409, "Endgame definition retired")
-    attempt_id = uuid.uuid4().hex
-    storage.insert_endgame_attempt(db, attempt_id, payload["template_id"], payload["fen"], payload["target"], datetime.now(timezone.utc).isoformat())
-    return {
-        "id": attempt_id,
-        "fen": payload["fen"],
-        "target": payload["target"],
-        "moves": payload["moves"],
-    }
-
-
-def register_handlers():
-    if "queue.issue_head" not in gateway._handlers:
-        queue_commands.register_handlers()
-    if "studies.attempts.submit" not in gateway._handlers:
-        study_attempt_commands.register_handlers()
-    handlers = {
-        "study.settings.update": study_bootstrap.update_settings,
-        "cards.teaching.record": teaching_commands.record_teaching,
-        "cards.review": submit_legacy_review,
-        "cards.review.reconcile": reconcile,
-        "tactics.attempt.submit": submit_tactic_attempt,
-        "defense.attempt.submit": lambda db, p: submit_defense_attempt(
-            p["candidate_id"],
-            write_database=db,
-            **p["request"],
-            light_first_interval_days=storage.light_first_interval_days(db),
-        ),
-        "defense.recognition.submit": lambda db, p: submit_defense_recognition(
-            p["candidate_id"],
-            DefenseRecognitionRequest.model_validate(p["request"]),
-            write_database=db,
-        ),
-        "opening_evidence.checkpoint": lambda db, p: evidence.persist_checkpoint(db, p),
-        "endgames.attempt.create": save_endgame_attempt,
-        "publication.activate": activate,
-        "publication.activate.v2": publication_bridge.activate,
-        "publication.retire": retire,
-    }
-    for name, handler in handlers.items():
-        if name not in gateway._handlers:
-            gateway.register_command(name, handler)
-
 
 def create_app(configuration: Configuration):
-    register_handlers()
+    registry = register_handlers()
     database = Database(configuration)
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
@@ -125,7 +58,7 @@ def create_app(configuration: Configuration):
 
         async def maintain():
             while not stopping.is_set():
-                with database.scope():
+                with database.scope(), gateway.registry_scope(registry):
                     await asyncio.to_thread(safe_run_once)
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=0.1)
@@ -145,6 +78,7 @@ def create_app(configuration: Configuration):
                 database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
+    app.state.command_registry = registry
     app.state.database = database
     app.state.host_activity = activity
 
@@ -200,7 +134,7 @@ def create_app(configuration: Configuration):
         # Optional host reporting stays outside the durable transaction owner.
         # A pending essential request remains protected even if its browser is suspended.
         essential = request.url.path.startswith("/api/") and request.url.path != "/api/study/activity" and request.method != "OPTIONS"
-        with database.scope():
+        with database.scope(), gateway.registry_scope(registry):
             if essential:
                 async with request_activity():
                     return await call_next(request)

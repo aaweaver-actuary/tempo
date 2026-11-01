@@ -1,4 +1,4 @@
-import { computeStudyTask, type StudyTask } from "./study-computation";
+import { computeStudyTask, type StudyTask, type StudyTaskResult } from "./study-computation";
 import { isBulkStudyTask, runBulkStudyTask } from './bulk-study';
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
@@ -27,13 +27,13 @@ function failStudyRequests(cause?: unknown): void {
   }
 }
 
-export function runStudyTask<T>(
-  task: StudyTask,
+export function runStudyTask<Task extends StudyTask>(
+  task: Task,
   signal?: AbortSignal,
   shouldPublishDiagnostics?: () => boolean,
-): Promise<T> {
+): Promise<StudyTaskResult<Task>> {
   if (typeof Worker !== 'undefined' && isBulkStudyTask(task))
-    return runBulkStudyTask<T>(task, signal, shouldPublishDiagnostics);
+    return runBulkStudyTask(task, signal, shouldPublishDiagnostics);
   const id = ++nextId;
   const activityId = `study:${id}`;
   const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
@@ -44,7 +44,7 @@ export function runStudyTask<T>(
   }
   // Test/server environments do not have workers; still yield before computing.
   if (typeof Worker === "undefined")
-    return new Promise<T>((resolve, reject) => {
+    return new Promise<StudyTaskResult<Task>>((resolve, reject) => {
       setTimeout(() => {
         updateBrowserActivity(activityId, title, "running", "Computing");
         if (signal?.aborted) {
@@ -55,7 +55,7 @@ export function runStudyTask<T>(
         try {
           resolve((task.kind === "workspace"
             ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics)
-            : computeStudyTask(task)) as T);
+            : computeStudyTask(task)) as StudyTaskResult<Task>);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
@@ -124,7 +124,7 @@ export function runStudyTask<T>(
     reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
     failStudyRequests(error);
   };
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<StudyTaskResult<Task>>((resolve, reject) => {
     const cancel = () => {
       pending.delete(id);
       updateBrowserActivity(activityId, title, "complete", "Cancelled");
@@ -137,7 +137,7 @@ export function runStudyTask<T>(
       shouldPublishDiagnostics,
       resolve: (value) => {
         signal?.removeEventListener("abort", cancel);
-        resolve(value as T);
+        resolve(value as StudyTaskResult<Task>);
       },
       reject: (error) => {
         signal?.removeEventListener("abort", cancel);

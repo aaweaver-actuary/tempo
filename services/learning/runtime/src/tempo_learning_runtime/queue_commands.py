@@ -10,7 +10,6 @@ from fastapi import HTTPException
 
 from . import queue_application
 from .queue_ordering import PRESENTATION_VERSION
-from .gateway import register_command
 from .review_conflicts import ReviewConflict
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
@@ -157,8 +156,10 @@ def request_queue_refresh_in_transaction(
     )
 
 
-def register_handlers():
-    register_command("queue.issue_head", issue_queue_head)
-    register_command("queue.attempt_failed", mark_attempt_failed)
-    register_command("queue.bury", bury_queue_entry)
-    register_command("queue.ensure_current", ensure_current_queue)
+def handler_definitions():
+    return (
+        ("queue.issue_head", issue_queue_head),
+        ("queue.attempt_failed", mark_attempt_failed),
+        ("queue.bury", bury_queue_entry),
+        ("queue.ensure_current", ensure_current_queue),
+    )
