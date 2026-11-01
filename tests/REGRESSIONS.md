@@ -6478,3 +6478,13 @@ and `test_native_games_owner_transaction_retains_deadline_and_atomic_rollback`.
 They cover Review, Feedback and managed-mode stores: exact production connections
 retain their existing 250ms transaction once; supplied callbacks retain their
 savepoint/configuration; exceptions roll back the complete owner mutation.
+
+## Explicit graph-recovery cold pool readiness (#661)
+
+`backend/tests/test_opening_graph_recovery.py::test_recovery_pool_readiness_waits_for_exact_background_writer_pool_without_a_transaction`
+selects only the existing background authoritative (writer-credential) pool and
+checks its five-second startup wait without borrowing a transaction.
+`test_selected_cli_pool_readiness_precedes_preflight_and_never_claims_on_failure`
+checks successful ordering before lease/transaction and failure before preflight,
+evidence capture or task claims. Existing resume-pin/dry-run checks remain active;
+normal runtime pool/transaction limits are unchanged.

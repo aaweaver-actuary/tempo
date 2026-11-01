@@ -69,13 +69,18 @@ def selected_rebuild_main(args):
     else:
         if any(output.iterdir()):
             raise ValueError('Use a fresh private output directory or --resume; preserve prior evidence')
+    # ConnectionPool opens asynchronously. Warm exactly the authoritative
+    # background pool before its ordinary 100ms acquisition budget starts.
+    # No lease, application transaction or task claim is held during this wait.
+    from tempo_legacy_database.adapters import postgres_store
+    postgres_store.prepare_authoritative_background_pool()
+    if not args.resume:
         prepared = preflight_queued_rebuild(args.task_id, args.repertoire_id, args.generation, args.target,
                                            source_revision=args.source_revision, prefix_revision=args.prefix_revision, day=args.day)
         save_plan(prepared)
         before = capture_evidence(args.repertoire_id, args.day, selected_rebuild=True)
         (output / 'before.json').write_text(json.dumps(before, indent=2) + '\n')
     # Resume preflight checks the saved day/source/target without taking a task.
-    from tempo_legacy_database.adapters import postgres_store
     from app.services.opening_graph_recovery import validate_selected_scope, background_lease
     with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
         validate_selected_scope(database, prepared, lock=False)
