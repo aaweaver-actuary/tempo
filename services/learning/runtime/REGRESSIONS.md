@@ -405,3 +405,9 @@ no browser/server build or run is claimed for this change.
 ## Independent command registry selection (#710 G1)
 
 `tests/test_command_registry_isolation.py` checks two app configurations with distinct immutable registries and handlers, repeated construction, duplicate rejection, synchronous request thread propagation, nested token reset, maintenance `asyncio.to_thread` propagation, CLI maintenance/publication selection, publication fence request scope, cold import without Redis/Celery/Games, and direct gateway registry construction and intent validation with HTTP composition imports blocked. Existing gateway tests retain receipt, logical identity, savepoint, and retry behavior through the public registry capability. Fakes do not prove PostgreSQL workspace isolation, lifecycle supervision, or live adoption.
+
+The native `test_failed_queued_intent_defers_original_and_next_study_command_progresses`
+keeps the original queued receipt and its identity after an injected execution
+failure, then runs a separate retained Study command through the real gateway.
+The fixture extends only the already-observed retry timestamp to avoid relying
+on host scheduling within the one-second deferral window.

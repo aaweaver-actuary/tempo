@@ -165,6 +165,60 @@ def test_lost_response_and_logical_retry_are_immutable(case):
     assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 1
 
 
+def test_failed_queued_intent_defers_original_and_next_study_command_progresses(case, monkeypatch):
+    activate(case)
+    card = head(case)
+    poison_id, next_id = uuid.uuid4().hex, uuid.uuid4().hex
+    poison_payload = {'card_id': card['id'], 'review': review_payload(card)}
+    next_payload = {'card_id': card['id'], 'review': review_payload(card)}
+    registry = case.client.app.state.command_registry
+    with case.database.scope(), gateway.registry_scope(registry):
+        gateway.record_intent(poison_id, 'cards.review', poison_payload)
+        gateway.record_intent(next_id, 'cards.review', next_payload)
+    case.query("UPDATE learning.operation_receipts SET created_at=NOW()-interval '2 seconds' WHERE operation_id=%s", (poison_id,))
+    case.query("UPDATE learning.operation_receipts SET created_at=NOW()-interval '1 second' WHERE operation_id=%s", (next_id,))
+
+    def receipt(operation):
+        return tuple(case.query('SELECT operation_id,command_name,request_hash,payload_json,state,response_json,error_json,next_retry_at FROM learning.operation_receipts WHERE operation_id=%s', (operation,))[0])
+
+    before = receipt(poison_id)
+    next_before = receipt(next_id)
+    assert before[0:2] == (poison_id, 'cards.review')
+    assert json.loads(before[3]) == poison_payload and before[4:] == ('queued', None, None, None)
+    assert next_before[:2] == (next_id, 'cards.review')
+    assert json.loads(next_before[3]) == next_payload and next_before[4:] == ('queued', None, None, None)
+    reviews_before = case.query('SELECT COUNT(*) FROM learning.reviews')[0][0]
+    queue_before = [tuple(row) for row in case.query('SELECT id,card_id,status,attempt_state FROM learning.daily_queue ORDER BY id')]
+    actual_execute = gateway.execute
+    calls = []
+    def fail_only_original(operation_id, **options):
+        calls.append(operation_id)
+        if operation_id == poison_id:
+            raise RuntimeError('synthetic retained operation failure')
+        return actual_execute(operation_id, **options)
+    monkeypatch.setattr(gateway, 'execute', fail_only_original)
+
+    with case.database.scope(), gateway.registry_scope(registry):
+        assert run_once()
+    deferred = receipt(poison_id)
+    assert deferred[:7] == before[:7] and deferred[7] is not None
+    assert case.query('SELECT COUNT(*) FROM learning.reviews')[0][0] == reviews_before
+    assert [tuple(row) for row in case.query('SELECT id,card_id,status,attempt_state FROM learning.daily_queue ORDER BY id')] == queue_before
+    # Preserve the observed real defer; extend only this fixture's due time so
+    # host scheduling cannot consume the one-second window before the next call.
+    case.query("UPDATE learning.operation_receipts SET next_retry_at=NOW()+interval '1 hour' WHERE operation_id=%s", (poison_id,))
+    with case.database.scope(), gateway.registry_scope(registry):
+        assert run_once()
+    assert calls == [poison_id, next_id]
+    assert receipt(poison_id)[:7] == before[:7]
+    next_after = receipt(next_id)
+    assert next_after[:4] == next_before[:4] and next_after[4] == 'complete'
+    assert json.loads(next_after[5])['persisted'] is True
+    assert case.query("SELECT COUNT(*) FROM learning.reviews WHERE source_kind='study' AND source_ref=%s",
+                      ('attempt:' + next_payload['review']['attempt_id'],))[0][0] == 1
+    assert case.query('SELECT COUNT(*) FROM learning.reviews')[0][0] == reviews_before + 1
+
+
 def test_scope_origin_and_role_denials(case):
     assert (
         case.client.get(
