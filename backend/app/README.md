@@ -38,7 +38,7 @@ This bounded view describes the newly separated leaves and timing import, not ev
 | [Frozen Study policy](study/frozen_order/README.md) | `annotate`, `proposal_valid`, `order_queue_slots` and typed facts/predicates accept supplied data/capabilities. Outer composition binds the database adapter. | The legacy facade still reaches feedback and queue-ordering implementation. The pure leaf's separation does not isolate every caller. |
 | [Learning review application](../../services/learning/application/src/tempo_learning_review/__init__.py) | `apply_review`, `review_context`, `submit_review`, `ReviewStore` and `ReviewSubmissionStore` provide semantic review behavior. `register_review_commands(register, submit=..., reconcile=...)` explicitly registers `cards.review` and `cards.review.reconcile`; import alone does not register them. | Caller/gateway owns the transaction and settlement. This separate installed package is not an extension of the legacy global registry. |
 | [Legacy command gateway](command_gateway.py) | `register_command(name, handler, prepare=...)` registers existing command handlers; the gateway owns receipt/transaction execution. | Process-global handler/preparer dictionaries, concrete `PostgresConnection` handlers and command-specific execution branches remain. It is not a generic isolated-plugin contract. |
-| [HTTP and worker composition](main.py) | Routes translate requests and compose existing capabilities; [background worker](background_worker.py) starts/stops its coordinator. | That worker imports `main.coordinator` to register handlers and waits for API health. HTTP startup and worker lifecycle remain coupled in this legacy assembly. |
+| [HTTP and worker composition](main.py) | Routes translate requests and compose existing capabilities; [background worker](background_worker.py) starts/stops its coordinator. | Both entrypoints use the same compatibility coordinator composition and singleton. The worker still waits for API health; lifecycle remains coupled to that health check. |
 
 **Coupling has been reduced, not eliminated.** Moved policy leaves and removed
 optional producers remove specific edges; the [retirement map](services/README.md#retired-optional-capabilities)
@@ -75,4 +75,19 @@ flowchart LR
   identity --> review["Review/checkpoint projection"]
   identity --> paste["Paste request projection"]
   identity --> discovery["Discovery acceptance projection"]
+```
+
+
+### Compatibility coordinator and authored Studies
+
+The API and SQLite worker call [compatibility composition](product_composition/compatibility_coordinator.py), which registers the existing handlers once on the existing coordinator singleton. The worker still waits for API health and owns its writer/coordinator start and stop. The [authored Studies router](study_routes.py) receives queue refresh per router construction; its native command path remains unchanged. This source boundary does not establish optional-service isolation or deployment.
+
+```mermaid
+flowchart LR
+  API[API composition] --> CC[Compatibility coordinator composition]
+  Worker[SQLite compatibility worker] --> CC
+  CC --> S[Existing coordinator and handlers]
+  API --> R[Authored Studies router factory]
+  API -->|supplies queue refresh| R
+  R --> Q[Queue refresh operation]
 ```

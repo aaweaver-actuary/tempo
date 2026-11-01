@@ -7,9 +7,11 @@ import json
 import sqlite3
 import uuid
 from datetime import date, datetime, timezone
+from contextvars import ContextVar
+from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import TypeAdapter
 
 from tempo_legacy_database.connections import connection, read_connection
@@ -73,9 +75,25 @@ def _exercise_payload(database, exercise_id: str, *, learner: bool = False) -> d
             "card": dict(card) if card else None}
 
 
+_refresh_callback: ContextVar[Callable[[], None]] = ContextVar("study_queue_refresh")
+
+
+def create_study_router(refresh: Callable[[], None]) -> APIRouter:
+    """Bind queue refresh to this router without mutable process-wide configuration."""
+    async def refresh_scope():
+        token = _refresh_callback.set(refresh)
+        try:
+            yield
+        finally:
+            _refresh_callback.reset(token)
+
+    bound = APIRouter()
+    bound.include_router(router, dependencies=[Depends(refresh_scope)])
+    return bound
+
+
 def _queue_refresh() -> None:
-    from .main import enqueue_daily_queue_refresh
-    enqueue_daily_queue_refresh()
+    _refresh_callback.get()()
 
 
 @router.get("")
