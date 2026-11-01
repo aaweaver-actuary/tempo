@@ -202,8 +202,8 @@ refused at this retained binding.
 
 Publication requires an enclosing PostgreSQL transaction, rereads the shared
 source fence and exact current line/card definitions, and invokes the existing
-canonical prefix checks, `integrity_repair_commands._replace_repertoire_line`,
-`repertoire_integrity._rewrite_card`, route certification and integrity
+canonical prefix checks, `retained_mutations.replace_repertoire_line`,
+`retained_mutations.rewrite_card`, route certification and integrity
 invalidation. The old card/history and other memberships survive; a shared card
 owner is reassigned only to its remaining membership so ownership fallback cannot
 keep the old conflict in the resolved repertoire. Unrelated route/queue/review
