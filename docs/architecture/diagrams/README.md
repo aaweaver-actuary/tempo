@@ -101,6 +101,27 @@ not its tables. Existing evidence supports bounded separability, **not** a blank
 claim of robust arbitrary plugins, eliminated coupling or deployed failure/resource
 isolation.
 
+## Selected source boundaries — November 1
+
+At source [`f5bdbeee`](https://github.com/aaweaver-actuary/tempo/commit/f5bdbeeeaac4bc579cb97eba841a8c6ba5e12bff),
+these selected changes supplement the dated October 26 views; they do not
+requalify the other rows or establish an installation:
+
+- [Intelligence public imports](../../../services/intelligence/README.md#public-import-boundary)
+  resolve `create_app` lazily while preserving its supported root export.
+- [Study queue order](../../../backend/app/study/queue_order.py) owns capture and
+  preservation of the queue receipt; the existing placement function and
+  compatibility imports still have separate callers.
+- [Study client composition](../../../app/lib/README.md) supplies explicit client
+  instances alongside the retained default client and aliases.
+- [Independent Learning composition](../../../services/learning/runtime/README.md#command-registry-selection-proposed-g1)
+  selects an immutable registry per app. Its [maintenance lifecycle](../../../services/learning/runtime/README.md#maintenance-lifecycle-ownership-g2--proposed-g3)
+  preserves nested cleanup and reports a terminal essential-maintenance failure
+  through readiness. Source separation does not establish deployed isolation.
+
+Installation status is maintained in [#657](https://github.com/aaweaver-actuary/tempo/issues/657);
+this source pin does not certify installation or runtime acceptance.
+
 ## Bounded resumption priorities
 
 The table contains dated candidate follow-ups, not prerequisites or automatically active assignments.
