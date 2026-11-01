@@ -7,7 +7,15 @@ import {
 } from "./validated-data";
 
 self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {
-  const data = parseData(studyRequestSchema, raw, "study worker request");
+  let data;
+  try {
+    data = parseData(studyRequestSchema, raw, "study worker request");
+  } catch (error) {
+    const id = typeof raw === "object" && raw !== null && "id" in raw ? raw.id : undefined;
+    if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) throw error;
+    self.postMessage({ id, error: "Invalid study worker request" });
+    return;
+  }
   clearDataDiagnostics();
   self.postMessage({ id: data.id, state: "running" });
   const computeStartedAt = performance.now();

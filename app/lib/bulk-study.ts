@@ -1,4 +1,5 @@
 import type { StudyTask, StudyTaskResult } from './study-computation';
+import { decodeStudyResult } from './study-result-decoder';
 import { studyReplySchema } from '../domain/schemas';
 import { parseData, reportDataDiagnostic } from './validated-data';
 import { recordTempoDuration } from './performance';
@@ -66,14 +67,14 @@ function pump() {
           updateBrowserActivity(`bulk:${request.id}`, 'Preparing workspace data', 'running', 'Computing');
           return;
         }
-        if (reply.error) throw new Error(reply.error);
+        if (reply.error !== undefined) throw new Error(reply.error);
         for (const issue of reply.diagnostics ?? []) {
           if (request.current?.() === false) break;
           reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId);
         }
         if (reply.computeMs !== undefined) recordTempoDuration('bulk-worker-compute', reply.computeMs);
         recordTempoDuration('bulk-worker-roundtrip', performance.now() - request.queuedAt);
-        finish(undefined, reply.result);
+        finish(undefined, decodeStudyResult(request.task, reply.result, request.current));
       } catch (error) { fail(error); }
     };
     runningWorker.onerror = event => { if (current()) fail(new Error(event.message || 'Workspace worker failed')); };

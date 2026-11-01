@@ -29,8 +29,9 @@ it('study input terminates confirmed bulk computation immediately and preserves 
   await vi.advanceTimersByTimeAsync(3_000);
   expect(workers).toHaveLength(3);
   expect(workers[1].terminate).not.toHaveBeenCalled();
-  workers[2].onmessage?.({ data: { id: bulkId, result: 'current' } });
-  await expect(bulk).resolves.toBe('current');
+  const result = { generation: 1, positions: [], movesByRepertoire: new Map() };
+  workers[2].onmessage?.({ data: { id: bulkId, result } });
+  await expect(bulk).resolves.toEqual(result);
 });
 
 it('three started bulk invalidations stop actual workers, settle callers and reject late publications', async () => {
