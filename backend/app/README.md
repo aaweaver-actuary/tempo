@@ -91,3 +91,25 @@ flowchart LR
   API -->|supplies queue refresh| R
   R --> Q[Queue refresh operation]
 ```
+
+### Proposed B2 command registration seam
+
+`contracts.command_registry` declares frozen, generic decode/preparation/apply
+relationships and explicitly constructed registries without importing runtime
+providers. The gateway's existing handler and preparer dictionaries are the
+same registry-owned objects, and the compatibility registration and executor
+continue to use them. `register_descriptor` adds a typed registration path constrained to the
+existing `PostgresConnection` supplied by the executor; independent registries
+may use another transaction type. Existing feature registrations have not yet migrated. B1 still hashes the
+original payload before preparation, and all transaction and exceptional
+execution paths remain unchanged. Tests that temporarily replace private gateway
+attributes are test doubles, not additional production registries.
+
+```mermaid
+flowchart LR
+  Legacy["Legacy register_command"] --> Maps["One gateway registry's handler/preparer maps"]
+  Descriptor["Frozen typed descriptor"] --> Registry["Registry erasure boundary"]
+  Registry --> Maps
+  Executor["Existing gateway executor"] --> Maps
+  Identity["B1 original-payload identity"] --> Executor
+```
