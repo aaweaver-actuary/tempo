@@ -177,7 +177,11 @@ class PostgresGamesStore:
 
     @contextmanager
     def _transaction(self):
+        from .product_review import DedicatedGamesConnections
         with self._connections() as database:
+            if type(self._connections) is DedicatedGamesConnections:
+                yield database  # The exact owner already enforces 250ms.
+                return
             with database.transaction():
                 database.execute("SET LOCAL lock_timeout = '100ms'")
                 database.execute("SET LOCAL statement_timeout = '250ms'")

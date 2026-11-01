@@ -100,7 +100,11 @@ class ManagedGamesModeStore:
 
     @contextmanager
     def _writer(self):
+        from .product_review import DedicatedGamesConnections
         with self.connections() as database:
+            if type(self.connections) is DedicatedGamesConnections:
+                yield database  # Keep the existing exact-owner transaction.
+                return
             with database.transaction():
                 database.execute("SET LOCAL lock_timeout = '100ms'")
                 database.execute("SET LOCAL statement_timeout = '250ms'")
