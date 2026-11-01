@@ -15,6 +15,88 @@ import time
 
 import httpx
 
+def install_r2_current_feedback_guards(path=Path('/qualification/r2-current-feedback.json')):
+    """Install deepest guards before consumer imports/closures, never change authority.
+
+    The optional exact-target mutation is controlled fixture SQL immediately
+    before the NEW narrow target fence, inside the actual owner transaction.
+    Its rejection and the mutation must roll back together; this is not an
+    external concurrency simulation or a fabricated readiness/effect result.
+    """
+    if not path.exists():
+        return False
+    configuration = json.loads(path.read_text())
+    assert (set(configuration) == {'schema_version','target_id','target_revision','inject_target_change'}
+        and configuration['schema_version'] == 1 and isinstance(configuration['target_id'],str)
+        and type(configuration['target_revision']) is int and configuration['target_revision'] > 0
+        and type(configuration['inject_target_change']) is bool)
+    from functools import wraps
+    import hashlib
+
+    def forbidden(name):
+        def unavailable(*args, **kwargs):
+            print(json.dumps({'r2_legacy_capture_forbidden_call':name}), flush=True)
+            raise RuntimeError('r2_legacy_capture_forbidden')
+        return unavailable
+
+    # Patch the deepest implementation before importing callers that retain
+    # aliases. Then patch public projections before importing composition roots.
+    from app.services import legacy_game_capture
+    legacy_game_capture.capture_source_scope = forbidden('capture_source_scope')
+    from app import legacy_game_observation
+    legacy_game_observation.capture_source_scope = forbidden('capture_source_scope_alias')
+    legacy_game_observation.capture_game = forbidden('capture_game')
+    from app.repertoire import snapshot
+    snapshot.project_capture = forbidden('snapshot.project_capture')
+    from app import repertoire
+    repertoire.project_capture = forbidden('repertoire.project_capture')
+    from tempo_legacy_database.adapters.study.current_feedback_authority import CurrentQualifiedOwnerDecisions
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+    current = CurrentQualifiedOwnerDecisions._current_prepared_qualified
+
+    @wraps(current)
+    def changed_target_fence(self, command):
+        fault = getattr(self,'_r2_prepared_target_fault',None)
+        if fault is None:
+            return current(self, command)
+        assert command.decision.presentation_revision == fault['target_revision'], 'r2_fault_target_revision_changed'
+        changed = self.database.execute_native(
+            'UPDATE cards SET revision=revision+1 WHERE id=%s AND revision=%s',
+            (fault['target_id'],fault['target_revision']))
+        assert changed.rowcount == 1, 'r2_fault_target_missing_or_changed'
+        try:
+            current(self, command)
+        except CurrentDecisionUnavailable as error:
+            assert error.reason in {'current_owner_integrity_changed','current_owner_card_changed'}, \
+                'r2_fault_unexpected_target_refusal'
+            print(json.dumps({'r2_current_target_fence_rejected':True,
+                'target_token':hashlib.sha256(fault['target_id'].encode()).hexdigest()[:16],
+                'reason':error.reason,'controlled_in_transaction_mutation':True}), flush=True)
+            raise
+        raise RuntimeError('r2_changed_target_was_not_rejected')
+
+    CurrentQualifiedOwnerDecisions._current_prepared_qualified = changed_target_fence
+    from app.product_composition import provider_priority
+    provider_priority.project_capture = forbidden('provider_priority.project_capture')
+    provider_priority._owner_capture = forbidden('provider_priority._owner_capture')
+    prepare_owner = provider_priority._prepare_qualified_owner
+    @wraps(prepare_owner)
+    def prepared_owner(*args, **kwargs):
+        prepared = prepare_owner(*args, **kwargs)
+        # Read the controlled marker only after real preparation closes every
+        # reader, never perform filesystem I/O inside the owner writer.
+        fault = json.loads(path.read_text())
+        if fault['inject_target_change'] and prepared.qualification.selection.decision.presentation_id == fault['target_id']:
+            prepared.prepared_decisions._r2_prepared_target_fault = fault
+        return prepared
+    provider_priority._prepare_qualified_owner = prepared_owner
+    print(json.dumps({'r2_current_feedback_guards_installed':True,'mode':sys.argv[1]}), flush=True)
+    return True
+
+
+r2_current_feedback_guards = install_r2_current_feedback_guards()
+
+
 # Fault injection runs the real Celery application/queues after installing one
 # bounded observation/barrier around the actual local qualification stage. No
 # owner result, receipt, source fact or runtime identity is manufactured.
@@ -30,6 +112,8 @@ if len(sys.argv) > 1 and sys.argv[1] in {'recovery-foreground', 'recovery-backgr
             and len(args) > 1 and args[1] == 'queue.prepare_next')
         if patched or not selected:
             return
+        if r2_current_feedback_guards:
+            print(json.dumps({'r2_current_feedback_child_guard':True,'pid':os.getpid()}), flush=True)
         # Install in the executing child, inside the first relevant task's
         # elapsed time. Preloading this owner before prefork would change the
         # actual concurrency memory/cold-import conditions under acceptance.
@@ -139,6 +223,8 @@ def feedback_admitted():
 try:
     if sys.argv[1] in {'worker', 'feedback-worker'}:
         feedback = sys.argv[1] == 'feedback-worker'
+        if feedback and r2_current_feedback_guards:
+            print(json.dumps({'r2_current_feedback_producer_guard':True}), flush=True)
         from app.product_composition import game_sync_current as current
         original = current.current_provider_worker
         actual_admission = current.current_sync_admission
@@ -152,7 +238,8 @@ try:
         current.current_provider_worker = build
         current.current_sync_admission = feedback_admitted if feedback else admitted
         sys.argv = ['worker', *(['--feedback'] if feedback else ['--collect-only']), '--follow', '--overlap-seconds', '0',
-            '--reconcile-interval-seconds', '600', '--once', '--max-units', '50']
+            '--reconcile-interval-seconds', '600',
+            *([] if feedback and r2_current_feedback_guards else ['--once','--max-units','50'])]
         current.main()
         if feedback and Path('/qualification/recovery-lifetime').exists():
             deadline = time.monotonic() + 600
