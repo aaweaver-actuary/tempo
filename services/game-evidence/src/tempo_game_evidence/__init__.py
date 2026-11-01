@@ -4,9 +4,16 @@ from .snapshot import ComparisonSnapshot
 from .comparison import compare_game
 from .legacy_authority import LegacyAuthorityToken, LegacyComparisonSnapshot, PhysicalCard
 from .legacy_scoped_authority import LegacyScopedComparisonSnapshot
-from tempo_game_evidence_database.adapters.store import EvidenceStore
 from .legacy_payloads import preview_legacy_observation
 
 __all__ = ["normalize_pgn", "replay_positions", "ComparisonSnapshot", "compare_game", "EvidenceStore",
            "LegacyAuthorityToken", "LegacyComparisonSnapshot", "LegacyScopedComparisonSnapshot", "PhysicalCard",
            "preview_legacy_observation"]
+
+
+def __getattr__(name: str):
+    """Load the supported concrete store only when requested."""
+    if name == "EvidenceStore":
+        from tempo_game_evidence_database.adapters.store import EvidenceStore
+        return EvidenceStore
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

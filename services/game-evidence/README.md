@@ -414,3 +414,19 @@ The existing `EvidenceStore` methods also invoke these application helpers at th
 The inventoried import/snapshot/worker/comparison/report/list computation and retry decisions are now outside the database tree. The store retains transaction scopes, row/revision/epoch/lease and idempotency guards, bounded rescope checkpoint writes, and persistence adaptation. The private per-worker snapshot tuple remains on the compatibility store instance, with its decisions in the application helper and its existing lifetime preserved. Persistence leases/resource limits and the atomic bounded rescope mechanism are unchanged. This mechanical separation does not claim complete domain-interface adoption or redesign the compatibility store's lifecycle.
 
 No schema, table/field relationship, migration, public wire contract, credential handling or grants change. Existing [schema diagrams and data dictionaries](../../database/tempo_game_evidence_database/schema/README.md) therefore remain authoritative for the same source schema. Application composition still wires the existing component-owned store; this move does not claim complete domain-interface adoption or live resource/failure isolation, and gives Study no new Game Evidence dependency.
+
+### Public import boundary
+
+Pure root exports, including comparison and legacy authority contracts, do not
+load the concrete Evidence database adapter. The supported root `EvidenceStore`
+export resolves on request to the same database-owned class and still requires
+its declared dependencies. Versions, exports and package dependencies are
+unchanged; legacy authority contracts remain intentional pure inputs.
+
+```mermaid
+flowchart LR
+  P[Pure consumer] --> R[Game Evidence package root]
+  R --> D[Comparison and authority contracts]
+  C[Store consumer] -->|EvidenceStore on demand| R
+  R -.-> S[Evidence database adapter]
+```

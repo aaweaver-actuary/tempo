@@ -16,10 +16,8 @@ to its adapter owner; byte normalization belongs to `tempo_game_ingestion.interf
 The owned `source.py` caller now imports that public ingestion surface directly;
 the normalizer identity and import/write preparation order remain unchanged.
 
-The old package initializer still eagerly imports its legacy database store class
-without opening a connection. This exact pre-existing edge is not decoupling or
-an export sanctioned by this interface. #501's package/caller migration and
-#482's guard must remove that legacy barrel after consumers move. This checkpoint
-changes only the allocated surface; no runtime adoption is claimed. Cold import
+The package root resolves the supported legacy `EvidenceStore` export lazily;
+pure imports do not load its database adapter. That root export is not part of
+this narrower interface. The source boundary does not establish runtime adoption. Cold import
 has connection/provider/process/thread tripwires and export identity checks in
 `backend/tests/test_public_surface_game_ingestion.py`.
