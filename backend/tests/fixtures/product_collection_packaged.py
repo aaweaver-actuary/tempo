@@ -116,7 +116,7 @@ class LocalHTTP(httpx.AsyncHTTPTransport):
         request.url = request.url.copy_with(scheme='http', host='127.0.0.1', port=server.server_port)
         return await super().handle_async_request(request)
 class Clock:
-    def now(self): return inputs['now']
+    def now(self): return max(inputs['now'], time.time())
     def utc_now(self): return datetime.fromtimestamp(self.now(), timezone.utc).isoformat()
 @contextmanager
 def admitted():

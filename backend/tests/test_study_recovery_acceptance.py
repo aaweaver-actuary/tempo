@@ -201,3 +201,42 @@ else:
 '''
     result = subprocess.run([sys.executable, '-c', probe, str(entry)], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_held_retry_waits_for_original_deadline_without_rotating_identity(monkeypatch):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'database/tests/games_collection'))
+    from study_recovery_acceptance import _wait_for_original_retry
+
+    held = {'operation_id': 'original-operation', 'next_attempt_at': 102.0}
+    original = dict(held)
+    clock = {'wall': 100.0, 'monotonic': 10.0}
+    def sleep(seconds):
+        clock['wall'] += seconds
+        clock['monotonic'] += seconds
+    current = _wait_for_original_retry(held, now=lambda: clock['wall'],
+        monotonic=lambda: clock['monotonic'], sleep=sleep)
+    assert current >= original['next_attempt_at']
+    assert held == original
+    assert clock['monotonic'] < 55.0
+
+    with pytest.raises(AssertionError, match='held_original_retry_deadline_not_reached'):
+        _wait_for_original_retry(held, now=lambda: 100.0, monotonic=iter((0.0, 46.0)).__next__, sleep=lambda _: None)
+
+
+def test_packaged_fixture_clock_advances_with_wall_time():
+    import ast
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    source = (Path(__file__).resolve().parent / 'fixtures/product_collection_packaged.py').read_text()
+    clock_class = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == 'Clock')
+    inputs = {'now': 100.0}
+    wall = SimpleNamespace(time=lambda: 101.0)
+    namespace = {'inputs': inputs, 'time': wall}
+    exec(compile(ast.Module(body=[clock_class], type_ignores=[]), '<fixture-clock>', 'exec'), namespace)
+    clock = namespace['Clock']()
+    assert clock.now() == 101.0
+    inputs['now'] = 102.0
+    assert clock.now() == 102.0
