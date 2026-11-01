@@ -139,7 +139,7 @@ export function readWorkspaceData(
         .then((raw: unknown) => {
           clearTimeout(requestTimeout); // Optional compute/idle waits are not network failures.
           return url.includes("/api/")
-            ? runStudyTask<unknown>({ kind: "workspace", url, payload: raw }, undefined, ownsCacheEntry)
+            ? runStudyTask({ kind: "workspace", url, payload: raw }, undefined, ownsCacheEntry)
             : raw;
         });
     })
@@ -224,7 +224,7 @@ export function loadTacticsDeck(motif: string, stage: string) {
       z.array(z.unknown()),
     )
       .then((records) =>
-        runStudyTask<Array<{ record: PackagedPuzzle; card: PracticeCard }>>({
+        runStudyTask({
           kind: "deck",
           records,
           deckId,

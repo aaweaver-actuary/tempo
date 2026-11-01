@@ -1,4 +1,4 @@
-import type { AnalysisLine } from "../types";
+import type { AnalysisLine, PackagedPuzzle, PracticeCard } from "../types";
 import { packagedPuzzleSchema } from "../domain/schemas";
 import { validRecords } from "./validated-data";
 import {
@@ -33,7 +33,24 @@ export type PureStudyTask =
 
 export type StudyTask = PureStudyTask;
 
+// This is the finite result contract of the existing computation branches.
+// Workspace depends on its URL and stays unknown until its owner decodes it.
+export type StudyTaskResults = {
+  workspace: unknown;
+  transportLines: ReturnType<typeof repertoireLinesFromPayload>;
+  queue: ReturnType<typeof queueCardsFromPayload>;
+  deck: Array<{ record: PackagedPuzzle; card: PracticeCard }>;
+  lines: AnalysisLine[];
+  index: ReturnType<typeof indexRepertoirePositions>;
+  repertoireAlternatives: ReturnType<typeof buildRepertoireAlternativeSnapshot>;
+  repertoirePreparation: ReturnType<typeof buildRepertoireAlternativeSnapshot>;
+  matches: Array<IndexedPosition & { distance: number }>;
+  similarity: Array<IndexedPosition & { distance: number }>;
+};
+export type StudyTaskResult<Task extends StudyTask> = StudyTaskResults[Task["kind"]];
+
 // Runs in the study worker in browsers, never during a React render.
+export function computeStudyTask<Task extends PureStudyTask>(task: Task): StudyTaskResult<Task>;
 export function computeStudyTask(task: PureStudyTask) {
   switch (task.kind) {
     case "workspace":
