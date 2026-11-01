@@ -624,3 +624,26 @@ installation or an authorized live provider run.
 The one-time history operator delegates the daily mapping recovery to Games,
 then uses the saved replay cursor to read the immutable page before resuming
 provider acquisition. Study queue effects remain with the Study owner.
+
+### Cheap feedback prerequisite observation (#661)
+
+Before retrying a retained target, composition may borrow one bounded read of
+`observe_feedback_integrity_prerequisite` from the existing integrity owner. The
+result distinguishes a missing publication, queued newer graph, missing integrity
+state, incomplete scan and malformed certificate. Its dependency fingerprint is
+a retry hint; final acceptance retains its current-source, certificate and target
+locks. Observation performs no graph projection, enqueue or learning mutation.
+
+```mermaid
+flowchart LR
+  Retry[Retained feedback retry] --> Observe[Integrity owner: one bounded read]
+  Observe --> Facts[(Publication / integrity / graph and scan task facts)]
+  Observe --> Hold[Known prerequisite hold: retain original delivery]
+  Observe --> Ready[Current hint: allow bounded preparation]
+  Ready --> Fence[Existing final transaction authority and target fence]
+```
+
+Study-only currently permits only daily-queue task kinds. A queued graph/scan
+cannot progress under that policy without an explicit supported repair operation;
+ordinary Study must remain available while that prerequisite is held. No optional
+producer is enabled by this observer.

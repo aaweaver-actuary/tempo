@@ -19,6 +19,9 @@ _logger = logging.getLogger('tempo.study.feedback')
 # These are fixed public owner classifications, never exception text. Unknown
 # reasons deliberately stay redacted even when they happen to look like codes.
 _REMEDIATION_REASONS = frozenset({
+    'legacy_completed_current_integrity_required', 'integrity_graph_not_ready',
+    'integrity_graph_generation_mismatch', 'integrity_state_missing',
+    'integrity_scan_incomplete', 'integrity_certificate_invalid',
     'source_authority_mismatch', 'source_revision_mismatch', 'batch_limit_exceeded',
     'legacy_capture_out_of_range', 'legacy_capture_in_future', 'occurrence_out_of_range',
     'occurrence_in_future', 'ambiguous_obligation_linkage', 'legacy_authority_variant_required',

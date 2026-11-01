@@ -19,6 +19,23 @@ def certificate_facts(database, values):
     ).fetchone()
 
 
+def feedback_prerequisite_facts(database, values):
+    """One indexed read including absent prerequisite rows; never starts work."""
+    return database.execute_native(
+        """SELECT publication.state graph_state,publication.generation graph_generation,
+        state.repertoire_id integrity_repertoire_id,state.status integrity_status,state.scan_status,
+        state.scan_generation,state.checked_at,state.scan_completed_sources,state.scan_total_sources,state.scan_error,
+        graph.generation graph_task_generation,graph.state graph_task_state,
+        scan.id scan_task_id,scan.generation scan_task_generation,scan.state scan_task_state,scan.payload_json
+        FROM (SELECT %s::text repertoire_id) target
+        LEFT JOIN opening_graph_publications publication ON publication.repertoire_id=target.repertoire_id
+        LEFT JOIN repertoire_integrity_state state ON state.repertoire_id=target.repertoire_id
+        LEFT JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=target.repertoire_id
+        LEFT JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=target.repertoire_id""",
+        values,
+    ).fetchone()
+
+
 def queue_scan_state(database, values):
     return database.execute_native(
         "UPDATE repertoire_integrity_state SET scan_status='queued' "
