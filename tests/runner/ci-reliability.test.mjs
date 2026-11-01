@@ -789,3 +789,27 @@ test("queue_owner_attempt_uses_fresh_roots_and_retains_failed_fixture_evidence",
     } finally { if (extra.failureRoot) rmSync(extra.failureRoot, { recursive: true, force: true }); }
   } finally { if (first.failureRoot) rmSync(first.failureRoot, { recursive: true, force: true }); }
 });
+
+
+test("packaged_browser_prerequisites_fail_when_selected_without_fixture", () => {
+  const game = readFileSync("tests/browser/real-game-feedback.spec.ts", "utf8");
+  const study = readFileSync("tests/browser/study-recovery.spec.ts", "utf8");
+  for (const [source, env, error] of [
+    [game, "TEMPO_PACKAGED_FEEDBACK_SCENARIO", "Owned packaged feedback scenario is required"],
+    [game, "TEMPO_PACKAGED_HOLD_SCENARIO", "Owned prerequisite scenario required"],
+    [study, "TEMPO_STUDY_RECOVERY_SCENARIO", "Owned recovery scenario required"],
+  ]) {
+    assert(source.includes(env));
+    assert(source.includes(`if (!scenarioPath) throw new Error("${error}")`));
+    assert(!source.includes("test.skip(!scenarioPath"));
+  }
+});
+
+test("selected_browser_skip_is_not_passing_evidence", () => {
+  const result = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });
+  assert.equal(result[0].status, "failed");
+  const selected = plan({ complete: true });
+  const report = successfulResults(selected).reports.browser;
+  report.tests[0].status = "skipped";
+  assert(layerFailures(selected, "browser", "success", report).some(message => /skipped|failed/.test(message)));
+});
