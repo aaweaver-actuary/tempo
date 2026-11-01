@@ -122,7 +122,9 @@ registry. Its compatibility `update_settings` entry uses the same decoder and
 apply function. The gateway hashes the original payload before decoding; settings
 validation now occurs during existing preparation, with definitive errors still
 recorded through the existing receipt path. Settings writes, queue requests and
-post-commit policy/wake decisions retain their existing owners.
+the descriptor's typed post-commit callback refreshes policy after the writer
+closes and before the gateway wakes the queue. Completed receipt replay also
+invokes the callback; failed commands do not.
 
 ```mermaid
 flowchart LR
@@ -132,4 +134,7 @@ flowchart LR
   decode --> gateway
   gateway --> apply["Settings transactional apply"]
   apply --> effects["Existing settings, provider and queue effects"]
+  effects --> committed["Commit and close writer"]
+  committed --> policy["Settings-owned policy callback"]
+  policy --> wake["Existing queue wake decision"]
 ```

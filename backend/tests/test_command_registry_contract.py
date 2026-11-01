@@ -48,6 +48,22 @@ def test_explicit_registries_do_not_share_registrations():
     first.handlers.pop('typed')
     assert 'typed' in second.handlers
 
+
+def test_after_commit_is_descriptor_owned_and_legacy_names_are_noops():
+    observed = []
+    registry = CommandRegistry()
+    registry.register(CommandDescriptor('typed', lambda p: p['value'], str,
+                                        lambda _tx, value: len(value), observed.append))
+    registry.after_commit('typed', 4)
+    registry.after_commit('legacy', 7)
+    assert observed == [4]
+    registry.handlers.pop('typed')
+    registry.register(CommandDescriptor('typed', lambda p: p['value'], str,
+                                        lambda _tx, value: len(value)))
+    registry.after_commit('typed', 5)
+    assert observed == [4]
+    assert CommandRegistry()._after_commit == {}
+
 def test_default_legacy_registration_and_executor_maps_are_registry_owned(monkeypatch):
     from app import command_gateway as gateway
     assert gateway._handlers is gateway._registry.handlers

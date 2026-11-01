@@ -84,7 +84,12 @@ def _prepare_settings(request: SettingsRequest) -> SettingsRequest:
     return request
 
 
+def _refresh_policy_after_commit(_result: dict[str, object]) -> None:
+    from .services.study_priority import refresh_policy
+    refresh_policy()  # Post-commit generation fences any older policy read.
+
+
 SETTINGS_COMMAND: CommandDescriptor[PostgresConnection, SettingsRequest, SettingsRequest, dict[str, object]] = CommandDescriptor(
-    "settings.update", decode_settings_request, _prepare_settings, apply_settings,
+    "settings.update", decode_settings_request, _prepare_settings, apply_settings, _refresh_policy_after_commit,
 )
 register_descriptor(SETTINGS_COMMAND)
