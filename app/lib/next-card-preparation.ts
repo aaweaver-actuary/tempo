@@ -1,6 +1,6 @@
 import { createStudySession } from "@tempo/study-session";
 import type { IntentEnvelope, IntentRecord, IntentStore } from "@tempo/browser-intents";
-import { z } from "zod";
+import { nextCardPreparationResultSchema, preparationBlocksIssuance, type NextCardPreparationResult } from "./next-card-preparation-contract";
 import { studyIntentStore, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { LEARNING_URL, learningFetch, studyWorkspace } from "./study-connection";
 import { confirmOperationResponse, PendingOperationError, readOperationResponse } from "./operation-status";
@@ -10,13 +10,13 @@ const currentKey = `${kind}:current`;
 // Older servers have no retry metadata. Only an explicit retry may start another
 // no-progress unit, at least one second after its terminal receipt was retained.
 export const preparationRetryDelayMs = 1_000;
-const resultSchema = z.object({ progressed: z.boolean(), pending: z.boolean(), reason: z.string().nullable() });
-type PreparationResult = z.infer<typeof resultSchema>;
+const resultSchema = nextCardPreparationResultSchema;
+type PreparationResult = NextCardPreparationResult;
 type Request = { authority: string; progression: string; baseUrl: string; headers: { "Idempotency-Key": string } };
 
 export class NextCardPreparationDeferredError extends Error {
   constructor(readonly operationId: string, readonly reason: string | null) {
-    super("Local Study preparation has not progressed. Your result is saved. Retry loading the queue after the preparation hold is resolved.");
+    super("Study preparation is waiting. Saved results are retained. Retry loading the queue after its prerequisite is restored.");
     this.name = "NextCardPreparationDeferredError";
   }
 }
@@ -54,8 +54,13 @@ async function selectRequest(store: IntentStore, authority: string, progression:
       const completed = result(retained.receipt);
       if (!completed.progressed && completed.pending) {
         const completedAt = (retained.data as { completedAt?: number } | undefined)?.completedAt;
-        if (!retryDeferred || !Number.isFinite(completedAt) || Date.now() < Number(completedAt) + preparationRetryDelayMs)
-          throw new NextCardPreparationDeferredError(retained.requestId, completed.reason);
+        if (!retryDeferred || !Number.isFinite(completedAt) || Date.now() < Number(completedAt) + preparationRetryDelayMs) {
+          if (preparationBlocksIssuance(completed))
+            throw new NextCardPreparationDeferredError(retained.requestId, completed.reason);
+          // A definitive nonblocking hold is reusable. Do not create another
+          // command on each queue acquisition or another tab's rapid retry.
+          return pointer;
+        }
       }
     }
     requireAuthority(store, authority, signal);
@@ -117,7 +122,8 @@ export async function prepareNextCard(input: { progression: string; signal: Abor
     requireAuthority(store, authority, input.signal);
     if (settled.state !== "committed") throw new PendingOperationError(envelope.requestId);
     const completed = result(settled.receipt);
-    if (!completed.progressed && completed.pending) throw new NextCardPreparationDeferredError(envelope.requestId, completed.reason);
+    if (!completed.progressed && preparationBlocksIssuance(completed))
+      throw new NextCardPreparationDeferredError(envelope.requestId, completed.reason);
     return completed;
   } finally { coordinator.dispose(); }
 }
