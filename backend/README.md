@@ -27,6 +27,7 @@ flowchart TB
   Broker -->|"foreground and background<br/>workers"| Commands["Legacy command gateway and<br/>handlers"]
   Commands -->|"borrow caller transaction"| Policy["Queue/review/feedback<br/>policies and storage<br/>adapters"]
   Policy -->|"same database: game<br/>projections and Study state"| DB[("Legacy tempo PostgreSQL<br/>database")]
+  API -->|"SQLite prefix wake capability"| Compat["Compatibility coordinator"]
   API -->|"Games selection / source facts"| Facts["Public Games contracts and<br/>pure retained source facts"]
   API -->|"reader capabilities"| ReadStorage["Root database read adapters"]
   ReadStorage -->|"existing shared database"| DB

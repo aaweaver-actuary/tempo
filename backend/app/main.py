@@ -4152,8 +4152,8 @@ from .prefix_transition_api import router as prefix_transition_router
 app.include_router(prefix_transition_router)
 from .opening_evidence_api import router as opening_evidence_router
 app.include_router(opening_evidence_router)
-from .canonical_prefix_api import router as canonical_prefix_router
-app.include_router(canonical_prefix_router)
+from .canonical_prefix_api import create_canonical_prefix_router
+app.include_router(create_canonical_prefix_router(lambda: _compatibility_coordinator().wake()))
 
 from .prefix_diagnostics_api import router as prefix_diagnostics_router
 app.include_router(prefix_diagnostics_router)
