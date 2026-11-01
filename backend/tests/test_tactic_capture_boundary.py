@@ -77,24 +77,35 @@ assert CapturedTacticAdmission and ValidatedCapture
 
 def test_disposable_capture_proof_binds_database_before_owner_work(monkeypatch):
     """The direct proof entry point composes the same authorities as the app."""
+    import os
     import runpy
+    import sys
     from pathlib import Path
+    from unittest.mock import patch
     from app.product_composition import database_infrastructure
     from tempo_legacy_database.adapters import postgres_store
 
     calls = []
+    original_path = sys.path[:]
+    original_environment = dict(os.environ)
     monkeypatch.setattr(database_infrastructure, 'bind_database_infrastructure', lambda: calls.append('bind'))
-    proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_tactic_capture.py'))
-    assert calls == []  # Importing the proof remains inert.
-    monkeypatch.delenv('TEMPO_TEST_INSTANCE', raising=False)
-    with pytest.raises(RuntimeError, match='disposable PostgreSQL instance'):
-        proof['main']()
-    assert calls == []
-    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
-    def stop_before_connection():
-        calls.append('connection')
-        raise RuntimeError('stopped before database access')
-    monkeypatch.setattr(postgres_store, 'connection', stop_before_connection)
-    with pytest.raises(RuntimeError, match='stopped before database access'):
-        proof['main']()
-    assert calls == ['bind', 'connection']
+    try:
+        with patch.dict(os.environ):
+            proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_tactic_capture.py'))
+            assert calls == []  # Importing the proof remains inert.
+            os.environ.pop('TEMPO_TEST_INSTANCE', None)
+            with pytest.raises(RuntimeError, match='disposable PostgreSQL instance'):
+                proof['main']()
+            assert calls == []
+            os.environ['TEMPO_TEST_INSTANCE'] = 'disposable'
+            def stop_before_connection():
+                calls.append('connection')
+                raise RuntimeError('stopped before database access')
+            monkeypatch.setattr(postgres_store, 'connection', stop_before_connection)
+            with pytest.raises(RuntimeError, match='stopped before database access'):
+                proof['main']()
+            assert calls == ['bind', 'connection']
+    finally:
+        sys.path[:] = original_path
+    assert dict(os.environ) == original_environment
+    assert sys.path == original_path
