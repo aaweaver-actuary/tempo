@@ -100,18 +100,61 @@ def _comparison_scope(capture, comparison_game):
         source_revision=game.source_revision, source_digest=game.source_digest)
 
 
-def _frames(starting_fen, moves):
+class _PrefixFacts:
+    """Detached legal-position facts, bounded and local to one projection."""
+
+    def __init__(self, limit=100001):
+        self.limit = limit
+        self.roots = {}
+        self.edges = {}
+        self.facts = {}
+
+
+def _frames(starting_fen, moves, memo):
     board = chess.Board(starting_fen)
     if not board.is_valid():
         raise ValueError("invalid_source_position")
-    frames = [board.copy(stack=False)]
+    # New nodes stay local until the entire route has passed legality checks.
+    roots, edges, facts = {}, {}, {}
+    next_token = len(memo.facts)
+    cacheable = True
+
+    def node(parent, move=None):
+        nonlocal next_token, cacheable
+        key = starting_fen if parent is None else (parent, move)
+        existing = (memo.roots.get(key) if parent is None else memo.edges.get(key))
+        if existing is not None:
+            return existing, memo.facts[existing]
+        staged = roots if parent is None else edges
+        if key in staged:
+            token = staged[key]
+            return token, facts[token]
+        value = (board.turn, canonical_fen_key(board.fen(en_passant='legal')))
+        if not cacheable or next_token >= memo.limit:
+            cacheable = False
+            return None, value
+        token = next_token
+        next_token += 1
+        staged[key], facts[token] = token, value
+        return token, value
+
+    token, first = node(None)
+    frames = [first]
     for uci in moves:
         move = chess.Move.from_uci(uci)
         if move not in board.legal_moves:
             raise ValueError("illegal_source_move")
         board.push(move)
-        frames.append(board.copy(stack=False))
-    return frames
+        if token is None:
+            frames.append((board.turn, canonical_fen_key(board.fen(en_passant='legal'))))
+        else:
+            token, value = node(token, uci)
+            frames.append(value)
+    if cacheable:
+        memo.roots.update(roots)
+        memo.edges.update(edges)
+        memo.facts.update(facts)
+    return tuple(frames)
 
 
 def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None, *, include_unavailable=False):
@@ -125,6 +168,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     # The retained values contain detached positions only and share exact route
     # aliases; existing source-row/total-ply bounds cap this retained input.
     replayed = {}
+    prefix_facts = _PrefixFacts()
     position_key = lru_cache(maxsize=1024)(opening_position_key)
     card_positions = {}
     def card_position(card):
@@ -138,8 +182,7 @@ def _mappings(capture, routes, revision, scope_proof=None, comparison_scope=None
     def replay_positions(starting_fen, moves):
         key = (starting_fen, tuple(moves))
         if key not in replayed:
-            replayed[key] = tuple((frame.turn, canonical_fen_key(frame.fen(en_passant='legal')))
-                for frame in _frames(starting_fen, moves))
+            replayed[key] = _frames(starting_fen, moves, prefix_facts)
         return replayed[key]
     for graph in capture["graphs"]:
         card = cards_by_id.get(graph["card_id"])
