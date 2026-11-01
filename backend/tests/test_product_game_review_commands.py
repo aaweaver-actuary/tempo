@@ -94,6 +94,38 @@ def test_pooled_repertoire_snapshot_profile_is_unreserved_read_only_and_leaves_b
     assert len(pools) == count
 
 
+@pytest.mark.parametrize("options", [
+    {}, {"read_only": True}, {"read_only": True, "repertoire_snapshot": True},
+    {"background": True}, {"read_only": True, "background": True},
+    {"read_only": True, "background": True, "authoritative": True},
+])
+def test_only_reserved_background_profile_disables_jit_in_original_setup_roundtrip(monkeypatch, options):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters import postgres_store
+    calls, reservations = [], []
+    class Database:
+        def execute(self, statement, parameters=()): calls.append((statement, parameters))
+    @contextmanager
+    def borrowed(**reservation):
+        reservations.append(reservation)
+        yield Database()
+    monkeypatch.setattr(postgres_store, "_pool", lambda *args, **kwargs: SimpleNamespace(connection=borrowed))
+    monkeypatch.delenv("TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS", raising=False)
+    with postgres_store.connection(**options):
+        pass
+    if options.get("background"):
+        settings = [item for item in calls if item[0].startswith("SELECT set_config")]
+        assert len(settings) == 1, "short reserved work must retain one setup round trip"
+        assert settings[0][1] == ("250ms", "25ms")
+        assert "set_config('jit', 'off', true)" in settings[0][0]
+        assert reservations == [{"timeout": .1}]
+    else:
+        assert not any("'jit'" in statement for statement, _ in calls)
+        assert reservations == [{}]
+
+
 @pytest.mark.parametrize("count", [1, 10, 17])
 def test_reader_http_dispatches_original_configure_and_run_identity_without_writer(monkeypatch, count):
     from app import command_dispatch
