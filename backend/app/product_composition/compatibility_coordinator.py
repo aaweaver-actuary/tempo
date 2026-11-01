@@ -6,7 +6,6 @@ from tempo_legacy_database.adapters.database_executor import submit_background_w
 from tempo_legacy_database.adapters.http_composition import queue_maintenance as queue_maintenance_storage
 from app.services import queue_application
 from app.services.durable_tasks import enqueue_task
-from app.services.game_sync_coordinator import coordinator, register_durable_task_handler, register_maintenance_handler
 
 
 def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
@@ -17,7 +16,7 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     submit = submit_foreground_write if foreground else submit_background_write
     submit(lambda database: queue_maintenance_storage.mark_queue_projection_refreshing(database, queue_date),
            label=f"daily-queue-refreshing:{queue_date}")
-    coordinator.wake()
+    compose_compatibility_coordinator().wake()
     return task
 
 
@@ -75,6 +74,7 @@ _registered = False
 def compose_compatibility_coordinator():
     """Register the existing handlers once and return the existing singleton."""
     global _registered
+    from app.services.game_sync_coordinator import coordinator, register_durable_task_handler, register_maintenance_handler
     if _registered:
         return coordinator
     from app.services.repertoire_integrity import execute_durable_integrity_repair

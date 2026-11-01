@@ -72,3 +72,75 @@ def test_registered_daily_queue_handler_preserves_task_payload(monkeypatch):
     }})
     assert calls == ['daily-queue:2026-11-01',
                      ('writer', '2026-11-01', {'preserve_through_entry_id': 42})]
+
+
+def test_postgres_main_cold_lifespan_excludes_legacy_sync_and_providers():
+    code = '''
+import asyncio, importlib.abc, os, socket, subprocess, sys
+from contextlib import contextmanager
+class Guard(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {'app.services.game_sync_coordinator', 'app.services.game_sync',
+                        'app.games.providers.lichess', 'app.games.providers.chesscom'}:
+            raise AssertionError('legacy import: ' + fullname)
+def forbidden(*args, **kwargs): raise AssertionError('network or process startup')
+sys.meta_path.insert(0, Guard())
+socket.socket.connect = forbidden
+socket.create_connection = forbidden
+subprocess.Popen = forbidden
+os.environ['TEMPO_DATABASE_READ_URL'] = 'postgresql://reader@example/tempo'
+os.environ.pop('TEMPO_DATABASE_WRITE_URL', None)
+from app import main, command_dispatch
+from app.services import study_priority
+calls = []
+main.postgres_store.configured = lambda: True
+main.initialize = lambda: calls.append('initialize')
+command_dispatch.dispatch_command = lambda name, payload, idempotency_key: calls.append(('dispatch', name, payload, idempotency_key)) or {'ok':True}
+@contextmanager
+def policy():
+    calls.append('policy-enter')
+    try: yield
+    finally: calls.append('policy-exit')
+study_priority.policy_publisher = policy
+async def run():
+    async with main.lifespan(main.app): calls.append('serving')
+asyncio.run(run())
+assert calls[0] == 'initialize'
+assert calls[1][0:2] == ('dispatch','queue.ensure_current') and calls[1][2]['queue_date'] and calls[1][3] is None
+assert calls[2:] == ['policy-enter','serving','policy-exit']
+assert not {'app.services.game_sync_coordinator','app.services.game_sync',
+            'app.games.providers.lichess','app.games.providers.chesscom'} & sys.modules.keys()
+try: main.unknown_coordinator_export
+except AttributeError: pass
+else: raise AssertionError('unknown export accepted')
+'''
+    subprocess.run([sys.executable, '-c', code], env=os.environ.copy(), check=True)
+
+
+def test_sqlite_lifespan_composes_before_writer_and_preserves_lifecycle(monkeypatch):
+    import asyncio
+    from app import main
+    calls = []
+    class Coordinator:
+        async def start(self): calls.append('coordinator-start')
+        async def stop(self): calls.append('coordinator-stop')
+    coordinator = Coordinator()
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: False)
+    monkeypatch.setattr(main, 'compose_compatibility_coordinator', lambda: calls.append('compose') or coordinator)
+    monkeypatch.setattr(main, 'initialize', lambda: calls.append('initialize'))
+    monkeypatch.setattr(main.database_writer, 'start', lambda: calls.append('writer-start'))
+    monkeypatch.setattr(main.database_writer, 'stop', lambda: calls.append('writer-stop'))
+    monkeypatch.setattr(main, 'submit_foreground_write', lambda *_args, **_kwargs: calls.append('materialize'))
+    from app.services import study_priority
+    @__import__('contextlib').contextmanager
+    def policy():
+        calls.append('policy-enter')
+        try: yield
+        finally: calls.append('policy-exit')
+    monkeypatch.setattr(study_priority, 'policy_publisher', policy)
+    monkeypatch.setenv('TEMPO_COORDINATOR_MODE', 'embedded')
+    async def run():
+        async with main.lifespan(main.app): calls.append('serving')
+    asyncio.run(run())
+    assert calls == ['compose','initialize','writer-start','materialize','compose','coordinator-start',
+                     'policy-enter','serving','policy-exit','compose','coordinator-stop','writer-stop']
