@@ -25,6 +25,7 @@ bind_database_infrastructure()
 
 from .celery_app import celery_app
 from .product_composition.worker_game_sync import resolve_worker_game_sync_command
+from .product_composition.worker_game_commands import resolve_worker_game_command
 from .product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
 from .product_composition.worker_product_feedback import resolve_worker_product_feedback
 from .command_gateway import (
@@ -47,9 +48,6 @@ from . import repertoire_commands  # noqa: F401 - registers foreground repertoir
 from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
-from . import game_commands  # noqa: F401 - registers foreground game changes
-from .product_composition.game_review_commands import register_commands as register_product_review_commands
-register_product_review_commands()
 from .product_composition.repertoire_runtime import register_current_repertoire_commands
 register_current_repertoire_commands()
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
@@ -67,12 +65,7 @@ from . import defensive_admin_commands  # noqa: F401 - registers defensive admin
 from . import threat_analysis_commands  # noqa: F401 - registers defensive engine callbacks
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
-from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims
-from . import game_analysis_publication  # noqa: F401 - registers analysis publication admission
 from . import discovery_commands  # noqa: F401 - registers discovery acceptance
-from .game_analysis_publication import (
-    execute_game_analysis_followup_slice, execute_game_analysis_publication_slice,
-)
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
@@ -152,6 +145,16 @@ def execute_game_feature_slice(claimed_task):
 
 def execute_game_priority_handoff_slice(claimed_task):
     from .services.postgres_game_priorities import execute_game_priority_handoff_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_analysis_publication_slice(claimed_task):
+    from .game_analysis_publication import execute_game_analysis_publication_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_analysis_followup_slice(claimed_task):
+    from .game_analysis_publication import execute_game_analysis_followup_slice as execute
     return execute(claimed_task)
 
 
@@ -290,6 +293,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
             resolve_worker_game_sync_command(command_name)
+            resolve_worker_game_command(command_name)
             resolve_worker_legacy_evidence(command_name)
             resolve_worker_product_feedback(command_name)
             result = execute_command(operation_id, command_name, saved_payload,
@@ -338,6 +342,7 @@ def execute_background_command(
                   else nullcontext()):
                 activity_gate.check_background_admission()
                 resolve_worker_game_sync_command(command_name)
+                resolve_worker_game_command(command_name)
                 resolve_worker_legacy_evidence(command_name)
                 resolve_worker_product_feedback(command_name)
                 return execute_command(operation_id, command_name, saved_payload,

@@ -140,9 +140,15 @@ def retry(database, prepared):
         raise HTTPException(error.status, error.reason) from error
 
 
-def register_commands():
+def register_commands(name: str | None = None) -> None:
     from app.command_gateway import register_command
-    register_command("product_games.configure", configure)
-    register_command("product_games.sync", sync)
-    register_command("product_games.refresh", refresh)
-    register_command("product_games.retry_feedback", retry, prepare=prepare_retry)
+    if name is not None and name not in {'product_games.configure', 'product_games.sync', 'product_games.refresh', 'product_games.retry_feedback'}:
+        raise ValueError(f"Unknown command: {name}")
+    if name is None or name == 'product_games.configure':
+        register_command('product_games.configure', configure)
+    if name is None or name == 'product_games.sync':
+        register_command('product_games.sync', sync)
+    if name is None or name == 'product_games.refresh':
+        register_command('product_games.refresh', refresh)
+    if name is None or name == 'product_games.retry_feedback':
+        register_command('product_games.retry_feedback', retry, prepare=prepare_retry)
