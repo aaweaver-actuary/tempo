@@ -6496,3 +6496,16 @@ normal runtime pool/transaction limits are unchanged.
 ### Packaged collector startup admission ordering (#668)
 
 `database/tests/games_collection/test_study_recovery_packaged.py::test_packaged_study_recovery_thirty_consecutive_transitions` owns the startup regression: establish the genuine protected browser attempt and verify API/foreground identities before constructing the collector. Its existing 45-second admission window then covers only actual collector preparation/identity/profile, the three-runtime managed-mode commit, and release. The first 41f21 packaged attempt failed before browser acceptance because unrelated setup consumed this window; collector exit was not an OOM. Deadlines, actual worker execution, mode checks and full browser/recovery assertions remain unchanged.
+
+### Packaged current-feedback tripwires (#662 / #668)
+
+`database/tests/games_collection/test_study_recovery_packaged.py` adds
+`test_packaged_current_feedback_without_legacy_capture[unseen]` and
+`[introduced-with-target-rollback]` to the existing `study-recovery` suite.
+The existing browser journey must reach actual same-key settlement with legacy
+capture/projection tripwires installed before consumer imports. The introduced
+case injects one controlled revision change inside the actual owner transaction,
+immediately before the new narrow target fence; it requires durable refusal,
+rollback of the revision/effect/ack and unchanged-key/clock recovery after clearing
+the marker. This case does not claim to simulate external concurrency. The normal
+R1 thirty-transition cases and production deadlines/resource caps stay unchanged.
