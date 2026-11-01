@@ -15,11 +15,12 @@ def unavailable_priority(*_args, **_kwargs):
 
 
 def test_prefix_save_preserves_source_and_coverage_without_optional_priority(monkeypatch):
+    from app.services import canonical_prefix
     database = object()
     effects = []
-    storage = canonical_prefix_api.storage
+    storage = canonical_prefix.command_storage
     monkeypatch.setattr(storage, "repertoire_presence", lambda *_args: True)
-    monkeypatch.setattr(canonical_prefix_api, "read_prefix", lambda *_args, **_kwargs: {
+    monkeypatch.setattr(canonical_prefix, "read_prefix", lambda *_args, **_kwargs: {
         "moves": [], "revision": 2, "source_revision": 9,
     })
     monkeypatch.setattr(storage, "prefix_preview", lambda *_args: {
@@ -28,7 +29,7 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
     })
     monkeypatch.setattr(storage, "postgres_is_configured", lambda: True)
     monkeypatch.setattr(storage, "save_prefix_values", lambda *args: effects.append(("prefix", args)))
-    monkeypatch.setattr(canonical_prefix_api, "enqueue_task_in_transaction",
+    monkeypatch.setattr(canonical_prefix, "enqueue_task_in_transaction",
                         lambda *args, **kwargs: effects.append(("graph-refresh", args, kwargs)))
     monkeypatch.setattr(storage, "advance_priority_source_epoch",
                         lambda *args: effects.append(("source-epoch", args)))

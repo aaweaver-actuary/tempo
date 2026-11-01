@@ -43,3 +43,8 @@ class PositionAnnotationRequest(BaseModel):
     comment: str = Field(default="", max_length=4000)
     arrows: list[AnnotationArrow] = Field(default_factory=list)
     squares: list[AnnotationSquare] = Field(default_factory=list)
+
+
+class CanonicalPrefixSaveRequest(BaseModel):
+    preview_id: str = Field(min_length=1, max_length=128)
+    expected_revision: int = Field(ge=0)

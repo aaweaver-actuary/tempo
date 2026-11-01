@@ -1,71 +1,21 @@
 """Canonical opening prefix reads and idempotent foreground saves."""
 
-import json
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.authored_repertoires import prefix_commands as storage
-from .command_gateway import register_command
+from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
+from .contracts.transport.authored_repertoire import CanonicalPrefixSaveRequest
 from tempo_legacy_database.connections import connection, read_connection
-from .services.canonical_prefix import parse_prefix, prefix_projection, read_prefix
-from .services.canonical_prefix_preview import preview_projection, request_preview
-from .services.durable_tasks import enqueue_task_in_transaction
+from .services.canonical_prefix import parse_prefix, prefix_projection, read_prefix, preview_command, save_prefix
+from .services.canonical_prefix_preview import preview_projection
 
 router = APIRouter()
 
 
 class CanonicalPrefixPreviewRequest(BaseModel):
     movetext: str = Field(max_length=5000)
-
-
-class CanonicalPrefixSaveRequest(BaseModel):
-    preview_id: str = Field(min_length=1, max_length=128)
-    expected_revision: int = Field(ge=0)
-
-
-def preview_command(database, payload: dict) -> dict:
-    try:
-        return request_preview(database, payload["repertoire_id"], payload["moves"])
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
-
-
-def save_prefix(database, payload: dict) -> dict:
-    repertoire_id = payload["repertoire_id"]
-    request = CanonicalPrefixSaveRequest.model_validate(payload["request"])
-    if not storage.repertoire_presence(database, repertoire_id):
-        raise HTTPException(404, "Repertoire not found")
-    current = read_prefix(database, repertoire_id, lock=True)
-    preview = storage.prefix_preview(database, request.preview_id, repertoire_id)
-    if (not preview or preview["state"] != "ready" or current["revision"] != request.expected_revision
-            or preview["expected_revision"] != current["revision"]
-            or preview["source_revision"] != current["source_revision"]):
-        raise HTTPException(409, "Resolve conflicting lines and check the current prefix again before saving.")
-    moves = json.loads(preview["moves_json"])
-    if moves == current["moves"] and not moves:
-        storage.set_empty_prefix_preview(database, request.preview_id, repertoire_id)
-        return prefix_projection(moves, current["revision"])
-    revision = current["revision"] + int(moves != current["moves"])
-    storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
-    if moves != current["moves"]:
-        enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
-    if not storage.postgres_is_configured():
-        storage.fail_active_local_coverage(database, repertoire_id)
-    if storage.postgres_is_configured():
-        from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
-        storage.advance_priority_source_epoch(database, repertoire_id)
-        request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
-        storage.delete_priority_publication(database, repertoire_id)
-        storage.delete_introduction_priorities(database, repertoire_id)
-    return prefix_projection(moves, revision)
-
-
-register_command("repertoire.canonical_prefix.preview", preview_command)
-register_command("repertoire.canonical_prefix.save", save_prefix)
 
 
 @router.get("/api/repertoires/{identifier}/canonical-prefix")
