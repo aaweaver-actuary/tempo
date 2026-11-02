@@ -12,7 +12,11 @@ from datetime import date, datetime
 import json
 from typing import Mapping, TYPE_CHECKING
 
+from app.repertoire.interfaces.position_schedule_occurrences import routes_from_validated_index
+from tempo_evidence_math.position_learning import Hold, SourceCertificate
+
 if TYPE_CHECKING:
+    from app.contracts.product_v02.repertoire import RepertoireSnapshot
     from app.repertoire.position_index import PositionIndex
 
 
@@ -39,14 +43,16 @@ class DonorFact:
 
 @dataclass(frozen=True)
 class SourceFacts:
-    """One canonical Repertoire index plus its separately issued source proof.
+    """Canonical snapshot, exact index and shared typed source certificate.
 
-    `source_certificate` is intentionally opaque and mandatory. An adapter may
-    provide only a verified owner-issued certificate; a boolean is not proof.
+    Certificate fields alone do not prove owner authority; the source owner must
+    issue it for this snapshot. B1's public projection checks type, digest,
+    membership/current-integrity claims and authored-route diagnostics.
     """
 
+    snapshot: "RepertoireSnapshot"
     index: "PositionIndex"
-    source_certificate: object | None
+    source_certificate: SourceCertificate | None
     source_hold: str | None = None
 
 
@@ -86,6 +92,24 @@ class InventoryHold(ValueError):
     pass
 
 
+def _certified_position_routes(routes):
+    """Group B1-certified route decisions by the shared exact PositionKey."""
+    grouped = defaultdict(lambda: {"routes": set(), "responses": set()})
+    for route in routes:
+        for decision in route.decisions:
+            definition = decision.definition
+            item = grouped[definition.key]
+            item["routes"].add(route.route_id)
+            item["responses"].add(definition.expected_uci)
+    result = {}
+    for key, facts in grouped.items():
+        if len(facts["responses"]) != 1:
+            # B1 should already reject this; retain a local invariant guard.
+            raise InventoryHold("certified_selected_response_conflict")
+        result[key] = (facts["routes"], next(iter(facts["responses"])))
+    return result
+
+
 def _binding_card_revisions(node) -> dict[str, set[int]]:
     # Physical mapping ambiguity is not a chess response conflict. Keep every
     # bound card for donor analysis while identity remains repertoire+position.
@@ -122,38 +146,45 @@ def build_inventory(request: InventoryRequest) -> dict:
         if not reps or any(rep in seen_repertoires for rep in reps):
             raise InventoryHold("duplicate_or_empty_repertoire_scope")
         seen_repertoires.update(reps)
-        if source.source_certificate is None or type(source.source_certificate) is bool:
-            source_hold = source.source_hold or "authored_route_certificate_unavailable"
-        elif source.source_hold:
+        if source.source_hold:
             source_hold = source.source_hold
-        elif not index.available or not index.complete:
-            source_hold = "source_index_incomplete"
+            certified_positions = {}
+        elif source.source_certificate is None:
+            source_hold = "authored_route_certificate_unavailable"
+            certified_positions = {}
+        elif not isinstance(source.source_certificate, SourceCertificate):
+            source_hold = "invalid_source_certificate_type"
+            certified_positions = {}
         else:
-            source_hold = None
+            projection = routes_from_validated_index(
+                source.snapshot, index, source_certificate=source.source_certificate)
+            if isinstance(projection, Hold):
+                source_hold = projection.reason + (":" + projection.detail if projection.detail else "")
+                certified_positions = {}
+            else:
+                source_hold = None
+                certified_positions = _certified_position_routes(projection)
 
+        nodes_by_key = {(key.repertoire_id, key.variant, key.position): node
+                        for key, node in index.nodes.items()}
         for repertoire_id in reps:
-            # Failed or stale source proof excludes rows from denominators.
-            keys = [] if source_hold else sorted(
-                key for key in index.nodes if key.repertoire_id == repertoire_id)
+            # Use B1's owner-validated authored projection, which allows physical
+            # mapping ambiguity while still holding on actual source diagnostics.
+            keys = sorted(key for key in certified_positions if key.repertoire_id == repertoire_id)
             position_rows = []
             card_ids_all: set[str] = set()
             donor_statuses = defaultdict(int)
             position_route_occurrences = 0
             repertoire_routes: set[str] = set()
             for key in keys:
-                node = index.nodes[key]
-                route_ids = {item.route_id for item in node.occurrences}
+                route_ids, selected_response = certified_positions[key]
                 position_route_occurrences += len(route_ids)
                 repertoire_routes.update(route_ids)
-                card_revisions = _binding_card_revisions(node)
+                index_node = nodes_by_key.get((key.repertoire_id, key.variant, key.position))
+                card_revisions = _binding_card_revisions(index_node) if index_node is not None else {}
                 card_ids = set(card_revisions)
                 card_ids_all.update(card_ids)
-                conflict = node.conflict
                 position_holds = []
-                if source_hold:
-                    position_holds.append(source_hold)
-                if conflict:
-                    position_holds.append("own_response_conflict")
                 candidate_cards = []
                 eligible_donor_ids = []
                 for card_id in sorted(card_ids):
@@ -176,7 +207,7 @@ def build_inventory(request: InventoryRequest) -> dict:
                 position_rows.append({
                     "position": key.position,
                     "variant": key.variant,
-                    "selected_response_uci": node.selected_response,
+                    "selected_response_uci": selected_response,
                     "route_count": len(route_ids),
                     "physical_card_count": len(card_ids),
                     "physical_card_ids": sorted(card_ids),
@@ -323,8 +354,10 @@ def _fsrs_shape_valid(raw: str) -> bool:
 def _introduction_distribution(card_ids: set[str], donors: Mapping[str, DonorFact]) -> dict:
     counts: Counter[str] = Counter()
     for card_id in card_ids:
-        fact = donors[card_id]
-        if fact.introduced_at is None:
+        fact = donors.get(card_id)
+        if fact is None or not fact.card_exists:
+            counts["missing_card_source"] += 1
+        elif fact.introduced_at is None:
             counts["unintroduced"] += 1
         elif _aware_timestamp(fact.introduced_at):
             counts["introduced"] += 1
@@ -343,6 +376,10 @@ def _aware_timestamp(value: str) -> bool:
 def _card_state_counts(card_ids: set[str], donors: Mapping[str, DonorFact]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for card_id in card_ids:
-        state = donors[card_id].state
+        fact = donors.get(card_id)
+        if fact is None or not fact.card_exists:
+            counts["missing_card_source"] += 1
+            continue
+        state = fact.state
         counts[state if state in {"locked", "new", "learning", "mature"} else "unknown_state"] += 1
     return dict(sorted(counts.items()))

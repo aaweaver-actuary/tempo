@@ -1,99 +1,153 @@
 from types import SimpleNamespace
 
-from dataclasses import dataclass
+import chess
+from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.position_learning import SourceCertificate
+from tempo_game_review_contracts import AuthoredRoute, RepertoireSnapshot as MembershipSnapshot
+
+from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
+from app.repertoire import build_index
 from tooling.position_study_inventory import (
     DonorFact, InventoryHold, InventoryRequest, SourceFacts, build_inventory, read_card_page,
 )
 
 
-@dataclass(frozen=True, order=True)
-class PositionKey:
-    repertoire_id: str
-    variant: str
-    position: str
+def authored(route_id, repertoire_id="r1", moves=("e2e4",), **changes):
+    return dict(repertoire_id=repertoire_id, route_id=route_id, learner_color="white",
+                starting_fen=chess.STARTING_FEN, moves=list(moves), policy_id=repertoire_id,
+                reentries=[]) | changes
 
 
-def occurrence(route_id, bindings=()):
-    return SimpleNamespace(route_id=route_id, bindings=bindings)
+def snapshot(*routes, bindings=()):
+    authored_routes = [AuthoredRoute(**{k: v for k, v in route.items() if k != "complete"}) for route in routes]
+    membership = MembershipSnapshot(
+        workspace_id="fixture", snapshot_id="snapshot", revision=1, digest="a" * 64,
+        source_revision="source-1", captured_at="2026-11-02T12:00:00Z", scope_id="fixture",
+        scope_repertoire_ids=sorted({route["repertoire_id"] for route in routes}),
+        complete=True, available=True, routes=authored_routes)
+    boundaries = tuple(RouteBoundary(route_id=route["route_id"], terminal_ply=len(route["moves"]),
+                                     deliberate=route.get("complete", True)) for route in routes)
+    mappings = []
+    for value in bindings:
+        route = next(r for r in routes if r["route_id"] == value["route_id"]
+                     and r["repertoire_id"] == value["repertoire_id"])
+        board = chess.Board(route["starting_fen"])
+        for move in route["moves"][:value["ply"]]:
+            board.push_uci(move)
+        mappings.append(DecisionPresentation(
+            decision_id=value["decision_id"], repertoire_id=value["repertoire_id"],
+            position_key=opening_position_key(board.fen()),
+            selected_response_uci=value.get("selected_response") or route["moves"][value["ply"]],
+            presentation_id=value["card_id"], presentation_revision=value["revision"],
+            repertoire_revision=membership.revision, introduction="unknown", introduced_at=None))
+    return RepertoireSnapshot(membership=membership, variant="standard", learner_color="white",
+                              boundaries=boundaries, decision_presentations=tuple(mappings))
 
 
-def binding(card_id):
-    return SimpleNamespace(presentation_id=card_id, presentation_revision=2)
+def card_binding(card_id, route_id="route", repertoire_id="r1", ply=0, revision=2,
+                 selected_response=None):
+    return {"card_id": card_id, "route_id": route_id, "repertoire_id": repertoire_id,
+            "ply": ply, "revision": revision, "decision_id": f"decision-{card_id}",
+            "selected_response": selected_response}
 
 
-def index(nodes, *, complete=True):
-    return SimpleNamespace(
-        scope_repertoire_ids=("r1",),
-        nodes=nodes,
-        available=True,
-        complete=complete,
-    )
+def source(snapshot_value, certificate=None):
+    return SourceFacts(snapshot_value, build_index(snapshot_value), certificate or certificate_for(snapshot_value))
 
 
-def donor(card_id, repertoire_id, owners=("r1",)):
+def certificate_for(snapshot_value):
+    membership = snapshot_value.membership
+    return SourceCertificate(membership.snapshot_id, membership.source_revision,
+                             membership.digest, True, True)
+
+
+def donor(card_id, repertoire_id, owners=None):
     return DonorFact(
-        card_id=card_id, repertoire_id=repertoire_id, revision=2,
-        state="learning", due_date="2026-11-03", fsrs_card_json='{"card_id":1,"state":2,"step":null,"stability":1,"difficulty":1,"due":"2026-11-03T00:00:00+00:00","last_review":null}',
+        card_id=card_id, repertoire_id=repertoire_id, revision=2, state="learning",
+        due_date="2026-11-03", fsrs_card_json='{"card_id":1,"state":2,"step":null,"stability":1,"difficulty":1,"due":"2026-11-03T00:00:00+00:00","last_review":null}',
         introduced_at="2026-10-01T12:00:00+00:00", archived=False,
         pending_validation=False, superseded_by=None, integrity_blocked=False,
-        owner_repertoire_ids=owners,
-    )
+        owner_repertoire_ids=tuple(owners if owners is not None else (repertoire_id,)))
 
 
 def test_same_physical_card_in_two_repertoires_is_excluded_for_both():
-    shared = binding("shared")
-    one = PositionKey("r1", "standard", "fen-one")
-    two = PositionKey("r2", "standard", "fen-two")
-    first = index({one: SimpleNamespace(occurrences=(occurrence("a", (shared,)),),
-                                       conflict=False, selected_response="e2e4")})
-    second = SimpleNamespace(scope_repertoire_ids=("r2",), available=True, complete=True,
-        nodes={two: SimpleNamespace(occurrences=(occurrence("b", (shared,)),),
-                                    conflict=False, selected_response="e2e4")})
+    value = snapshot(authored("a", "r1"), authored("b", "r2"), bindings=(
+        card_binding("shared", route_id="a", repertoire_id="r1"),
+        card_binding("shared", route_id="b", repertoire_id="r2")))
     result = build_inventory(InventoryRequest(
-        (SourceFacts(first, object()), SourceFacts(second, object())),
-        (donor("shared", "r1", ("r1", "r2")),),
-    ))
+        (source(value),), (donor("shared", "r1", ("r1", "r2")),)))
     assert [row["shared_card_exclusions"] for row in result["repertoires"]] == [1, 1]
-    assert result["repertoires"][0]["positions"][0]["donor_candidates"][0]["status"] == "shared_across_repertoires"
-    assert result["repertoires"][1]["positions"][0]["donor_candidates"][0]["status"] == "shared_across_repertoires"
+    assert [row["positions"][0]["donor_candidates"][0]["status"]
+            for row in result["repertoires"]] == ["shared_across_repertoires"] * 2
 
 
 def test_one_hundred_routes_count_one_exact_position_once():
-    key = PositionKey("r1", "standard", "same-position")
-    node = SimpleNamespace(occurrences=tuple(occurrence(f"route-{i}") for i in range(100)),
-                           conflict=False, selected_response="e2e4")
-    result = build_inventory(InventoryRequest((SourceFacts(index({key: node}), object()),), ()))
-    repertoire = result["repertoires"][0]
+    value = snapshot(*(authored(f"route-{i}") for i in range(100)))
+    repertoire = build_inventory(InventoryRequest((source(value),), ())) ["repertoires"][0]
     assert repertoire["distinct_exact_positions"] == 1
     assert repertoire["distinct_routes"] == 100
     assert repertoire["position_route_occurrences"] == 100
     assert repertoire["metrics"]["distinct_positions_tested_per_minute"] is None
 
 
+def test_arbitrary_and_stale_certificates_hold():
+    value = snapshot(authored("route"))
+    index = build_index(value)
+    arbitrary = SourceFacts(value, index, object())
+    stale = SourceCertificate("other", "source-1", "a" * 64, True, True)
+    invalid_result = build_inventory(InventoryRequest((arbitrary,), ()))
+    stale_result = build_inventory(InventoryRequest((SourceFacts(value, index, stale),), ()))
+    assert invalid_result["repertoires"][0]["source_hold"] == "invalid_source_certificate_type"
+    assert stale_result["repertoires"][0]["source_hold"] == "source_certificate_mismatch"
+    assert invalid_result["repertoires"][0]["distinct_exact_positions"] == 0
+    assert stale_result["repertoires"][0]["distinct_exact_positions"] == 0
+
+
 def test_stale_generation_source_is_held_and_omitted_from_counts():
-    key = PositionKey("r1", "standard", "stale-position")
-    node = SimpleNamespace(occurrences=(occurrence("stale-route"),),
-                           conflict=False, selected_response="e2e4")
-    result = build_inventory(InventoryRequest((SourceFacts(
-        index({key: node}), None, "stale_graph_generation"),), ()))
+    value = snapshot(authored("stale-route"))
+    cert = SourceCertificate("snapshot", "stale-generation", "a" * 64, True, True)
+    result = build_inventory(InventoryRequest((SourceFacts(value, build_index(value), cert),), ()))
     repertoire = result["repertoires"][0]
     assert repertoire["source_status"] == "held"
-    assert repertoire["source_hold"] == "stale_graph_generation"
+    assert repertoire["source_hold"] == "source_certificate_mismatch"
     assert repertoire["distinct_exact_positions"] == 0
 
 
-def test_bad_source_holds_and_missing_donor_is_reported():
-    key = PositionKey("r1", "standard", "current-position")
-    node = SimpleNamespace(occurrences=(occurrence("route", (binding("missing"),)),),
-                           conflict=False, selected_response="e2e4")
-    result = build_inventory(InventoryRequest((SourceFacts(
-        index({key: node}), None, "authored_route_certificate_unavailable"),), ()))
+def test_ambiguous_physical_mapping_is_eligible_but_source_fault_holds():
+    value = snapshot(authored("a"), authored("b"), bindings=(
+        card_binding("one", "a"), card_binding("two", "a")))
+    index = build_index(value)
+    assert not index.complete
+    result = build_inventory(InventoryRequest((SourceFacts(value, index, certificate_for(value)),), ()))
     repertoire = result["repertoires"][0]
-    assert repertoire["source_hold"] == "authored_route_certificate_unavailable"
-    assert repertoire["distinct_exact_positions"] == 0
-    # Source failure is surfaced at repertoire level, and no unproven card rows
-    # leak into a partial denominator.
-    assert repertoire["positions"] == []
+    assert repertoire["source_status"] == "source_facts_only"
+    assert repertoire["distinct_exact_positions"] == 1
+    assert "own_response_conflict" not in repertoire["positions"][0]["holds"]
+    assert repertoire["donor_status_counts"] == {"missing_card_source": 2}
+
+    invalid = snapshot(authored("bad", complete=False))
+    held = build_inventory(InventoryRequest((source(invalid),), ())) ["repertoires"][0]
+    assert held["source_status"] == "held"
+    assert held["distinct_exact_positions"] == 0
+
+
+def test_missing_donor_is_reported_without_partial_count_crash():
+    value = snapshot(authored("route"), bindings=(card_binding("missing", route_id="route"),))
+    repertoire = build_inventory(InventoryRequest((source(value),), ())) ["repertoires"][0]
+    assert repertoire["distinct_exact_positions"] == 1
+    assert repertoire["donor_status_counts"] == {"missing_card_source": 1}
+    assert repertoire["physical_card_state_counts"] == {"missing_card_source": 1}
+    assert repertoire["due_introduction_distribution"] == {"missing_card_source": 1}
+
+
+def test_invalid_donor_state_is_a_hold_with_measured_source_counts():
+    value = snapshot(authored("route"), bindings=(card_binding("card", route_id="route"),))
+    invalid = donor("card", "r1")
+    invalid = DonorFact(**{**invalid.__dict__, "fsrs_card_json": "not-json"})
+    repertoire = build_inventory(InventoryRequest((source(value),), (invalid,))) ["repertoires"][0]
+    assert repertoire["distinct_exact_positions"] == 1
+    assert repertoire["donor_status_counts"] == {"invalid_fsrs_state_shape": 1}
+    assert repertoire["positions"][0]["source_eligible_donor_card_ids"] == []
 
 
 class FakeReader:
@@ -112,7 +166,7 @@ class FakeReader:
         return SimpleNamespace(fetchall=lambda: [("card",)])
 
 
-def test_card_page_requires_reader_role_repeatable_read_and_bounded_keyset():
+def test_card_page_requires_reader_role_repeatable_read_and_bounded_batch():
     reader = FakeReader(("tempo_reader", "on", "repeatable read"))
     assert read_card_page(reader, candidate_card_ids=("card-01", "card-02")) == [("card",)]
     assert reader.calls[1][1] == (["card-01", "card-02"],)
@@ -123,17 +177,3 @@ def test_card_page_requires_reader_role_repeatable_read_and_bounded_keyset():
         assert str(error) == "postgres_read_only_role_required"
     else:
         raise AssertionError("writer connection was accepted")
-
-
-def test_invalid_donor_state_is_a_hold_with_measured_source_counts():
-    key = PositionKey("r1", "standard", "position")
-    node = SimpleNamespace(occurrences=(occurrence("route", (binding("card"),)),),
-                           conflict=False, selected_response="e2e4")
-    invalid = donor("card", "r1")
-    invalid = DonorFact(**{**invalid.__dict__, "fsrs_card_json": "not-json"})
-    result = build_inventory(InventoryRequest(
-        (SourceFacts(index({key: node}), object()),), (invalid,)))
-    repertoire = result["repertoires"][0]
-    assert repertoire["distinct_exact_positions"] == 1
-    assert repertoire["donor_status_counts"] == {"invalid_fsrs_state_shape": 1}
-    assert repertoire["positions"][0]["source_eligible_donor_card_ids"] == []
