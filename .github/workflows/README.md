@@ -28,3 +28,29 @@ Source: [`pages.yml`](pages.yml),
 [`ci-quality.mjs`](../../scripts/ci-quality.mjs), and
 [`ci-merge-gate.mjs`](../../scripts/ci-merge-gate.mjs). This diagram describes the
 changed workflow source, not runtime installation or verification execution.
+
+## Owned PostgreSQL proof lifetime
+
+The existing full and CI durability PostgreSQL plans include the packaged Games
+reader proof during the same owned stack lifetime. Generic backend pytest runs
+its import/refusal boundary tests; it does not require a stack that a later
+verification stage has yet to create. FAST/STUDY selection and hosted protection
+settings are unchanged.
+
+```mermaid
+flowchart LR
+  Plan["Full or durability PostgreSQL plan"] --> Build["Existing budgeted image preparation"]
+  Build --> Ready["Owned stack startup and service health"]
+  Ready --> Reader["Mandatory packaged Games reader proof"]
+  Reader --> Remaining["Remaining existing native and selected browser checks"]
+  Remaining --> Cleanup["Existing verified owned cleanup"]
+  Ready -. "failure" .-> Cleanup
+  Reader -. "failure or refused target" .-> Cleanup
+  Remaining -. "failure" .-> Cleanup
+```
+
+Sources: [executable plan](../../database/tests/postgres-test-plan.mjs),
+[runner](../../database/tests/test-postgres-docker.mjs),
+[reader proof](../../database/tests/check_postgres_game_review_reader.py), and
+[exact stage evidence checks](../../scripts/ci-run-layer.mjs). This is implemented
+verification wiring, not a claim of a completed native run or installation.

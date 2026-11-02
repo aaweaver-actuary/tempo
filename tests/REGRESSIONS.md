@@ -6614,3 +6614,32 @@ The owning regressions retain current source contracts after earlier component m
 Component packaging fixtures include the existing development-web-cache leaf; exact dependency closure includes the three already declared Game Evidence dependencies. The graph preparation guard permits the transition's existing node:url builtin used for protected checkout exclusion, and the duplicate shared Learning suite registration includes its database owner root. These corrections preserve exact test inventories, input fencing and failure accounting. The PostgreSQL readiness fixture expects three remaining restoration call sites after the priority benchmark retirement; behavioral health-before-engine assertions remain.
 
 `standalone defense engine smoke does not poll an unavailable API` retains its 15-second deadline, one thread, 32MiB hash and depth-four restricted search. Its smoke branch now terminates the owned Stockfish child in a finally block before exiting; ordinary engine processing is unchanged.
+
+## Issue #825 packaged reader release prerequisite
+
+The original packaged reader proof now lives in
+`database/tests/check_postgres_game_review_reader.py`, retaining its target,
+source-hash, reader ACL, current-receipt, unchanged-row and cleanup assertions.
+The existing full and CI durability PostgreSQL plans run the mandatory
+`game_review_reader` stage after service health, using their existing owned
+stack. The schema guard requires the complete current ledger and exactly ten
+SELECT-only relations, including migration 056's managed-mode state.
+
+`backend/tests/test_packaged_game_review_reader_boundary.py` owns
+`test_packaged_reader_import_is_inert_and_native_proof_is_outside_generic_backend_pytest`,
+`test_packaged_reader_refuses_unowned_or_wrong_project_before_external_effects`,
+`test_packaged_reader_requires_current_complete_schema_and_exact_ten_relation_acls`,
+and `test_packaged_reader_rejects_incomplete_or_extra_schema_inventory_and_write_acl`.
+These are boundary checks, not a packaged native pass.
+
+`tests/runner/postgres-test-speedups.test.mjs` owns:
+
+- `packaged Games reader runs once on the host after ready owned services and before cleanup`;
+- `packaged Games reader missing action fails the owned plan and cleans up`;
+- `packaged Games reader failure fails the owned plan and cleans up`;
+- `packaged Games reader cannot be missing, skipped, failed, or omitted from the qualification plan`.
+
+Their regular Vitest owner remains
+`tests/unit/postgres-test-speedups-regressions.test.ts`. The exact executable
+plan, scenario results, current candidate and plan hash remain qualification
+requirements; no CI classification or smaller-tier native exemption is added.
