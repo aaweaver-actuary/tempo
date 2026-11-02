@@ -26,3 +26,11 @@ _STUDY_NEW_ELIGIBILITY = """c.content_type='study_exercise' AND c.state='new'
                    WHERE burial.exercise_id=exercise.id AND burial.study_day=%s)
     AND NOT EXISTS(SELECT 1 FROM daily_queue queue
                    WHERE queue.card_id=c.id AND queue.queue_date=%s)"""
+
+# Active and transitioning owners use position scheduling, not card due dates.
+_POSITION_DUE_EXCLUSION = """ AND (c.content_type!='opening' OR NOT EXISTS(
+    SELECT 1 FROM study_position_owners owner
+    WHERE owner.mode IN ('active','staged','paused')
+      AND (owner.repertoire_id=c.repertoire_id OR EXISTS(
+        SELECT 1 FROM repertoire_cards link WHERE link.card_id=c.id
+          AND link.repertoire_id=owner.repertoire_id))))"""

@@ -593,7 +593,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
-                     "admit_due", "prioritized_openings", "prioritized_opening_item",
+                     "admit_due", "admit_position_due", "prioritized_openings", "prioritized_opening_item",
                      "study_opening_page", "study_opening_item",
                      "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
@@ -633,6 +633,12 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_due":
         activity_gate.wait_for_foreground()
         due_card_id = _prepare_due_card(queue_date)
+    position_due = None
+    if phase == "admit_position_due":
+        activity_gate.wait_for_foreground()
+        from .position_queue_admission import prepare_due
+        with background_read_connection() as database:
+            position_due = prepare_due(database, queue_date, payload)
     prioritized_plan = None
     if phase == "prioritized_openings":
         activity_gate.wait_for_foreground()
@@ -721,11 +727,30 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                                 "introduced_counts": introduced_counts}
         elif phase == "admit_due":
             if due_card_id is None:
-                next_phase = "prioritized_openings"
+                next_phase = "admit_position_due"
             else:
                 _admit_one_due_card(database, queue_date, due_card_id)
                 next_phase = phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "admit_position_due":
+            from tempo_evidence_math.position_learning import Hold
+            from .position_queue_admission import admit_due
+            if isinstance(position_due, Hold):
+                raise RuntimeError('Position queue admission held: ' + position_due.reason)
+            if position_due is None:
+                next_phase = "prioritized_openings"
+                next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+            elif 'repertoire_done' in position_due:
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase,
+                                "position_repertoire_after": position_due['repertoire_done']}
+            else:
+                held = admit_due(database, queue_date, position_due)
+                if isinstance(held, Hold):
+                    raise RuntimeError('Position queue admission held: ' + held.reason)
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase,
+                                **position_due['cursor']}
         elif phase == "prioritized_openings":
             next_phase = "prioritized_opening_item" if prioritized_plan else "admit_study"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,

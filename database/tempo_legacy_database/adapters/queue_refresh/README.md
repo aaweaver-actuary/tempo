@@ -181,3 +181,27 @@ not trigger repeated history scans or nonleading index probes per queued card. L
 uncertainty, explicit/issued/exposed exceptions, captured definitions, memberships
 and current eligibility still decide availability; the query grants no new
 eligibility or publication authority.
+
+### Position-owned introduced due work
+
+The PostgreSQL sliced refresh reads one H1 introduced due target and prepares
+its source and deterministic physical carrier on a background read before its
+writer slice. The writer fences authored source, owner epoch and current due
+state before locking the carrier card and then the queue date. It rechecks the
+card revision, repertoire membership and integrity and reuses an outstanding
+carrier; a later still-due target can use a new cycle after completion. Active,
+staged and paused position-owned opening cards are excluded from legacy card
+scheduled due admission. Inactive and shadow owners retain legacy admission.
+These queue records do not constitute a review, grade or new introduction.
+Source, due or ownership uncertainty holds the refresh rather than substituting
+physical scheduling. Position plan issuance and initial position introduction
+are separate integration steps.
+
+```mermaid
+flowchart LR
+    H1[H1 introduced due page] --> Prepare[Source and carrier preparation]
+    Prepare --> Fence[Source, owner and state fences]
+    Fence --> Card[Lock and recheck carrier card]
+    Card --> Day[Lock queue date]
+    Day --> Queue[Reuse pending carrier or append cycle]
+```
