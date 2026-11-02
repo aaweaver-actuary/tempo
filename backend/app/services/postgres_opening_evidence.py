@@ -789,7 +789,12 @@ def issued_position_manifest(plan, original_scope_manifest):
                 raise ValueError('illegal issued display')
             learner_turn = board.turn == (trained_color == 'white')
             if learner_turn:
-                if (current is None or current.move_offset != offset or current.fen != board.fen()
+                # Issued source FEN may retain an en passant target even when
+                # no legal capture exists. Compare python-chess's legal FEN
+                # representation, while retaining the exact authorized bytes
+                # in the manifest and its decision identity.
+                if (current is None or current.move_offset != offset
+                        or chess.Board(current.fen).fen() != board.fen()
                         or current.definition.expected_uci != uci
                         or current.definition.key.repertoire_id != scope['repertoire_id']):
                     raise ValueError('issued decisions differ from display')
