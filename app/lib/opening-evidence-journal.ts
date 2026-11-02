@@ -149,9 +149,13 @@ export function preparePositionOpeningAttempt(card: PracticeCard): Promise<strin
     return Promise.resolve("The issued position attempt is unavailable.");
   const pause = positionPauses.get(attemptId);
   if (pause) return pause.then(() => preparePositionOpeningAttempt(card));
-  if (releaseLeases.has(attemptId)) return Promise.resolve(undefined);
   const existing = positionReservations.get(attemptId);
   if (existing) return existing;
+  if (releaseLeases.has(attemptId)) {
+    const capture = captures.get(attemptId);
+    return Promise.resolve(capture && JSON.stringify(capture.positionPlan) === JSON.stringify(plan)
+      ? undefined : "The active position attempt does not match this issued plan.");
+  }
   if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks)
     return Promise.resolve("Position Study needs browser storage and exclusive tab ownership.");
   const preparing = new Promise<string | undefined>(resolve => {
@@ -328,7 +332,8 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
   }
   if (!attemptId || card.kind !== "opening" || !card.openingDecisionManifest || !card.queueEntryId || typeof indexedDB === "undefined") return;
   const existing = captures.get(attemptId);
-  if (existing) return existing;
+  if (existing) return position.positionStudyMode !== "position" ||
+    JSON.stringify(existing.positionPlan) === JSON.stringify(position.positionPresentation) ? existing : undefined;
   let timezone = options.studyTimezone;
   try { if (timezone && timezone !== "local") new Intl.DateTimeFormat("en", { timeZone: timezone }); else timezone = undefined; }
   catch { timezone = undefined; }
