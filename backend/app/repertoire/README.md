@@ -365,3 +365,25 @@ alone does not establish a digest-bound current-integrity certificate. Product
 composition must obtain that proof and issuance must fence it again before use.
 This pure interface does not wire a provider, change persistence or grant a
 Study schedule authority.
+
+The database owner's `prepare_position_source(database, repertoire_id)` constructs
+an ephemeral `PreparedPositionSource` from the complete published owner read,
+the actual completed integrity/task facts and the legal route projection. Its
+`authored_token` binds the original snapshot ID/revision/full digest as immutable
+provenance and separately records an authored-only digest of the source header,
+standard variant, response policy, and every route's identity, color, root and
+moves. The original `SourceCertificate` is provenance for that capture: a later
+successful authored fence does not claim its full physical-card digest is still
+current.
+
+The issuing owner must call `fence_position_source` on its borrowed writer
+transaction before effects, persist `authored_token.as_dict()` with the immutable
+attempt, and independently fence its original queue/card identity. The fence
+uses the existing shared graph advisory lock, locked source/publication and
+completed scan/task rows, and a bounded exact authored-line reread, without graph
+or chess replay. The repertoire line trigger advances the locked source header
+for route insertions, deletions and changes to repertoire, root, moves or color;
+that serialization also prevents route phantoms crossing the writer's fence.
+Physical-only changes do not invalidate the authored token. This is a new
+prepared boundary, not a new store; independent source review and native
+PostgreSQL concurrency tests are required before production adoption.
