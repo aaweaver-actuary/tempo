@@ -20,8 +20,9 @@ from tempo_evidence_math.position_learning import Hold, SourceCertificate
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source, fence_position_source
 from app.repertoire import build_index
-from tooling.position_study_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
-from tooling.position_study_seed import seed_shadow_page
+from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
+from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -99,8 +100,11 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
                 'archived': bool(row['archived']),
                 'pending_validation': bool(row['pending_validation']),
                 'integrity_blocked': bool(row['integrity_blocked']),
+                'deleted': bool(row['deleted']),
             })) for row in rows)
-        request = InventoryRequest((SourceFacts(prepared.snapshot, build_index(prepared.snapshot), certificate),), donors)
+        inventory = inventory_from_validated_index(prepared.snapshot, build_index(prepared.snapshot), source_certificate=certificate)
+        assert not isinstance(inventory, Hold), inventory
+        request = InventoryRequest((SourceFacts(prepared.snapshot, inventory),), donors)
         for _ in range(10):
             raw.execute('BEGIN')
             result = seed_shadow_page(port, prepared, request, epoch='n2-epoch', now=now, page_size=100)
@@ -142,3 +146,108 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         assert replay.mode == 'replay' and replay.proposal.to_wire() == issued['position_presentation']
         assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s', (entry,)).fetchone()[0] == 1
         assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 1
+        raw.commit()
+        _real_review_journey(raw, port, dsn, monkeypatch, replay.proposal, entry, fsrs)
+
+
+
+def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs):
+    """Use real checkpoint/review owners; connection routing is fixture-only."""
+    from contextlib import contextmanager
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from app.services import postgres_opening_evidence as evidence, learning_review_adapter
+    from app.services.opening_decision_evidence import decision_manifest
+    from tempo_legacy_database import connections
+    from tempo_legacy_database.adapters.opening_evidence import storage as evidence_storage
+    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+
+    @contextmanager
+    def fixture_reader(*args, **kwargs):
+        with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as reader:
+            yield PostgresConnection(reader, read_only=True)
+
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', dsn)
+    monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', dsn)
+    monkeypatch.setattr(connections, 'read_connection', fixture_reader)
+    monkeypatch.setattr(connections, 'background_read_connection', fixture_reader)
+    monkeypatch.setattr(evidence_storage, 'read_connection', fixture_reader)
+    monkeypatch.setattr(learning_review_adapter, 'read_connection', fixture_reader)
+    scope_row = raw.execute('''SELECT snapshot.*, context.effective_trained_color
+        FROM opening_evidence_presentations snapshot
+        JOIN opening_evidence_queue_contexts context ON context.presentation_snapshot_id=snapshot.id
+        WHERE context.queue_entry_id=%s AND context.repertoire_id='n2' ''', (entry,)).fetchone()
+    assert scope_row is not None
+    original = decision_manifest(evidence._manifest_snapshot(dict(scope_row)), 'n2')
+    manifest = evidence.issued_position_manifest(plan, original)
+    assert len(manifest['decisions']) >= 2, 'fixture must include a clean decision before the later wrong'
+    now = datetime.now(timezone.utc).isoformat()
+    events = []
+    for index, decision in enumerate(manifest['decisions']):
+        board = chess.Board(decision['fen'])
+        move = decision['expected_uci']
+        if index == 1:
+            move = next(m.uci() for m in board.legal_moves if m.uci() != move)
+        events.append(dict(sequence=len(events)+1, decision_index=index,
+            decision_id=decision['decision_id'], expected_uci=decision['expected_uci'],
+            kind='first_response', observed_at=now, response_uci=move,
+            disposition='wrong' if index == 1 else 'expected'))
+        if index == 1:
+            events.append(dict(sequence=len(events)+1, decision_index=index,
+                decision_id=decision['decision_id'], expected_uci=decision['expected_uci'],
+                kind='correction', observed_at=now, response_uci=decision['expected_uci']))
+    checkpoint = dict(attempt_id=plan.attempt_id, manifest=manifest, origin_queue_entry_id=entry,
+        queue_entry_id=entry, started_at=now, study_timezone='UTC', source='live', events=events[:2])
+    raw.commit()
+    # Two first responses: the second wrong is durable before aggregate review.
+    prepared = evidence.prepare_standalone_checkpoint({'checkpoint': checkpoint})
+    raw.execute('BEGIN')
+    first = evidence.commit_standalone_checkpoint(port, prepared)
+    raw.commit()
+    assert first['persisted'] and first['contiguous_sequence'] == 2
+    grade_rows = [tuple(row) for row in raw.execute('SELECT event_id,grade FROM study_position_grades ORDER BY event_id').fetchall()]
+    assert len(grade_rows) == 1 and grade_rows[0][1] == 'again'
+    assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    raw.commit()
+    # Exact delivery replay cannot duplicate the negative effect.
+    prepared = evidence.prepare_standalone_checkpoint({'checkpoint': checkpoint})
+    raw.execute('BEGIN')
+    retry = evidence.commit_standalone_checkpoint(port, prepared)
+    raw.commit()
+    assert retry['persisted']
+    assert [tuple(row) for row in raw.execute('SELECT event_id,grade FROM study_position_grades ORDER BY event_id').fetchall()] == grade_rows
+    raw.commit()
+    completion = {**checkpoint, 'events': events,
+        'terminal': {'state': 'complete', 'final_sequence': len(events), 'ended_at': now}}
+    request = OpeningEvidenceCheckpoint.model_validate(completion)
+    prepared_manifest = evidence.prepare_checkpoint(request)
+    with fixture_reader() as reader:
+        prepared_position = evidence.prepare_position_checkpoint(reader, request)
+    review_payload = {'card_id': 'card', 'review': {'outcome': 'again', 'guided': True,
+        'queue_entry_id': entry, 'expected_revision': 1, 'attempt_id': plan.attempt_id,
+        'opening_evidence_completion': completion}}
+    review_payload = prepare_recombination_review(review_payload, read_connection=fixture_reader)
+    review_payload.update(prepared_manifest=prepared_manifest, prepared_position_checkpoint=prepared_position)
+    raw.execute('BEGIN')
+    saved = learning_review_adapter.submit_legacy_review(port, review_payload)
+    raw.commit()
+    assert saved['persisted'] and saved['queue_entry_id'] == entry
+    assert saved['requeue_entry_id'] is None
+    rows = [tuple(row) for row in raw.execute('SELECT grade FROM study_position_grades ORDER BY decision_index').fetchall()]
+    assert rows[0] == ('good',) and rows[1] == ('again',), rows
+    receipt = raw.execute('''SELECT r.card_id,r.queue_entry_id,r.review_id,v.source_kind,v.source_ref
+        FROM review_attempt_receipts r JOIN reviews v ON v.id=r.review_id WHERE r.attempt_id=%s''', (plan.attempt_id,)).fetchone()
+    assert tuple(receipt) == ('card',entry,saved['review_id'],'position_study','attempt:'+plan.attempt_id)
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    raw.commit()
+    # Same aggregate delivery must return the original receipt, not regrade.
+    with fixture_reader() as reader:
+        review_payload['prepared_position_checkpoint'] = evidence.prepare_position_checkpoint(reader, request)
+    raw.execute('BEGIN')
+    replay = learning_review_adapter.submit_legacy_review(port, review_payload)
+    raw.commit()
+    assert replay['review_id'] == saved['review_id']
+    assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 1
+    assert [tuple(row) for row in raw.execute('SELECT grade FROM study_position_grades ORDER BY decision_index').fetchall()] == rows
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    raw.commit()
