@@ -332,3 +332,145 @@ def decision_evidence(database, decision_id: str, *, offset: int = 0, limit: int
             "observations": [{**{key: row[key] for key in ("attempt_id", "card_id", "card_revision", "manifest_id", "repertoire_id", "state")},
                               **json.loads(row["observation_json"])} for row in rows[:limit]],
             "next_offset": offset + limit if len(rows) > limit else None}
+
+# Position Study first-response receipts. This boundary is deliberately separate
+# from the legacy shadow observation reducer: a suffix index is not an original
+# manifest index and browser disposition/expected FEN are not authority.
+def _position_canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _position_digest(value: Any) -> str:
+    import hashlib
+    return hashlib.sha256(_position_canonical(value).encode("ascii")).hexdigest()
+
+
+def position_first_response_envelope(plan, *, event_id, decision_index, actual_uci,
+                                     manual_failure, assistance_before, observed_at,
+                                     classify_alternative):
+    """Adjudicate one actual action against the decoded frozen server plan.
+
+    ``classify_alternative`` is the authored-source owner's fenced capability;
+    it returns wrong, alternate or unverified for a legal non-expected move.
+    The caller must use the contiguous checkpoint prefix and retain the first
+    action only. Neither client FEN nor client disposition enters this function.
+    """
+    import chess
+    import re
+    from datetime import datetime
+    if not isinstance(event_id, str) or not event_id or type(decision_index) is not int:
+        raise ValueError("invalid_first_response_identity")
+    if decision_index < 0 or decision_index >= len(plan.decision_slots):
+        raise ValueError("decision_index_outside_issued_plan")
+    if type(manual_failure) is not bool or type(assistance_before) is not bool:
+        raise ValueError("invalid_first_response_flags")
+    try:
+        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise ValueError("invalid_observed_at") from exc
+    if observed.utcoffset() is None:
+        raise ValueError("invalid_observed_at")
+    slot = plan.decision_slots[decision_index]
+    definition = slot.definition
+    if manual_failure:
+        if actual_uci is not None:
+            raise ValueError("manual_failure_has_move")
+        disposition = "manual_failure"
+    else:
+        if not isinstance(actual_uci, str) or not re.fullmatch(r"[a-h][1-8][a-h][1-8][qrbn]?", actual_uci):
+            raise ValueError("invalid_actual_uci")
+        try:
+            move = chess.Move.from_uci(actual_uci)
+            board = chess.Board(slot.fen)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("invalid_actual_uci") from exc
+        if actual_uci == definition.expected_uci:
+            if move not in board.legal_moves:
+                raise ValueError("invalid_issued_expected_move")
+            disposition = "expected"
+        elif move not in board.legal_moves:
+            disposition = "illegal"
+        else:
+            disposition = classify_alternative(definition, actual_uci)
+            if disposition not in {"wrong", "alternate", "unverified"}:
+                raise ValueError("invalid_source_disposition")
+    return {
+        "version": 1, "event_id": event_id, "attempt_id": plan.attempt_id,
+        "decision_index": decision_index, "queue_entry_id": plan.queue_entry_id,
+        "card_id": plan.original_card_id, "card_revision": plan.original_card_revision,
+        "repertoire_id": definition.key.repertoire_id, "variant": definition.key.variant,
+        "position": definition.key.position, "owner_epoch": plan.owner_epoch,
+        "original_ply": slot.original_ply, "expected_uci": definition.expected_uci,
+        "policy_version": definition.policy_version, "actual_uci": actual_uci,
+        "manual_failure": manual_failure, "assistance_before": assistance_before,
+        "observed_at": observed_at, "disposition": disposition,
+    }
+
+
+def decode_position_first_response(payload, digest, plan):
+    """Verify stored canonical bytes and all immutable issued decision identities.
+
+    A digest establishes integrity, not source authority. The disposition is
+    authoritative only because this decoder is used for an owner-saved row.
+    """
+    if not isinstance(payload, dict) or _position_digest(payload) != digest:
+        raise ValueError("first_response_digest_mismatch")
+    keys = {"version", "event_id", "attempt_id", "decision_index", "queue_entry_id",
+            "card_id", "card_revision", "repertoire_id", "variant", "position",
+            "owner_epoch", "original_ply", "expected_uci", "policy_version", "actual_uci",
+            "manual_failure", "assistance_before", "observed_at", "disposition"}
+    if set(payload) != keys or payload['version'] != 1:
+        raise ValueError("invalid_first_response_envelope")
+    # Revalidate all facts, preserving the saved source adjudication only for
+    # legal alternatives. It must never convert alternate/unverified to wrong.
+    expected = position_first_response_envelope(
+        plan, event_id=payload['event_id'], decision_index=payload['decision_index'],
+        actual_uci=payload['actual_uci'], manual_failure=payload['manual_failure'],
+        assistance_before=payload['assistance_before'], observed_at=payload['observed_at'],
+        classify_alternative=lambda _definition, _actual: payload['disposition'],
+    )
+    if expected != payload:
+        raise ValueError("first_response_issued_plan_mismatch")
+    return expected
+
+
+def persist_position_first_response(database, plan, envelope, accepted_at, *, apply_grade):
+    """Save a verified first action and settle a negative in the same transaction.
+
+    Caller owns the transaction and must already hold the owner advisory fence,
+    original card/queue/attempt locks and authored-source fence in that order.
+    It obtains ``plan`` by strict decoding the locked issued record, reduces the
+    actual contiguous opening events, and supplies the source adjudicator above.
+    ``apply_grade`` is the Learning owner's borrowed-transaction capability; a
+    raised exception must abort the caller's transaction; its adapter must turn
+    any held result into an exception. An exact retry
+    returns the original row without invoking it again. Correct responses remain
+    pending until a real saved review receipt is supplied by the review owner.
+    """
+    from tempo_legacy_database.adapters.study import position_first_responses as storage
+    digest = _position_digest(envelope)
+    decode_position_first_response(envelope, digest, plan)
+    rows = storage.receipt(database, envelope['event_id'], envelope['attempt_id'],
+                           envelope['decision_index'])
+    if rows:
+        if len(rows) != 1:
+            raise EvidenceConflict("First response identity conflicts with another receipt")
+        row = dict(rows[0])
+        stored = row['payload_json']
+        if isinstance(stored, str):
+            stored = json.loads(stored)
+        if row['payload_digest'] != digest or stored != envelope:
+            raise EvidenceConflict("First response identity was reused with different content")
+        decode_position_first_response(stored, row['payload_digest'], plan)
+        return row
+    if not storage.insert(database, envelope, digest, _position_canonical(envelope), accepted_at):
+        # A concurrent unique-key winner cannot be treated as a successful
+        # acceptance without re-reading and checking its exact immutable bytes.
+        raise EvidenceConflict("First response raced another acceptance; retry transaction")
+    if envelope['disposition'] in {'wrong', 'illegal', 'manual_failure'}:
+        apply_grade(database, envelope['attempt_id'], (envelope['event_id'],))
+    rows = storage.receipt(database, envelope['event_id'], envelope['attempt_id'],
+                           envelope['decision_index'])
+    if len(rows) != 1:
+        raise EvidenceConflict("Inserted first response receipt is unavailable")
+    return dict(rows[0])
