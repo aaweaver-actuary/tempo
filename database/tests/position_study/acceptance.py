@@ -55,6 +55,14 @@ def _migrate(raw):
 
 
 def test_real_schema_source_seed_and_due_queue(monkeypatch):
+    _run_schema_journey(monkeypatch, branches=False)
+
+
+def test_real_daily_credit_across_server_issued_attempts(monkeypatch):
+    _run_schema_journey(monkeypatch, branches=True)
+
+
+def _run_schema_journey(monkeypatch, *, branches):
     from app.services.position_queue_admission import prepare_due, admit_due
     dsn = _dsn()
     now = datetime.now(timezone.utc)
@@ -72,6 +80,17 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('n2','card')")
         raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
             VALUES('n2',3,'route',0,'card',%s,%s,%s,'white')""", (chess.STARTING_FEN,chess.STARTING_FEN,moves))
+        if branches:
+            for suffix, opponent, card_number in [('c5','c7c5',43), ('e6','e7e6',44)]:
+                route_moves = json.dumps(['e2e4', opponent, 'g1f3'])
+                card_id, route_id = 'card-'+suffix, 'route-'+suffix
+                raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,'n2',%s,'white',%s,%s,%s)", (route_id,route_id,chess.STARTING_FEN,route_moves,now.isoformat()))
+                state_json = Card(card_id=card_number, due=now-timedelta(days=1)).to_json()
+                raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
+                    VALUES(%s,'n2','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card_id,chess.STARTING_FEN,route_moves,day,state_json,(now-timedelta(days=2)).isoformat()))
+                raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('n2',%s)", (card_id,))
+                raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+                    VALUES('n2',3,%s,0,%s,%s,%s,%s,'white')""", (route_id,card_id,chess.STARTING_FEN,chess.STARTING_FEN,route_moves))
         raw.execute("""INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,checked_at,scan_completed_sources,scan_total_sources)
             VALUES('n2','clean','idle','scan:2',%s,1,1)""", (now.isoformat(),))
         for ident, kind, generation, payload in [('graph','opening_graph_rebuild',3,{}), ('scan','integrity_scan',2,{'repertoire_id':'n2','graph_generation':3})]:
@@ -94,7 +113,7 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as reader:
             reader.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             read_port = PostgresConnection(reader, read_only=True)
-            rows = read_card_page(read_port, candidate_card_ids=('card',))
+            rows = read_card_page(read_port, candidate_card_ids=(('card','card-c5','card-e6') if branches else ('card',)))
             donors = tuple(DonorFact(**(dict(row) | {
                 'owner_repertoire_ids': tuple(row['owner_repertoire_ids']),
                 'archived': bool(row['archived']),
@@ -122,7 +141,11 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         assert admit_due(port, day, proposal) is None
         raw.commit()
         print(f'N2_SOURCE_QUEUE_ADMISSION_MS={(perf_counter()-queue_started)*1000:.3f}')
-        assert tuple(raw.execute("SELECT card_id,admission_repertoire_id FROM daily_queue WHERE queue_date=%s", (day,)).fetchone()) == ('card','n2')
+        first_entry = raw.execute('SELECT card_id,admission_repertoire_id FROM daily_queue WHERE queue_date=%s', (day,)).fetchone()
+        first_card = first_entry['card_id']
+        assert first_entry['admission_repertoire_id'] == 'n2'
+        if not branches: assert first_card == 'card'
+        physical_before = {row['id']: row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()}
         raw.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,'n2',%s)", (day,now.isoformat()))
         raw.commit()
         entry = raw.execute('SELECT id FROM daily_queue').fetchone()[0]
@@ -138,7 +161,7 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
             with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as reader:
                 yield PostgresConnection(reader, read_only=True)
         monkeypatch.setattr(connections, 'read_connection', fixture_reader)
-        envelope = {'queue_date': day, 'entry_id': entry, 'card_id': 'card', 'expected_revision': 1}
+        envelope = {'queue_date': day, 'entry_id': entry, 'card_id': first_card, 'expected_revision': 1}
         proposal = prepare_queue_head(envelope)
         assert proposal.mode == 'position', proposal
         issued = issue_queue_head(port, proposal)
@@ -149,11 +172,15 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s', (entry,)).fetchone()[0] == 1
         assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 1
         raw.commit()
-        _real_review_journey(raw, port, dsn, monkeypatch, replay.proposal, entry, fsrs)
+        _real_review_journey(raw, port, dsn, monkeypatch, replay.proposal, entry, first_card, physical_before[first_card])
+        if branches:
+            _real_daily_credit_followup(raw, port, dsn, monkeypatch, replay.proposal, day)
+            assert {row['id']: row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical_before
+            raw.commit()
 
 
 
-def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs):
+def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, card_id, original_fsrs):
     """Use real checkpoint/review owners; connection routing is fixture-only."""
     from contextlib import contextmanager
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
@@ -209,7 +236,7 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs
     grade_rows = [tuple(row) for row in raw.execute('SELECT event_id,grade FROM study_position_grades ORDER BY event_id').fetchall()]
     assert len(grade_rows) == 1 and grade_rows[0][1] == 'again'
     assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
-    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id=%s", (card_id,)).fetchone()[0] == original_fsrs
     raw.commit()
     # Exact delivery replay cannot duplicate the negative effect.
     prepared = evidence.prepare_standalone_checkpoint({'checkpoint': checkpoint})
@@ -225,7 +252,7 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs
     prepared_manifest = evidence.prepare_checkpoint(request)
     with fixture_reader() as reader:
         prepared_position = evidence.prepare_position_checkpoint(reader, request)
-    review_payload = {'card_id': 'card', 'review': {'outcome': 'again', 'guided': True,
+    review_payload = {'card_id': card_id, 'review': {'outcome': 'again', 'guided': True,
         'queue_entry_id': entry, 'expected_revision': 1, 'attempt_id': plan.attempt_id,
         'opening_evidence_completion': completion}}
     review_payload = prepare_recombination_review(review_payload, read_connection=fixture_reader)
@@ -241,8 +268,8 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs
     assert rows[0] == ('good',) and rows[1] == ('again',), rows
     receipt = raw.execute('''SELECT r.card_id,r.queue_entry_id,r.review_id,v.source_kind,v.source_ref
         FROM review_attempt_receipts r JOIN reviews v ON v.id=r.review_id WHERE r.attempt_id=%s''', (plan.attempt_id,)).fetchone()
-    assert tuple(receipt) == ('card',entry,saved['review_id'],'position_study','attempt:'+plan.attempt_id)
-    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    assert tuple(receipt) == (card_id,entry,saved['review_id'],'position_study','attempt:'+plan.attempt_id)
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id=%s", (card_id,)).fetchone()[0] == original_fsrs
     raw.commit()
     # Same aggregate delivery must return the original receipt, not regrade.
     with fixture_reader() as reader:
@@ -253,5 +280,124 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs
     assert replay['review_id'] == saved['review_id']
     assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 1
     assert [tuple(row) for row in raw.execute('SELECT grade FROM study_position_grades ORDER BY decision_index').fetchall()] == rows
-    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == original_fsrs
+    assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id=%s", (card_id,)).fetchone()[0] == original_fsrs
+    raw.commit()
+
+
+def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
+    """Revisit one real Good as context in two later separately issued routes."""
+    from contextlib import contextmanager
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from app.services import postgres_opening_evidence as evidence, learning_review_adapter
+    from app.services.opening_decision_evidence import decision_manifest
+    from app.services.position_queue_admission import prepare_due, admit_due
+    from app.services.queue_next_card import prepare_queue_head
+    from app.queue_commands import issue_queue_head
+    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+
+    @contextmanager
+    def reader(*args, **kwargs):
+        with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as conn:
+            yield PostgresConnection(conn, read_only=True)
+
+    shared = first_plan.decision_slots[0].definition.key
+    def state():
+        return tuple(raw.execute('''SELECT version,fsrs_json,due_at FROM study_position_states
+            WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+            (shared.repertoire_id, shared.variant, shared.position)).fetchone())
+    def grade_rows():
+        return [tuple(r) for r in raw.execute('''SELECT attempt_id,event_id,grade FROM study_position_grades
+            WHERE repertoire_id=%s AND variant=%s AND position=%s ORDER BY accepted_at,effect_id''',
+            (shared.repertoire_id,shared.variant,shared.position)).fetchall()]
+    assert [r[2] for r in grade_rows()] == ['good']
+    after_good = state()
+    raw.commit()
+
+    def next_plan():
+        proposal = prepare_due(port, day, {})
+        assert isinstance(proposal, dict) and 'candidate' in proposal, proposal
+        assert admit_due(port, day, proposal) is None
+        raw.commit()
+        pending = raw.execute("SELECT id,card_id FROM daily_queue WHERE status='queued' ORDER BY position,id").fetchone()
+        assert pending is not None
+        entry, card = pending['id'], pending['card_id']
+        raw.commit()
+        envelope = {'queue_date':day, 'entry_id':entry, 'card_id':card, 'expected_revision':1}
+        proposal = prepare_queue_head(envelope)
+        assert proposal.mode == 'position', proposal
+        issued = issue_queue_head(port, proposal)
+        assert issued['issued'], issued
+        raw.commit()
+        replay = prepare_queue_head(envelope)
+        assert replay.mode == 'replay'
+        plan = replay.proposal
+        assert plan.decision_slots[0].definition.key == shared
+        witness = next(w for w in plan.due_positions if w.definition.key == shared)
+        assert not witness.due, 'the revisited position must naturally be nondue'
+        assert plan.attempt_id != first_plan.attempt_id and entry != first_plan.queue_entry_id
+        return plan, entry, card
+
+    def checkpoint(plan, entry, *, wrong_first=False):
+        scope = raw.execute('''SELECT snapshot.*,context.effective_trained_color
+            FROM opening_evidence_presentations snapshot JOIN opening_evidence_queue_contexts context
+              ON context.presentation_snapshot_id=snapshot.id
+            WHERE context.queue_entry_id=%s AND context.repertoire_id='n2' ''', (entry,)).fetchone()
+        assert scope is not None
+        manifest = evidence.issued_position_manifest(plan, decision_manifest(evidence._manifest_snapshot(dict(scope)), 'n2'))
+        now = datetime.now(timezone.utc).isoformat()
+        events = []
+        for index, decision in enumerate(manifest['decisions']):
+            response = decision['expected_uci']
+            if wrong_first and index == 0:
+                response = next(move.uci() for move in chess.Board(decision['fen']).legal_moves if move.uci() != response)
+            events.append(dict(sequence=index+1, decision_index=index, decision_id=decision['decision_id'],
+                expected_uci=decision['expected_uci'], kind='first_response', observed_at=now,
+                response_uci=response, disposition='wrong' if wrong_first and index == 0 else 'expected'))
+            if wrong_first: break
+        raw.commit()
+        return dict(attempt_id=plan.attempt_id, manifest=manifest, origin_queue_entry_id=entry,
+                    queue_entry_id=entry, started_at=now, study_timezone='UTC', source='live', events=events)
+
+    second, second_entry, second_card = next_plan()
+    clean = checkpoint(second, second_entry)
+    completion = {**clean, 'terminal': {'state':'complete', 'final_sequence':len(clean['events']),
+                                       'ended_at':clean['started_at']}}
+    request = OpeningEvidenceCheckpoint.model_validate(completion)
+    prepared_manifest = evidence.prepare_checkpoint(request)
+    with reader() as conn:
+        prepared_position = evidence.prepare_position_checkpoint(conn, request)
+    payload = {'card_id':second_card, 'review':{'outcome':'correct', 'guided':True,
+        'queue_entry_id':second_entry, 'expected_revision':1, 'attempt_id':second.attempt_id,
+        'opening_evidence_completion':completion}}
+    payload = prepare_recombination_review(payload, read_connection=reader)
+    payload.update(prepared_manifest=prepared_manifest,prepared_position_checkpoint=prepared_position)
+    raw.execute('BEGIN')
+    saved = learning_review_adapter.submit_legacy_review(port, payload)
+    raw.commit()
+    assert saved['persisted'] and saved['queue_entry_id'] == second_entry
+    grades = grade_rows()
+    assert [r[2] for r in grades].count('good') == 1
+    assert next(r[2] for r in grades if r[0] == second.attempt_id) == 'observe'
+    assert state() == after_good, 'a repeated nondue clean response changed position FSRS'
+    raw.commit()
+
+    third, third_entry, _ = next_plan()
+    assert third.attempt_id != second.attempt_id and third_entry != second_entry
+    failed = checkpoint(third, third_entry, wrong_first=True)
+    prepared = evidence.prepare_standalone_checkpoint({'checkpoint':failed})
+    raw.execute('BEGIN')
+    assert evidence.commit_standalone_checkpoint(port, prepared)['persisted']
+    raw.commit()
+    grades = grade_rows()
+    assert [r[2] for r in grades].count('good') == 1
+    assert next(r[2] for r in grades if r[0] == third.attempt_id) == 'again'
+    after_again = state()
+    assert after_again[0] == after_good[0] + 1 and after_again[1] != after_good[1]
+    assert len({r[1] for r in grades}) == len(grades), 'first-response event identities must be distinct'
+    raw.commit()
+    prepared = evidence.prepare_standalone_checkpoint({'checkpoint':failed})
+    raw.execute('BEGIN')
+    assert evidence.commit_standalone_checkpoint(port, prepared)['persisted']
+    raw.commit()
+    assert grade_rows() == grades and state() == after_again
     raw.commit()
