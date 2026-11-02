@@ -47,12 +47,14 @@ def fake_module(monkeypatch, name, **attributes):
 
 
 @pytest.mark.parametrize('branch', ['same', 'existing', 'new_reset'])
-def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_refresh(monkeypatch, branch):
+@pytest.mark.parametrize('opening_source', [True, False])
+def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_refresh(monkeypatch, branch, opening_source):
     events = []
     replacement = 'z-source' if branch == 'same' else 'a-replacement'
     old = dict(revision=2, archived=0, superseded_by=None, start_fen=chess.STARTING_FEN,
                moves_json='["e2e4"]', due_date='old-day', interval_days=40,
-               fsrs_card_json='old-schedule', state='mature')
+               fsrs_card_json='old-schedule', state='mature',
+               content_type='opening' if opening_source else 'puzzle')
     existing = dict(id=replacement, revision=7) if branch == 'existing' else None
     lock_count = 1 if branch == 'same' else 2
     branch_writes = {'same': 1, 'existing': 4, 'new_reset': 3}[branch]
@@ -72,6 +74,19 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
                 ensure_line_in_scope=scope, certify_admitted_route=certify)
     fake_module(monkeypatch, 'app.card_deletion', require_card_not_deleted=
                 lambda connection, identifier: events.append(('not_deleted', identifier)))
+    source_reads = 0
+    def current_sources(connection, repertoire):
+        nonlocal source_reads
+        assert connection is database and repertoire == 'rep'
+        events.append('guard_sources')
+        source_reads += 1
+        if not opening_source:
+            return ()
+        return (dict(source_id='card:z-source' if source_reads == 1 else f'card:{replacement}',
+                     start_fen=chess.STARTING_FEN,
+                     moves_json='["e2e4"]' if source_reads == 1 else '["d2d4"]',
+                     trained_color='white'),)
+    monkeypatch.setattr(application.change_storage, 'lock_sources', current_sources)
     monkeypatch.setattr(application, 'card_id', lambda *args: replacement)
     monkeypatch.setattr(application, 'datetime', SimpleNamespace(now=
         lambda zone: events.append('clock') or SimpleNamespace(isoformat=lambda: 'timestamp')))
@@ -86,6 +101,9 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
         starting_fen=chess.STARTING_FEN, moves=['D2D4'], expected_revision=2,
         history_mode='reset' if branch == 'new_reset' else 'preserve')))
     assert events.index('scope') < events.index(('native', 1))
+    assert events.index('scope') < events.index('guard_sources') < events.index(('native', 1))
+    assert source_reads == 2
+    assert max(index for index, value in enumerate(events) if value == 'guard_sources') < events.index('certify')
     lock_parameters = [parameters for _, parameters in database.native_calls[1:1 + lock_count]]
     assert lock_parameters == [(f'tempo:card-edit:{identifier}',) for identifier in sorted({'z-source', replacement})]
     assert events.index(('native', 1 + lock_count)) < events.index(('not_deleted', 'z-source'))

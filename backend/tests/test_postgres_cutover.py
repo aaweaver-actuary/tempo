@@ -2098,6 +2098,8 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
 
     class Database:
         def execute_native(self, statement, _parameters=()):
+            if "SELECT 'line:' || id source_id" in statement:
+                return SimpleNamespace(fetchall=lambda: [])
             if "FROM repertoires" in statement:
                 return SimpleNamespace(fetchone=lambda: (1,))
             if "INSERT INTO repertoire_lines" in statement:

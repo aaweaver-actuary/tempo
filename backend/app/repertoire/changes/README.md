@@ -67,20 +67,35 @@ required in the publication command.
 
 ## Current import/edit guard coverage
 
-This branch ports the previously qualified private C1 owner from PR #520 onto
-integration `adfc8de8` (including merged #553 and #554). It does **not** claim
-that the old shared command hooks are already present on this integration base.
 The current importer already rejects conflicting/invalid sources through
 `pgn_import_validation.validate_sources` before writes, preserves main selection,
 and retains its failed command payload. Its parser rejects illegal tails.
 
-Three existing C1 regressions demonstrate missing shared hooks in
+The existing pure `validate_source_rows` guard is also consumed by
 `branch_commands.add_repertoire_branch`, `card_commands.revise_card`, and
-`integrity_repair_commands.resolve_integrity_issue`. The old owner branch has
-those narrow guards; adopting them requires the shared-file reservation. Only the reserved `explicit_pgn_import` C2 dispatch is changed; no branch/card/repair
-command file is edited by this lane. These failures remain
-visible; the focused passing selection explicitly excludes those three cases.
+`integrity_repair_commands.resolve_integrity_issue`. Existing bounded
+`product_changes.lock_sources` facts are read in the caller's transaction;
+card scopes are locked in sorted repertoire order and repair retains its
+graph-task-first ordering. Proposed sources provide an early refusal. Card and
+repair commands also validate actual final source facts before certification
+or invalidation, accounting for retained canonical/shared cards and an existing
+replacement card's stored attributes. A refusal rolls back through the original
+gateway savepoint and retains the normal failed command receipt. The existing
+mutators, source revision triggers, history and publication authority are unchanged.
+Non-opening edits retain their original path when neither affected card is an
+eligible opening source. Bound refusals retain HTTP 409 translation.
 Root router/schema registration and Study suspension remain #501's responsibility.
+
+```mermaid
+flowchart LR
+  C[Existing branch/card/repair command] --> F[Bounded current source facts]
+  F --> G[Existing pure source validator]
+  G --> W[Existing borrowed transaction mutations]
+  W --> A[Actual final card/repair source facts]
+  A --> G2[Same pure source validator]
+  G2 --> P[Existing certification and invalidation]
+  G2 -->|refusal| R[Original gateway savepoint rollback]
+```
 
 ## Transactions and stored evidence
 
