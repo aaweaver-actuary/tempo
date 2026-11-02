@@ -324,10 +324,10 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
             raise GradeEffectError(decision.reason)
         final = decision.acceptance.receipt.final
         schedule = decision.schedule
-        before = row['fsrs_json'] if schedule else None
-        after = schedule.fsrs_card_json if schedule else None
-        vb = row['version'] if schedule else None
-        va = vb + 1 if schedule else None
+        before = row['fsrs_json']
+        after = schedule.fsrs_card_json if schedule else before
+        vb = row['version']
+        va = vb + 1 if schedule else vb
         decisions.append((effect_id, response, digest, final, before, after, vb, va, schedule))
 
     # All policy holds have been checked before the first write. Any SQL or
