@@ -8,6 +8,7 @@
 | [branches.py](branches.py) | Existing repertoire row locks, idempotent line insert, initial/training depth facts/write, locked source-gap lookup and covered flag, ordered stored-line projection and matching-ID deletion. | [branch_commands.py](../../../../backend/app/branch_commands.py) retains legal move normalization, deterministic identity, prefix-scope validation, gap ownership/response checks, matching-line selection, route certification, integrity/graph/coverage calls and response construction. |
 | [analysis_paste.py](analysis_paste.py) | Exact repertoire/line snapshot, gap facts, SQLite conditional begin, saved-line/depth insert and covered flag; borrowed transaction, no cursor escapes. | [services/analysis_paste.py](../../../../backend/app/services/analysis_paste.py) retains SAN/PGN/chess/cache/hash/preview/duplicate/conflict/scope/certification/clock and response decisions. |
 | [integrity_commands.py](integrity_commands.py) | Existing issue/source/card row locks and membership facts; replacement-line insert, training-depth carry-forward and old-line deletion. Reuses the existing repertoire row lock in `branches.py`. | [integrity_repair_commands.py](../../../../backend/app/integrity_repair_commands.py) retains prepared signature/expected-source checks, deterministic line identity, chess/route validation, graph-task-before-card lock ordering, rewrite/archive/certification and refresh callbacks. |
+| [product_imports.py](product_imports.py) | Raw retained-import access only: existing operation receipt read, existing card-definition rows, borrowed transaction-state observation and original-operation lock. No receipt mutation or transaction completion. | [changes/imports.py](../../../../backend/app/repertoire/changes/imports.py) `RetainedImportApplication` owns receipt interpretation, read/preview/validate/apply policy and invokes the existing decorated explicit importer. |
 
 ```mermaid
 flowchart LR
@@ -26,6 +27,14 @@ Canonical source schema dictionaries and ER diagrams show actual fields/types, p
 Prefix saves retain the original ready/current preview checks, revision semantics, empty-prefix fast path and callback sequence. Branch edits retain original `FOR UPDATE`/`FOR UPDATE OF candidate`, conflict-ignore/returning behavior, stored line ordering, native array-bound delete and conditional certification/coverage calls. The application still selects exactly which line IDs match and constructs every task payload, timestamp and response. No query, lock, key, FK, migration, view, stored JSON or behavior changes.
 
 The four extracted application files contain no SQL-bearing literals or direct query/driver calls. Driver configuration probes execute at their original call points through the existing database helper; compatibility imports and command/router registrations remain available. No generic SQL execution port, dispatch framework, independently committing repository or broad domain move is introduced.
+
+Retained conflicted-import storage uses only existing receipt and card facts.
+`RetainedImportStorage` exposes four raw operations (`read_operation`,
+`card_rows`, `in_transaction`, `lock_original`) over the borrowed database.
+`RetainedImportApplication` owns the existing read/preview/validate/apply flow;
+the established importer remains the sole import writer and keeps the caller's
+transaction, publication receipt and source lock behavior. No schema or stored
+field is added or reinterpreted as a new stored fact.
 
 Existing authored-source, scope, coverage, priority and task/certification coupling is preserved explicitly. These adapters grant no new cross-owner table access, establish no new domain boundary and prove no Games/Study resource or shutdown isolation. Study gains no Games dependency. Other prefix/preview/graph/integrity/task implementations retain their existing separately coordinated owners.
 

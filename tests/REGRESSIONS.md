@@ -6554,6 +6554,7 @@ condition; a real packaged engine startup remains a separate acceptance check.
 `backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` compares full, authored and candidate documents against the released JSONB encoding, including escaped text, nulls, budget metadata and fingerprints. Both packaged recovery modes reached four verified reviews before a 384 MiB PostgreSQL OOM during the complete-repertoire source query. The wire serialization change preserves source rows, ordering, one MVCC view and existing refusal bounds; packaged recovery remains to be rerun.
 
 
+
 ### Existing mutation source guards (#492 / #825 release blockers)
 
 `backend/tests/test_product_repertoire_changes.py` owns the named
@@ -6584,4 +6585,15 @@ The existing real Chromium proof in `tests/fixtures/study-worker-replies/worker-
 also checks malformed-card quarantine and the original request-correlated diagnostics
 alongside valid production queue decoding. Existing debug, publication, worker,
 reply and bulk regressions retain notification/currentness/cancellation semantics.
+
+### Retained import storage direction (#827)
+
+`backend/tests/test_pgn_import_storage_boundary.py` owns
+`test_retained_import_storage_does_not_import_application_policy`, its original-import
+negative cases, and `test_retained_import_public_values_import_without_command_registration`.
+The same suite checks the complete receipt tuple/raw JSON, exact ordered card
+projection, INTRANS probe and existing opaque receipt writer lock. Existing
+retained-import unit and native approval/retry/outer-rollback cases remain the
+behavioral owners; the native fixture freezes the actual queue issuance clock.
+
 
