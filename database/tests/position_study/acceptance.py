@@ -62,7 +62,11 @@ def test_real_daily_credit_across_server_issued_attempts(monkeypatch):
     _run_schema_journey(monkeypatch, branches=True)
 
 
-def _run_schema_journey(monkeypatch, *, branches):
+def test_real_clean_position_review_supplies_prefix_proof(monkeypatch):
+    _run_schema_journey(monkeypatch, branches=True, verify_clean_proof=True)
+
+
+def _run_schema_journey(monkeypatch, *, branches, verify_clean_proof=False):
     from app.services.position_queue_admission import prepare_due, admit_due
     dsn = _dsn()
     now = datetime.now(timezone.utc)
@@ -174,7 +178,7 @@ def _run_schema_journey(monkeypatch, *, branches):
         raw.commit()
         _real_review_journey(raw, port, dsn, monkeypatch, replay.proposal, entry, first_card, physical_before[first_card])
         if branches:
-            _real_daily_credit_followup(raw, port, dsn, monkeypatch, replay.proposal, day)
+            _real_daily_credit_followup(raw, port, dsn, monkeypatch, replay.proposal, day, verify_clean_proof=verify_clean_proof)
             assert {row['id']: row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical_before
             raw.commit()
 
@@ -284,7 +288,7 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, card_id, orig
     raw.commit()
 
 
-def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
+def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *, verify_clean_proof=False):
     """Revisit one real Good as context in two later separately issued routes."""
     from contextlib import contextmanager
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
@@ -366,7 +370,7 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
     prepared_manifest = evidence.prepare_checkpoint(request)
     with reader() as conn:
         prepared_position = evidence.prepare_position_checkpoint(conn, request)
-    payload = {'card_id':second_card, 'review':{'outcome':'correct', 'guided':True,
+    payload = {'card_id':second_card, 'review':{'outcome':'correct', 'guided':not verify_clean_proof,
         'queue_entry_id':second_entry, 'expected_revision':1, 'attempt_id':second.attempt_id,
         'opening_evidence_completion':completion}}
     payload = prepare_recombination_review(payload, read_connection=reader)
@@ -384,6 +388,13 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
     assert next(r[2] for r in grades if r[0] == second.attempt_id) == 'observe'
     assert state() == after_good, 'a repeated nondue clean response changed position FSRS'
     raw.commit()
+    if verify_clean_proof:
+        from tempo_legacy_database.adapters.study.position_issued_plans import read_clean_presentation_proof
+        proof = read_clean_presentation_proof(port, second.attempt_id)
+        assert not isinstance(proof, Hold), proof
+        assert proof.attempt_id == second.attempt_id
+        raw.commit()
+        return
 
     third, third_entry, _ = next_plan()
     assert third.attempt_id != second.attempt_id and third_entry != second_entry
