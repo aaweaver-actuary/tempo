@@ -5,6 +5,7 @@ fence it again at issuance. Constructing a certificate is not evidence of that
 owner read. Physical presentation mappings are not route eligibility proofs.
 """
 from collections import defaultdict
+from dataclasses import dataclass
 from types import MappingProxyType
 
 from tempo_evidence_math.position_learning import (
@@ -13,6 +14,126 @@ from tempo_evidence_math.position_learning import (
 
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from .position_index import PositionIndex, build_index
+
+
+@dataclass(frozen=True)
+class PositionSourceScopes:
+    """Detached identity and scope of the captured public repertoire source."""
+
+    snapshot_id: str
+    source_revision: str
+    source_digest: str
+    membership_revision: int
+    captured_at: str
+    scope_id: str
+    repertoire_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PositionRouteOccurrence:
+    """One exact authored learner response occurrence, identified before the move."""
+
+    route_id: str
+    route_ply: int
+    full_fen: str
+
+
+@dataclass(frozen=True)
+class PhysicalBindingFact:
+    """Detached current physical-card reference; availability is never inferred."""
+
+    decision_id: str
+    card_id: str
+    card_revision: str
+    available: bool
+    route_id: str | None
+    route_ply: int | None
+
+
+@dataclass(frozen=True)
+class PositionBindingFacts:
+    """Authored identity with all exact route occurrences and physical references."""
+
+    definition: PositionDefinition
+    occurrences: tuple[PositionRouteOccurrence, ...]
+    physical_bindings: tuple[PhysicalBindingFact, ...]
+
+
+@dataclass(frozen=True)
+class PositionInventoryFacts:
+    """Immutable public facts projected after source and legality gates pass."""
+
+    source_certificate: SourceCertificate
+    source_scopes: PositionSourceScopes
+    positions: tuple[PositionBindingFacts, ...]
+    distinct_position_count: int
+    distinct_route_count: int
+    route_occurrence_count: int
+    physical_reference_count: int
+
+
+def inventory_from_validated_index(
+    snapshot: RepertoireSnapshot, index: PositionIndex, *, source_certificate: SourceCertificate | None,
+) -> PositionInventoryFacts | Hold:
+    """Project detached position, route-occurrence and physical-binding facts.
+
+    The validated index stays inside the Repertoire adapter. The returned value
+    contains only frozen shared-library/public value types and scalar facts.
+    """
+    routes = routes_from_validated_index(snapshot, index, source_certificate=source_certificate)
+    if isinstance(routes, Hold):
+        return routes
+    if source_certificate is None:  # Kept explicit for type narrowing and authority clarity.
+        return Hold("authored_source_unavailable_or_not_current")
+
+    grouped = defaultdict(lambda: {"definition": None, "occurrences": [], "bindings": {}})
+    for (repertoire_id, route_id), occurrences in sorted(index.routes.items()):
+        for item in occurrences:
+            if not item.learner_turn or not item.next_move:
+                continue
+            key = PositionKey(repertoire_id, item.key.position)
+            definition = PositionDefinition(key, item.next_move, str(item.policy_id))
+            row = grouped[key]
+            if row["definition"] is not None and row["definition"] != definition:
+                return Hold("authored_position_definition_conflict")
+            row["definition"] = definition
+            row["occurrences"].append(PositionRouteOccurrence(route_id, item.ply, item.full_fen))
+
+    # Attach detached references by their declared authored position. The
+    # source gate above has already checked selected responses and route-local
+    # occurrence claims; retain unavailable and ambiguous mappings as facts.
+    for mapping in snapshot.decision_presentations:
+        key = PositionKey(mapping.repertoire_id, mapping.position_key)
+        row = grouped.get(key)
+        if row is None:
+            continue
+        fact = PhysicalBindingFact(
+            mapping.decision_id, mapping.presentation_id, mapping.presentation_revision,
+            mapping.available, mapping.route_id, mapping.route_ply,
+        )
+        identity = (fact.decision_id, fact.card_id, fact.card_revision, fact.available,
+                    fact.route_id, fact.route_ply)
+        row["bindings"][identity] = fact
+
+    positions = tuple(PositionBindingFacts(
+        row["definition"],
+        tuple(sorted(row["occurrences"], key=lambda item: (item.route_id, item.route_ply))),
+        tuple(row["bindings"][key] for key in sorted(row["bindings"], key=lambda item: tuple("" if v is None else str(v) for v in item))),
+    ) for _key, row in sorted(grouped.items()))
+    route_ids = {(position.definition.key.repertoire_id, item.route_id)
+                 for position in positions for item in position.occurrences}
+    physical_count = sum(len(position.physical_bindings) for position in positions)
+    membership = snapshot.membership
+    return PositionInventoryFacts(
+        source_certificate,
+        PositionSourceScopes(
+            membership.snapshot_id, membership.source_revision, membership.digest,
+            membership.revision, membership.captured_at, membership.scope_id,
+            tuple(membership.scope_repertoire_ids),
+        ),
+        positions, len(positions), len(route_ids),
+        sum(len(position.occurrences) for position in positions), physical_count,
+    )
 
 
 def routes_from_validated_index(
