@@ -58,9 +58,9 @@ class PositionDueCandidateReader:
         return (self.states.repertoire_id, self.states.owner_epoch, self.states.source_digest,
                 self.issued_at, self.study_day, include_unintroduced)
 
-    def _witness(self, state: PositionScheduleState, *, credited: bool) -> DueAtIssuance:
+    def _witness(self, state: PositionScheduleState) -> DueAtIssuance:
         return DueAtIssuance(state.definition,
-            state.introduced_at is not None and state.due_at <= self.issued_at and not credited,
+            state.introduced_at is not None and state.due_at <= self.issued_at,
             self.study_day, state.owner_epoch, state.version, self.issued_at)
 
     def read_due_page(self, *, after: PositionDueCursor | None = None, limit: int = 100,
@@ -69,6 +69,9 @@ class PositionDueCandidateReader:
         """Unintroduced opt-in is only a hint for H2's normal intro admission.
 
         It grants no automatic due obligation or exception to introduction budget.
+        A Good fulfills this target only while it is the current schedule effect.
+        A newer Again may make the position due again; daily Good credit is a
+        separate acceptance rule enforced by the grade owner.
         """
         if type(limit) is not int or not 1 <= limit <= MAX_POSITIONS:
             raise ValueError("position_page_limit_between_1_and_100_required")
@@ -96,14 +99,15 @@ class PositionDueCandidateReader:
  WHERE s.repertoire_id=%s AND s.owner_epoch=%s AND s.due_at<=%s
  AND NOT EXISTS (SELECT 1 FROM study_position_grades good
    WHERE good.repertoire_id=s.repertoire_id AND good.variant=s.variant
-     AND good.position=s.position AND good.accepted_study_day=%s AND good.grade='good')
+     AND good.position=s.position AND good.accepted_study_day=%s AND good.grade='good'
+     AND good.owner_epoch=s.owner_epoch AND good.version_after=s.version)
  """ + cursor_sql + " ORDER BY s.due_at,s.variant,s.position LIMIT %s", tuple(params)).fetchall()
         candidates = []
         for row in rows:
             state = self.states.decode_state(row)
             if isinstance(state, Hold):
                 return state
-            candidates.append(PositionDueCandidate(state, self._witness(state, credited=False),
+            candidates.append(PositionDueCandidate(state, self._witness(state),
                 "unintroduced" if state.introduced_at is None else "due"))
         next_cursor = None
         if len(candidates) > limit:
@@ -114,19 +118,13 @@ class PositionDueCandidateReader:
 
     def read_context(self, positions: tuple[PositionKey, ...]
                      ) -> tuple[DueAtIssuance | Hold, ...] | Hold:
-        """Witness all shown decisions, including nondue; Good spans epochs."""
+        """Report current due facts for all shown decisions, including nondue.
+
+        A due witness does not grant another Good on an already credited day.
+        The grade owner separately rechecks the cross-epoch daily positive cap.
+        """
         states = self.states.read_many(positions)
         if isinstance(states, Hold) or not positions:
             return states
-        keys = sorted({(p.variant, p.position) for p in positions})
-        rows = self.states.database.execute_native("""SELECT good.variant,good.position
- FROM study_position_grades good
- JOIN unnest(%s::text[],%s::text[]) requested(variant,position)
- ON requested.variant=good.variant AND requested.position=good.position
- WHERE good.repertoire_id=%s AND good.accepted_study_day=%s AND good.grade='good'
- LIMIT 100""", ([k[0] for k in keys], [k[1] for k in keys],
-                    self.states.repertoire_id, self.study_day)).fetchall()
-        credited = {(row["variant"], row["position"]) for row in rows}
-        return tuple(state if isinstance(state, Hold) else self._witness(state,
-            credited=(state.definition.key.variant, state.definition.key.position) in credited)
+        return tuple(state if isinstance(state, Hold) else self._witness(state)
             for state in states)

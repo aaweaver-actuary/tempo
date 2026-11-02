@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from tempo_evidence_math.position_learning import Hold, PositionKey
-from tempo_legacy_database.adapters.study.position_due_candidates import PositionDueCandidateReader
+from tempo_legacy_database.adapters.study.position_due_candidates import PositionDueCandidateReader, PositionDueCursor
 from test_position_schedule_state import Database, FEN, KEY, NOW, state_row
 
 
@@ -18,7 +18,7 @@ def reader(db, **changes):
         source_digest='source', issued_at=NOW, study_day=date(2026, 11, 3)) | changes))
 
 
-def test_due_query_uses_native_index_order_and_cross_epoch_positive_ledger():
+def test_due_query_uses_index_order_and_only_current_good_suppresses_target():
     db = Database()
     page = reader(db).read_due_page()
     candidate, = page.candidates
@@ -33,7 +33,8 @@ def test_due_query_uses_native_index_order_and_cross_epoch_positive_ledger():
     assert 's.repertoire_id=%s AND s.owner_epoch=%s AND s.due_at<=%s' in sql
     assert 's.introduced_at IS NOT NULL' in sql
     assert 'ORDER BY s.due_at,s.variant,s.position LIMIT %s' in sql
-    assert "good.grade='good'" in sql and 'good.owner_epoch' not in sql
+    assert "good.grade='good'" in sql
+    assert 'good.owner_epoch=s.owner_epoch AND good.version_after=s.version' in sql
     assert params == ('r', 'e1', NOW, date(2026, 11, 3), 101)
     assert all(word not in sql for word in ('cards', 'opening_graph', 'UPDATE', 'OFFSET'))
 
@@ -64,12 +65,11 @@ def test_context_witnesses_include_nondue_missing_and_already_good_positions():
     missing = PositionKey('r', 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -')
     db.credited = [dict(variant='standard', position=FEN)]
     result = reader(db).read_context((KEY, black_key, missing, KEY))
-    assert [getattr(w, 'due', None) for w in result] == [False, False, None, False]
+    assert [getattr(w, 'due', None) for w in result] == [True, False, None, True]
     assert result[2].reason == 'position_state_missing'
     assert result[0] == result[3]
-    assert len(db.calls) == 3
-    assert 'good.owner_epoch' not in db.calls[-1][0]
-    assert db.calls[-1][1][-1] == date(2026, 11, 3)
+    assert len(db.calls) == 2
+    assert all('study_position_grades' not in q for q, _ in db.calls)
 
 
 def test_unintroduced_is_explicit_opt_in_hint_and_stale_source_holds_page():
@@ -84,10 +84,10 @@ def test_unintroduced_is_explicit_opt_in_hint_and_stale_source_holds_page():
     assert reader(db).read_due_page().reason == 'position_owner_inactive'
 
 
-def test_hundred_context_aliases_are_three_queries_and_all_bounds_precede_sql():
+def test_hundred_context_aliases_are_two_queries_and_all_bounds_precede_sql():
     db = Database()
     assert len(reader(db).read_context((KEY,) * 100)) == 100
-    assert len(db.calls) == 3
+    assert len(db.calls) == 2
     assert db.calls[1][1][0:2] == (['standard'], [FEN])
     assert reader(db).read_context(()) == ()
     before = len(db.calls)
@@ -167,6 +167,7 @@ def test_native_due_keyset_pagination_exclusions_context_and_index():
                  request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
                 VALUES ('g','study','ev','a',0,'response','r','standard',%s,'e1','a1a2','p1','source',
                         '2026-11-03','good','d',%s,'{}','{}',1,2)''', (ordered[2], NOW))
+            connection.execute('UPDATE study_position_states SET version=2 WHERE position=%s AND repertoire_id=%s', (ordered[2], 'r'))
             connection.execute('ANALYZE study_position_states')
             connection.execute('BEGIN')
             db = Native(connection)
@@ -185,8 +186,27 @@ def test_native_due_keyset_pagination_exclusions_context_and_index():
             plan = connection.execute('EXPLAIN (FORMAT JSON) ' + query, params).fetchone()['QUERY PLAN']
             assert 'study_position_due' in str(plan)
             context = due.read_context(tuple(PositionKey('r', p) for p in ordered[:3]))
-            assert [w.due for w in context] == [False, False, False]
-            tomorrow = reader(db, study_day=date(2026, 11, 4))
+            assert [w.due for w in context] == [False, False, True]
+            # A later genuine wrong first response can create a new due
+            # obligation despite today's Good. It cannot grant a second Good.
+            again_at = NOW + timedelta(minutes=1)
+            connection.execute("INSERT INTO study_position_issued_plans VALUES ('a2',2,'card',2,'r','standard','e1','source','2026-11-03','d2','{}',%s)", (again_at,))
+            connection.execute("INSERT INTO study_position_first_responses VALUES ('ev2','a2',0,'r','standard',%s,'e1','d2','{}',%s,%s)", (ordered[2], again_at, again_at))
+            connection.execute('''INSERT INTO study_position_grades
+                (effect_id,source_kind,event_id,attempt_id,decision_index,effect_kind,repertoire_id,variant,
+                 position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,grade,
+                 request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
+                VALUES ('g2','study','ev2','a2',0,'response','r','standard',%s,'e1','a1a2','p1','source',
+                        '2026-11-03','again','d2',%s,'{}','{}',2,3)''', (ordered[2], again_at))
+            connection.execute('UPDATE study_position_states SET version=3,due_at=%s WHERE position=%s AND repertoire_id=%s', (again_at, ordered[2], 'r'))
+            after_original_due = PositionDueCursor('r', 'e1', 'source', again_at,
+                date(2026, 11, 3), False, NOW, 'standard', ordered[-1])
+            again_due = reader(db, issued_at=again_at).read_due_page(after=after_original_due, limit=1)
+            assert len(again_due.candidates) == 1
+            assert again_due.candidates[0].state.definition.key.position == ordered[2]
+            assert again_due.candidates[0].witness.due
+            assert reader(db, issued_at=again_at).read_context((PositionKey('r', ordered[2]),))[0].due
+            tomorrow = reader(db, issued_at=again_at, study_day=date(2026, 11, 4))
             assert tomorrow.read_context((PositionKey('r', ordered[2]),))[0].due
             other = reader(db, repertoire_id='other').read_due_page()
             assert len(other.candidates) == 1
