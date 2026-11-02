@@ -354,10 +354,11 @@ private sibling, undeclared export/member and dynamic sibling access.
 ### Position schedule route projection
 
 `app.repertoire.interfaces.position_schedule_occurrences` exposes the pure
-`routes_from_validated_index(snapshot, index, source_certificate=...)`,
-`index_routes`, and `options_for_target` functions. The projection uses the
-shared `tempo_evidence_math.position_learning` values and checks the index
-against the supplied snapshot. It permits physical-card ambiguity but holds on
+`routes_from_snapshot(snapshot, source_certificate=...)`,
+`inventory_from_snapshot(snapshot, source_certificate=...)`, `index_routes`, and
+`options_for_target` functions. The projection uses the shared
+`tempo_evidence_math.position_learning` values and builds the private index
+inside Repertoire. Consumers receive immutable route and binding facts. It permits physical-card ambiguity but holds on
 illegal or incomplete authored content and conflicting selected responses.
 The detached certificate must come from the source owner for the exact snapshot,
 revision and digest; constructing one proves nothing. The current snapshot port

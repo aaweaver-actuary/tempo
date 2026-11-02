@@ -151,6 +151,17 @@ def inventory_from_validated_index(
     )
 
 
+def routes_from_snapshot(
+    snapshot: RepertoireSnapshot, *, source_certificate: SourceCertificate | None,
+) -> tuple[RouteOption, ...] | Hold:
+    """Project certified snapshot routes without exporting the graph type."""
+    try:
+        index = build_index(snapshot)
+    except (ValueError, TypeError) as exc:
+        return Hold("authored_source_invalid", str(exc))
+    return routes_from_validated_index(snapshot, index, source_certificate=source_certificate)
+
+
 def routes_from_validated_index(
     snapshot: RepertoireSnapshot, index: PositionIndex, *, source_certificate: SourceCertificate | None,
 ) -> tuple[RouteOption, ...] | Hold:

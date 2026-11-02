@@ -110,8 +110,7 @@ class PreparedPositionSource:
 def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSource | Hold:
     """Read and legally project a complete publication outside the writer."""
     from app.repertoire.snapshot import PreparedPublishedRepertoire
-    from app.repertoire.position_index import build_index
-    from app.repertoire.interfaces.position_schedule_occurrences import routes_from_validated_index
+    from app.repertoire.interfaces.position_schedule_occurrences import routes_from_snapshot
     try:
         facts = read_repertoire(database, repertoire_id)
         if facts["repertoire"]["id"] != repertoire_id:
@@ -124,7 +123,7 @@ def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSou
         membership = snapshot.membership
         provenance = SourceCertificate(membership.snapshot_id, membership.source_revision,
                                        membership.digest, True, True)
-        routes = routes_from_validated_index(snapshot, build_index(snapshot), source_certificate=provenance)
+        routes = routes_from_snapshot(snapshot, source_certificate=provenance)
         if isinstance(routes, Hold):
             return routes
         token = AuthoredSourceToken(membership.snapshot_id, membership.source_revision, membership.digest,
