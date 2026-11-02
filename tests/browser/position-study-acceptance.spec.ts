@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Chess } from "chess.js";
-import { api, expect, move, test } from "./product-fixtures";
+import { expect, test } from "./observability";
+import { move } from "./native-board";
+import { assertDisposableTarget } from "./disposable-target";
+import { resetPostgresDeletedCards, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { prepareUI } from "./ui-fixtures";
 import type { Page } from "@playwright/test";
 // The existing runner owns this JavaScript resource-admission helper.
 // @ts-ignore -- the repository's .mjs helper does not publish TypeScript declarations.
-import { waitForStudyQuiet } from "../../scripts/development-budget.mjs";
+import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
 /*
  * This fixture is permitted only in the PostgreSQL browser runner's disposable
@@ -203,25 +206,70 @@ function position(fen: string): string { return fen.split(" ").slice(0, 4).join(
 /* iPhone standalone enables the real offline preparation path and service worker. */
 test.use({ viewport: { width: 390, height: 844 }, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 
-test("position Study keeps its server-issued suffix and first-wrong journal across reload and offline", async ({ page, request, context }) => {
+test("position Study keeps its server-issued suffix and first-wrong journal across reload and offline", async ({ page, request, context, baseURL }) => {
   test.setTimeout(180_000);
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
     throw new Error("Position acceptance requires the owning disposable PostgreSQL browser runner");
   const budgetToken = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
   if (!budgetToken) throw new Error("The disposable browser runner must own the development budget");
-  for (const service of ["api", "foreground-worker"]) {
+  await validateDevelopmentBudgetOwner();
+  const origin = process.env.TEMPO_DOCKER_URL;
+  if (!origin || baseURL !== origin || (process.env.TEMPO_BROWSER_API_URL && process.env.TEMPO_BROWSER_API_URL !== `${origin}/api`))
+    throw new Error("Browser and API must use the owning disposable endpoint");
+  const address = new URL(origin);
+  if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !address.port ||
+      address.pathname !== "/" || address.username || address.password || address.search || address.hash)
+    throw new Error("Disposable endpoint must be a loopback origin with an explicit port");
+  const api = `${origin}/api`;
+  for (const service of ["web", "api", "foreground-worker"]) {
     const container = execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml",
       "ps", "-q", service], { encoding: "utf8", timeout: 5_000 }).trim();
     if (!container) throw new Error(`Missing disposable ${service} service`);
     const labels = JSON.parse(execFileSync("docker", ["inspect", "--format", "{{json .Config.Labels}}", container],
       { encoding: "utf8", timeout: 5_000 })) as Record<string, string>;
-    if (labels["com.docker.compose.project"] !== project || labels["tempo.resource-owner"] !== budgetToken)
+    if (labels["com.docker.compose.project"] !== project || labels["com.docker.compose.service"] !== service || labels["tempo.resource-owner"] !== budgetToken)
       throw new Error(`Unowned ${service} service`);
+    if (service === "web") {
+      const ports = JSON.parse(execFileSync("docker", ["inspect", "--format", "{{json .NetworkSettings.Ports}}", container],
+        { encoding: "utf8", timeout: 5_000 }));
+      const bindings = ports?.["80/tcp"];
+      if (!Array.isArray(bindings) || bindings.length !== 1 || bindings[0].HostIp !== "127.0.0.1" || bindings[0].HostPort !== address.port)
+        throw new Error("Browser endpoint does not belong to the owning disposable project");
+    }
   }
+  const healthResponse = await request.get(`${api}/health`);
+  const health: unknown = healthResponse.ok() ? await healthResponse.json() : null;
+  assertDisposableTarget(health);
+  await verifyPostgresFixtureTarget({ health, apiUrl: api, project });
+  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
+  // Existing product initialization, executed only after endpoint and ownership verification.
+  const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
+  const activePackIds = catalog.packs.filter((pack: { active: boolean }) => pack.active).map((pack: { id: string }) => pack.id);
+  if (activePackIds.length) {
+    const response = await request.put(`${api}/tactics/activation`, { data: { pack_ids: activePackIds, active: false } });
+    expect(response.ok(), await response.text()).toBe(true);
+    await expect.poll(async () => (await (await request.get(`${api}/tactics/catalog`)).json()).packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
+  }
+  const repertoires = (await (await request.get(`${api}/repertoires`)).json()).repertoires;
+  for (const item of repertoires) {
+    if (item.id.startsWith("__")) continue;
+    const removal = await request.delete(`${api}/repertoires/${item.id}`);
+    expect(removal.ok(), await removal.text()).toBe(true);
+    if (removal.status() === 202) {
+      const operationId = (await removal.json()).operation_id;
+      await expect.poll(async () => (await (await request.get(`${api}/operations/${operationId}`)).json()).state, { timeout: 20_000 }).toBe("complete");
+    }
+  }
+  await resetPostgresDeletedCards({ health, apiUrl: api, project });
+  for (const card of (await (await request.get(`${api}/queue/today`)).json()).cards)
+    if (card.content_type !== "opening") await request.delete(`${api}/cards/${card.id}`);
+  const settings = await (await request.get(`${api}/settings`)).json();
+  const updatedSettings = await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 2, initial_depth: 2, lichess_username: "", chesscom_username: "" } });
+  expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
-  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
   fixture(project, "seed", identity);
   const before = fixture<Snapshot>(project, "read", identity);
   await prepareUI(page);
@@ -298,7 +346,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again"),
     { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
-  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
   const legacy = fixture<{ card: string }>(project, "legacy", identity);
   await page.reload();
   await expect.poll(async () => (await queue()).cards[0]?.id, { timeout: 30_000 }).toBe(legacy.card);
@@ -319,8 +367,9 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     expect(await attemptForCard(page, legacy.card)).toBe(legacyAttempt);
     expect((await openingEvents(page, legacyAttempt)).find(event =>
       event.kind === "first_response" && event.disposition === "wrong")).toEqual(legacyWrong);
-    expect((await openingEvents(page, suffix.attempt_id)).find(event =>
-      event.kind === "first_response" && event.disposition === "wrong")).toEqual(wrong);
+    const durable = fixture<Snapshot>(project, "read", identity);
+    expect(durable.grades.filter(g => g.attempt_id === suffix.attempt_id && g.grade === "again")).toHaveLength(1);
+    expect(durable.reviews.some(r => r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again")).toBe(true);
   } finally {
     await context.setOffline(false);
   }
