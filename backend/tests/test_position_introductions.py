@@ -245,7 +245,9 @@ def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(mon
             calls.append(('admit', day, kw))
             return NS(status='introduced')
     fence = NS(prepared=proposal, definitions=(DEF,))
-    result = admission.admit_targeted_position_introduction(object(), prepared, fence,
+    class Database:
+        def execute_native(self, *a): return Cursor((1,))
+    result = admission.admit_targeted_position_introduction(Database(), prepared, fence,
         day='2026-11-02', now=datetime.now(timezone.utc), introductions=Canonical())
     assert result.status == 'introduced'
     assert [call[0] for call in calls] == ['prepare', 'admit', 'initialize']

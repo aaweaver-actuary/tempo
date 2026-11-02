@@ -226,6 +226,12 @@ def admit_targeted_position_introduction(database, prepared_target, fenced, *, d
     result = introductions.admit_encounter(day, repertoire_id=target.repertoire_id,
         decision_id=target.decision_id, target=target)
     if result.status == 'introduced':
+        admitted = database.execute_native("""SELECT 1 FROM cards c JOIN daily_queue q ON q.card_id=c.id
+            WHERE c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL
+              AND q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1""",
+            (target.presentation_id, target.presentation_revision, day, target.repertoire_id)).fetchone()
+        if not admitted:
+            raise ValueError('position_canonical_introduction_unproved')
         initialize_introduction(database, prepared, fenced, now=now)
     elif result.status in {'already_introduced', 'replayed'}:
         # This pre-fenced proposal represented unseen state, so an existing
