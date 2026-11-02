@@ -166,8 +166,11 @@ class AcceptedEvidence:
     owner_epoch: str
     source_digest: str
     accepted_at: datetime
+    accepted_study_day: date  # Owner day at this grade acceptance, persisted on replay.
 
     def __post_init__(self) -> None:
+        if not isinstance(self.accepted_study_day, date) or isinstance(self.accepted_study_day, datetime):
+            raise ValueError("accepted_study_day_required")
         if self.accepted_at.utcoffset() is None:
             raise ValueError("accepted_at_aware_required")
 

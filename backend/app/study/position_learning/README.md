@@ -39,9 +39,14 @@ issuance cannot turn a nondue witness into Good. A mismatch in the original proo
 digest revision holds new issuance but does not by itself invalidate the saved
 original attempt. Changed approved definitions are separately fenced;
 there is no silent fallback to legacy scheduling for an opted-in position. Study reads its
-configured local timezone and captures the Study day once at issuance. To bound
-late arrivals, a Good is eligible only when acceptance's current local Study day
-is the same as the issued day; after midnight preserve the response as observation,
+configured local timezone and captures the Study day once at issuance. At each
+particular grade acceptance transaction, the Study owner captures the current
+local day using its existing clock/settings day policy and supplies it as the
+required `AcceptedEvidence.accepted_study_day`. For Good, that is the day of
+the completed saved review, not an earlier partial-response checkpoint. Persist
+this day in the accepted grade receipt for exact replay. Never derive it from a
+client timestamp or the offset on `issued_at`. To bound late arrivals, a Good is
+eligible only when that owner-supplied acceptance day is the same as the issued day; after midnight preserve the response as observation,
 including on replay, and never credit the prior day retroactively. The writer
 checks at most one Good per position and local day across all attempts, policies
 and epochs. Negative evidence is accepted on the current owner day at actual

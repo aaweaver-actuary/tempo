@@ -39,3 +39,21 @@ def test_detached_witness_and_response_require_identity_and_aware_times():
 def test_backend_reexports_the_standalone_contract_identity():
     from tempo_evidence_math.position_learning import PositionKey as SharedPositionKey
     assert SharedPositionKey is PositionKey
+
+
+def test_grade_acceptance_requires_owner_day_not_issued_timestamp_offset():
+    from zoneinfo import ZoneInfo
+    from app.study.position_learning.contracts import AcceptedEvidence
+
+    definition = PositionDefinition(PositionKey("r", START), "e2e4", "v1")
+    response = FirstResponse("attempt", 0, definition, "e2e4", False, NOW, "event")
+    # UTC is already tomorrow while New York is still on the issued Study day.
+    accepted_at = datetime(2026, 11, 3, 1, tzinfo=timezone.utc)
+    owner_day = accepted_at.astimezone(ZoneInfo("America/New_York")).date()
+    evidence = AcceptedEvidence(response, True, "expected", True, True,
+                                "epoch", "digest", accepted_at, owner_day)
+    assert evidence.accepted_study_day == date(2026, 11, 2)
+    assert evidence.accepted_study_day != evidence.accepted_at.date()
+    with pytest.raises(ValueError, match="accepted_study_day_required"):
+        AcceptedEvidence(response, True, "expected", True, True,
+                         "epoch", "digest", accepted_at, accepted_at)
