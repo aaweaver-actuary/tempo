@@ -212,6 +212,8 @@ class PreparedOpeningCheckpoint:
     observations: tuple[dict, ...]
     terminal_json: str | None
     result: dict
+    position_plan: Any = None
+    position_source: Any = None
 
 
 def _read_checkpoint_source(database, attempt_id: str, *, lock: bool = False) -> tuple[dict | None, tuple[tuple[int, str], ...]]:
@@ -228,12 +230,24 @@ def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
         row = storage.presentation_context(database, (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id))
         snapshot = dict(row) if row else None
         source_attempt, source_events = _read_checkpoint_source(database, request.attempt_id)
+        from tempo_legacy_database.adapters.study import position_first_responses as position_storage
+        from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
+        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+        from tempo_evidence_math.position_learning import Hold
+        position_plan = replay_exact_attempt(database, request.attempt_id) if position_storage.has_position_tables(database) else None
+        if isinstance(position_plan, Hold):
+            raise evidence_error(position_plan.reason)
+        position_source = prepare_position_source(database, request.manifest.repertoire_id) if position_plan else None
+        if isinstance(position_source, Hold):
+            raise evidence_error(position_source.reason)
     try:
         if snapshot is None:
             raise EvidenceConflict("The original opening presentation and repertoire scope cannot be proven")
         authoritative_manifest = decision_manifest(_manifest_snapshot(snapshot), request.manifest.repertoire_id)
         validate_checkpoint(request, authoritative_manifest)
-        return _compute_checkpoint_publication(request, source_attempt, source_events)
+        prepared = _compute_checkpoint_publication(request, source_attempt, source_events)
+        from dataclasses import replace
+        return replace(prepared, position_plan=position_plan, position_source=position_source)
     except (ValueError, KeyError) as error:
         raise evidence_error(str(error)) from error
 
@@ -289,7 +303,13 @@ def commit_standalone_checkpoint(database, prepared: PreparedOpeningCheckpoint) 
     request = prepared.request
     manifest = request.manifest
     try:
+        position_context = _begin_position_checkpoint(database, prepared)
         _validate_checkpoint_scope(database, request, completing_review=False)
+        if position_context:
+            if not position_context[0].lock_original_queue(database, prepared.position_plan):
+                raise EvidenceConflict("Position original queue or day is busy or unavailable")
+            if not position_context[0].lock_attempt(database, request.attempt_id):
+                raise EvidenceConflict("Position original attempt is busy")
         inserted = storage.insert_attempt_returning(database, (request.attempt_id, manifest.manifest_id, manifest.presentation_snapshot_id, manifest.repertoire_id,
              manifest.card_id, manifest.card_revision, manifest.trained_color, prepared.context_json,
              prepared.manifest_json, request.started_at, request.study_timezone, request.queue_entry_id))
@@ -303,6 +323,8 @@ def commit_standalone_checkpoint(database, prepared: PreparedOpeningCheckpoint) 
         if prepared.missing_events:
             storage.insert_event_batch(database, (request.attempt_id, [sequence for sequence, _ in prepared.missing_events],
                  [event_json for _, event_json in prepared.missing_events]))
+        if position_context:
+            _commit_position_checkpoint(database, prepared, position_context)
         _persist_observations(database, request.attempt_id, list(prepared.observations))
         storage.update_attempt(database, (prepared.result["contiguous_sequence"], prepared.result["state"], prepared.terminal_json,
              request.queue_entry_id, request.attempt_id))
@@ -474,3 +496,92 @@ def persist_position_first_response(database, plan, envelope, accepted_at, *, ap
     if len(rows) != 1:
         raise EvidenceConflict("Inserted first response receipt is unavailable")
     return dict(rows[0])
+
+
+def _begin_position_checkpoint(database, prepared):
+    """Fence the owner before the existing checkpoint acquires card locks."""
+    from tempo_legacy_database.adapters.study import position_first_responses as position_storage
+    from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
+    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+    from tempo_evidence_math.position_learning import Hold
+    current = replay_exact_attempt(database, prepared.request.attempt_id) if position_storage.has_position_tables(database) else None
+    if isinstance(current, Hold):
+        raise EvidenceConflict(current.reason)
+    plan = prepared.position_plan
+    if (current is None) != (plan is None) or (plan and current.to_record() != plan.to_record()):
+        raise EvidenceConflict("Position issuance changed; prepare checkpoint again")
+    if plan is None:
+        return None
+    request = prepared.request
+    manifest = request.manifest
+    token = plan.to_record().get('authored_source_token')
+    source = prepared.position_source
+    if (not token or source is None or token['authored_digest'] != source.authored_token.authored_digest
+            or (plan.attempt_id, plan.queue_entry_id, plan.original_card_id, plan.original_card_revision,
+                plan.target.key.repertoire_id) !=
+               (request.attempt_id, request.origin_queue_entry_id, manifest.card_id,
+                manifest.card_revision, manifest.repertoire_id)
+            or request.queue_entry_id not in (None, plan.queue_entry_id)):
+        raise EvidenceConflict("Position issuance and original checkpoint scope differ")
+    owner = owner_mode(database, manifest.repertoire_id, token['authored_digest'])
+    if owner.disposition != 'position' or owner.epoch != plan.owner_epoch:
+        raise EvidenceConflict(owner.reason)
+    return position_storage, token['authored_digest']
+
+
+def _commit_position_checkpoint(database, prepared, context):
+    """Fence source and persist only first actions from the contiguous journal."""
+    import hashlib
+    from tempo_learning_review.application import review_day_at
+    from tempo_evidence_math import opening_position_key
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+    from tempo_legacy_database.adapters.study.position_grade_effects import apply_in_borrowed_transaction
+    plan, source, request = prepared.position_plan, prepared.position_source, prepared.request
+    held = fence_position_source(database, source)
+    if held is not None:
+        raise EvidenceConflict(held.reason)
+    by_original_ply = {slot.original_ply: (index, slot) for index, slot in enumerate(plan.decision_slots)}
+    if len(by_original_ply) != len(plan.decision_slots):
+        raise EvidenceConflict("Position issued route repeats an original ply")
+    combined = dict(prepared.source_events)
+    combined.update(dict(prepared.missing_events))
+    contiguous = []
+    for sequence, raw in sorted(combined.items()):
+        if sequence != len(contiguous) + 1:
+            break
+        contiguous.append(json.loads(raw))
+    # Verify current complete authored source has one answer for each issued
+    # position before classifying a different legal response as wrong.
+    for observation in prepared.observations:
+        if observation['response_at'] is None:
+            continue
+        original = request.manifest.decisions[observation['decision_index']]
+        match = by_original_ply.get(original.move_offset)
+        if match is None:
+            raise EvidenceConflict("Checkpoint decision is outside issued route")
+        index, slot = match
+        if (original.expected_uci != slot.definition.expected_uci
+                or opening_position_key(original.fen) != slot.definition.key.position):
+            raise EvidenceConflict("Checkpoint decision differs from issued route")
+        alternatives = [d.definition for route in source.routes for d in route.decisions
+                        if d.definition.key == slot.definition.key]
+        if not alternatives or any(definition != slot.definition for definition in alternatives):
+            raise EvidenceConflict("Position authored response is ambiguous")
+        event = next((event for event in contiguous
+                      if event['decision_index'] == observation['decision_index']
+                      and event['kind'] in ('first_response', 'manual_failure')), None)
+        if event is None:
+            raise EvidenceConflict("First response is unavailable")
+        event_id = hashlib.sha256(('position:first-response:' + request.attempt_id + ':' + str(event['sequence'])).encode('utf-8')).hexdigest()
+        envelope = position_first_response_envelope(
+            plan, event_id=event_id, decision_index=index,
+            actual_uci=observation['first_response_uci'], manual_failure=observation['manual_failure'],
+            assistance_before=bool(observation['assistance_before_response']),
+            observed_at=observation['response_at'], classify_alternative=lambda *_: 'wrong')
+        now, timezone_name = context[0].acceptance_clock(database)
+        day = review_day_at(now, timezone_name)
+        def apply_grade(db, attempt_id, event_ids):
+            return apply_in_borrowed_transaction(db, attempt_id, event_ids,
+                owner_epoch=plan.owner_epoch, authored_digest=context[1],
+                accepted_study_day=day, accepted_at=now)
+        persist_position_first_response(database, plan, envelope, now, apply_grade=apply_grade)

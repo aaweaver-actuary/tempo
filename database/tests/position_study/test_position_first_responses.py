@@ -83,3 +83,69 @@ def test_correct_stays_pending_and_grade_failure_aborts(monkeypatch):
     with pytest.raises(evidence.EvidenceConflict):
         evidence.persist_position_first_response(None, plan(), event(), datetime.now(timezone.utc),
                                                  apply_grade=held)
+
+
+def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correction(monkeypatch):
+    import json
+    import sys
+    from types import ModuleType
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from tempo_evidence_math import opening_position_key
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+
+    frozen = plan()
+    slot = frozen.decision_slots[0]
+    slot.definition.key.position = opening_position_key(slot.fen)
+    decision = {'decision_id': 'd' * 64, 'decision_index': 0, 'move_offset': 6,
+                'fen': slot.fen, 'expected_uci': 'e2e4'}
+    raw = {'attempt_id': 'attempt', 'origin_queue_entry_id': 21, 'queue_entry_id': 21,
+           'started_at': '2026-11-02T12:00:00+00:00', 'study_timezone': 'UTC',
+           'manifest': {'manifest_id': 'a' * 64, 'presentation_snapshot_id': 1,
+                        'repertoire_id': 'r', 'card_id': 'card', 'card_revision': 4,
+                        'trained_color': 'white', 'decisions': [decision]},
+           'events': [{'sequence': 1, 'decision_index': 0, 'decision_id': 'd' * 64,
+                       'expected_uci': 'e2e4', 'kind': 'first_response',
+                       'observed_at': '2026-11-02T12:00:00+00:00', 'response_uci': 'd2d4',
+                       'disposition': 'unverified'}]}
+    # The saved source proves the one expected move, independently of the
+    # browser's unverified disposition.
+    source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])])
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *_: None)
+    grade_module = ModuleType('tempo_legacy_database.adapters.study.position_grade_effects')
+    grades = []
+    grade_module.apply_in_borrowed_transaction = lambda _db, attempt, ids, **kw: grades.append((attempt, ids))
+    monkeypatch.setitem(sys.modules, grade_module.__name__, grade_module)
+    monkeypatch.setattr(evidence, '_begin_position_checkpoint', lambda *_: (storage, 'authored'))
+    monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: True)
+    monkeypatch.setattr(storage, 'lock_attempt', lambda *_: True)
+    monkeypatch.setattr(storage, 'acceptance_clock', lambda *_: (datetime.now(timezone.utc), 'UTC'))
+    monkeypatch.setattr(evidence, '_validate_checkpoint_scope', lambda *_, **__: None)
+    monkeypatch.setattr(evidence, '_persist_observations', lambda *_: None)
+    monkeypatch.setattr(evidence.storage, 'insert_attempt_returning', lambda *_: True)
+    monkeypatch.setattr(evidence.storage, 'insert_event_batch', lambda *_: None)
+    monkeypatch.setattr(evidence.storage, 'update_attempt', lambda *_: None)
+    saved = []
+    monkeypatch.setattr(storage, 'receipt', lambda *_: saved[:])
+    def insert(_db, envelope, digest, _json, accepted):
+        saved.append(dict(payload_json=envelope, payload_digest=digest, accepted_at=accepted))
+        return ('event',)
+    monkeypatch.setattr(storage, 'insert', insert)
+    monkeypatch.setattr(evidence, '_read_checkpoint_source', lambda *_, **__: (None, ()))
+    from dataclasses import replace
+    req = OpeningEvidenceCheckpoint.model_validate(raw)
+    prepared = replace(evidence._compute_checkpoint_publication(req, None, ()),
+                       position_plan=frozen, position_source=source)
+    result = evidence.commit_standalone_checkpoint(None, prepared)
+    assert result['persisted'] and len(grades) == 1
+    assert saved[0]['payload_json']['original_ply'] == 6
+    assert saved[0]['payload_json']['decision_index'] == 0
+    assert saved[0]['payload_json']['disposition'] == 'wrong'
+    # A later guided correction is not another first response or transition.
+    raw['events'].append({'sequence': 2, 'decision_index': 0, 'decision_id': 'd' * 64,
+                          'expected_uci': 'e2e4', 'kind': 'correction',
+                          'observed_at': '2026-11-02T12:01:00+00:00', 'response_uci': 'e2e4'})
+    req = OpeningEvidenceCheckpoint.model_validate(raw)
+    prepared = replace(evidence._compute_checkpoint_publication(req, None, ()),
+                       position_plan=frozen, position_source=source)
+    evidence.commit_standalone_checkpoint(None, prepared)
+    assert len(saved) == len(grades) == 1

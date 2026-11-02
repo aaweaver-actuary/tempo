@@ -31,3 +31,37 @@ def insert(database, envelope, digest, payload_json, accepted_at):
          envelope['repertoire_id'], envelope['variant'], envelope['position'],
          envelope['owner_epoch'], digest, payload_json, envelope['observed_at'], accepted_at),
     ).fetchone()
+
+
+def has_position_tables(database):
+    row = database.execute_native("SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL", ()).fetchone()
+    return bool(row and row[0])
+
+
+def lock_original_queue(database, plan):
+    """Card identity is already locked; lock its original day and queue next."""
+    day = database.execute_native(
+        "SELECT queue_date FROM daily_queue_days WHERE queue_date=%s FOR UPDATE SKIP LOCKED",
+        (plan.local_day.isoformat(),),
+    ).fetchone()
+    queue = database.execute_native(
+        "SELECT card_id,queue_date FROM daily_queue WHERE id=%s FOR UPDATE SKIP LOCKED",
+        (plan.queue_entry_id,),
+    ).fetchone()
+    return bool(day and queue and queue['card_id'] == plan.original_card_id
+                and str(queue['queue_date']) == plan.local_day.isoformat())
+
+
+def lock_attempt(database, attempt_id):
+    row = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
+        ("tempo:position-attempt:" + attempt_id,),
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def acceptance_clock(database):
+    row = database.execute_native("SELECT statement_timestamp(),timezone FROM settings WHERE id=1", ()).fetchone()
+    if not row:
+        raise ValueError("study_timezone_unavailable")
+    return row[0], row[1]
