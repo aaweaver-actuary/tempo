@@ -17,6 +17,12 @@ CREATE TABLE study_position_owners (
     FOREIGN KEY (repertoire_id, epoch) REFERENCES study_position_epochs(repertoire_id, epoch)
 );
 
+-- Reservation only: legacy-ID namespace admission still requires a durable
+-- preflight and a fence on all present and future legacy ID creators.
+CREATE SEQUENCE study_position_fsrs_id_seq AS BIGINT
+    MINVALUE 4503599627370496 MAXVALUE 9007199254740991
+    START WITH 4503599627370496 NO CYCLE;
+
 CREATE TABLE study_position_states (
     repertoire_id TEXT NOT NULL,
     variant TEXT NOT NULL CHECK (variant = 'standard'),
@@ -26,7 +32,7 @@ CREATE TABLE study_position_states (
     owner_epoch TEXT NOT NULL,
     source_digest TEXT NOT NULL,
     version BIGINT NOT NULL DEFAULT 1 CHECK (version > 0),
-    fsrs_internal_card_id BIGINT NOT NULL UNIQUE,
+    fsrs_internal_card_id BIGINT NOT NULL UNIQUE CHECK (fsrs_internal_card_id > 0),
     fsrs_json TEXT NOT NULL,
     due_at TIMESTAMPTZ NOT NULL,
     introduced_at TIMESTAMPTZ,
@@ -41,6 +47,63 @@ CREATE TABLE study_position_states (
 );
 CREATE INDEX study_position_due ON study_position_states
     (repertoire_id, owner_epoch, due_at, variant, position);
+
+-- A page's outcomes, new state and checkpoint advance together. The source
+-- owner supplies the manifest and namespace preflight; this table cannot certify them.
+CREATE TABLE study_position_seed_runs (
+    repertoire_id TEXT NOT NULL,
+    owner_epoch TEXT NOT NULL,
+    source_digest TEXT NOT NULL,
+    source_token_json JSONB NOT NULL,
+    selection_policy TEXT NOT NULL,
+    manifest_digest TEXT NOT NULL,
+    manifest_count BIGINT NOT NULL CHECK (manifest_count >= 0),
+    allocator_preflight_json JSONB NOT NULL,
+    checkpoint_variant TEXT,
+    checkpoint_position TEXT,
+    seeded_count BIGINT NOT NULL DEFAULT 0 CHECK (seeded_count >= 0),
+    held_count BIGINT NOT NULL DEFAULT 0 CHECK (held_count >= 0),
+    status TEXT NOT NULL DEFAULT 'incomplete' CHECK (status IN ('incomplete', 'complete')),
+    created_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ,
+    PRIMARY KEY (repertoire_id, owner_epoch),
+    FOREIGN KEY (repertoire_id, owner_epoch) REFERENCES study_position_epochs(repertoire_id, epoch),
+    CHECK ((checkpoint_variant IS NULL) = (checkpoint_position IS NULL)),
+    CHECK (seeded_count + held_count <= manifest_count),
+    CHECK ((status = 'incomplete' AND completed_at IS NULL)
+        OR (status = 'complete' AND completed_at IS NOT NULL AND seeded_count + held_count = manifest_count))
+);
+
+CREATE TABLE study_position_seed_outcomes (
+    repertoire_id TEXT NOT NULL,
+    owner_epoch TEXT NOT NULL,
+    variant TEXT NOT NULL CHECK (variant = 'standard'),
+    position TEXT NOT NULL,
+    expected_uci TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    disposition TEXT NOT NULL CHECK (disposition IN ('seeded', 'hold')),
+    hold_reason TEXT,
+    donor_card_id TEXT,
+    donor_card_revision BIGINT,
+    donor_fingerprint TEXT,
+    donor_selection_policy TEXT,
+    donor_fsrs_internal_card_id BIGINT,
+    allocated_fsrs_internal_card_id BIGINT UNIQUE,
+    clone_fingerprint TEXT,
+    introduced_at TIMESTAMPTZ,
+    PRIMARY KEY (repertoire_id, owner_epoch, variant, position),
+    FOREIGN KEY (repertoire_id, owner_epoch) REFERENCES study_position_seed_runs(repertoire_id, owner_epoch),
+    CHECK ((disposition = 'hold' AND hold_reason IS NOT NULL AND donor_card_id IS NULL
+            AND donor_card_revision IS NULL AND donor_fingerprint IS NULL AND donor_selection_policy IS NULL
+            AND donor_fsrs_internal_card_id IS NULL AND allocated_fsrs_internal_card_id IS NULL
+            AND clone_fingerprint IS NULL AND introduced_at IS NULL)
+        OR (disposition = 'seeded' AND hold_reason IS NULL AND donor_card_id IS NOT NULL
+            AND donor_card_revision IS NOT NULL AND donor_fingerprint IS NOT NULL AND donor_selection_policy IS NOT NULL
+            AND donor_fsrs_internal_card_id IS NOT NULL AND allocated_fsrs_internal_card_id IS NOT NULL
+            AND allocated_fsrs_internal_card_id BETWEEN 4503599627370496 AND 9007199254740991
+            AND donor_fsrs_internal_card_id <> allocated_fsrs_internal_card_id
+            AND clone_fingerprint IS NOT NULL AND introduced_at IS NOT NULL))
+);
 
 -- A plan is an immutable issuance snapshot, including route and due witnesses.
 -- The owner rejects a different payload under the same attempt identity.
@@ -58,8 +121,12 @@ CREATE TABLE study_position_issued_plans (
     plan_json JSONB NOT NULL,
     issued_at TIMESTAMPTZ NOT NULL,
     UNIQUE (attempt_id, repertoire_id, variant, owner_epoch),
+    UNIQUE (queue_entry_id, card_id, card_revision),
     FOREIGN KEY (repertoire_id, owner_epoch) REFERENCES study_position_epochs(repertoire_id, epoch)
 );
+
+CREATE INDEX study_position_plan_clean_lookup ON study_position_issued_plans
+    (repertoire_id, owner_epoch, issue_study_day, issued_at, attempt_id);
 
 -- The first response is durable before a terminal aggregate review exists.
 CREATE TABLE study_position_first_responses (

@@ -43,7 +43,28 @@ def test_position_migration_native():
             with conn.transaction():
                 conn.execute(SQL)
             assert conn.execute('SELECT version FROM tempo_schema_migrations').fetchall() == [(57,)]
+            allocated = conn.execute("SELECT nextval('study_position_fsrs_id_seq')").fetchone()[0]
+            assert allocated == 4503599627370496
             conn.execute("INSERT INTO study_position_epochs VALUES ('r','e','source',now()), ('other','e','source',now())")
+            conn.execute("""INSERT INTO study_position_seed_runs
+                (repertoire_id,owner_epoch,source_digest,source_token_json,selection_policy,manifest_digest,
+                 manifest_count,allocator_preflight_json,created_at)
+                VALUES ('r','e','source','{}','policy','manifest',1,'{}',now())""")
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("""UPDATE study_position_seed_runs SET status='complete',completed_at=now()
+                    WHERE repertoire_id='r' AND owner_epoch='e'""")
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("""INSERT INTO study_position_seed_outcomes
+                    (repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,
+                     donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy,
+                     donor_fsrs_internal_card_id,allocated_fsrs_internal_card_id,clone_fingerprint,introduced_at)
+                    VALUES ('r','e','standard','fen','e2e4','v','seeded','card',1,'hash','policy',
+                            %s,%s,'clone',now())""", (allocated, allocated))
+            conn.execute("""INSERT INTO study_position_seed_outcomes
+                (repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,hold_reason)
+                VALUES ('r','e','standard','fen','e2e4','v','hold','pending')""")
+            conn.execute("""UPDATE study_position_seed_runs SET held_count=1,status='complete',completed_at=now()
+                WHERE repertoire_id='r' AND owner_epoch='e'""")
             conn.execute("INSERT INTO study_position_owners(repertoire_id,epoch,updated_at) VALUES ('r','e',now())")
             assert conn.execute("SELECT mode FROM study_position_owners").fetchone() == ('inactive',)
             conn.execute("""INSERT INTO study_position_states
@@ -57,6 +78,9 @@ def test_position_migration_native():
                     VALUES ('other','standard','fen','e2e4','v','e','source',7,'{}',now())""")
             conn.execute("""INSERT INTO study_position_issued_plans
                 VALUES ('a',1,'card',1,'r','standard','e','source','2026-11-02','digest','{}',now())""")
+            with pytest.raises(psycopg.errors.UniqueViolation):
+                conn.execute("""INSERT INTO study_position_issued_plans
+                    VALUES ('duplicate',1,'card',1,'r','standard','e','source','2026-11-02','other','{}',now())""")
             with pytest.raises(psycopg.errors.ForeignKeyViolation):
                 conn.execute("""INSERT INTO study_position_first_responses
                     VALUES ('event','a',0,'other','standard','fen','e','digest','{}',now(),now())""")
@@ -111,5 +135,5 @@ def test_readiness_queries_all_position_tables():
         yield Reader()
     facts = read_health_facts(reader, lambda: date(2026, 11, 2))
     assert facts[1] == (True,)
-    for table in ('epochs', 'owners', 'states', 'issued_plans', 'first_responses', 'grades'):
+    for table in ('epochs', 'owners', 'states', 'fsrs_id_seq', 'seed_runs', 'seed_outcomes', 'issued_plans', 'first_responses', 'grades'):
         assert "to_regclass('public.study_position_" + table + "')" in statements[1]

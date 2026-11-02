@@ -10,6 +10,8 @@ erDiagram
     study_position_epochs ||--o| study_position_owners : current
     study_position_epochs ||--o{ study_position_states : fences
     study_position_epochs ||--o{ study_position_issued_plans : fences
+    study_position_epochs ||--o{ study_position_seed_runs : fences
+    study_position_seed_runs ||--o{ study_position_seed_outcomes : accounts_for
     study_position_issued_plans ||--o{ study_position_first_responses : contains
     study_position_states ||--o{ study_position_first_responses : identifies
     study_position_first_responses o|--o{ study_position_grades : study_effect
@@ -26,9 +28,26 @@ erDiagram
   `fsrs_internal_card_id` is unique; version and UTC due support bounded reads.
   Donor card, revision, fingerprint and selection policy are all present or all
   absent, preserving restart-safe provenance without rewriting physical cards.
+- `study_position_fsrs_id_seq`: a non-cycling positive reservation range
+  2^52 through 2^53-1. It does not itself establish uniqueness against legacy
+  FSRS IDs. The owner must validate existing IDs and fence every legacy allocator
+  against this namespace throughout its use; malformed or unknown IDs hold seed.
+- `study_position_seed_runs`: one run per repertoire/epoch, with original source
+  token, authored digest, selection policy, immutable manifest digest/count and
+  allocator preflight, plus checkpoint, seeded/held counts and completion time.
+  A completed count is not a cutover certificate: F4 must check actual outcomes,
+  source currentness, holds and introduction support.
+- `study_position_seed_outcomes`: immutable seeded or held outcome per manifest
+  position. Seeded outcomes retain donor card/revision/blob fingerprint, selection
+  policy, original and allocated FSRS IDs, initial clone fingerprint and original
+  introduction time. The donor and new IDs must differ. A hold has a reason.
+  Page writes atomically commit outcomes, new states and the checkpoint; retries
+  compare original provenance without overwriting an already graded state.
 - `study_position_issued_plans`: one frozen plan per original attempt, storing
   original queue/card/revision, scope, source, issue day, digest and plan JSON
-  including route and due witnesses. Its identifier snapshots do not cascade
+  including route and due witnesses. A unique original queue/card/revision fence
+  prevents two attempts issuing the same original presentation; the scope/day/time
+  index supports bounded clean-proof reads. Its identifier snapshots do not cascade
   when original sources change.
 - `study_position_first_responses`: durable event and first attempt/decision
   identity, position scope, original payload/digest and observation/acceptance
@@ -49,3 +68,8 @@ No trigger grades or mutates legacy reviews. No ledger row is written for a
 pending qualification. Deletion of retained position state is restricted by
 receipt references, and originals are logical snapshots rather than cascading
 foreign keys to editable legacy rows.
+
+All `source_digest` columns in migration 57 mean the authoritative B1
+`authored_token.authored_digest`. The full original snapshot digest is retained
+in the plan or seed provenance JSON for history; it is not the currentness
+fence after physical source changes.
