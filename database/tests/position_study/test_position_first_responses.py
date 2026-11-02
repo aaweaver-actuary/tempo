@@ -12,7 +12,7 @@ def plan():
     definition = NS(key=key, expected_uci='e2e4', policy_version='v1')
     slot = NS(definition=definition, original_ply=6,
               fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
-    return NS(attempt_id='attempt', queue_entry_id=21, original_card_id='card',
+    return NS(plan_id='a'*64, attempt_id='attempt', queue_entry_id=21, original_card_id='card',
               original_card_revision=4, owner_epoch='epoch', decision_slots=(slot,))
 
 
@@ -121,7 +121,6 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: True)
     monkeypatch.setattr(storage, 'lock_attempt', lambda *_: True)
     monkeypatch.setattr(storage, 'acceptance_clock', lambda *_: (datetime.now(timezone.utc), 'UTC'))
-    monkeypatch.setattr(storage, 'grade_receipt', lambda *_: {'event_id': 'event'})
     monkeypatch.setattr(evidence, '_validate_checkpoint_scope', lambda *_, **__: None)
     monkeypatch.setattr(evidence, '_persist_observations', lambda *_: None)
     monkeypatch.setattr(evidence.storage, 'insert_attempt_returning', lambda *_: True)
@@ -129,6 +128,12 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     monkeypatch.setattr(evidence.storage, 'update_attempt', lambda *_: None)
     saved = []
     monkeypatch.setattr(storage, 'receipt', lambda *_: saved[:])
+    def saved_grade(_db, event_id):
+        import hashlib
+        return {'event_id':event_id, 'attempt_id':'attempt', 'decision_index':0, 'source_kind':'study',
+                'effect_id':hashlib.sha256(('study:first_response:' + event_id).encode()).hexdigest(),
+                'request_digest':hashlib.sha256((frozen.plan_id + ':' + saved[0]['payload_digest']).encode()).hexdigest()}
+    monkeypatch.setattr(storage, 'grade_receipt', saved_grade)
     def insert(_db, envelope, digest, _json, accepted):
         saved.append(dict(payload_json=envelope, payload_digest=digest, accepted_at=accepted,
                           **{k: envelope[k] for k in ('event_id', 'attempt_id', 'decision_index', 'repertoire_id', 'variant', 'position', 'owner_epoch')}))

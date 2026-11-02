@@ -57,6 +57,9 @@ def lock_original_queue(database, plan):
     present = database.execute_native("SELECT 1 FROM daily_queue WHERE id=%s", (plan.queue_entry_id,)).fetchone()
     if present:
         return False
+    count = database.execute_native("SELECT count(*) FROM queue_attempt_origins WHERE queue_entry_id=%s", (plan.queue_entry_id,)).fetchone()
+    if not count or count[0] != 1:
+        return False
     rows = database.execute_native(
         "SELECT card_id,revision,queue_date,admission_repertoire_id FROM queue_attempt_origins "
         "WHERE queue_entry_id=%s ORDER BY card_id,revision LIMIT 2 FOR UPDATE SKIP LOCKED",

@@ -632,6 +632,13 @@ def commit_position_checkpoint(database, fence, contiguous_events):
             grade = fence.storage.grade_receipt(database, event_id)
             if raw['disposition'] in {'wrong', 'illegal', 'manual_failure'} and grade is None:
                 raise EvidenceConflict("Accepted first failure has no grade receipt")
+            if grade is not None:
+                expected_effect = hashlib.sha256(('study:first_response:' + event_id).encode('utf-8')).hexdigest()
+                expected_digest = hashlib.sha256((plan.plan_id + ':' + row['payload_digest']).encode('ascii')).hexdigest()
+                if (grade['effect_id'], grade['source_kind'], grade['event_id'], grade['attempt_id'],
+                    grade['decision_index'], grade['request_digest']) != (
+                        expected_effect, 'study', event_id, plan.attempt_id, index, expected_digest):
+                    raise EvidenceConflict("Position grade receipt identity differs")
             results.append({'receipt': row, 'grade_receipt': grade, 'replayed': True})
             continue
         if not source_fenced:
@@ -714,3 +721,27 @@ def position_completion_inputs(fence, results):
     if len(ids) != len(set(ids)):
         raise EvidenceConflict("Position completion repeats a first response")
     return PositionCompletionInputs(plan.attempt_id, plan.owner_epoch, fence.authored_digest, tuple(ids))
+
+
+def fence_position_completion(database, fence, results):
+    """Fence current authority only if completion will add a new grade effect."""
+    from tempo_evidence_math.position_learning import Hold
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+    if (not isinstance(fence, PositionCheckpointFence) or fence._seal is not _POSITION_CHECKPOINT_SEAL
+            or fence.database is not database):
+        raise EvidenceConflict("Position checkpoint writer fence is required")
+    position_completion_inputs(fence, results)
+    if all(result['grade_receipt'] is not None for result in results):
+        return
+    source, plan = fence.preparation.source, fence.preparation.plan
+    if source is None or isinstance(source, Hold):
+        raise EvidenceConflict(getattr(source, 'reason', 'Position source is unavailable'))
+    if source.authored_token.authored_digest != fence.authored_digest:
+        raise EvidenceConflict("Position authored source changed")
+    held = fence_position_source(database, source)
+    if held is not None:
+        raise EvidenceConflict(held.reason)
+    owner = owner_mode(database, plan.target.key.repertoire_id, fence.authored_digest)
+    if owner.disposition != 'position' or owner.epoch != plan.owner_epoch:
+        raise EvidenceConflict(owner.reason)
