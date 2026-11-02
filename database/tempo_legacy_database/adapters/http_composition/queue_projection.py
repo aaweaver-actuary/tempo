@@ -249,3 +249,27 @@ def bury_entry(database, day: str, entry_id: int) -> None:
                  AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
         (day, entry_id),
     )
+
+
+def position_pending_modes(database, cards):
+    """Mark position-owned prefetch rows as held until actually issued."""
+    ids = [card['queue_entry_id'] for card in cards if card['content_type'] == 'opening']
+    if not ids:
+        return {}
+    rows = database.execute_native("""SELECT q.id, EXISTS(
+        SELECT 1 FROM study_position_owners owner
+        WHERE owner.mode IN ('active','staged','paused') AND
+          (owner.repertoire_id=q.admission_repertoire_id OR
+           (q.admission_repertoire_id IS NULL AND (owner.repertoire_id=c.repertoire_id OR
+             EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.card_id=c.id
+                 AND rc.repertoire_id=owner.repertoire_id))))) position_owned
+        FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=ANY(%s::bigint[])""",
+        (ids,)).fetchall()
+    return {row['id']: bool(row['position_owned']) for row in rows}
+
+
+def position_source_revision(database, repertoire_id):
+    """Cheap cache invalidation hint; source owner still fences all facts."""
+    return database.execute_native("""SELECT r.scope_source_revision,r.canonical_prefix_revision,
+        p.generation,p.state FROM repertoires r JOIN opening_graph_publications p
+          ON p.repertoire_id=r.id WHERE r.id=%s""", (repertoire_id,)).fetchone()

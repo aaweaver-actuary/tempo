@@ -6,7 +6,7 @@ source, owner, card revision and admission under its existing locks.
 from tempo_evidence_math.position_learning import Hold
 
 
-def select_carrier(source, target):
+def select_carrier(source, target, *, card_id=None):
     """Choose one current physical carrier for an exact authored decision.
 
     Aliases and multiple physical candidates within one repertoire are normal;
@@ -26,6 +26,8 @@ def select_carrier(source, target):
         return Hold("position_carrier_response_ambiguous")
     eligible = [binding for binding in bindings if binding.available
                 and binding.presentation_id and binding.presentation_revision > 0]
+    if card_id is not None:
+        eligible = [binding for binding in eligible if binding.presentation_id == card_id]
     if not eligible:
         return Hold("position_carrier_unavailable")
     return min(eligible, key=lambda binding: (binding.presentation_id,

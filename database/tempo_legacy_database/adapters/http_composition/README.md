@@ -149,3 +149,24 @@ columns rather than `cards.*`; queue predicates, joins, candidate limits,
 ordering and count/head operations remain unchanged. The Study queue-serving
 assembler owns flat response shaping; the HTTP composition retains separate
 advisory reads and head issuance.
+
+### Position-owned queue heads
+
+For an active position owner, the queue head command prepares source, due
+witnesses and the selected route before its writer. The writer fences source
+and ownership before existing Study card and queue locks and persists the
+immutable issued plan in the same transaction as the head stamp. A retry reads
+that plan by the original queue/card/revision identity without consulting the
+current source. Missing or ambiguous authority returns a position hold; an
+unissued position prefetch is also held. The response retains the original
+physical card and attempt identity and derives the evidence manifest from the
+issued display. Legacy and non-opening rows retain their existing presentation.
+
+```mermaid
+flowchart LR
+    Queue[Original queue head] --> Prepare[Bounded source and due preparation]
+    Prepare --> Fence[Source and owner fences]
+    Fence --> Issue[Position plan and existing head stamp]
+    Issue --> Wire[Position presentation and display manifest]
+    Issue --> Replay[Exact original-attempt replay]
+```

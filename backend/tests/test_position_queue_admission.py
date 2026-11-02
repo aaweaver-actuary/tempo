@@ -21,6 +21,7 @@ def source(bindings):
 def test_same_repertoire_aliases_choose_one_deterministic_carrier():
     prepared, target = source([binding('b'), binding('a'), binding('x', repertoire='other')])
     assert select_carrier(prepared, target).presentation_id == 'a'
+    assert select_carrier(prepared, target, card_id='b').presentation_id == 'b'
 
 
 def test_conflicting_response_or_unavailable_carrier_holds():
@@ -137,7 +138,13 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                   queue_date text,card_id text,cycle bigint,position bigint,card_bucket text,
                   admission_kind text,admission_repertoire_id text,status text DEFAULT 'queued',
                   UNIQUE(queue_date,card_id,cycle));
-                CREATE TABLE queue_attempt_origins(queue_entry_id bigint,card_id text,issued_as_head int)""")
+                CREATE TABLE queue_attempt_origins(queue_entry_id bigint,card_id text,revision bigint,
+                  queue_date text,cycle bigint,admission_repertoire_id text,issued_as_head int,
+                  start_fen text,moves_json text,trained_color text,content_type text);
+                CREATE TABLE daily_queue_days(queue_date text PRIMARY KEY);
+                CREATE TABLE opening_evidence_attempts(attempt_id text,card_id text,card_revision bigint,
+                  queue_entry_id bigint,repertoire_id text);
+                CREATE TABLE review_attempt_receipts(attempt_id text)""")
             ddl = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
             raw.execute(ddl.read_text())
             moves = json.dumps(['e2e4','e7e5','g1f3'])
@@ -183,6 +190,44 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             assert refresh.execute_postgres_queue_refresh_slice({'payload': {'queue_date': day, '_queue_phase': 'admit_position_due'}})
             raw.execute('COMMIT')
             assert [tuple(r) for r in raw.execute('SELECT card_id,cycle,admission_repertoire_id FROM daily_queue').fetchall()] == [('card', 0, 'r')]
+            entry = raw.execute('SELECT id FROM daily_queue').fetchone()[0]
+            raw.execute('INSERT INTO daily_queue_days VALUES(%s)', (day,))
+            raw.execute("""INSERT INTO queue_attempt_origins
+                VALUES(%s,'card',1,%s,0,'r',0,%s,%s,'white','opening')""",
+                (entry,day,chess.STARTING_FEN,moves))
+            from tempo_legacy_database import connections
+            from tempo_legacy_database.adapters.study import game_feedback
+            from app.services import queue_next_card, legacy_study_remediation
+            from app import queue_commands
+            monkeypatch.setattr(connections, 'read_connection', borrowed)
+            monkeypatch.setattr(queue_commands, 'current_study_day', lambda db: day)
+            monkeypatch.setattr(queue_commands, '_lock_attempt_card', lambda *a: None)
+            monkeypatch.setattr(queue_commands.queue_storage, 'is_postgres_connection', lambda db: False)
+            monkeypatch.setattr(queue_commands.queue_storage, 'issued_origin', lambda *a: True)
+            monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda d: {'id': entry})
+            monkeypatch.setattr(queue_commands, 'validate_available_attempt', lambda *a: None)
+            monkeypatch.setattr(legacy_study_remediation, 'bind_first_issuance', lambda *a: None)
+            monkeypatch.setattr(game_feedback, 'installed', lambda *a: False)
+            monkeypatch.setattr(queue_commands.queue_storage, 'stamp_issued_head',
+                lambda db, *a: raw.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s', (entry,)).rowcount)
+            envelope = {'queue_date': day, 'entry_id': entry, 'card_id': 'card', 'expected_revision': 1}
+            raw.execute('BEGIN')
+            proposal = queue_next_card.prepare_queue_head(envelope)
+            assert proposal.mode == 'position', proposal.reason
+            monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda d: {'id': entry + 100})
+            from fastapi import HTTPException
+            with pytest.raises(HTTPException):
+                queue_commands.issue_queue_head(port, proposal)
+            raw.execute('ROLLBACK')
+            assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
+            monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda d: {'id': entry})
+            raw.execute('BEGIN')
+            result = queue_commands.issue_queue_head(port, proposal)
+            assert result['issued'] and result['position_study_hold'] is None
+            raw.execute('COMMIT')
+            first_wire = result['position_presentation']
+            replay = queue_next_card.prepare_queue_head(envelope)
+            assert replay.mode == 'replay' and replay.proposal.to_wire() == first_wire
             cursor_payload = saved[-1]['next_payload']
             raw.execute('BEGIN')
             assert refresh.execute_postgres_queue_refresh_slice({'payload': cursor_payload})
@@ -197,3 +242,85 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             raw.execute('ROLLBACK')
             raw.execute('SET search_path TO public')
             raw.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_issued_head_replays_exact_attempt_without_rebuilding_source(monkeypatch):
+    from contextlib import contextmanager
+    from app.services.queue_next_card import prepare_queue_head
+    from tempo_legacy_database import connections
+    from tempo_legacy_database.adapters.study import position_issued_plans
+    calls = []
+    plan = NS(to_wire=lambda: {'attempt_id': 'original'})
+    class Cursor:
+        def fetchall(self): return [{'attempt_id': 'original'}]
+    class Reader:
+        def execute_native(self, sql, params):
+            calls.append((sql, params))
+            return Cursor()
+    @contextmanager
+    def borrowed(): yield Reader()
+    monkeypatch.setattr(connections, 'read_connection', borrowed)
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda db, attempt: plan)
+    result = prepare_queue_head({'queue_date': '2026-11-02', 'entry_id': 4,
+                                 'card_id': 'card', 'expected_revision': 2})
+    assert result.mode == 'replay' and result.proposal is plan
+    assert len(calls) == 1 and calls[0][1] == (4, 'card', 2)
+
+
+def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_back_stale_head(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import queue_commands
+    from app.services import queue_next_card
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters.study import position_issued_plans
+    calls = []
+    payload = {'queue_date': '2026-11-02', 'entry_id': 4, 'card_id': 'card', 'expected_revision': 2}
+    proposal = NS(source=object())
+    prepared = queue_next_card.PreparedQueueHead(payload, 'position', proposal)
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda db: payload['queue_date'])
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *a: calls.append('source'))
+    monkeypatch.setattr(position_issued_plans, 'issue_in_borrowed_transaction', lambda *a: calls.append('plan') or object())
+    monkeypatch.setattr(queue_commands, '_lock_attempt_card', lambda *a: calls.append('card'))
+    monkeypatch.setattr(queue_commands.queue_storage, 'is_postgres_connection', lambda db: False)
+    monkeypatch.setattr(queue_commands.queue_storage, 'issued_origin', lambda *a: True)
+    monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda day: {'id': 99})
+    with pytest.raises(HTTPException) as failure:
+        queue_commands.issue_queue_head(object(), prepared)
+    assert failure.value.status_code == 409
+    assert calls == ['source', 'plan', 'card']
+
+
+def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
+    from app.services import queue_next_card
+    from tempo_legacy_database.adapters.http_composition import queue_projection
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    queue_next_card._source_cache.clear()
+    revision, calls = [1], []
+    monkeypatch.setattr(queue_projection, 'position_source_revision', lambda *a: (revision[0], 2, 3, 'ready'))
+    monkeypatch.setattr(position_study_source, 'prepare_position_source', lambda *a: calls.append(1) or NS())
+    first = queue_next_card._cached_position_source(object(), 'rep', 'e1', 'digest')
+    assert queue_next_card._cached_position_source(object(), 'rep', 'e1', 'digest') is first
+    revision[0] += 1
+    assert queue_next_card._cached_position_source(object(), 'rep', 'e1', 'digest') is not first
+    assert len(calls) == 2
+    queue_next_card._source_cache.clear()
+
+
+def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
+    from contextlib import contextmanager
+    from app import main
+    from app.services import queue_next_card
+    plan = NS(to_wire=lambda: {'attempt_id': 'saved', 'plan_id': 'same'})
+    @contextmanager
+    def borrowed(): yield object()
+    monkeypatch.setattr(main, 'read_connection', borrowed)
+    monkeypatch.setattr(main.queue_projection_storage, 'issued_head', lambda *a: {'issued_as_head': 1})
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(queue_next_card, 'prepare_queue_head',
+                        lambda payload: queue_next_card.PreparedQueueHead(payload, 'replay', plan))
+    result = main._issue_returned_queue_head('2026-11-02',
+        {'queue_entry_id': 4, 'id': 'card', 'revision': 2})
+    assert result == {'issued': True, 'position_study_mode': 'position',
+                      'position_presentation': {'attempt_id': 'saved', 'plan_id': 'same'},
+                      'position_study_hold': None}
