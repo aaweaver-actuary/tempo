@@ -6632,6 +6632,20 @@ Their regular Vitest owner remains
 plan, scenario results, current candidate and plan hash remain qualification
 requirements; no CI classification or smaller-tier native exemption is added.
 
+### Existing mutation source guards (#492 / #825 release blockers)
+
+`backend/tests/test_product_repertoire_changes.py` owns the named
+`test_legacy_branch_guard_stops_conflict_before_insert`,
+`test_legacy_card_edit_guard_keeps_shared_membership_before_writes`, and
+`test_legacy_integrity_repair_cannot_introduce_new_response_conflict` regressions.
+Card and repair cases also preserve HTTP 409 for bounded source-read refusals.
+`test_card_edits_storage_boundary.py` preserves original source/history/lock and
+callback assertions for both opening and non-opening revisions while observing
+the source checks before and after mutation. The existing branch checkpoint
+fixture supplies the additional bounded source-read facts without relaxing its
+publication order assertions. Native survivor/replacement and legal repair
+proof remains in the existing Repertoire PostgreSQL suite.
+
 `tests/unit/study-command-client-capability.test.ts` retains receipt-authority
 assertions with the mocks' actual fetch argument signatures; this repairs the
 two baseline empty-tuple type errors without changing runtime behavior.
@@ -6644,3 +6658,4 @@ The owning regressions retain current source contracts after earlier component m
 Component packaging fixtures include the existing development-web-cache leaf; exact dependency closure includes the three already declared Game Evidence dependencies. The graph preparation guard permits the transition's existing node:url builtin used for protected checkout exclusion, and the duplicate shared Learning suite registration includes its database owner root. These corrections preserve exact test inventories, input fencing and failure accounting. The PostgreSQL readiness fixture expects three remaining restoration call sites after the priority benchmark retirement; behavioral health-before-engine assertions remain.
 
 `standalone defense engine smoke does not poll an unavailable API` retains its 15-second deadline, one thread, 32MiB hash and depth-four restricted search. Its smoke branch now terminates the owned Stockfish child in a finally block before exiting; ordinary engine processing is unchanged.
+
