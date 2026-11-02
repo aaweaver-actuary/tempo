@@ -201,10 +201,11 @@ def test_native_due_keyset_pagination_exclusions_context_and_index():
             connection.execute('UPDATE study_position_states SET version=3,due_at=%s WHERE position=%s AND repertoire_id=%s', (again_at, ordered[2], 'r'))
             after_original_due = PositionDueCursor('r', 'e1', 'source', again_at,
                 date(2026, 11, 3), False, NOW, 'standard', ordered[-1])
-            again_due = reader(db, issued_at=again_at).read_due_page(after=after_original_due, limit=1)
-            assert len(again_due.candidates) == 1
-            assert again_due.candidates[0].state.definition.key.position == ordered[2]
-            assert again_due.candidates[0].witness.due
+            again_due = reader(db, issued_at=again_at).read_due_page(after=after_original_due, limit=100)
+            # The contextual position with due=NOW+1 second also becomes due
+            # before this later response. Preserve natural due ordering.
+            assert [item.state.definition.key.position for item in again_due.candidates] == ordered[1:3]
+            assert all(item.witness.due for item in again_due.candidates)
             assert reader(db, issued_at=again_at).read_context((PositionKey('r', ordered[2]),))[0].due
             tomorrow = reader(db, issued_at=again_at, study_day=date(2026, 11, 4))
             assert tomorrow.read_context((PositionKey('r', ordered[2]),))[0].due
