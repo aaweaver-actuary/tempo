@@ -244,9 +244,28 @@ def test_native_two_decisions_and_late_failure_rollback():
                     apply_in_borrowed_transaction(Borrowed(conn,True),plan.attempt_id,('event-0','event-1'),**args)
             assert conn.execute('SELECT count(*) AS n FROM study_position_grades').fetchone()['n'] == 0
             assert all(r['version'] == 7 for r in conn.execute('SELECT version FROM study_position_states').fetchall())
+            from concurrent.futures import ThreadPoolExecutor
+            from threading import Barrier
+            from tempo_legacy_database.adapters.study.position_grade_effects import GradeEffectError
+            barrier = Barrier(2)
+            def run_duplicate():
+                with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as other:
+                    other.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+                    try:
+                        with other.transaction():
+                            barrier.wait(timeout=10)
+                            return apply_in_borrowed_transaction(Borrowed(other), plan.attempt_id,
+                                ('event-0','event-1'), **args)
+                    except GradeEffectError as exc:
+                        return str(exc)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: run_duplicate(), range(2)))
+            assert any(isinstance(r, tuple) and [x.grade for x in r] == ['good','good'] for r in results)
+            assert all(isinstance(r, tuple) or r == 'position_state_busy_or_missing' for r in results)
+            assert conn.execute('SELECT count(*) AS n FROM study_position_grades').fetchone()['n'] == 2
             with conn.transaction():
-                result = apply_in_borrowed_transaction(Borrowed(conn),plan.attempt_id,('event-0','event-1'),**args)
-            assert [r.grade for r in result] == ['good','good']
+                replay = apply_in_borrowed_transaction(Borrowed(conn),plan.attempt_id,('event-0','event-1'),**args)
+            assert all(r.replayed and r.grade == 'good' for r in replay)
             assert conn.execute('SELECT value FROM legacy_sentinel').fetchone()['value'] == 'unchanged'
         finally:
             conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
