@@ -5,11 +5,11 @@ import { beginOpeningAttempt, partialOpeningAttempt, preparePositionOpeningAttem
 import { enqueuePendingReview, flushPendingReviews, pendingReviews, conflictedReviews } from "../../app/lib/review-outbox";
 import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { offlineTrainingDatabase } from "../../database/browser/offline-training-storage";
-import { readSavedOpeningJournal } from "../../database/browser/opening-evidence-journal-storage";
+import { confirmOpeningDelivery, readPositionOpeningJournal, readSavedOpeningJournal } from "../../database/browser/opening-evidence-journal-storage";
 import { resetStudyStorage, withMissingReceipts } from "./support/study-intent-fixtures";
 import { asCardId, asFenString, asQueueEntryId } from "../../app/types";
 
-const plan = { attempt_id: "issued-position", original_card_id: manifest.card_id, original_card_revision: 3,
+const plan = { attempt_id: "issued-position", route_id: "issued-route", original_card_id: manifest.card_id, original_card_revision: 3,
   queue_entry_id: 101, decision_slots: manifest.decisions.map(d => ({ move_offset: d.move_offset,
     expected_uci: d.expected_uci, position_key: canonicalFenKey(d.fen) })) };
 const card = { id: asCardId("queue-101"), backendId: asCardId(manifest.card_id), kind: "opening" as const,
@@ -25,8 +25,13 @@ const review = { backendId: manifest.card_id, queueEntryId: 101, expectedRevisio
 beforeEach(async () => { await resetStudyStorage(); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it("accepts only the issued online identity and displayed manifest, retaining the first wrong response on abort", async () => {
-  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => callback({}) } });
+it("restores the first wrong response after checkpoint acknowledgement and pause", async () => {
+  let held = false;
+  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => {
+    if (held) return callback(null);
+    held = true;
+    try { await callback({}); } finally { held = false; }
+  } } });
   expect(await preparePositionOpeningAttempt(card)).toBeUndefined();
   expect(beginOpeningAttempt(card, "different")).toBeUndefined();
   expect(beginOpeningAttempt(card, plan.attempt_id, { offline: true })).toBeUndefined();
@@ -34,19 +39,31 @@ it("accepts only the issued online identity and displayed manifest, retaining th
   expect(beginOpeningAttempt(mismatched, plan.attempt_id)).toBeUndefined();
   const journal = beginOpeningAttempt(card, plan.attempt_id)!;
   journal.response(0, "d2d4", "wrong");
-  journal.assistance(0, "guided");
-  journal.response(0, "e2e4", "expected");
-  partialOpeningAttempt(plan.attempt_id);
-  expect(journal.snapshot()).toMatchObject({ attempt_id: plan.attempt_id, terminal: { state: "partial" },
-    events: [{ kind: "first_response", response_uci: "d2d4" }, { kind: "assistance", assistance: "guided" },
-      { kind: "correction", response_uci: "e2e4" }] });
   await vi.waitFor(async () => {
     const saved = await readSavedOpeningJournal(await offlineTrainingDatabase(), plan.attempt_id, () => false);
-    expect(saved?.events.map(event => event.kind)).toEqual(["first_response", "assistance", "correction"]);
     expect(saved?.events[0].response_uci).toBe("d2d4");
-    expect(saved?.attempt.terminal?.state).toBe("partial");
   });
-  expect(await preparePositionOpeningAttempt(card)).toContain("already started");
+  const database = await offlineTrainingDatabase();
+  await confirmOpeningDelivery(database, journal.snapshot(), { persisted: true, attempt_id: plan.attempt_id,
+    received_sequences: [1], contiguous_sequence: 1 }, () => {});
+  expect((await readPositionOpeningJournal(database, plan.attempt_id))?.events[0].response_uci).toBe("d2d4");
+  partialOpeningAttempt(plan.attempt_id);
+  await vi.waitFor(() => expect(held).toBe(false));
+  vi.resetModules();
+  const reloaded = await import("../../app/lib/opening-evidence-journal");
+  const changed = { ...card, positionPresentation: { ...plan, route_id: "different-route" } };
+  expect(await reloaded.preparePositionOpeningAttempt(changed)).toContain("does not match");
+  expect(await reloaded.preparePositionOpeningAttempt(card)).toBeUndefined();
+  const restored = reloaded.beginOpeningAttempt(card, plan.attempt_id)!;
+  expect(restored).not.toBe(journal);
+  restored.response(0, "d2d4", "wrong");
+  restored.assistance(0, "guided");
+  restored.response(0, "e2e4", "expected");
+  expect(restored.snapshot()).toMatchObject({ attempt_id: plan.attempt_id, terminal: null,
+    events: [{ sequence: 1, kind: "first_response", response_uci: "d2d4" },
+      { sequence: 2, kind: "assistance", assistance: "guided" }, { sequence: 3, kind: "correction", response_uci: "e2e4" }] });
+  reloaded.partialOpeningAttempt(plan.attempt_id);
+  await vi.waitFor(() => expect(held).toBe(false));
 });
 
 it("holds a second tab when the issued attempt lease is owned", async () => {

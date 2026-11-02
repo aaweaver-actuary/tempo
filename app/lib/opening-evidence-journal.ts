@@ -136,45 +136,72 @@ function holdAttemptLease(attemptId: string): void {
   });
 }
 
-/**
- * Reserve one issued position ID before enabling input. Confirmed checkpoint
- * events may be removed from IndexedDB, so a previous capture cannot safely be
- * reconstructed from that journal alone. Keep a durable started marker and
- * hold instead of replaying an incomplete sequence on reload.
- */
+/** Acquire exclusive capture ownership and restore the exact issued position journal. */
 const positionReservations = new Map<string, Promise<string | undefined>>();
+const positionPauses = new Map<string, Promise<void>>();
+const positionLeaseReleases = new Map<string, Promise<void>>();
 export function preparePositionOpeningAttempt(card: PracticeCard): Promise<string | undefined> {
   const position = card as PracticeCard & { positionStudyMode?: "position"; positionStudyHold?: string;
     positionPresentation?: { attempt_id: string } };
-  const attemptId = position.positionPresentation?.attempt_id;
+  const plan = position.positionPresentation;
+  const attemptId = plan?.attempt_id;
   if (position.positionStudyMode !== "position" || position.positionStudyHold || !attemptId)
     return Promise.resolve("The issued position attempt is unavailable.");
+  const pause = positionPauses.get(attemptId);
+  if (pause) return pause.then(() => preparePositionOpeningAttempt(card));
   if (releaseLeases.has(attemptId)) return Promise.resolve(undefined);
   const existing = positionReservations.get(attemptId);
   if (existing) return existing;
-  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks || typeof localStorage === "undefined")
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks)
     return Promise.resolve("Position Study needs browser storage and exclusive tab ownership.");
   const preparing = new Promise<string | undefined>(resolve => {
-    void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { ifAvailable: true }, async lease => {
+    const lockRequest = navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { ifAvailable: true }, async lease => {
       if (!lease) { resolve("This position attempt is open in another tab."); return; }
+      let release!: () => void;
+      const held = new Promise<void>(done => { release = done; });
+      releaseLeases.set(attemptId, release);
       try {
-        const marker = `tempo-position-attempt-started:${attemptId}`;
+        await writeTail.catch(() => undefined);
         const database = await offlineTrainingDatabase();
-        const prior = await readRecoveryAttempt(database, attemptId);
-        if (prior || localStorage.getItem(marker)) {
-          resolve("This position attempt was already started. Refresh training for a new issued attempt."); return;
+        const prior = await journalStorage.readPositionOpeningJournal(database, attemptId);
+        if (prior && (prior.attempt.position_plan === undefined ||
+            JSON.stringify(prior.attempt.position_plan) !== JSON.stringify(plan) ||
+            JSON.stringify(prior.attempt.manifest) !== JSON.stringify(card.openingDecisionManifest) ||
+            prior.attempt.queue_entry_id !== card.queueEntryId || prior.attempt.terminal ||
+            ["rejected", "retained"].includes(prior.attempt.delivery_state))) {
+          resolve("The saved position attempt does not match this issued plan or needs review."); return;
         }
-        localStorage.setItem(marker, "1");
-        // A read-back catches storage implementations that silently discard writes.
-        if (localStorage.getItem(marker) !== "1") throw new Error("Position attempt marker was not saved");
-        await new Promise<void>(release => {
-          releaseLeases.set(attemptId, release);
-          resolve(undefined);
-        });
+        const journal = beginOpeningAttempt(card, attemptId);
+        if (!journal) { resolve("The issued position attempt is invalid."); return; }
+        if (prior) {
+          const events = prior.events.map(({ attempt_id: _attemptId, ...event }) => openingDecisionEventSchema.parse(event))
+            .sort((a, b) => a.sequence - b.sequence);
+          if (events.length !== prior.attempt.final_sequence || events.some((event, index) => {
+            const decision = prior.attempt.manifest.decisions[event.decision_index];
+            return event.sequence !== index + 1 || !decision || event.decision_id !== decision.decision_id ||
+              event.expected_uci !== decision.expected_uci;
+          })) {
+            captures.delete(attemptId);
+            resolve("The saved position response sequence is incomplete."); return;
+          }
+          const { owner_session_id: _owner, final_sequence: _sequence, delivery_state: _state, rejection: _rejection,
+            retention_reason: _retention, local_capture_gap: _gap, delivery: _delivery, position_plan: _plan, ...header } = prior.attempt;
+          const restored = new OpeningAttemptJournal(header, storeAppend, plan);
+          restored.events.push(...events);
+          captures.set(attemptId, restored);
+        } else {
+          // Persist the immutable plan and header before input is enabled.
+          await storeAppend(journal, undefined, false);
+        }
+        resolve(undefined);
+        await held;
       } catch {
-        resolve("Position Study could not reserve durable browser storage. Restore storage access and retry.");
+        resolve("Position Study could not restore durable browser storage. Restore storage access and retry.");
       } finally { releaseLeases.delete(attemptId); }
-    }).catch(() => resolve("Position Study could not reserve exclusive tab ownership."));
+    });
+    const released = lockRequest.then(() => undefined, () => { resolve("Position Study could not reserve exclusive tab ownership."); });
+    positionLeaseReleases.set(attemptId, released);
+    void released.finally(() => { if (positionLeaseReleases.get(attemptId) === released) positionLeaseReleases.delete(attemptId); });
   }).finally(() => positionReservations.delete(attemptId));
   positionReservations.set(attemptId, preparing);
   return preparing;
@@ -187,7 +214,8 @@ export class OpeningAttemptJournal {
   terminal: OpeningEvidenceCheckpoint["terminal"] = null;
   storageError: string | undefined;
   constructor(readonly header: AttemptHeader,
-    private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>) {
+    private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>,
+    readonly positionPlan?: unknown) {
     this.header = structuredClone(header);
   }
 
@@ -254,7 +282,8 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
   const snapshot = journal.snapshot();
   const attempt: SavedAttempt = { ...snapshot, owner_session_id: sessionId, final_sequence: snapshot.events.length,
     local_capture_gap: journal.storageError,
-    delivery_state: event || snapshot.terminal?.state === "partial" ? "pending" : "idle" };
+    ...(journal.positionPlan !== undefined ? { position_plan: structuredClone(journal.positionPlan) } : {}),
+    delivery_state: event || snapshot.terminal?.state === "partial" || (journal.positionPlan !== undefined && snapshot.events.length) ? "pending" : "idle" };
   delete (attempt as Partial<OpeningEvidenceCheckpoint>).events;
   const pendingEvents = [...journal.uncommittedEvents.values()];
   const writing = writeTail.catch(() => undefined).then(async () => {
@@ -309,7 +338,7 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
     parent_attempt_id: card.openingEvidenceParentAttemptId ?? null, started_at: new Date().toISOString(),
     study_timezone: timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     source: options.offline ? "offline" : card.queueAttemptState === "reinforcement" ? "reinforcement" : "live", terminal: null };
-  const journal = new OpeningAttemptJournal(header, storeAppend);
+  const journal = new OpeningAttemptJournal(header, storeAppend, position.positionStudyMode === "position" ? position.positionPresentation : undefined);
   captures.set(attemptId, journal);
   holdAttemptLease(attemptId);
   return journal;
@@ -318,6 +347,18 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
 export function partialOpeningAttempt(attemptId: string | undefined): void {
   if (!attemptId) return;
   const journal = captures.get(attemptId);
+  if (journal?.positionPlan !== undefined && !journal.terminal) {
+    // A pause must preserve the issued attempt and its first responses for reload.
+    if (!positionPauses.has(attemptId)) {
+      const pausing = storeAppend(journal).then(() => {
+        const released = positionLeaseReleases.get(attemptId);
+        releaseLeases.get(attemptId)?.();
+        return released;
+      }).catch(() => undefined).finally(() => positionPauses.delete(attemptId));
+      positionPauses.set(attemptId, pausing);
+    }
+    return;
+  }
   if (journal && !journal.terminal && journal.events.length) journal.finish("partial");
   // Keep failed partial appends reachable until their local transaction commits.
   if (!journal?.events.length || journal.terminal?.state === "complete") captures.delete(attemptId);
@@ -381,7 +422,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     if (!saved) return;
     const frozenDelivery = saved.attempt.delivery;
     const header = openingEvidenceCheckpointSchema.omit({ events: true }).parse(Object.fromEntries(
-      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap"].includes(key)),
+      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap", "position_plan"].includes(key)),
     ));
     const events = saved.events.map(event => openingDecisionEventSchema.parse(
       Object.fromEntries(Object.entries(event).filter(([key]) => key !== "attempt_id")),
@@ -451,7 +492,7 @@ function hasRecoveryWork(attempt: SavedAttempt, pendingAggregateIds: Set<string 
     !["rejected", "retained"].includes(attempt.delivery_state) &&
     !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id)) &&
     (attempt.delivery_state === "pending" ||
-      (attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial")));
+      (attempt.position_plan === undefined && attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial")));
 }
 
 function recoveryDeadlineArrived(attemptId: string): boolean {
@@ -549,7 +590,7 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
               } else if (response.status !== 404) throw new OpeningEvidenceHttpError(response.status);
             } catch (error) { markOpeningEvidenceTimeout(error, controller.signal); throw error; } finally { clearTimeout(timeout); }
           }
-          await journalStorage.markOrphanedOpeningAttemptPartial(database, attempt, () => new Date().toISOString());
+          if (attempt.position_plan === undefined) await journalStorage.markOrphanedOpeningAttemptPartial(database, attempt, () => new Date().toISOString());
         });
       }
       if (deliver) {
