@@ -52,7 +52,7 @@ def test_pause_writes_receipt_and_owner_in_same_borrowed_transaction(prepared):
 @pytest.mark.parametrize('action', ['stage', 'activate', 'resume', 'rollforward'])
 def test_unqualified_operations_hold_and_roll_back(prepared, action):
     db = DB()
-    with pytest.raises(operator.OperatorHold, match='unqualified'):
+    with pytest.raises(operator.OperatorHold, match='invalid_transition|evidence_unavailable|not_integrated'):
         call(db, prepared, action)
     assert any(s.startswith('ROLLBACK TO SAVEPOINT') for s, _ in db.statements)
     assert not any('UPDATE study_position_owners' in s for s, _ in db.statements)
@@ -64,3 +64,92 @@ def test_operation_id_cannot_be_reused_with_different_request(prepared):
     with pytest.raises(operator.OperatorHold, match='operation_conflict'):
         call(db, prepared)
     assert any(s.startswith('ROLLBACK TO SAVEPOINT') for s, _ in db.statements)
+
+
+@pytest.mark.parametrize(('action', 'current', 'expected'), [
+    ('stage', 'inactive', 'staged'), ('activate', 'staged', 'active'), ('resume', 'paused', 'active'),
+])
+def test_qualified_transition_requires_preflight_and_frontier(prepared, monkeypatch, action, current, expected):
+    db = DB()
+    original = db.execute_native
+    def execute(sql, params=()):
+        if 'FROM study_position_owners o' in sql:
+            db.statements.append((sql, params))
+            return Cursor({'epoch': 'epoch', 'mode': current, 'source_digest': 'source'})
+        return original(sql, params)
+    db.execute_native = execute
+    calls = []
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: calls.append('release') or {'revision': 'r'})
+    monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: calls.append('seed'))
+    monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: calls.append('frontier'))
+    release = dict(state_directory='x', qualification_path='x', revision='r', target='t', registration_path='x')
+    result = operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
+        operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    assert result['mode'] == expected
+    assert calls == ['release', 'seed', 'frontier']
+
+
+def test_frontier_hold_prevents_mode_change(prepared, monkeypatch):
+    db = DB()
+    original = db.execute_native
+    def execute(sql, params=()):
+        if 'FROM study_position_owners o' in sql:
+            return Cursor({'epoch': 'epoch', 'mode': 'staged', 'source_digest': 'source'})
+        return original(sql, params)
+    db.execute_native = execute
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {})
+    monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: None)
+    def hold(*args):
+        raise operator.OperatorHold('position_old_issued_attempt_unfinished')
+    monkeypatch.setattr(operator, 'fence_old_attempt_frontier', hold)
+    release = dict(state_directory='x', qualification_path='x', revision='r', target='t', registration_path='x')
+    with pytest.raises(operator.OperatorHold, match='old_issued'):
+        operator.transition_in_writer(db, prepared, None, action='activate', epoch='epoch',
+            operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    assert not any('UPDATE study_position_owners' in sql for sql, _ in db.statements)
+
+
+def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    from types import SimpleNamespace
+
+    revision = 'a' * 40
+    registration = {'version': 1, 'daemonId': 'daemon', 'context': 'default',
+                    'root': str(tmp_path), 'postgresVolumeKey': 'pg', 'volumes': {'pg': {'name': 'volume'}}}
+    target = hashlib.sha256(json.dumps(['daemon', ['volume']], separators=(',', ':')).encode()).hexdigest()[:24]
+    directory = tmp_path / target
+    directory.mkdir()
+    backup = {'filename': 'verified.dump', 'verified': True, 'restore_created': True, 'restore_removed': True}
+    deployment = {'version': 1, 'revision': revision, 'schema': 57, 'evidence': {'commit': revision},
+                  'verified_at': 'now', 'images': {'api': 'sha256:image'}, 'backup': backup}
+    guard = {'version': 1, 'target': target, 'state': 'verified', 'verified_schema': 57,
+             'verified_at': 'now', 'database': {'name': 'tempo', 'volume': 'volume'}, 'backup': backup}
+    qualification = {'version': 1, 'revision': revision, 'schema': 57, 'target': target,
+        'repertoire_id': 'rep', 'epoch': 'epoch', 'source_digest': 'source',
+        'checks': {name: {'status': 'passed', 'evidence': 'test-only evidence'}
+                   for name in operator._REQUIRED_QUALIFICATIONS}}
+    for name, value in [('deployment.json', deployment), ('migration-guard.json', guard)]:
+        (directory / name).write_text(json.dumps(value))
+    regpath, qualpath = tmp_path / 'registration.json', tmp_path / 'qualification.json'
+    regpath.write_text(json.dumps(registration))
+    qualpath.write_text(json.dumps(qualification))
+    class Rows:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0]
+        def fetchall(self): return self.rows
+    class Database:
+        def execute_native(self, sql):
+            return Rows([('tempo',)] if 'current_database' in sql else [(n,) for n in range(1, 58)])
+    prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='source'))
+    kwargs = dict(epoch='epoch', state_directory=directory, qualification_path=qualpath,
+                  revision=revision, target=target, registration_path=regpath)
+    monkeypatch.setattr(operator.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=2))
+    with pytest.raises(operator.OperatorHold, match='running_image_identity'):
+        operator.validate_release_evidence(Database(), prepared, **kwargs)
+    monkeypatch.setattr(operator.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0))
+    assert operator.validate_release_evidence(Database(), prepared, **kwargs)['target'] == target
+    qualification['checks']['fresh_introduction'] = True
+    qualpath.write_text(json.dumps(qualification))
+    with pytest.raises(operator.OperatorHold, match='qualification_incomplete'):
+        operator.validate_release_evidence(Database(), prepared, **kwargs)
