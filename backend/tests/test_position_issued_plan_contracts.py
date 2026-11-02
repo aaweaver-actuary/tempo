@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date, datetime, timezone
+import json
 
 import chess
 
@@ -9,7 +10,9 @@ from app.study.position_learning.contracts import DueAtIssuance, Hold, PositionD
 from app.study.position_learning.contracts import PositionKey
 from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
 from app.study.position_learning.issued_plan_contracts import (
+    IssuedPlan,
     SelectionRequest,
+    decode_issued_record,
     select_and_freeze,
     validate_wire_v1,
 )
@@ -54,6 +57,95 @@ def test_v1_freeze_preserves_original_attempt_and_exposes_strict_wire():
     assert len(issued.plan_id) == 64
     changed_digest = dict(issued.to_wire(), plan_id="0" * 64)
     assert isinstance(validate_wire_v1(changed_digest, expected_plan=issued), Hold)
+
+
+def test_server_record_roundtrips_after_json_restart_and_binds_all_due_and_route_fields():
+    issued = select_and_freeze(request_for(option("italian-knight-attack"), due=False))
+    assert not isinstance(issued, Hold)
+    raw = json.loads(json.dumps(issued.to_record(), sort_keys=True))
+    decoded = decode_issued_record(raw)
+    assert not isinstance(decoded, Hold)
+    assert decoded == issued
+    assert decoded.to_record() == raw
+    assert len(raw["due_witnesses"]) == len(issued.decision_slots)
+    assert all(row["due"] is False for row in raw["due_witnesses"])
+    assert raw["route"]["decision_slots"][0]["original_ply"] == issued.decision_slots[0].original_ply
+    assert "due_witnesses" not in issued.to_wire()
+
+
+def test_server_record_rejects_unknown_fields_and_altered_digest_or_typed_payload():
+    issued = select_and_freeze(request_for(option("italian-knight-attack")))
+    assert not isinstance(issued, Hold)
+    record = issued.to_record()
+    mutations = []
+    mutations.append({**record, "unexpected": 1})
+    mutations.append({**record, "plan_id": "0" * 64})
+    changed_due = json.loads(json.dumps(record))
+    changed_due["due_witnesses"][0]["due"] = not changed_due["due_witnesses"][0]["due"]
+    mutations.append(changed_due)
+    changed_epoch = json.loads(json.dumps(record))
+    changed_epoch["due_witnesses"][0]["owner_epoch"] = "other-epoch"
+    mutations.append(changed_epoch)
+    changed_day = json.loads(json.dumps(record))
+    changed_day["due_witnesses"][0]["study_day"] = "2026-11-03"
+    mutations.append(changed_day)
+    changed_definition = json.loads(json.dumps(record))
+    changed_definition["due_witnesses"][0]["definition"]["policy_version"] = "other-policy"
+    mutations.append(changed_definition)
+    changed_slot = json.loads(json.dumps(record))
+    changed_slot["route"]["decision_slots"][0]["original_ply"] += 1
+    mutations.append(changed_slot)
+    wrong_type = json.loads(json.dumps(record))
+    wrong_type["original_card_revision"] = True
+    mutations.append(wrong_type)
+    for mutation in mutations:
+        assert isinstance(decode_issued_record(mutation), Hold)
+
+
+def test_authored_owner_token_is_scope_bound_immutable_and_digest_bound():
+    route = option("italian-knight-attack")
+    request = request_for(route)
+    token = {
+        "original_snapshot_id": route.certificate.snapshot_id,
+        "original_source_revision": route.certificate.source_revision,
+        "original_source_digest": route.certificate.source_digest,
+        "repertoire_id": "rep-italian",
+        "authored_digest": "authored-content-digest",
+        "header": {"id": "rep-italian", "source_revision": "r1"},
+        "integrity": {"status": "complete", "scan_generation": 7},
+    }
+    issued = select_and_freeze(replace(request, authored_source_token=token))
+    assert not isinstance(issued, Hold)
+    token["header"]["source_revision"] = "mutated-after-selection"
+    record = issued.to_record()
+    assert record["authored_source_token"]["header"]["source_revision"] == "r1"
+    restored = decode_issued_record(json.loads(json.dumps(record)))
+    assert not isinstance(restored, Hold)
+    assert restored.to_record() == record
+    changed_scope = json.loads(json.dumps(record))
+    changed_scope["authored_source_token"]["repertoire_id"] = "rep-other"
+    assert isinstance(decode_issued_record(changed_scope), Hold)
+    changed_payload = json.loads(json.dumps(record))
+    changed_payload["authored_source_token"]["integrity"]["scan_generation"] = 8
+    assert isinstance(decode_issued_record(changed_payload), Hold)
+
+
+def test_server_record_roundtrips_prefix_receipt_identity_and_opponent_cue():
+    route = option("italian-knight-attack")
+    played = route.moves_uci[:6]
+    decisions = tuple(d for d in route.decisions if d.ply < len(played))
+    proof = CleanPresentationProof(
+        "saved-prefix", route.route_id, route.start_fen, played, decisions,
+        tuple(CleanFirstResponse(d.ply, d.definition, played[d.ply], False, f"event-{d.ply}") for d in decisions),
+        route.certificate.snapshot_id, route.certificate.source_revision, route.certificate.source_digest,
+        DAY, EPOCH, True, "terminal-proof", "review-proof",
+    )
+    issued = select_and_freeze(request_for(route, proofs=(proof,)))
+    assert not isinstance(issued, Hold)
+    decoded = IssuedPlan.from_record(json.loads(json.dumps(issued.to_record())))
+    assert not isinstance(decoded, Hold)
+    assert decoded.opponent_cue_uci == route.moves_uci[5]
+    assert decoded.skipped_prefix_proof_ids == ("saved-prefix", "terminal-proof", "review-proof")
 
 
 def test_digest_changes_with_queue_identity_due_state_and_authored_move_order():
@@ -107,19 +199,51 @@ def test_mismatched_due_scope_definition_or_position_holds():
 
 def test_prefix_proof_for_another_route_cannot_suppress_or_skip():
     route = option("italian-knight-attack")
-    moves = route.moves_uci
-    decisions = route.decisions
+    unrelated = option("london-order-a")
+    moves = unrelated.moves_uci
+    decisions = unrelated.decisions
     proof = CleanPresentationProof(
-        "wrong-route-attempt", "some-other-route", route.start_fen, moves, decisions,
+        "wrong-route-attempt", unrelated.route_id, unrelated.start_fen, moves, decisions,
         tuple(CleanFirstResponse(d.ply, d.definition, moves[d.ply], False, f"wrong-event-{d.ply}")
               for d in decisions),
-        route.certificate.snapshot_id, route.certificate.source_revision, route.certificate.source_digest,
+        unrelated.certificate.snapshot_id, unrelated.certificate.source_revision, unrelated.certificate.source_digest,
         DAY, EPOCH, True, "wrong-terminal", "wrong-review",
     )
     issued = select_and_freeze(replace(request_for(route), clean_proofs=(proof,)))
     assert not isinstance(issued, Hold)
     assert issued.start_ply == 0
     assert issued.skipped_prefix_proof_ids == ()
+
+
+def test_italian_knight_and_giuoco_share_only_c3_verified_clean_prefix():
+    def whole_clean(route, attempt_id):
+        moves = route.moves_uci
+        decisions = route.decisions
+        return CleanPresentationProof(
+            attempt_id, route.route_id, route.start_fen, moves, decisions,
+            tuple(CleanFirstResponse(d.ply, d.definition, moves[d.ply], False,
+                                     f"{attempt_id}-event-{d.ply}") for d in decisions),
+            route.certificate.snapshot_id, route.certificate.source_revision,
+            route.certificate.source_digest, DAY, EPOCH, True,
+            f"{attempt_id}-terminal", f"{attempt_id}-review",
+        )
+
+    attack = option("italian-knight-attack")
+    giuoco = option("italian-giuoco")
+    for selected, prior in ((giuoco, attack), (attack, giuoco)):
+        proof = whole_clean(prior, f"saved-{prior.route_id}")
+        issued = select_and_freeze(request_for(selected, target_ply=6, proofs=(proof,)))
+        assert not isinstance(issued, Hold)
+        assert issued.route_id == selected.route_id
+        assert issued.start_ply == 5
+        assert issued.opponent_cue_uci == selected.moves_uci[5]
+        assert issued.to_wire()["moves_uci"][0] == selected.moves_uci[5]
+        assert tuple(slot.original_ply for slot in issued.decision_slots) == tuple(
+            decision.ply for decision in selected.decisions if decision.ply >= 6
+        )
+        assert issued.skipped_prefix_proof_ids == (
+            proof.attempt_id, proof.terminal_receipt_id, proof.review_receipt_id,
+        )
 
 
 def test_black_learner_and_wire_caps_and_unknown_fields():
