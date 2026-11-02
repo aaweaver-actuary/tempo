@@ -8,11 +8,17 @@ import { offlineTrainingDatabase } from "../../database/browser/offline-training
 import { confirmOpeningDelivery, readPositionOpeningJournal, readSavedOpeningJournal } from "../../database/browser/opening-evidence-journal-storage";
 import { resetStudyStorage, withMissingReceipts } from "./support/study-intent-fixtures";
 import { asCardId, asFenString, asQueueEntryId } from "../../app/types";
+import type { PracticeCard } from "../../app/domain/cards";
+import { decodePositionPresentation } from "../../app/domain/position-presentation";
 
-const plan = { attempt_id: "issued-position", route_id: "issued-route", original_card_id: manifest.card_id, original_card_revision: 3,
+const plan = decodePositionPresentation({ version: 1, plan_id: "a".repeat(64),
+  owner_epoch: "issued-epoch", target_ply: 0, starting_fen: manifest.decisions[0].fen,
+  moves_uci: ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
+  source_digest: "issued-source", local_day: "2026-09-30", skipped_prefix_proof_ids: [],
+  attempt_id: "issued-position", route_id: "issued-route", original_card_id: manifest.card_id, original_card_revision: 3,
   queue_entry_id: 101, decision_slots: manifest.decisions.map(d => ({ move_offset: d.move_offset,
-    expected_uci: d.expected_uci, position_key: canonicalFenKey(d.fen) })) };
-const card = { id: asCardId("queue-101"), backendId: asCardId(manifest.card_id), kind: "opening" as const,
+    expected_uci: d.expected_uci, position_key: canonicalFenKey(d.fen) })) });
+const card: PracticeCard = { id: asCardId("queue-101"), backendId: asCardId(manifest.card_id), kind: "opening" as const,
   title: "Position", subtitle: "", startingFen: asFenString(manifest.decisions[0].fen), moves: [], userMoveTarget: 3,
   queueEntryId: asQueueEntryId(101), revision: 3, openingDecisionManifest: manifest as any,
   positionStudyMode: "position" as const, positionPresentation: plan };

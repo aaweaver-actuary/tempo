@@ -203,6 +203,14 @@ async function attemptForCard(page: Page, cardId: string): Promise<string | null
 
 function position(fen: string): string { return fen.split(" ").slice(0, 4).join(" "); }
 
+async function waitForProtectedStudyQuiet() {
+  // JS inference omits the helper's optional signal without a default value.
+  const options: Parameters<typeof waitForStudyQuiet>[0] & { signal: AbortSignal } = {
+    signal: AbortSignal.timeout(30_000),
+  };
+  await waitForStudyQuiet(options);
+}
+
 /* iPhone standalone enables the real offline preparation path and service worker. */
 test.use({ viewport: { width: 390, height: 844 }, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 
@@ -242,7 +250,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const health: unknown = healthResponse.ok() ? await healthResponse.json() : null;
   assertDisposableTarget(health);
   await verifyPostgresFixtureTarget({ health, apiUrl: api, project });
-  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  await waitForProtectedStudyQuiet();
   // Existing product initialization, executed only after endpoint and ownership verification.
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   const activePackIds = catalog.packs.filter((pack: { active: boolean }) => pack.active).map((pack: { id: string }) => pack.id);
@@ -269,7 +277,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
-  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  await waitForProtectedStudyQuiet();
   fixture(project, "seed", identity);
   const before = fixture<Snapshot>(project, "read", identity);
   await prepareUI(page);
@@ -346,7 +354,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again"),
     { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
-  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  await waitForProtectedStudyQuiet();
   const legacy = fixture<{ card: string }>(project, "legacy", identity);
   await page.reload();
   await expect.poll(async () => (await queue()).cards[0]?.id, { timeout: 30_000 }).toBe(legacy.card);
