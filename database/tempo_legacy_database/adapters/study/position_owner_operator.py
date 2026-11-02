@@ -262,7 +262,8 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
             owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
                 JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
                 WHERE o.repertoire_id=%s FOR UPDATE OF o NOWAIT''', (rep,)).fetchone()
-            if not owner or owner['epoch'] != epoch or owner['source_digest'] != identity['source_digest']:
+            if (not owner or owner['epoch'] != epoch
+                    or (action != 'pause' and owner['source_digest'] != identity['source_digest'])):
                 raise OperatorHold('position_owner_epoch_or_source_changed')
             if action == 'rollforward':
                 raise OperatorHold('position_rollforward_not_integrated')
@@ -280,7 +281,8 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
                 preflight_in_writer(database, prepared, request, epoch=epoch)
                 fence_old_attempt_frontier(database, rep)
                 mode = 'staged' if action == 'stage' else 'active'
-            result = identity | {'mode': mode, 'operation_id': operation_id}
+            result = identity | {'mode': mode, 'operation_id': operation_id,
+                                 'owner_source_digest': owner['source_digest']}
             if action != 'pause':
                 result['release'] = evidence
             database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES (%s,%s,%s,'complete',%s)",

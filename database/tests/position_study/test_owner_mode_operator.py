@@ -153,3 +153,14 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
     qualpath.write_text(json.dumps(qualification))
     with pytest.raises(operator.OperatorHold, match='qualification_incomplete'):
         operator.validate_release_evidence(Database(), prepared, **kwargs)
+
+
+def test_pause_still_available_after_source_changes(prepared):
+    db = DB()
+    original = db.execute_native
+    def execute(sql, params=()):
+        if 'FROM study_position_owners o' in sql:
+            return Cursor({'epoch': 'epoch', 'mode': 'active', 'source_digest': 'old-source'})
+        return original(sql, params)
+    db.execute_native = execute
+    assert call(db, prepared)['mode'] == 'paused'
