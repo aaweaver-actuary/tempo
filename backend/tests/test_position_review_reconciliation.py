@@ -98,3 +98,40 @@ def test_issued_manifest_accepts_fen_en_passant_target_without_legal_capture():
         'presentation_snapshot_id': 1, 'repertoire_id': 'rep-italian', 'card_id': 'legacy-card-1',
         'card_revision': 4, 'trained_color': 'white'})
     assert manifest['decisions'][1]['fen'] == decisions[1].fen
+
+
+def test_repeated_position_in_one_completion_has_one_good(monkeypatch):
+    """Two clean occurrences share one position/day even in one writer batch."""
+    import importlib.util
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+
+    path = Path(__file__).resolve().parents[2] / 'database/tests/position_study/test_position_grade_effects.py'
+    spec = importlib.util.spec_from_file_location('position_grade_fixture', path)
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    evidence, due, _, _, state_json = fixture.facts('e2e4', complete=True)
+    one = evidence.first_response
+    two = replace(one, index=1, event_id='event-2')
+    plan = SimpleNamespace(plan_id='plan', attempt_id=one.attempt_id, owner_epoch='epoch',
+        target=fixture.DEF, due_positions=(due,), source_digest='original')
+    monkeypatch.setattr(writer, '_load_plan', lambda *_: plan)
+    monkeypatch.setattr(writer, '_load_events', lambda *_: (
+        (one, 'expected', 'digest-1', fixture.NOW),
+        (two, 'expected', 'digest-2', fixture.NOW)))
+    monkeypatch.setattr(writer, '_lock_states', lambda *_, **__: {fixture.KEY: {
+        'expected_uci':'e2e4', 'policy_version':'v1', 'owner_epoch':'epoch',
+        'source_digest':'authored', 'fsrs_json':state_json, 'fsrs_internal_card_id':100, 'version':1}})
+    monkeypatch.setattr(writer, '_completion_saved', lambda *_: True)
+
+    class Cursor:
+        def fetchall(self): return []
+    class Database:
+        read_only = False
+        raw = SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name='INTRANS')))
+        def execute_native(self, *_): return Cursor()
+
+    result = writer.apply_in_borrowed_transaction(Database(), plan.attempt_id, (one.event_id,two.event_id),
+        owner_epoch='epoch',authored_digest='authored',accepted_study_day=fixture.DAY,
+        accepted_at=fixture.NOW,completion=object())
+    assert [r.grade for r in result] == ['good', 'observe']
