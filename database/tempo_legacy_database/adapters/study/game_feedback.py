@@ -718,3 +718,86 @@ def resume_available_feedback(database, day, *, limit=16):
                        datetime.now(timezone.utc))
         elif not facts.active_attempt and not facts.buried:
             store.promote_effect(effect, day)
+
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PositionUrgency:
+    """An outstanding accepted Games consequence for one exact Study position."""
+    definition: object
+    owner_epoch: str
+    source_digest: str
+    position_version: int
+    effect_key: str
+    grade_effect_id: str
+
+
+def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=False):
+    """Read a qualified, durable position reset; optionally recheck under its lock.
+
+    No producer or background work is invoked. The issuer still owns source,
+    owner, card and queue fences and must compare this fact at commit.
+    """
+    from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
+    if not installed(database):
+        return None
+    rows = database.execute_native("""SELECT * FROM study_game_feedback
+        WHERE status IN ('pending','applied') AND (card_id=%s OR
+        CAST(payload_json AS json)->'owner'->'progress'->'target'->>'card_id'=%s)
+        ORDER BY effect_key""", (card_id, card_id)).fetchall()
+    candidates = []
+    for row in rows:
+        effect = PostgresGameFeedbackStore._effect(row)
+        progress = effect.progress
+        if (effect.control is not None or effect.qualification is None or progress is None
+                or progress.position_grade_effect_id is None or progress.remediation_fence is None
+                or (progress.target.card_id, progress.target.card_revision) != (card_id, revision)):
+            continue
+        command = effect.encounter or effect.lapse
+        if command is None or not effect.qualification.matches(command):
+            continue
+        decision = effect.qualification.selection.decision
+        if decision is None or decision.repertoire_id != repertoire_id:
+            continue
+        candidates.append((progress.stream != 'forward', instant(progress.determined_at),
+                           effect_id(effect.key), effect))
+    if not candidates:
+        return None
+    _, _, key, effect = min(candidates, key=lambda item: item[:3])
+    if lock:
+        if not database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                                       (key,)).fetchone()[0]:
+            return Hold('position_urgency_effect_busy')
+        # The original card/day locks are already held by the caller; reread
+        # after the effect lock to detect settlement or competing changes.
+        current = read_position_urgency(database, card_id=card_id, revision=revision,
+                                        repertoire_id=repertoire_id, lock=False)
+        if not isinstance(current, PositionUrgency) or current.effect_key != key:
+            return Hold('position_urgency_changed')
+        return current
+    progress = effect.progress
+    row = database.execute_native('''SELECT g.effect_id,g.repertoire_id,g.variant,g.position,
+        g.owner_epoch,g.source_digest,g.expected_uci,g.policy_version,g.version_after,
+        s.owner_epoch AS state_epoch,s.source_digest AS state_digest,s.expected_uci AS state_uci,
+        s.policy_version AS state_policy,s.version AS state_version,s.introduced_at
+        FROM study_position_grades g JOIN study_position_states s
+          ON s.repertoire_id=g.repertoire_id AND s.variant=g.variant AND s.position=g.position
+        WHERE g.effect_id=%s AND g.game_effect_key=%s AND g.source_kind='game_lapse'
+          AND g.grade='again' ''', (progress.position_grade_effect_id, effect.key.logical_id())).fetchone()
+    if not row:
+        return Hold('position_urgency_receipt_unavailable')
+    selection = effect.qualification.selection
+    if (row['repertoire_id'] != repertoire_id or row['position'] != selection.position_key
+            or (row['state_epoch'], row['state_digest'], row['state_uci'], row['state_policy']) !=
+               (row['owner_epoch'], row['source_digest'], row['expected_uci'], row['policy_version'])
+            or row['introduced_at'] is None or row['state_version'] < row['version_after']):
+        return Hold('position_urgency_receipt_changed')
+    try:
+        definition = PositionDefinition(PositionKey(repertoire_id, row['position'], row['variant']),
+                                        row['expected_uci'], row['policy_version'])
+    except (TypeError, ValueError):
+        return Hold('position_urgency_receipt_invalid')
+    return PositionUrgency(definition, row['owner_epoch'], row['source_digest'], row['version_after'],
+                           key, row['effect_id'])

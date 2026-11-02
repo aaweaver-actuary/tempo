@@ -156,3 +156,33 @@ def test_game_grade_writes_position_again_with_original_game_identity(monkeypatc
     replay = grades.apply_game_lapse(db, command.key, prepared_source=source,
         accepted_study_day=NOW.date(), accepted_at=NOW + timedelta(hours=1))
     assert replay == (receipt, NOW, 4) and len(db.writes) == 2
+
+
+def test_position_urgency_reads_exact_durable_reset_and_holds_changed_state(monkeypatch):
+    from test_position_game_target_mapping import departure, LONDON_ORDER_A
+    from tempo_evidence_math.position_learning import Hold
+    from tempo_legacy_database.adapters.study import game_feedback as storage
+    command, qualification, position = departure(LONDON_ORDER_A)
+    progress = NS(position_grade_effect_id='grade', remediation_fence=object(),
+                  target=NS(card_id='card', card_revision=1), stream='forward', determined_at=NOW)
+    effect = NS(control=None, qualification=qualification, progress=progress,
+                encounter=command, lapse=None, key=command.key)
+    monkeypatch.setattr(storage, 'installed', lambda db: True)
+    monkeypatch.setattr(storage.PostgresGameFeedbackStore, '_effect', lambda row: effect)
+    row = dict(effect_id='grade', repertoire_id='london', variant='standard', position=position,
+               owner_epoch='epoch', source_digest='digest', expected_uci='g1f3', policy_version='london-policy',
+               version_after=4, state_epoch='epoch', state_digest='digest', state_uci='g1f3',
+               state_policy='london-policy', state_version=4, introduced_at=NOW)
+    class Reader:
+        def execute_native(self, sql, args=()):
+            if 'SELECT * FROM study_game_feedback' in sql: return Result([{}])
+            if 'pg_try_advisory' in sql: return Result((True,))
+            if 'FROM study_position_grades' in sql: return Result(row)
+            raise AssertionError(sql)
+    db = Reader()
+    fact = storage.read_position_urgency(db, card_id='card', revision=1, repertoire_id='london')
+    assert fact.definition.key.position == position and fact.position_version == 4
+    assert fact.grade_effect_id == 'grade'
+    assert storage.read_position_urgency(db, card_id='card', revision=1, repertoire_id='london', lock=True) == fact
+    row['state_digest'] = 'changed'
+    assert isinstance(storage.read_position_urgency(db, card_id='card', revision=1, repertoire_id='london'), Hold)
