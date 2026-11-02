@@ -12,6 +12,7 @@ import chess
 import psycopg
 import pytest
 from fsrs import Card
+from psycopg.conninfo import conninfo_to_dict
 
 from database.tests.position_study.acceptance import _dsn, _migrate
 from tempo_evidence_math.position_learning import Hold, SourceCertificate
@@ -47,6 +48,11 @@ def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian',
     """
     if len(routes) != 2 or len(labels) != 2:
         raise ValueError('two fixture routes required')
+    params = conninfo_to_dict(dsn)
+    if (params.get('host') not in ('127.0.0.1','localhost')
+            or not params.get('dbname','').startswith('tempo_position_test_n2')
+            or raw.execute('SELECT current_database()').fetchone()[0] != params['dbname']):
+        raise RuntimeError('refusing non-local or non-N2 fixture database')
     now = now or datetime.now(timezone.utc)
     day = now.date().isoformat()
     _migrate(raw)
