@@ -150,7 +150,7 @@ export function preparePositionOpeningAttempt(card: PracticeCard): Promise<strin
   const pause = positionPauses.get(attemptId);
   if (pause) return pause.then(() => preparePositionOpeningAttempt(card));
   const existing = positionReservations.get(attemptId);
-  if (existing) return existing;
+  if (existing) return existing.then(reason => reason ?? preparePositionOpeningAttempt(card));
   if (releaseLeases.has(attemptId)) {
     const capture = captures.get(attemptId);
     return Promise.resolve(capture && JSON.stringify(capture.positionPlan) === JSON.stringify(plan)
