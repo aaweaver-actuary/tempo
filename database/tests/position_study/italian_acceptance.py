@@ -39,14 +39,14 @@ def _moves(san):
     return tuple(moves)
 
 
-def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian', now=None):
+def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian', now=None, introduced=True):
     """Seed two legal authored routes in an empty owned DB and return real owner facts.
 
     The caller owns the connection, database lifecycle, routing and transactions.
     This uses the real migration, source, reader, namespace and seed owners;
     its direct active-owner update is a synthetic fixture, not operator proof.
     """
-    if len(routes) != 2 or len(labels) != 2:
+    if len(routes) != 2 or len(labels) != 2 or type(introduced) is not bool:
         raise ValueError('two fixture routes required')
     params = conninfo_to_dict(dsn)
     if (params.get('host') not in ('127.0.0.1','localhost')
@@ -68,7 +68,9 @@ def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian',
         physical[card] = blob
         raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,'white',%s,%s,%s)", (route,repertoire_id,labels[index],chess.STARTING_FEN,raw_moves,now.isoformat()))
         raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
-            VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,repertoire_id,chess.STARTING_FEN,raw_moves,day,blob,(now-timedelta(days=3)).isoformat()))
+            VALUES(%s,%s,'prefix',%s,%s,%s,%s,%s,%s,1,'opening','white')""", (card,repertoire_id,chess.STARTING_FEN,raw_moves,
+                'learning' if introduced else 'new', day, blob,
+                (now-timedelta(days=3)).isoformat() if introduced else None))
         raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire_id,card))
         raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
             VALUES(%s,3,%s,0,%s,%s,%s,%s,'white')""", (repertoire_id,route,card,chess.STARTING_FEN,chess.STARTING_FEN,raw_moves))
@@ -102,7 +104,11 @@ def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian',
         seed = seed_shadow_page(db,source,request,epoch=repertoire_id+'-epoch',now=now,page_size=100)
         raw.commit()
         if seed['stage'] == 'complete': break
-    assert seed['stage'] == 'complete' and seed['held'] == 0
+    assert seed['stage'] == 'complete'
+    if introduced:
+        assert seed['held'] == 0
+    else:
+        assert seed['held'] > 0
     raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id=%s", (repertoire_id,))
     raw.execute('INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,%s,%s)', (day,repertoire_id,now.isoformat()))
     raw.commit()

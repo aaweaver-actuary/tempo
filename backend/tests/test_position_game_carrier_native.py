@@ -131,3 +131,103 @@ def test_native_transposition_again_alias_issuance_and_settlement(monkeypatch):
         assert raw.execute("SELECT count(*) FROM study_position_grades WHERE game_effect_key=%s AND grade='again'",
                            (command.key.logical_id(),)).fetchone()[0] == 1
         assert {row['id']:row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical
+
+
+def test_native_unseen_position_uses_canonical_encounter_exception_once(monkeypatch):
+    """Real seed holds precede canonical admission; policy qualification is synthetic."""
+    if not os.environ.get('TEMPO_POSITION_N2_DSN'):
+        pytest.skip('requires explicit empty task-owned TEMPO_POSITION_N2_DSN')
+    import chess
+    import psycopg
+    from types import SimpleNamespace
+    from test_product_game_lapse import fixture, qualification_for
+    from app.contracts.product_v02.learning import GameEncounter
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
+    from app.study.encounter_feedback import EncounterFeedback
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
+
+    fixture_dir = Path(__file__).resolve().parents[2] / 'database' / 'tests' / 'position_study'
+    monkeypatch.syspath_prepend(str(fixture_dir))
+    from acceptance import _dsn
+    from italian_acceptance import seed_disposable_source
+    dsn = _dsn()
+    now = datetime.now(timezone.utc)
+    routes = [('d2d4','d7d5','g1f3','g8f6','c1f4'),
+              ('d2d4','g8f6','g1f3','d7d5','c1f4')]
+    @contextmanager
+    def reader(*args, **kwargs):
+        with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as conn:
+            yield PostgresConnection(conn, read_only=True)
+    with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
+        db, source, physical, day = seed_disposable_source(raw, dsn, routes, ('order-a','order-b'),
+            repertoire_id='j2-unseen', now=now, introduced=False)
+        raw.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=0 WHERE id=1')
+        scope_revision = raw.execute("SELECT scope_source_revision FROM repertoires WHERE id='j2-unseen'").fetchone()[0]
+        assert raw.execute("SELECT count(*) FROM study_position_states WHERE repertoire_id='j2-unseen'").fetchone()[0] == 0
+        assert raw.execute("SELECT count(*) FROM reviews").fetchone()[0] == 0
+        position = ' '.join(chess.Board().fen(en_passant='legal').split()[:4])
+        target = [item for item in source.snapshot.decision_presentations
+                  if item.presentation_id == 'card-0' and item.position_key == position]
+        assert len(target) == 1 and target[0].introduction == 'unintroduced'
+        seed = raw.execute('''SELECT disposition,hold_reason FROM study_position_seed_outcomes
+            WHERE repertoire_id='j2-unseen' AND variant='standard' AND position=%s''', (position,)).fetchone()
+        assert (seed['disposition'],seed['hold_reason']) == ('hold','no_valid_current_introduced_donor')
+        raw.commit()
+        template = fixture('encounters/unintroduced-missed', GameEncounter)
+        key = template.key.model_copy(update={'decision_id':target[0].decision_id, 'occurrence_ply':0})
+        command = template.model_copy(update={'key':key, 'decision':target[0],
+            'expected_uci':'d2d4', 'played_uci':'e2e4', 'detected_at':now.isoformat(),
+            'occurred_at':(now-timedelta(days=1)).isoformat()})
+        qualification = qualification_for(command)
+        class PurePolicyOwner(CurrentOwnerDecisions):
+            def current_qualified(self, command, qualification):
+                assert qualification.matches(command)
+                return (target[0],)
+            def introduction_revision(self, repertoire_id):
+                assert repertoire_id == 'j2-unseen'
+                return scope_revision + 1
+        decisions = object.__new__(PurePolicyOwner)
+        decisions.database, decisions._position_source, decisions._prepared_targets = db, source, ()
+        owner = EncounterFeedback(PostgresGameFeedbackStore(db), decisions, clock=lambda:now,
+                                  introductions=None, introduction_policy=None, position_intake=decisions)
+        accepted = owner.accept_qualified(command, qualification=qualification)
+        assert accepted.disposition == 'first_introduction' and accepted.reason == 'position_introduction_pending'
+        raw.commit()
+        with reader() as read_db:
+            observed = PostgresGameFeedbackStore(read_db).get(command.key)
+        prepared_policy = SimpleNamespace(target_capture=None,target_snapshot=None,qualification=qualification,
+                                          prepared_decisions=decisions)
+        prepared = prepare_feedback_effect(observed, read=reader, capture=None, clock=lambda:now,
+                                           qualification_prepare=lambda command:prepared_policy)
+        assert prepared.reason is None and prepared.position_introduction is not None
+        assert prepared.prepared_introduction.reason is None
+        receipt = apply_prepared_feedback_effect(db, prepared, clock=lambda:now, operation_admitted=True)
+        assert receipt.admission_status == 'available' and receipt.progress.introduction_applied_at is not None
+        assert receipt.progress.position_grade_effect_id is None and receipt.progress.scheduling_review_id is None
+        raw.commit()
+        state = raw.execute("SELECT position,introduced_at FROM study_position_states WHERE repertoire_id='j2-unseen'").fetchall()
+        assert len(state) == 1 and state[0]['position'] == position and state[0]['introduced_at'] is not None
+        queue = raw.execute("SELECT card_id,admission_repertoire_id,gameplay_priority_reason FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchall()
+        assert len(queue) == 1 and queue[0]['card_id'] == 'card-0' and queue[0]['admission_repertoire_id'] == 'j2-unseen'
+        assert queue[0]['gameplay_priority_reason'] == 'product_game_encounter'
+        assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
+        assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
+        assert tuple(raw.execute('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1').fetchone()) == (1,0)
+        assert {row['id']:row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical
+        raw.commit()
+        replay = owner.accept_qualified(command, qualification=qualification)
+        assert replay.outcome == 'duplicate' and replay.progress.introduction_applied_at == receipt.progress.introduction_applied_at
+        raw.commit()
+        with reader() as read_db:
+            observed = PostgresGameFeedbackStore(read_db).get(command.key)
+        prepared_again = prepare_feedback_effect(observed, read=reader, capture=None, clock=lambda:now,
+                                                  qualification_prepare=lambda command:prepared_policy)
+        assert prepared_again.reason is None
+        replayed = apply_prepared_feedback_effect(db, prepared_again, clock=lambda:now, operation_admitted=True)
+        assert replayed.progress.introduction_applied_at == receipt.progress.introduction_applied_at
+        raw.commit()
+        assert raw.execute("SELECT count(*) FROM study_position_states WHERE repertoire_id='j2-unseen'").fetchone()[0] == 1
+        assert raw.execute("SELECT count(*) FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchone()[0] == 1
+        assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
