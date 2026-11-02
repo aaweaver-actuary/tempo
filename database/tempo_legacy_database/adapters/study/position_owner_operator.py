@@ -57,7 +57,7 @@ def preflight_in_writer(database, prepared, request, *, epoch):
     definitions = {(item.definition.key.variant, item.definition.key.position): item.definition
                    for route in prepared.routes for item in route.decisions}
     manifest = run['manifest_digest'] if run else None
-    if (not run or run['status'] != 'complete' or run['manifest_digest'] != manifest
+    if (not run or run['status'] != 'complete'
             or run['manifest_count'] != len(definitions)
             or run['seeded_count'] + run['held_count'] != len(definitions)
             or not isinstance(run['allocator_preflight_json'], dict)
@@ -123,8 +123,8 @@ def validate_release_evidence(database, prepared, *, epoch, state_directory, qua
     """Read real Tempo CLI receipts and a candidate-bound qualification artifact.
 
     The coordinator supplies paths to the registered target's state directory and
-    independent N2 output. A passing artifact cannot stand in for runtime image
-    inspection, which the local lifecycle adapter must perform separately.
+    independent N2 output. This also invokes the CLI's runtime inspection; a
+    production adapter must bind the writer to that registered target.
     """
     if not re.fullmatch(r'[0-9a-f]{40}', revision or '') or not re.fullmatch(r'[0-9a-f]{24}', target or ''):
         raise OperatorHold('position_release_identity_invalid')
