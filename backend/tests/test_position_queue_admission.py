@@ -324,3 +324,82 @@ def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
     assert result == {'issued': True, 'position_study_mode': 'position',
                       'position_presentation': {'attempt_id': 'saved', 'plan_id': 'same'},
                       'position_study_hold': None}
+
+
+def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
+    from contextlib import contextmanager
+    from app.services import queue_next_card, position_queue_admission
+    from app.study.position_learning.issued_plan_contracts import SelectionRequest
+    from tempo_legacy_database import connections
+    from tempo_legacy_database.adapters.study import game_feedback, position_due_candidates, position_issued_plans
+    from tests.test_position_issued_plan_contracts import option, request_for
+    request = request_for(option('italian-knight-attack'), due=False)
+    route, target = request.routes[0], request.target
+    class Token:
+        repertoire_id = target.key.repertoire_id
+        authored_digest = 'authored-digest'
+        def as_dict(self):
+            return {'original_snapshot_id': route.certificate.snapshot_id,
+                    'original_source_revision': route.certificate.source_revision,
+                    'original_source_digest': route.certificate.source_digest,
+                    'repertoire_id': self.repertoire_id, 'authored_digest': self.authored_digest,
+                    'header': {'id': self.repertoire_id}, 'integrity': {'status':'clean'}}
+    source = NS(routes=(route,), authored_token=Token())
+    urgency = game_feedback.PositionUrgency(target, request.dues[0].owner_epoch,
+        'authored-digest', 7, 'effect', 'grade')
+    class Result:
+        def __init__(self, value): self.value = value
+        def fetchall(self): return self.value
+        def fetchone(self): return self.value
+    class Reader:
+        def execute_native(self, sql, params=()):
+            if 'SELECT p.attempt_id' in sql: return Result([])
+            if 'FROM queue_attempt_origins o JOIN cards' in sql:
+                return Result({'admission_repertoire_id':target.key.repertoire_id,
+                               'issued_as_head':0,'content_type':'opening'})
+            if 'FROM study_position_owners o' in sql:
+                return Result({'mode':'active','epoch':request.dues[0].owner_epoch,'source_digest':'authored-digest'})
+            if 'SELECT attempt_id FROM study_position_issued_plans' in sql: return Result([])
+            raise AssertionError(sql)
+    @contextmanager
+    def borrowed(): yield Reader()
+    class DueReader:
+        def __init__(self, *a, **kw): pass
+        def read_due_page(self, **kw): pytest.fail('Urgent target must not require natural due')
+        def read_context(self, keys): return request.dues
+    import pytest
+    monkeypatch.setattr(connections, 'read_connection', borrowed)
+    monkeypatch.setattr(queue_next_card, '_cached_position_source', lambda *a: source)
+    monkeypatch.setattr(position_due_candidates, 'PositionDueCandidateReader', DueReader)
+    monkeypatch.setattr(position_queue_admission, 'select_carrier', lambda *a, **kw: NS(presentation_revision=4))
+    monkeypatch.setattr(game_feedback, 'read_position_urgency', lambda *a, **kw: urgency)
+    monkeypatch.setattr(position_issued_plans, 'read_applicable_clean_proofs', lambda *a, **kw: ())
+    payload = {'queue_date':'2026-11-02','entry_id':41,'card_id':'legacy-card-1','expected_revision':4}
+    result = queue_next_card.prepare_queue_head(payload)
+    assert result.mode == 'position' and result.urgency == urgency
+    witness = next(w for w in result.proposal.plan.due_positions if w.definition == target)
+    assert witness.due is False and witness.position_revision == 7
+
+
+def test_changed_urgency_rolls_back_inserted_position_plan(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import queue_commands
+    from app.services import queue_next_card
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters.study import game_feedback, position_issued_plans
+    payload = {'queue_date':'2026-11-02','entry_id':4,'card_id':'card','expected_revision':2}
+    urgency = NS(definition=NS(key=NS(repertoire_id='r')))
+    prepared = queue_next_card.PreparedQueueHead(payload, 'position', NS(source=object()), urgency=urgency)
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda *a: payload['queue_date'])
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *a: None)
+    monkeypatch.setattr(position_issued_plans, 'issue_in_borrowed_transaction', lambda *a: object())
+    monkeypatch.setattr(queue_commands, '_lock_attempt_card', lambda *a: None)
+    monkeypatch.setattr(queue_commands.queue_storage, 'is_postgres_connection', lambda *a: False)
+    monkeypatch.setattr(queue_commands.queue_storage, 'issued_origin', lambda *a: True)
+    monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda day: {'id':4})
+    monkeypatch.setattr(queue_commands, 'validate_available_attempt', lambda *a: None)
+    monkeypatch.setattr(game_feedback, 'read_position_urgency', lambda *a, **kw: None)
+    with pytest.raises(HTTPException) as failure:
+        queue_commands.issue_queue_head(object(), prepared)
+    assert failure.value.status_code == 409

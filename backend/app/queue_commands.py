@@ -141,6 +141,17 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
         if position_plan is not None:
             raise HTTPException(409, 'Position head changed during issuance')
         return {"issued": False}
+    if prepared.urgency is not None:
+        from tempo_evidence_math.position_learning import Hold
+        from tempo_legacy_database.adapters.study import game_feedback
+        reader = getattr(game_feedback, 'read_position_urgency', None)
+        actual = (reader(database, card_id=payload['card_id'], revision=payload['expected_revision'],
+                         repertoire_id=prepared.urgency.definition.key.repertoire_id, lock=True)
+                  if reader else None)
+        if isinstance(actual, Hold) or actual != prepared.urgency:
+            # G2 may already have inserted a plan; the command savepoint must
+            # roll back rather than committing an unauthorized urgent head.
+            raise HTTPException(409, 'Position urgency changed during issuance')
     from .services.legacy_study_remediation import bind_first_issuance
     bind_first_issuance(database, entry_id, payload["card_id"], payload["expected_revision"])
     changed = queue_storage.stamp_issued_head(database, entry_id, payload["card_id"], payload["expected_revision"])

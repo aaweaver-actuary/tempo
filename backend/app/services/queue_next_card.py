@@ -92,6 +92,7 @@ class PreparedQueueHead:
     mode: str
     proposal: object = None
     reason: str | None = None
+    urgency: object = None
 
 
 def prepare_queue_head(payload):
@@ -154,21 +155,39 @@ def prepare_queue_head(payload):
         instant, day = datetime.now(timezone.utc), date.fromisoformat(payload['queue_date'])
         reader = PositionDueCandidateReader(db, repertoire_id=rep, owner_epoch=owner['epoch'],
             source_digest=owner['source_digest'], issued_at=instant, study_day=day)
+        # An accepted local Games obligation is independent of natural FSRS
+        # due time. Its Study-owned fact names the exact target; read_context
+        # below preserves the real due flag instead of manufacturing a due.
+        from tempo_legacy_database.adapters.study import game_feedback
+        read_urgency = getattr(game_feedback, 'read_position_urgency', None)
+        urgency = (read_urgency(db, card_id=payload['card_id'],
+            revision=payload['expected_revision'], repertoire_id=rep) if read_urgency else None)
+        if isinstance(urgency, Hold):
+            return held(urgency.reason)
         target, cursor = None, None
-        # Bound the work independently of catalogue size; a larger backlog stays
-        # held for explicit queue refresh rather than falling back to card FSRS.
-        for _ in range(10):
-            page = reader.read_due_page(after=cursor, limit=100)
-            if isinstance(page, Hold):
-                return held(page.reason)
-            for candidate in page.candidates:
-                carrier = select_carrier(source, candidate.state.definition, card_id=payload['card_id'])
-                if not isinstance(carrier, Hold) and carrier.presentation_revision == payload['expected_revision']:
-                    target = candidate.state.definition
+        if urgency is not None:
+            if (urgency.owner_epoch != owner['epoch'] or urgency.source_digest != owner['source_digest']
+                    or urgency.definition.key.repertoire_id != rep):
+                return held('position_urgency_scope_changed')
+            carrier = select_carrier(source, urgency.definition, card_id=payload['card_id'])
+            if isinstance(carrier, Hold) or carrier.presentation_revision != payload['expected_revision']:
+                return held('position_urgency_carrier_changed')
+            target = urgency.definition
+        else:
+            # Bound work independently of catalogue size; a larger backlog stays
+            # held rather than falling back to physical-card scheduling.
+            for _ in range(10):
+                page = reader.read_due_page(after=cursor, limit=100)
+                if isinstance(page, Hold):
+                    return held(page.reason)
+                for candidate in page.candidates:
+                    carrier = select_carrier(source, candidate.state.definition, card_id=payload['card_id'])
+                    if not isinstance(carrier, Hold) and carrier.presentation_revision == payload['expected_revision']:
+                        target = candidate.state.definition
+                        break
+                if target or page.next_cursor is None:
                     break
-            if target or page.next_cursor is None:
-                break
-            cursor = page.next_cursor
+                cursor = page.next_cursor
         if target is None:
             return held('position_due_target_unavailable')
         proofs = []
@@ -193,9 +212,14 @@ def prepare_queue_head(payload):
             return held(witnesses.reason)
         if any(isinstance(w, Hold) for w in witnesses):
             return held(next(w.reason for w in witnesses if isinstance(w, Hold)))
+        if urgency is not None:
+            target_witness = next((w for w in witnesses if w.definition == target), None)
+            if target_witness is None or target_witness.position_revision < urgency.position_version:
+                return held('position_urgency_state_changed')
         attempt = str(uuid5(NAMESPACE_URL, 'tempo:position-study:%s:%s:%s' %
                             (payload['entry_id'], payload['card_id'], payload['expected_revision'])))
         request = SelectionRequest(target, source.routes, tuple(witnesses), tuple(proofs),
             payload['card_id'], payload['expected_revision'], payload['entry_id'], attempt)
         proposal = prepare_position_issuance(source, request)
-        return held(proposal.reason) if isinstance(proposal, Hold) else PreparedQueueHead(payload, 'position', proposal)
+        return (held(proposal.reason) if isinstance(proposal, Hold) else
+                PreparedQueueHead(payload, 'position', proposal, urgency=urgency))

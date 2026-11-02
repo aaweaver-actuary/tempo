@@ -224,3 +224,41 @@ def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeyp
         'study_opening_index': 0, 'study_opening_more': False, 'study_opening_counts': {}}}
     assert refresh.execute_postgres_queue_refresh_slice(task)
     assert calls == ['advance']
+
+
+def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(monkeypatch):
+    from app.services import position_queue_admission as admission
+    target = NS(decision_id='d', repertoire_id='r', position_key=FEN,
+        selected_response_uci='e2e4', presentation_id='card', presentation_revision=1,
+        route_id='route', route_ply=0, available=True)
+    source = NS(snapshot=NS(decision_presentations=[target]),
+                routes=[NS(decisions=[NS(definition=DEF)])])
+    proposal = object()
+    calls = []
+    monkeypatch.setattr(intro, 'prepare_introduction', lambda *a, **kw:
+                        calls.append(('prepare', kw['target'])) or proposal)
+    prepared = admission.prepare_targeted_position_introduction(source, target)
+    assert prepared == (proposal, target) and calls == [('prepare', DEF)]
+    monkeypatch.setattr(intro, 'initialize_introduction', lambda *a, **kw: calls.append(('initialize', a[1])))
+    class Canonical:
+        def admit_encounter(self, day, **kw):
+            calls.append(('admit', day, kw))
+            return NS(status='introduced')
+    fence = NS(prepared=proposal, definitions=(DEF,))
+    result = admission.admit_targeted_position_introduction(object(), prepared, fence,
+        day='2026-11-02', now=datetime.now(timezone.utc), introductions=Canonical())
+    assert result.status == 'introduced'
+    assert [call[0] for call in calls] == ['prepare', 'admit', 'initialize']
+    assert calls[1][2]['target'] is target
+
+
+def test_targeted_game_intro_does_not_initialize_on_rejected_admission(monkeypatch):
+    from app.services import position_queue_admission as admission
+    proposal, target = object(), NS(repertoire_id='r', decision_id='d')
+    monkeypatch.setattr(intro, 'initialize_introduction', lambda *a, **kw: pytest.fail('No authorized introduction'))
+    class Rejected:
+        def admit_encounter(self, *a, **kw): return NS(status='deferred', reason='paused')
+    result = admission.admit_targeted_position_introduction(object(), (proposal, target),
+        NS(prepared=proposal, definitions=(DEF,)), day='2026-11-02',
+        now=datetime.now(timezone.utc), introductions=Rejected())
+    assert result.status == 'deferred'

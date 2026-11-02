@@ -171,3 +171,64 @@ def apply_opening_introduction(database, prepared, fenced, *, now):
 def redundant_opening_introduction(prepared, fenced):
     """A wholly introduced card grants no new position introduction."""
     return prepared[0] == 'position' and not fenced.definitions
+
+
+def prepare_targeted_position_introduction(source, target):
+    """Prepare exactly the current qualified Games target, never its neighbors.
+
+    J2 supplies its owner-validated target. The Repertoire capability must
+    contain the same current physical and logical occurrence.
+    """
+    from tempo_legacy_database.adapters.study.position_introductions import prepare_introduction
+    fields = ('decision_id', 'repertoire_id', 'position_key', 'selected_response_uci',
+              'presentation_id', 'presentation_revision', 'route_id', 'route_ply')
+    try:
+        matches = [binding for binding in source.snapshot.decision_presentations
+                   if all(getattr(binding, name) == getattr(target, name) for name in fields)
+                   and binding.available]
+    except AttributeError:
+        return Hold('position_target_binding_unavailable')
+    if len(matches) != 1:
+        return Hold('position_target_binding_ambiguous')
+    definitions = {d.definition for route in source.routes for d in route.decisions
+                   if d.definition.key.repertoire_id == target.repertoire_id
+                   and d.definition.key.position == target.position_key
+                   and d.definition.expected_uci == target.selected_response_uci}
+    if len(definitions) != 1:
+        return Hold('position_target_definition_ambiguous')
+    prepared = prepare_introduction(source, target.presentation_id, target=next(iter(definitions)))
+    return prepared if isinstance(prepared, Hold) else (prepared, target)
+
+
+def fence_targeted_position_introduction(database, prepared_target):
+    """Acquire the H2 introduction fences before J2 card/effect/day locks."""
+    from tempo_legacy_database.adapters.study.position_introductions import fence_introduction
+    prepared, _target = prepared_target
+    fenced = fence_introduction(database, prepared)
+    if isinstance(fenced, Hold):
+        return fenced
+    if not fenced.definitions:
+        return Hold('position_target_already_introduced')
+    return fenced
+
+
+def admit_targeted_position_introduction(database, prepared_target, fenced, *, day, now, introductions):
+    """Use the existing encounter-exception admission and initialize atomically.
+
+    The caller retains the transaction and must abort it on any exception.
+    The capability is Study-owned and its result is the actual introduction
+    receipt, not a fabricated review or Games scheduling effect.
+    """
+    from tempo_legacy_database.adapters.study.position_introductions import initialize_introduction
+    prepared, target = prepared_target
+    if getattr(fenced, 'prepared', None) is not prepared or not fenced.definitions:
+        raise ValueError('position_introduction_fence_required')
+    result = introductions.admit_encounter(day, repertoire_id=target.repertoire_id,
+        decision_id=target.decision_id, target=target)
+    if result.status == 'introduced':
+        initialize_introduction(database, prepared, fenced, now=now)
+    elif result.status in {'already_introduced', 'replayed'}:
+        # This pre-fenced proposal represented unseen state, so an existing
+        # physical receipt cannot authorize us to reset/replace a position.
+        raise ValueError('position_introduction_raced_existing_admission')
+    return result

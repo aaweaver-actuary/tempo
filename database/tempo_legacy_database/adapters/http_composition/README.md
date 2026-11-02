@@ -170,3 +170,11 @@ flowchart LR
     Issue --> Wire[Position presentation and display manifest]
     Issue --> Replay[Exact original-attempt replay]
 ```
+
+A qualified outstanding position Games consequence can nominate its exact
+position at head preparation even when the natural FSRS due time is later. The
+stored due witness remains the actual schedule fact. The writer rechecks and
+locks the same Study-owned obligation before stamping the head; a changed or
+settled obligation rolls the proposed plan back. Targeted first introductions
+use the existing encounter-exception admission and initialize only the exact
+qualified position in the same transaction.

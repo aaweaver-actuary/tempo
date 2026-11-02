@@ -52,7 +52,7 @@ class PreparedIntroduction:
         object.__setattr__(self, '_seal', seal)
 
 
-def prepare_introduction(source, card_id):
+def prepare_introduction(source, card_id, *, target=None):
     """Project the bounded exact decisions and aliases of an admitted card."""
     from tempo_legacy_database.adapters.authored_repertoires.position_study_source import PreparedPositionSource
     if not isinstance(source, PreparedPositionSource) or not card_id:
@@ -62,6 +62,11 @@ def prepare_introduction(source, card_id):
            if b.repertoire_id == rep and b.presentation_id == card_id and b.available]
     if not own:
         return Hold('position_introduction_binding_unavailable')
+    if target is not None:
+        own = [b for b in own if b.position_key == target.key.position
+               and b.selected_response_uci == target.expected_uci]
+        if not own or target.key.repertoire_id != rep:
+            return Hold('position_introduction_target_unavailable')
     keys = {(b.position_key, b.selected_response_uci) for b in own}
     import hashlib
     import json
@@ -78,7 +83,8 @@ def prepare_introduction(source, card_id):
                 prior = definitions.setdefault(d.key, d)
                 if prior != d:
                     return Hold('position_introduction_definition_ambiguous')
-    if len(definitions) != len(keys) or not 1 <= len(definitions) <= 20:
+    if (len(definitions) != len(keys) or not 1 <= len(definitions) <= 20
+            or (target is not None and tuple(definitions.values()) != (target,))):
         return Hold('position_introduction_definition_unavailable')
     bindings = tuple(b for b in source.snapshot.decision_presentations
                      if b.repertoire_id == rep and b.position_key in {d.key.position for d in definitions.values()})
