@@ -196,6 +196,41 @@ def fence_old_attempt_frontier(database, repertoire_id):
         raise OperatorHold('position_old_issued_attempt_unfinished')
 
 
+
+def preview_rollforward_in_writer(database, prepared, *, epoch):
+    """Classify locked stored definitions against freshly fenced owner routes.
+
+    This is a preview only: a new epoch still needs durable seed provenance and
+    resume handling. Never discard or rewrite states for held/retired positions.
+    """
+    from app.study.position_learning.source_change_policy import ScopedPositionSource, compare_persisted_definition
+    from tempo_evidence_math.position_learning import PositionDefinition, PositionKey, SourceCertificate
+    rep = _lock(database, prepared)
+    owner = database.execute_native('SELECT epoch,mode FROM study_position_owners WHERE repertoire_id=%s FOR UPDATE NOWAIT',
+                                    (rep,)).fetchone()
+    if not owner or owner['epoch'] != epoch or owner['mode'] != 'paused':
+        raise OperatorHold('position_owner_not_paused')
+    rows = database.execute_native('''SELECT variant,position,expected_uci,policy_version,owner_epoch
+        FROM study_position_states WHERE repertoire_id=%s ORDER BY variant,position
+        LIMIT 10001 FOR UPDATE NOWAIT''', (rep,)).fetchall()
+    if len(rows) > 10000:
+        raise OperatorHold('position_rollforward_exceeds_bound')
+    membership = prepared.snapshot.membership
+    certificate = SourceCertificate(membership.snapshot_id, membership.source_revision, membership.digest, True, True)
+    decisions = []
+    for row in rows:
+        if row['owner_epoch'] != epoch:
+            raise OperatorHold('position_state_epoch_changed')
+        key = PositionKey(rep, row['position'], row['variant'])
+        previous = PositionDefinition(key, row['expected_uci'], row['policy_version'])
+        routes = tuple(route for route in prepared.routes
+                       if any(item.definition.key == key for item in route.decisions))
+        scope = ScopedPositionSource(key, certificate, prepared.authored_token.authored_digest, routes)
+        decisions.append(compare_persisted_definition(previous, scope).as_record())
+    return {'repertoire_id': rep, 'epoch': epoch, 'source_digest': prepared.authored_token.authored_digest,
+            'decisions': decisions, 'hold': 'position_rollforward_provenance_not_integrated'}
+
+
 def transition_in_writer(database, prepared, request, *, action, epoch, operation_id, now, release=None):
     """Pause an active owner with an atomic receipt.
 
@@ -321,7 +356,7 @@ def main():
                 owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
                     JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
                     WHERE o.repertoire_id=%s''', (rep,)).fetchone()
-                if (not owner or owner['epoch'] != epoch or (action != 'pause'
+                if (not owner or owner['epoch'] != epoch or (action not in ('pause', 'rollforward')
                         and owner['source_digest'] != prepared.authored_token.authored_digest)):
                     raise OperatorHold('position_owner_epoch_or_source_changed')
                 modes = {'stage': ('inactive', 'shadow'), 'activate': ('staged',),
@@ -335,7 +370,7 @@ def main():
                     result['preflight'] = preflight_in_writer(database, prepared, request, epoch=epoch)
                     fence_old_attempt_frontier(database, rep)
                 elif action == 'rollforward':
-                    raise OperatorHold('position_rollforward_not_integrated')
+                    result['rollforward'] = preview_rollforward_in_writer(database, prepared, epoch=epoch)
             else:
                 result = transition_in_writer(database, prepared, request, action=action, epoch=epoch,
                     operation_id=payload['operation_id'], now=datetime.now(timezone.utc),

@@ -159,3 +159,29 @@ def test_pause_still_available_after_source_changes(prepared):
         return original(sql, params)
     db.execute_native = execute
     assert call(db, prepared)['mode'] == 'paused'
+
+
+def test_rollforward_preview_classifies_persisted_definition_without_writes(monkeypatch):
+    from test_position_source_authority import setup
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    prepared = prepare_position_source(setup(monkeypatch), 'rep')
+    definition = prepared.routes[0].decisions[0].definition
+    monkeypatch.setattr(operator, '_lock', lambda db, prepared, **kwargs: 'rep')
+    class Rows:
+        def __init__(self, values): self.values = values
+        def fetchone(self): return self.values[0] if self.values else None
+        def fetchall(self): return self.values
+    class Database:
+        def __init__(self): self.statements = []
+        def execute_native(self, sql, params):
+            self.statements.append(sql)
+            if 'FROM study_position_owners' in sql:
+                return Rows([{'epoch': 'epoch', 'mode': 'paused'}])
+            return Rows([{'variant': definition.key.variant, 'position': definition.key.position,
+                          'expected_uci': definition.expected_uci, 'policy_version': definition.policy_version,
+                          'owner_epoch': 'epoch'}])
+    db = Database()
+    result = operator.preview_rollforward_in_writer(db, prepared, epoch='epoch')
+    assert result['decisions'][0]['disposition'] == 'preserve_schedule'
+    assert result['hold'] == 'position_rollforward_provenance_not_integrated'
+    assert all(not sql.lstrip().upper().startswith(('UPDATE', 'INSERT', 'DELETE')) for sql in db.statements)
