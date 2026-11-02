@@ -52,9 +52,10 @@ def test_pause_writes_receipt_and_owner_in_same_borrowed_transaction(prepared):
 @pytest.mark.parametrize('action', ['stage', 'activate', 'resume', 'rollforward'])
 def test_unqualified_operations_hold_and_roll_back(prepared, action):
     db = DB()
-    with pytest.raises(operator.OperatorHold, match='invalid_transition|evidence_unavailable|not_integrated'):
+    with pytest.raises(operator.OperatorHold, match='invalid_transition|evidence_unavailable|new_epoch_required'):
         call(db, prepared, action)
-    assert any(s.startswith('ROLLBACK TO SAVEPOINT') for s, _ in db.statements)
+    if action != 'rollforward':
+        assert any(s.startswith('ROLLBACK TO SAVEPOINT') for s, _ in db.statements)
     assert not any('UPDATE study_position_owners' in s for s, _ in db.statements)
 
 
@@ -76,13 +77,15 @@ def test_qualified_transition_requires_preflight_and_frontier(prepared, monkeypa
         if 'FROM study_position_owners o' in sql:
             db.statements.append((sql, params))
             return Cursor({'epoch': 'epoch', 'mode': current, 'source_digest': 'source'})
+        if 'FROM study_position_seed_runs' in sql:
+            return Cursor((1,))
         return original(sql, params)
     db.execute_native = execute
     calls = []
     monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: calls.append('release') or {'revision': 'r'})
     monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: calls.append('seed'))
     monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: calls.append('frontier'))
-    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
     result = operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
         operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
     assert result['mode'] == expected
@@ -102,7 +105,7 @@ def test_frontier_hold_prevents_mode_change(prepared, monkeypatch):
     def hold(*args):
         raise operator.OperatorHold('position_old_issued_attempt_unfinished')
     monkeypatch.setattr(operator, 'fence_old_attempt_frontier', hold)
-    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
     with pytest.raises(operator.OperatorHold, match='old_issued'):
         operator.transition_in_writer(db, prepared, None, action='activate', epoch='epoch',
             operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
@@ -165,7 +168,7 @@ def test_rollforward_preview_classifies_persisted_definition_without_writes(monk
     from test_position_source_authority import setup
     from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
     prepared = prepare_position_source(setup(monkeypatch), 'rep')
-    definition = prepared.routes[0].decisions[0].definition
+    definitions = {item.definition for route in prepared.routes for item in route.decisions}
     monkeypatch.setattr(operator, '_lock', lambda db, prepared, **kwargs: 'rep')
     class Rows:
         def __init__(self, values): self.values = values
@@ -176,14 +179,13 @@ def test_rollforward_preview_classifies_persisted_definition_without_writes(monk
         def execute_native(self, sql, params):
             self.statements.append(sql)
             if 'FROM study_position_owners' in sql:
-                return Rows([{'epoch': 'epoch', 'mode': 'paused'}])
+                return Rows([{'epoch': 'epoch', 'mode': 'paused', 'source_digest': 'source'}])
             return Rows([{'variant': definition.key.variant, 'position': definition.key.position,
                           'expected_uci': definition.expected_uci, 'policy_version': definition.policy_version,
-                          'owner_epoch': 'epoch'}])
+                          'owner_epoch': 'epoch', 'source_digest': 'source'} for definition in definitions])
     db = Database()
     result = operator.preview_rollforward_in_writer(db, prepared, epoch='epoch')
     assert result['decisions'][0]['disposition'] == 'preserve_schedule'
-    assert result['hold'] == 'position_rollforward_provenance_not_integrated'
     assert all(not sql.lstrip().upper().startswith(('UPDATE', 'INSERT', 'DELETE')) for sql in db.statements)
 
 
@@ -231,7 +233,7 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
             monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: {})
             monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'target': 'test'})
             prepared = SimpleNamespace(authored_token=SimpleNamespace(authored_digest='source'))
-            release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
+            release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
             def transition(db, action, operation):
                 return operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
                     operation_id=operation, now=datetime.now(timezone.utc), release=release if action != 'pause' else None)
@@ -253,3 +255,81 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
         finally:
             admin.execute('SET search_path TO public')
             admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_rollforward_rebinds_only_epoch_and_source_and_retains_receipt(monkeypatch):
+    db = DB()
+    original = db.execute_native
+    def execute(sql, params=()):
+        if 'FROM study_position_owners o' in sql:
+            db.statements.append((sql, params))
+            return Cursor({'epoch': 'old', 'mode': 'paused', 'source_digest': 'old-digest'})
+        return original(sql, params)
+    db.execute_native = execute
+    token = SimpleNamespace(authored_digest='new-digest', as_dict=lambda: {'authored_digest': 'new-digest'})
+    prepared = SimpleNamespace(authored_token=token)
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'revision': 'r'})
+    monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+    monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_fence_retained_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_prior_owner_receipt', lambda *a, **kw: {
+        'operation_id': 'prior', 'response_json': '{"mode":"active"}'})
+    monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'preserve_schedule'}])
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    result = operator.transition_in_writer(db, prepared, None, action='rollforward', epoch='old', new_epoch='new',
+        operation_id='roll', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    assert (result['epoch'], result['prior_epoch'], result['mode'], result['prior_operation_id']) == ('new', 'old', 'paused', 'prior')
+    updates = [sql for sql, _ in db.statements if sql.startswith('UPDATE study_position_states')]
+    assert updates == ['UPDATE study_position_states SET owner_epoch=%s,source_digest=%s WHERE repertoire_id=%s AND owner_epoch=%s']
+    assert not any('DELETE' in sql or 'fsrs_json' in sql for sql, _ in db.statements)
+
+
+def test_rollforward_changed_definition_rolls_back_without_rebinding(monkeypatch):
+    db = DB()
+    original = db.execute_native
+    def execute(sql, params=()):
+        if 'FROM study_position_owners o' in sql:
+            return Cursor({'epoch': 'old', 'mode': 'paused', 'source_digest': 'old-digest'})
+        return original(sql, params)
+    db.execute_native = execute
+    prepared = SimpleNamespace(authored_token=SimpleNamespace(authored_digest='new-digest'))
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {})
+    monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+    monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_fence_retained_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_prior_owner_receipt', lambda *a, **kw: {'response_json': '{"mode":"active"}'})
+    monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'hold_definition'}])
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    with pytest.raises(operator.OperatorHold, match='definition_changed'):
+        operator.transition_in_writer(db, prepared, None, action='rollforward', epoch='old', new_epoch='new',
+            operation_id='roll', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    assert any(sql.startswith('ROLLBACK TO SAVEPOINT') for sql, _ in db.statements)
+    assert not any(sql.startswith('UPDATE study_position_states') or sql.startswith('INSERT INTO study_position_epochs')
+                   for sql, _ in db.statements)
+
+
+@pytest.mark.parametrize(('table', 'reason'), [
+    ('opening_evidence_attempts', 'evidence_attempt_unfinished'),
+    ('study_position_issued_plans', 'issued_attempt_unfinished'),
+    ('study_game_feedback f', 'negative_feedback_unsettled'),
+])
+def test_retained_frontier_refuses_unfinished_obligations(table, reason):
+    class Frontier:
+        def execute_native(self, sql, params=()):
+            return Cursor((1,) if sql.startswith('SELECT') and table in sql else None)
+    with pytest.raises(operator.OperatorHold, match=reason):
+        operator._fence_retained_frontier(Frontier(), 'rep')
+
+
+def test_resume_retained_epoch_requires_original_rollforward_receipt(monkeypatch):
+    prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='new'))
+    monkeypatch.setattr(operator, '_prior_owner_receipt', lambda *a, **kw: None)
+    with pytest.raises(operator.OperatorHold, match='receipt_missing'):
+        operator._retained_preflight(DB(), prepared, epoch='new')
+    monkeypatch.setattr(operator, '_prior_owner_receipt', lambda *a, **kw: {
+        'operation_id': 'roll', 'response_json': '{"mode":"paused","state_count":1}'})
+    monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'preserve_schedule'}])
+    monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+    assert operator._retained_preflight(DB(), prepared, epoch='new')['rollforward_operation_id'] == 'roll'
