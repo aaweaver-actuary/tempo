@@ -1,6 +1,8 @@
 # Position-owned opening Study contract
 
-`contracts.py` contains detached immutable values and transaction ports only. It
+`tempo_evidence_math.position_learning` owns detached immutable values;
+`contracts.py` re-exports the identical classes and contains Study transaction
+ports. The contract
 performs no issuance, grade, graph lookup, persistence, or scheduling. Existing
 Study remains authoritative for these operations and the legacy card scheduler
 and its first-clean reinforcement remain unchanged. The pure values do not
@@ -29,12 +31,14 @@ retry returns the original issuance; changed bytes under the same identity hold.
 
 The writer uses the captured due witness as necessary, never sufficient, positive
 entitlement. Under the existing borrowed transaction it locks position states in
-stable key order, rechecks definition, source and owner epoch, event identity,
+stable key order, rechecks definition, original issuance proof and owner epoch, event identity,
 current revision and the accepted positive ledger, and commits schedule, receipt
 and original attempt/queue settlement atomically. Stale Good is observation;
 never backdate or reorder an accepted FSRS transition. A newly due state after
-issuance cannot turn a nondue witness into Good. A source or epoch mismatch holds;
-no silent fallback to legacy scheduling for an opted-in position. Study reads its
+issuance cannot turn a nondue witness into Good. A mismatch in the original proof or owner epoch holds; a later unrelated source
+digest revision holds new issuance but does not by itself invalidate the saved
+original attempt. Changed approved definitions are separately fenced;
+there is no silent fallback to legacy scheduling for an opted-in position. Study reads its
 configured local timezone and captures the Study day once at issuance. To bound
 late arrivals, a Good is eligible only when acceptance's current local Study day
 is the same as the issued day; after midnight preserve the response as observation,
@@ -71,3 +75,15 @@ definition = PositionDefinition(key, "e2e4", "policy-1")
 The interfaces deliberately have no Repertoire implementation, DB connection,
 provider or scheduler import. Concrete issuance and grade receipts are supplied
 by the actual Study owner; ports borrow its transaction and cannot commit it.
+
+```mermaid
+flowchart LR
+  Repertoire[Repertoire owner] -->|detached source claims| Values[Evidence-math position-learning values]
+  Study[Study issuer and grade owner] -->|public value imports| Values
+  Learning[Standalone Learning consumers] -->|public value imports| Values
+  Study -->|borrowed transaction ports| Writer[Existing Study writer]
+```
+
+This is the source contract and intended dependency boundary, not a claim that
+Learning, issuance or persistence is wired or deployed. Composition and owner
+adapters supply source authority and implement the transaction ports.

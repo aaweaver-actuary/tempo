@@ -34,3 +34,8 @@ def test_detached_witness_and_response_require_identity_and_aware_times():
         FirstResponse("attempt", 0, definition, None, False, NOW, "event")
     with pytest.raises(ValueError):
         SourceCertificate("", "revision", "digest", True, True)
+
+
+def test_backend_reexports_the_standalone_contract_identity():
+    from tempo_evidence_math.position_learning import PositionKey as SharedPositionKey
+    assert SharedPositionKey is PositionKey
