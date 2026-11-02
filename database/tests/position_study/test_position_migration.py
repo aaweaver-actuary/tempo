@@ -21,7 +21,9 @@ def test_position_migration_registration_and_additive_scope():
     assert POSTGRES_SCHEMA_VERSION == 57
     assert SQL.count('INSERT INTO tempo_schema_migrations') == 1
     assert 'VALUES(57)' in SQL
-    assert 'CREATE TRIGGER' not in SQL.upper()
+    assert SQL.upper().count('CREATE TRIGGER') == 1
+    assert 'BEFORE INSERT OR UPDATE OF fsrs_card_json ON cards' in SQL
+    assert 'UPDATE cards' not in SQL
     assert 'ALTER TABLE ' not in SQL.upper()
     assert 'DROP TABLE ' not in SQL.upper()
 
@@ -40,9 +42,30 @@ def test_position_migration_native():
         try:
             conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             conn.execute('CREATE TABLE tempo_schema_migrations (version integer PRIMARY KEY)')
+            conn.execute('CREATE TABLE cards (id text PRIMARY KEY, fsrs_card_json text)')
+            conn.execute("INSERT INTO cards VALUES (%s,%s)", ('retained', '{"card_id":4503599627370496,"memory":1}'))
+            conn.execute("INSERT INTO cards VALUES ('malformed', 'old bad json')")
+            conn.execute("INSERT INTO cards VALUES (%s,%s)", ('string', '{"card_id":"123","memory":1}'))
             with conn.transaction():
                 conn.execute(SQL)
             assert conn.execute('SELECT version FROM tempo_schema_migrations').fetchall() == [(57,)]
+            assert conn.execute("SELECT fsrs_card_json FROM cards WHERE id='retained'").fetchone()[0] == '{"card_id":4503599627370496,"memory":1}'
+            conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='retained'", ('{"card_id":4503599627370496,"memory":2}',))
+            conn.execute("UPDATE cards SET fsrs_card_json='another bad json' WHERE id='malformed'")
+            conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='string'", ('{"card_id":"123","memory":2}',))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='string'", ('{"card_id":"124"}',))
+            conn.execute("INSERT INTO cards VALUES (%s,%s)", ('notation', '{"card_id":1.73e12}'))
+            conn.execute("INSERT INTO cards VALUES (%s,%s)", ('ordinary', '{"card_id":1730000000000}'))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("INSERT INTO cards VALUES (%s,%s)", ('collision', '{"card_id":4503599627370496}'))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='ordinary'", ('{"card_id":4503599627370497}',))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute("INSERT INTO cards VALUES (%s,%s)", ('unicode', '{"card_id":"４５０３５９９６２７３７０４９６"}'))
+            guard = conn.execute("""SELECT pg_get_triggerdef(oid) FROM pg_trigger
+                WHERE tgrelid='cards'::regclass AND tgname='study_position_guard_legacy_fsrs_id'""").fetchone()[0]
+            assert 'BEFORE INSERT OR UPDATE OF fsrs_card_json' in guard
             allocated = conn.execute("SELECT nextval('study_position_fsrs_id_seq')").fetchone()[0]
             assert allocated == 4503599627370496
             conn.execute("INSERT INTO study_position_epochs VALUES ('r','e','source',now()), ('other','e','source',now())")

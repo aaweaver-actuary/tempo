@@ -1,5 +1,45 @@
 -- Study-owned, inactive-by-default position scheduling. Existing card and review
 -- state is deliberately untouched. Snapshot identifiers do not cascade to source.
+-- Reserve the namespace against every legacy cards writer without rewriting rows.
+-- Changed nonnumeric/fractional IDs are held because their identity is ambiguous;
+-- malformed blobs without a readable card_id remain accepted.
+CREATE FUNCTION study_position_guard_legacy_fsrs_id() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+    new_id JSONB;
+    old_id JSONB;
+    numeric_id NUMERIC;
+BEGIN
+    BEGIN
+        new_id := NEW.fsrs_card_json::jsonb -> 'card_id';
+    EXCEPTION WHEN data_exception THEN
+        new_id := NULL;
+    END;
+    IF TG_OP = 'UPDATE' THEN
+        BEGIN
+            old_id := OLD.fsrs_card_json::jsonb -> 'card_id';
+        EXCEPTION WHEN data_exception THEN
+            old_id := NULL;
+        END;
+    END IF;
+    IF new_id IS NULL OR new_id = 'null'::jsonb OR new_id = old_id THEN
+        RETURN NEW;
+    END IF;
+    IF jsonb_typeof(new_id) = 'number' THEN
+        numeric_id := (new_id #>> '{}')::numeric;
+        IF numeric_id = trunc(numeric_id) THEN
+            IF numeric_id BETWEEN 4503599627370496 AND 9007199254740991 THEN
+                RAISE EXCEPTION 'reserved position Study FSRS card_id' USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END IF;
+    END IF;
+    RAISE EXCEPTION 'ambiguous legacy FSRS card_id' USING ERRCODE = '23514';
+END $$;
+CREATE TRIGGER study_position_guard_legacy_fsrs_id
+    BEFORE INSERT OR UPDATE OF fsrs_card_json ON cards
+    FOR EACH ROW EXECUTE FUNCTION study_position_guard_legacy_fsrs_id();
+
 CREATE TABLE study_position_epochs (
     repertoire_id TEXT NOT NULL,
     epoch TEXT NOT NULL,

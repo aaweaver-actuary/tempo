@@ -3,7 +3,8 @@
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
 Position Study adds [057_position_study.sql](057_position_study.sql), at source
-readiness 57. Its [owner dictionary](../../schema/study-position/README.md)
+readiness 57. Its reject-only legacy card ID namespace guard reserves new IDs
+without changing existing rows. Its [owner dictionary](../../schema/study-position/README.md)
 describes inactive epochs, schedules, issuance and receipts. This is additive
 source DDL; it does not seed or activate a cohort.
 

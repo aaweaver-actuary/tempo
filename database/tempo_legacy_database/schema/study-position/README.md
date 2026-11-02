@@ -30,8 +30,16 @@ erDiagram
   absent, preserving restart-safe provenance without rewriting physical cards.
 - `study_position_fsrs_id_seq`: a non-cycling positive reservation range
   2^52 through 2^53-1. It does not itself establish uniqueness against legacy
-  FSRS IDs. The owner must validate existing IDs and fence every legacy allocator
-  against this namespace throughout its use; malformed or unknown IDs hold seed.
+  FSRS IDs. Migration 57 installs a reject-only `cards` insert/update trigger:
+  newly assigned integral JSON numeric IDs in this range fail, while a retained
+  ID may keep the same identity across memory updates. New or changed readable
+  nonnumeric or fractional IDs fail closed; malformed blobs without a readable
+  ID remain accepted. Existing rows are not rewritten. The seed owner must
+  inspect all retained IDs, hold on malformed/unknown IDs and collision, and
+  verify the installed guard through `position_fsrs_namespace.fence_namespace`
+  in its borrowed transaction before allocation. The guard does not grade or
+  change legacy state. An access-share table lock protects the verified trigger
+  from concurrent DDL while allowing ordinary card writes.
 - `study_position_seed_runs`: one run per repertoire/epoch, with original source
   token, authored digest, selection policy, immutable manifest digest/count and
   allocator preflight, plus checkpoint, seeded/held counts and completion time.
