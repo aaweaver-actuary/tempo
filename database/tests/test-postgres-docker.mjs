@@ -9,6 +9,7 @@ import { createServer } from "node:net";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
+import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
@@ -1064,6 +1065,16 @@ const actions = {
     for (const service of ["api", "foreground-worker", "background-worker",
       "background-scheduler", "defense-engine", "maia-worker", "web"])
       assert(runningServices.has(service), `${service} exited during PostgreSQL startup`);
+  },
+  game_review_reader: async () => {
+    run(resolvePython(), ["database/tests/check_postgres_game_review_reader.py"], {
+      env: { ...environment,
+        PYTHONPATH: ["backend", "database", "backend/tests"].map(path => resolve(path)).join(":"),
+        TEMPO_TEST_INSTANCE: "disposable",
+        TEMPO_TEST_COMPOSE_PROJECT: project,
+        TEMPO_DEVELOPMENT_BUDGET_TOKEN: process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,
+      },
+    });
   },
   background_budget: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
