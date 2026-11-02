@@ -39,17 +39,33 @@ def has_position_tables(database):
 
 
 def lock_original_queue(database, plan):
-    """Card identity is already locked; lock its original day and queue next."""
+    """Lock original projection or retained immutable origin if projection is gone."""
     day = database.execute_native(
         "SELECT queue_date FROM daily_queue_days WHERE queue_date=%s FOR UPDATE SKIP LOCKED",
         (plan.local_day.isoformat(),),
     ).fetchone()
+    if not day:
+        return False
     queue = database.execute_native(
         "SELECT card_id,queue_date FROM daily_queue WHERE id=%s FOR UPDATE SKIP LOCKED",
         (plan.queue_entry_id,),
     ).fetchone()
-    return bool(day and queue and queue['card_id'] == plan.original_card_id
+    if queue:
+        return (queue['card_id'] == plan.original_card_id
                 and str(queue['queue_date']) == plan.local_day.isoformat())
+    # Distinguish a missing projection from a concurrently locked row.
+    present = database.execute_native("SELECT 1 FROM daily_queue WHERE id=%s", (plan.queue_entry_id,)).fetchone()
+    if present:
+        return False
+    rows = database.execute_native(
+        "SELECT card_id,revision,queue_date,admission_repertoire_id FROM queue_attempt_origins "
+        "WHERE queue_entry_id=%s ORDER BY card_id,revision LIMIT 2 FOR UPDATE SKIP LOCKED",
+        (plan.queue_entry_id,),
+    ).fetchall()
+    return (len(rows) == 1 and rows[0]['card_id'] == plan.original_card_id
+            and rows[0]['revision'] == plan.original_card_revision
+            and str(rows[0]['queue_date']) == plan.local_day.isoformat()
+            and rows[0]['admission_repertoire_id'] == plan.target.key.repertoire_id)
 
 
 def lock_attempt(database, attempt_id):
@@ -65,3 +81,11 @@ def acceptance_clock(database):
     if not row:
         raise ValueError("study_timezone_unavailable")
     return row[0], row[1]
+
+
+def grade_receipt(database, event_id):
+    row = database.execute_native(
+        "SELECT * FROM study_position_grades WHERE event_id=%s AND effect_kind='first_response'",
+        (event_id,),
+    ).fetchone()
+    return dict(row) if row else None

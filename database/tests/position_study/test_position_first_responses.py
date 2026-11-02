@@ -109,16 +109,19 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
                        'disposition': 'unverified'}]}
     # The saved source proves the one expected move, independently of the
     # browser's unverified disposition.
-    source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])])
+    source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])], authored_token=NS(authored_digest='authored'))
     monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *_: None)
     grade_module = ModuleType('tempo_legacy_database.adapters.study.position_grade_effects')
     grades = []
     grade_module.apply_in_borrowed_transaction = lambda _db, attempt, ids, **kw: grades.append((attempt, ids))
     monkeypatch.setitem(sys.modules, grade_module.__name__, grade_module)
-    monkeypatch.setattr(evidence, '_begin_position_checkpoint', lambda *_: (storage, 'authored'))
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *_: NS(disposition='position', epoch='epoch'))
+    monkeypatch.setattr(evidence, 'begin_position_checkpoint', lambda _db, prep: evidence.PositionCheckpointFence(prep, _db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL))
     monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: True)
     monkeypatch.setattr(storage, 'lock_attempt', lambda *_: True)
     monkeypatch.setattr(storage, 'acceptance_clock', lambda *_: (datetime.now(timezone.utc), 'UTC'))
+    monkeypatch.setattr(storage, 'grade_receipt', lambda *_: {'event_id': 'event'})
     monkeypatch.setattr(evidence, '_validate_checkpoint_scope', lambda *_, **__: None)
     monkeypatch.setattr(evidence, '_persist_observations', lambda *_: None)
     monkeypatch.setattr(evidence.storage, 'insert_attempt_returning', lambda *_: True)
@@ -127,14 +130,15 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     saved = []
     monkeypatch.setattr(storage, 'receipt', lambda *_: saved[:])
     def insert(_db, envelope, digest, _json, accepted):
-        saved.append(dict(payload_json=envelope, payload_digest=digest, accepted_at=accepted))
+        saved.append(dict(payload_json=envelope, payload_digest=digest, accepted_at=accepted,
+                          **{k: envelope[k] for k in ('event_id', 'attempt_id', 'decision_index', 'repertoire_id', 'variant', 'position', 'owner_epoch')}))
         return ('event',)
     monkeypatch.setattr(storage, 'insert', insert)
     monkeypatch.setattr(evidence, '_read_checkpoint_source', lambda *_, **__: (None, ()))
     from dataclasses import replace
     req = OpeningEvidenceCheckpoint.model_validate(raw)
     prepared = replace(evidence._compute_checkpoint_publication(req, None, ()),
-                       position_plan=frozen, position_source=source)
+                       position_preparation=evidence.PositionCheckpointPreparation(req, frozen, source, evidence._POSITION_CHECKPOINT_SEAL))
     result = evidence.commit_standalone_checkpoint(None, prepared)
     assert result['persisted'] and len(grades) == 1
     assert saved[0]['payload_json']['original_ply'] == 6
@@ -145,7 +149,51 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
                           'expected_uci': 'e2e4', 'kind': 'correction',
                           'observed_at': '2026-11-02T12:01:00+00:00', 'response_uci': 'e2e4'})
     req = OpeningEvidenceCheckpoint.model_validate(raw)
+    from tempo_evidence_math.position_learning import Hold
     prepared = replace(evidence._compute_checkpoint_publication(req, None, ()),
-                       position_plan=frozen, position_source=source)
+                       position_preparation=evidence.PositionCheckpointPreparation(req, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL))
     evidence.commit_standalone_checkpoint(None, prepared)
     assert len(saved) == len(grades) == 1
+    raw['events'][0]['response_uci'] = 'c2c4'
+    req = OpeningEvidenceCheckpoint.model_validate(raw)
+    prepared = replace(evidence._compute_checkpoint_publication(req, None, ()),
+                       position_preparation=evidence.PositionCheckpointPreparation(req, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL))
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        evidence.commit_standalone_checkpoint(None, prepared)
+    assert len(saved) == len(grades) == 1
+
+
+def test_public_preparation_and_owner_fence_bind_writer(monkeypatch):
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from tempo_legacy_database.adapters.study import position_issued_plans
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_evidence_math.position_learning import Hold
+
+    frozen = plan()
+    frozen.target = NS(key=NS(repertoire_id='r'))
+    frozen.to_record = lambda: {'authored_source_token': {'authored_digest': 'authored'}}
+    req = OpeningEvidenceCheckpoint.model_validate({
+        'attempt_id':'attempt', 'origin_queue_entry_id':21, 'queue_entry_id':21,
+        'started_at':'2026-11-02T12:00:00+00:00', 'study_timezone':'UTC',
+        'manifest': {'manifest_id':'a'*64, 'presentation_snapshot_id':1, 'repertoire_id':'r',
+                     'card_id':'card', 'card_revision':4, 'trained_color':'white',
+                     'decisions':[{'decision_id':'d'*64, 'decision_index':0, 'move_offset':6,
+                                   'fen':frozen.decision_slots[0].fen, 'expected_uci':'e2e4'}]}})
+    class Cursor:
+        def fetchone(self): return (True,)
+    class DB:
+        read_only = False
+        raw = NS(info=NS(transaction_status=NS(name='INTRANS')))
+        def execute_native(self, *_): return Cursor()
+    db = DB()
+    monkeypatch.setattr(storage, 'has_position_tables', lambda *_: True)
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: frozen)
+    monkeypatch.setattr(position_study_source, 'prepare_position_source', lambda *_: Hold('source_changed'))
+    prep = evidence.prepare_position_checkpoint(db, req)
+    fence = evidence.begin_position_checkpoint(db, prep)
+    assert fence.preparation.plan is frozen and fence.authored_digest == 'authored'
+    with pytest.raises(evidence.EvidenceConflict):
+        evidence.commit_position_checkpoint(DB(), fence, [])
+    with pytest.raises(evidence.EvidenceConflict):
+        evidence.begin_position_checkpoint(db, NS())

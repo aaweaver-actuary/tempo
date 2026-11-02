@@ -214,6 +214,7 @@ class PreparedOpeningCheckpoint:
     result: dict
     position_plan: Any = None
     position_source: Any = None
+    position_preparation: Any = None
 
 
 def _read_checkpoint_source(database, attempt_id: str, *, lock: bool = False) -> tuple[dict | None, tuple[tuple[int, str], ...]]:
@@ -230,16 +231,7 @@ def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
         row = storage.presentation_context(database, (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id))
         snapshot = dict(row) if row else None
         source_attempt, source_events = _read_checkpoint_source(database, request.attempt_id)
-        from tempo_legacy_database.adapters.study import position_first_responses as position_storage
-        from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
-        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
-        from tempo_evidence_math.position_learning import Hold
-        position_plan = replay_exact_attempt(database, request.attempt_id) if position_storage.has_position_tables(database) else None
-        if isinstance(position_plan, Hold):
-            raise evidence_error(position_plan.reason)
-        position_source = prepare_position_source(database, request.manifest.repertoire_id) if position_plan else None
-        if isinstance(position_source, Hold):
-            raise evidence_error(position_source.reason)
+        position_preparation = prepare_position_checkpoint(database, request)
     try:
         if snapshot is None:
             raise EvidenceConflict("The original opening presentation and repertoire scope cannot be proven")
@@ -247,7 +239,7 @@ def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
         validate_checkpoint(request, authoritative_manifest)
         prepared = _compute_checkpoint_publication(request, source_attempt, source_events)
         from dataclasses import replace
-        return replace(prepared, position_plan=position_plan, position_source=position_source)
+        return replace(prepared, position_preparation=position_preparation)
     except (ValueError, KeyError) as error:
         raise evidence_error(str(error)) from error
 
@@ -303,12 +295,12 @@ def commit_standalone_checkpoint(database, prepared: PreparedOpeningCheckpoint) 
     request = prepared.request
     manifest = request.manifest
     try:
-        position_context = _begin_position_checkpoint(database, prepared)
+        position_context = begin_position_checkpoint(database, prepared.position_preparation)
         _validate_checkpoint_scope(database, request, completing_review=False)
         if position_context:
-            if not position_context[0].lock_original_queue(database, prepared.position_plan):
+            if not position_context.storage.lock_original_queue(database, position_context.preparation.plan):
                 raise EvidenceConflict("Position original queue or day is busy or unavailable")
-            if not position_context[0].lock_attempt(database, request.attempt_id):
+            if not position_context.storage.lock_attempt(database, request.attempt_id):
                 raise EvidenceConflict("Position original attempt is busy")
         inserted = storage.insert_attempt_returning(database, (request.attempt_id, manifest.manifest_id, manifest.presentation_snapshot_id, manifest.repertoire_id,
              manifest.card_id, manifest.card_revision, manifest.trained_color, prepared.context_json,
@@ -324,7 +316,14 @@ def commit_standalone_checkpoint(database, prepared: PreparedOpeningCheckpoint) 
             storage.insert_event_batch(database, (request.attempt_id, [sequence for sequence, _ in prepared.missing_events],
                  [event_json for _, event_json in prepared.missing_events]))
         if position_context:
-            _commit_position_checkpoint(database, prepared, position_context)
+            combined = dict(prepared.source_events)
+            combined.update(dict(prepared.missing_events))
+            contiguous = []
+            for sequence, raw in sorted(combined.items()):
+                if sequence != len(contiguous) + 1:
+                    break
+                contiguous.append(json.loads(raw))
+            commit_position_checkpoint(database, position_context, contiguous)
         _persist_observations(database, request.attempt_id, list(prepared.observations))
         storage.update_attempt(database, (prepared.result["contiguous_sequence"], prepared.result["state"], prepared.terminal_json,
              request.queue_entry_id, request.attempt_id))
@@ -498,61 +497,106 @@ def persist_position_first_response(database, plan, envelope, accepted_at, *, ap
     return dict(rows[0])
 
 
-def _begin_position_checkpoint(database, prepared):
-    """Fence the owner before the existing checkpoint acquires card locks."""
+_POSITION_CHECKPOINT_SEAL = object()
+
+
+@dataclass(frozen=True)
+class PositionCheckpointPreparation:
+    request: Any
+    plan: Any
+    source: Any
+    _seal: Any
+
+
+@dataclass(frozen=True)
+class PositionCheckpointFence:
+    preparation: PositionCheckpointPreparation
+    database: Any
+    storage: Any
+    authored_digest: str
+    _seal: Any
+
+
+def prepare_position_checkpoint(database, request):
+    """Prepare frozen issuance and authored evidence on a read connection.
+
+    A source hold is retained: an already accepted response remains replayable.
+    The caller also validates the checkpoint against its immutable manifest.
+    """
     from tempo_legacy_database.adapters.study import position_first_responses as position_storage
     from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
-    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
     from tempo_evidence_math.position_learning import Hold
-    current = replay_exact_attempt(database, prepared.request.attempt_id) if position_storage.has_position_tables(database) else None
-    if isinstance(current, Hold):
-        raise EvidenceConflict(current.reason)
-    plan = prepared.position_plan
-    if (current is None) != (plan is None) or (plan and current.to_record() != plan.to_record()):
-        raise EvidenceConflict("Position issuance changed; prepare checkpoint again")
+    if not isinstance(request, OpeningEvidenceCheckpoint):
+        raise EvidenceConflict("Position checkpoint request is invalid")
+    plan = replay_exact_attempt(database, request.attempt_id) if position_storage.has_position_tables(database) else None
+    if isinstance(plan, Hold):
+        raise EvidenceConflict(plan.reason)
     if plan is None:
         return None
-    request = prepared.request
+    source = prepare_position_source(database, request.manifest.repertoire_id)
+    return PositionCheckpointPreparation(request.model_copy(deep=True), plan, source, _POSITION_CHECKPOINT_SEAL)
+
+
+def begin_position_checkpoint(database, prepared):
+    """Take the owner advisory fence before original card/day/queue locks."""
+    from tempo_legacy_database.adapters.study import position_first_responses as position_storage
+    from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
+    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_lock_key
+    from tempo_evidence_math.position_learning import Hold
+    if prepared is None:
+        return None
+    if not isinstance(prepared, PositionCheckpointPreparation) or prepared._seal is not _POSITION_CHECKPOINT_SEAL:
+        raise EvidenceConflict("Position checkpoint preparation is required")
+    try:
+        if database.read_only or database.raw.info.transaction_status.name != 'INTRANS':
+            raise EvidenceConflict("Position checkpoint requires a borrowed writer")
+    except AttributeError as exc:
+        raise EvidenceConflict("Position checkpoint requires a borrowed writer") from exc
+    plan, request = prepared.plan, prepared.request
+    current = replay_exact_attempt(database, request.attempt_id)
+    if isinstance(current, Hold) or current is None or current.to_record() != plan.to_record():
+        raise EvidenceConflict("Position issuance changed; prepare checkpoint again")
     manifest = request.manifest
     token = plan.to_record().get('authored_source_token')
-    source = prepared.position_source
-    if (not token or source is None or token['authored_digest'] != source.authored_token.authored_digest
-            or (plan.attempt_id, plan.queue_entry_id, plan.original_card_id, plan.original_card_revision,
-                plan.target.key.repertoire_id) !=
-               (request.attempt_id, request.origin_queue_entry_id, manifest.card_id,
-                manifest.card_revision, manifest.repertoire_id)
+    if (not token or (plan.attempt_id, plan.queue_entry_id, plan.original_card_id, plan.original_card_revision,
+                      plan.target.key.repertoire_id) !=
+                     (request.attempt_id, request.origin_queue_entry_id, manifest.card_id,
+                      manifest.card_revision, manifest.repertoire_id)
             or request.queue_entry_id not in (None, plan.queue_entry_id)):
         raise EvidenceConflict("Position issuance and original checkpoint scope differ")
-    owner = owner_mode(database, manifest.repertoire_id, token['authored_digest'])
-    if owner.disposition != 'position' or owner.epoch != plan.owner_epoch:
-        raise EvidenceConflict(owner.reason)
-    return position_storage, token['authored_digest']
+    locked = database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+                                     (owner_lock_key(manifest.repertoire_id),)).fetchone()
+    if not locked or not locked[0]:
+        raise EvidenceConflict("Position owner is busy")
+    return PositionCheckpointFence(prepared, database, position_storage, token['authored_digest'], _POSITION_CHECKPOINT_SEAL)
 
 
-def _commit_position_checkpoint(database, prepared, context):
-    """Fence source and persist only first actions from the contiguous journal."""
+def commit_position_checkpoint(database, fence, contiguous_events):
+    """Accept a validated durable journal prefix in the borrowed transaction.
+
+    Original card/day/queue/attempt locks must already be held. Exact saved
+    events are replayed before requiring current source; a new event requires
+    both the authored fence and active owner in this transaction.
+    """
     import hashlib
     from tempo_learning_review.application import review_day_at
     from tempo_evidence_math import opening_position_key
+    from tempo_evidence_math.position_learning import Hold
     from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
-    from tempo_legacy_database.adapters.study.position_grade_effects import apply_in_borrowed_transaction
-    plan, source, request = prepared.position_plan, prepared.position_source, prepared.request
-    held = fence_position_source(database, source)
-    if held is not None:
-        raise EvidenceConflict(held.reason)
+    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+    if (not isinstance(fence, PositionCheckpointFence) or fence._seal is not _POSITION_CHECKPOINT_SEAL
+            or fence.database is not database):
+        raise EvidenceConflict("Position checkpoint writer fence is required")
+    prepared = fence.preparation
+    plan, source, request = prepared.plan, prepared.source, prepared.request
+    observations = reduce_observations(contiguous_events, request.study_timezone)
     by_original_ply = {slot.original_ply: (index, slot) for index, slot in enumerate(plan.decision_slots)}
     if len(by_original_ply) != len(plan.decision_slots):
         raise EvidenceConflict("Position issued route repeats an original ply")
-    combined = dict(prepared.source_events)
-    combined.update(dict(prepared.missing_events))
-    contiguous = []
-    for sequence, raw in sorted(combined.items()):
-        if sequence != len(contiguous) + 1:
-            break
-        contiguous.append(json.loads(raw))
-    # Verify current complete authored source has one answer for each issued
-    # position before classifying a different legal response as wrong.
-    for observation in prepared.observations:
+    results = []
+    source_fenced = False
+    for observation in observations:
         if observation['response_at'] is None:
             continue
         original = request.manifest.decisions[observation['decision_index']]
@@ -563,25 +607,110 @@ def _commit_position_checkpoint(database, prepared, context):
         if (original.expected_uci != slot.definition.expected_uci
                 or opening_position_key(original.fen) != slot.definition.key.position):
             raise EvidenceConflict("Checkpoint decision differs from issued route")
-        alternatives = [d.definition for route in source.routes for d in route.decisions
-                        if d.definition.key == slot.definition.key]
-        if not alternatives or any(definition != slot.definition for definition in alternatives):
-            raise EvidenceConflict("Position authored response is ambiguous")
-        event = next((event for event in contiguous
+        event = next((event for event in contiguous_events
                       if event['decision_index'] == observation['decision_index']
                       and event['kind'] in ('first_response', 'manual_failure')), None)
         if event is None:
             raise EvidenceConflict("First response is unavailable")
         event_id = hashlib.sha256(('position:first-response:' + request.attempt_id + ':' + str(event['sequence'])).encode('utf-8')).hexdigest()
+        existing = fence.storage.receipt(database, event_id, request.attempt_id, index)
+        if existing:
+            if len(existing) != 1:
+                raise EvidenceConflict("First response identity conflicts with another receipt")
+            row = dict(existing[0])
+            raw = row['payload_json']
+            if isinstance(raw, str):
+                raw = json.loads(raw)
+            decode_position_first_response(raw, row['payload_digest'], plan)
+            if any(row[name] != raw[name] for name in ('event_id', 'attempt_id', 'decision_index',
+                   'repertoire_id', 'variant', 'position', 'owner_epoch')):
+                raise EvidenceConflict("Stored first response identity differs from payload")
+            if (raw['event_id'], raw['actual_uci'], raw['manual_failure'], raw['assistance_before'], raw['observed_at']) != (
+                    event_id, observation['first_response_uci'], observation['manual_failure'],
+                    bool(observation['assistance_before_response']), observation['response_at']):
+                raise EvidenceConflict("First response identity was reused with different content")
+            grade = fence.storage.grade_receipt(database, event_id)
+            if raw['disposition'] in {'wrong', 'illegal', 'manual_failure'} and grade is None:
+                raise EvidenceConflict("Accepted first failure has no grade receipt")
+            results.append({'receipt': row, 'grade_receipt': grade, 'replayed': True})
+            continue
+        if not source_fenced:
+            if isinstance(source, Hold) or source is None:
+                raise EvidenceConflict(getattr(source, 'reason', 'Position source is unavailable'))
+            if source.authored_token.authored_digest != fence.authored_digest:
+                raise EvidenceConflict("Position authored source changed")
+            held = fence_position_source(database, source)
+            if held is not None:
+                raise EvidenceConflict(held.reason)
+            owner = owner_mode(database, request.manifest.repertoire_id, fence.authored_digest)
+            if owner.disposition != 'position' or owner.epoch != plan.owner_epoch:
+                raise EvidenceConflict(owner.reason)
+            source_fenced = True
+        alternatives = [d.definition for route in source.routes for d in route.decisions
+                        if d.definition.key == slot.definition.key]
+        if not alternatives or any(definition != slot.definition for definition in alternatives):
+            raise EvidenceConflict("Position authored response is ambiguous")
         envelope = position_first_response_envelope(
             plan, event_id=event_id, decision_index=index,
             actual_uci=observation['first_response_uci'], manual_failure=observation['manual_failure'],
             assistance_before=bool(observation['assistance_before_response']),
             observed_at=observation['response_at'], classify_alternative=lambda *_: 'wrong')
-        now, timezone_name = context[0].acceptance_clock(database)
+        now, timezone_name = fence.storage.acceptance_clock(database)
         day = review_day_at(now, timezone_name)
         def apply_grade(db, attempt_id, event_ids):
+            from tempo_legacy_database.adapters.study.position_grade_effects import apply_in_borrowed_transaction
             return apply_in_borrowed_transaction(db, attempt_id, event_ids,
-                owner_epoch=plan.owner_epoch, authored_digest=context[1],
+                owner_epoch=plan.owner_epoch, authored_digest=fence.authored_digest,
                 accepted_study_day=day, accepted_at=now)
-        persist_position_first_response(database, plan, envelope, now, apply_grade=apply_grade)
+        row = persist_position_first_response(database, plan, envelope, now, apply_grade=apply_grade)
+        results.append({'receipt': row, 'grade_receipt': fence.storage.grade_receipt(database, event_id), 'replayed': False})
+    return results
+
+
+def position_checkpoint_events(database, fence):
+    """Read the saved bounded contiguous journal after owner checkpoint persistence."""
+    if (not isinstance(fence, PositionCheckpointFence) or fence._seal is not _POSITION_CHECKPOINT_SEAL
+            or fence.database is not database):
+        raise EvidenceConflict("Position checkpoint writer fence is required")
+    request = fence.preparation.request
+    attempt = storage.locked_attempt(database, (request.attempt_id,))
+    context = request.model_dump(mode="json", exclude={"events", "terminal", "queue_entry_id"})
+    if not attempt or attempt['context_json'] != canonical_json(context):
+        raise EvidenceConflict("Saved checkpoint context differs from position preparation")
+    rows = storage.event_rows(database, (request.attempt_id,))
+    events = []
+    for row in rows:
+        if row[0] != len(events) + 1:
+            break
+        events.append(json.loads(row[1]))
+    if len(events) != attempt['contiguous_sequence']:
+        raise EvidenceConflict("Saved checkpoint contiguous sequence differs")
+    return events
+
+
+@dataclass(frozen=True)
+class PositionCompletionInputs:
+    attempt_id: str
+    owner_epoch: str
+    authored_digest: str
+    event_ids: tuple[str, ...]
+
+
+def position_completion_inputs(fence, results):
+    """Return identities for I1's saved-completion grade handoff."""
+    if not isinstance(fence, PositionCheckpointFence) or fence._seal is not _POSITION_CHECKPOINT_SEAL:
+        raise EvidenceConflict("Position checkpoint writer fence is required")
+    plan = fence.preparation.plan
+    ids = []
+    for result in results:
+        row = result['receipt']
+        raw = row['payload_json']
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        decode_position_first_response(raw, row['payload_digest'], plan)
+        if row['event_id'] != raw['event_id'] or row['attempt_id'] != plan.attempt_id:
+            raise EvidenceConflict("Position completion receipt identity differs")
+        ids.append(row['event_id'])
+    if len(ids) != len(set(ids)):
+        raise EvidenceConflict("Position completion repeats a first response")
+    return PositionCompletionInputs(plan.attempt_id, plan.owner_epoch, fence.authored_digest, tuple(ids))
