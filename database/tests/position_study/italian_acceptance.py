@@ -38,6 +38,71 @@ def _moves(san):
     return tuple(moves)
 
 
+def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian', now=None):
+    """Seed two legal authored routes in an empty owned DB and return real owner facts.
+
+    The caller owns the connection, database lifecycle, routing and transactions.
+    This uses the real migration, source, reader, namespace and seed owners;
+    its direct active-owner update is a synthetic fixture, not operator proof.
+    """
+    if len(routes) != 2 or len(labels) != 2:
+        raise ValueError('two fixture routes required')
+    now = now or datetime.now(timezone.utc)
+    day = now.date().isoformat()
+    _migrate(raw)
+    db = PostgresConnection(raw)
+    raw.execute('INSERT INTO settings(id) VALUES(1)')
+    raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'n2',%s)", (repertoire_id,repertoire_id+' fixture',now.isoformat()))
+    raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,3,'ready',%s)", (repertoire_id,now.isoformat()))
+    physical = {}
+    for index, moves in enumerate(routes):
+        card, route = f'card-{index}', f'route-{index}'
+        raw_moves = json.dumps(moves)
+        blob = Card(card_id=42+index,due=now-timedelta(days=2-index)).to_json()
+        physical[card] = blob
+        raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,'white',%s,%s,%s)", (route,repertoire_id,labels[index],chess.STARTING_FEN,raw_moves,now.isoformat()))
+        raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
+            VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,repertoire_id,chess.STARTING_FEN,raw_moves,day,blob,(now-timedelta(days=3)).isoformat()))
+        raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire_id,card))
+        raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+            VALUES(%s,3,%s,0,%s,%s,%s,%s,'white')""", (repertoire_id,route,card,chess.STARTING_FEN,chess.STARTING_FEN,raw_moves))
+    raw.execute("""INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,checked_at,scan_completed_sources,scan_total_sources)
+        VALUES(%s,'clean','idle','scan:2',%s,2,2)""", (repertoire_id,now.isoformat()))
+    for ident,kind,generation,payload in [('graph','opening_graph_rebuild',3,{}),('scan','integrity_scan',2,{'repertoire_id':repertoire_id,'graph_generation':3})]:
+        raw.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
+            VALUES(%s,%s,%s,%s,'complete',%s,%s,%s,%s)""", (ident,kind,repertoire_id,generation,json.dumps(payload),now.isoformat(),now.isoformat(),now.isoformat()))
+    raw.execute('GRANT USAGE ON SCHEMA public TO tempo_reader,tempo_writer')
+    raw.execute('GRANT SELECT ON ALL TABLES IN SCHEMA public TO tempo_reader')
+    raw.execute('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO tempo_writer')
+    raw.execute('GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO tempo_writer')
+    raw.commit()
+    source = prepare_position_source(db,repertoire_id)
+    assert not isinstance(source, Hold), source
+    assert fence_position_source(db,source) is None
+    membership = source.snapshot.membership
+    cert = SourceCertificate(membership.snapshot_id,membership.source_revision,membership.digest,True,True)
+    inventory = inventory_from_snapshot(source.snapshot,source_certificate=cert)
+    assert not isinstance(inventory, Hold), inventory
+    raw.commit()
+    with psycopg.connect(dsn,user='tempo_reader',row_factory=tempo_row_factory) as reader_raw:
+        reader_raw.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        rows = read_card_page(PostgresConnection(reader_raw,read_only=True),candidate_card_ids=('card-0','card-1'))
+        donors = tuple(DonorFact(**(dict(row) | {'owner_repertoire_ids':tuple(row['owner_repertoire_ids']),
+            'archived':bool(row['archived']), 'pending_validation':bool(row['pending_validation']),
+            'integrity_blocked':bool(row['integrity_blocked']), 'deleted':bool(row['deleted'])})) for row in rows)
+    request = InventoryRequest((SourceFacts(source.snapshot,inventory),),donors)
+    for _ in range(10):
+        raw.execute('BEGIN')
+        seed = seed_shadow_page(db,source,request,epoch=repertoire_id+'-epoch',now=now,page_size=100)
+        raw.commit()
+        if seed['stage'] == 'complete': break
+    assert seed['stage'] == 'complete' and seed['held'] == 0
+    raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id=%s", (repertoire_id,))
+    raw.execute('INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,%s,%s)', (day,repertoire_id,now.isoformat()))
+    raw.commit()
+    return db, source, physical, day
+
+
 @pytest.mark.parametrize('first_line', ['knight', 'giuoco'], ids=['knight-first', 'giuoco-first'])
 def test_real_clean_italian_branches_issue_opponent_cue(monkeypatch, first_line):
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
@@ -71,58 +136,7 @@ def test_real_clean_italian_branches_issue_opponent_cue(monkeypatch, first_line)
     monkeypatch.setattr(evidence_storage, 'read_connection', reader)
     monkeypatch.setattr(learning_review_adapter, 'read_connection', reader)
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
-        _migrate(raw)
-        db = PostgresConnection(raw)
-        raw.execute('INSERT INTO settings(id) VALUES(1)')
-        raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('italian','Italian fixture','n2',%s)", (now.isoformat(),))
-        raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('italian',3,'ready',%s)", (now.isoformat(),))
-        physical = {}
-        for index, moves in enumerate(routes):
-            card, route = f'card-{index}', f'route-{index}'
-            raw_moves = json.dumps(moves)
-            blob = Card(card_id=42+index, due=now-timedelta(days=2-index)).to_json()
-            physical[card] = blob
-            raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,'italian',%s,'white',%s,%s,%s)", (route,ordered[index],chess.STARTING_FEN,raw_moves,now.isoformat()))
-            raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
-                VALUES(%s,'italian','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,chess.STARTING_FEN,raw_moves,day,blob,(now-timedelta(days=3)).isoformat()))
-            raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian',%s)", (card,))
-            raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
-                VALUES('italian',3,%s,0,%s,%s,%s,%s,'white')""", (route,card,chess.STARTING_FEN,chess.STARTING_FEN,raw_moves))
-        raw.execute("""INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,checked_at,scan_completed_sources,scan_total_sources)
-            VALUES('italian','clean','idle','scan:2',%s,2,2)""", (now.isoformat(),))
-        for ident,kind,generation,payload in [('graph','opening_graph_rebuild',3,{}),('scan','integrity_scan',2,{'repertoire_id':'italian','graph_generation':3})]:
-            raw.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
-                VALUES(%s,%s,'italian',%s,'complete',%s,%s,%s,%s)""", (ident,kind,generation,json.dumps(payload),now.isoformat(),now.isoformat(),now.isoformat()))
-        raw.execute('GRANT USAGE ON SCHEMA public TO tempo_reader,tempo_writer')
-        raw.execute('GRANT SELECT ON ALL TABLES IN SCHEMA public TO tempo_reader')
-        raw.execute('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO tempo_writer')
-        raw.execute('GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO tempo_writer')
-        raw.commit()
-        source = prepare_position_source(db, 'italian')
-        assert not isinstance(source, Hold), source
-        assert fence_position_source(db, source) is None
-        membership = source.snapshot.membership
-        cert = SourceCertificate(membership.snapshot_id,membership.source_revision,membership.digest,True,True)
-        inventory = inventory_from_snapshot(source.snapshot, source_certificate=cert)
-        assert not isinstance(inventory, Hold), inventory
-        raw.commit()
-        with reader() as read_db:
-            read_db.raw.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            rows = read_card_page(read_db,candidate_card_ids=('card-0','card-1'))
-            donors = tuple(DonorFact(**(dict(row) | {
-                'owner_repertoire_ids':tuple(row['owner_repertoire_ids']),
-                'archived':bool(row['archived']), 'pending_validation':bool(row['pending_validation']),
-                'integrity_blocked':bool(row['integrity_blocked']), 'deleted':bool(row['deleted'])})) for row in rows)
-        request = InventoryRequest((SourceFacts(source.snapshot,inventory),),donors)
-        for _ in range(10):
-            raw.execute('BEGIN')
-            seed = seed_shadow_page(db,source,request,epoch='italian-epoch',now=now,page_size=100)
-            raw.commit()
-            if seed['stage'] == 'complete': break
-        assert seed['stage'] == 'complete' and seed['held'] == 0
-        raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id='italian'")
-        raw.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,'italian',%s)",(day,now.isoformat()))
-        raw.commit()
+        db, _, physical, day = seed_disposable_source(raw, dsn, routes, ordered, now=now)
 
         def issue():
             proposal = prepare_due(db,day,{})
