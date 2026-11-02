@@ -54,6 +54,11 @@ class PositionDefinition:
 
 @dataclass(frozen=True)
 class SourceCertificate:
+    """Detached source-owner claims; fields alone do not establish authority.
+
+    A trusted owner supplies and fences the source facts; callers cannot certify
+    completeness or currentness merely by constructing this value.
+    """
     snapshot_id: str
     source_revision: str
     source_digest: str
@@ -79,6 +84,7 @@ class DecisionOccurrence:
 
 @dataclass(frozen=True)
 class RouteOption:
+    """Detached route claims, subject to source-owner and issuance fences."""
     route_id: str
     start_fen: str
     moves_uci: tuple[str, ...]
@@ -109,6 +115,7 @@ class RouteOption:
 
 @dataclass(frozen=True)
 class DueAtIssuance:
+    """Captured entitlement; positive credit also requires transaction recheck."""
     definition: PositionDefinition
     due: bool
     study_day: date
