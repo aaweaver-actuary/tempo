@@ -1,6 +1,11 @@
 """Fake borrowed-driver checks for the PGN import storage split; no database startup."""
+import ast
 from datetime import date
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import chess
@@ -8,6 +13,66 @@ import pytest
 
 from app import pgn_import_commands as application
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
+
+
+def _retained_storage_application_imports(source):
+    """Inspect this adapter's imports, including imports inside lazy methods."""
+    modules = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.append(node.module)
+    return {name for name in modules if name == 'app' or name.startswith('app.')}
+
+
+def test_retained_import_storage_does_not_import_application_policy():
+    from tempo_legacy_database.adapters.authored_repertoires import product_imports
+
+    source = Path(product_imports.__file__).read_text()
+    assert _retained_storage_application_imports(source) == set()
+
+
+@pytest.mark.parametrize('source', [
+    'from app.repertoire.changes.imports import ImportPreview, verify_import_approval',
+    'def preview():\n    from app.pgn_import_commands import ImportPayload, prepare_import_payload',
+    'def validate():\n    from app.pgn_import_validation import validate_sources',
+    'def apply():\n    import app.pgn_import_commands as commands',
+])
+def test_retained_import_storage_guard_rejects_original_reverse_application_imports(source):
+    # These cover the original adapter's value/policy and lazy command imports.
+    assert _retained_storage_application_imports(source)
+
+
+def test_retained_import_public_values_import_without_command_registration():
+    script = '''
+import importlib.abc, socket, sqlite3, subprocess, sys
+def forbidden(*args, **kwargs):
+    raise AssertionError('connection or process startup during retained import facade import')
+socket.socket.connect = forbidden
+socket.socket.connect_ex = forbidden
+socket.create_connection = forbidden
+sqlite3.connect = forbidden
+subprocess.Popen = forbidden
+denied = {'app.pgn_import_commands', 'app.command_gateway', 'app.main', 'app.tasks',
+          'tempo_legacy_database', 'psycopg'}
+class RejectImporterOrDatabase(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if any(fullname == name or fullname.startswith(name + '.') for name in denied):
+            raise AssertionError('unexpected startup import: ' + fullname)
+sys.meta_path.insert(0, RejectImporterOrDatabase())
+from app.repertoire.changes.imports import (
+    RetainedImport, ImportPreview, retained_imports,
+    validate_approved_import, apply_approved_import,
+)
+assert RetainedImport.model_fields and ImportPreview.model_fields
+assert all(callable(value) for value in (
+    retained_imports, validate_approved_import, apply_approved_import,
+))
+assert not denied.intersection(sys.modules)
+'''
+    subprocess.run([sys.executable, '-B', '-c', script], env=os.environ.copy(),
+                   check=True, capture_output=True, text=True, timeout=20)
 
 
 class Rows:
@@ -68,6 +133,91 @@ class Borrowed:
         return self.batch
     def __getattr__(self, name):
         raise AssertionError('Unexpected transaction/lifecycle access: ' + name)
+
+
+def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
+    from tempo_legacy_database.adapters.authored_repertoires.product_imports import RetainedImportStorage
+    from tempo_legacy_database.adapters.postgres_store import TempoRow
+
+    columns = ('command_name', 'request_hash', 'state', 'response_json', 'error_json',
+               'attempt_count', 'next_retry_at', 'last_error_json', 'lease_expires_at',
+               'payload_json', 'retry_cycle', 'cycle_attempt_count')
+    payload_json = ' { "source_name": "book.pgn", "lines": [] }\n'
+    error_json = '{ "status_code":409, "detail": {"code":"repertoire_conflict"} }'
+    values = ('imports.pgn.explicit', 'original-request-hash', 'failed', None,
+              error_json, 7, 'next-retry', '{ "old":true }', 'lease-expiry',
+              payload_json, 2, 3)
+    events = []
+    database = Borrowed(events, replies=[Rows(value=TempoRow(columns, values)), Rows()])
+    owner = RetainedImportStorage(database)
+
+    result = owner.read_operation('original-operation')
+    assert type(result) is tuple and len(result) == 12
+    assert result == values
+    assert result[4] == error_json and result[9] == payload_json
+    assert owner.read_operation('missing-operation') is None
+    assert [parameters for _, parameters in database.raw_calls] == [
+        ('original-operation',), ('missing-operation',)]
+    assert events == [('raw', 1), ('raw', 2)]
+    assert database.native_calls == []
+
+
+def test_retained_import_storage_card_rows_keep_exact_projection_order_and_empty_read():
+    from tempo_legacy_database.adapters.authored_repertoires.product_imports import RetainedImportStorage
+    from tempo_legacy_database.adapters.postgres_store import TempoRow
+
+    columns = ('id', 'revision', 'start_fen', 'moves_json', 'trained_color', 'archived', 'superseded_by')
+    values = [('a', 4, chess.STARTING_FEN, '["e2e4"]', 'black', False, None),
+              ('z', None, chess.STARTING_FEN, '[]', 'white', True, 'replacement')]
+    rows = [TempoRow(columns, row) for row in values]
+    database = Borrowed([], replies=[Rows(rows=rows)])
+    owner = RetainedImportStorage(database)
+
+    assert owner.card_rows([]) == ()
+    assert database.native_calls == []
+    identifiers = ['z', 'a']
+    result = owner.card_rows(identifiers)
+    assert result == tuple(dict(zip(columns, row)) for row in values)
+    assert type(result) is tuple and all(type(row) is dict for row in result)
+    assert database.native_calls == [(
+        'SELECT id,revision,start_fen,moves_json,trained_color,archived,superseded_by '
+        'FROM cards WHERE id=ANY(%s::text[]) ORDER BY id', (identifiers,))]
+    assert database.raw_calls == []
+
+
+def test_retained_import_storage_requires_exact_intrans_status_without_lifecycle_access():
+    from psycopg.pq import TransactionStatus
+    from tempo_legacy_database.adapters.authored_repertoires.product_imports import RetainedImportStorage
+
+    database = Borrowed([])
+    database.info = SimpleNamespace(transaction_status=None)
+    owner = RetainedImportStorage(database)
+    for status in TransactionStatus:
+        database.info.transaction_status = status
+        assert owner.in_transaction() is (status == TransactionStatus.INTRANS)
+    assert database.raw_calls == database.native_calls == database.events == []
+
+
+def test_retained_import_storage_locks_original_using_existing_opaque_receipt_writer(monkeypatch):
+    from tempo_legacy_database.adapters.authored_repertoires.product_imports import RetainedImportStorage
+    from tempo_legacy_database.adapters.commands.receipts import storage as receipts
+
+    database = Borrowed([])
+    writer = object()
+    events = []
+    def receipt_writer(connection):
+        assert connection is database
+        events.append('writer')
+        return writer
+    def lock_operation(capability, operation_id):
+        assert capability is writer
+        events.append(('lock', operation_id))
+    monkeypatch.setattr(receipts, 'receipt_writer', receipt_writer)
+    monkeypatch.setattr(receipts, 'lock_operation', lock_operation)
+
+    assert RetainedImportStorage(database).lock_original('original-operation') is None
+    assert events == ['writer', ('lock', 'original-operation')]
+    assert database.raw_calls == database.native_calls == database.events == []
 
 
 @pytest.mark.parametrize('line_rows,result_sets,expected', [
