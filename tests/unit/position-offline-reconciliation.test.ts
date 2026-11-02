@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import manifest from "../fixtures/opening-evidence-manifest.json";
 import { canonicalFenKey } from "../../app/utils/canonical-line";
-import { beginOpeningAttempt, partialOpeningAttempt } from "../../app/lib/opening-evidence-journal";
+import { beginOpeningAttempt, partialOpeningAttempt, preparePositionOpeningAttempt } from "../../app/lib/opening-evidence-journal";
 import { enqueuePendingReview, flushPendingReviews, pendingReviews, conflictedReviews } from "../../app/lib/review-outbox";
 import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { offlineTrainingDatabase } from "../../database/browser/offline-training-storage";
@@ -26,6 +26,8 @@ beforeEach(async () => { await resetStudyStorage(); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("accepts only the issued online identity and displayed manifest, retaining the first wrong response on abort", async () => {
+  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => callback({}) } });
+  expect(await preparePositionOpeningAttempt(card)).toBeUndefined();
   expect(beginOpeningAttempt(card, "different")).toBeUndefined();
   expect(beginOpeningAttempt(card, plan.attempt_id, { offline: true })).toBeUndefined();
   const mismatched = { ...card, positionPresentation: { ...plan, decision_slots: [] } };
@@ -44,6 +46,14 @@ it("accepts only the issued online identity and displayed manifest, retaining th
     expect(saved?.events[0].response_uci).toBe("d2d4");
     expect(saved?.attempt.terminal?.state).toBe("partial");
   });
+  expect(await preparePositionOpeningAttempt(card)).toContain("already started");
+});
+
+it("holds a second tab when the issued attempt lease is owned", async () => {
+  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => callback(null) } });
+  const other = { ...card, positionPresentation: { ...plan, attempt_id: "other-tab" } };
+  expect(await preparePositionOpeningAttempt(other)).toContain("another tab");
+  expect(beginOpeningAttempt(other, "other-tab")).toBeUndefined();
 });
 
 it("retains one immutable position packet through network failure and duplicate enqueue, then sends it once on retry", async () => {

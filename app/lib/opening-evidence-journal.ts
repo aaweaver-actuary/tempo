@@ -128,11 +128,56 @@ let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
 
 function holdAttemptLease(attemptId: string): void {
+  if (releaseLeases.has(attemptId)) return;
   if (typeof navigator === "undefined" || !navigator.locks) return;
   void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, async () => {
     await new Promise<void>((resolve) => releaseLeases.set(attemptId, resolve));
     releaseLeases.delete(attemptId);
   });
+}
+
+/**
+ * Reserve one issued position ID before enabling input. Confirmed checkpoint
+ * events may be removed from IndexedDB, so a previous capture cannot safely be
+ * reconstructed from that journal alone. Keep a durable started marker and
+ * hold instead of replaying an incomplete sequence on reload.
+ */
+const positionReservations = new Map<string, Promise<string | undefined>>();
+export function preparePositionOpeningAttempt(card: PracticeCard): Promise<string | undefined> {
+  const position = card as PracticeCard & { positionStudyMode?: "position"; positionStudyHold?: string;
+    positionPresentation?: { attempt_id: string } };
+  const attemptId = position.positionPresentation?.attempt_id;
+  if (position.positionStudyMode !== "position" || position.positionStudyHold || !attemptId)
+    return Promise.resolve("The issued position attempt is unavailable.");
+  if (captures.has(attemptId) && releaseLeases.has(attemptId)) return Promise.resolve(undefined);
+  const existing = positionReservations.get(attemptId);
+  if (existing) return existing;
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks || typeof localStorage === "undefined")
+    return Promise.resolve("Position Study needs browser storage and exclusive tab ownership.");
+  const preparing = new Promise<string | undefined>(resolve => {
+    void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { ifAvailable: true }, async lease => {
+      if (!lease) { resolve("This position attempt is open in another tab."); return; }
+      try {
+        const marker = `tempo-position-attempt-started:${attemptId}`;
+        const database = await offlineTrainingDatabase();
+        const prior = await readRecoveryAttempt(database, attemptId);
+        if (prior || localStorage.getItem(marker)) {
+          resolve("This position attempt was already started. Refresh training for a new issued attempt."); return;
+        }
+        localStorage.setItem(marker, "1");
+        // A read-back catches storage implementations that silently discard writes.
+        if (localStorage.getItem(marker) !== "1") throw new Error("Position attempt marker was not saved");
+        await new Promise<void>(release => {
+          releaseLeases.set(attemptId, release);
+          resolve(undefined);
+        });
+      } catch {
+        resolve("Position Study could not reserve durable browser storage. Restore storage access and retry.");
+      } finally { releaseLeases.delete(attemptId); }
+    }).catch(() => resolve("Position Study could not reserve exclusive tab ownership."));
+  }).finally(() => positionReservations.delete(attemptId));
+  positionReservations.set(attemptId, preparing);
+  return preparing;
 }
 
 /** A bounded in-memory attempt; storage is an explicit asynchronous boundary. */
@@ -241,7 +286,7 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
   if (position.positionStudyMode === "position") {
     const plan = position.positionPresentation;
     const manifest = card.openingDecisionManifest;
-    if (options.offline || position.positionStudyHold || !plan || !attemptId || attemptId !== plan.attempt_id ||
+    if (options.offline || position.positionStudyHold || !plan || !attemptId || !releaseLeases.has(attemptId) || attemptId !== plan.attempt_id ||
         !manifest || !openingEvidenceCheckpointSchema.shape.manifest.safeParse(manifest).success ||
         card.backendId !== plan.original_card_id || card.revision !== plan.original_card_revision ||
         card.queueEntryId !== plan.queue_entry_id || manifest.card_id !== plan.original_card_id ||
