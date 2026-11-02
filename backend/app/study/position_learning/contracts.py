@@ -14,6 +14,14 @@ IssuedPlanT = TypeVar("IssuedPlanT", contravariant=True)
 IssuedReceiptT = TypeVar("IssuedReceiptT", covariant=True)
 GradeReceiptT = TypeVar("GradeReceiptT", covariant=True)
 OwnerReceiptT = TypeVar("OwnerReceiptT", covariant=True)
+PositionStateT = TypeVar("PositionStateT", covariant=True)
+
+
+class PositionScheduleReadPort(Protocol[PositionStateT]):
+    def read_due_page(self, *, repertoire_id: str, owner_epoch: str,
+            after: tuple | None, limit: int) -> tuple[DueAtIssuance, ...] | Hold: ...
+
+    def read_current(self, position: PositionKey) -> PositionStateT | Hold: ...
 
 
 class IssuedPositionAttemptPort(Protocol[IssuedPlanT, IssuedReceiptT]):
