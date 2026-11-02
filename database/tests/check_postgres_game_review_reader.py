@@ -3,10 +3,10 @@
 Run with the existing validation lock and explicit TEMPO_TEST_INSTANCE=disposable,
 TEMPO_TEST_COMPOSE_PROJECT=tempo-pg-regressions-<digits>-<hex>, and that stack's
 TEMPO_DEVELOPMENT_BUDGET_TOKEN. API, foreground-worker and PostgreSQL must already
-be running with schema52 and provisioned reader/writer profiles. Nothing here
+be running with the current schema and provisioned reader/writer profiles. Nothing here
 creates a container, credential, role, grant, image, or application instance.
 Only three uniquely named synthetic receipt rows are seeded/removed by the
-existing writer. Collection performs no Docker, HTTP, database or fixture work.
+existing writer. Import performs no Docker, HTTP, database or fixture work.
 """
 import hashlib
 import json
@@ -17,6 +17,8 @@ import subprocess
 import uuid
 
 import pytest
+
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +34,7 @@ RUNTIME_FILES = {
     "database/tempo_legacy_database/adapters/study/game_feedback.py": "/app/tempo_legacy_database/adapters/study/game_feedback.py",
     "database/tempo_legacy_database/ddl/schema_version.py": "/app/tempo_legacy_database/ddl/schema_version.py",
     "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql": "/app/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
+    "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql": "/app/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
 }
 
 
@@ -75,6 +78,7 @@ import hashlib, json, os
 from pathlib import Path
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 def connect(role):
     assert os.environ.get("TEMPO_TEST_INSTANCE") == "disposable"
@@ -92,7 +96,7 @@ def connect(role):
         assert row[3] in payload["postgres_addresses"], ("Database address differs from owned fixture", row[3], payload["postgres_addresses"])
         assert row[4] == "tempo-disposable-postgres-test"
         versions = database.execute("SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()
-        assert [row[0] for row in versions] == list(range(1,53))
+        assert [row[0] for row in versions] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
         return database
     except BaseException:
         database.close()
@@ -112,7 +116,8 @@ with connect("tempo_reader") as database:
     assert [row[0] for row in relations] == sorted([
         'product_feedback_jobs','product_feedback_pages','product_feedback_sources',
         'product_feedback_captures','product_feedback_deliveries','product_feedback_configuration',
-        'product_feedback_sync_requests','product_feedback_retry_requests','study_game_feedback'])
+        'product_feedback_sync_requests','product_feedback_retry_requests',
+        'product_feedback_managed_mode','study_game_feedback'])
     for relation, in relations:
         privileges = database.execute("""SELECT has_table_privilege(current_user,%s,'SELECT'),
             has_table_privilege(current_user,%s,'INSERT'),has_table_privilege(current_user,%s,'UPDATE'),
@@ -128,7 +133,7 @@ with connect("tempo_reader") as database:
         pass
     else:
         raise AssertionError("Reader UPDATE must be rejected even in a read-write transaction")
-print(json.dumps({"schema":52,"role":"tempo_reader","select_grants":9,"update_rejected":True}))
+print(json.dumps({"schema":POSTGRES_SCHEMA_VERSION,"role":"tempo_reader","select_grants":len(relations),"update_rejected":True}))
 '''
 
 SEED = r'''
@@ -224,7 +229,7 @@ def _exec_python(container, payload, body):
     return json.loads(_docker("exec", "-i", container["Id"], "python", "-", source=source).strip().splitlines()[-1])
 
 
-def test_packaged_game_review_schema52_reader_reads_current_receipt_without_write_privileges():
+def check_packaged_game_review_reader_reads_current_receipt_without_write_privileges():
     containers = _owned_containers()  # Reject ambient/live targets before any connection or seed.
     from app.games.feedback.coordinator import delivery_for
     from app.games.feedback.ports import SourceState
@@ -253,10 +258,15 @@ def test_packaged_game_review_schema52_reader_reads_current_receipt_without_writ
         command=command.model_dump(mode="json"),effect_id=effect_id(command.key),postgres_addresses=addresses,
         runtime_hashes={target:hashlib.sha256((ROOT/path).read_bytes()).hexdigest() for path,target in RUNTIME_FILES.items()})
     preflight = _exec_python(containers["api"],payload,PREFLIGHT)
-    assert preflight == dict(schema=52,role="tempo_reader",select_grants=9,update_rejected=True)
+    assert preflight == dict(schema=POSTGRES_SCHEMA_VERSION,role="tempo_reader",select_grants=10,update_rejected=True)
     try:
         assert _exec_python(containers["foreground-worker"],payload,SEED)["effect_id"] == payload["effect_id"]
         proof = _exec_python(containers["api"],payload,PROOF)
         assert proof["writer_command_rejected"] and proof["fixture_rows_unchanged"]
     finally:
         assert _exec_python(containers["foreground-worker"],payload,CLEANUP) == {"fixture_cleanup_verified":True}
+
+
+if __name__ == "__main__":
+    check_packaged_game_review_reader_reads_current_receipt_without_write_privileges()
+    print("PASS packaged Games reader reads the current receipt without write privileges; fixture cleanup verified")

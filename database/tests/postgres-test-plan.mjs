@@ -15,7 +15,7 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   ];
   return [
     "compose_config", "image_build", ...(mode === "browser" ? [] : ["maintenance_cli"]),
-    "startup", "service_health", ...(mode === "browser" ? [] : durabilityStages),
+    "startup", "service_health", ...(mode === "browser" ? [] : ["game_review_reader", ...durabilityStages]),
     ...nativeChecks, ...(mode === "durability" ? [] : ["browser"]),
     ...(mode === "full" ? ["study_isolation"] : []),
     ...(mode === "browser" ? [] : ["study_durability"]), "cleanup",
