@@ -11,9 +11,9 @@ such accepted position-receipt adapter exists in this change.
 
 | Metric | Definition |
 | --- | --- |
-| Distinct positions tested | Unique `(repertoire_id, exact_position)` among accepted first-response effects with Good or Again. Alias routes collapse; pending/skipped positions are excluded. |
-| Actual response events | Unique immutable accepted event IDs with Good or Again. Two independently accepted events remain two events even if they concern the same position. |
-| Distinct positions per minute | Distinct tested positions divided by the caller's positive elapsed window in minutes. Both UTC-aware start/end instants are required; otherwise unavailable. It is a throughput measure, not a learner-quality claim. |
+| Distinct positions tested | Unique `(repertoire_id, exact_position)` among accepted first-response receipts with Good, Again, or observation-only `observe`. Alias routes collapse; pending/skipped positions are excluded. |
+| Actual response events | Unique immutable accepted event IDs with Good, Again, or `observe`. Two independently accepted events remain two events even if they concern the same position. |
+| Distinct positions per minute | Distinct tested positions divided by the caller's positive elapsed window in minutes. Both UTC-aware start/end instants and an aware `accepted_at` inside the inclusive window for every counted event are required. Missing timestamps make this unavailable; any present event outside the window is rejected. It is a throughput measure, not a learner-quality claim. |
 | Repeated moves avoided | Sum of explicit receipt counters for prevented repeated learner moves. It is never added to positions tested. |
 | Nondue first wrong | Accepted Again events whose Study-owned due-at-issuance witness was false. An accepted first wrong remains included if the attempt was abandoned later. |
 | Due Good / due Again | Actual accepted Good or Again events with a true due-at-issuance witness. Separately, positive positions per Study day counts each exact repertoire position at most once for the authoritative `study_day`; it is unavailable if a positive receipt lacks that day. |
@@ -25,9 +25,12 @@ such accepted position-receipt adapter exists in this change.
 | 7/30-day retention | Always unavailable in this reducer. A future source may report a matured cohort only after the full interval has elapsed and real follow-up receipts exist. Synthetic fixtures, unelapsed cohorts and missing follow-up are not retention observations. |
 
 Study day is carried by the owning receipt and is not reconstructed from UTC or
-the machine timezone. Missing or naive window timestamps leave time-derived
-measures unavailable; event counters can still be reported when receipt
-identity and grade are present. Attempt-level signals with no released source
+the machine timezone. Good and Again counters count each unique accepted event
+ID, including separate same-day positive effects; the daily positive-position
+count is a separate deduplicated metric and does not hide duplicate effects.
+Missing or naive window/event timestamps leave throughput unavailable; event
+counters can still be reported when receipt identity and grade are present.
+Attempt-level signals with no released source
 are `None` (unavailable), not zero. Conflicting payloads sharing one event or attempt ID must
 be rejected by the source adapter; this reducer keeps the first occurrence and
 cannot establish receipt authenticity.

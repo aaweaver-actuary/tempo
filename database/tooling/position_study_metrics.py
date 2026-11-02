@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
 
-Grade = Literal["good", "again", "pending"]
+Grade = Literal["good", "again", "observe", "pending"]
 MAX_ATTEMPT_RECEIPTS = 1_000
 MAX_EVENTS_PER_ATTEMPT = 256
 
@@ -21,7 +21,9 @@ class AcceptedPositionEvent:
 
     ``event_id`` is the immutable receipt identity. ``study_day`` is the day
     captured by the Study owner, not recomputed in this read-only layer.
-    Pending/skipped positions are represented by no event (or grade=pending).
+    ``observe`` is an actual accepted response that did not create Good/Again
+    schedule effect. Pending/skipped positions are represented by no event
+    (or grade=pending).
     """
 
     event_id: str
@@ -87,8 +89,11 @@ def summarize(
     """Aggregate a caller-bounded page; duplicate receipt IDs count once.
 
     Repeated route aliases collapse by (repertoire, exact position). Event IDs
-    collapse independently. Conflicting duplicate IDs are outside the released
-    receipt contract and callers must reject them before invoking this function.
+    collapse independently. For throughput, every non-pending event must have
+    an aware accepted_at inside the inclusive supplied window; a missing or
+    naive event timestamp makes throughput unavailable, and a present event
+    outside the window is rejected. Conflicting duplicate IDs are outside the
+    released receipt contract and callers must reject them before this call.
     """
     if len(receipts) > MAX_ATTEMPT_RECEIPTS:
         raise ValueError(f"receipt page exceeds {MAX_ATTEMPT_RECEIPTS} attempts")
@@ -130,6 +135,16 @@ def summarize(
     if aware_window and ended_at > started_at:
         elapsed = (ended_at - started_at).total_seconds() / 60
 
+    all_event_times_valid = bool(aware_window and elapsed is not None)
+    if all_event_times_valid:
+        for event in actual:
+            event_at = event.accepted_at
+            if event_at is None or event_at.tzinfo is None or event_at.utcoffset() is None:
+                all_event_times_valid = False
+                continue
+            if event_at < started_at or event_at > ended_at:
+                raise ValueError("accepted event falls outside the measurement window")
+
     return Metrics(
         distinct_positions_tested=len(positions),
         actual_response_events=len(actual),
@@ -148,5 +163,9 @@ def summarize(
         donor_eligible=sum_optional("donor_eligible"),
         migration_excluded=sum_optional("migration_excluded"),
         elapsed_minutes=elapsed,
-        distinct_positions_per_minute=(len(positions) / elapsed if elapsed and elapsed > 0 else None),
+        distinct_positions_per_minute=(
+            len(positions) / elapsed
+            if all_event_times_valid and elapsed is not None and elapsed > 0
+            else None
+        ),
     )
