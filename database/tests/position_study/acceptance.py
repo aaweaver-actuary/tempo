@@ -317,7 +317,7 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *,
     after_good = state()
     raw.commit()
 
-    def next_plan():
+    def next_plan(*, expect_shared=True):
         proposal = prepare_due(port, day, {})
         assert isinstance(proposal, dict) and 'candidate' in proposal, proposal
         assert admit_due(port, day, proposal) is None
@@ -335,9 +335,10 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *,
         replay = prepare_queue_head(envelope)
         assert replay.mode == 'replay'
         plan = replay.proposal
-        assert plan.decision_slots[0].definition.key == shared
-        witness = next(w for w in plan.due_positions if w.definition.key == shared)
-        assert not witness.due, 'the revisited position must naturally be nondue'
+        if expect_shared:
+            assert plan.decision_slots[0].definition.key == shared
+            witness = next(w for w in plan.due_positions if w.definition.key == shared)
+            assert not witness.due, 'the revisited position must naturally be nondue'
         assert plan.attempt_id != first_plan.attempt_id and entry != first_plan.queue_entry_id
         return plan, entry, card
 
@@ -394,6 +395,20 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *,
         assert not isinstance(proof, Hold), proof
         assert proof.attempt_id == second.attempt_id
         raw.commit()
+        # A different authored reply shares e4, so the genuine saved proof can
+        # skip that clean learner move while preserving the necessary reply cue.
+        shortened, next_entry, _ = next_plan(expect_shared=False)
+        assert shortened.attempt_id != second.attempt_id and next_entry != second_entry
+        assert shortened.skipped_prefix_proof_ids[0] == second.attempt_id
+        assert shortened.start_ply == 1 and shortened.opponent_cue_ply == 1
+        assert shortened.opponent_cue_uci == shortened.moves_uci[0]
+        assert shortened.opponent_cue_uci != proof.moves_uci[1]
+        board = chess.Board()
+        board.push_uci('e2e4')
+        assert chess.Board(shortened.starting_fen) == board
+        board.push_uci(shortened.opponent_cue_uci)
+        assert chess.Board(shortened.decision_slots[0].fen) == board
+        assert shortened.decision_slots[0].original_ply == 2
         return
 
     third, third_entry, _ = next_plan()
