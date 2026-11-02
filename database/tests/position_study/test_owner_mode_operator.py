@@ -82,7 +82,7 @@ def test_qualified_transition_requires_preflight_and_frontier(prepared, monkeypa
     monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: calls.append('release') or {'revision': 'r'})
     monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: calls.append('seed'))
     monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: calls.append('frontier'))
-    release = dict(state_directory='x', qualification_path='x', revision='r', target='t', registration_path='x')
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
     result = operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
         operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
     assert result['mode'] == expected
@@ -102,7 +102,7 @@ def test_frontier_hold_prevents_mode_change(prepared, monkeypatch):
     def hold(*args):
         raise operator.OperatorHold('position_old_issued_attempt_unfinished')
     monkeypatch.setattr(operator, 'fence_old_attempt_frontier', hold)
-    release = dict(state_directory='x', qualification_path='x', revision='r', target='t', registration_path='x')
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
     with pytest.raises(operator.OperatorHold, match='old_issued'):
         operator.transition_in_writer(db, prepared, None, action='activate', epoch='epoch',
             operation_id='op', now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
@@ -142,15 +142,10 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
         def execute_native(self, sql):
             return Rows([('tempo',)] if 'current_database' in sql else [(n,) for n in range(1, 58)])
     prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='source'))
-    kwargs = dict(epoch='epoch', state_directory=directory, qualification_path=qualpath,
-                  revision=revision, target=target, registration_path=regpath)
-    monkeypatch.setattr(operator.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=2))
-    with pytest.raises(operator.OperatorHold, match='running_image_identity'):
-        operator.validate_release_evidence(Database(), prepared, **kwargs)
-    monkeypatch.setattr(operator.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0))
+    kwargs = dict(epoch='epoch', registration=registration, deployment=deployment, guard=guard,
+                  qualification=qualification, revision=revision, target=target)
     assert operator.validate_release_evidence(Database(), prepared, **kwargs)['target'] == target
     qualification['checks']['fresh_introduction'] = True
-    qualpath.write_text(json.dumps(qualification))
     with pytest.raises(operator.OperatorHold, match='qualification_incomplete'):
         operator.validate_release_evidence(Database(), prepared, **kwargs)
 

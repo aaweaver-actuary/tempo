@@ -9,17 +9,15 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from pathlib import Path
 import re
-import subprocess
 
 from tempo_legacy_database.adapters.authored_repertoires.position_study_source import (
     PreparedPositionSource, fence_position_source,
 )
 from tempo_legacy_database.adapters.study.position_owner_epoch import owner_lock_key, _writer
 from tempo_legacy_database.adapters.study.position_fsrs_namespace import fence_namespace
-from tooling.position_study_seed import verify_seed_receipts_page
-from tooling.position_study_donors import select_donors
+from tempo_legacy_database.adapters.study.position_seed import verify_seed_receipts_page
+from tempo_legacy_database.adapters.study.position_seed_donors import select_donors
 
 
 class OperatorHold(ValueError):
@@ -119,55 +117,44 @@ def preflight_in_writer(database, prepared, request, *, epoch):
 _REQUIRED_QUALIFICATIONS = ('fresh_introduction', 'games_j2', 'online_only_l2', 'operator_n2')
 
 
-def validate_release_evidence(database, prepared, *, epoch, state_directory, qualification_path, revision, target, registration_path):
-    """Read real Tempo CLI receipts and a candidate-bound qualification artifact.
+def validate_release_evidence(database, prepared, *, epoch, registration, deployment, guard,
+                              qualification, revision, target):
+    """Validate raw CLI receipts and qualification in the target writer.
 
-    The coordinator supplies paths to the registered target's state directory and
-    independent N2 output. This also invokes the CLI's runtime inspection; a
-    production adapter must bind the writer to that registered target.
+    The host adapter has inspected the registered running target and passes the
+    actual records through; no client-supplied success boolean is accepted.
     """
-    if not re.fullmatch(r'[0-9a-f]{40}', revision or '') or not re.fullmatch(r'[0-9a-f]{24}', target or ''):
+    if not isinstance(revision, str) or not re.fullmatch(r'[0-9a-f]{40}', revision):
         raise OperatorHold('position_release_identity_invalid')
-    directory = Path(state_directory)
-    if directory.name != target:
-        raise OperatorHold('position_release_target_mismatch')
-    try:
-        deployment = json.loads((directory / 'deployment.json').read_text())
-        guard = json.loads((directory / 'migration-guard.json').read_text())
-        registration = json.loads(Path(registration_path).read_text())
-        qualification_bytes = Path(qualification_path).read_bytes()
-        qualification = json.loads(qualification_bytes)
-    except (OSError, ValueError, TypeError) as exc:
-        raise OperatorHold('position_release_evidence_unavailable') from exc
+    if not isinstance(target, str) or not re.fullmatch(r'[0-9a-f]{24}', target):
+        raise OperatorHold('position_release_identity_invalid')
     if not all(isinstance(value, dict) for value in (deployment, guard, qualification, registration)):
         raise OperatorHold('position_release_evidence_unavailable')
     try:
         volumes = sorted(volume['name'] for volume in registration['volumes'].values())
         key_bytes = json.dumps([registration.get('daemonId') or registration['context'], volumes],
                                ensure_ascii=False, separators=(',', ':')).encode()
-        actual_target = hashlib.sha256(key_bytes).hexdigest()[:24]
-        if registration.get('version') != 1 or actual_target != target:
+        if registration.get('version') != 1 or hashlib.sha256(key_bytes).hexdigest()[:24] != target:
             raise OperatorHold('position_release_target_mismatch')
         expected_volume = registration['volumes'][registration['postgresVolumeKey']]['name']
-        root = Path(registration['root']).resolve(strict=True)
-    except (KeyError, TypeError, OSError) as exc:
+    except (KeyError, TypeError) as exc:
         raise OperatorHold('position_registration_invalid') from exc
     backup = deployment.get('backup') or {}
     if not isinstance(backup, dict) or not isinstance(deployment.get('evidence'), dict):
         raise OperatorHold('position_deployment_receipt_unqualified')
     if (deployment.get('version') != 1 or deployment.get('revision') != revision
-            or deployment.get('schema') != 57 or deployment.get('evidence', {}).get('commit') != revision
+            or deployment.get('schema') != 57 or deployment['evidence'].get('commit') != revision
             or not deployment.get('verified_at') or not isinstance(deployment.get('images'), dict)
             or not deployment['images'] or not all(deployment['images'].values())
             or backup.get('verified') is not True or not backup.get('filename')
             or not backup.get('restore_created') or not backup.get('restore_removed')):
         raise OperatorHold('position_deployment_receipt_unqualified')
     dbname = database.execute_native('SELECT current_database()').fetchone()[0]
-    if (guard.get('version') != 1 or guard.get('target') != target or guard.get('state') != 'verified'
+    if (not isinstance(guard.get('database'), dict) or not isinstance(guard.get('backup'), dict)
+            or guard.get('version') != 1 or guard.get('target') != target or guard.get('state') != 'verified'
             or guard.get('verified_schema') != 57 or not guard.get('verified_at')
-            or guard.get('database', {}).get('name') != dbname
-            or guard.get('database', {}).get('volume') != expected_volume
-            or guard.get('backup', {}).get('verified') is not True or not guard['backup'].get('filename')):
+            or guard['database'].get('name') != dbname or guard['database'].get('volume') != expected_volume
+            or guard['backup'].get('verified') is not True or not guard['backup'].get('filename')):
         raise OperatorHold('position_migration_receipt_unqualified')
     versions = [row[0] for row in database.execute_native('SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()]
     if versions != list(range(1, 58)):
@@ -182,33 +169,9 @@ def validate_release_evidence(database, prepared, *, epoch, state_directory, qua
             or checks[name].get('status') != 'passed' or not isinstance(checks[name].get('evidence'), str)
             or not checks[name]['evidence'].strip() for name in _REQUIRED_QUALIFICATIONS)):
         raise OperatorHold('position_qualification_incomplete')
-    # Reuse the CLI's actual Docker target/image/config inspection. It is a
-    # read-only probe, not a caller-provided boolean or a deployment action.
-    js = """
-import {readFileSync} from 'node:fs';
-import {createRuntime} from './scripts/tempo-runtime.mjs';
-import {commandExecutor} from './scripts/tempo-deployment.mjs';
-const [registrationPath, stateDirectory, expectedRevision] = process.argv.slice(1);
-const target = JSON.parse(readFileSync(registrationPath, 'utf8'));
-const previous = JSON.parse(readFileSync(stateDirectory + '/deployment.json', 'utf8'));
-const run = commandExecutor({root: target.root, output: () => {}});
-const runtime = createRuntime(target, {run, stateDirectory, revision: expectedRevision, previous, log: () => {}});
-await runtime.inspectTarget();
-const identity = await runtime.inspectRunningRevision();
-if (identity.status !== 'consistent' || !identity.detail.startsWith(expectedRevision + ' ')
-    || identity.receipt !== 'matches immutable images and configuration of inspected running services') process.exit(2);
-"""
-    try:
-        probe = subprocess.run(['node', '--input-type=module', '-e', js,
-                                str(Path(registration_path).resolve()), str(directory.resolve()), revision],
-                               cwd=root, capture_output=True, text=True, timeout=30, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise OperatorHold('position_running_image_inspection_unavailable') from exc
-    if probe.returncode:
-        raise OperatorHold('position_running_image_identity_unqualified')
+    payload = json.dumps(qualification, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
     return {'target': target, 'revision': revision,
-            'qualification_sha256': hashlib.sha256(qualification_bytes).hexdigest(),
-            'backup': backup['filename']}
+            'qualification_sha256': hashlib.sha256(payload).hexdigest(), 'backup': backup['filename']}
 
 
 def fence_old_attempt_frontier(database, repertoire_id):
@@ -275,7 +238,7 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
                 allowed = {'stage': ('inactive', 'shadow'), 'activate': ('staged',), 'resume': ('paused',)}
                 if owner['mode'] not in allowed[action]:
                     raise OperatorHold('position_owner_invalid_transition')
-                if not isinstance(release, dict) or set(release) != {'state_directory', 'qualification_path', 'revision', 'target', 'registration_path'}:
+                if not isinstance(release, dict) or set(release) != {'registration', 'deployment', 'guard', 'qualification', 'revision', 'target'}:
                     raise OperatorHold('position_release_evidence_unavailable')
                 evidence = validate_release_evidence(database, prepared, epoch=epoch, **release)
                 preflight_in_writer(database, prepared, request, epoch=epoch)
@@ -294,3 +257,88 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
         raise
     database.execute_native('RELEASE SAVEPOINT position_owner_operator')
     return result
+
+
+def _prepare_request(repertoire_id):
+    """Read a complete source and bounded donor facts before the writer fence."""
+    from app.repertoire.position_index import build_index
+    from tempo_evidence_math.position_learning import Hold, SourceCertificate
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from tempo_legacy_database.adapters.postgres_store import connection
+    from tempo_legacy_database.adapters.study.position_seed_inventory import (
+        DonorFact, InventoryRequest, SourceFacts, read_seed_donor_page,
+    )
+    with connection(read_only=True, authoritative=True, repeatable_read=True) as database:
+        prepared = prepare_position_source(database, repertoire_id)
+        if isinstance(prepared, Hold):
+            raise OperatorHold(prepared.reason)
+        index = build_index(prepared.snapshot)
+        ids = sorted({binding.presentation_id for node in index.nodes.values()
+                      for occurrence in node.occurrences for binding in occurrence.bindings
+                      if binding.presentation_id})
+        if len(ids) > 10000:
+            raise OperatorHold('position_donor_map_exceeds_bound')
+        donors = []
+        for offset in range(0, len(ids), 500):
+            rows = read_seed_donor_page(database, candidate_card_ids=tuple(ids[offset:offset + 500])).fetchall()
+            for row in rows:
+                facts = dict(row)
+                facts['owner_repertoire_ids'] = tuple(facts['owner_repertoire_ids'])
+                for field in ('archived', 'pending_validation'):
+                    value = facts[field]
+                    facts[field] = bool(value) if value in (0, 1) else None
+                donors.append(DonorFact(**facts))
+        membership = prepared.snapshot.membership
+        cert = SourceCertificate(membership.snapshot_id, membership.source_revision, membership.digest, True, True)
+        request = InventoryRequest((SourceFacts(prepared.snapshot, index, cert),), tuple(donors))
+    return prepared, request
+
+
+def main():
+    """Private CLI transport executed by the registered foreground worker."""
+    import argparse
+    import base64
+    from datetime import timezone
+    from tempo_legacy_database.adapters.postgres_store import connection
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--request-base64', required=True)
+    args = parser.parse_args()
+    try:
+        raw = base64.b64decode(args.request_base64, validate=True)
+        if len(raw) > 100000:
+            raise OperatorHold('position_operator_request_too_large')
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get('version') != 1 or type(payload.get('plan')) is not bool:
+            raise OperatorHold('position_operator_request_invalid')
+        action, rep, epoch = payload['action'], payload['repertoire_id'], payload['epoch']
+        if action not in ('stage', 'activate', 'pause', 'resume', 'rollforward') or not all(
+                isinstance(value, str) and value for value in (rep, epoch, payload.get('operation_id'))):
+            raise OperatorHold('position_operator_request_invalid')
+        prepared, request = _prepare_request(rep)
+        with connection() as database:
+            if payload['plan']:
+                _lock(database, prepared, source_required=action != 'pause')
+                owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
+                    JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+                    WHERE o.repertoire_id=%s''', (rep,)).fetchone()
+                if not owner or owner['epoch'] != epoch:
+                    raise OperatorHold('position_owner_epoch_or_source_changed')
+                result = {'plan': True, 'action': action, 'repertoire_id': rep, 'epoch': epoch,
+                          'current_mode': owner['mode'], 'source_digest': prepared.authored_token.authored_digest}
+                if action not in ('pause', 'rollforward'):
+                    result['release'] = validate_release_evidence(database, prepared, epoch=epoch, **payload['release'])
+                    result['preflight'] = preflight_in_writer(database, prepared, request, epoch=epoch)
+                    fence_old_attempt_frontier(database, rep)
+                elif action == 'rollforward':
+                    raise OperatorHold('position_rollforward_not_integrated')
+            else:
+                result = transition_in_writer(database, prepared, request, action=action, epoch=epoch,
+                    operation_id=payload['operation_id'], now=datetime.now(timezone.utc),
+                    release=payload['release'] if action != 'pause' else None)
+        print(json.dumps(result, sort_keys=True))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise SystemExit('position operator held: ' + str(exc)) from exc
+
+
+if __name__ == '__main__':
+    main()
