@@ -140,6 +140,7 @@ def test_native_due_keyset_pagination_exclusions_context_and_index():
         try:
             connection.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             connection.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
+            connection.execute('CREATE TABLE cards(id text PRIMARY KEY,fsrs_card_json text)')
             ddl = Path(__file__).resolve().parents[3] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
             connection.execute(ddl.read_text())
             connection.execute("INSERT INTO study_position_epochs VALUES ('r','e1','source',%s),('other','e1','source',%s)", (NOW, NOW))

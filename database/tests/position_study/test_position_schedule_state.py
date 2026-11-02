@@ -142,6 +142,7 @@ def test_native_position_lock_borrowing_and_repertoire_isolation():
         try:
             setup.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             setup.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
+            setup.execute('CREATE TABLE cards(id text PRIMARY KEY,fsrs_card_json text)')
             ddl = Path(__file__).resolve().parents[3] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
             setup.execute(ddl.read_text())
             setup.execute("INSERT INTO study_position_epochs VALUES ('r','e1','source',%s),('other','e1','source',%s)", (NOW, NOW))
@@ -149,8 +150,8 @@ def test_native_position_lock_borrowing_and_repertoire_isolation():
             for rep, card in [('r', 123), ('other', 124)]:
                 setup.execute('''INSERT INTO study_position_states
                     (repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,
-                     fsrs_internal_card_id,fsrs_json,due_at)
-                    VALUES (%s,'standard',%s,'e2e4','p1','e1','source',%s,%s,%s)''',
+                     version,fsrs_internal_card_id,fsrs_json,due_at)
+                    VALUES (%s,'standard',%s,'e2e4','p1','e1','source',7,%s,%s,%s)''',
                     (rep, FEN, card, state_row()['fsrs_json'], NOW))
             with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as first, psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as second:
                 for conn in (first, second):
