@@ -269,3 +269,49 @@ def test_native_two_decisions_and_late_failure_rollback():
             assert conn.execute('SELECT value FROM legacy_sentinel').fetchone()['value'] == 'unchanged'
         finally:
             conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_independent_wrong_after_good_still_transitions():
+    from dataclasses import replace
+    args = facts('e2e4', complete=True)
+    good = _decide(*args)
+    assert good.acceptance.receipt.final.grade == 'good'
+    original = args[0]
+    wrong_response = replace(original.first_response, attempt_id='other-attempt', event_id='other-event',
+                             actual_uci='d2d4')
+    wrong = replace(original, first_response=wrong_response, disposition='wrong',
+                    terminal_complete=False, aggregate_review_saved=False)
+    current = replace(args[2], revision=2)
+    result = _decide(wrong, replace(args[1], due=False), current,
+                     (good.acceptance.receipt,), good.schedule.fsrs_card_json)
+    assert result.acceptance.receipt.final.grade == 'again'
+    assert result.schedule is not None
+
+
+def test_exact_retry_returns_original_negative_and_changed_payload_conflicts(monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+    import pytest
+    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+    response = facts('d2d4')[0].first_response
+    plan = SimpleNamespace(plan_id='p', attempt_id='attempt', owner_epoch='epoch')
+    monkeypatch.setattr(writer, '_load_plan', lambda *_: plan)
+    monkeypatch.setattr(writer, '_load_events', lambda *_: ((response, 'wrong', 'digest', NOW),))
+    monkeypatch.setattr(writer, '_lock_states', lambda *_, **__: pytest.fail('replay acquired state lock'))
+    old = {'effect_id': hashlib.sha256(b'study:first_response:event').hexdigest(), 'event_id': 'event',
+           'grade': 'again', 'accepted_study_day': DAY, 'accepted_at': NOW,
+           'fsrs_before_json': 'before', 'fsrs_after_json': 'after', 'version_before': 1,
+           'version_after': 2, 'request_digest': hashlib.sha256(b'p:digest').hexdigest()}
+    class Cursor:
+        def fetchall(self): return [old]
+    class Database:
+        read_only = False
+        raw = SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name='INTRANS')))
+        def execute_native(self, *_): return Cursor()
+    kwargs = dict(owner_epoch='epoch', authored_digest='authored', accepted_study_day=DAY, accepted_at=NOW,
+                  completion=object())
+    result = writer.apply_in_borrowed_transaction(Database(), 'attempt', ('event',), **kwargs)
+    assert result[0].replayed and result[0].grade == 'again' and result[0].fsrs_after_json == 'after'
+    old['request_digest'] = 'changed'
+    with pytest.raises(writer.GradeEffectError, match='first_response_receipt_conflict'):
+        writer.apply_in_borrowed_transaction(Database(), 'attempt', ('event',), **kwargs)
