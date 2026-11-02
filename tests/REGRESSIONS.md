@@ -6552,3 +6552,45 @@ condition; a real packaged engine startup remains a separate acceptance check.
 ### Complete snapshot wire serialization under the existing PostgreSQL budget (#703)
 
 `backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` compares full, authored and candidate documents against the released JSONB encoding, including escaped text, nulls, budget metadata and fingerprints. Both packaged recovery modes reached four verified reviews before a 384 MiB PostgreSQL OOM during the complete-repertoire source query. The wire serialization change preserves source rows, ordering, one MVCC view and existing refusal bounds; packaged recovery remains to be rerun.
+
+## Position-owned opening Study (#832)
+
+`backend/tests/test_position_identity_contract.py` and the legal position fixtures
+cover exact identity, castling, en passant, clocks, repertoire scope and authored
+transpositions. `test_position_schedule_occurrences.py` covers public certified
+route/inventory projection, physical-binding ambiguity and source conflicts.
+`test_position_first_response_policy.py`, `test_position_daily_credit.py`,
+`test_position_prefix_eligibility.py` and `test_position_issued_plan_contracts.py`
+cover first-response classification, daily positive credit, independent failures,
+whole-clean prefix proof and immutable issuance. The real-FEN regressions retain
+authorized bytes while accepting legally irrelevant en-passant spelling.
+
+`database/tests/position_study/` owns the additive schema/namespace, exact state,
+bounded due reader, deterministic donor inventory and restart-safe seed, source
+fences, issued plans, raw first responses, atomic grade effects and owner-mode
+operator regressions. Opt-in native cases require their explicit task-owned
+PostgreSQL DSN; skipped cases are not native evidence.
+`database/tests/position_study/acceptance.py` is explicitly selected against an
+empty disposable `tempo_position_test_n2*` database: real migrations, source and
+namespace guards, donor seeding, due admission, original queue/head/attempt,
+durable first error, central review and receipt replay, repeated clean context,
+later genuine failure and actual saved clean-prefix issuance. Connection routing
+is substituted; core learning writers are not. This does not establish installed
+runtime, real human practice, browser behavior or production latency.
+
+`backend/tests/test_position_review_integration.py` and
+`test_position_review_reconciliation.py` own position-only central review ordering
+and original receipt recovery. `test_position_game_feedback.py`,
+`test_position_game_target_mapping.py`, `test_position_queue_admission.py` and
+`test_position_introductions.py` cover exact Games targets, truthful urgent
+nondue witnesses, queue authority and canonical fresh-state introduction.
+`test_position_recombination_gate.py` preserves legacy R11 while preventing
+competing transitions for adopted cohorts. Actual integrated Games promotion and
+settlement qualification remains separate from mocked port checks.
+
+Browser decoder, issued-display, attempt identity and journal tests in
+`tests/unit/position-*` and `tests/unit/opening-evidence-*` own wire decoding and
+retention behavior. Real compiled browser and applicable service-worker checks
+are required before claiming browser/offline acceptance; controlled tests with
+service workers blocked do not establish offline support. Position v1 is
+explicitly online-only; legacy unsynced journals remain protected.

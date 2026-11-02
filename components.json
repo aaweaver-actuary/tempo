@@ -974,7 +974,11 @@
       "publicExports": [
         "Schedule",
         "schedule_review",
-        "unlock_ready"
+        "unlock_ready",
+        "PositionGrade",
+        "PositionSchedule",
+        "clone_state",
+        "schedule_position_review"
       ],
       "dependencies": [
         "fsrs"
