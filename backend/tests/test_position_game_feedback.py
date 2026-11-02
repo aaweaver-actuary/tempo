@@ -186,3 +186,10 @@ def test_position_urgency_reads_exact_durable_reset_and_holds_changed_state(monk
     assert storage.read_position_urgency(db, card_id='card', revision=1, repertoire_id='london', lock=True) == fact
     row['state_digest'] = 'changed'
     assert isinstance(storage.read_position_urgency(db, card_id='card', revision=1, repertoire_id='london'), Hold)
+
+    class TooMany:
+        def execute_native(self, sql, args=()):
+            assert 'LIMIT 129' in sql
+            return Result([{}] * 129)
+    assert storage.read_position_urgency(TooMany(), card_id='card', revision=1,
+                                         repertoire_id='london').reason == 'position_urgency_candidate_limit'
