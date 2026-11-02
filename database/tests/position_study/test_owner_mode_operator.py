@@ -488,7 +488,6 @@ def test_native_full_source_operator_lifecycle():
     from tempo_evidence_math.position_learning import Hold, SourceCertificate
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
     from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
-    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
     from tempo_legacy_database.adapters.study.position_seed_inventory import CARD_PAGE_SQL, DonorFact, InventoryRequest, SourceFacts
     from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
     dsn = os.environ.get('TEMPO_POSITION_F4_FULL_DSN')
@@ -552,12 +551,18 @@ def test_native_full_source_operator_lifecycle():
             raw.commit()
             return source, request
         source, request = prepare()
-        for _ in range(10):
+        for page_number in range(10):
             raw.execute('BEGIN')
-            result = seed_shadow_page(port, source, request, epoch='old', now=now, page_size=100)
+            result = operator.seed_page_in_writer(port, source, request, epoch='old',
+                operation_id=f'seed-{page_number}', page_size=100, now=now, release=release(source, 'old'))
             raw.commit()
-            if result['stage'] == 'complete': break
-        assert result['stage'] == 'complete' and result['held'] == 0
+            raw.execute('BEGIN')
+            replay = operator.seed_page_in_writer(port, source, request, epoch='old',
+                operation_id=f'seed-{page_number}', page_size=100, now=now, release=release(source, 'old'))
+            raw.commit()
+            assert replay == result
+            if result['page']['stage'] == 'complete': break
+        assert result['page']['stage'] == 'complete' and result['page']['held'] == 0
         original = [tuple(row) for row in raw.execute('''SELECT variant,position,fsrs_internal_card_id,fsrs_json,version,due_at
             FROM study_position_states ORDER BY variant,position''').fetchall()]
         raw.commit()
@@ -594,3 +599,71 @@ def test_native_full_source_operator_lifecycle():
             FROM study_position_states ORDER BY variant,position''').fetchall()] == original
         assert raw.execute("SELECT count(*) FROM study_position_epochs WHERE repertoire_id='f4'").fetchone()[0] == 2
         assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == fsrs
+
+
+def test_seed_plan_uses_real_preview_without_writes(monkeypatch):
+    from test_position_source_authority import setup
+    from tempo_evidence_math.position_learning import SourceCertificate
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryRequest, SourceFacts
+    from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
+    prepared = prepare_position_source(setup(monkeypatch), 'rep')
+    membership = prepared.snapshot.membership
+    cert = SourceCertificate(membership.snapshot_id, membership.source_revision, membership.digest, True, True)
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(prepared.snapshot, source_certificate=cert)),), ())
+    db = DB()
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'revision': 'candidate'})
+    monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+    def no_seed(*a, **kw): raise AssertionError('plan must never write an F2 page')
+    monkeypatch.setattr(operator, 'seed_shadow_page', no_seed)
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    result = operator.plan_in_writer(db, prepared, request, {'action': 'seed', 'repertoire_id': 'rep',
+        'epoch': 'e', 'page_size': 1, 'release': release})
+    assert result['plan'] and len(result['decisions']) == 1 and result['decisions'][0]['disposition'] == 'hold'
+    assert not any(sql.lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE', 'SELECT NEXTVAL')) for sql, _ in db.statements)
+
+
+def test_seed_page_replays_exact_receipt_and_rejects_changed_request(monkeypatch):
+    import json
+    class ReceiptDB(DB):
+        def execute_native(self, sql, params=()):
+            self.statements.append((sql, params))
+            if 'FROM operation_receipts WHERE' in sql:
+                return Cursor(self.existing)
+            if sql.startswith('INSERT INTO operation_receipts'):
+                self.existing = dict(command_name=params[1], request_hash=params[2], state='complete', response_json=params[3])
+            return Cursor()
+    db = ReceiptDB()
+    token = SimpleNamespace(repertoire_id='rep', authored_digest='digest', as_dict=lambda: {'authored_digest': 'digest'})
+    prepared = SimpleNamespace(authored_token=token)
+    calls = []
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'revision': 'candidate'})
+    monkeypatch.setattr(operator, 'seed_shadow_page', lambda db, source, request, **kw: calls.append(kw) or {'stage': 'seeding', 'seeded': 1, 'held': 0})
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    args = dict(epoch='epoch', operation_id='op', page_size=1, now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    first = operator.seed_page_in_writer(db, prepared, object(), **args)
+    assert operator.seed_page_in_writer(db, prepared, object(), **args) == first
+    assert len(calls) == 1 and calls[0]['page_size'] == 1
+    assert json.loads(db.existing['response_json']) == first
+    with pytest.raises(operator.OperatorHold, match='operation_conflict'):
+        operator.seed_page_in_writer(db, prepared, object(), **(args | {'page_size': 2}))
+    assert len(calls) == 1
+    assert any(sql.startswith('ROLLBACK TO SAVEPOINT') for sql, _ in db.statements)
+
+
+def test_seed_page_failure_rolls_back_before_receipt(monkeypatch):
+    db = DB()
+    prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='digest',
+        as_dict=lambda: {'authored_digest': 'digest'}))
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {})
+    def fail(*a, **kw): raise ValueError('source_changed')
+    monkeypatch.setattr(operator, 'seed_shadow_page', fail)
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    with pytest.raises(ValueError, match='source_changed'):
+        operator.seed_page_in_writer(db, prepared, object(), epoch='epoch', operation_id='op', page_size=1,
+            now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
+    assert any(sql.startswith('ROLLBACK TO SAVEPOINT') for sql, _ in db.statements)
+    assert not any(sql.startswith('INSERT INTO operation_receipts') for sql, _ in db.statements)

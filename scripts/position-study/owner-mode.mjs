@@ -11,15 +11,19 @@ const values = {};
 let apply = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--apply') { apply = true; continue; }
-  if (!['--action', '--repertoire', '--epoch', '--operation-id', '--qualification', '--config', '--new-epoch'].includes(args[i]) || !args[i + 1])
+  if (!['--action', '--repertoire', '--epoch', '--operation-id', '--qualification', '--config', '--new-epoch', '--page-size'].includes(args[i]) || !args[i + 1])
     throw new Error(`Unrecognized or incomplete argument: ${args[i]}`);
   values[args[i].slice(2)] = args[++i];
 }
-if (!['stage', 'activate', 'pause', 'resume', 'rollforward'].includes(values.action)
+if (!['seed', 'stage', 'activate', 'pause', 'resume', 'rollforward'].includes(values.action)
     || !values.repertoire || !values.epoch || !values['operation-id'])
   throw new Error('Provide --action, --repertoire, --epoch and --operation-id.');
 if (values.action === 'rollforward' && (!values['new-epoch'] || values['new-epoch'] === values.epoch))
   throw new Error('Rollforward requires a distinct --new-epoch.');
+const pageSize = values['page-size'] === undefined ? 100 : Number(values['page-size']);
+if (values.action !== 'seed' && values['page-size'] !== undefined) throw new Error('--page-size is only valid for seed.');
+if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 || (values['page-size'] !== undefined && !/^[1-9][0-9]*$/.test(values['page-size'])))
+  throw new Error('--page-size must be an integer from 1 to 100.');
 const configPath = resolve(values.config ?? process.env.TEMPO_CLI_CONFIG ?? join(homedir(), '.config', 'tempo', 'config.json'));
 const registration = JSON.parse(readFileSync(configPath, 'utf8'));
 if (registration.version !== 1) throw new Error('A registered version 1 Tempo target is required.');
@@ -43,7 +47,7 @@ try {
       || image.receipt !== 'matches immutable images and configuration of inspected running services')
     throw new Error('Running service identities do not match the recorded deployment.');
   const payload = {version: 1, action: values.action, repertoire_id: values.repertoire,
-    epoch: values.epoch, new_epoch: values['new-epoch'] ?? null, operation_id: values['operation-id'], plan: !apply,
+    epoch: values.epoch, page_size: pageSize, new_epoch: values['new-epoch'] ?? null, operation_id: values['operation-id'], plan: !apply,
     release: {registration, deployment, guard, qualification, target, revision, operation}};
   const wire = Buffer.from(JSON.stringify(payload)).toString('base64');
   if (wire.length > 131072) throw new Error('Operator evidence exceeds the bounded command size.');

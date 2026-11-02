@@ -1,5 +1,25 @@
 # Study game-feedback storage
 
+## Position Study owner operation
+
+The registered local coordinator command can preview and advance a bounded
+shadow seed without enabling Study ownership. The target must already have a
+matching deployed image, verified backup and source-bound qualification
+evidence. A missing or stale receipt holds the command.
+
+```sh
+node scripts/position-study/owner-mode.mjs --action seed --repertoire REPERTOIRE --epoch EPOCH --operation-id PAGE_ID --qualification QUALIFICATION.json --page-size 100
+node scripts/position-study/owner-mode.mjs --action seed --repertoire REPERTOIRE --epoch EPOCH --operation-id PAGE_ID --qualification QUALIFICATION.json --page-size 100 --apply
+```
+
+The first command previews only. The second commits at most one allocator
+preflight or seed page and its operation receipt in the same transaction.
+Retry the same page with the same operation ID; use a new ID to advance the
+checkpoint. A completed seed still requires the operator's stage and activation
+checks, including readback and the attempt frontier. Paused compatible owners
+can roll forward to a new epoch while retaining position schedules and history;
+changed definitions and unresolved evidence remain held.
+
 The Study-owned [recombination adapter](recombination.py) now supplies bounded
 `CurrentStudyRecombination` source/attempt fencing, fresh generated card scheduling,
 normal queue projection and confirmed splits. Its canonical
