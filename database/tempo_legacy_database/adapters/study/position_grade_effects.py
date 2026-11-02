@@ -411,6 +411,11 @@ def position_completion_matches(database, effect, completion):
         owner_epoch,source_digest,expected_uci,policy_version
         FROM study_position_grades WHERE game_effect_key=%s AND source_kind='game_lapse'""",
         (effect.key.logical_id(),)).fetchone()
+    if (reset is None and getattr(getattr(effect, 'progress', None), 'position_grade_effect_id', None)
+            is not None):
+        return False
+    if reset is None and (getattr(effect, 'target_authority', None) or {}).get('kind') == 'position_carrier':
+        return False
     if reset is not None:
         witness = next((d for d in plan.due_positions if d.definition == response.definition), None)
         key = response.definition.key

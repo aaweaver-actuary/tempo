@@ -451,3 +451,54 @@ def test_position_carrier_queue_requires_exact_repertoire_scope(monkeypatch):
     assert not adapter.promote_position_carrier(effect, NOW.date().isoformat()) and not db.updated
     db.rows = [{'id':1, 'admission_repertoire_id':None}]
     assert not adapter.promote_position_carrier(effect, NOW.date().isoformat())
+
+
+def test_position_carrier_settlement_requires_original_durable_game_grade(monkeypatch):
+    key = NS(repertoire_id='rep', variant='standard', position='fen')
+    definition = NS(key=key, expected_uci='e2e4', policy_version='policy')
+    witness = NS(definition=definition, position_revision=4, owner_epoch='epoch')
+    plan = NS(attempt_id='a', due_positions=(witness,))
+    response = NS(definition=definition, assistance_before=False, manual_failure=False,
+                  correct=True, event_id='event')
+    monkeypatch.setattr(grades, '_load_plan', lambda *args: plan)
+    monkeypatch.setattr(grades, '_completion_saved', lambda *args: True)
+    monkeypatch.setattr(grades, '_load_events', lambda *args: ((response, 'expected', 'digest', NOW),))
+    authority = dict(kind='position_carrier', grade_effect_id='original-grade', owner_epoch='epoch',
+        source_digest='digest', expected_uci='e2e4', policy_version='policy', repertoire_id='rep',
+        variant='standard', position='fen')
+    effect = NS(qualification=None, lapse=NS(finding=NS(repertoire_id='rep', position_key='fen',
+        expected_uci=('e2e4',))), key=NS(logical_id=lambda: 'game-key'), target_authority=authority,
+        progress=NS(position_grade_effect_id='original-grade'))
+    completion = NS(review_id=1, card_id='alias', revision=1)
+    assert not grades.position_completion_matches(Database(None), effect, completion)
+    wrong = dict(effect_id='different-grade', version_after=4, repertoire_id='rep', variant='standard',
+                 position='fen', owner_epoch='epoch', source_digest='digest', expected_uci='e2e4',
+                 policy_version='policy')
+    assert not grades.position_completion_matches(Database(wrong), effect, completion)
+    wrong['effect_id'] = 'original-grade'
+    assert grades.position_completion_matches(Database(wrong), effect, completion)
+
+
+def test_position_carrier_recovery_prepares_the_retained_alias(monkeypatch):
+    from test_position_game_target_mapping import departure, LONDON_ORDER_A
+    from tempo_evidence_math.position_learning import PositionDefinition, PositionKey
+    from tempo_legacy_database.adapters.study import game_feedback_authority as authority, current_feedback_authority
+    _, qualification, position = departure(LONDON_ORDER_A)
+    decision = qualification.selection.decision
+    definition = PositionDefinition(PositionKey('london', position), 'g1f3', 'london-policy')
+    earlier = decision.model_copy(update={'presentation_id':'a-card', 'presentation_revision':1,
+                                           'introduction':'introduced', 'available':True})
+    retained = decision.model_copy(update={'presentation_id':'z-card', 'presentation_revision':2,
+                                            'introduction':'introduced', 'available':True})
+    source = NS(authored_token=NS(authored_digest='digest'), snapshot=NS(decision_presentations=(earlier,retained)),
+                routes=(NS(decisions=(NS(definition=definition),)),))
+    def facts(db, binding):
+        return {'card':dict(revision=binding.presentation_revision, introduced_at=NOW, content_type='opening',
+                            archived=False, pending_validation=False, superseded_by=None),
+                'memberships':[{'repertoire_id':'london'}], 'graphs':[{'line_id':binding.route_id}]}
+    monkeypatch.setattr(current_feedback_authority, 'read_current_feedback_target', facts)
+    monkeypatch.setattr(authority.CurrentOwnerDecisions, '_carrier_executable', staticmethod(lambda *args: True))
+    decisions = object.__new__(authority.CurrentOwnerDecisions)
+    decisions._position_source = source
+    target = NS(card_id='z-card', card_revision=2)
+    assert decisions.prepare_position_carrier(object(), qualification, retained_target=target)[0] == retained

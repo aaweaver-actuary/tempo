@@ -190,7 +190,7 @@ class CurrentOwnerDecisions:
         from app.services.position_queue_admission import prepare_targeted_position_introduction
         return prepare_targeted_position_introduction(source, target)
 
-    def prepare_position_carrier(self, database, qualification):
+    def prepare_position_carrier(self, database, qualification, *, retained_target=None):
         """Prepare one bounded introduced carrier from the owner projection."""
         source = getattr(self, '_position_source', None)
         if source is None:
@@ -213,6 +213,9 @@ class CurrentOwnerDecisions:
                     if item.repertoire_id == decision.repertoire_id and item.position_key == selection.position_key
                     and item.selected_response_uci == definition.expected_uci and item.available
                     and item.introduction == 'introduced' and item.presentation_id != decision.presentation_id]
+        if retained_target is not None:
+            bindings = [item for item in bindings if (item.presentation_id, item.presentation_revision) ==
+                        (retained_target.card_id, retained_target.card_revision)]
         if len(bindings) > 128:
             return None
         from .current_feedback_authority import read_current_feedback_target

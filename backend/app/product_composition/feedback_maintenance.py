@@ -82,7 +82,9 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
                 introduction_target_identity(target), '', (), 'encounter_preparation_required'))
         with read() as database:
             day = PostgresGameFeedbackStore(database).study_day(instant(clock())).isoformat()
-            position_carrier = (decisions.prepare_position_carrier(database, qualification)
+            retained = (observed.target_authority or {}).get('kind') == 'position_carrier'
+            position_carrier = (decisions.prepare_position_carrier(database, qualification,
+                                retained_target=observed.progress.target if retained else None)
                 if observed.progress is not None and observed.progress.position_grade_effect_id is not None
                 and (target.introduction == 'unintroduced' or observed.reason == 'position_carrier_unintroduced'
                      or (observed.target_authority or {}).get('kind') == 'position_carrier') else None)
