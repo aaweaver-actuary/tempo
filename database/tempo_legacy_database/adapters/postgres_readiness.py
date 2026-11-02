@@ -6,6 +6,14 @@ def read_health_facts(reader, today):
                 version_row = database.execute_native(
                     "SELECT MAX(version) FROM tempo_schema_migrations"
                 ).fetchone()
+                position_tables = database.execute_native(
+                    "SELECT to_regclass('public.study_position_epochs') IS NOT NULL AND "
+                    "to_regclass('public.study_position_owners') IS NOT NULL AND "
+                    "to_regclass('public.study_position_states') IS NOT NULL AND "
+                    "to_regclass('public.study_position_issued_plans') IS NOT NULL AND "
+                    "to_regclass('public.study_position_first_responses') IS NOT NULL AND "
+                    "to_regclass('public.study_position_grades') IS NOT NULL"
+                ).fetchone()
                 settings_row = database.execute_native(
                     "SELECT 1 FROM settings WHERE id=1"
                 ).fetchone()
@@ -17,4 +25,4 @@ def read_health_facts(reader, today):
                     "SELECT state,payload_json FROM background_tasks "
                     "WHERE kind='daily_queue' AND deduplication_key='current'"
                 ).fetchone()
-    return version_row, settings_row, queue_row, queue_task
+    return version_row, position_tables, settings_row, queue_row, queue_task

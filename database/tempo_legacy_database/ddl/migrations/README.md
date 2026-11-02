@@ -2,6 +2,11 @@
 
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
+Position Study adds [057_position_study.sql](057_position_study.sql), at source
+readiness 57. Its [owner dictionary](../../schema/study-position/README.md)
+describes inactive epochs, schedules, issuance and receipts. This is additive
+source DDL; it does not seed or activate a cohort.
+
 #622 adds [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql), at
 source readiness 55. It extends existing attempt origins with actual first-head
 sequence/time. Existing issued attempts keep unknown generation/time; no history
@@ -91,3 +96,6 @@ migration has been run by the feature implementation.
 
 - [054_product_repertoire_review.sql](054_product_repertoire_review.sql)
 - [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql)
+
+- [056_managed_game_feedback_mode.sql](056_managed_game_feedback_mode.sql)
+- [057_position_study.sql](057_position_study.sql)
