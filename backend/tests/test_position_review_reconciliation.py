@@ -125,6 +125,7 @@ def test_repeated_position_in_one_completion_has_one_good(monkeypatch):
     monkeypatch.setattr(writer, '_completion_saved', lambda *_: True)
 
     class Cursor:
+        rowcount = 1
         def fetchall(self): return []
     class Database:
         read_only = False

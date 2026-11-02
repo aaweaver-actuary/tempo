@@ -46,6 +46,7 @@ def test_state_locks_use_stable_order_and_authored_source():
     from tempo_legacy_database.adapters.study.position_grade_effects import _lock_states
 
     class Cursor:
+        rowcount = 1
         def __init__(self, row):
             self.row = row
         def fetchone(self):
@@ -83,6 +84,7 @@ def test_grade_writer_aborts_before_writes_when_correct_is_pending(monkeypatch):
         'fsrs_internal_card_id': 100, 'version': 1}})
 
     class Cursor:
+        rowcount = 1
         def fetchall(self): return []
     class Database:
         read_only = False
@@ -120,6 +122,7 @@ def test_two_due_decisions_write_two_effects_and_propagate_late_failure(monkeypa
     monkeypatch.setattr(writer, '_completion_saved', lambda *_: True)
 
     class Cursor:
+        rowcount = 1
         def fetchall(self): return []
     class Database:
         read_only = False
@@ -303,6 +306,7 @@ def test_exact_retry_returns_original_negative_and_changed_payload_conflicts(mon
            'fsrs_before_json': 'before', 'fsrs_after_json': 'after', 'version_before': 1,
            'version_after': 2, 'request_digest': hashlib.sha256(b'p:digest').hexdigest()}
     class Cursor:
+        rowcount = 1
         def fetchall(self): return [old]
     class Database:
         read_only = False

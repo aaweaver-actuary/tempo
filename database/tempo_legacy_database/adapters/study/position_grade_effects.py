@@ -264,8 +264,12 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
     saved = _completion_saved(database, plan, completion) if completion is not None else False
     if completion is not None and not saved:
         raise GradeEffectError('saved_completion_unavailable')
+    # Plan the batch against successive state, while retaining the all-holds
+    # before-writes boundary. A legal route can revisit the same exact position.
+    states = {key: dict(row) for key, row in states.items()}
+    staged_goods = {}
     decisions = []
-    for response, disposition, payload_digest, event_accepted_at in events:
+    for response, disposition, payload_digest, event_accepted_at in sorted(events, key=lambda event: event[0].index):
         row = states[response.definition.key]
         if (row['expected_uci'], row['policy_version']) != (response.definition.expected_uci,
                                                              response.definition.policy_version):
@@ -312,7 +316,7 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
             proposal=SimpleNamespace(event_id=h['event_id']),
             evidence=SimpleNamespace(first_response=SimpleNamespace(attempt_id=h['attempt_id'], index=h['decision_index'])),
             final=SimpleNamespace(position=response.definition.key, study_day=h['accepted_study_day'], grade=h['grade']),
-        ) for h in history)
+        ) for h in history) + tuple(staged_goods.get(response.definition.key, ()))
         evidence = AcceptedEvidence(response, True, disposition, saved, saved, owner_epoch,
                                     plan.source_digest, accepted_at, accepted_study_day)
         current = CurrentPositionState(response.definition, owner_epoch, row['version'],
@@ -329,6 +333,10 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
         vb = row['version']
         va = vb + 1 if schedule else vb
         decisions.append((effect_id, response, digest, final, before, after, vb, va, schedule))
+        if final.grade == 'good':
+            staged_goods.setdefault(response.definition.key, []).append(decision.acceptance.receipt)
+        if schedule is not None:
+            row['fsrs_json'], row['version'] = after, va
 
     # All policy holds have been checked before the first write. Any SQL or
     # scheduling failure below must propagate to the caller and abort its scope.
@@ -340,11 +348,13 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
         effect_id, response, digest, final, before, after, vb, va, schedule = item
         key = response.definition.key
         if schedule is not None:
-            database.execute_native(
+            updated = database.execute_native(
                 """UPDATE study_position_states SET fsrs_json=%s,due_at=%s,version=%s
                      WHERE repertoire_id=%s AND variant=%s AND position=%s AND version=%s""",
                 (after, schedule.due_at, va, key.repertoire_id, key.variant, key.position, vb),
             )
+            if updated.rowcount != 1:
+                raise GradeEffectError('position_state_version_changed')
         database.execute_native(
             """INSERT INTO study_position_grades
                 (effect_id,source_kind,event_id,attempt_id,decision_index,effect_kind,repertoire_id,
