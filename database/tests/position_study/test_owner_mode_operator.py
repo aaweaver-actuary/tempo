@@ -217,6 +217,8 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
             admin.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
             admin.execute('CREATE TABLE cards(id text PRIMARY KEY, repertoire_id text, fsrs_card_json text)')
             admin.execute('CREATE TABLE repertoire_cards(repertoire_id text,card_id text)')
+            admin.execute('CREATE TABLE opening_evidence_attempts(repertoire_id text,state text)')
+            admin.execute('CREATE TABLE study_game_feedback(card_id text,status text)')
             admin.execute('''CREATE TABLE queue_attempt_origins(queue_entry_id bigint,card_id text,revision bigint,
                 issued_as_head bigint,content_type text,last_status text,review_result_json text,admission_repertoire_id text)''')
             admin.execute('''CREATE TABLE operation_receipts(operation_id text PRIMARY KEY,command_name text NOT NULL,
@@ -238,7 +240,8 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
             monkeypatch.setattr(operator, '_lock', lock)
             monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: {})
             monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'target': 'test'})
-            prepared = SimpleNamespace(authored_token=SimpleNamespace(authored_digest='source'))
+            prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='source',
+                as_dict=lambda: {'authored_digest': 'new-source'}))
             release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
             def transition(db, action, operation):
                 return operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
@@ -258,6 +261,36 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
                 conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
                 assert conn.execute('SELECT mode FROM study_position_owners').fetchone()[0] == 'inactive'
                 assert conn.execute('SELECT count(*) FROM operation_receipts').fetchone()[0] == 0
+                # Exercise retained state/grade and resume through real SQL. Source,
+                # policy, namespace and release capability are test stubs here.
+                import json
+                monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+                monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'preserve_schedule'}])
+                conn.execute("UPDATE study_position_owners SET mode='paused' WHERE repertoire_id='rep'")
+                conn.execute("UPDATE queue_attempt_origins SET last_status='complete',review_result_json='{}'")
+                prior = {'action': 'activate', 'repertoire_id': 'rep', 'epoch': 'epoch',
+                         'source_digest': 'source', 'mode': 'active'}
+                conn.execute("INSERT INTO operation_receipts VALUES ('prior','position_owner.transition','hash','complete',%s)",
+                             (json.dumps(prior),))
+                conn.execute('''INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,
+                    owner_epoch,source_digest,version,fsrs_internal_card_id,fsrs_json,due_at)
+                    VALUES ('rep','standard','position','e2e4','policy','epoch','source',7,4503599627370496,'{"state":"retained"}',now())''')
+                conn.execute('''INSERT INTO study_position_grades(effect_id,source_kind,game_effect_key,game_evidence_json,effect_kind,
+                    repertoire_id,variant,position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,
+                    grade,request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
+                    VALUES ('grade','game_lapse','game','{}'::jsonb,'again','rep','standard','position','epoch','e2e4',
+                    'policy','source',CURRENT_DATE,'again','request',now(),'before','after',6,7)''')
+                before_state = tuple(conn.execute('SELECT fsrs_internal_card_id,fsrs_json,version,due_at FROM study_position_states').fetchone())
+                before_grade = tuple(conn.execute('SELECT * FROM study_position_grades').fetchone())
+                prepared.authored_token.authored_digest = 'new-source'
+                rolled = operator.transition_in_writer(db, prepared, None, action='rollforward', epoch='epoch', new_epoch='next',
+                    operation_id='roll', now=datetime.now(timezone.utc), release=release)
+                assert rolled['mode'] == 'paused'
+                assert tuple(conn.execute('SELECT fsrs_internal_card_id,fsrs_json,version,due_at FROM study_position_states').fetchone()) == before_state
+                assert tuple(conn.execute('SELECT * FROM study_position_grades').fetchone()) == before_grade
+                assert operator.transition_in_writer(db, prepared, None, action='resume', epoch='next', operation_id='resume',
+                    now=datetime.now(timezone.utc), release=release)['mode'] == 'active'
+                conn.rollback()
         finally:
             admin.execute('SET search_path TO public')
             admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
