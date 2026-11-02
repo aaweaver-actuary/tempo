@@ -126,6 +126,9 @@ def test_study_opening_rejected_page_advances_without_starvation(phase_harness, 
 def test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resumes(phase_harness, monkeypatch):
     monkeypatch.setattr(study_mode, 'study_only_enabled', lambda: False)
     admitted = []
+    from app.services import position_queue_admission
+    monkeypatch.setattr(position_queue_admission, 'prepare_opening_introduction', lambda *a: ('legacy', 'rep'))
+    monkeypatch.setattr(position_queue_admission, 'fence_opening_introduction', lambda *a: None)
     monkeypatch.setattr(worker, '_admit_one_prioritized_opening',
                         lambda db, day, planned: admitted.append(planned['card_id']) or False)
     payload = {'queue_date': '2026-10-13', '_queue_phase': 'study_opening_item',

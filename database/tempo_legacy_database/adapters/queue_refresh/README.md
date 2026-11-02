@@ -205,3 +205,13 @@ flowchart LR
     Card --> Day[Lock queue date]
     Day --> Queue[Reuse pending carrier or append cycle]
 ```
+
+For an ordinary authorized opening introduction in an active position epoch,
+the refresh prepares exact source-bound decisions and fences the source, owner,
+namespace preflight and physical aliases before its existing card/date locks.
+Only after the existing admission and quota checks succeed does the same writer
+create fresh FSRS state for missing positions with proven unintroduced history.
+The immutable seed hold remains in place; no grade or review is manufactured.
+An ordinary card whose positions are already introduced is skipped, while an
+outstanding miss retains its existing priority path. Unknown or previously
+introduced alias history holds rather than resetting a historical schedule.

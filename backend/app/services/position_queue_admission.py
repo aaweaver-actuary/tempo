@@ -129,3 +129,45 @@ def admit_due(database, day, prepared):
     if not carrier_status['occupied']:
         admissions.append_position_due(database, day, token.repertoire_id, carrier.presentation_id)
     return None
+
+
+def prepare_opening_introduction(database, planned):
+    """Prepare position state only for the existing selected introduction."""
+    from tempo_legacy_database.adapters.study.position_introductions import prepare_introduction
+    repertoire = planned['repertoire_id']
+    row = database.execute_native('''SELECT o.mode,o.epoch,e.source_digest
+        FROM study_position_owners o JOIN study_position_epochs e
+          ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+        WHERE o.repertoire_id=%s''', (repertoire,)).fetchone()
+    if row is None or row['mode'] in ('inactive', 'shadow'):
+        return ('legacy', repertoire)
+    if row['mode'] != 'active':
+        return Hold('position_owner_' + row['mode'])
+    from .queue_next_card import _cached_position_source
+    source = _cached_position_source(database, repertoire, row['epoch'], row['source_digest'])
+    if isinstance(source, Hold):
+        return source
+    if source.authored_token.authored_digest != row['source_digest']:
+        return Hold('position_owner_source_changed')
+    intro = prepare_introduction(source, planned['card_id'])
+    return intro if isinstance(intro, Hold) else ('position', intro)
+
+
+def fence_opening_introduction(database, prepared):
+    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+    from tempo_legacy_database.adapters.study.position_introductions import fence_introduction
+    if prepared[0] == 'legacy':
+        owner = owner_mode(database, prepared[1], None)
+        return None if owner.disposition == 'legacy' else Hold(owner.reason)
+    return fence_introduction(database, prepared[1])
+
+
+def apply_opening_introduction(database, prepared, fenced, *, now):
+    from tempo_legacy_database.adapters.study.position_introductions import initialize_introduction
+    if prepared[0] == 'position':
+        initialize_introduction(database, prepared[1], fenced, now=now)
+
+
+def redundant_opening_introduction(prepared, fenced):
+    """A wholly introduced card grants no new position introduction."""
+    return prepared[0] == 'position' and not fenced.definitions
