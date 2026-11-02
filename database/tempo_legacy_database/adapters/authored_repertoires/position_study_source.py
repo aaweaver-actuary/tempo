@@ -42,7 +42,8 @@ _LINES_SQL = """SELECT CASE WHEN octet_length(id)<=65536 THEN id END id,
  CASE WHEN octet_length(trained_color)<=65536 THEN trained_color END trained_color,
  CASE WHEN octet_length(start_fen)<=65536 THEN start_fen END start_fen,
  CASE WHEN octet_length(moves_json)<=65536 THEN moves_json END moves_json
- FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 10001"""
+ FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 10001
+ FOR SHARE SKIP LOCKED"""
 
 
 def _owner_header(database, repertoire_id, *, lock):

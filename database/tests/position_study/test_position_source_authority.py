@@ -20,6 +20,7 @@ class Database:
         self.read_only = False
         self.raw = SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name="INTRANS")))
         self.busy = False
+        self.line_busy = False
         self.calls = []
         self.integrity = dict(integrity_status="clean", scan_status="idle", scan_generation="scan:2",
             checked_at="2026-10-26T12:00:00Z", scan_completed_sources=1, scan_total_sources=1,
@@ -29,7 +30,8 @@ class Database:
         self.calls.append(sql)
         if "pg_try_advisory" in sql: return Result(row=(not self.busy,))
         if "FROM repertoire_lines WHERE" in sql:
-            return Result(rows=[{k: row[k] for k in owner._LINE} for row in self.facts["lines"]])
+            assert "FOR SHARE SKIP LOCKED" in sql
+            return Result(rows=[] if self.line_busy else [{k: row[k] for k in owner._LINE} for row in self.facts["lines"]])
         return Result(row=self.facts["repertoire"] | self.integrity)
 
 
@@ -92,3 +94,92 @@ def test_conflicting_authored_answers_are_not_certified(monkeypatch):
     db.facts["lines"].append(line)
     result = owner.prepare_position_source(db, "rep")
     assert isinstance(result, Hold) and "own_response_conflict" in result.detail
+
+
+def test_busy_authored_line_cannot_be_certified_as_complete(monkeypatch):
+    db = setup(monkeypatch)
+    prepared = owner.prepare_position_source(db, "rep")
+    db.line_busy = True
+    assert owner.fence_position_source(db, prepared).reason == "position_source_authored_content_changed"
+
+
+def test_native_id_only_edit_and_busy_row_cannot_cross_fence():
+    """Two real sessions: ID-only edit waits, and a prelocked row causes hold."""
+    import json
+    import os
+    from pathlib import Path
+    import uuid
+
+    import chess
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict
+    import pytest
+    from test_product_snapshot_postgres import DDL
+    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+
+    dsn = os.environ.get("TEMPO_POSITION_SOURCE_TEST_DSN")
+    if not dsn:
+        pytest.skip("explicit task-owned PostgreSQL DSN required")
+    params = conninfo_to_dict(dsn)
+    if params.get("host") not in {"localhost", "127.0.0.1"} or not params.get("dbname", "").startswith("tempo_position_"):
+        raise RuntimeError("explicit local task-owned tempo_position_* database required")
+    schema = "position_source_" + uuid.uuid4().hex
+    migration = (Path(__file__).parents[2] / "tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql").read_text()
+    function = "CREATE OR REPLACE FUNCTION advance_canonical_prefix_source()" + migration.split("CREATE OR REPLACE FUNCTION advance_canonical_prefix_source()", 1)[1].split("END $$;", 1)[0] + "END $$;"
+    with psycopg.connect(dsn, autocommit=True) as setup_db:
+        setup_db.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+    try:
+        opts = f"-c search_path={schema} -c statement_timeout=5000"
+        with psycopg.connect(dsn, autocommit=True, options=opts) as setup_db:
+            setup_db.execute(DDL)
+            setup_db.execute("""CREATE TABLE repertoire_integrity_state(repertoire_id text PRIMARY KEY,
+                status text,scan_status text,scan_generation text,checked_at text,
+                scan_completed_sources bigint,scan_total_sources bigint,scan_error text);
+                CREATE TABLE background_tasks(id text,kind text,deduplication_key text,
+                generation bigint,state text,payload_json text)""")
+            setup_db.execute(function)
+            setup_db.execute("CREATE TRIGGER canonical_line_source AFTER INSERT OR UPDATE OR DELETE ON repertoire_lines FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source()")
+            setup_db.execute("INSERT INTO legacy_learning_identity VALUES(1,'fixture')")
+            setup_db.execute("INSERT INTO repertoires VALUES('rep','Synthetic',7,0,'[]')")
+            setup_db.execute("INSERT INTO opening_graph_publications VALUES('rep',3,'ready')")
+            setup_db.execute("INSERT INTO repertoire_lines VALUES('route','rep','Route','white',%s,%s)",
+                             (chess.STARTING_FEN, json.dumps(["e2e4"])))
+            setup_db.execute("INSERT INTO repertoire_integrity_state VALUES('rep','clean','idle','scan:2','2026-10-26T12:00:00Z',1,1,NULL)")
+            setup_db.execute("INSERT INTO background_tasks VALUES('graph','opening_graph_rebuild','rep',3,'complete','{}'),('scan','integrity_scan','rep',2,'complete',%s)",
+                             (json.dumps(dict(repertoire_id="rep", graph_generation=3)),))
+
+        class Port:
+            read_only = False
+            def __init__(self, raw): self.raw = raw
+            def execute_native(self, statement, parameters): return self.raw.execute(statement, parameters)
+
+        with psycopg.connect(dsn, options=opts, row_factory=tempo_row_factory) as raw:
+            port = Port(raw)
+            prepared = owner.prepare_position_source(port, "rep")
+            assert not isinstance(prepared, Hold)
+            raw.commit()
+            # With a line already locked by another writer, SKIP LOCKED cannot
+            # turn a partial authored relation into a successful fence.
+            with psycopg.connect(dsn, options=opts) as other:
+                other.execute("SELECT id FROM repertoire_lines WHERE id='route' FOR UPDATE")
+                raw.execute("SELECT 1")
+                assert owner.fence_position_source(port, prepared).reason == "position_source_authored_content_changed"
+                raw.rollback()
+                other.rollback()
+            raw.execute("SELECT 1")
+            assert owner.fence_position_source(port, prepared) is None
+            with psycopg.connect(dsn, options=opts) as other:
+                other.execute("SET LOCAL lock_timeout='100ms'")
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    other.execute("UPDATE repertoire_lines SET id='renamed' WHERE id='route'")
+                other.rollback()
+            raw.rollback()
+            with psycopg.connect(dsn, options=opts) as other:
+                other.execute("UPDATE repertoire_lines SET id='renamed' WHERE id='route'")
+            raw.execute("SELECT 1")
+            assert owner.fence_position_source(port, prepared).reason == "position_source_authored_content_changed"
+            raw.rollback()
+    finally:
+        with psycopg.connect(dsn, autocommit=True) as cleanup:
+            cleanup.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
