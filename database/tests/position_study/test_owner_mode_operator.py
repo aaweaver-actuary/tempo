@@ -367,3 +367,71 @@ def test_prepare_request_uses_public_inventory_and_deleted_donor_fact(monkeypatc
     assert result is prepared
     assert request.sources[0].inventory is not None
     assert request.donors and all(fact.deleted is False and fact.archived is False for fact in request.donors)
+
+
+def test_rollforward_then_resume_plan_and_apply_use_retained_proof(monkeypatch):
+    import json
+    saved = {}
+    class StateDB(DB):
+        def __init__(self):
+            super().__init__()
+            self.owner = {'epoch': 'old', 'mode': 'paused', 'source_digest': 'old-digest'}
+        def execute_native(self, sql, params=()):
+            self.statements.append((sql, params))
+            if 'FROM study_position_owners o' in sql:
+                return Cursor(dict(self.owner))
+            if sql.startswith('INSERT INTO operation_receipts'):
+                saved[params[0]] = json.loads(params[3])
+            if sql.startswith('UPDATE study_position_owners'):
+                self.owner = {'epoch': params[0], 'mode': params[1], 'source_digest': 'new-digest'}
+            return Cursor(None)
+    db = StateDB()
+    prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='new-digest',
+        as_dict=lambda: {'authored_digest': 'new-digest'}))
+    monkeypatch.setattr(operator, '_lock', lambda *a, **kw: 'rep')
+    monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {})
+    monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
+    monkeypatch.setattr(operator, 'fence_old_attempt_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_fence_retained_frontier', lambda *a: None)
+    monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'preserve_schedule'}])
+    def prior(*args, **kwargs):
+        if kwargs.get('action') == 'rollforward':
+            return {'operation_id': 'roll', 'response_json': json.dumps(saved['roll'])}
+        return {'operation_id': 'prior', 'response_json': '{"mode":"active"}'}
+    monkeypatch.setattr(operator, '_prior_owner_receipt', prior)
+    release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t', operation=None)
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert operator.transition_in_writer(db, prepared, None, action='rollforward', epoch='old', new_epoch='new',
+        operation_id='roll', now=now, release=release)['mode'] == 'paused'
+    payload = {'action': 'resume', 'repertoire_id': 'rep', 'epoch': 'new', 'release': release}
+    assert operator.plan_in_writer(db, prepared, None, payload)['preflight']['rollforward_operation_id'] == 'roll'
+    assert operator.transition_in_writer(db, prepared, None, action='resume', epoch='new',
+        operation_id='resume', now=now, release=release)['mode'] == 'active'
+
+
+def test_pause_plan_and_apply_do_not_prepare_current_source(monkeypatch, capsys):
+    import base64
+    import json
+    import sys
+    from contextlib import contextmanager
+    from tempo_legacy_database.adapters import postgres_store
+    class PauseDB(DB):
+        def execute_native(self, sql, params=()):
+            if 'FROM study_position_owners o' in sql:
+                return Cursor({'epoch': 'epoch', 'mode': 'active', 'source_digest': 'stored'})
+            if sql.startswith('SELECT source_digest FROM study_position_epochs'):
+                return Cursor({'source_digest': 'stored'})
+            return super().execute_native(sql, params)
+    @contextmanager
+    def connection(): yield PauseDB()
+    monkeypatch.setattr(postgres_store, 'connection', connection)
+    monkeypatch.setattr(operator, '_lock_repertoire', lambda db, rep: rep)
+    def no_source(*args): raise AssertionError('pause must not prepare invalid current source')
+    monkeypatch.setattr(operator, '_prepare_request', no_source)
+    for plan in (True, False):
+        payload = {'version': 1, 'plan': plan, 'action': 'pause', 'repertoire_id': 'rep',
+                   'epoch': 'epoch', 'operation_id': 'pause'}
+        wire = base64.b64encode(json.dumps(payload).encode()).decode()
+        monkeypatch.setattr(sys, 'argv', ['operator', '--request-base64', wire])
+        operator.main()
+        assert json.loads(capsys.readouterr().out)['source_digest'] == 'stored'

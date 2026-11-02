@@ -42,6 +42,20 @@ def _lock(database, prepared, *, source_required=True):
     return rep
 
 
+
+def _lock_repertoire(database, repertoire_id):
+    """Pause without requiring current authored source to be readable."""
+    if not _writer(database):
+        raise OperatorHold('borrowed_owner_writer_transaction_required')
+    if not isinstance(repertoire_id, str) or not repertoire_id:
+        raise OperatorHold('repertoire_required')
+    locked = database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                                     (owner_lock_key(repertoire_id),)).fetchone()
+    if not locked or not locked[0]:
+        raise OperatorHold('position_owner_busy')
+    return repertoire_id
+
+
 def preflight_in_writer(database, prepared, request, *, epoch):
     """Verify the complete seed and current donor facts while holding fences.
 
@@ -305,7 +319,21 @@ def preview_rollforward_in_writer(database, prepared, *, epoch):
             'decisions': decisions}
 
 
-def transition_in_writer(database, prepared, request, *, action, epoch, operation_id, now, release=None, new_epoch=None):
+
+def _verify_current_epoch(database, prepared, request, *, action, epoch, repertoire_id):
+    seeded = (action != 'resume' or database.execute_native(
+        'SELECT 1 FROM study_position_seed_runs WHERE repertoire_id=%s AND owner_epoch=%s',
+        (repertoire_id, epoch)).fetchone())
+    if seeded:
+        result = preflight_in_writer(database, prepared, request, epoch=epoch)
+    else:
+        _fence_retained_frontier(database, repertoire_id)
+        result = _retained_preflight(database, prepared, epoch=epoch)
+    fence_old_attempt_frontier(database, repertoire_id)
+    return result
+
+
+def transition_in_writer(database, prepared, request, *, action, epoch, operation_id, now, release=None, new_epoch=None, repertoire_id=None):
     """Pause an active owner with an atomic receipt.
 
     Stage, activate and resume require concrete release evidence and a quiescent
@@ -319,9 +347,17 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
         raise OperatorHold('position_operator_timestamp_required')
     if action == 'rollforward' and (not isinstance(new_epoch, str) or not new_epoch or new_epoch == epoch):
         raise OperatorHold('position_rollforward_new_epoch_required')
-    rep = _lock(database, prepared, source_required=action != 'pause')
+    if action == 'pause' and prepared is None:
+        rep = _lock_repertoire(database, repertoire_id)
+        stored = database.execute_native('SELECT source_digest FROM study_position_epochs WHERE repertoire_id=%s AND epoch=%s', (rep, epoch)).fetchone()
+        if not stored:
+            raise OperatorHold('position_owner_epoch_or_source_changed')
+        source_digest = stored['source_digest']
+    else:
+        rep = _lock(database, prepared, source_required=action != 'pause')
+        source_digest = prepared.authored_token.authored_digest
     identity = {'action': action, 'repertoire_id': rep, 'epoch': epoch,
-                'source_digest': prepared.authored_token.authored_digest,
+                'source_digest': source_digest,
                 'release_revision': release.get('revision') if isinstance(release, dict) else None,
                 'release_target': release.get('target') if isinstance(release, dict) else None,
                 'new_epoch': new_epoch if action == 'rollforward' else None}
@@ -373,13 +409,7 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
                 if not isinstance(release, dict) or set(release) != {'registration', 'deployment', 'guard', 'qualification', 'revision', 'target', 'operation'}:
                     raise OperatorHold('position_release_evidence_unavailable')
                 evidence = validate_release_evidence(database, prepared, epoch=epoch, **release)
-                seeded = (action != 'resume' or database.execute_native('SELECT 1 FROM study_position_seed_runs WHERE repertoire_id=%s AND owner_epoch=%s', (rep, epoch)).fetchone())
-                if seeded:
-                    preflight_in_writer(database, prepared, request, epoch=epoch)
-                else:
-                    _fence_retained_frontier(database, rep)
-                    _retained_preflight(database, prepared, epoch=epoch)
-                fence_old_attempt_frontier(database, rep)
+                _verify_current_epoch(database, prepared, request, action=action, epoch=epoch, repertoire_id=rep)
                 mode = 'staged' if action == 'stage' else 'active'
             result = identity | {'mode': mode, 'operation_id': operation_id,
                                  'owner_source_digest': owner['source_digest']}
@@ -437,6 +467,47 @@ def _prepare_request(repertoire_id):
     return prepared, request
 
 
+def plan_in_writer(database, prepared, request, payload):
+    """Apply the same readiness checks without changing ownership."""
+    action, rep, epoch = payload['action'], payload['repertoire_id'], payload['epoch']
+    if action == 'pause':
+        _lock_repertoire(database, rep)
+    else:
+        _lock(database, prepared)
+    owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
+        JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+        WHERE o.repertoire_id=%s''', (rep,)).fetchone()
+    if (not owner or owner['epoch'] != epoch or (action not in ('pause', 'rollforward')
+            and owner['source_digest'] != prepared.authored_token.authored_digest)):
+        raise OperatorHold('position_owner_epoch_or_source_changed')
+    modes = {'stage': ('inactive', 'shadow'), 'activate': ('staged',),
+             'resume': ('paused',), 'pause': ('active',), 'rollforward': ('paused',)}
+    if action not in modes or owner['mode'] not in modes[action]:
+        raise OperatorHold('position_owner_invalid_transition')
+    source_digest = owner['source_digest'] if action == 'pause' else prepared.authored_token.authored_digest
+    result = {'plan': True, 'action': action, 'repertoire_id': rep, 'epoch': epoch,
+              'current_mode': owner['mode'], 'source_digest': source_digest}
+    if action not in ('pause', 'rollforward'):
+        result['release'] = validate_release_evidence(database, prepared, epoch=epoch, **payload['release'])
+        result['preflight'] = _verify_current_epoch(database, prepared, request, action=action, epoch=epoch, repertoire_id=rep)
+    elif action == 'rollforward':
+        new_epoch = payload.get('new_epoch')
+        if not isinstance(new_epoch, str) or not new_epoch or new_epoch == epoch:
+            raise OperatorHold('position_rollforward_new_epoch_required')
+        result['release'] = validate_release_evidence(database, prepared, epoch=new_epoch, **payload['release'])
+        fence_namespace(database)
+        fence_old_attempt_frontier(database, rep)
+        _fence_retained_frontier(database, rep)
+        if not _prior_owner_receipt(database, rep, epoch, owner['source_digest'], mode='active'):
+            raise OperatorHold('position_prior_activation_receipt_missing')
+        result['rollforward'] = preview_rollforward_in_writer(database, prepared, epoch=epoch)
+        if any(item['disposition'] != 'preserve_schedule' for item in result['rollforward']['decisions']):
+            raise OperatorHold('position_rollforward_definition_changed')
+        if database.execute_native('SELECT 1 FROM study_position_epochs WHERE repertoire_id=%s AND epoch=%s', (rep, new_epoch)).fetchone():
+            raise OperatorHold('position_new_epoch_already_exists')
+    return result
+
+
 def main():
     """Private CLI transport executed by the registered foreground worker."""
     import argparse
@@ -457,44 +528,15 @@ def main():
         if action not in ('stage', 'activate', 'pause', 'resume', 'rollforward') or not all(
                 isinstance(value, str) and value for value in (rep, epoch, payload.get('operation_id'))):
             raise OperatorHold('position_operator_request_invalid')
-        prepared, request = _prepare_request(rep)
+        prepared, request = (None, None) if action == 'pause' else _prepare_request(rep)
         with connection() as database:
             if payload['plan']:
-                _lock(database, prepared, source_required=action != 'pause')
-                owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
-                    JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-                    WHERE o.repertoire_id=%s''', (rep,)).fetchone()
-                if (not owner or owner['epoch'] != epoch or (action not in ('pause', 'rollforward')
-                        and owner['source_digest'] != prepared.authored_token.authored_digest)):
-                    raise OperatorHold('position_owner_epoch_or_source_changed')
-                modes = {'stage': ('inactive', 'shadow'), 'activate': ('staged',),
-                         'resume': ('paused',), 'pause': ('active',)}
-                if action != 'rollforward' and owner['mode'] not in modes[action]:
-                    raise OperatorHold('position_owner_invalid_transition')
-                result = {'plan': True, 'action': action, 'repertoire_id': rep, 'epoch': epoch,
-                          'current_mode': owner['mode'], 'source_digest': prepared.authored_token.authored_digest}
-                if action not in ('pause', 'rollforward'):
-                    result['release'] = validate_release_evidence(database, prepared, epoch=epoch, **payload['release'])
-                    result['preflight'] = preflight_in_writer(database, prepared, request, epoch=epoch)
-                    fence_old_attempt_frontier(database, rep)
-                elif action == 'rollforward':
-                    new_epoch = payload.get('new_epoch')
-                    if not isinstance(new_epoch, str) or not new_epoch or new_epoch == epoch:
-                        raise OperatorHold('position_rollforward_new_epoch_required')
-                    result['release'] = validate_release_evidence(database, prepared, epoch=new_epoch, **payload['release'])
-                    fence_namespace(database)
-                    fence_old_attempt_frontier(database, rep)
-                    _fence_retained_frontier(database, rep)
-                    if not _prior_owner_receipt(database, rep, epoch, owner['source_digest'], mode='active'):
-                        raise OperatorHold('position_prior_activation_receipt_missing')
-                    result['rollforward'] = preview_rollforward_in_writer(database, prepared, epoch=epoch)
-                    if any(item['disposition'] != 'preserve_schedule' for item in result['rollforward']['decisions']):
-                        raise OperatorHold('position_rollforward_definition_changed')
+                result = plan_in_writer(database, prepared, request, payload)
             else:
                 result = transition_in_writer(database, prepared, request, action=action, epoch=epoch,
                     operation_id=payload['operation_id'], now=datetime.now(timezone.utc),
                     release=payload['release'] if action != 'pause' else None,
-                    new_epoch=payload.get('new_epoch'))
+                    new_epoch=payload.get('new_epoch'), repertoire_id=rep)
         print(json.dumps(result, sort_keys=True))
     except (ValueError, KeyError, TypeError) as exc:
         raise SystemExit('position operator held: ' + str(exc)) from exc
