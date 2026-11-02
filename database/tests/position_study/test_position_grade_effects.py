@@ -202,6 +202,7 @@ def test_native_two_decisions_and_late_failure_rollback():
         try:
             conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             conn.execute('CREATE TABLE tempo_schema_migrations (version integer PRIMARY KEY)')
+            conn.execute('CREATE TABLE cards (id text PRIMARY KEY, fsrs_card_json text)')
             conn.execute(migration)
             conn.execute('CREATE TABLE legacy_sentinel (value text NOT NULL)')
             conn.execute("INSERT INTO legacy_sentinel VALUES ('unchanged')")
