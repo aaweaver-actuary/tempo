@@ -82,3 +82,19 @@ def test_position_completion_requires_evidence_before_any_review_effect():
         review.submit_review(store, _fixture.command(), lambda: _fixture.CONTEXT)
     assert caught.value.code == 'opening_evidence_conflict'
     assert not {'schedule', 'human_review', 'position_effects', 'receipt'} & set(names(store))
+
+
+def test_issued_manifest_accepts_fen_en_passant_target_without_legal_capture():
+    """An issued e4 e5 route must remain reviewable with full-FEN e6."""
+    from app.services.postgres_opening_evidence import issued_position_manifest
+    from tests.test_position_issued_plan_contracts import option, request_for, select_and_freeze
+
+    route = option('italian-knight-attack')
+    decisions = list(route.decisions)
+    assert ' KQkq - ' in decisions[1].fen
+    decisions[1] = replace(decisions[1], fen=decisions[1].fen.replace(' KQkq - ', ' KQkq e6 '))
+    plan = select_and_freeze(request_for(replace(route, decisions=tuple(decisions)), target_ply=2))
+    manifest = issued_position_manifest(plan, {'manifest_version': 1, 'policy_version': 1,
+        'presentation_snapshot_id': 1, 'repertoire_id': 'rep-italian', 'card_id': 'legacy-card-1',
+        'card_revision': 4, 'trained_color': 'white'})
+    assert manifest['decisions'][1]['fen'] == decisions[1].fen
