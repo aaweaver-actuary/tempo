@@ -4,83 +4,35 @@ import {
   type PositionPresentation,
 } from "./position-presentation";
 
-/** JSON-safe due/credit facts captured with the server issue. */
-export type PositionDueSnapshot = Readonly<Record<string, unknown>>;
-
 /** A local copy of a server issue. Its digest is an identifier, not proof of issuance. */
 export type PositionOfflinePlan = Readonly<{
   version: 1;
   position_study_mode: "position";
   position_presentation: PositionPresentation;
-  due_snapshot: PositionDueSnapshot;
 }>;
 
 const envelopeSchema = z.strictObject({
   version: z.literal(1),
   position_study_mode: z.literal("position"),
   position_presentation: z.unknown(),
-  due_snapshot: z.record(z.string(), z.unknown()),
 });
-
-function freezeJson(value: unknown): unknown {
-  if (Array.isArray(value)) return Object.freeze(value.map(freezeJson));
-  if (value && typeof value === "object") {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, freezeJson(item)])));
-  }
-  return value;
-}
-
-function cloneJsonRecord(raw: unknown): PositionDueSnapshot {
-  const parsed = z.record(z.string(), z.unknown()).parse(raw);
-  // JSON is the browser storage representation. Reject values that would be
-  // silently dropped or changed during refresh/reload instead of sealing them.
-  const assertJson = (value: unknown, seen = new Set<object>()): void => {
-    if (value === null || typeof value === "string" || typeof value === "boolean") return;
-    if (typeof value === "number" && Number.isFinite(value)) return;
-    if (Array.isArray(value)) {
-      if (seen.has(value)) throw new Error("position_offline_due_snapshot_not_json");
-      seen.add(value);
-      value.forEach((item) => assertJson(item, seen));
-      seen.delete(value);
-      return;
-    }
-    if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-      if (seen.has(value)) throw new Error("position_offline_due_snapshot_not_json");
-      seen.add(value);
-      Object.values(value).forEach((item) => assertJson(item, seen));
-      seen.delete(value);
-      return;
-    }
-    throw new Error("position_offline_due_snapshot_not_json");
-  };
-  assertJson(parsed);
-  const encoded = JSON.stringify(parsed);
-  if (encoded === undefined) throw new Error("position_offline_due_snapshot_not_json");
-  const decoded: unknown = JSON.parse(encoded);
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    throw new Error("position_offline_due_snapshot_not_object");
-  }
-  return freezeJson(decoded) as PositionDueSnapshot;
-}
 
 /** Build a duplicate-safe immutable payload while retaining the exact issued suffix. */
 export function sealPositionOfflinePlan(
   rawPresentation: unknown,
-  dueSnapshot: unknown,
 ): PositionOfflinePlan {
   const plan = decodePositionPresentation(rawPresentation);
   return Object.freeze({
     version: 1 as const,
     position_study_mode: "position" as const,
     position_presentation: plan,
-    due_snapshot: cloneJsonRecord(dueSnapshot),
   });
 }
 
 /** Strictly decode a persisted position payload; unknown versions fail closed. */
 export function decodePositionOfflinePlan(raw: unknown): PositionOfflinePlan {
   const envelope = envelopeSchema.parse(raw);
-  return sealPositionOfflinePlan(envelope.position_presentation, envelope.due_snapshot);
+  return sealPositionOfflinePlan(envelope.position_presentation);
 }
 
 /** Stable browser-storage roundtrip, preserving all identity and suffix fields. */
