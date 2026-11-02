@@ -229,4 +229,10 @@ CREATE TABLE study_position_grades (
 CREATE UNIQUE INDEX study_position_one_good_per_day ON study_position_grades
     (repertoire_id, variant, position, accepted_study_day) WHERE grade = 'good';
 
+-- A new accepted failure can supersede an earlier clean target/prefix proof.
+-- Scope it by the current owner/day without scanning unrelated grade history.
+CREATE INDEX study_position_recent_again ON study_position_grades
+    (repertoire_id, variant, position, owner_epoch, accepted_study_day, version_after)
+    WHERE grade = 'again';
+
 INSERT INTO tempo_schema_migrations(version) VALUES(57);
