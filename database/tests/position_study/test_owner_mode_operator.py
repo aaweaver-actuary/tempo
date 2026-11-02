@@ -339,3 +339,31 @@ def test_resume_retained_epoch_requires_original_rollforward_receipt(monkeypatch
     monkeypatch.setattr(operator, '_compatible_states', lambda *a, **kw: [{'disposition': 'preserve_schedule'}])
     monkeypatch.setattr(operator, 'fence_namespace', lambda *a: None)
     assert operator._retained_preflight(DB(), prepared, epoch='new')['rollforward_operation_id'] == 'roll'
+
+
+def test_prepare_request_uses_public_inventory_and_deleted_donor_fact(monkeypatch):
+    from contextlib import contextmanager
+    from test_position_source_authority import setup
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.study import position_seed_inventory
+    prepared = position_study_source.prepare_position_source(setup(monkeypatch), 'rep')
+    @contextmanager
+    def connection(**options):
+        assert options == {'read_only': True, 'authoritative': True, 'repeatable_read': True}
+        yield object()
+    monkeypatch.setattr(postgres_store, 'connection', connection)
+    monkeypatch.setattr(position_study_source, 'prepare_position_source', lambda db, rep: prepared)
+    class Rows:
+        def __init__(self, ids): self.ids = ids
+        def fetchall(self):
+            return [dict(card_id=card, repertoire_id='rep', revision=1, state='learning', due_date='2026-11-03',
+                fsrs_card_json='{}', introduced_at='2026-01-01T00:00:00Z', archived=0, pending_validation=0,
+                superseded_by=None, integrity_blocked=False, owner_repertoire_ids=['rep'], card_exists=True,
+                content_type='opening', deleted=False) for card in self.ids]
+    monkeypatch.setattr(position_seed_inventory, 'read_seed_donor_page',
+                        lambda db, *, candidate_card_ids: Rows(candidate_card_ids))
+    result, request = operator._prepare_request('rep')
+    assert result is prepared
+    assert request.sources[0].inventory is not None
+    assert request.donors and all(fact.deleted is False and fact.archived is False for fact in request.donors)
