@@ -7,6 +7,7 @@ from tempo_game_review_contracts import AuthoredRoute, RepertoireSnapshot as Mem
 
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
 from app.repertoire import build_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
 from tooling.position_study_inventory import (
     DonorFact, InventoryHold, InventoryRequest, SourceFacts, build_inventory, read_card_page,
 )
@@ -39,7 +40,8 @@ def snapshot(*routes, bindings=()):
             position_key=opening_position_key(board.fen()),
             selected_response_uci=value.get("selected_response") or route["moves"][value["ply"]],
             presentation_id=value["card_id"], presentation_revision=value["revision"],
-            repertoire_revision=membership.revision, introduction="unknown", introduced_at=None))
+            repertoire_revision=membership.revision, introduction="unknown", introduced_at=None,
+            available=value.get("available", True)))
     return RepertoireSnapshot(membership=membership, variant="standard", learner_color="white",
                               boundaries=boundaries, decision_presentations=tuple(mappings))
 
@@ -52,7 +54,8 @@ def card_binding(card_id, route_id="route", repertoire_id="r1", ply=0, revision=
 
 
 def source(snapshot_value, certificate=None):
-    return SourceFacts(snapshot_value, build_index(snapshot_value), certificate or certificate_for(snapshot_value))
+    return SourceFacts(snapshot_value, inventory_from_validated_index(
+        snapshot_value, build_index(snapshot_value), source_certificate=certificate or certificate_for(snapshot_value)))
 
 
 def certificate_for(snapshot_value):
@@ -67,7 +70,7 @@ def donor(card_id, repertoire_id, owners=None):
         due_date="2026-11-03", fsrs_card_json='{"card_id":1,"state":2,"step":null,"stability":1,"difficulty":1,"due":"2026-11-03T00:00:00+00:00","last_review":null}',
         introduced_at="2026-10-01T12:00:00+00:00", archived=False,
         pending_validation=False, superseded_by=None, integrity_blocked=False,
-        owner_repertoire_ids=tuple(owners if owners is not None else (repertoire_id,)))
+        owner_repertoire_ids=tuple(owners if owners is not None else (repertoire_id,)), deleted=False)
 
 
 def test_same_physical_card_in_two_repertoires_is_excluded_for_both():
@@ -93,11 +96,11 @@ def test_one_hundred_routes_count_one_exact_position_once():
 def test_arbitrary_and_stale_certificates_hold():
     value = snapshot(authored("route"))
     index = build_index(value)
-    arbitrary = SourceFacts(value, index, object())
+    arbitrary = SourceFacts(value, object())
     stale = SourceCertificate("other", "source-1", "a" * 64, True, True)
     invalid_result = build_inventory(InventoryRequest((arbitrary,), ()))
-    stale_result = build_inventory(InventoryRequest((SourceFacts(value, index, stale),), ()))
-    assert invalid_result["repertoires"][0]["source_hold"] == "invalid_source_certificate_type"
+    stale_result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, index, source_certificate=stale)),), ()))
+    assert invalid_result["repertoires"][0]["source_hold"] == "authored_route_certificate_unavailable"
     assert stale_result["repertoires"][0]["source_hold"] == "source_certificate_mismatch"
     assert invalid_result["repertoires"][0]["distinct_exact_positions"] == 0
     assert stale_result["repertoires"][0]["distinct_exact_positions"] == 0
@@ -106,7 +109,7 @@ def test_arbitrary_and_stale_certificates_hold():
 def test_stale_generation_source_is_held_and_omitted_from_counts():
     value = snapshot(authored("stale-route"))
     cert = SourceCertificate("snapshot", "stale-generation", "a" * 64, True, True)
-    result = build_inventory(InventoryRequest((SourceFacts(value, build_index(value), cert),), ()))
+    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, build_index(value), source_certificate=cert)),), ()))
     repertoire = result["repertoires"][0]
     assert repertoire["source_status"] == "held"
     assert repertoire["source_hold"] == "source_certificate_mismatch"
@@ -118,7 +121,7 @@ def test_ambiguous_physical_mapping_is_eligible_but_source_fault_holds():
         card_binding("one", "a"), card_binding("two", "a")))
     index = build_index(value)
     assert not index.complete
-    result = build_inventory(InventoryRequest((SourceFacts(value, index, certificate_for(value)),), ()))
+    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, index, source_certificate=certificate_for(value))),), ()))
     repertoire = result["repertoires"][0]
     assert repertoire["source_status"] == "source_facts_only"
     assert repertoire["distinct_exact_positions"] == 1
@@ -171,6 +174,7 @@ def test_card_page_requires_reader_role_repeatable_read_and_bounded_batch():
     assert read_card_page(reader, candidate_card_ids=("card-01", "card-02")) == [("card",)]
     assert reader.calls[1][1] == (["card-01", "card-02"],)
     assert "LEFT JOIN cards c ON c.id = requested.card_id" in reader.calls[1][0]
+    assert "FROM deleted_cards d" in reader.calls[1][0]
     try:
         read_card_page(FakeReader(("tempo_writer", "off", "read committed")), candidate_card_ids=("card",))
     except InventoryHold as error:

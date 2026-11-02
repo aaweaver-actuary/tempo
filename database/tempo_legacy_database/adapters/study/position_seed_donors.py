@@ -91,7 +91,7 @@ def select_donors(request: InventoryRequest) -> tuple[DonorDecision, ...]:
                 f"source_held:{repertoire['source_hold']}",
             )))
             continue
-        certificate = source.source_certificate
+        certificate = source.inventory.source_certificate
         # E1 validated this typed certificate against the snapshot and index.
         if certificate is None:
             decisions.append(DonorDecision(None, DonorHold(

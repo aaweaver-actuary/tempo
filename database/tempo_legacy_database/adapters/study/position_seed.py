@@ -139,7 +139,9 @@ def fence_donor_facts(database, facts):
         (ids,)).fetchall()
     if [row['id'] for row in rows] != ids:
         raise ValueError('donor_card_missing_or_busy')
-    # With the parent card locks held, no new rows referencing them can commit.
+    # Card and repertoire deletion acquire the same card-edit advisory key
+    # before recording deleted_cards; that key fences tombstone insertion.
+    # Parent card locks separately fence new FK membership/block rows.
     for table in ('repertoire_cards', 'repertoire_integrity_card_blocks'):
         database.execute_native(
             f'SELECT card_id FROM {table} WHERE card_id=ANY(%s::text[]) FOR UPDATE NOWAIT',
@@ -154,7 +156,7 @@ def fence_donor_facts(database, facts):
                       'introduced_at', 'superseded_by', 'content_type', 'card_exists'):
             if row[field] != getattr(fact, field):
                 raise ValueError('donor_facts_changed')
-        for field in ('archived', 'pending_validation', 'integrity_blocked'):
+        for field in ('archived', 'pending_validation', 'integrity_blocked', 'deleted'):
             expected = getattr(fact, field)
             if expected is None or bool(row[field]) != expected:
                 raise ValueError('donor_facts_changed')

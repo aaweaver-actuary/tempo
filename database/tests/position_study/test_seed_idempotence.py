@@ -4,6 +4,7 @@ import json
 import pytest
 
 from app.repertoire import build_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
 from tempo_evidence_math.position_learning import SourceCertificate
 from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
 from tooling.position_study_inventory import InventoryRequest, SourceFacts
@@ -17,7 +18,8 @@ def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
     membership = prepared.snapshot.membership
     certificate = SourceCertificate(membership.snapshot_id, membership.source_revision,
                                     membership.digest, True, True)
-    request = InventoryRequest((SourceFacts(prepared.snapshot, build_index(prepared.snapshot), certificate),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
+        prepared.snapshot, build_index(prepared.snapshot), source_certificate=certificate)),), ())
     first = preview_seed_page(prepared, request, limit=1)
     assert first == preview_seed_page(prepared, request, limit=1)
     assert first.decisions and all(item.hold for item in first.decisions)
@@ -29,7 +31,8 @@ def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
 def test_preview_refuses_unprepared_or_unbounded_requests(monkeypatch):
     db = setup(monkeypatch)
     prepared = owner.prepare_position_source(db, "rep")
-    request = InventoryRequest((SourceFacts(prepared.snapshot, build_index(prepared.snapshot), None),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
+        prepared.snapshot, build_index(prepared.snapshot), source_certificate=None)),), ())
     with pytest.raises(ValueError, match="prepared_position_source_required"):
         preview_seed_page(object(), request)
     with pytest.raises(ValueError, match="invalid_page_limit"):
@@ -66,7 +69,8 @@ def test_writer_holds_when_namespace_guard_unavailable(monkeypatch):
         pytest.skip('installed namespace guard is tested with native PostgreSQL')
     db = setup(monkeypatch)
     prepared = owner.prepare_position_source(db, 'rep')
-    request = InventoryRequest((SourceFacts(prepared.snapshot, build_index(prepared.snapshot), None),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
+        prepared.snapshot, build_index(prepared.snapshot), source_certificate=None)),), ())
     before = list(db.calls)
     with pytest.raises(ValueError, match='position_namespace_guard_unavailable'):
         seed_shadow_page(db, prepared, request, epoch='e', now=datetime.now(timezone.utc))
@@ -96,8 +100,9 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
     blob = json.dumps({'card_id': 42, 'state': 1, 'step': 0, 'stability': None, 'difficulty': None,
                        'due': '2026-11-03T00:00:00+00:00', 'last_review': None})
     fact = DonorFact('physical', 'rep', 4, 'learning', '2026-11-03', blob,
-                     '2026-10-20T00:00:00Z', False, False, None, False, ('rep',))
-    request = InventoryRequest((SourceFacts(prepared.snapshot, build_index(prepared.snapshot), cert),), (fact,))
+                     '2026-10-20T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
+        prepared.snapshot, build_index(prepared.snapshot), source_certificate=cert)),), (fact,))
     # Only this test replaces external authority/guard; SQL, savepoints,
     # sequence, receipts and state are real PostgreSQL operations.
     monkeypatch.setattr(owner, 'fence_position_source', lambda db, source: None)
@@ -116,6 +121,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
             admin.execute('''CREATE TABLE cards(id text PRIMARY KEY, repertoire_id text, revision bigint,
                 state text,due_date text,fsrs_card_json text,introduced_at text,archived bigint,
                 pending_validation bigint,superseded_by text,content_type text)''')
+            admin.execute('CREATE TABLE deleted_cards(card_id text PRIMARY KEY)')
             admin.execute('CREATE TABLE repertoire_cards(repertoire_id text,card_id text REFERENCES cards(id))')
             admin.execute('CREATE TABLE repertoire_integrity_card_blocks(repertoire_id text,card_id text REFERENCES cards(id))')
             admin.execute(migration.read_text())
@@ -139,6 +145,27 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
                 assert bad_result['held'] == 1 and bad_result['seeded'] == 0
                 conn.rollback()
                 conn.execute('BEGIN')
+                conn.execute("INSERT INTO deleted_cards VALUES ('physical')")
+                deleted = replace(fact, deleted=True)
+                deleted_request = InventoryRequest(request.sources, (deleted,))
+                deleted_result = seed_shadow_page(db, prepared, deleted_request, epoch='e', now=now, page_size=1)
+                assert deleted_result['held'] == 1 and deleted_result['seeded'] == 0
+                conn.rollback()
+                conn.execute('BEGIN')
+                conn.execute("INSERT INTO deleted_cards VALUES ('physical')")
+                with pytest.raises(ValueError, match='donor_facts_changed'):
+                    seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
+                assert conn.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
+                conn.rollback()
+                conn.execute('BEGIN')
+                from tempo_legacy_database.adapters.authored_repertoires.card_deletion import storage as deletion
+                with psycopg.connect(dsn, row_factory=tempo_row_factory) as other:
+                    other.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+                    deletion.lock_card(Borrowed(other), 'physical')
+                    other.execute("INSERT INTO deleted_cards VALUES ('physical')")
+                    with pytest.raises(ValueError, match='donor_card_busy'):
+                        seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
+                    other.rollback()
                 from tempo_evidence_math.position_learning import Hold
                 monkeypatch.setattr(owner, 'fence_position_source', lambda db, source: Hold('source_changed'))
                 with pytest.raises(ValueError, match='source_changed'):
@@ -172,11 +199,11 @@ def test_donor_fence_rejects_changed_or_busy_physical_owner():
     from tooling.position_study_inventory import DonorFact
     from tooling.position_study_seed import fence_donor_facts
     fact = DonorFact('card', 'rep', 2, 'learning', '2026-11-03', '{}',
-                     '2026-10-01T00:00:00Z', False, False, None, False, ('rep',))
+                     '2026-10-01T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
     row = dict(card_id='card', repertoire_id='rep', revision=2, state='learning',
                due_date='2026-11-03', fsrs_card_json='{}', introduced_at=fact.introduced_at,
                archived=0, pending_validation=0, superseded_by=None, integrity_blocked=False,
-               owner_repertoire_ids=['rep'], card_exists=True, content_type='opening')
+               owner_repertoire_ids=['rep'], card_exists=True, content_type='opening', deleted=False)
     class Result:
         def __init__(self, rows): self.rows = rows
         def fetchone(self): return self.rows[0] if self.rows else None
@@ -190,6 +217,10 @@ def test_donor_fence_rejects_changed_or_busy_physical_owner():
             return Result([])
     db = Database()
     fence_donor_facts(db, [fact])
+    db.row['deleted'] = True
+    with pytest.raises(ValueError, match='donor_facts_changed'):
+        fence_donor_facts(db, [fact])
+    db.row['deleted'] = False
     db.row['owner_repertoire_ids'] = ['other', 'rep']
     with pytest.raises(ValueError, match='donor_ownership_changed'):
         fence_donor_facts(db, [fact])

@@ -11,6 +11,7 @@ from app.contracts.product_v02.repertoire import (
     RouteBoundary,
 )
 from app.repertoire import build_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
 from tooling.position_study_donors import select_donors
 from tooling.position_study_inventory import DonorFact, InventoryRequest, SourceFacts
 
@@ -38,6 +39,7 @@ def _snapshot(*routes, bindings=()):
             selected_response_uci=route["moves"][binding["ply"]],
             presentation_id=binding["card_id"], presentation_revision=binding["revision"],
             repertoire_revision=membership.revision, introduction="unknown", introduced_at=None,
+            available=binding.get("available", True),
         ))
     return RepertoireSnapshot(membership=membership, variant="standard", learner_color="white",
                               boundaries=boundaries,
@@ -59,7 +61,8 @@ def _source(snapshot, certificate=None):
     membership = snapshot.membership
     certificate = certificate or SourceCertificate(
         membership.snapshot_id, membership.source_revision, membership.digest, True, True)
-    return SourceFacts(snapshot, build_index(snapshot), certificate)
+    return SourceFacts(snapshot, inventory_from_validated_index(
+        snapshot, build_index(snapshot), source_certificate=certificate))
 
 
 def _fsrs(card_id, due="2026-11-03T00:00:00+00:00"):
@@ -73,7 +76,7 @@ def _donor(card_id, *, due="2026-11-03T00:00:00+00:00", **changes):
         due_date="2026-11-03", fsrs_card_json=_fsrs(int(card_id[-1])),
         introduced_at="2026-10-01T12:00:00+00:00", archived=False,
         pending_validation=False, superseded_by=None, integrity_blocked=False,
-        owner_repertoire_ids=("r1",), card_exists=True, content_type="opening",
+        owner_repertoire_ids=("r1",), card_exists=True, content_type="opening", deleted=False,
     )
     values.update(changes)
     if "fsrs_card_json" not in changes:
@@ -179,3 +182,46 @@ def test_selected_original_blob_is_not_mutated_by_native_validation():
     decision = _selected(_request(donor))
     assert decision.selected.fsrs_card_json == original
     assert donor.fsrs_card_json == original
+
+
+def test_tombstoned_or_unknown_donor_is_ineligible_even_if_card_exists():
+    for deleted in (True, None):
+        result = _selected(_request(_donor('card-1', deleted=deleted)))
+        assert result.selected is None
+        assert result.hold.candidate_reasons == (('card-1', 'deleted_or_unknown'),)
+    result = _selected(_request(_donor('card-1', deleted=True), _donor('card-2')))
+    assert result.selected.donor_card_id == 'card-2'
+
+
+def test_unavailable_binding_remains_visible_but_cannot_donate():
+    unavailable = _binding('card-1') | {'available': False}
+    snapshot = _snapshot(_route(), bindings=(unavailable,))
+    decision = _selected(InventoryRequest((_source(snapshot),), (_donor('card-1'),)))
+    assert decision.selected is None
+    assert decision.hold.candidate_reasons == (('card-1', 'binding_unavailable_or_ambiguous'),)
+    # A different valid binding can be selected without reviving the unavailable one.
+    snapshot = _snapshot(_route(), bindings=(unavailable, _binding('card-2')))
+    decision = _selected(InventoryRequest((_source(snapshot),), (_donor('card-1'), _donor('card-2'))))
+    assert decision.selected.donor_card_id == 'card-2'
+
+
+def test_same_card_with_conflicting_binding_availability_is_held():
+    snapshot = _snapshot(_route(), bindings=(_binding('card-1'),
+        _binding('card-1') | {'available': False}))
+    decision = _selected(InventoryRequest((_source(snapshot),), (_donor('card-1'),)))
+    assert decision.selected is None
+    assert decision.hold.candidate_reasons == (('card-1', 'binding_unavailable_or_ambiguous'),)
+
+
+def test_unavailable_reference_cannot_be_omitted_from_detached_projection():
+    from dataclasses import replace
+    unavailable = _binding('card-1') | {'available': False}
+    snapshot = _snapshot(_route(), bindings=(unavailable, _binding('card-2')))
+    source = _source(snapshot)
+    position = source.inventory.positions[0]
+    tampered = replace(position, physical_bindings=tuple(
+        b for b in position.physical_bindings if b.card_id != 'card-1'))
+    source = replace(source, inventory=replace(source.inventory, positions=(tampered,)))
+    result = _selected(InventoryRequest((source,), (_donor('card-1'), _donor('card-2'))))
+    assert result.selected is None
+    assert result.hold.reason.startswith('source_held:')

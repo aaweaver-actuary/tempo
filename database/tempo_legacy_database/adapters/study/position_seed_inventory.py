@@ -12,12 +12,11 @@ from datetime import date, datetime
 import json
 from typing import Mapping, TYPE_CHECKING
 
-from app.repertoire.interfaces.position_schedule_occurrences import routes_from_validated_index
+from app.repertoire.interfaces.position_schedule_occurrences import PositionInventoryFacts
 from tempo_evidence_math.position_learning import Hold, SourceCertificate
 
 if TYPE_CHECKING:
     from app.contracts.product_v02.repertoire import RepertoireSnapshot
-    from app.repertoire.position_index import PositionIndex
 
 
 @dataclass(frozen=True)
@@ -39,20 +38,18 @@ class DonorFact:
     card_exists: bool = True
     content_type: str | None = "opening"
     source_hold: str | None = None
+    deleted: bool | None = None
 
 
 @dataclass(frozen=True)
 class SourceFacts:
-    """Canonical snapshot, exact index and shared typed source certificate.
+    """Public snapshot and immutable detached Repertoire inventory or hold.
 
-    Certificate fields alone do not prove owner authority; the source owner must
-    issue it for this snapshot. B1's public projection checks type, digest,
-    membership/current-integrity claims and authored-route diagnostics.
+    A detached certificate is not authority: the owner prepares and fences the
+    source separately in the seed writer transaction.
     """
-
     snapshot: "RepertoireSnapshot"
-    index: "PositionIndex"
-    source_certificate: SourceCertificate | None
+    inventory: PositionInventoryFacts | Hold | None
     source_hold: str | None = None
 
 
@@ -75,6 +72,8 @@ WITH requested AS (
            c.due_date, c.fsrs_card_json, c.introduced_at, c.archived,
            c.pending_validation, c.superseded_by, c.content_type,
            (c.id IS NOT NULL) AS card_exists,
+           EXISTS (SELECT 1 FROM deleted_cards d
+                   WHERE d.card_id = requested.card_id) AS deleted,
            EXISTS (SELECT 1 FROM repertoire_integrity_card_blocks b
                    WHERE b.card_id = requested.card_id) AS integrity_blocked,
            ARRAY(SELECT owner_id FROM (
@@ -92,33 +91,24 @@ class InventoryHold(ValueError):
     pass
 
 
-def _certified_position_routes(routes):
-    """Group B1-certified route decisions by the shared exact PositionKey."""
-    grouped = defaultdict(lambda: {"routes": set(), "responses": set()})
-    for route in routes:
-        for decision in route.decisions:
-            definition = decision.definition
-            item = grouped[definition.key]
-            item["routes"].add(route.route_id)
-            item["responses"].add(definition.expected_uci)
-    result = {}
-    for key, facts in grouped.items():
-        if len(facts["responses"]) != 1:
-            # B1 should already reject this; retain a local invariant guard.
-            raise InventoryHold("certified_selected_response_conflict")
-        result[key] = (facts["routes"], next(iter(facts["responses"])))
-    return result
-
-
-def _binding_card_revisions(node) -> dict[str, set[int]]:
-    # Physical mapping ambiguity is not a chess response conflict. Keep every
-    # bound card for donor analysis while identity remains repertoire+position.
-    result: dict[str, set[int]] = defaultdict(set)
-    for occurrence in node.occurrences:
-        for item in occurrence.bindings:
-            if item.presentation_id:
-                result[item.presentation_id].add(item.presentation_revision)
-    return result
+def _bindings_match_snapshot(snapshot, projection: PositionInventoryFacts) -> bool:
+    """Check public detached bindings against their original owner snapshot."""
+    expected = defaultdict(set)
+    for mapping in snapshot.decision_presentations:
+        key = (mapping.repertoire_id, snapshot.variant, mapping.position_key)
+        expected[key].add((mapping.decision_id, mapping.presentation_id,
+                           mapping.presentation_revision, mapping.available,
+                           mapping.route_id, mapping.route_ply))
+    actual = {}
+    for position in projection.positions:
+        key = (position.definition.key.repertoire_id, position.definition.key.variant,
+               position.definition.key.position)
+        if key in actual:
+            return False
+        actual[key] = {(b.decision_id, b.card_id, b.card_revision, b.available,
+                        b.route_id, b.route_ply) for b in position.physical_bindings}
+    return all(key in actual and actual[key] == bindings for key, bindings in expected.items()) and all(
+        bindings == expected.get(key, set()) for key, bindings in actual.items())
 
 
 def build_inventory(request: InventoryRequest) -> dict:
@@ -140,48 +130,54 @@ def build_inventory(request: InventoryRequest) -> dict:
 
     output = []
     seen_repertoires: set[str] = set()
-    for source in sorted(request.sources, key=lambda item: item.index.scope_repertoire_ids):
-        index = source.index
-        reps = tuple(index.scope_repertoire_ids)
+    for source in sorted(request.sources, key=lambda item: item.snapshot.membership.scope_repertoire_ids):
+        membership = source.snapshot.membership
+        reps = tuple(membership.scope_repertoire_ids)
         if not reps or any(rep in seen_repertoires for rep in reps):
             raise InventoryHold("duplicate_or_empty_repertoire_scope")
         seen_repertoires.update(reps)
+        projection = source.inventory
         if source.source_hold:
             source_hold = source.source_hold
-            certified_positions = {}
-        elif source.source_certificate is None:
+        elif isinstance(projection, Hold):
+            source_hold = projection.reason + (":" + projection.detail if projection.detail else "")
+        elif not isinstance(projection, PositionInventoryFacts):
             source_hold = "authored_route_certificate_unavailable"
-            certified_positions = {}
-        elif not isinstance(source.source_certificate, SourceCertificate):
-            source_hold = "invalid_source_certificate_type"
-            certified_positions = {}
         else:
-            projection = routes_from_validated_index(
-                source.snapshot, index, source_certificate=source.source_certificate)
-            if isinstance(projection, Hold):
-                source_hold = projection.reason + (":" + projection.detail if projection.detail else "")
-                certified_positions = {}
+            scope = projection.source_scopes
+            certificate = projection.source_certificate
+            expected = (membership.snapshot_id, membership.source_revision, membership.digest,
+                        membership.revision, membership.captured_at, membership.scope_id, reps)
+            observed = (scope.snapshot_id, scope.source_revision, scope.source_digest,
+                        scope.membership_revision, scope.captured_at, scope.scope_id, scope.repertoire_ids)
+            if (observed != expected or not isinstance(certificate, SourceCertificate)
+                    or (certificate.snapshot_id, certificate.source_revision, certificate.source_digest)
+                       != expected[:3] or not certificate.complete or not certificate.current_integrity
+                    or not membership.complete or not membership.available
+                    or not _bindings_match_snapshot(source.snapshot, projection)):
+                source_hold = "source_certificate_mismatch"
             else:
                 source_hold = None
-                certified_positions = _certified_position_routes(projection)
-
-        nodes_by_key = {(key.repertoire_id, key.variant, key.position): node
-                        for key, node in index.nodes.items()}
         for repertoire_id in reps:
-            # Use B1's owner-validated authored projection, which allows physical
-            # mapping ambiguity while still holding on actual source diagnostics.
-            keys = sorted(key for key in certified_positions if key.repertoire_id == repertoire_id)
+            positions = (() if source_hold else tuple(p for p in projection.positions
+                         if p.definition.key.repertoire_id == repertoire_id))
             position_rows = []
             card_ids_all: set[str] = set()
             donor_statuses = defaultdict(int)
             position_route_occurrences = 0
             repertoire_routes: set[str] = set()
-            for key in keys:
-                route_ids, selected_response = certified_positions[key]
-                position_route_occurrences += len(route_ids)
+            for position in positions:
+                key = position.definition.key
+                selected_response = position.definition.expected_uci
+                route_ids = {occurrence.route_id for occurrence in position.occurrences}
+                position_route_occurrences += len(position.occurrences)
                 repertoire_routes.update(route_ids)
-                index_node = nodes_by_key.get((key.repertoire_id, key.variant, key.position))
-                card_revisions = _binding_card_revisions(index_node) if index_node is not None else {}
+                card_revisions = defaultdict(set)
+                card_availability = defaultdict(set)
+                for binding in position.physical_bindings:
+                    if binding.card_id:
+                        card_revisions[binding.card_id].add(binding.card_revision)
+                        card_availability[binding.card_id].add(binding.available)
                 card_ids = set(card_revisions)
                 card_ids_all.update(card_ids)
                 position_holds = []
@@ -189,17 +185,18 @@ def build_inventory(request: InventoryRequest) -> dict:
                 eligible_donor_ids = []
                 for card_id in sorted(card_ids):
                     fact = donor_by_id.get(card_id)
-                    if fact is None:
-                        donor_statuses["missing_card_source"] += 1
-                        position_holds.append("missing_card_source")
-                        candidate_cards.append({"card_id": card_id, "status": "missing_card_source"})
-                        continue
-                    expected_revisions = card_revisions[card_id]
-                    status = _donor_status(fact, repertoire_id, expected_revisions)
+                    if card_availability[card_id] != {True}:
+                        status = "binding_unavailable_or_ambiguous"
+                    elif fact is None:
+                        status = "missing_card_source"
+                    else:
+                        status = _donor_status(fact, repertoire_id, card_revisions[card_id])
                     donor_statuses[status] += 1
-                    candidate_cards.append({"card_id": card_id, "status": status,
-                                           "revision": fact.revision,
-                                           "shared_repertoire_ids": list(fact.owner_repertoire_ids)})
+                    row = {"card_id": card_id, "status": status}
+                    if fact is not None:
+                        row.update(revision=fact.revision,
+                                   shared_repertoire_ids=list(fact.owner_repertoire_ids))
+                    candidate_cards.append(row)
                     if status == "source_eligible_unvalidated_fsrs_runtime":
                         eligible_donor_ids.append(card_id)
                     else:
@@ -215,6 +212,7 @@ def build_inventory(request: InventoryRequest) -> dict:
                     "source_eligible_donor_card_ids": eligible_donor_ids,
                     "holds": sorted(set(position_holds)),
                 })
+            keys = positions
             output.append({
                 "repertoire_id": repertoire_id,
                 "source_status": "held" if source_hold else "source_facts_only",
@@ -242,6 +240,8 @@ def build_inventory(request: InventoryRequest) -> dict:
 def _donor_status(fact: DonorFact, repertoire_id: str, expected_revisions: set[int]) -> str:
     if fact.source_hold:
         return fact.source_hold
+    if fact.deleted is not False:
+        return "deleted_or_unknown"
     if not fact.card_exists:
         return "missing_card_source"
     if fact.content_type != "opening":
