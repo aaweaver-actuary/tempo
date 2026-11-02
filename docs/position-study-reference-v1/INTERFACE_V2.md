@@ -14,11 +14,11 @@
 ```sh
 cd tempo-position-study-reference-v2
 python -m pytest -q tests             # 38 passed
-node --test browser/*.test.mjs         # 7 passed
+node --test browser/*.test.mjs         # 9 passed
 python -m compileall -q reference      # passed
 ```
 
-ZIP SHA-256: `75e9dc5e28ed2e568a07c2623f5035da0947d3f2e7301f597ef3efa999a599df` (59,844 bytes).
+ZIP SHA-256: `982c161a50aff977e43f2b4cf0e398ed946dad578769960177b5ece28eecf4cb` (59,974 bytes).
 
 **Not executed:** native python-chess path validation, FSRS 6.3.2 decoding and unique-ID allocation, live or disposable PostgreSQL locks/transactions, Tempo runtime/browser integration, actual installed source/currentness and offline replay. Synthetic route inputs assume external Repertoire certification. The JSON display wire uses illustrative IDs and is not a server-signed authorization. A distinct independent reviewer still owns release qualification; the reference ZIP is not a migration.
 
