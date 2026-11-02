@@ -1,0 +1,95 @@
+"""Pure authored-route projection; certification authority stays with the source owner.
+
+The caller must obtain the certificate from the owner of the same snapshot and
+fence it again at issuance. Constructing a certificate is not evidence of that
+owner read. Physical presentation mappings are not route eligibility proofs.
+"""
+from collections import defaultdict
+from types import MappingProxyType
+
+from tempo_evidence_math.position_learning import (
+    DecisionOccurrence, Hold, PositionDefinition, PositionKey, RouteOption, SourceCertificate,
+)
+
+from app.contracts.product_v02.repertoire import RepertoireSnapshot
+from .position_index import PositionIndex, build_index
+
+
+def routes_from_validated_index(
+    snapshot: RepertoireSnapshot, index: PositionIndex, *, source_certificate: SourceCertificate | None,
+) -> tuple[RouteOption, ...] | Hold:
+    """Project bounded authored facts, requiring owner-proven membership and integrity."""
+    membership = snapshot.membership
+    if (source_certificate is None or not source_certificate.complete
+            or not source_certificate.current_integrity or not membership.complete
+            or not membership.available or not index.available):
+        return Hold("authored_source_unavailable_or_not_current")
+    if (source_certificate.snapshot_id, source_certificate.source_revision, source_certificate.source_digest) != (
+            membership.snapshot_id, membership.source_revision, membership.digest):
+        return Hold("source_certificate_mismatch")
+    try:
+        # Do not trust a detached index with the same revision but different content.
+        if build_index(snapshot) != index:
+            return Hold("source_index_mismatch")
+    except (ValueError, TypeError) as exc:
+        return Hold("authored_source_invalid", str(exc))
+    fatal = sorted({d.code for d in index.diagnostics if d.code != "ambiguous_physical_mapping"})
+    if fatal:
+        return Hold("authored_source_diagnostics", ",".join(fatal))
+    if any(route.learner_color != snapshot.learner_color for route in membership.routes):
+        return Hold("learner_side_conflict")
+    # An explicit selected answer is source content, even if no physical mapping
+    # binds to the authored move and PositionIndex would otherwise ignore it.
+    nodes_by_position = {(key.repertoire_id, key.position): node for key, node in index.nodes.items()}
+    for mapping in snapshot.decision_presentations:
+        node = nodes_by_position.get((mapping.repertoire_id, mapping.position_key))
+        if node is None or node.selected_response != mapping.selected_response_uci:
+            return Hold("selected_response_conflict")
+        if mapping.route_id is not None:
+            occurrences = index.routes.get((mapping.repertoire_id, mapping.route_id), ())
+            if (mapping.route_ply >= len(occurrences)
+                    or occurrences[mapping.route_ply].key.position != mapping.position_key
+                    or not occurrences[mapping.route_ply].learner_turn):
+                return Hold("selected_response_conflict")
+    out = []
+    for (repertoire_id, route_id), occurrences in sorted(index.routes.items()):
+        if not occurrences or any(not item.route_complete for item in occurrences):
+            return Hold("route_incomplete", route_id)
+        first = occurrences[0]
+        try:
+            decisions = tuple(DecisionOccurrence(
+                item.ply, PositionDefinition(PositionKey(repertoire_id, item.key.position),
+                                             item.next_move, str(item.policy_id)), item.full_fen)
+                for item in occurrences if item.learner_turn and item.next_move)
+            if decisions:
+                out.append(RouteOption(route_id, first.starting_fen, first.route_moves,
+                                       first.learner_color, decisions, source_certificate, True))
+        except (ValueError, TypeError) as exc:
+            return Hold("published_route_contract_invalid", str(exc))
+    return tuple(out)
+
+
+def index_routes(routes: tuple[RouteOption, ...], *, max_routes: int = 10000,
+                 max_uses: int = 100000):
+    """Index detached options; repeat occurrences remain in each route's decisions."""
+    if len(routes) > max_routes or max_routes < 0:
+        return Hold("route_inventory_too_large")
+    candidates = defaultdict(list)
+    definitions = defaultdict(set)
+    uses = 0
+    for route in routes:
+        for decision in route.decisions:
+            uses += 1
+            if uses > max_uses:
+                return Hold("decision_inventory_too_large")
+            candidates[decision.definition.key].append(route)
+            definitions[decision.definition.key].add(decision.definition)
+    return MappingProxyType({key: Hold("own_response_conflict") if len(definitions[key]) != 1 else
+                             tuple(sorted(set(values), key=lambda route: route.route_id))
+                             for key, values in candidates.items()})
+
+
+def options_for_target(index, key: PositionKey):
+    if isinstance(index, Hold):
+        return index
+    return index.get(key, Hold("position_not_in_current_graph"))

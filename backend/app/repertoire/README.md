@@ -350,3 +350,18 @@ Study's rejection of producer mapping substitution. The public facade case
 also proves literal constructor identity and a fresh import without optional
 runtime or infrastructure; the product boundary guard rejects package-root,
 private sibling, undeclared export/member and dynamic sibling access.
+
+### Position schedule route projection
+
+`app.repertoire.interfaces.position_schedule_occurrences` exposes the pure
+`routes_from_validated_index(snapshot, index, source_certificate=...)`,
+`index_routes`, and `options_for_target` functions. The projection uses the
+shared `tempo_evidence_math.position_learning` values and checks the index
+against the supplied snapshot. It permits physical-card ambiguity but holds on
+illegal or incomplete authored content and conflicting selected responses.
+The detached certificate must come from the source owner for the exact snapshot,
+revision and digest; constructing one proves nothing. The current snapshot port
+alone does not establish a digest-bound current-integrity certificate. Product
+composition must obtain that proof and issuance must fence it again before use.
+This pure interface does not wire a provider, change persistence or grant a
+Study schedule authority.
