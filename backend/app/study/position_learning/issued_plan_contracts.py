@@ -339,8 +339,8 @@ def freeze_issued_plan(
         if key in by_key:
             return Hold("duplicate_position_due_witness")
         by_key[key] = witness
-    occurrence_keys = tuple(item.definition.key for item in plan.decision_occurrences)
-    if set(by_key) != set(occurrence_keys):
+    occurrence_keys = {item.definition.key for item in plan.decision_occurrences}
+    if set(by_key) != occurrence_keys:
         return Hold("due_witnesses_do_not_match_selected_decisions")
     for occurrence in plan.decision_occurrences:
         witness = by_key[occurrence.definition.key]
@@ -376,7 +376,7 @@ def freeze_issued_plan(
         opponent_cue_uci=plan.opponent_cue_uci,
         opponent_cue_ply=plan.opponent_cue_ply,
         decision_slots=slots,
-        due_positions=tuple(by_key[s.definition.key] for s in slots),
+        due_positions=tuple(dict.fromkeys(by_key[s.definition.key] for s in slots)),
         source_snapshot_id=cert.snapshot_id,
         source_revision=cert.source_revision,
         source_digest=cert.source_digest,
@@ -526,7 +526,7 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
         return _record_hold("invalid_issued_record_opponent_cue")
 
     slots: list[DecisionSlot] = []
-    seen_positions: set[PositionKey] = set()
+    definition_by_position: dict[PositionKey, PositionDefinition] = {}
     previous_ply = -1
     for slot_raw in slots_raw:
         slot_keys = {"move_offset", "original_ply", "definition", "fen"}
@@ -540,16 +540,18 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
             return definition
         offset, ply, fen = slot_raw["move_offset"], slot_raw["original_ply"], slot_raw["fen"]
         if (offset != ply - route["start_ply"] or not 0 <= offset < len(moves)
-                or ply <= previous_ply or moves[offset] != definition.expected_uci
-                or definition.key in seen_positions):
+                or ply <= previous_ply or moves[offset] != definition.expected_uci):
             return _record_hold("invalid_issued_record_decision_slot")
+        prior_definition = definition_by_position.get(definition.key)
+        if prior_definition is not None and prior_definition != definition:
+            return _record_hold("issued_record_repeated_position_definition_conflict")
         try:
             if opening_position_key(fen) != definition.key.position:
                 return _record_hold("issued_record_decision_position_mismatch")
         except (TypeError, ValueError):
             return _record_hold("invalid_issued_record_decision_fen")
         slots.append(DecisionSlot(offset, ply, definition, fen))
-        seen_positions.add(definition.key)
+        definition_by_position[definition.key] = definition
         previous_ply = ply
 
     target = _parse_definition(raw["target"])
@@ -583,11 +585,12 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     if local_day is None or issued_at is None:
         return _record_hold("invalid_issued_record_time")
     due_raw = raw["due_witnesses"]
-    if not isinstance(due_raw, list) or len(due_raw) != len(slots):
+    ordered_unique_definitions = tuple(dict.fromkeys(slot.definition for slot in slots))
+    if not isinstance(due_raw, list) or len(due_raw) != len(ordered_unique_definitions):
         return _record_hold("invalid_issued_record_due_witnesses")
     dues: list[DueAtIssuance] = []
     due_keys = {"definition", "due", "study_day", "owner_epoch", "position_revision", "issued_at"}
-    for witness_raw, slot in zip(due_raw, slots):
+    for witness_raw, expected_definition in zip(due_raw, ordered_unique_definitions):
         if (not _exact_mapping(witness_raw, due_keys)
                 or type(witness_raw["due"]) is not bool
                 or type(witness_raw["position_revision"]) is not int
@@ -599,7 +602,7 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
             return definition
         witness_day = _parse_record_date(witness_raw["study_day"])
         witness_time = _parse_record_datetime(witness_raw["issued_at"])
-        if (definition != slot.definition or witness_day != local_day or witness_time is None):
+        if (definition != expected_definition or witness_day != local_day or witness_time is None):
             return _record_hold("issued_record_due_witness_mismatch")
         try:
             dues.append(DueAtIssuance(definition, witness_raw["due"], witness_day,

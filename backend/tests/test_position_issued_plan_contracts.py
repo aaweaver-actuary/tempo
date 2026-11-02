@@ -35,10 +35,13 @@ def request_for(route, target_ply=6, *, due=True, proofs=(), attempt="attempt-or
     planned = choose_plan(target_key, (route,), clean_proofs=proofs,
                           study_day=DAY, owner_epoch=EPOCH)
     assert not isinstance(planned, Hold)
-    due_rows = tuple(
-        DueAtIssuance(item.definition, due, DAY, EPOCH, 7, NOW)
-        for item in planned.decision_occurrences
-    )
+    due_by_position = {}
+    for item in planned.decision_occurrences:
+        due_by_position.setdefault(
+            item.definition.key,
+            DueAtIssuance(item.definition, due, DAY, EPOCH, 7, NOW),
+        )
+    due_rows = tuple(due_by_position.values())
     return SelectionRequest(
         PositionDefinition(target_key, target_occurrence.definition.expected_uci, "policy-v1"),
         (route,), due_rows, tuple(proofs), "legacy-card-1", 4, 41, attempt,
@@ -128,6 +131,26 @@ def test_authored_owner_token_is_scope_bound_immutable_and_digest_bound():
     changed_payload = json.loads(json.dumps(record))
     changed_payload["authored_source_token"]["integrity"]["scan_generation"] = 8
     assert isinstance(decode_issued_record(changed_payload), Hold)
+
+
+def test_repeated_legal_position_keeps_occurrence_slots_but_one_due_witness_on_restart():
+    route = option("clock-long")
+    repeated = [d for d in route.decisions if d.definition.key == route.decisions[0].definition.key]
+    assert tuple(d.ply for d in repeated) == (0, 4)
+    issued = select_and_freeze(request_for(route, target_ply=4))
+    assert not isinstance(issued, Hold)
+    assert tuple(slot.original_ply for slot in issued.decision_slots) == (0, 2, 4, 6)
+    assert issued.decision_slots[0].definition == issued.decision_slots[2].definition
+    assert issued.decision_slots[1].definition == issued.decision_slots[3].definition
+    assert len(issued.due_positions) == len({slot.definition.key for slot in issued.decision_slots})
+    record = json.loads(json.dumps(issued.to_record()))
+    assert len(record["due_witnesses"]) == len({
+        slot["definition"]["position"] for slot in record["route"]["decision_slots"]
+    })
+    restored = decode_issued_record(record)
+    assert not isinstance(restored, Hold)
+    assert tuple(slot.original_ply for slot in restored.decision_slots) == (0, 2, 4, 6)
+    assert len(restored.due_positions) == 2
 
 
 def test_server_record_roundtrips_prefix_receipt_identity_and_opponent_cue():
