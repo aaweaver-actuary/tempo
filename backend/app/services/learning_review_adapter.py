@@ -55,17 +55,21 @@ def translate_failure(error):
 
 
 class LearningReviewAdapter:
-    def __init__(self, database, request, *, prepared_manifest=None, policy_provider=None,
+    def __init__(self, database, request, *, prepared_manifest=None, prepared_position_checkpoint=None, policy_provider=None,
                  observed_at=None, local_day=None):
         self.database = database
         self.request = request
         self.prepared_manifest = prepared_manifest
+        self.prepared_position_checkpoint = prepared_position_checkpoint
+        self._position_fence = None
+        self._position_receipts = ()
         self.policy_provider = policy_provider
         self.observed_at = observed_at
         self.local_day = local_day
         self._command_time = None
         self._command_day = None
         self._command_timezone = None
+        self._review_attempt = None
         self.deferred_effects = []
 
     def _capture_command_day(self):
@@ -126,11 +130,13 @@ class LearningReviewAdapter:
         if row is not None:
             from .study_attempt_guard import guard_current_attempt
             guard_current_attempt(self.database,row['id'],command.card_id,self.current_revision(command.card_id))
-        return self._attempt(row)
+        self._review_attempt = self._attempt(row)
+        return self._review_attempt
 
     def recover_attempt(self, command):
         from ..queue_attempt_origins import recover_queue_entry
-        return self._attempt(recover_queue_entry(self.database, command.card_id, self.request))
+        self._review_attempt = self._attempt(recover_queue_entry(self.database, command.card_id, self.request))
+        return self._review_attempt
 
     def current_revision(self, card_id):
         row = storage.current_revision(self.database, card_id)
@@ -168,6 +174,23 @@ class LearningReviewAdapter:
                 light_first_interval_days=policy.light_first_interval_days,
                 reviewed_at=context.reviewed_at, review_day=context.review_day)
 
+    def record_position_review(self, command, context, *, outcome, guided):
+        """Save the human review without advancing the physical card schedule."""
+        from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+        from tempo_learning_runtime.scheduling_review_contracts import ReviewRecord
+        owner = OwnedConnectionSchedulingReviewStore(self.database)
+        card = owner.load_card_state(command.card_id, require_active=True)
+        if card is None:
+            raise KeyError(command.card_id)
+        owner.append_review(ReviewRecord(command.card_id, outcome,
+            "again" if outcome == "again" else "good", guided, context.reviewed_at,
+            card.interval_days, card.interval_days, "position_study", f"attempt:{command.attempt_id}"))
+        return {"card_id": command.card_id, "next_due": card.due_date,
+            "interval_days": card.interval_days, "state": card.state,
+            "requeue_today": False, "requeue_after_cards": None, "stability": card.stability,
+            "scheduling_mode": card.scheduling_mode, "hard_correct_streak": card.hard_correct_streak,
+            "suggest_shorter_prefix": False, "idempotent": False}
+
     def settle_remediation(self, command, review_id, *, revision):
         if review_id is None: return
         from tempo_legacy_database.adapters.study.game_feedback import settle_saved_review
@@ -199,6 +222,21 @@ class LearningReviewAdapter:
         storage.insert_receipt(self.database, command.attempt_id, command.card_id, result["queue_entry_id"], command.outcome, int(command.guided),
              context.reviewed_at.isoformat() if command.recorded_at else None,
              result["review_id"], "canonical", None, json.dumps(result))
+        self.settle_remediation(command, result.get("review_id"), revision=self.current_revision(command.card_id))
+
+    def save_position_receipt(self, command, context, result):
+        # D3 verifies this canonical human receipt before accepting Good. Its
+        # result remains provisional until every position effect succeeds.
+        storage.insert_receipt(self.database, command.attempt_id, command.card_id, result["queue_entry_id"],
+            command.outcome, int(command.guided), context.reviewed_at.isoformat() if command.recorded_at else None,
+            result["review_id"], "canonical", None, "{}")
+
+    def finish_position_receipt(self, command, context, result):
+        storage.save_continuation(self.database, json.dumps(result), command.attempt_id)
+        self.retain_completion(command, self._review_attempt, json.dumps({**result,
+            "_request": {"outcome": command.outcome, "guided": command.guided},
+            "_recorded_at": context.reviewed_at.isoformat() if command.recorded_at else None,
+            "_attempt_id": command.attempt_id}))
         self.settle_remediation(command, result.get("review_id"), revision=self.current_revision(command.card_id))
 
     def retain_completion(self, command, attempt, result_json, *, origin_only=False):
@@ -246,9 +284,48 @@ class LearningReviewAdapter:
     def lock_review_cards(self, command):
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)
 
+    def begin_position_review(self, command):
+        # A saved canonical receipt owns replay across owner activation changes.
+        if command.attempt_id and self.receipt(command.attempt_id):
+            return False
+        from tempo_legacy_database.adapters.study import position_first_responses as positions
+        if not positions.has_position_tables(self.database):
+            return False
+        card = storage.card(self.database, command.card_id)
+        if card is None or card['content_type'] != 'opening':
+            return False
+        if self.prepared_position_checkpoint is not None:
+            from .postgres_opening_evidence import begin_position_checkpoint
+            self._position_fence = begin_position_checkpoint(self.database, self.prepared_position_checkpoint)
+            return self._position_fence is not None
+        # In the absence of a plan use the original admission, never a client
+        # flag, to prevent an active/staged/paused owner falling back to FSRS.
+        from tempo_legacy_database.adapters.lifecycle.queue_attempt_origins import attempt_contexts
+        from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+        contexts = (attempt_contexts(self.database, command.queue_entry_id, command.card_id)
+                    if command.queue_entry_id is not None else [])
+        owners = {row['admission_repertoire_id'] for row in contexts if row['admission_repertoire_id']}
+        if not owners:
+            owners = {row[0] for row in storage.card_owners(self.database, command.card_id) if row[0]}
+        for repertoire_id in sorted(owners):
+            owner = owner_mode(self.database, repertoire_id, None)
+            if owner.disposition != 'legacy':
+                raise learning.ReviewFailure(409, 'Position issuance is unavailable: ' + owner.reason,
+                                             code='opening_evidence_conflict')
+        return False
+
     def lock_queue_date(self):
         self._capture_command_day()
+        if self._position_fence is not None:
+            return  # lock_original_queue takes the original issued day below
         lock_queue_date_for_position(self.database, self._command_day.isoformat())
+
+    def lock_position_attempt(self, command):
+        from tempo_legacy_database.adapters.study import position_first_responses as positions
+        plan = self._position_fence.preparation.plan
+        if not positions.lock_original_queue(self.database, plan) or not positions.lock_attempt(self.database, command.attempt_id):
+            raise learning.ReviewFailure(409, 'Original position attempt is busy or unavailable',
+                                         code='opening_evidence_conflict')
 
     def completed_evidence_exists(self, attempt_id):
         row = storage.evidence_state(self.database, attempt_id)
@@ -266,6 +343,35 @@ class LearningReviewAdapter:
         with training_timing_stage("completion_evidence"):
             persist_checkpoint(self.database, {"checkpoint":json.loads(command.completion.checkpoint_json),
                 "prepared_manifest":self.prepared_manifest}, completing_review=True)
+        if self._position_fence is not None:
+            from .postgres_opening_evidence import commit_position_checkpoint, position_checkpoint_events
+            self._position_receipts = commit_position_checkpoint(self.database, self._position_fence,
+                position_checkpoint_events(self.database, self._position_fence))
+
+    def apply_position_effects(self, command, context, result):
+        from tempo_legacy_database.adapters.study.position_grade_effects import (
+            CompletionAuthority, apply_in_borrowed_transaction)
+        from tempo_legacy_database.adapters.study.position_first_responses import acceptance_clock
+        from tempo_evidence_math.position_learning import Hold
+        from .postgres_opening_evidence import fence_position_completion, position_completion_inputs
+        plan = self._position_fence.preparation.plan
+        now, timezone_name = acceptance_clock(self.database)
+        inputs = position_completion_inputs(self._position_fence, self._position_receipts)
+        if len(inputs.event_ids) != len(plan.decision_slots):
+            raise learning.ReviewFailure(409, 'Position completion is missing a first response',
+                                         code='opening_evidence_conflict')
+        if command.queue_entry_id != plan.queue_entry_id or result['queue_entry_id'] != plan.queue_entry_id:
+            raise learning.ReviewFailure(409, 'Position completion differs from its original queue entry',
+                                         code='opening_evidence_conflict')
+        fence_position_completion(self.database, self._position_fence, self._position_receipts)
+        authority = CompletionAuthority(command.attempt_id, plan.queue_entry_id, command.card_id,
+                                        command.completion.card_revision, result['review_id'])
+        effects = apply_in_borrowed_transaction(self.database, inputs.attempt_id, inputs.event_ids,
+            owner_epoch=inputs.owner_epoch, authored_digest=inputs.authored_digest,
+            accepted_study_day=learning.review_day_at(now, timezone_name), accepted_at=now,
+            completion=authority)
+        if isinstance(effects, Hold):
+            raise learning.ReviewFailure(409, effects.reason, code='opening_evidence_conflict')
 
     def complete_evidence(self, command, result):
         from .postgres_opening_evidence import complete_review_evidence
@@ -307,13 +413,19 @@ def apply_legacy_review(card_id, request, *, database=None, observed_at=None, lo
 
 
 def submit_legacy_review(database, payload):
+    from .opening_decision_evidence import EvidenceConflict
+    from tempo_legacy_database.adapters.study.position_grade_effects import GradeEffectError
     request = ReviewRequest.model_validate(payload["review"])
     command = command_from_request(payload["card_id"], request)
-    adapter = LearningReviewAdapter(database, request, prepared_manifest=payload.get("prepared_manifest"))
+    adapter = LearningReviewAdapter(database, request, prepared_manifest=payload.get("prepared_manifest"),
+        prepared_position_checkpoint=payload.get("prepared_position_checkpoint"))
     try:
         result = learning.submit_review(adapter, command, lambda: adapter.context(command)).as_dict()
     except learning.ReviewFailure as error:
         raise translate_failure(error) from error
+    except (EvidenceConflict, GradeEffectError) as error:
+        from .postgres_opening_evidence import evidence_error
+        raise evidence_error(str(error)) from error
     from tempo_legacy_database.adapters.study.recombination import after_saved_review
     regrouping = after_saved_review(database, command.attempt_id, prepared=payload.get("prepared_recombination"))
     if regrouping:

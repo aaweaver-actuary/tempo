@@ -49,7 +49,7 @@ def _refresh_opening(store, context, card, result, *, priority_first=False):
     store.refresh_progression(context, card, result)
 
 
-def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewContext) -> ReviewResult:
+def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewContext, *, position=False) -> ReviewResult:
     original_request = {"outcome": command.outcome, "guided": command.guided}
     original_payload, request_json = _request_binding(command, context)
     completed_at = context.reviewed_at.isoformat() if command.recorded_at else None
@@ -96,6 +96,8 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
             store.bind_receipt(command, request_json)
             return ReviewResult.from_dict(confirmed)
         if command.attempt_id and command.attempt_id != recorded_attempt:
+            if position:
+                raise ReviewConflict("position_attempt_conflict", "A different review completed this position attempt")
             reconciled = store.reconcile_completed(command, attempt, context, guided=command.guided,
                 revision=command.expected_revision, competing_review={
                     "outcome": recorded_request.get("outcome") if recorded_request else None,
@@ -117,7 +119,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     # Receipt/projection replay must not depend on reading current policy.
     if command.recorded_at:
         context = replace(context, review_day=review_day_at(context.reviewed_at, policy.timezone))
-    if attempt.recovered:
+    if attempt.recovered and not position:
         if attempt.cycle == 0 and attempt.admission_kind == "new" and card.content_type == "opening":
             store.retain_introduction(command.card_id, attempt.queue_date)
         if store.has_later_review(command.card_id, context) or not command.recorded_at:
@@ -130,13 +132,14 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
             return ReviewResult.from_dict(reconciled)
     guided = bool(attempt.attempt_failed or command.guided)
     outcome = "again" if guided else command.outcome
-    snapshot = store.schedule_snapshot(command.card_id)
+    snapshot = None if position else store.schedule_snapshot(command.card_id)
     try:
-        scheduled = store.schedule(command, context, outcome=outcome, guided=guided, policy=policy)
+        scheduled = (store.record_position_review(command, context, outcome=outcome, guided=guided)
+                     if position else store.schedule(command, context, outcome=outcome, guided=guided, policy=policy))
     except KeyError as error:
         raise ReviewFailure(404, "Card not found") from error
     store.complete_attempt(command, context, guided=guided)
-    if outcome == "correct" and not guided and not attempt.attempt_failed:
+    if not position and outcome == "correct" and not guided and not attempt.attempt_failed:
         store.mark_clean_tactic(command.card_id, context)
     repeated_entry_id = None
     if scheduled["requeue_today"]:
@@ -149,10 +152,15 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     if snapshot:
         store.save_snapshot(result["review_id"], snapshot)
     if command.attempt_id:
-        store.save_receipt(command, context, result)
-        store.bind_receipt(command, request_json)
-    store.retain_completion(command, attempt, json.dumps({**result, "_request": original_request,
-        "_recorded_at": completed_at, "_attempt_id": command.attempt_id}))
+        if position:
+            store.save_position_receipt(command, context, result)
+        else:
+            store.save_receipt(command, context, result)
+        if not position:
+            store.bind_receipt(command, request_json)
+    if not position:
+        store.retain_completion(command, attempt, json.dumps({**result, "_request": original_request,
+            "_recorded_at": completed_at, "_attempt_id": command.attempt_id}))
     _refresh_opening(store, context, card, result)
     if card.content_type != "opening" and result["state"] == "mature":
         store.refresh_maturity(context)
@@ -164,10 +172,14 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
 
 def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_factory) -> ReviewResult:
     """Required evidence and optional continuation share the review transaction."""
+    begin_position = getattr(store, "begin_position_review", None)
+    position = begin_position(command) if begin_position else False
     continuation_locked = store.lock_review_cards(command)
     if store.is_deleted(command.card_id):
         raise ReviewConflict("card_deleted", "This card was permanently deleted. Discard this attempt and refresh training.")
     store.lock_queue_date()
+    if position:
+        store.lock_position_attempt(command)
     prior = store.receipt(command.attempt_id) if command.attempt_id else None
     completion = command.completion
     if completion:
@@ -185,9 +197,16 @@ def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_
                                 code="opening_evidence_conflict")
         store.persist_evidence(command)
     context = context_factory()
-    result = apply_review(store, command, context).as_dict()
+    if position and not completion and not prior:
+        raise ReviewFailure(409, "Position completion requires opening evidence", code="opening_evidence_conflict")
+    result = apply_review(store, command, context, position=position).as_dict()
     if completion:
         store.complete_evidence(command, result)
+        if position and not prior and result.get("idempotent") is False:
+            store.apply_position_effects(command, context, result)
+            store.finish_position_receipt(command, context, result)
+            _, request_json = _request_binding(command, context)
+            store.bind_receipt(command, request_json)
         if not prior and result.get("idempotent") is False and result.get("requeue_entry_id") is not None:
             store.inherit_evidence_scope(command, result)
     if command.attempt_id and not prior and result.get("idempotent") is False and continuation_locked:

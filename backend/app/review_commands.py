@@ -29,7 +29,20 @@ def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> d
 
 def register_prepared_review(name, handler):
     from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
-    register_command(name,handler,prepare=prepare_recombination_review)
+
+    def prepare(payload):
+        prepared = prepare_recombination_review(payload)
+        request = prepared['review'].get('opening_evidence_completion')
+        if request:
+            from app.contracts.transport.study import OpeningEvidenceCheckpoint
+            from .services.postgres_opening_evidence import prepare_position_checkpoint
+            from tempo_legacy_database.connections import read_connection
+            with read_connection() as database:
+                prepared['prepared_position_checkpoint'] = prepare_position_checkpoint(
+                    database, OpeningEvidenceCheckpoint.model_validate(request))
+        return prepared
+
+    register_command(name,handler,prepare=prepare)
 
 
 register_review_commands(register_prepared_review, submit=submit_review, reconcile=reconcile_review)
