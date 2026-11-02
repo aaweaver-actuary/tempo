@@ -282,3 +282,56 @@ def test_foreground_preparation_validates_issued_manifest_not_physical(monkeypat
     from fastapi import HTTPException
     with pytest.raises(HTTPException):
         evidence.prepare_checkpoint(tampered)
+
+
+def test_all_displayed_events_map_to_issued_ordinals_including_repeated_position(monkeypatch):
+    import chess
+    from tempo_evidence_math import opening_position_key
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+    board = chess.Board()
+    slots = []
+    moves = ('g1f3', 'g8f6', 'f3g1', 'f6g8', 'g1f3')
+    for offset, move in enumerate(moves):
+        if board.turn == chess.WHITE:
+            key = NS(repertoire_id='r', variant='standard', position=opening_position_key(board.fen()))
+            slots.append(NS(move_offset=offset, original_ply=offset+4, fen=board.fen(),
+                            definition=NS(key=key, expected_uci=move, policy_version='v1')))
+        board.push_uci(move)
+    frozen = NS(plan_id='a'*64, attempt_id='attempt', queue_entry_id=21, original_card_id='card',
+                original_card_revision=4, owner_epoch='epoch', target=slots[-1].definition,
+                starting_fen=chess.STARTING_FEN, moves_uci=moves, decision_slots=tuple(slots))
+    scope = {'manifest_version':1, 'policy_version':1, 'manifest_id':'b'*64,
+             'presentation_snapshot_id':13, 'repertoire_id':'r', 'card_id':'card',
+             'card_revision':4, 'trained_color':'white',
+             'decisions':[{'decision_id':'c'*64, 'decision_index':0, 'move_offset':0,
+                           'fen':slots[-1].fen, 'expected_uci':'g1f3'}]}
+    manifest = evidence.issued_position_manifest(frozen, scope)
+    now = datetime.now(timezone.utc).isoformat()
+    events = [{'sequence':i+1, 'decision_index':i, 'decision_id':d['decision_id'],
+               'expected_uci':d['expected_uci'], 'kind':'first_response', 'observed_at':now,
+               'response_uci':d['expected_uci'], 'assistance':None, 'disposition':'expected'}
+              for i, d in enumerate(manifest['decisions'])]
+    req = OpeningEvidenceCheckpoint.model_validate({'attempt_id':'attempt', 'origin_queue_entry_id':21,
+        'queue_entry_id':21, 'started_at':now, 'study_timezone':'UTC', 'manifest':manifest, 'events':events})
+    source = NS(routes=[NS(decisions=[NS(definition=s.definition) for s in slots])],
+                authored_token=NS(authored_digest='authored'))
+    db = object()
+    prep = evidence.PositionCheckpointPreparation(req, frozen, source, evidence._POSITION_CHECKPOINT_SEAL)
+    fence = evidence.PositionCheckpointFence(prep, db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL)
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *_: None)
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *_: NS(disposition='position', epoch='epoch'))
+    monkeypatch.setattr(storage, 'acceptance_clock', lambda *_: (datetime.now(timezone.utc), 'UTC'))
+    monkeypatch.setattr(storage, 'grade_receipt', lambda *_: None)
+    saved = []
+    monkeypatch.setattr(storage, 'receipt', lambda _db, event_id, attempt, index:
+                        [r for r in saved if r['event_id'] == event_id or
+                         (r['attempt_id'], r['decision_index']) == (attempt, index)])
+    def insert(_db, payload, digest, _json, accepted):
+        saved.append({**payload, 'payload_json':payload, 'payload_digest':digest, 'accepted_at':accepted})
+        return ('ok',)
+    monkeypatch.setattr(storage, 'insert', insert)
+    evidence.commit_position_checkpoint(db, fence, events)
+    assert [(r['decision_index'], r['original_ply']) for r in saved] == [(0,4), (1,6), (2,8)]
+    assert len({r['event_id'] for r in saved}) == 3
