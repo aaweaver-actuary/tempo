@@ -1,3 +1,4 @@
+import { positionStudyUnavailable } from "../domain/attempt";
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -46,6 +47,7 @@ interface TrainingViewProps {
   dateLabel: string;
   serviceError: string;
   offlineQueue?: boolean;
+  positionStudyUnavailableReason?: string;
   refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean) => void;
   cardsLeft: number;
   card: PracticeCard;
@@ -84,6 +86,7 @@ function StandardTrainingView({
   dateLabel,
   serviceError,
   offlineQueue = false,
+  positionStudyUnavailableReason,
   cardsLeft,
   refreshDatabaseQueue,
   card,
@@ -167,8 +170,9 @@ function StandardTrainingView({
 
     }
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError, reviewPersistenceIdentity]);
+  const positionUnavailable = positionStudyUnavailableReason ?? positionStudyUnavailable(card, offlineQueue || !navigator.onLine);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
-  const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
+  const trainingMutationBlocked = Boolean(positionUnavailable) || liveQueueBlocked || reviewBlocked || burialPending;
   const isEndgame = card.kind === "endgame" && !hasSavedEndgameLine(card);
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
@@ -176,6 +180,7 @@ function StandardTrainingView({
   const showTeachingArrow =
     showHint ||
     (card.kind === "opening" &&
+      card.positionStudyMode !== "position" &&
       !card.hasPriorStudyReview &&
       !card.firstCleanPassAt &&
       card.queueAttemptState !== "reinforcement" &&
@@ -201,7 +206,7 @@ function StandardTrainingView({
     feedback === "complete" ? card.moves.length : step,
   );
 
-  const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${attemptGeneration}`;
+  const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${card.positionPresentation?.plan_id ?? "legacy"}:${attemptGeneration}`;
   const visiblePositions = useMemo(() => positionsFromMoves(card.startingFen, card.moves, feedback === "complete" ? card.moves.length : step), [card.startingFen, card.moves, feedback, step]);
   const boardHistory = useBoardHistory(trainingPositionKey, visiblePositions, currentFenString);
   function observeDisplayedHint(displayedFen: string) {
@@ -212,14 +217,14 @@ function StandardTrainingView({
   useBoardPublisher("train", useSharedBoard && !isEndgame ? {
     keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
-    unavailable:
+    unavailable: positionUnavailable ?? (
       cardsLeft <= 0
         ? serviceError
           ? "Training position unavailable. Retry the local service."
           : /requires? the computer/.test(queueNotice)
             ? "Prepared exercises require the computer. Reconnect to continue."
             : "No cards due. Your next session will appear here."
-        : undefined,
+        : undefined),
     fen: boardHistory.fen,
     expectedSan: card.moves[step],
     lastMove: boardHistory.viewingHistory ? undefined : lastMove,
@@ -316,6 +321,9 @@ function StandardTrainingView({
       {!phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em>{queueNotice}</em>}
     </div>
   );
+  const trailPlyOffset = card.positionStudyMode === "position"
+    ? (Number(card.startingFen.split(" ")[5]) - 1) * 2 + (card.startingFen.split(" ")[1] === "b" ? 1 : 0)
+    : 0;
   const moveTrail = (
     <div
       className={`move-trail${revealedMoves.length ? "" : " empty"}`}
@@ -327,8 +335,8 @@ function StandardTrainingView({
           {revealedMoves.map((move, index) => (
             <li key={`${move}-${index}`}>
               <b>
-                {index % 2 === 0
-                  ? `${Math.floor(index / 2) + 1}.`
+                {(index + trailPlyOffset) % 2 === 0
+                  ? `${Math.floor((index + trailPlyOffset) / 2) + 1}.`
                   : "..."}
               </b>
               {move}
@@ -378,6 +386,7 @@ function StandardTrainingView({
           </Button>
         </div>
       )}
+      {cardsLeft > 0 && positionUnavailable && <p className="ui-notice" role="status">{positionUnavailable}</p>}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}

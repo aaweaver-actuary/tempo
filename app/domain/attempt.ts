@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { canReplayPositionStudyOffline } from "./position-offline-plan";
 import type { PracticeCard } from "./cards";
 import { asFenString, type FenString, type MoveSquares } from "./shared";
 
@@ -16,7 +17,29 @@ export type AttemptToken = {
 };
 
 export function attemptEntryKey(card: PracticeCard): string {
-  return `${card.backendId ?? card.id}:${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${card.startingFen}:${card.moves.join(" ")}`;
+  const positionIdentity = card.positionStudyMode === "position"
+    ? `:position:${card.positionPresentation?.plan_id ?? "held"}:${card.positionPresentation?.attempt_id ?? ""}` : "";
+  return `${card.backendId ?? card.id}:${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${card.startingFen}:${card.moves.join(" ")}${positionIdentity}`;
+}
+
+/** Position attempts use the server's frozen identity through reload/restart. */
+export function trainingAttemptId(card: PracticeCard): string {
+  return card.positionPresentation?.attempt_id ?? crypto.randomUUID();
+}
+
+export function positionStudyUnavailable(card: PracticeCard, offline = false): string | undefined {
+  if (card.positionStudyMode !== "position") return undefined;
+  if (card.positionStudyHold) return `Position study unavailable: ${card.positionStudyHold}`;
+  if (!card.positionPresentation) return "Position study unavailable: refresh the issued plan while connected.";
+  if (offline && !canReplayPositionStudyOffline({
+    positionStudyMode: card.positionStudyMode,
+    positionPresentation: card.positionPresentation,
+    originalCardId: card.backendId,
+    originalQueueEntryId: card.queueEntryId,
+    originalCardRevision: card.revision,
+    expectedAttemptId: card.positionPresentation.attempt_id,
+  })) return "Position study requires a connection. Reconnect to continue this issued plan.";
+  return undefined;
 }
 
 export function isAttemptPlayable(attempt: AttemptToken): boolean {

@@ -14,6 +14,7 @@ import { demoCards } from "../samples";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import {
   initialTrainingState,
+  trainingAttemptId,
   attemptEntryKey,
   isAttemptPlayable,
   isCurrentAttempt,
@@ -448,7 +449,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(nextCard),
         generation: get().attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(nextCard),
         phase: "playerTurn",
       },
       reviewSaveError: "",
@@ -495,7 +496,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(card),
         generation: get().attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(card),
         phase: nextAttemptFailed ? "guided" : "playerTurn",
       },
       reviewSaveError: "",
@@ -581,7 +582,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           attempt: {
             entryKey: card ? attemptEntryKey(card) : "",
             generation: current.attempt.generation + 1,
-            attemptId: crypto.randomUUID(),
+            attemptId: trainingAttemptId(card),
             phase: card ? (failed ? "guided" : "playerTurn") : "complete",
           },
         });
@@ -612,7 +613,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: card ? attemptEntryKey(card) : "",
         generation: current.attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(card),
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });
