@@ -56,7 +56,9 @@ def test_answer_and_policy_changes_preserve_key_but_change_definition():
 
 
 def test_position_key_keeps_castling_and_legally_available_en_passant():
-    assert CASTLING_INTACT.position(0) != CASTLING_LOST.position(4)
+    assert CASTLING_INTACT.board_at(0).is_valid()
+    assert CASTLING_LOST.board_at(0).is_valid()
+    assert CASTLING_INTACT.position(0) != CASTLING_LOST.position(0)
     ep_board = LEGAL_EP.board_at(4)
     assert ep_board.fen(en_passant="fen").split()[3] == "d6"
     assert chess.Move.from_uci("e5d6") in ep_board.legal_moves

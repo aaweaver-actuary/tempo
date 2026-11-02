@@ -17,11 +17,12 @@ class LegalPath:
     repertoire_id: str
     name: str
     moves_uci: tuple[str, ...]
+    start_fen: str = chess.STARTING_FEN
 
     def board_at(self, ply: int) -> chess.Board:
         if not 0 <= ply <= len(self.moves_uci):
             raise IndexError("ply_outside_path")
-        board = chess.Board()
+        board = chess.Board(self.start_fen)
         for move_uci in self.moves_uci[:ply]:
             move = chess.Move.from_uci(move_uci)
             if move not in board.legal_moves:
@@ -55,12 +56,12 @@ LONDON_ORDER_B = LegalPath(
     ("d2d4", "g8f6", "c1f4", "d7d5", "e2e3", "e7e6"),
 )
 
-# A reversible knight cycle returns to the initial placement and turn, while
-# losing castling rights. This demonstrates why rights are part of identity.
+# This legal synthetic root has the starting placement and turn without
+# castling rights. It isolates the rights field as part of position identity.
 CASTLING_INTACT = LegalPath("identity", "castling_intact", ())
 CASTLING_LOST = LegalPath(
-    "identity", "castling_lost",
-    ("g1f3", "g8f6", "f3g1", "f6g8"),
+    "identity", "castling_lost", (),
+    start_fen=chess.STARTING_FEN.replace("KQkq", "-"),
 )
 
 # Legal en-passant target after 1.e4 a6 2.e5 d5; the capture e5xd6 is legal.
