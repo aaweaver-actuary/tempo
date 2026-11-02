@@ -7,6 +7,7 @@ not claim browser, review or installed-image qualification.
 import hashlib
 import json
 import os
+from time import perf_counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -116,10 +117,12 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
         # Active mode is a synthetic fixture insertion only, not the operator path.
         raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id='n2'")
         raw.commit()
+        queue_started = perf_counter()
         proposal = prepare_due(port, day, {})
         assert isinstance(proposal, dict) and 'candidate' in proposal, proposal
         assert admit_due(port, day, proposal) is None
         raw.commit()
+        print(f'N2_SOURCE_QUEUE_ADMISSION_MS={(perf_counter()-queue_started)*1000:.3f}')
         assert tuple(raw.execute("SELECT card_id,admission_repertoire_id FROM daily_queue WHERE queue_date=%s", (day,)).fetchone()) == ('card','n2')
         raw.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,'n2',%s)", (day,now.isoformat()))
         raw.commit()
@@ -229,8 +232,10 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, original_fsrs
     review_payload = prepare_recombination_review(review_payload, read_connection=fixture_reader)
     review_payload.update(prepared_manifest=prepared_manifest, prepared_position_checkpoint=prepared_position)
     raw.execute('BEGIN')
+    save_started = perf_counter()
     saved = learning_review_adapter.submit_legacy_review(port, review_payload)
     raw.commit()
+    print(f'N2_DIRECT_REVIEW_COMMIT_MS={(perf_counter()-save_started)*1000:.3f}')
     assert saved['persisted'] and saved['queue_entry_id'] == entry
     assert saved['requeue_entry_id'] is None
     rows = [tuple(row) for row in raw.execute('SELECT grade FROM study_position_grades ORDER BY decision_index').fetchall()]
