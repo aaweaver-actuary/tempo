@@ -14,7 +14,6 @@ from app.repertoire import build_index
 from tempo_legacy_database.adapters.authored_repertoires import product_snapshot as storage
 
 DSN = os.environ.get("TEMPO_483_SNAPSHOT_TEST_DSN")
-pytestmark = pytest.mark.skipif(not DSN, reason="task-owned snapshot PostgreSQL DSN required")
 
 DDL = """
 CREATE TABLE legacy_learning_identity(id integer PRIMARY KEY,workspace_id text NOT NULL);
@@ -38,6 +37,8 @@ CREATE TABLE deleted_cards(card_id text PRIMARY KEY);
 
 @pytest.fixture
 def database():
+    if not DSN:
+        pytest.fail("TEMPO_483_SNAPSHOT_TEST_DSN must identify the task-owned disposable tempo483_snapshot database")
     parameters = conninfo_to_dict(DSN)
     if parameters.get("host") not in {"localhost", "127.0.0.1"} or parameters.get("dbname") != "tempo483_snapshot":
         raise RuntimeError("only explicit local task-owned tempo483_snapshot is permitted")

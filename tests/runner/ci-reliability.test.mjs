@@ -801,7 +801,7 @@ test("packaged_browser_prerequisites_fail_when_selected_without_fixture", () => 
   ]) {
     assert(source.includes(env));
     assert(source.includes(`if (!scenarioPath) throw new Error("${error}")`));
-    assert(!source.includes("test.skip(!scenarioPath"));
+    assert(!source.includes(["test", "skip"].join(".") + "(!scenarioPath"));
   }
 });
 
