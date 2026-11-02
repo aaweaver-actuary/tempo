@@ -418,3 +418,108 @@ def position_completion_matches(database, effect, completion):
                 or witness.position_revision < reset['version_after']):
             return False
     return True
+
+
+def apply_game_lapse(database, key, *, prepared_source, accepted_study_day, accepted_at):
+    """Apply one qualified, persisted Games miss under Study's borrowed writer.
+
+    Caller fences the authored source and owner before card/effect locks. This
+    method independently verifies the retained effect, source and target again;
+    any error must abort the caller's transaction, including its intake receipt.
+    """
+    import hashlib
+    import json
+    from datetime import date, datetime
+    from psycopg.types.json import Jsonb
+    from app.study.encounter_feedback import qualified_encounter_view
+    from app.study.position_learning.game_target_mapping import map_first_departure
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+    from .position_owner_epoch import owner_mode
+    from .game_feedback import PostgresGameFeedbackStore
+
+    if (getattr(database, 'read_only', True) or database.raw.info.transaction_status.name != 'INTRANS'):
+        raise GradeEffectError('borrowed_owner_writer_transaction_required')
+    if (not isinstance(accepted_study_day, date) or isinstance(accepted_study_day, datetime)
+            or not isinstance(accepted_at, datetime) or accepted_at.utcoffset() is None):
+        raise GradeEffectError('invalid_acceptance_time')
+    held = fence_position_source(database, prepared_source)
+    if held is not None:
+        raise GradeEffectError(held.reason)
+    token = prepared_source.authored_token
+    owner = owner_mode(database, token.repertoire_id, token.authored_digest)
+    if owner.disposition != 'position':
+        raise GradeEffectError(owner.reason)
+    store = PostgresGameFeedbackStore(database)
+    effect = store.get(key)
+    if (effect is None or effect.status not in {'pending', 'applied'} or effect.control is not None
+            or effect.qualification is None or effect.disposition != 'introduced_again'):
+        raise GradeEffectError('qualified_game_effect_not_accepted')
+    original = effect.encounter or effect.lapse
+    if original is None or not effect.qualification.matches(original):
+        raise GradeEffectError('qualified_game_effect_mismatch')
+    encounter = qualified_encounter_view(original, effect.qualification)
+
+    class PreparedDefinitions:
+        def current_definition(self, *, repertoire_id, position):
+            definitions = {occurrence.definition for route in prepared_source.routes
+                for occurrence in route.decisions if occurrence.definition.key.repertoire_id == repertoire_id
+                and occurrence.definition.key.position == position}
+            return next(iter(definitions)) if len(definitions) == 1 else Hold('current_position_ambiguous')
+
+    target = map_first_departure(encounter, effect.qualification, current_source=PreparedDefinitions())
+    if isinstance(target, Hold):
+        raise GradeEffectError(target.reason)
+    definition = target.definition
+    evidence = dict(command=original.model_dump(mode='json'),
+                    qualification=effect.qualification.model_dump(mode='json'))
+    digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(',', ':'),
+                                       ensure_ascii=False).encode()).hexdigest()
+    game_key = key.logical_id()
+    identifier = hashlib.sha256(('game_lapse:' + game_key).encode()).hexdigest()
+    prior = database.execute_native('''SELECT effect_id,request_digest,accepted_at,version_after
+        FROM study_position_grades WHERE game_effect_key=%s''', (game_key,)).fetchone()
+    if prior:
+        if prior['effect_id'] != identifier or prior['request_digest'] != digest:
+            raise GradeEffectError('game_lapse_receipt_conflict')
+        return prior['effect_id'], prior['accepted_at'], prior['version_after']
+    if effect.status != 'pending':
+        raise GradeEffectError('game_lapse_applied_without_position_receipt')
+    states = _lock_states(database, repertoire_id=token.repertoire_id, owner_epoch=owner.epoch,
+                          authored_digest=token.authored_digest, positions=(definition.key,))
+    if isinstance(states, Hold):
+        raise GradeEffectError(states.reason)
+    row = states[definition.key]
+    if (row['expected_uci'], row['policy_version']) != (definition.expected_uci, definition.policy_version):
+        raise GradeEffectError('position_definition_changed')
+    introduced = database.execute_native('''SELECT introduced_at FROM study_position_states
+        WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+        (definition.key.repertoire_id, definition.key.variant, definition.key.position)).fetchone()
+    if not introduced or introduced['introduced_at'] is None:
+        raise GradeEffectError('position_unintroduced')
+    try:
+        native = json.loads(row['fsrs_json'])
+        if native['card_id'] != row['fsrs_internal_card_id']:
+            raise ValueError('identity')
+        last = datetime.fromisoformat(native['last_review']) if native['last_review'] else None
+        if last is not None and last > accepted_at:
+            raise ValueError('clock')
+    except (ValueError, TypeError, KeyError):
+        raise GradeEffectError('position_fsrs_invalid_or_future') from None
+    schedule = schedule_position_review('again', fsrs_card_json=row['fsrs_json'],
+        accepted_at=accepted_at, review_day=accepted_study_day)
+    key_position = definition.key
+    version = row['version'] + 1
+    database.execute_native('''UPDATE study_position_states SET fsrs_json=%s,due_at=%s,version=%s
+        WHERE repertoire_id=%s AND variant=%s AND position=%s AND version=%s''',
+        (schedule.fsrs_card_json, schedule.due_at, version, key_position.repertoire_id,
+         key_position.variant, key_position.position, row['version']))
+    database.execute_native('''INSERT INTO study_position_grades
+        (effect_id,source_kind,game_effect_key,game_evidence_json,effect_kind,repertoire_id,variant,
+         position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,grade,
+         request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
+        VALUES (%s,'game_lapse',%s,%s,'game_lapse',%s,%s,%s,%s,%s,%s,%s,%s,'again',%s,%s,%s,%s,%s,%s)''',
+        (identifier, game_key, Jsonb(evidence), key_position.repertoire_id, key_position.variant,
+         key_position.position, owner.epoch, definition.expected_uci, definition.policy_version,
+         token.authored_digest, accepted_study_day, digest, accepted_at, row['fsrs_json'],
+         schedule.fsrs_card_json, row['version'], version))
+    return identifier, accepted_at, version

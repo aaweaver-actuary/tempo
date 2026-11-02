@@ -105,7 +105,7 @@ export function departureProgress(receipt: GameDetail["receipts"][number] | unde
   const progress = receipt.progress;
   const held = receipt.status === "held" || ["conflict", "stale_revision", "withdrawn"].includes(receipt.outcome);
   if (held) return `Study feedback held: ${receipt.reason ?? receipt.outcome.replaceAll("_", " ")}`;
-  const application = progress.scheduling_review_id !== null && progress.schedule_applied_at !== null
+  const application = (progress.scheduling_review_id !== null || progress.position_grade_effect_id !== undefined) && progress.schedule_applied_at !== null
     ? "Again applied" : progress.introduction_applied_at !== null ? "Canonical first introduction applied" : null;
   if (progress.settlement && issuedForCurrentTarget(progress, progress.settlement.attempt)) return `${application} · Settled after a genuine Study review`;
   if (issuedForCurrentTarget(progress, progress.first_issued)) return `${application} · Issued for Study (new issuance ${progress.first_issued_ordinal})`;

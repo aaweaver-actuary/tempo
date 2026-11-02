@@ -54,6 +54,12 @@ class CurrentEncounterPort(CurrentDecisionPort, Protocol):
                           qualification: FirstDepartureWitness) -> tuple[DecisionPresentation, ...]: ...
 
 
+class PositionGameIntake(Protocol):
+    """Study-owned pre-lock source/owner fence and accepted-effect grade."""
+    def fence_position_intake(self, command, qualification) -> str: ...
+    def apply_position_lapse(self, key, *, day, now) -> tuple[str, datetime, int] | None: ...
+
+
 class EncounterStore(GameFeedbackStore, Protocol):
     def encounter_card_facts(self, card_id: str, day: str) -> CardFacts | None: ...
     def lock_intake_target(self, card_id: str) -> None: ...
@@ -83,9 +89,10 @@ class EncounterFeedback(GameFeedback):
     def __init__(self, store: EncounterStore, decisions: CurrentEncounterPort, *,
                  clock: Callable[[], datetime], introductions: EncounterIntroductions | None,
                  introduction_policy: EncounterIntroductionPolicy | None,
-                 light_first_interval_days: int = 7):
+                 light_first_interval_days: int = 7, position_intake: PositionGameIntake | None = None):
         super().__init__(store, decisions, clock=clock, light_first_interval_days=light_first_interval_days)
         self.introductions, self.introduction_policy = introductions, introduction_policy
+        self.position_intake = position_intake
 
     @staticmethod
     def _command(effect):
@@ -151,6 +158,8 @@ class EncounterFeedback(GameFeedback):
         now = instant(self.clock())
         card = command.decision if isinstance(command, GameEncounter) else command.finding
         digest = encounter_digest(command) if isinstance(command, GameEncounter) else semantic_digest(command)
+        position_mode = (self.position_intake.fence_position_intake(command, qualification)
+                         if self.position_intake is not None and qualification is not None else "legacy")
         self.store.lock_intake_target(card.presentation_id)
         self.store.lock_effect(command.key)
         previous = self.store.get(command.key)
@@ -167,6 +176,7 @@ class EncounterFeedback(GameFeedback):
                     and previous.progress is None):
                 qualified = self._accept_priority(replace(previous, qualification=qualification), now)
                 self.store.save(qualified, now)
+                qualified = self._apply_position_intake(qualified, now, position_mode)
                 return self._encounter_receipt(qualified, command, "duplicate")
             return self._encounter_receipt(previous, command, "duplicate")
         source_revision = (command.source.source_revision if isinstance(command, GameEncounter)
@@ -179,8 +189,30 @@ class EncounterFeedback(GameFeedback):
             card_id=card.presentation_id, card_revision=card.presentation_revision)
         effect = self._accept_priority(effect, now)
         self.store.save(effect, now)
+        effect = self._apply_position_intake(effect, now, position_mode)
         return self._encounter_receipt(effect, command,
             "stale_revision" if effect.status == "held" else "accepted")
+
+    def _apply_position_intake(self, effect, now, position_mode):
+        if position_mode != 'position' or effect.progress is None or effect.status != 'pending':
+            return effect
+        if effect.disposition == 'first_introduction':
+            # Canonical targeted position introduction is a separate admission.
+            effect = replace(effect, reason='position_introduction_pending')
+            self.store.save(effect, now)
+            return effect
+        result = self.position_intake.apply_position_lapse(effect.key, day=self._day(now), now=now)
+        if result is None:
+            effect = replace(effect, reason='position_introduction_pending')
+            self.store.save(effect, now)
+            return effect
+        receipt, applied, _version = result
+        progress = effect.progress.model_copy(update=dict(position_grade_effect_id=receipt,
+            schedule_applied_at=applied.isoformat(), remediation_fence=self._fence(effect.progress.target, now)))
+        effect = replace(effect, status='applied', applied_at=applied, progress=progress,
+                         reason='study_priority_pending')
+        self.store.save(effect, now)
+        return effect
 
     def refresh_encounter(self, key, *, qualification=None):
         """Study-owned consumption of one accepted identity; never a producer action."""
@@ -262,6 +294,12 @@ class EncounterFeedback(GameFeedback):
         """Study-owned refresh only; acceptance never calls this queue capability."""
         if effect.encounter is None and effect.qualification is None:
             return super()._advance(effect,now)
+        if effect.reason == "position_introduction_pending":
+            return effect
+        if effect.progress is not None and effect.progress.position_grade_effect_id is not None:
+            # The physical-card promotion port cannot select an exact due
+            # position. Wait for the position queue semantic capability.
+            return replace(effect, admission_status='pending', reason='position_priority_pending')
         if effect.progress is None:
             effect = self._accept_priority(effect, now)
         if effect.progress is None:

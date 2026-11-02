@@ -92,3 +92,24 @@ flowchart LR
 This is the source contract and intended dependency boundary, not a claim that
 Learning, issuance or persistence is wired or deployed. Composition and owner
 adapters supply source authority and implement the transaction ports.
+
+Qualified game misses use Study's `PositionGameIntake` capability. The source is
+prepared on a closed read and fenced with the active owner before the existing
+card/effect locks. For an introduced position, the accepted original Games effect
+and the position Again receipt commit in the same borrowed transaction. The
+receipt retains the original game key and evidence; it does not create a human
+review. Its position grade ID is distinct from a legacy scheduling review ID.
+Unseen positions remain pending until canonical introduction is authorized.
+The exact-position urgent queue handoff is pending; a grade receipt alone does
+not claim queue availability.
+
+```mermaid
+flowchart LR
+  Source[Prepared authored source] --> Fence[Source and position owner fences]
+  Game[Qualified accepted game effect] --> Grade[Study position grade owner]
+  Fence --> Grade
+  Grade --> State[Position schedule and immutable grade receipt]
+  State -. pending exact-position handoff .-> Queue[Study priority and issuance]
+  Queue --> Completion[Saved target first response and completion]
+  Completion --> Settlement[Game obligation settlement]
+```

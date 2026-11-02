@@ -208,3 +208,14 @@ flowchart LR
   Fence --> Effect[Existing Study effect and receipt]
   Legacy[Unqualified compatibility] --> Capture[Existing legacy capture]
 ```
+
+### Position game grade acceptance
+
+`position_grade_effects.apply_game_lapse` consumes a persisted, qualified game
+effect and a prepared, re-fenced authored source in the borrowed writer. It
+rechecks the active owner, exact first-departure definition and introduced state,
+then atomically records the original game key and a position Again transition.
+Matching retries return the original grade receipt. Position Study completion
+settlement verifies the saved plan, exact unassisted first response, completed
+review receipt and accepted grade; the original issuance fence and, where
+present, the position reset version also apply.

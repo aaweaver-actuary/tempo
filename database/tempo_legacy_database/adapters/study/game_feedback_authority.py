@@ -88,7 +88,7 @@ class CurrentOwnerDecisions:
         return self
 
     def prepare_qualified(self, command, qualification, *, qualified_publications,
-                          qualification_fence, game, select_first_boundary, prepared_targets=()):
+                          qualification_fence, game, select_first_boundary, prepared_targets=(), position_source=None):
         """Recompute first-boundary authority on trusted closed-read owner facts.
 
         The selector is injected by composition through its public pure port.
@@ -153,6 +153,7 @@ class CurrentOwnerDecisions:
         self._qualification_fence = qualification_fence
         self._qualified = (command.model_dump_json(), qualification.model_dump_json())
         self._prepared_targets = targets
+        self._position_source = position_source
         if self.prepared_target(qualification.selection.decision) is None:
             self.prepare_encounter(qualified_encounter_view(command,qualification))
         return self
@@ -180,6 +181,37 @@ class CurrentOwnerDecisions:
             getattr(item.current,field) == getattr(target,field) for field in fields)]
         _require(len(matches) <= 1, 'first_departure_current_target_ambiguous')
         return matches[0] if matches else None
+
+    def fence_position_intake(self, command, qualification):
+        """Fence active position ownership before the existing card/effect locks."""
+        from .position_owner_epoch import owner_mode
+        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+        installed = self.database.execute_native("SELECT to_regclass('study_position_owners') IS NOT NULL").fetchone()[0]
+        if not installed:
+            return 'legacy'
+        source = getattr(self, '_position_source', None)
+        repertoire_id = qualification.selection.decision.repertoire_id
+        if source is not None:
+            held = fence_position_source(self.database, source)
+            _require(held is None, held.reason if held else 'position_source_unavailable')
+        decision = owner_mode(self.database, repertoire_id,
+                              source.authored_token.authored_digest if source is not None else None)
+        if decision.disposition == 'hold':
+            raise CurrentDecisionUnavailable(decision.reason)
+        if decision.disposition == 'position':
+            _require(source is not None and source.authored_token.repertoire_id == repertoire_id,
+                     'position_source_preparation_required')
+        return decision.disposition
+
+    def apply_position_lapse(self, key, *, day, now):
+        from .position_grade_effects import GradeEffectError, apply_game_lapse
+        try:
+            return apply_game_lapse(self.database, key, prepared_source=self._position_source,
+                                    accepted_study_day=day, accepted_at=now)
+        except GradeEffectError as error:
+            if str(error) == 'position_unintroduced':
+                return None
+            raise
 
     def current_qualified(self, command, qualification):
         _require(self._qualified == (command.model_dump_json(), qualification.model_dump_json()),
@@ -435,7 +467,7 @@ def current_owner_encounter_intake(database, *, retained_owner_capture=None, sna
     if qualification is not None:
         _require(prepared_decisions is not None, 'first_departure_prepared_authority_required')
     return EncounterFeedback(PostgresGameFeedbackStore(database), decisions,
-        clock=clock,introductions=None,introduction_policy=None)
+        clock=clock,introductions=None,introduction_policy=None, position_intake=decisions)
 
 
 def current_owner_encounter_feedback(database, *, retained_owner_capture=None, snapshot=None, clock,

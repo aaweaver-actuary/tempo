@@ -322,7 +322,7 @@ class GameFeedback:
         # scheduler review and deliberately uses its own application proof.
         if progress is not None:
             applied = (progress.introduction_applied_at if effect.disposition == "first_introduction"
-                       else progress.schedule_applied_at if effect.review_id is not None else None)
+                       else progress.schedule_applied_at if (effect.review_id is not None or progress.position_grade_effect_id is not None) else None)
             if applied is None:
                 return None
             if progress.first_issued is None:

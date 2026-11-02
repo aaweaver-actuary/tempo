@@ -8,7 +8,7 @@ import pytest
 from app.contracts.product_v02.learning import GameLapse
 from app.study.game_feedback import Completion
 from tempo_legacy_database.adapters.study import position_grade_effects as grades
-from test_product_game_lapse import CARD, NOW, Decisions, MemoryStore, fixture, issued_attempt
+from test_product_game_lapse import CARD, NOW, Decisions, MemoryStore, fixture, issued_attempt, encounter_owner
 from app.study.game_feedback import GameFeedback
 
 
@@ -70,3 +70,89 @@ def test_position_response_must_be_unassisted_exact_and_after_reset(monkeypatch,
     completion = NS(review_id=1, card_id='card', revision=1)
     db = Database(dict(version_after=4, repertoire_id='rep', variant='standard', position='fen'))
     assert grades.position_completion_matches(db, effect, completion) is expected
+
+
+def test_qualified_intake_applies_position_once_before_receipt(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
+
+    class PositionIntake:
+        calls = 0
+        def fence_position_intake(self, command, qualification):
+            assert not store.effects
+            return 'position'
+        def apply_position_lapse(self, key, *, day, now):
+            self.calls += 1
+            assert store.get(key).status == 'pending'
+            return 'position-receipt', now, 2
+
+    port = PositionIntake()
+    service.position_intake = port
+    receipt = service.accept_qualified(command, qualification=qualification_for(command))
+    assert receipt.progress.position_grade_effect_id == 'position-receipt'
+    assert receipt.progress.scheduling_review_id is None
+    assert receipt.progress.remediation_fence is not None
+    assert not store.reviews and port.calls == 1
+    assert service.refresh_encounter(command.key).reason == 'position_priority_pending'
+    assert not store.queue
+    # Retry traverses the same pre-lock fence and returns the accepted receipt.
+    port.fence_position_intake = lambda command, qualification: 'position'
+    replay = service.accept_qualified(command, qualification=qualification_for(command))
+    assert replay.outcome == 'duplicate' and port.calls == 1
+
+
+def test_unseen_position_holds_for_canonical_position_introduction(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position')
+    receipt = service.accept_qualified(command, qualification=qualification_for(command))
+    assert receipt.reason == 'position_introduction_pending'
+    assert service.refresh_encounter(command.key).reason == 'position_introduction_pending'
+    assert not store.reviews
+
+
+def test_game_grade_writes_position_again_with_original_game_identity(monkeypatch):
+    from fsrs import Card
+    from test_position_game_target_mapping import departure, LONDON_ORDER_A
+    from tempo_evidence_math.position_learning import PositionDefinition, PositionKey
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters.study import game_feedback as feedback_storage, position_owner_epoch
+
+    command, qualification, position = departure(LONDON_ORDER_A)
+    definition = PositionDefinition(PositionKey('london', position), 'g1f3', 'london-policy')
+    source = NS(authored_token=NS(repertoire_id='london', authored_digest='source'),
+                routes=(NS(decisions=(NS(definition=definition),)),))
+    effect = NS(status='pending', control=None, qualification=qualification,
+                disposition='introduced_again', encounter=command, lapse=None)
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *args: None)
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *args: NS(disposition='position', epoch='epoch'))
+    monkeypatch.setattr(feedback_storage, 'PostgresGameFeedbackStore', lambda db: NS(get=lambda key: effect))
+    card = Card(card_id=123, due=NOW, last_review=NOW - timedelta(days=1), stability=10, difficulty=5)
+    state = dict(expected_uci='g1f3', policy_version='london-policy', version=3,
+                 fsrs_internal_card_id=123, fsrs_json=card.to_json())
+    monkeypatch.setattr(grades, '_lock_states', lambda *args, **kwargs: {definition.key: state})
+
+    class Writer:
+        read_only = False
+        raw = NS(info=NS(transaction_status=NS(name='INTRANS')))
+        def __init__(self): self.writes, self.prior = [], None
+        def execute_native(self, sql, args=()):
+            if 'SELECT effect_id,request_digest' in sql: return Result(self.prior)
+            if 'SELECT introduced_at' in sql: return Result(dict(introduced_at=NOW - timedelta(days=5)))
+            self.writes.append((sql, args))
+            if 'INSERT INTO study_position_grades' in sql:
+                self.prior = dict(effect_id=args[0], request_digest=args[11], accepted_at=args[12], version_after=args[-1])
+            return Result(None)
+
+    db = Writer()
+    receipt, accepted, version = grades.apply_game_lapse(db, command.key, prepared_source=source,
+        accepted_study_day=NOW.date(), accepted_at=NOW)
+    assert accepted == NOW and version == 4 and len(receipt) == 64
+    assert len(db.writes) == 2
+    sql, args = db.writes[1]
+    assert "'game_lapse'" in sql and args[1] == command.key.logical_id()
+    assert 'reviews' not in sql and args[-2:] == (3, 4)
+    replay = grades.apply_game_lapse(db, command.key, prepared_source=source,
+        accepted_study_day=NOW.date(), accepted_at=NOW + timedelta(hours=1))
+    assert replay == (receipt, NOW, 4) and len(db.writes) == 2
