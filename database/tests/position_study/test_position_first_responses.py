@@ -96,7 +96,7 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     frozen = plan()
     slot = frozen.decision_slots[0]
     slot.definition.key.position = opening_position_key(slot.fen)
-    decision = {'decision_id': 'd' * 64, 'decision_index': 0, 'move_offset': 6,
+    decision = {'decision_id': 'd' * 64, 'decision_index': 0, 'move_offset': 2,
                 'fen': slot.fen, 'expected_uci': 'e2e4'}
     raw = {'attempt_id': 'attempt', 'origin_queue_entry_id': 21, 'queue_entry_id': 21,
            'started_at': '2026-11-02T12:00:00+00:00', 'study_timezone': 'UTC',

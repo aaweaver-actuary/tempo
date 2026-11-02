@@ -603,13 +603,17 @@ def commit_position_checkpoint(database, fence, contiguous_events):
         if observation['response_at'] is None:
             continue
         original = request.manifest.decisions[observation['decision_index']]
-        match = by_original_ply.get(original.move_offset)
-        if match is None:
-            raise EvidenceConflict("Checkpoint decision is outside issued route")
-        index, slot = match
-        if (original.expected_uci != slot.definition.expected_uci
-                or opening_position_key(original.fen) != slot.definition.key.position):
-            raise EvidenceConflict("Checkpoint decision differs from issued route")
+        # A physical card may start at a different ply from the issued authored
+        # route. Match its immutable decision by exact position and answer,
+        # retaining the issued slot's original ply separately. Repeated matches
+        # are ambiguous and cannot identify the actual issued occurrence.
+        position = opening_position_key(original.fen)
+        matches = [(index, slot) for index, slot in enumerate(plan.decision_slots)
+                   if slot.definition.key.position == position
+                   and slot.definition.expected_uci == original.expected_uci]
+        if len(matches) != 1:
+            raise EvidenceConflict("Checkpoint decision does not uniquely match issued route")
+        index, slot = matches[0]
         event = next((event for event in contiguous_events
                       if event['decision_index'] == observation['decision_index']
                       and event['kind'] in ('first_response', 'manual_failure')), None)
