@@ -15,6 +15,14 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection, te
 
 
 def test_real_repeated_position_completion_has_one_good_and_observe(monkeypatch):
+    _run_repeated_position(monkeypatch, wrong=False)
+
+
+def test_real_repeated_wrong_occurrences_advance_successive_versions(monkeypatch):
+    _run_repeated_position(monkeypatch, wrong=True)
+
+
+def _run_repeated_position(monkeypatch, *, wrong):
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.queue_commands import issue_queue_head
     from app.services import postgres_opening_evidence as evidence, learning_review_adapter
@@ -81,6 +89,51 @@ def test_real_repeated_position_completion_has_one_good_and_observe(monkeypatch)
         manifest = evidence.issued_position_manifest(plan,decision_manifest(evidence._manifest_snapshot(dict(scope)),'repeat'))
         assert len(manifest['decisions']) == 3
         stamp = datetime.now(timezone.utc).isoformat()
+        if wrong:
+            events = []
+            for index, decision in enumerate(manifest['decisions']):
+                expected = decision['expected_uci']
+                board_at_decision = chess.Board(decision['fen'])
+                response = (next(m.uci() for m in board_at_decision.legal_moves if m.uci() != expected)
+                            if index in (0,2) else expected)
+                events.append(dict(sequence=len(events)+1,decision_index=index,decision_id=decision['decision_id'],
+                    expected_uci=expected,kind='first_response',observed_at=stamp,response_uci=response,
+                    disposition='wrong' if index in (0,2) else 'expected'))
+                if index == 0:
+                    events.append(dict(sequence=len(events)+1,decision_index=index,decision_id=decision['decision_id'],
+                        expected_uci=expected,kind='correction',observed_at=stamp,response_uci=expected))
+            partial = dict(attempt_id=plan.attempt_id,manifest=manifest,origin_queue_entry_id=entry,
+                queue_entry_id=entry,started_at=stamp,study_timezone='UTC',source='live',events=events)
+            raw.commit()
+            prepared_checkpoint = evidence.prepare_standalone_checkpoint({'checkpoint':partial})
+            raw.execute('BEGIN')
+            assert evidence.commit_standalone_checkpoint(db,prepared_checkpoint)['persisted']
+            raw.commit()
+            rows = [dict(r) for r in raw.execute('''SELECT event_id,decision_index,grade,version_before,
+                version_after,fsrs_before_json,fsrs_after_json FROM study_position_grades
+                WHERE attempt_id=%s ORDER BY decision_index''',(plan.attempt_id,)).fetchall()]
+            assert len(rows) == 2 and [r['grade'] for r in rows] == ['again','again']
+            assert [r['decision_index'] for r in rows] == [0,2] and rows[0]['event_id'] != rows[1]['event_id']
+            assert [(r['version_before'],r['version_after']) for r in rows] == [(1,2),(2,3)]
+            assert rows[0]['fsrs_before_json'] == root_before[1]
+            assert rows[1]['fsrs_before_json'] == rows[0]['fsrs_after_json']
+            current = tuple(raw.execute('''SELECT version,fsrs_json FROM study_position_states
+                WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+                (shared.repertoire_id,shared.variant,shared.position)).fetchone())
+            assert current == (3,rows[1]['fsrs_after_json'])
+            assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
+            assert {r['id']:r['fsrs_card_json'] for r in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical
+            raw.commit()
+            prepared_checkpoint = evidence.prepare_standalone_checkpoint({'checkpoint':partial})
+            raw.execute('BEGIN')
+            assert evidence.commit_standalone_checkpoint(db,prepared_checkpoint)['persisted']
+            raw.commit()
+            assert raw.execute('SELECT count(*) FROM study_position_grades WHERE attempt_id=%s',(plan.attempt_id,)).fetchone()[0] == 2
+            assert tuple(raw.execute('''SELECT version,fsrs_json FROM study_position_states
+                WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+                (shared.repertoire_id,shared.variant,shared.position)).fetchone()) == current
+            raw.commit()
+            return
         events = [dict(sequence=i+1,decision_index=i,decision_id=d['decision_id'],expected_uci=d['expected_uci'],
             kind='first_response',observed_at=stamp,response_uci=d['expected_uci'],disposition='expected')
             for i,d in enumerate(manifest['decisions'])]
