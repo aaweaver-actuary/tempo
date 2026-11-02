@@ -193,3 +193,121 @@ def test_position_urgency_reads_exact_durable_reset_and_holds_changed_state(monk
             return Result([{}] * 129)
     assert storage.read_position_urgency(TooMany(), card_id='card', revision=1,
                                          repertoire_id='london').reason == 'position_urgency_candidate_limit'
+
+
+def test_unseen_feedback_calls_targeted_admission_once(encounter_owner, monkeypatch):
+    from test_product_game_lapse import qualification_for
+    from app.services import position_queue_admission
+    store, _, _, _, service, command = encounter_owner
+    store.database = object()
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position')
+    qualification = qualification_for(command)
+    service.accept_qualified(command, qualification=qualification)
+    calls = []
+    def admit(database, prepared, fence, *, day, now, introductions):
+        calls.append((database, prepared, fence, day))
+        return NS(status='introduced')
+    monkeypatch.setattr(position_queue_admission, 'admit_targeted_position_introduction', admit)
+    target = (object(), command.decision)
+    receipt = service.refresh_encounter(command.key, qualification=qualification,
+                                        position_introduction=target, position_fence='fence')
+    assert receipt.reason == 'position_priority_pending'
+    assert receipt.progress.introduction_applied_at is not None
+    assert receipt.progress.scheduling_review_id is None and not store.reviews
+    service.refresh_encounter(command.key, qualification=qualification,
+                              position_introduction=target, position_fence='fence')
+    assert len(calls) == 1
+
+
+def test_position_urgency_requires_real_same_transaction_introduction(monkeypatch):
+    from test_position_game_target_mapping import departure, LONDON_ORDER_A
+    from tempo_evidence_math.position_learning import Hold
+    from tempo_legacy_database.adapters.study import game_feedback as storage
+    command, qualification, position = departure(LONDON_ORDER_A)
+    progress = NS(position_grade_effect_id=None, introduction_applied_at=NOW.isoformat(),
+                  remediation_fence=object(), target=NS(card_id='card', card_revision=1),
+                  stream='forward', determined_at=NOW)
+    effect = NS(control=None, qualification=qualification, progress=progress, disposition='first_introduction',
+                encounter=command, lapse=None, key=command.key)
+    monkeypatch.setattr(storage, 'installed', lambda db: True)
+    monkeypatch.setattr(storage.PostgresGameFeedbackStore, '_effect', lambda row: effect)
+    state = dict(repertoire_id='london', variant='standard', position=position, owner_epoch='epoch',
+                 source_digest='digest', expected_uci='g1f3', policy_version='london-policy',
+                 version=0, introduced_at=NOW)
+    class Reader:
+        def execute_native(self, sql, args=()):
+            if 'SELECT * FROM study_game_feedback' in sql: return Result([{}])
+            if 'FROM study_position_states' in sql: return Result(state)
+            raise AssertionError(sql)
+    fact = storage.read_position_urgency(Reader(), card_id='card', revision=1, repertoire_id='london')
+    assert fact.definition.key.position == position and fact.grade_effect_id is None
+    state['introduced_at'] = NOW - timedelta(seconds=1)
+    assert isinstance(storage.read_position_urgency(Reader(), card_id='card', revision=1,
+                                                     repertoire_id='london'), Hold)
+
+
+def test_accepted_position_again_promotes_absent_card_then_checks_saved_settlement(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position',
+        apply_position_lapse=lambda key, *, day, now: ('position-receipt', now, 2))
+    qualification = qualification_for(command)
+    service.accept_qualified(command, qualification=qualification)
+    assert not store.queue
+    calls = []
+    class Targeting:
+        def promote_effect(self, effect, day):
+            calls.append(effect.key)
+            store.queue[(day, effect.card_id)] = 'urgent'
+            return True
+    service.targets = Targeting()
+    service._saved_settlement = lambda effect: calls.append('settlement') or None
+    receipt = service.refresh_encounter(command.key, qualification=qualification)
+    assert receipt.admission_status == 'available' and store.queue
+    service.refresh_encounter(command.key, qualification=qualification)
+    assert len(calls) == 2 and calls[1] == 'settlement'
+
+
+def test_retained_unqualified_feedback_fences_position_before_qualification(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
+    service.accept_encounter(command)
+    qualification = qualification_for(command)
+    calls = []
+    class Position:
+        def fence_position_intake(self, command, qualification):
+            calls.append('fence')
+            return 'position'
+        def apply_position_lapse(self, key, *, day, now):
+            calls.append('grade')
+            return ('position-receipt', now, 1)
+    service.position_intake = Position()
+    receipt = service.refresh_encounter(command.key, qualification=qualification)
+    assert receipt.progress.position_grade_effect_id == 'position-receipt'
+    assert calls == ['fence', 'grade'] and not store.reviews
+
+
+def test_retained_qualification_with_staged_owner_holds_before_card_write(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
+    service.accept_encounter(command)
+    class Staged:
+        def fence_position_intake(self, command, qualification):
+            raise RuntimeError('position_owner_staged')
+    service.position_intake = Staged()
+    with pytest.raises(RuntimeError, match='position_owner_staged'):
+        service.refresh_encounter(command.key, qualification=qualification_for(command))
+    assert store.get(command.key).progress is None and not store.reviews
+
+
+def test_missing_position_stays_pending_without_legacy_review(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position',
+        apply_position_lapse=lambda key, *, day, now: None)
+    receipt = service.accept_qualified(command, qualification=qualification_for(command))
+    assert receipt.reason == 'position_introduction_pending' and not store.reviews

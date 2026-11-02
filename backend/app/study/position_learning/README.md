@@ -99,9 +99,11 @@ card/effect locks. For an introduced position, the accepted original Games effec
 and the position Again receipt commit in the same borrowed transaction. The
 receipt retains the original game key and evidence; it does not create a human
 review. Its position grade ID is distinct from a legacy scheduling review ID.
-Unseen positions remain pending until canonical introduction is authorized.
-The exact-position urgent queue handoff is pending; a grade receipt alone does
-not claim queue availability.
+For an unseen target, the existing encounter-exception admission and its fresh
+position state commit together after source and owner fences. Accepted effects
+promote the current physical carrier through the existing Study queue. The queue
+issuer reads the exact durable position obligation and retains its natural due
+witness; a nondue urgent presentation does not become positive evidence.
 
 ```mermaid
 flowchart LR
@@ -109,7 +111,7 @@ flowchart LR
   Game[Qualified accepted game effect] --> Grade[Study position grade owner]
   Fence --> Grade
   Grade --> State[Position schedule and immutable grade receipt]
-  State -. pending exact-position handoff .-> Queue[Study priority and issuance]
+  State -->|durable exact-position obligation| Queue[Study priority and issuance]
   Queue --> Completion[Saved target first response and completion]
   Completion --> Settlement[Game obligation settlement]
 ```

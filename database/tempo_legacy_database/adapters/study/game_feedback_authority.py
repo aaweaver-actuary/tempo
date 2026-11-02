@@ -182,6 +182,14 @@ class CurrentOwnerDecisions:
         _require(len(matches) <= 1, 'first_departure_current_target_ambiguous')
         return matches[0] if matches else None
 
+    def prepare_position_introduction(self, target):
+        """Prepare the owner's exact unseen position on already closed reads."""
+        source = getattr(self, '_position_source', None)
+        if source is None:
+            return None
+        from app.services.position_queue_admission import prepare_targeted_position_introduction
+        return prepare_targeted_position_introduction(source, target)
+
     def fence_position_intake(self, command, qualification):
         """Fence active position ownership before the existing card/effect locks."""
         from .position_owner_epoch import owner_mode
@@ -495,4 +503,4 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture=None, s
     return EncounterFeedback(PostgresGameFeedbackStore(database, prepared_priority=prepared_priority,
         prepared_targets=decisions._prepared_targets), decisions,
         clock=clock,introductions=RetainedIntroductionTarget() if introductions is not None else None,
-        introduction_policy=introduction_policy)
+        introduction_policy=introduction_policy, position_intake=decisions)

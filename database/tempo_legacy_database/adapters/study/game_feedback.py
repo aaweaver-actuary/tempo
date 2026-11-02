@@ -731,7 +731,7 @@ class PositionUrgency:
     source_digest: str
     position_version: int
     effect_key: str
-    grade_effect_id: str
+    grade_effect_id: str | None
 
 
 def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=False):
@@ -754,7 +754,9 @@ def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=Fa
         effect = PostgresGameFeedbackStore._effect(row)
         progress = effect.progress
         if (effect.control is not None or effect.qualification is None or progress is None
-                or progress.position_grade_effect_id is None or progress.remediation_fence is None
+                or (progress.position_grade_effect_id is None and not
+                    (effect.disposition == 'first_introduction' and progress.introduction_applied_at))
+                or progress.remediation_fence is None
                 or (progress.target.card_id, progress.target.card_revision) != (card_id, revision)):
             continue
         command = effect.encounter or effect.lapse
@@ -780,6 +782,26 @@ def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=Fa
             return Hold('position_urgency_changed')
         return current
     progress = effect.progress
+    selection = effect.qualification.selection
+    if progress.position_grade_effect_id is None:
+        row = database.execute_native('''SELECT repertoire_id,variant,position,owner_epoch,source_digest,
+            expected_uci,policy_version,version,introduced_at FROM study_position_states
+            WHERE repertoire_id=%s AND position=%s AND variant='standard' ''',
+            (repertoire_id, selection.position_key)).fetchone()
+        routes = [route for route in selection.surviving_routes
+                  if (route.repertoire_id, route.route_id, route.route_ply) ==
+                     (selection.decision.repertoire_id, selection.decision.route_id, selection.decision.route_ply)]
+        if (not row or row['introduced_at'] is None
+                or instant(row['introduced_at']) != instant(progress.introduction_applied_at)
+                or tuple(selection.expected_uci) != (row['expected_uci'],)
+                or len(routes) != 1 or routes[0].policy_id != row['policy_version']):
+            return Hold('position_urgency_introduction_changed')
+        try:
+            definition = PositionDefinition(PositionKey(repertoire_id, row['position'], row['variant']),
+                                            row['expected_uci'], row['policy_version'])
+        except (TypeError, ValueError):
+            return Hold('position_urgency_receipt_invalid')
+        return PositionUrgency(definition, row['owner_epoch'], row['source_digest'], 0, key, None)
     row = database.execute_native('''SELECT g.effect_id,g.repertoire_id,g.variant,g.position,
         g.owner_epoch,g.source_digest,g.expected_uci,g.policy_version,g.version_after,
         s.owner_epoch AS state_epoch,s.source_digest AS state_digest,s.expected_uci AS state_uci,
@@ -790,7 +812,6 @@ def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=Fa
           AND g.grade='again' ''', (progress.position_grade_effect_id, effect.key.logical_id())).fetchone()
     if not row:
         return Hold('position_urgency_receipt_unavailable')
-    selection = effect.qualification.selection
     routes = [route for route in selection.surviving_routes
               if (route.repertoire_id, route.route_id, route.route_ply) ==
                  (selection.decision.repertoire_id, selection.decision.route_id, selection.decision.route_ply)]

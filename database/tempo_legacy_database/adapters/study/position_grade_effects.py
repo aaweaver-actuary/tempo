@@ -487,6 +487,14 @@ def apply_game_lapse(database, key, *, prepared_source, accepted_study_day, acce
     states = _lock_states(database, repertoire_id=token.repertoire_id, owner_epoch=owner.epoch,
                           authored_digest=token.authored_digest, positions=(definition.key,))
     if isinstance(states, Hold):
+        # A missing row is different from a row skipped because it is locked.
+        # Never invent an Again for an unseen position; preserve it for the
+        # canonical introduction/reconciliation capability instead.
+        exists = database.execute_native('''SELECT 1 FROM study_position_states
+            WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+            (definition.key.repertoire_id, definition.key.variant, definition.key.position)).fetchone()
+        if not exists:
+            raise GradeEffectError('position_unintroduced')
         raise GradeEffectError(states.reason)
     row = states[definition.key]
     if (row['expected_uci'], row['policy_version']) != (definition.expected_uci, definition.policy_version):
