@@ -242,7 +242,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const health: unknown = healthResponse.ok() ? await healthResponse.json() : null;
   assertDisposableTarget(health);
   await verifyPostgresFixtureTarget({ health, apiUrl: api, project });
-  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
+  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
   // Existing product initialization, executed only after endpoint and ownership verification.
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   const activePackIds = catalog.packs.filter((pack: { active: boolean }) => pack.active).map((pack: { id: string }) => pack.id);
@@ -269,7 +269,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
-  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
+  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
   fixture(project, "seed", identity);
   const before = fixture<Snapshot>(project, "read", identity);
   await prepareUI(page);
@@ -346,7 +346,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again"),
     { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
-  await waitForStudyQuiet({ activityUrl: `${api}/system/foreground-active`, signal: AbortSignal.timeout(30_000) });
+  await waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
   const legacy = fixture<{ card: string }>(project, "legacy", identity);
   await page.reload();
   await expect.poll(async () => (await queue()).cards[0]?.id, { timeout: 30_000 }).toBe(legacy.card);
