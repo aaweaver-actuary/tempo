@@ -33,6 +33,7 @@ def test_guard_verifier_accepts_exact_packaged_body_and_holds_table():
     fence_namespace(db)
     assert db.statements[0] == 'LOCK TABLE public.cards IN ACCESS SHARE MODE NOWAIT'
     assert "t.tgenabled IN ('O','A')" in db.statements[1]
+    assert "t.tgattr::text=card_id.attnum::text || ' ' || a.attnum::text" in db.statements[1]
     assert "current_setting('session_replication_role')='origin'" in db.statements[1]
 
 

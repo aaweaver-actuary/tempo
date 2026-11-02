@@ -32,7 +32,9 @@ erDiagram
   2^52 through 2^53-1. It does not itself establish uniqueness against legacy
   FSRS IDs. Migration 57 installs a reject-only `cards` insert/update trigger:
   newly assigned integral JSON numeric IDs in this range fail, while a retained
-  ID may keep the same identity across memory updates. New or changed readable
+  ID may keep the same identity across memory updates, but its card ID cannot
+  change while that reserved FSRS ID remains; this prevents a paged inventory
+  from missing a row moved behind its cursor. New or changed readable
   nonnumeric or fractional IDs fail closed; malformed blobs without a readable
   ID remain accepted. Existing rows are not rewritten. The seed owner must
   inspect all retained IDs, hold on malformed/unknown IDs and collision, and

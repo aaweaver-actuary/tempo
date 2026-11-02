@@ -22,7 +22,19 @@ BEGIN
             old_id := NULL;
         END;
     END IF;
-    IF new_id IS NULL OR new_id = 'null'::jsonb OR new_id = old_id THEN
+    IF new_id IS NULL OR new_id = 'null'::jsonb THEN
+        RETURN NEW;
+    END IF;
+    IF new_id = old_id THEN
+        -- A rename behind a paged preflight cursor could hide a retained ID.
+        IF TG_OP = 'UPDATE' AND NEW.id IS DISTINCT FROM OLD.id
+           AND jsonb_typeof(new_id) = 'number' THEN
+            numeric_id := (new_id #>> '{}')::numeric;
+            IF numeric_id = trunc(numeric_id)
+               AND numeric_id BETWEEN 4503599627370496 AND 9007199254740991 THEN
+                RAISE EXCEPTION 'reserved position Study FSRS card_id rename' USING ERRCODE = '23514';
+            END IF;
+        END IF;
         RETURN NEW;
     END IF;
     IF jsonb_typeof(new_id) = 'number' THEN
@@ -37,7 +49,7 @@ BEGIN
     RAISE EXCEPTION 'ambiguous legacy FSRS card_id' USING ERRCODE = '23514';
 END $$;
 CREATE TRIGGER study_position_guard_legacy_fsrs_id
-    BEFORE INSERT OR UPDATE OF fsrs_card_json ON cards
+    BEFORE INSERT OR UPDATE OF id, fsrs_card_json ON cards
     FOR EACH ROW EXECUTE FUNCTION study_position_guard_legacy_fsrs_id();
 
 CREATE TABLE study_position_epochs (

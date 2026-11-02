@@ -1,7 +1,7 @@
 """Verify the installed cards namespace guard in a borrowed transaction."""
 import hashlib
 
-_GUARD_SHA256 = '48adec4b20b2ddf5a0b3b8eed76bb2bd36ded6437fec16b1aae4297d06540ee4'
+_GUARD_SHA256 = '108522b7f2dbe0898a811f08861b5c6a6c32982f45b5012c0e7e23f5e220dab1'
 
 
 def fence_namespace(database):
@@ -20,10 +20,11 @@ def fence_namespace(database):
         JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid
         JOIN pg_catalog.pg_namespace pn ON pn.oid=p.pronamespace
         JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attname='fsrs_card_json'
+        JOIN pg_catalog.pg_attribute card_id ON card_id.attrelid=c.oid AND card_id.attname='id'
         WHERE n.nspname='public' AND c.relname='cards'
           AND t.tgname='study_position_guard_legacy_fsrs_id'
           AND NOT t.tgisinternal AND t.tgtype=23 AND t.tgenabled IN ('O','A')
-          AND t.tgattr::text=a.attnum::text AND t.tgqual IS NULL AND t.tgnargs=0
+          AND t.tgattr::text=card_id.attnum::text || ' ' || a.attnum::text AND t.tgqual IS NULL AND t.tgnargs=0
           AND pn.nspname='public' AND p.proname='study_position_guard_legacy_fsrs_id'
           AND p.proconfig=ARRAY['search_path=pg_catalog']
           AND current_setting('session_replication_role')='origin'
