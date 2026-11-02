@@ -197,6 +197,56 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 (entry,day,chess.STARTING_FEN,moves))
             from tempo_legacy_database import connections
             from tempo_legacy_database.adapters.study import game_feedback
+            from app.contracts.product_v02.games import FirstDepartureRoute, FirstDepartureScope, FirstDepartureSelection
+            from app.contracts.product_v02.learning import (FirstDepartureWitness, GameEffectKey, GameEncounter,
+                EncounterProgress, EncounterTarget, RemediationFence)
+            from app.contracts.product_v02.repertoire import IntroductionGameScope
+            from app.study.game_feedback import Effect
+            target_mapping = next(b for b in prepared.snapshot.decision_presentations if b.position_key == second_fen)
+            target_definition = next(d.definition for r in prepared.routes for d in r.decisions
+                                     if d.definition.key.position == second_fen)
+            game_source = IntroductionGameScope(provider='lichess', game_id='game',
+                source_revision=1, source_digest='a'*64)
+            scope = FirstDepartureScope(repertoire_id='r', learner_color='white', snapshot_id='snapshot',
+                source_revision='revision', revision=target_mapping.repertoire_revision, digest='b'*64, complete=True, available=True)
+            route_fact = FirstDepartureRoute(repertoire_id='r', route_id='route', route_ply=2,
+                policy_id=target_definition.policy_version, source_revision='revision', at_deliberate_end=False)
+            selection = FirstDepartureSelection(workspace_id='fixture', source=game_source,
+                learner_color='white', selected_scope=(scope,), status='own_actionable', ply=3,
+                actor='learner', position_key=second_fen, played_uci='f1c4', expected_uci=('g1f3',),
+                decision=target_mapping, surviving_routes=(route_fact,), diagnostic=None)
+            reset_at = now - timedelta(minutes=1)
+            determined_at = now - timedelta(minutes=2)
+            qualification = FirstDepartureWitness(selection=selection, configuration_revision=1,
+                determined_at=determined_at.isoformat(), stream='forward')
+            game_key = GameEffectKey(workspace_id='fixture', provider='lichess', game_id='game',
+                                     decision_id=target_mapping.decision_id, occurrence_ply=3)
+            encounter = GameEncounter(key=game_key, source=game_source, decision=target_mapping,
+                expected_uci='g1f3', played_uci='f1c4', observation='missed',
+                detected_at=determined_at.isoformat(), occurred_at=determined_at.isoformat(), payload_digest='c'*64)
+            actual_target = EncounterTarget(card_id='card',card_revision=1)
+            progress = EncounterProgress(determined_at=determined_at.isoformat(), stream='forward',
+                target=actual_target, scheduling_review_id=None, position_grade_effect_id='game-grade',
+                schedule_applied_at=reset_at.isoformat(), introduction_applied_at=None,
+                remediation_fence=RemediationFence(target=actual_target, after_issuance_sequence=0,
+                                                   established_at=reset_at.isoformat()),
+                first_issued=None,first_issued_ordinal=None,settlement=None)
+            effect = Effect(key=game_key,source_revision=1,received_at=reset_at,status='applied',
+                payload_hash='d'*64,card_id='card',card_revision=1,reason='position_priority_pending',
+                applied_at=reset_at,encounter=encounter,disposition='introduced_again',
+                admission_status='pending',observation_recorded=True,qualification=qualification,progress=progress)
+            raw.execute("UPDATE study_position_states SET due_at=%s WHERE repertoire_id='r'", (now + timedelta(days=1),))
+            raw.execute("UPDATE study_position_states SET version=2 WHERE repertoire_id='r' AND position=%s", (second_fen,))
+            raw.execute("""INSERT INTO study_position_grades
+                (effect_id,source_kind,game_effect_key,game_evidence_json,effect_kind,repertoire_id,variant,
+                 position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,grade,
+                 request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
+                VALUES('game-grade','game_lapse',%s,'{}','game_lapse','r','standard',%s,'e1','g1f3',%s,%s,%s,
+                       'again','digest',%s,'{}','{}',1,2)""",
+                (game_key.logical_id(),second_fen,target_definition.policy_version,digest,now.date(),reset_at))
+            raw.execute('BEGIN')
+            game_feedback.PostgresGameFeedbackStore(port).save(effect, now)
+            raw.execute('COMMIT')
             from app.services import queue_next_card, legacy_study_remediation
             from app import queue_commands
             monkeypatch.setattr(connections, 'read_connection', borrowed)
@@ -207,13 +257,28 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda d: {'id': entry})
             monkeypatch.setattr(queue_commands, 'validate_available_attempt', lambda *a: None)
             monkeypatch.setattr(legacy_study_remediation, 'bind_first_issuance', lambda *a: None)
-            monkeypatch.setattr(game_feedback, 'installed', lambda *a: False)
+            monkeypatch.setattr(game_feedback, 'record_feedback_issuance', lambda *a: None)
             monkeypatch.setattr(queue_commands.queue_storage, 'stamp_issued_head',
                 lambda db, *a: raw.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s', (entry,)).rowcount)
             envelope = {'queue_date': day, 'entry_id': entry, 'card_id': 'card', 'expected_revision': 1}
             raw.execute('BEGIN')
             proposal = queue_next_card.prepare_queue_head(envelope)
             assert proposal.mode == 'position', proposal.reason
+            assert proposal.urgency is not None and proposal.proposal.plan.target == target_definition
+            assert next(w for w in proposal.proposal.plan.due_positions if w.definition == target_definition).due is False
+            raw.execute("UPDATE study_game_feedback SET status='settled' WHERE effect_key=%s", (proposal.urgency.effect_key,))
+            from fastapi import HTTPException
+            with pytest.raises(HTTPException):
+                queue_commands.issue_queue_head(port, proposal)
+            raw.execute('ROLLBACK')
+            assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
+            raw.execute('BEGIN')
+            raw.execute("UPDATE repertoire_lines SET moves_json='[\"d2d4\"]' WHERE id='route'")
+            held = queue_commands.issue_queue_head(port, proposal)
+            assert held['position_study_hold']
+            raw.execute('ROLLBACK')
+            assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
+            raw.execute('BEGIN')
             monkeypatch.setattr(queue_commands.queue_storage, 'prepare_queue_head', lambda *a: lambda d: {'id': entry + 100})
             from fastapi import HTTPException
             with pytest.raises(HTTPException):
@@ -234,6 +299,7 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             raw.execute('COMMIT')
             assert raw.execute('SELECT count(*) FROM daily_queue').fetchone()[0] == 1
             raw.execute("UPDATE daily_queue SET status='complete'")
+            raw.execute("UPDATE study_position_states SET due_at=%s WHERE repertoire_id='r'", (now - timedelta(days=1),))
             raw.execute('BEGIN')
             assert refresh.execute_postgres_queue_refresh_slice({'payload': {'queue_date': day, '_queue_phase': 'admit_position_due'}})
             raw.execute('COMMIT')
