@@ -6553,6 +6553,7 @@ condition; a real packaged engine startup remains a separate acceptance check.
 
 `backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` compares full, authored and candidate documents against the released JSONB encoding, including escaped text, nulls, budget metadata and fingerprints. Both packaged recovery modes reached four verified reviews before a 384 MiB PostgreSQL OOM during the complete-repertoire source query. The wire serialization change preserves source rows, ordering, one MVCC view and existing refusal bounds; packaged recovery remains to be rerun.
 
+
 ### Existing mutation source guards (#492 / #825 release blockers)
 
 `backend/tests/test_product_repertoire_changes.py` owns the named
@@ -6570,3 +6571,17 @@ proof remains in the existing Repertoire PostgreSQL suite.
 `tests/unit/study-command-client-capability.test.ts` retains receipt-authority
 assertions with the mocks' actual fetch argument signatures; this repairs the
 two baseline empty-tuple type errors without changing runtime behavior.
+
+### Pure Study worker validation (#826)
+
+`tests/unit/study-worker-entry-closure.test.ts` checks actual emitted contributions
+for both entries, rejecting browser debug/store implementation while retaining
+essential/optional computation separation and workerless results.
+`tests/unit/validated-data-regressions.test.ts` owns
+`pure schema validation reports and throws the same Error with caller context`
+and `browser validation exports the pure diagnostics owner and shares its deduplicated state`.
+The existing real Chromium proof in `tests/fixtures/study-worker-replies/worker-proof.mjs`
+also checks malformed-card quarantine and the original request-correlated diagnostics
+alongside valid production queue decoding. Existing debug, publication, worker,
+reply and bulk regressions retain notification/currentness/cancellation semantics.
+
