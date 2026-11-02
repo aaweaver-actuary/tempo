@@ -235,7 +235,7 @@ test('unregistered regression files cannot qualify through unrelated whole-suite
 });
 
 test('PR132 reviewed provider clients select consumer tests without persistence work', () => {
-  for (const path of ['backend/app/services/chesscom_client.py', 'backend/app/services/lichess_client.py']) {
+  for (const path of ['backend/app/games/providers/chesscom.py', 'backend/app/games/providers/lichess.py']) {
     const selected = captured(pr, [path]);
     assert.deepEqual(selected.core.backend, ['backend/tests/test_game_sync.py', 'backend/tests/test_postgres_game_sync_windows.py']);
     assert.equal(selected.jobs.postgres.applicable, false);

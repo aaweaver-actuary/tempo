@@ -1869,7 +1869,8 @@
         "services/learning/remediation",
         "services/game-evidence",
         "services/content",
-        "tools/analysis-restoration/a_bridge"
+        "tools/analysis-restoration/a_bridge",
+        "database/tempo_learning_database"
       ]
     },
     {
