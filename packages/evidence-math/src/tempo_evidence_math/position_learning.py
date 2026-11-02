@@ -194,5 +194,3 @@ class GradeProposal:
 class Hold:
     reason: str
     detail: str = ""
-
-
