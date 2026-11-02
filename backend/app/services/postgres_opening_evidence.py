@@ -39,10 +39,18 @@ def prepare_checkpoint(request: OpeningEvidenceCheckpoint) -> dict:
     with storage.read_connection() as database:
         row = storage.presentation_context(database, (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id))
         snapshot = dict(row) if row else None
+        from tempo_legacy_database.adapters.study import position_first_responses as position_storage
+        from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
+        from tempo_evidence_math.position_learning import Hold
+        plan = replay_exact_attempt(database, request.attempt_id) if position_storage.has_position_tables(database) else None
+        if isinstance(plan, Hold):
+            raise evidence_error(plan.reason)
     if snapshot is None:
         raise evidence_error("The original opening presentation and repertoire scope cannot be proven")
     try:
         authoritative_manifest = decision_manifest(_manifest_snapshot(snapshot), request.manifest.repertoire_id)
+        if plan is not None:
+            authoritative_manifest = issued_position_manifest(plan, authoritative_manifest)
         validate_checkpoint(request, authoritative_manifest)
     except (ValueError, KeyError) as error:
         raise evidence_error(str(error)) from error
@@ -239,6 +247,8 @@ def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
         if snapshot is None:
             raise EvidenceConflict("The original opening presentation and repertoire scope cannot be proven")
         authoritative_manifest = decision_manifest(_manifest_snapshot(snapshot), request.manifest.repertoire_id)
+        if position_preparation is not None:
+            authoritative_manifest = issued_position_manifest(position_preparation.plan, authoritative_manifest)
         validate_checkpoint(request, authoritative_manifest)
         prepared = _compute_checkpoint_publication(request, source_attempt, source_events)
         from dataclasses import replace
@@ -594,26 +604,19 @@ def commit_position_checkpoint(database, fence, contiguous_events):
     prepared = fence.preparation
     plan, source, request = prepared.plan, prepared.source, prepared.request
     observations = reduce_observations(contiguous_events, request.study_timezone)
-    by_original_ply = {slot.original_ply: (index, slot) for index, slot in enumerate(plan.decision_slots)}
-    if len(by_original_ply) != len(plan.decision_slots):
-        raise EvidenceConflict("Position issued route repeats an original ply")
+    expected_manifest = issued_position_manifest(plan, request.manifest.model_dump(mode='json'))
+    if request.manifest.model_dump(mode='json') != expected_manifest:
+        raise EvidenceConflict("Position checkpoint differs from issued display manifest")
     results = []
     source_fenced = False
     for observation in observations:
         if observation['response_at'] is None:
             continue
         original = request.manifest.decisions[observation['decision_index']]
-        # A physical card may start at a different ply from the issued authored
-        # route. Match its immutable decision by exact position and answer,
-        # retaining the issued slot's original ply separately. Repeated matches
-        # are ambiguous and cannot identify the actual issued occurrence.
-        position = opening_position_key(original.fen)
-        matches = [(index, slot) for index, slot in enumerate(plan.decision_slots)
-                   if slot.definition.key.position == position
-                   and slot.definition.expected_uci == original.expected_uci]
-        if len(matches) != 1:
-            raise EvidenceConflict("Checkpoint decision does not uniquely match issued route")
-        index, slot = matches[0]
+        index = observation['decision_index']
+        if index >= len(plan.decision_slots):
+            raise EvidenceConflict("Checkpoint decision is outside issued route")
+        slot = plan.decision_slots[index]
         event = next((event for event in contiguous_events
                       if event['decision_index'] == observation['decision_index']
                       and event['kind'] in ('first_response', 'manual_failure')), None)
@@ -752,3 +755,58 @@ def fence_position_completion(database, fence, results):
     owner = owner_mode(database, plan.target.key.repertoire_id, fence.authored_digest)
     if owner.disposition != 'position' or owner.epoch != plan.owner_epoch:
         raise EvidenceConflict(owner.reason)
+
+
+def issued_position_manifest(plan, original_scope_manifest):
+    """Derive the existing v1 evidence manifest from immutable issued display.
+
+    The supplied manifest provides only the already-verified original physical
+    scope. Decisions, identity and offsets come exclusively from the decoded
+    issued plan. The physical presentation row is not changed.
+    """
+    import chess
+    from tempo_learning_runtime.opening_segmentation import decision_identity, stable_key
+    from app.contracts.opening_evidence import OpeningDecisionManifest
+    scope = (original_scope_manifest.model_dump(mode='json')
+             if isinstance(original_scope_manifest, OpeningDecisionManifest)
+             else dict(original_scope_manifest))
+    if (scope.get('card_id'), scope.get('card_revision'), scope.get('repertoire_id')) != (
+            plan.original_card_id, plan.original_card_revision, plan.target.key.repertoire_id):
+        raise EvidenceConflict("Position issued plan and original presentation scope differ")
+    trained_color = scope.get('trained_color')
+    if trained_color not in ('white', 'black'):
+        raise EvidenceConflict("Position presentation trained color is unavailable")
+    try:
+        board = chess.Board(plan.starting_fen)
+        if not board.is_valid() or not 1 <= len(plan.decision_slots) <= 20:
+            raise ValueError('invalid issued display')
+        decisions = []
+        slots = iter(plan.decision_slots)
+        current = next(slots, None)
+        for offset, uci in enumerate(plan.moves_uci):
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                raise ValueError('illegal issued display')
+            learner_turn = board.turn == (trained_color == 'white')
+            if learner_turn:
+                if (current is None or current.move_offset != offset or current.fen != board.fen()
+                        or current.definition.expected_uci != uci
+                        or current.definition.key.repertoire_id != scope['repertoire_id']):
+                    raise ValueError('issued decisions differ from display')
+                decisions.append({'decision_id': decision_identity(scope['repertoire_id'], current.fen,
+                                                                     trained_color, uci),
+                                  'decision_index': len(decisions), 'move_offset': offset,
+                                  'fen': current.fen, 'expected_uci': uci})
+                current = next(slots, None)
+            board.push(move)
+        if current is not None or len(decisions) != len(plan.decision_slots):
+            raise ValueError('issued decision missing from display')
+        result = {key: scope[key] for key in ('manifest_version', 'policy_version', 'presentation_snapshot_id',
+                  'repertoire_id', 'card_id', 'card_revision', 'trained_color')}
+        result['manifest_id'] = stable_key('position-issued-manifest', 1, plan.plan_id,
+                                           scope['presentation_snapshot_id'], scope['repertoire_id'],
+                                           scope['card_id'], scope['card_revision'], trained_color)
+        result['decisions'] = decisions
+        return OpeningDecisionManifest.model_validate(result).model_dump(mode='json')
+    except (KeyError, ValueError, TypeError) as exc:
+        raise EvidenceConflict("Position issued display is invalid") from exc

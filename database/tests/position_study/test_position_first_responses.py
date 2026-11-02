@@ -10,10 +10,11 @@ from tempo_legacy_database.adapters.study import position_first_responses as sto
 def plan():
     key = NS(repertoire_id='r', variant='standard', position='position')
     definition = NS(key=key, expected_uci='e2e4', policy_version='v1')
-    slot = NS(definition=definition, original_ply=6,
+    slot = NS(definition=definition, original_ply=6, move_offset=0,
               fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
     return NS(plan_id='a'*64, attempt_id='attempt', queue_entry_id=21, original_card_id='card',
-              original_card_revision=4, owner_epoch='epoch', decision_slots=(slot,))
+              original_card_revision=4, owner_epoch='epoch', decision_slots=(slot,), target=definition,
+              starting_fen=slot.fen, moves_uci=('e2e4',))
 
 
 def event(**changes):
@@ -107,6 +108,10 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
                        'expected_uci': 'e2e4', 'kind': 'first_response',
                        'observed_at': '2026-11-02T12:00:00+00:00', 'response_uci': 'd2d4',
                        'disposition': 'unverified'}]}
+    from app.contracts.opening_evidence import OpeningDecisionManifest
+    scope = OpeningDecisionManifest.model_validate(raw['manifest']).model_dump(mode='json')
+    raw['manifest'] = evidence.issued_position_manifest(frozen, scope)
+    raw['events'][0]['decision_id'] = raw['manifest']['decisions'][0]['decision_id']
     # The saved source proves the one expected move, independently of the
     # browser's unverified disposition.
     source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])], authored_token=NS(authored_digest='authored'))
@@ -150,7 +155,7 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     assert saved[0]['payload_json']['decision_index'] == 0
     assert saved[0]['payload_json']['disposition'] == 'wrong'
     # A later guided correction is not another first response or transition.
-    raw['events'].append({'sequence': 2, 'decision_index': 0, 'decision_id': 'd' * 64,
+    raw['events'].append({'sequence': 2, 'decision_index': 0, 'decision_id': raw['manifest']['decisions'][0]['decision_id'],
                           'expected_uci': 'e2e4', 'kind': 'correction',
                           'observed_at': '2026-11-02T12:01:00+00:00', 'response_uci': 'e2e4'})
     req = OpeningEvidenceCheckpoint.model_validate(raw)
@@ -217,3 +222,63 @@ def test_completion_replay_skips_stale_source_but_new_grade_holds():
     evidence.fence_position_completion(db, fence, accepted)
     with pytest.raises(evidence.EvidenceConflict, match='source_changed'):
         evidence.fence_position_completion(db, fence, [{'receipt':row, 'grade_receipt':None}])
+
+
+def test_issued_manifest_covers_displayed_context_and_repeated_position_ordinals():
+    import chess
+    from tempo_evidence_math import opening_position_key
+    board = chess.Board()
+    moves = ('g1f3', 'g8f6', 'f3g1', 'f6g8', 'g1f3')
+    slots = []
+    for offset, move in enumerate(moves):
+        if board.turn == chess.WHITE:
+            key = NS(repertoire_id='r', variant='standard', position=opening_position_key(board.fen()))
+            slots.append(NS(move_offset=offset, original_ply=offset + 4, fen=board.fen(),
+                            definition=NS(key=key, expected_uci=move, policy_version='v1')))
+        board.push_uci(move)
+    frozen = NS(plan_id='a'*64, original_card_id='card', original_card_revision=4,
+                target=NS(key=NS(repertoire_id='r')), starting_fen=chess.STARTING_FEN,
+                moves_uci=moves, decision_slots=tuple(slots))
+    scope = {'manifest_version':1, 'policy_version':1, 'manifest_id':'b'*64,
+             'presentation_snapshot_id':13, 'repertoire_id':'r', 'card_id':'card',
+             'card_revision':4, 'trained_color':'white',
+             # Original physical card includes only the final target segment.
+             'decisions':[{'decision_id':'c'*64, 'decision_index':0, 'move_offset':0,
+                           'fen':slots[-1].fen, 'expected_uci':'g1f3'}]}
+    result = evidence.issued_position_manifest(frozen, scope)
+    assert result['presentation_snapshot_id'] == 13
+    assert [d['decision_index'] for d in result['decisions']] == [0, 1, 2]
+    assert [d['move_offset'] for d in result['decisions']] == [0, 2, 4]
+    assert result['decisions'][0]['decision_id'] == result['decisions'][2]['decision_id']
+    assert [slot.original_ply for slot in slots] == [4, 6, 8]
+    assert scope['decisions'][0]['decision_id'] == 'c'*64
+
+
+def test_foreground_preparation_validates_issued_manifest_not_physical(monkeypatch):
+    from contextlib import nullcontext
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+    from tempo_legacy_database.adapters.study import position_issued_plans
+    frozen = plan()
+    scope = {'manifest_version':1, 'policy_version':1, 'manifest_id':'b'*64,
+             'presentation_snapshot_id':13, 'repertoire_id':'r', 'card_id':'card',
+             'card_revision':4, 'trained_color':'white',
+             'decisions':[{'decision_id':'c'*64, 'decision_index':0, 'move_offset':2,
+                           'fen':frozen.decision_slots[0].fen, 'expected_uci':'e2e4'}]}
+    expected = evidence.issued_position_manifest(frozen, scope)
+    now = datetime.now(timezone.utc).isoformat()
+    request = OpeningEvidenceCheckpoint.model_validate({'attempt_id':'attempt',
+        'origin_queue_entry_id':21, 'queue_entry_id':21, 'started_at':now,
+        'study_timezone':'UTC', 'manifest':expected, 'events':[]})
+    monkeypatch.setattr(evidence.storage, 'postgres_is_configured', lambda: True)
+    monkeypatch.setattr(evidence.storage, 'read_connection', lambda: nullcontext(object()))
+    monkeypatch.setattr(evidence.storage, 'presentation_context', lambda *_: {'id':13})
+    monkeypatch.setattr(evidence, '_manifest_snapshot', lambda row: row)
+    monkeypatch.setattr(evidence, 'decision_manifest', lambda *_: scope)
+    monkeypatch.setattr(storage, 'has_position_tables', lambda *_: True)
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: frozen)
+    assert evidence.prepare_checkpoint(request) == expected
+    tampered = request.model_copy(deep=True)
+    tampered.manifest.decisions[0].move_offset = 2
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        evidence.prepare_checkpoint(tampered)
