@@ -11,7 +11,7 @@ def fence_namespace(database):
     The access-share lock prevents concurrent trigger DDL until caller commit and
     does not serialize ordinary card writes or allocate a position ID.
     """
-    database.execute_native('LOCK TABLE public.cards IN ACCESS SHARE MODE')
+    database.execute_native('LOCK TABLE public.cards IN ACCESS SHARE MODE NOWAIT')
     row = database.execute_native("""
         SELECT p.prosrc
         FROM pg_catalog.pg_trigger t
