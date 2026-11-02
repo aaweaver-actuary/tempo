@@ -26,6 +26,7 @@ export type PendingReview = {
   attemptId?: string;
   completedAt?: string;
   openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
+  positionStudy?: true;
   evidenceRejected?: string;
   evidenceFallbackReason?: "local_storage_quota";
   expectedRevision?: number;
@@ -147,13 +148,20 @@ async function replaceReview(review: PendingReview, replacement?: PendingReview,
 }
 
 export async function enqueuePendingReview(review: PendingReview): Promise<string> {
+  if (review.positionStudy && (!review.attemptId || !review.openingEvidenceCompletion ||
+      review.openingEvidenceCompletion.attempt_id !== review.attemptId ||
+      review.openingEvidenceCompletion.terminal?.state !== "complete" ||
+      review.openingEvidenceCompletion.queue_entry_id !== review.queueEntryId ||
+      review.openingEvidenceCompletion.manifest.card_id !== review.backendId ||
+      review.openingEvidenceCompletion.manifest.card_revision !== review.expectedRevision))
+    throw new Error("The issued position attempt and its completed evidence are required to save this review.");
   const store = await studyIntentStore();
   const retained = review.attemptId ? await store.get(`review:${review.attemptId}`) : undefined;
   const previous = retained ? (retained.data ?? retained.payload) as PendingReview : savedReviews().find(item => review.attemptId
     ? logicalAttemptId(item) === review.attemptId
     : item.queueEntryId === review.queueEntryId && item.backendId === review.backendId);
   if (previous) {
-    for (const field of ["backendId", "queueEntryId", "outcome", "guided", "completedAt", "expectedRevision", "openingEvidenceCompletion", "preparedNext"] as const)
+    for (const field of ["backendId", "queueEntryId", "outcome", "guided", "completedAt", "expectedRevision", "openingEvidenceCompletion", "preparedNext", "positionStudy"] as const)
       if (!(field === "openingEvidenceCompletion" && previous.evidenceFallbackReason) && review[field] !== undefined && JSON.stringify(previous[field]) !== JSON.stringify(review[field]))
         throw new Error("This logical training attempt already has a different completed result.");
     return logicalAttemptId(previous);
@@ -169,7 +177,7 @@ export async function enqueuePendingReview(review: PendingReview): Promise<strin
   try { await retain(normalizedReview); }
   catch (error) {
     const cause = error instanceof IntentStorageError ? error.cause : error;
-    if (!(cause instanceof DOMException) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(cause.name) || !normalizedReview.openingEvidenceCompletion) throw error;
+    if (normalizedReview.positionStudy || !(cause instanceof DOMException) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(cause.name) || !normalizedReview.openingEvidenceCompletion) throw error;
     const { openingEvidenceCompletion, ...aggregate } = normalizedReview;
     await retain({ ...aggregate, evidenceFallbackReason: "local_storage_quota" });
     void retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion).catch(() => {
@@ -190,7 +198,7 @@ export async function discardReviewConflict(attemptId: string): Promise<void> {
 export async function retryReviewConflict(attemptId: string): Promise<void> {
   const review = conflictedReviews().find((item) => logicalAttemptId(item) === attemptId);
   if (!review) throw new Error("This saved conflict is no longer available.");
-  await replaceReview(review, { ...review, state: "reconciling", conflict: undefined, automaticRecoverySuppressed: undefined,
+  await replaceReview(review, { ...review, state: review.positionStudy ? "pending" : "reconciling", conflict: undefined, automaticRecoverySuppressed: undefined,
     reconciliationSequence: (review.reconciliationSequence ?? 1) + 1 });
   updateReviewConflictNotice();
 }
@@ -242,7 +250,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
     endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
       requireCurrent();
       // Receipt-first recovery reaches this callback only when replay is necessary.
-      if (review.guided && !reconciling && !failureMarkerSent) {
+      if (!review.positionStudy && review.guided && !reconciling && !failureMarkerSent) {
         failureMarkerSent = true;
         const failureEndpoint = `${transport.origin}/api/queue/entries/${review.queueEntryId}/fail`;
         try {
@@ -284,7 +292,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
       return response;
     },
     operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
-    completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+    completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected, positionStudy: review.positionStudy,
     verifyReceiptFirst,
     aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
     onEvidenceRejected: async (message) => {
@@ -354,6 +362,10 @@ async function deliverLegacyReview(record: IntentRecord, signal: AbortSignal) {
   let response: Response;
   try { response = await sendReview(review, transport, store, requireCurrent, verifyReceiptFirst, signal); }
   catch (error) {
+    if (review.positionStudy && error instanceof ReviewReplayError && error.status === 409 && !error.retryable) {
+      return { state: "conflicted" as const, data: { ...review, state: "conflicted", conflict: {
+        code: error.code ?? "position_attempt_conflict", message: error.message, retryable: false } } };
+    }
     if (!(error instanceof ReviewReplayError) || error.status !== 409 || error.retryable || review.state === "reconciling") throw error;
     requireCurrent();
     review = { ...savedReviews().find(item => logicalAttemptId(item) === attemptId)!, state: "reconciling", reconciliationSequence: 1 };

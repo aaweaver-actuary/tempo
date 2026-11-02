@@ -1,0 +1,86 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import manifest from "../fixtures/opening-evidence-manifest.json";
+import { canonicalFenKey } from "../../app/utils/canonical-line";
+import { beginOpeningAttempt, partialOpeningAttempt } from "../../app/lib/opening-evidence-journal";
+import { enqueuePendingReview, flushPendingReviews, pendingReviews, conflictedReviews } from "../../app/lib/review-outbox";
+import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
+import { offlineTrainingDatabase } from "../../database/browser/offline-training-storage";
+import { readSavedOpeningJournal } from "../../database/browser/opening-evidence-journal-storage";
+import { resetStudyStorage, withMissingReceipts } from "./support/study-intent-fixtures";
+import { asCardId, asFenString, asQueueEntryId } from "../../app/types";
+
+const plan = { attempt_id: "issued-position", original_card_id: manifest.card_id, original_card_revision: 3,
+  queue_entry_id: 101, decision_slots: manifest.decisions.map(d => ({ move_offset: d.move_offset,
+    expected_uci: d.expected_uci, position_key: canonicalFenKey(d.fen) })) };
+const card = { id: asCardId("queue-101"), backendId: asCardId(manifest.card_id), kind: "opening" as const,
+  title: "Position", subtitle: "", startingFen: asFenString(manifest.decisions[0].fen), moves: [], userMoveTarget: 3,
+  queueEntryId: asQueueEntryId(101), revision: 3, openingDecisionManifest: manifest as any,
+  positionStudyMode: "position" as const, positionPresentation: plan };
+const completion = { attempt_id: plan.attempt_id, manifest, origin_queue_entry_id: 101, queue_entry_id: 101,
+  parent_attempt_id: null, started_at: "2026-09-30T12:00:00Z", study_timezone: "UTC", source: "live" as const,
+  events: [], terminal: { state: "complete" as const, final_sequence: 0, ended_at: "2026-09-30T12:01:00Z" } };
+const review = { backendId: manifest.card_id, queueEntryId: 101, expectedRevision: 3, attemptId: plan.attempt_id,
+  outcome: "correct" as const, guided: true, completedAt: completion.terminal.ended_at,
+  openingEvidenceCompletion: completion as any, positionStudy: true as const };
+beforeEach(async () => { await resetStudyStorage(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("accepts only the issued online identity and displayed manifest, retaining the first wrong response on abort", async () => {
+  expect(beginOpeningAttempt(card, "different")).toBeUndefined();
+  expect(beginOpeningAttempt(card, plan.attempt_id, { offline: true })).toBeUndefined();
+  const mismatched = { ...card, positionPresentation: { ...plan, decision_slots: [] } };
+  expect(beginOpeningAttempt(mismatched, plan.attempt_id)).toBeUndefined();
+  const journal = beginOpeningAttempt(card, plan.attempt_id)!;
+  journal.response(0, "d2d4", "wrong");
+  journal.assistance(0, "guided");
+  journal.response(0, "e2e4", "expected");
+  partialOpeningAttempt(plan.attempt_id);
+  expect(journal.snapshot()).toMatchObject({ attempt_id: plan.attempt_id, terminal: { state: "partial" },
+    events: [{ kind: "first_response", response_uci: "d2d4" }, { kind: "assistance", assistance: "guided" },
+      { kind: "correction", response_uci: "e2e4" }] });
+  await vi.waitFor(async () => {
+    const saved = await readSavedOpeningJournal(await offlineTrainingDatabase(), plan.attempt_id, () => false);
+    expect(saved?.events.map(event => event.kind)).toEqual(["first_response", "assistance", "correction"]);
+    expect(saved?.events[0].response_uci).toBe("d2d4");
+    expect(saved?.attempt.terminal?.state).toBe("partial");
+  });
+});
+
+it("retains one immutable position packet through network failure and duplicate enqueue, then sends it once on retry", async () => {
+  await enqueuePendingReview(review);
+  await enqueuePendingReview(review);
+  await expect(enqueuePendingReview({ ...review, guided: false })).rejects.toThrow("different completed result");
+  const bodies: string[] = [];
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_input, options) => {
+    bodies.push(String(options!.body));
+    if (bodies.length === 1) throw new Error("offline");
+    return Response.json({ persisted: true });
+  })));
+  await expect(flushPendingReviews()).rejects.toThrow("offline");
+  expect(pendingReviews()).toHaveLength(1);
+  expect((await flushPendingReviews(Infinity, true, plan.attempt_id)).persistedAttemptIds).toEqual([plan.attempt_id]);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[0]).toBe(bodies[1]);
+  expect(JSON.parse(bodies[0]).opening_evidence_completion).toEqual(completion);
+});
+
+it("retains a position conflict without aggregate fallback or legacy reconciliation", async () => {
+  await enqueuePendingReview(review);
+  const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ detail: { code: "opening_evidence_conflict", message: "changed", aggregate_review_allowed: true } }, { status: 409 }));
+  vi.stubGlobal("fetch", withMissingReceipts(request));
+  const result = await flushPendingReviews();
+  expect(result.conflictedAttemptIds).toEqual([plan.attempt_id]);
+  expect(conflictedReviews()[0].openingEvidenceCompletion).toEqual(completion);
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(String(request.mock.calls[0][0])).not.toContain("reconcile");
+});
+
+it("does not downgrade a position evidence conflict to an aggregate-only review", async () => {
+  const request = vi.fn(async () => Response.json({ detail: { code: "opening_evidence_unavailable", aggregate_review_allowed: true } }, { status: 409 }));
+  const rejected = vi.fn();
+  const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "key", body: {}, completion: completion as any,
+    positionStudy: true, onEvidenceRejected: rejected, request });
+  expect(response.status).toBe(409);
+  expect(request).toHaveBeenCalledOnce();
+  expect(rejected).not.toHaveBeenCalled();
+});

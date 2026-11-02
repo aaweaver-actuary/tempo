@@ -10,6 +10,7 @@ import { confirmOperationResponse, FailedOperationError, PendingOperationError, 
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
+import { canonicalFenKey } from "../utils/canonical-line";
 
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
@@ -232,6 +233,25 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
     severity: "warning", source: "opening evidence", key: `opening-evidence-unavailable:${card.id}`,
     message: card.openingEvidenceDiagnostic,
   });
+  // Position plans are issued for one specific online attempt and displayed suffix.
+  // Refuse incomplete or mismatched metadata rather than capturing a legacy line.
+  const position = card as PracticeCard & { positionStudyMode?: "position"; positionStudyHold?: string;
+    positionPresentation?: { attempt_id: string; original_card_id: string; original_card_revision: number;
+      queue_entry_id: number; decision_slots: readonly { move_offset: number; position_key: string; expected_uci: string }[] } };
+  if (position.positionStudyMode === "position") {
+    const plan = position.positionPresentation;
+    const manifest = card.openingDecisionManifest;
+    if (options.offline || position.positionStudyHold || !plan || !attemptId || attemptId !== plan.attempt_id ||
+        !manifest || !openingEvidenceCheckpointSchema.shape.manifest.safeParse(manifest).success ||
+        card.backendId !== plan.original_card_id || card.revision !== plan.original_card_revision ||
+        card.queueEntryId !== plan.queue_entry_id || manifest.card_id !== plan.original_card_id ||
+        manifest.card_revision !== plan.original_card_revision || manifest.decisions.length !== plan.decision_slots.length ||
+        manifest.decisions.some((decision, index) => {
+          const slot = plan.decision_slots[index];
+          return !slot || decision.decision_index !== index || decision.move_offset !== slot.move_offset ||
+            decision.expected_uci !== slot.expected_uci || canonicalFenKey(decision.fen) !== slot.position_key;
+        })) return;
+  }
   if (!attemptId || card.kind !== "opening" || !card.openingDecisionManifest || !card.queueEntryId || typeof indexedDB === "undefined") return;
   const existing = captures.get(attemptId);
   if (existing) return existing;
