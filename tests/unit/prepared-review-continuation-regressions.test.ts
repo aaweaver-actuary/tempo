@@ -17,7 +17,7 @@ vi.mock("../../app/lib/background-study", async () => {
 const queue = ["a", "b", "c"].map((id, index) => ({ id, queue_entry_id: 501 + index, revision: 1,
   start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e4", "e7e5", "g1f3"],
   content_type: "opening", repertoire_name: id, repertoire_source: "PGN" }));
-const cards = queue.map(mapQueueCardToPracticeCard);
+const cards = queue.map(raw => mapQueueCardToPracticeCard(raw));
 beforeEach(() => {
   localStorage.clear();
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
