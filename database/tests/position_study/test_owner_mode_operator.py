@@ -119,7 +119,7 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
 
     revision = 'a' * 40
     registration = {'version': 1, 'daemonId': 'daemon', 'context': 'default',
-                    'root': str(tmp_path), 'postgresVolumeKey': 'pg', 'volumes': {'pg': {'name': 'volume'}}}
+                    'root': str(tmp_path), 'project': 'tempo', 'postgresVolumeKey': 'pg', 'volumes': {'pg': {'name': 'volume'}}}
     target = hashlib.sha256(json.dumps(['daemon', ['volume']], separators=(',', ':')).encode()).hexdigest()[:24]
     directory = tmp_path / target
     directory.mkdir()
@@ -148,6 +148,12 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
     kwargs = dict(epoch='epoch', registration=registration, deployment=deployment, guard=guard,
                   qualification=qualification, revision=revision, target=target)
     assert operator.validate_release_evidence(Database(), prepared, **kwargs)['target'] == target
+    standalone = dict(kwargs, guard=None, deployment={k: v for k, v in deployment.items() if k != 'backup'},
+                      operation={'phase': 'backup_verified', 'revision': revision, 'target': 'tempo', 'backup': backup})
+    assert operator.validate_release_evidence(Database(), prepared, **standalone)['backup'] == 'verified.dump'
+    standalone['operation'] = {'phase': 'applying_migrations'}
+    with pytest.raises(operator.OperatorHold, match='migration_receipt_unqualified'):
+        operator.validate_release_evidence(Database(), prepared, **standalone)
     qualification['checks']['fresh_introduction'] = True
     with pytest.raises(operator.OperatorHold, match='qualification_incomplete'):
         operator.validate_release_evidence(Database(), prepared, **kwargs)
