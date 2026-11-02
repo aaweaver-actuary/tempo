@@ -224,15 +224,6 @@ def issue_in_borrowed_transaction(database, prepared):
             or origin[0]["admission_repertoire_id"] != token.repertoire_id
             or any(origin[0][k] != card[k] for k in ("start_fen", "moves_json", "trained_color", "content_type"))):
         return Hold("position_original_admission_ambiguous")
-    if plan.skipped_prefix_proof_ids:
-        matches = [p for p in request.clean_proofs if
-                   (p.attempt_id, p.terminal_receipt_id, p.review_receipt_id) == plan.skipped_prefix_proof_ids]
-        if len(matches) != 1:
-            return Hold("position_prefix_authority_unavailable")
-        actual = read_clean_presentation_proof(database, matches[0].attempt_id, lock=True)
-        if (isinstance(actual, Hold) or actual != matches[0]
-                or not _prefix_matches(route, plan, actual)):
-            return Hold("position_prefix_authority_unavailable")
     # Serialize even when the attempt row does not exist yet.
     attempt_lock = database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
         ("tempo:position-attempt:" + plan.attempt_id,)).fetchone()
@@ -261,10 +252,24 @@ def issue_in_borrowed_transaction(database, prepared):
     current = reader.read_context(keys)
     if isinstance(current, Hold) or current != plan.due_positions:
         return Hold("position_due_witness_changed")
+    if plan.skipped_prefix_proof_ids:
+        matches = [p for p in request.clean_proofs if
+                   (p.attempt_id, p.terminal_receipt_id, p.review_receipt_id) == plan.skipped_prefix_proof_ids]
+        if len(matches) != 1:
+            return Hold("position_prefix_authority_unavailable")
+        actual = read_applicable_clean_proofs(database, (matches[0].attempt_id,),
+            target=plan.target, owner_epoch=plan.owner_epoch, study_day=plan.local_day, lock=True)
+        if (isinstance(actual, Hold) or len(actual) != 1 or actual[0] != matches[0]
+                or not _prefix_matches(route, plan, actual[0])):
+            return Hold("position_prefix_authority_unavailable")
+    target_witness = next((w for w in plan.due_positions if w.definition == plan.target), None)
+    if target_witness is None:
+        return Hold("position_due_state_unavailable")
     already_good = database.execute_native("""SELECT 1 FROM study_position_grades
         WHERE repertoire_id=%s AND variant=%s AND position=%s AND accepted_study_day=%s
-          AND grade='good' LIMIT 1""", (token.repertoire_id, plan.target.key.variant,
-          plan.target.key.position, plan.local_day)).fetchone()
+          AND grade='good' AND owner_epoch=%s AND version_after=%s LIMIT 1""",
+        (token.repertoire_id, plan.target.key.variant, plan.target.key.position, plan.local_day,
+         plan.owner_epoch, target_witness.position_revision)).fetchone()
     if already_good:
         return Hold("position_already_cleanly_tested_today")
     saved = database.execute_native("""INSERT INTO study_position_issued_plans
@@ -353,3 +358,66 @@ def read_clean_presentation_proof(database, attempt_id, *, lock=False):
             plan.source_digest, plan.local_day, plan.owner_epoch, True, attempt_id, str(row["review_id"]))
     except (KeyError, TypeError, ValueError):
         return Hold("position_prior_evidence_invalid")
+
+
+def read_applicable_clean_proofs(database, attempt_ids, *, target, owner_epoch, study_day, lock=False):
+    """Read bounded prior proofs and remove only superseded target coverage.
+
+    A later accepted Again may reopen the target, while the prior clean moves
+    before its first occurrence remain usable as context. The returned proof is
+    a conservative projection of the saved full-root receipt; callers must not
+    supply their own proof claims. The writer repeats this read after locking
+    the current state before it accepts a shortened plan.
+    """
+    from dataclasses import replace
+    from tempo_evidence_math.position_learning import PositionDefinition
+    if (not isinstance(target, PositionDefinition) or not isinstance(attempt_ids, (tuple, list))
+            or len(attempt_ids) > 20
+            or any(not isinstance(a, str) or not a for a in attempt_ids)
+            or len(set(attempt_ids)) != len(attempt_ids)):
+        return Hold("position_prefix_proof_request_invalid")
+    results = []
+    for attempt_id in attempt_ids:
+        proof = read_clean_presentation_proof(database, attempt_id, lock=lock)
+        if isinstance(proof, Hold):
+            return proof
+        if proof.owner_epoch != owner_epoch or proof.study_day != study_day:
+            return Hold("position_prefix_proof_scope_changed")
+        target_plies = [d.ply for d in proof.attempt_decisions if d.definition == target]
+        if not target_plies:
+            results.append(proof)
+            continue
+        prior = replay_exact_attempt(database, attempt_id)
+        if prior is None or isinstance(prior, Hold):
+            return Hold("position_prior_attempt_missing")
+        witness = next((w for w in prior.due_positions if w.definition == target), None)
+        if witness is None:
+            return Hold("position_prior_target_witness_missing")
+        # The lookup must be backed by the schema owner's partial Again index;
+        # LIMIT alone cannot bound a scan over historical grades.
+        index = database.execute_native("""SELECT EXISTS (SELECT 1 FROM pg_index i
+            WHERE i.indexrelid=to_regclass('study_position_recent_again')
+              AND i.indrelid='study_position_grades'::regclass AND i.indisvalid)""", ()).fetchone()
+        if not index or not index[0]:
+            return Hold("position_again_lookup_index_required")
+        superseded = database.execute_native("""SELECT 1 FROM study_position_grades again
+            JOIN study_position_states state ON state.repertoire_id=again.repertoire_id
+             AND state.variant=again.variant AND state.position=again.position
+            JOIN review_attempt_receipts prior_review ON prior_review.attempt_id=%s
+            WHERE again.repertoire_id=%s AND again.variant=%s AND again.position=%s
+              AND again.owner_epoch=%s AND again.accepted_study_day=%s AND again.grade='again'
+              AND again.expected_uci=%s AND again.policy_version=%s
+              AND state.owner_epoch=again.owner_epoch AND again.version_before >= %s
+              AND again.version_after > %s AND again.version_after <= state.version AND prior_review.completed_at IS NOT NULL
+              AND again.accepted_at > prior_review.completed_at::timestamptz
+            LIMIT 1""", (attempt_id, target.key.repertoire_id, target.key.variant,
+                target.key.position, owner_epoch, study_day, target.expected_uci,
+                target.policy_version, witness.position_revision, witness.position_revision)).fetchone()
+        if not superseded:
+            results.append(proof)
+            continue
+        cutoff = min(target_plies)
+        results.append(replace(proof, moves_uci=proof.moves_uci[:cutoff],
+            attempt_decisions=tuple(d for d in proof.attempt_decisions if d.ply < cutoff),
+            first_responses=tuple(r for r in proof.first_responses if r.ply < cutoff)))
+    return tuple(results)

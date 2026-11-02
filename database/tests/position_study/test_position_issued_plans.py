@@ -95,6 +95,7 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
     class Cursor(Result):
         def fetchall(self): return self.row
     class Writer(Database):
+        current_good = False
         def execute_native(self, sql, params):
             self.calls.append((sql, params))
             if 'SELECT * FROM study_position_issued_plans WHERE attempt_id' in sql: return Cursor(None)
@@ -107,7 +108,10 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
             if 'FROM queue_attempt_origins' in sql: return Cursor([origin])
             if 'count(*) FROM opening_evidence_attempts' in sql: return Cursor((0,))
             if 'FROM opening_evidence_attempts' in sql or 'FROM review_attempt_receipts' in sql: return Cursor(None)
-            if 'FROM study_position_grades' in sql: return Cursor(None)
+            if 'FROM study_position_grades' in sql:
+                assert 'owner_epoch=%s AND version_after=%s' in sql
+                assert params[-2:] == (plan.owner_epoch, next(w.position_revision for w in plan.due_positions if w.definition == plan.target))
+                return Cursor((1,) if self.current_good else None)
             if 'INSERT INTO study_position_issued_plans' in sql: return Cursor((plan.attempt_id,))
             raise AssertionError(sql)
     class Reader:
@@ -122,6 +126,10 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
     assert issuer.issue_in_borrowed_transaction(db, work) == plan
     insert = next(params for sql, params in db.calls if 'INSERT INTO study_position_issued_plans' in sql)
     assert insert[7] == work.source.authored_token.authored_digest
+    db = Writer()
+    db.current_good = True
+    assert issuer.issue_in_borrowed_transaction(db, work).reason == "position_already_cleanly_tested_today"
+    assert not any('INSERT INTO study_position_issued_plans' in sql for sql, _ in db.calls)
     Reader.witnesses = tuple(replace(w, position_revision=w.position_revision + 1) for w in plan.due_positions)
     db = Writer()
     assert issuer.issue_in_borrowed_transaction(db, work).reason == "position_due_witness_changed"
@@ -200,6 +208,111 @@ def test_native_replay_after_restart_uses_stored_authored_digest():
                  json.dumps(record),plan.issued_at))
             db = SimpleNamespace(execute_native=conn.execute)
             assert replay_exact_attempt(db, plan.attempt_id).to_record() == record
+        finally:
+            conn.execute('SET search_path TO public')
+            conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_later_again_reopens_target_without_discarding_other_clean_prefix(monkeypatch):
+    from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
+    from app.study.position_learning.route_planner import choose_plan
+    from tempo_legacy_database.adapters.study import position_issued_plans as issuer
+    route = option('italian-knight-attack')
+    work = prepared()
+    plan = work.plan
+    decisions = tuple(route.decisions)
+    proof = CleanPresentationProof('prior', route.route_id, route.start_fen, route.moves_uci,
+        decisions, tuple(CleanFirstResponse(d.ply, d.definition, d.definition.expected_uci, False,
+            'event-' + str(d.ply)) for d in decisions), route.certificate.snapshot_id,
+        route.certificate.source_revision, route.certificate.source_digest, plan.local_day,
+        plan.owner_epoch, True, 'prior', '51')
+    monkeypatch.setattr(issuer, 'read_clean_presentation_proof', lambda *a, **k: proof)
+    monkeypatch.setattr(issuer, 'replay_exact_attempt', lambda *a: plan)
+    class History(Database):
+        has_index = True
+        has_later_again = False
+        def execute_native(self, sql, params):
+            self.calls.append((sql, params))
+            if 'to_regclass' in sql: return Result(('study_position_recent_again' if self.has_index else None,))
+            if 'FROM study_position_grades again' in sql: return Result((1,) if self.has_later_again else None)
+            raise AssertionError(sql)
+    db = History()
+    args = dict(target=plan.target, owner_epoch=plan.owner_epoch, study_day=plan.local_day)
+    unchanged, = issuer.read_applicable_clean_proofs(db, ('prior',), **args)
+    assert unchanged == proof
+    assert choose_plan(plan.target.key, (route,), clean_proofs=(unchanged,),
+        study_day=plan.local_day, owner_epoch=plan.owner_epoch).reason == 'position_already_cleanly_tested_today'
+    db.has_later_again = True
+    projected, = issuer.read_applicable_clean_proofs(db, ('prior',), **args)
+    assert len(projected.first_responses) > 0
+    assert all(d.definition.key != plan.target.key for d in projected.attempt_decisions)
+    selected = choose_plan(plan.target.key, (route,), clean_proofs=(projected,),
+        study_day=plan.local_day, owner_epoch=plan.owner_epoch)
+    assert not isinstance(selected, Hold) and selected.start_ply > 0
+    sql, params = db.calls[-1]
+    assert 'again.version_after <= state.version' in sql
+    assert 'again.accepted_at > prior_review.completed_at::timestamptz' in sql
+    assert params[-1] == next(w.position_revision for w in plan.due_positions if w.definition == plan.target)
+    db.has_index = False
+    assert issuer.read_applicable_clean_proofs(db, ('prior',), **args).reason == 'position_again_lookup_index_required'
+
+
+def test_native_superseding_again_preserves_clean_prefix(monkeypatch):
+    """Opt-in serial proof against the task-owned disposable PostgreSQL DSN."""
+    import os
+    from datetime import timedelta
+    from uuid import uuid4
+    import pytest
+    dsn = os.environ.get('TEMPO_POSITION_TEST_DSN')
+    if not dsn:
+        pytest.skip('requires task-owned disposable TEMPO_POSITION_TEST_DSN')
+    import psycopg
+    from psycopg import sql
+    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+    from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
+    from tempo_legacy_database.adapters.study import position_issued_plans as issuer
+    work = prepared()
+    plan, route = work.plan, work.source.routes[0]
+    proof = CleanPresentationProof('prior', route.route_id, route.start_fen, route.moves_uci,
+        route.decisions, tuple(CleanFirstResponse(d.ply, d.definition, d.definition.expected_uci,
+            False, 'event-' + str(d.ply)) for d in route.decisions), plan.source_snapshot_id,
+        plan.source_revision, plan.source_digest, plan.local_day, plan.owner_epoch, True, 'prior', '51')
+    monkeypatch.setattr(issuer, 'read_clean_presentation_proof', lambda *a, **k: proof)
+    monkeypatch.setattr(issuer, 'replay_exact_attempt', lambda *a: plan)
+    witness = next(w for w in plan.due_positions if w.definition == plan.target)
+    target = plan.target
+    args = dict(target=target, owner_epoch=plan.owner_epoch, study_day=plan.local_day)
+    with psycopg.connect(dsn, autocommit=True, row_factory=tempo_row_factory) as conn:
+        assert conn.execute('SELECT current_database()').fetchone()[0].startswith('tempo_position_test_')
+        schema = 'position_g2_again_' + uuid4().hex
+        conn.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        try:
+            conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+            conn.execute('''CREATE TABLE study_position_states(repertoire_id text,variant text,position text,
+                owner_epoch text,version bigint)''')
+            conn.execute('''CREATE TABLE study_position_grades(repertoire_id text,variant text,position text,
+                owner_epoch text,accepted_study_day date,grade text,version_before bigint,version_after bigint,
+                expected_uci text,policy_version text,accepted_at timestamptz)''')
+            conn.execute('''CREATE INDEX study_position_recent_again ON study_position_grades
+                (repertoire_id,variant,position,owner_epoch,accepted_study_day,version_after) WHERE grade='again' ''')
+            conn.execute('CREATE TABLE review_attempt_receipts(attempt_id text PRIMARY KEY, completed_at text)')
+            conn.execute('INSERT INTO review_attempt_receipts VALUES (%s,%s)', ('prior', plan.issued_at.isoformat()))
+            conn.execute('INSERT INTO study_position_states VALUES (%s,%s,%s,%s,%s)',
+                (target.key.repertoire_id,target.key.variant,target.key.position,plan.owner_epoch,witness.position_revision))
+            db = SimpleNamespace(execute_native=conn.execute)
+            assert issuer.read_applicable_clean_proofs(db, ('prior',), **args) == (proof,)
+            conn.execute('''INSERT INTO study_position_grades VALUES (%s,%s,%s,%s,%s,'again',%s,%s,%s,%s,%s)''',
+                (target.key.repertoire_id,target.key.variant,target.key.position,plan.owner_epoch,plan.local_day,
+                 witness.position_revision,witness.position_revision + 1,target.expected_uci,target.policy_version,
+                 plan.issued_at + timedelta(seconds=1)))
+            # An uncommitted or not-yet-reflected effect cannot supersede proof.
+            assert issuer.read_applicable_clean_proofs(db, ('prior',), **args) == (proof,)
+            conn.execute('UPDATE study_position_states SET version=version+1')
+            projected, = issuer.read_applicable_clean_proofs(db, ('prior',), **args)
+            assert 0 < len(projected.first_responses) < len(proof.first_responses)
+            assert all(d.definition != target for d in projected.attempt_decisions)
+            conn.execute("UPDATE study_position_grades SET accepted_at=%s", (plan.issued_at - timedelta(seconds=1),))
+            assert issuer.read_applicable_clean_proofs(db, ('prior',), **args) == (proof,)
         finally:
             conn.execute('SET search_path TO public')
             conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
