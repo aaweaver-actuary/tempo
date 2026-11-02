@@ -84,9 +84,74 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(no
     # Optional recombination pre-reading precedes the writer; the ordinary
     # review and opening evidence still publish through the atomic handler.
     from app import review_commands
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
     assert command_gateway._handlers["cards.review"] is review_commands.submit_review
-    assert command_gateway._preparers["cards.review"] is prepare_recombination_review
+    assert command_gateway._preparers["cards.review"] is review_commands.prepare_review
+
+
+@pytest.mark.parametrize('command_name', ['cards.review', 'cards.review.reconcile'])
+@pytest.mark.parametrize('with_completion', [False, True])
+def test_review_prepares_recombination_and_position_before_writer(normal_study_mode, monkeypatch,
+                                                                   command_name, with_completion):
+    from app import command_gateway, review_commands
+    from tempo_legacy_database import connections
+    from tempo_legacy_database.adapters.study import recombination
+
+    manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
+    request = OpeningEvidenceCheckpoint(attempt_id='review-attempt', manifest=manifest,
+        origin_queue_entry_id=101, queue_entry_id=101, started_at='2026-09-30T12:00:00Z', study_timezone='UTC')
+    payload = {'card_id': request.manifest.card_id, 'review': {'attempt_id': request.attempt_id,
+        'queue_entry_id': 101, 'outcome': 'correct',
+        **({'opening_evidence_completion': request.model_dump(mode='json')} if with_completion else {})}}
+    original = copy.deepcopy(payload)
+    order = []
+    recombination_result, position_result, read_database = object(), object(), object()
+    observed = {}
+
+    def prepare_recombination(value):
+        order.append('recombination')
+        assert value is payload and value == original
+        return {**value, 'prepared_recombination': recombination_result}
+
+    @contextmanager
+    def read_connection():
+        order.append('read')
+        yield read_database
+        order.append('read_closed')
+
+    def prepare_position(database, checkpoint):
+        order.append('position')
+        assert database is read_database and checkpoint == request
+        return position_result
+
+    class WriterReached(Exception): pass
+    @contextmanager
+    def writer(_background):
+        order.append('writer')
+        raise WriterReached
+        yield
+
+    real_prepare = review_commands.prepare_review
+    def capture_prepared(value):
+        observed.update(real_prepare(value))
+        return observed
+
+    monkeypatch.setattr(recombination, 'prepare_recombination_review', prepare_recombination)
+    monkeypatch.setattr(connections, 'read_connection', read_connection)
+    monkeypatch.setattr(evidence, 'prepare_position_checkpoint', prepare_position)
+    monkeypatch.setattr(command_gateway, '_writer_connection', writer)
+    assert command_gateway._preparers[command_name] is real_prepare
+    monkeypatch.setitem(command_gateway._preparers, command_name, capture_prepared)
+    with pytest.raises(WriterReached):
+        command_gateway._execute_command('operation', command_name, payload)
+    assert order == (['recombination', 'read', 'position', 'read_closed', 'writer'] if with_completion
+                     else ['recombination', 'writer'])
+    assert payload == original and observed['card_id'] == original['card_id']
+    assert observed['review'] == original['review']
+    assert observed['prepared_recombination'] is recombination_result
+    if with_completion:
+        assert observed['prepared_position_checkpoint'] is position_result
+    else:
+        assert 'prepared_position_checkpoint' not in observed
 
 
 def large_request():
