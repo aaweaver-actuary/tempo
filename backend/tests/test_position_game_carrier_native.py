@@ -42,7 +42,7 @@ def test_native_transposition_again_alias_issuance_and_settlement(monkeypatch):
     dsn = _dsn()
     now = datetime.now(timezone.utc)
     routes = [('d2d4','d7d5','g1f3','g8f6','c1f4'),
-              ('g1f3','g8f6','d2d4','d7d5','c1f4')]
+              ('d2d4','g8f6','g1f3','d7d5','c1f4')]
     @contextmanager
     def reader(*args, **kwargs):
         with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as conn:
