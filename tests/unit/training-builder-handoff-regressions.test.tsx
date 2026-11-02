@@ -35,9 +35,10 @@ async function openTraining() {
   await waitFor(() => expect(useBoardShellStore.getState().board.fen).toBe(positions[8]));
 }
 
-it("retired view aliases fall back to Train and retired position actions are absent", async () => {
-  for (const alias of ["analysis", "builder", "compare", "games", "insights", "progress", "statistics"] as const)
+it("retired view aliases fall back to Train while Games remains a workspace", async () => {
+  for (const alias of ["analysis", "builder", "compare", "insights", "progress", "statistics"] as const)
     expect(prepareLegacyWorkspaceNavigation(alias)).toBe("train");
+  expect(prepareLegacyWorkspaceNavigation("games")).toBe("games");
   await openTraining();
   expect(screen.queryByLabelText("Open review position")).toBeNull();
   expect(screen.queryByRole("button", { name: "Analysis" })).toBeNull();

@@ -99,7 +99,7 @@ it("study_only_mode_pauses_bulk_preparation_preserves_expected_moves_and_resumes
   vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
   studyOnlyMode = true;
   render(<Home />);
-  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/Study-only mode pauses optional analysis and imports handled by the task scheduler/)).toBeTruthy());
   expect(lineRequests).toBe(0);
   await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
   await play("e2e4");
@@ -114,7 +114,7 @@ it("study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_p
   vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
   studyOnlyMode = true;
   render(<Home />);
-  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/Study-only mode pauses optional analysis and imports handled by the task scheduler/)).toBeTruthy());
   await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
   await play("d2d4");
   await waitFor(() => expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate"));
@@ -131,7 +131,7 @@ it.each(["wrong", "unavailable", "cancelled"])("study_only_move_verification_pre
     : Promise.resolve(scenario === "unavailable" ? new Response("unavailable", { status: 503 })
       : Response.json({ verified: false, next_cursor: null, source_token: "current-source" }));
   render(<Home />);
-  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/Study-only mode pauses optional analysis and imports handled by the task scheduler/)).toBeTruthy());
   await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
   if (scenario === "cancelled") {
     act(() => { void useBoardShellStore.getState().board.onMove?.("c2", "c4"); });
