@@ -161,3 +161,73 @@ def test_scoped_route_bound_holds_without_truncating_or_retiring_history():
     assert decision.reason == "scoped_source_exceeds_bound"
     assert not decision.allow_new_issuance
     assert decision.as_record()["retain_stored_schedule"]
+
+
+def test_persisted_definition_only_london_route_change_preserves_complete_memory():
+    from app.study.position_learning.source_change_policy import compare_persisted_definition
+
+    original = option("london-order-a").decisions[-1].definition
+    current = scope((option("london-order-b", NEXT),), authored_digest="new-opponent-order")
+    decision = compare_persisted_definition(original, current)
+    assert decision.position == original.key
+    assert decision.disposition == "preserve_schedule"
+    assert decision.reuse_schedule and decision.allow_new_issuance
+    assert decision.reprepare_presentation and not decision.requires_reauthorization
+    assert decision.added_route_ids == decision.retired_route_ids == ()
+    assert decision.as_record()["retain_stored_schedule"]
+
+
+@pytest.mark.parametrize("answer,policy,reason", [
+    ("d2d4", "policy-1", "selected_response_changed"),
+    ("g1f3", "policy-2", "content_policy_changed"),
+])
+def test_persisted_definition_response_or_policy_change_requires_reauthorization(answer, policy, reason):
+    from app.study.position_learning.source_change_policy import compare_persisted_definition
+
+    key = PositionKey("rep", opening_position_key(chess.STARTING_FEN))
+    previous = single(key).decisions[0].definition
+    decision = compare_persisted_definition(previous, scope((single(key, answer, policy),)))
+    assert decision.disposition == "hold_definition" and decision.reason == reason
+    assert decision.requires_reauthorization
+    assert not decision.allow_new_issuance and not decision.reuse_schedule
+    assert decision.as_record()["retain_original_attempt_proof"]
+
+
+@pytest.mark.parametrize("other", [
+    PositionKey("other", "4k2r/8/8/8/8/8/8/4K2R w Kk -"),
+    PositionKey("rep", "4k2r/8/8/8/8/8/8/4K2R w k -"),
+])
+def test_persisted_definition_repertoire_or_castling_difference_is_separate(other):
+    from app.study.position_learning.source_change_policy import compare_persisted_definition
+
+    key = PositionKey("rep", "4k2r/8/8/8/8/8/8/4K2R w Kk -")
+    previous = single(key, "h1h2").decisions[0].definition
+    decision = compare_persisted_definition(previous, scope((single(other, "h1h2"),)))
+    assert decision.disposition == "independent" and decision.position == other
+    assert not decision.reuse_schedule
+    assert decision.allow_new_issuance
+
+
+def test_persisted_definition_deleted_vs_unproved_source_has_no_false_currentness():
+    from app.study.position_learning.source_change_policy import compare_persisted_definition
+
+    route = option("london-order-a")
+    previous = route.decisions[-1].definition
+    current = scope((route,))
+    removed = replace(current, routes=(), certificate=NEXT, authored_digest="deleted")
+    decision = compare_persisted_definition(previous, removed)
+    assert decision.disposition == "retire_new_issuance"
+    assert not decision.allow_new_issuance
+    assert decision.as_record()["retain_stored_schedule"]
+    assert decision.as_record()["retain_original_attempt_proof"]
+    for unproved in (None, replace(removed, certificate=replace(NEXT, complete=False)),
+                     replace(removed, certificate=replace(NEXT, current_integrity=False)),
+                     replace(current, certificate=NEXT)):
+        held = compare_persisted_definition(previous, unproved)
+        assert held.disposition == "hold_definition"
+        assert not held.allow_new_issuance and not held.reuse_schedule
+    key = previous.key
+    conflicting = scope((single(key, "g1f3"), single(key, "b1c3", route_id="conflict")))
+    held = compare_persisted_definition(previous, conflicting)
+    assert held.reason == "conflicting_position_definitions"
+    assert held.requires_reauthorization and not held.allow_new_issuance

@@ -135,3 +135,42 @@ def compare_source_change(
                       else "content_policy_changed", reauthorize=True, added=added, retired=retired)
     return result("preserve_schedule", "same_position_and_approved_response", issue=True,
                   reuse=True, reprepare=before != after, added=added, retired=retired)
+
+
+def compare_persisted_definition(
+    previous: PositionDefinition,
+    current: ScopedPositionSource | None,
+) -> SourceChangeDecision:
+    """Compare a locked Study-state definition with current owner source facts.
+
+    The caller reads ``previous`` from authoritative persisted state, never a
+    client. No old route snapshot/certificate is required or reconstructed. New
+    facts still require the source owner's preparation and transaction fence.
+    ``None`` means unavailable authority, not proved removal; removal requires
+    a complete certified empty scope. Unknown prior routes cannot establish
+    added/retired aliases, prefix credit or permission to reuse a prepared plan.
+    """
+    key = current.key if current is not None else previous.key
+
+    def result(disposition, reason, *, issue=False, reuse=False, reauthorize=False):
+        return SourceChangeDecision(key, disposition, reason, issue, reuse,
+                                    reauthorize, True, (), ())
+
+    if current is None:
+        return result("hold_definition", "current_source_unavailable", reauthorize=True)
+    facts = _facts(current)
+    if isinstance(facts, str):
+        return result("hold_definition", facts, reauthorize=True)
+    definitions, _ = facts
+    if previous.key != current.key:
+        return result("independent", "different_exact_position_or_repertoire",
+                      issue=bool(definitions))
+    if not definitions:
+        return result("retire_new_issuance", "no_current_authored_route")
+    selected = definitions[0]
+    if previous.expected_uci != selected.expected_uci:
+        return result("hold_definition", "selected_response_changed", reauthorize=True)
+    if previous.policy_version != selected.policy_version:
+        return result("hold_definition", "content_policy_changed", reauthorize=True)
+    return result("preserve_schedule", "same_position_and_approved_response",
+                  issue=True, reuse=True)
