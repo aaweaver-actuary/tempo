@@ -375,6 +375,10 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
     saved = learning_review_adapter.submit_legacy_review(port, payload)
     raw.commit()
     assert saved['persisted'] and saved['queue_entry_id'] == second_entry
+    receipt = raw.execute('''SELECT r.card_id,r.queue_entry_id,r.review_id,v.source_kind,v.source_ref
+        FROM review_attempt_receipts r JOIN reviews v ON v.id=r.review_id WHERE r.attempt_id=%s''',
+        (second.attempt_id,)).fetchone()
+    assert tuple(receipt) == (second_card,second_entry,saved['review_id'],'position_study','attempt:'+second.attempt_id)
     grades = grade_rows()
     assert [r[2] for r in grades].count('good') == 1
     assert next(r[2] for r in grades if r[0] == second.attempt_id) == 'observe'
@@ -390,7 +394,13 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day):
     raw.commit()
     grades = grade_rows()
     assert [r[2] for r in grades].count('good') == 1
-    assert next(r[2] for r in grades if r[0] == third.attempt_id) == 'again'
+    failure = next(r for r in grades if r[0] == third.attempt_id)
+    assert failure[2] == 'again'
+    response = raw.execute('SELECT attempt_id,event_id FROM study_position_first_responses WHERE event_id=%s',
+                           (failure[1],)).fetchone()
+    assert tuple(response) == (third.attempt_id, failure[1])
+    assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s',
+                       (third_entry,)).fetchone()[0] == 1
     after_again = state()
     assert after_again[0] == after_good[0] + 1 and after_again[1] != after_good[1]
     assert len({r[1] for r in grades}) == len(grades), 'first-response event identities must be distinct'
