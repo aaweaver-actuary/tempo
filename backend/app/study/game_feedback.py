@@ -288,7 +288,7 @@ class GameFeedback:
 
     def settle(self, completion: Completion) -> None:
         """Called after the owning review write in the same card transaction."""
-        if not completion.clean or completion.source_kind not in {"study", "study_exercise"}:
+        if completion.source_kind not in {"study", "study_exercise", "position_study"} or (not completion.clean and completion.source_kind != "position_study"):
             return
         now = instant(self.clock())
         for observed in self.store.card_effects(completion.card_id)[:1]:
@@ -304,8 +304,12 @@ class GameFeedback:
         return self._settled_effect(effect,completion) if completion is not None else None
 
     def _settled_effect(self,effect,completion):
-        if not completion.clean or completion.source_kind not in {'study','study_exercise'}:
+        if completion.source_kind not in {'study','study_exercise','position_study'} or (not completion.clean and completion.source_kind != 'position_study'):
             return None
+        if completion.source_kind == 'position_study':
+            verifier = getattr(self.store, 'position_completion_matches', None)
+            if verifier is None or not verifier(effect, completion):
+                return None
         matches = (self.targets.completion_matches(effect, completion) if self.targets else
             effect.card_id == completion.card_id and effect.card_revision == completion.revision)
         progress = self.store.observed_progress(effect)

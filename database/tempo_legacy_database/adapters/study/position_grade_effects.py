@@ -359,3 +359,62 @@ def apply_in_borrowed_transaction(database, attempt_id, event_ids, *, owner_epoc
         result.append(GradeReceipt(effect_id, response.event_id, final.grade, accepted_study_day,
                                    accepted_at, before, after, vb, va))
     return tuple(result)
+
+
+def position_completion_matches(database, effect, completion):
+    """Verify the saved plan and exact target response, never aggregate rating alone."""
+    from tempo_evidence_math.position_learning import Hold
+
+    row = database.execute_native("""SELECT r.attempt_id,r.queue_entry_id,p.source_digest
+        FROM review_attempt_receipts r JOIN study_position_issued_plans p ON p.attempt_id=r.attempt_id
+        WHERE r.review_id=%s AND r.card_id=%s AND r.scheduling_status='canonical'""",
+        (completion.review_id, completion.card_id)).fetchone()
+    if row is None:
+        return False
+    plan = _load_plan(database, row['attempt_id'], row['source_digest'])
+    if isinstance(plan, Hold):
+        return False
+    authority = CompletionAuthority(row['attempt_id'], row['queue_entry_id'], completion.card_id,
+                                    completion.revision, completion.review_id)
+    if not _completion_saved(database, plan, authority):
+        return False
+    selected = effect.qualification.selection if effect.qualification else None
+    if selected is not None and selected.decision is not None:
+        repertoire, position, expected = (selected.decision.repertoire_id, selected.position_key,
+                                           tuple(selected.expected_uci))
+    elif effect.lapse is not None:
+        finding = effect.lapse.finding
+        repertoire, position, expected = finding.repertoire_id, finding.position_key, tuple(finding.expected_uci)
+    else:
+        return False
+    if len(expected) != 1:
+        return False
+    rows = database.execute_native("""SELECT event_id FROM study_position_first_responses
+        WHERE attempt_id=%s AND repertoire_id=%s AND position=%s""",
+        (plan.attempt_id, repertoire, position)).fetchall()
+    if len(rows) != 1:
+        return False
+    events = _load_events(database, plan, (rows[0]['event_id'],))
+    if isinstance(events, Hold):
+        return False
+    response, disposition, _digest, _accepted = events[0]
+    if (response.definition.expected_uci != expected[0] or disposition != 'expected'
+            or response.assistance_before or response.manual_failure or not response.correct):
+        return False
+    # A saved accepted response can be Good or Observe (e.g. one Good/day).
+    grade = database.execute_native("""SELECT grade FROM study_position_grades
+        WHERE event_id=%s AND source_kind='study' AND grade IN ('good','observe')""",
+        (response.event_id,)).fetchone()
+    if grade is None:
+        return False
+    reset = database.execute_native("""SELECT version_after,repertoire_id,variant,position
+        FROM study_position_grades WHERE game_effect_key=%s AND source_kind='game_lapse'""",
+        (effect.key.logical_id(),)).fetchone()
+    if reset is not None:
+        witness = next((d for d in plan.due_positions if d.definition == response.definition), None)
+        key = response.definition.key
+        if (witness is None or (reset['repertoire_id'], reset['variant'], reset['position']) !=
+                (key.repertoire_id, key.variant, key.position)
+                or witness.position_revision < reset['version_after']):
+            return False
+    return True

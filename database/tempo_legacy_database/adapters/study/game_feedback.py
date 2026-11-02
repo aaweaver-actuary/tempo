@@ -312,23 +312,30 @@ class PostgresGameFeedbackStore:
         fence = progress.remediation_fence if progress else effect.remediation_fence
         if effect.status!='applied' or fence is None:
             return None
-        row = self.database.execute_native("""SELECT review.id,review.reviewed_at,review.source_kind
+        rows = self.database.execute_native("""SELECT review.id,review.reviewed_at,review.source_kind
             FROM reviews review JOIN review_attempt_receipts receipt ON receipt.review_id=review.id
             JOIN queue_attempt_origins origin ON origin.queue_entry_id=receipt.queue_entry_id
               AND origin.card_id=receipt.card_id AND origin.card_id=review.card_id
-            WHERE review.card_id=%s AND origin.revision=%s AND review.rating='correct'
-              AND review.guided=0 AND review.invalidated_at IS NULL AND review.source_kind='study'
+            WHERE review.card_id=%s AND origin.revision=%s AND review.invalidated_at IS NULL
+              AND ((review.source_kind='study' AND review.rating='correct' AND review.guided=0)
+                   OR review.source_kind='position_study')
               AND origin.issued_as_head=1 AND origin.issuance_sequence>%s AND origin.issued_at>=%s
-            ORDER BY origin.issuance_sequence,review.id LIMIT 1""",
+            ORDER BY origin.issuance_sequence DESC,review.id DESC LIMIT 32""",
             (fence.target.card_id,fence.target.card_revision,fence.after_issuance_sequence,
-             instant(fence.established_at))).fetchone()
-        if row is None:
-            return None
+             instant(fence.established_at))).fetchall()
         from .issuance import completion_issuance
-        issued = completion_issuance(self.database,row['id'],fence.target.card_id,fence.target.card_revision)
-        return Completion(row['id'],fence.target.card_id,fence.target.card_revision,
-            instant(row['reviewed_at']),True,row['source_kind'],issued)
+        for row in rows:
+            issued = completion_issuance(self.database,row['id'],fence.target.card_id,fence.target.card_revision)
+            completion = Completion(row['id'],fence.target.card_id,fence.target.card_revision,
+                instant(row['reviewed_at']),True,row['source_kind'],issued)
+            if row['source_kind'] != 'position_study' or self.position_completion_matches(effect, completion):
+                return completion
+        return None
 
+
+    def position_completion_matches(self, effect, completion):
+        from .position_grade_effects import position_completion_matches
+        return position_completion_matches(self.database, effect, completion)
 
     def promote_effect(self, effect, day):
         from .recombination import effect_target, current_presentation_available

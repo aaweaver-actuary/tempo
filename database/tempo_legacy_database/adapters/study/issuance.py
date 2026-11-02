@@ -73,7 +73,7 @@ def completion_issuance(database, review_id, card_id, revision):
         JOIN queue_attempt_origins origin ON origin.queue_entry_id=receipt.queue_entry_id
           AND origin.card_id=receipt.card_id AND origin.card_id=review.card_id
         WHERE review.id=? AND origin.card_id=? AND origin.revision=?
-          AND origin.issued_as_head=1 AND review.source_kind='study'
+          AND origin.issued_as_head=1 AND review.source_kind IN ('study','position_study')
           AND review.invalidated_at IS NULL LIMIT 2""", (review_id, card_id, revision)).fetchall()
     return _evidence(rows[0]) if len(rows) == 1 else None
 
