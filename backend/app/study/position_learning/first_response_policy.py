@@ -12,11 +12,6 @@ from __future__ import annotations
 from ..position_learning.contracts import AcceptedEvidence, DueAtIssuance, GradeProposal, Hold
 
 
-def _local_day(timestamp, timezone_source):
-    """Return a timestamp's day in the timezone captured by the issuance."""
-    return timestamp.astimezone(timezone_source.tzinfo).date()
-
-
 def propose_grade(evidence: AcceptedEvidence, due: DueAtIssuance) -> GradeProposal | Hold:
     """Classify one owner's accepted first response against its issuance witness.
 
@@ -58,19 +53,19 @@ def propose_grade(evidence: AcceptedEvidence, due: DueAtIssuance) -> GradePropos
         grade, reason = "observe", "assisted_first_response_no_new_grade"
     elif not correct:
         grade, reason = "again", "actual_first_wrong_or_manual_failure"
-    elif not evidence.terminal_complete or not evidence.aggregate_review_saved:
-        grade, reason = "pending", "correct_waits_for_completed_saved_review"
     elif not due.due:
         grade, reason = "observe", "nondue_correct_no_schedule"
-    elif _local_day(evidence.accepted_at, due.issued_at) != due.study_day:
+    elif not evidence.terminal_complete or not evidence.aggregate_review_saved:
+        grade, reason = "pending", "correct_waits_for_completed_saved_review"
+    elif evidence.accepted_study_day != due.study_day:
         grade, reason = "observe", "accepted_after_issued_study_day"
     else:
         grade, reason = "good", "due_clean_first_response"
 
-    # Negative evidence belongs to the Study day it is accepted. Good and
-    # observation proposals retain the issuance day and its frozen entitlement.
+    # The Study owner supplies this authoritative day at acceptance and retains
+    # it on replay. Never infer it from timestamp timezone offsets.
     study_day = (
-        _local_day(evidence.accepted_at, due.issued_at)
+        evidence.accepted_study_day
         if grade == "again"
         else due.study_day
     )
