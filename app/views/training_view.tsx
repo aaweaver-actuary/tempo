@@ -386,7 +386,7 @@ function StandardTrainingView({
           </Button>
         </div>
       )}
-      {cardsLeft > 0 && positionUnavailable && <p className="ui-notice" role="status">{positionUnavailable}</p>}
+      {cardsLeft > 0 && !useSharedBoard && positionUnavailable && <p className="ui-notice" role="status">{positionUnavailable}</p>}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}

@@ -294,7 +294,10 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     let active = true;
     const id = card.positionPresentation?.attempt_id;
     void preparePositionOpeningAttempt(card).then(hold => {
-      if (!active) return;
+      if (!active) {
+        if (useTrainingStore.getState().attempt.attemptId !== id) partialOpeningAttempt(id);
+        return;
+      }
       if (!hold) {
         const capture = beginOpeningAttempt(card, id, { studyTimezone: card.openingEvidenceStudyTimezone });
         if (!capture) hold = "The issued position attempt could not be restored. Refresh training.";
