@@ -166,3 +166,33 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
         finally:
             admin.execute('SET search_path TO public')
             admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_donor_fence_rejects_changed_or_busy_physical_owner():
+    from tooling.position_study_inventory import DonorFact
+    from tooling.position_study_seed import fence_donor_facts
+    fact = DonorFact('card', 'rep', 2, 'learning', '2026-11-03', '{}',
+                     '2026-10-01T00:00:00Z', False, False, None, False, ('rep',))
+    row = dict(card_id='card', repertoire_id='rep', revision=2, state='learning',
+               due_date='2026-11-03', fsrs_card_json='{}', introduced_at=fact.introduced_at,
+               archived=0, pending_validation=0, superseded_by=None, integrity_blocked=False,
+               owner_repertoire_ids=['rep'], card_exists=True, content_type='opening')
+    class Result:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Database:
+        def __init__(self): self.row = row.copy(); self.busy = False
+        def execute_native(self, sql, params=()):
+            if 'pg_try_advisory' in sql: return Result([(not self.busy,)])
+            if sql.startswith('SELECT id FROM cards'): return Result([{'id': 'card'}])
+            if sql.startswith('WITH requested'): return Result([self.row])
+            return Result([])
+    db = Database()
+    fence_donor_facts(db, [fact])
+    db.row['owner_repertoire_ids'] = ['other', 'rep']
+    with pytest.raises(ValueError, match='donor_ownership_changed'):
+        fence_donor_facts(db, [fact])
+    db.busy = True
+    with pytest.raises(ValueError, match='donor_card_busy'):
+        fence_donor_facts(db, [fact])
