@@ -221,6 +221,40 @@ class CurrentOwnerDecisions:
                 return None
             raise
 
+    def position_introduced(self, command, qualification):
+        """Classify the exact qualified position while holding its state lock."""
+        from app.study.encounter_feedback import qualified_encounter_view
+        from app.study.position_learning.game_target_mapping import map_first_departure
+        from tempo_evidence_math.position_learning import Hold
+        from .position_owner_epoch import owner_mode
+        source = self._position_source
+        class Definitions:
+            def current_definition(self, *, repertoire_id, position):
+                matches = {item.definition for route in source.routes for item in route.decisions
+                           if item.definition.key.repertoire_id == repertoire_id
+                           and item.definition.key.position == position}
+                return next(iter(matches)) if len(matches) == 1 else Hold('current_position_ambiguous')
+        target = map_first_departure(qualified_encounter_view(command, qualification), qualification,
+                                     current_source=Definitions())
+        _require(not isinstance(target, Hold), target.reason if isinstance(target, Hold) else '')
+        definition, token = target.definition, source.authored_token
+        owner = owner_mode(self.database, token.repertoire_id, token.authored_digest)
+        _require(owner.disposition == 'position', owner.reason)
+        key = definition.key
+        args = (key.repertoire_id, key.variant, key.position)
+        row = self.database.execute_native('''SELECT expected_uci,policy_version,owner_epoch,source_digest,introduced_at
+            FROM study_position_states WHERE repertoire_id=%s AND variant=%s AND position=%s
+            FOR UPDATE SKIP LOCKED''', args).fetchone()
+        if row is None:
+            exists = self.database.execute_native('''SELECT 1 FROM study_position_states
+                WHERE repertoire_id=%s AND variant=%s AND position=%s''', args).fetchone()
+            _require(not exists, 'position_state_busy')
+            return False
+        _require((row['expected_uci'], row['policy_version'], row['owner_epoch'], row['source_digest']) ==
+                 (definition.expected_uci, definition.policy_version, owner.epoch, token.authored_digest),
+                 'position_state_changed')
+        return row['introduced_at'] is not None
+
     def current_qualified(self, command, qualification):
         _require(self._qualified == (command.model_dump_json(), qualification.model_dump_json()),
                  'first_departure_prepared_authority_required')

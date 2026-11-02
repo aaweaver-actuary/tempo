@@ -79,6 +79,7 @@ def test_qualified_intake_applies_position_once_before_receipt(encounter_owner):
 
     class PositionIntake:
         calls = 0
+        def position_introduced(self, command, qualification): return True
         def fence_position_intake(self, command, qualification):
             assert not store.effects
             return 'position'
@@ -105,7 +106,7 @@ def test_qualified_intake_applies_position_once_before_receipt(encounter_owner):
 def test_unseen_position_holds_for_canonical_position_introduction(encounter_owner):
     from test_product_game_lapse import qualification_for
     store, _, _, _, service, command = encounter_owner
-    service.position_intake = NS(fence_position_intake=lambda *args: 'position')
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position', position_introduced=lambda *args: False)
     receipt = service.accept_qualified(command, qualification=qualification_for(command))
     assert receipt.reason == 'position_introduction_pending'
     assert service.refresh_encounter(command.key).reason == 'position_introduction_pending'
@@ -200,7 +201,7 @@ def test_unseen_feedback_calls_targeted_admission_once(encounter_owner, monkeypa
     from app.services import position_queue_admission
     store, _, _, _, service, command = encounter_owner
     store.database = object()
-    service.position_intake = NS(fence_position_intake=lambda *args: 'position')
+    service.position_intake = NS(fence_position_intake=lambda *args: 'position', position_introduced=lambda *args: False)
     qualification = qualification_for(command)
     service.accept_qualified(command, qualification=qualification)
     calls = []
@@ -251,6 +252,7 @@ def test_accepted_position_again_promotes_absent_card_then_checks_saved_settleme
     store, _, _, _, service, command = encounter_owner
     store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
     service.position_intake = NS(fence_position_intake=lambda *args: 'position',
+        position_introduced=lambda *args: True,
         apply_position_lapse=lambda key, *, day, now: ('position-receipt', now, 2))
     qualification = qualification_for(command)
     service.accept_qualified(command, qualification=qualification)
@@ -277,6 +279,7 @@ def test_retained_unqualified_feedback_fences_position_before_qualification(enco
     qualification = qualification_for(command)
     calls = []
     class Position:
+        def position_introduced(self, command, qualification): return True
         def fence_position_intake(self, command, qualification):
             calls.append('fence')
             return 'position'
@@ -308,6 +311,48 @@ def test_missing_position_stays_pending_without_legacy_review(encounter_owner):
     store, _, _, _, service, command = encounter_owner
     store.facts = replace(store.facts, introduced_at=NOW - timedelta(days=1))
     service.position_intake = NS(fence_position_intake=lambda *args: 'position',
-        apply_position_lapse=lambda key, *, day, now: None)
+        position_introduced=lambda *args: False, apply_position_lapse=lambda key, *, day, now: None)
     receipt = service.accept_qualified(command, qualification=qualification_for(command))
     assert receipt.reason == 'position_introduction_pending' and not store.reviews
+
+
+def test_unintroduced_carrier_of_introduced_position_gets_one_again(encounter_owner):
+    from test_product_game_lapse import qualification_for
+    store, _, _, _, service, command = encounter_owner
+    assert store.facts.introduced_at is None
+    calls = []
+    class Position:
+        def fence_position_intake(self, command, qualification): return 'position'
+        def position_introduced(self, command, qualification):
+            # Another physical carrier has already introduced this shared key.
+            return True
+        def apply_position_lapse(self, key, *, day, now):
+            calls.append(key)
+            return ('shared-position-grade', now, 2)
+    service.position_intake = Position()
+    qualification = qualification_for(command)
+    receipt = service.accept_qualified(command, qualification=qualification)
+    assert receipt.disposition == 'introduced_again'
+    assert receipt.progress.position_grade_effect_id == 'shared-position-grade'
+    assert service.accept_qualified(command, qualification=qualification).outcome == 'duplicate'
+    assert service.refresh_encounter(command.key, qualification=qualification).reason == 'position_carrier_unintroduced'
+    assert len(calls) == 1 and not store.reviews and not store.queue
+
+
+def test_position_disposition_reads_locked_exact_position(monkeypatch):
+    from test_position_game_target_mapping import departure, LONDON_ORDER_A
+    from tempo_evidence_math.position_learning import PositionDefinition, PositionKey
+    from tempo_legacy_database.adapters.study import game_feedback_authority as authority, position_owner_epoch
+    command, qualification, position = departure(LONDON_ORDER_A)
+    definition = PositionDefinition(PositionKey('london', position), 'g1f3', 'london-policy')
+    source = NS(authored_token=NS(repertoire_id='london', authored_digest='digest'),
+                routes=(NS(decisions=(NS(definition=definition),)),))
+    class DB:
+        def execute_native(self, sql, args):
+            assert 'FOR UPDATE SKIP LOCKED' in sql and args == ('london', 'standard', position)
+            return Result(dict(expected_uci='g1f3', policy_version='london-policy',
+                               owner_epoch='epoch', source_digest='digest', introduced_at=NOW))
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *args: NS(disposition='position', epoch='epoch', reason=None))
+    decisions = object.__new__(authority.CurrentOwnerDecisions)
+    decisions.database, decisions._position_source = DB(), source
+    assert decisions.position_introduced(command, qualification) is True

@@ -57,6 +57,7 @@ class CurrentEncounterPort(CurrentDecisionPort, Protocol):
 class PositionGameIntake(Protocol):
     """Study-owned pre-lock source/owner fence and accepted-effect grade."""
     def fence_position_intake(self, command, qualification) -> str: ...
+    def position_introduced(self, command, qualification) -> bool: ...
     def apply_position_lapse(self, key, *, day, now) -> tuple[str, datetime, int] | None: ...
 
 
@@ -174,7 +175,7 @@ class EncounterFeedback(GameFeedback):
                 return self._encounter_receipt(changed, command, "conflict")
             if (qualification is not None and previous.status != "settled"
                     and previous.progress is None):
-                qualified = self._accept_priority(replace(previous, qualification=qualification), now)
+                qualified = self._accept_priority(replace(previous, qualification=qualification), now, position_mode)
                 self.store.save(qualified, now)
                 qualified = self._apply_position_intake(qualified, now, position_mode)
                 return self._encounter_receipt(qualified, command, "duplicate")
@@ -187,7 +188,7 @@ class EncounterFeedback(GameFeedback):
             qualification=qualification,
             available_by=None,
             card_id=card.presentation_id, card_revision=card.presentation_revision)
-        effect = self._accept_priority(effect, now)
+        effect = self._accept_priority(effect, now, position_mode)
         self.store.save(effect, now)
         effect = self._apply_position_intake(effect, now, position_mode)
         return self._encounter_receipt(effect, command,
@@ -228,7 +229,7 @@ class EncounterFeedback(GameFeedback):
         if qualification is not None and not current.control and current.status in {"pending", "applied"}:
             current = replace(current, qualification=qualification)
             if current.progress is None:
-                current = self._accept_priority(current, now)
+                current = self._accept_priority(current, now, position_mode)
                 self.store.save(current, now)
                 current = self._apply_position_intake(current, now, position_mode)
         if position_introduction is not None and current.reason == 'position_introduction_pending':
@@ -298,7 +299,7 @@ class EncounterFeedback(GameFeedback):
             return replace(effect, status="held", reason="current_card_unavailable"),None,None
         return effect,mapping,facts
 
-    def _accept_priority(self, effect, now):
+    def _accept_priority(self, effect, now, position_mode='legacy'):
         """Intake owns only exact validation and durable acceptance, never queue work."""
         effect, mapping, facts = self._current_encounter(effect,now)
         if mapping is None:
@@ -312,8 +313,13 @@ class EncounterFeedback(GameFeedback):
             return replace(effect, observation_recorded=True, admission_status="pending",
                 reason="first_departure_qualification_pending")
         else:
-            disposition = ("first_introduction" if effect.disposition == "first_introduction"
-                           or effect.disposition is None and facts.introduced_at is None else "introduced_again")
+            if effect.disposition in {'first_introduction', 'introduced_again'}:
+                disposition = effect.disposition
+            elif position_mode == 'position':
+                introduced = self.position_intake.position_introduced(command, effect.qualification)
+                disposition = 'introduced_again' if introduced else 'first_introduction'
+            else:
+                disposition = 'first_introduction' if facts.introduced_at is None else 'introduced_again'
         if disposition == 'frequency_only':
             return replace(effect,observation_recorded=True,disposition=disposition,
                 status='settled',admission_status='not_requested',settled_at=now,
@@ -341,6 +347,8 @@ class EncounterFeedback(GameFeedback):
             if facts.active_attempt or facts.buried:
                 return replace(effect, admission_status='pending',
                                reason='active_attempt' if facts.active_attempt else 'buried')
+            if facts.introduced_at is None:
+                return replace(effect, admission_status='pending', reason='position_carrier_unintroduced')
             target = effect.progress.target
             if (mapping.presentation_id, mapping.presentation_revision) != (target.card_id, target.card_revision):
                 return replace(effect, admission_status='pending', reason='position_target_changed')
