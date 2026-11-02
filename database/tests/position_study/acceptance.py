@@ -20,10 +20,9 @@ from psycopg.conninfo import conninfo_to_dict
 from tempo_evidence_math.position_learning import Hold, SourceCertificate
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source, fence_position_source
-from app.repertoire import build_index
 from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
 from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
-from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -103,7 +102,7 @@ def test_real_schema_source_seed_and_due_queue(monkeypatch):
                 'integrity_blocked': bool(row['integrity_blocked']),
                 'deleted': bool(row['deleted']),
             })) for row in rows)
-        inventory = inventory_from_validated_index(prepared.snapshot, build_index(prepared.snapshot), source_certificate=certificate)
+        inventory = inventory_from_snapshot(prepared.snapshot, source_certificate=certificate)
         assert not isinstance(inventory, Hold), inventory
         request = InventoryRequest((SourceFacts(prepared.snapshot, inventory),), donors)
         for _ in range(10):
