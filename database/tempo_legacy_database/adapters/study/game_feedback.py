@@ -746,7 +746,9 @@ def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=Fa
     rows = database.execute_native("""SELECT * FROM study_game_feedback
         WHERE status IN ('pending','applied') AND (card_id=%s OR
         CAST(payload_json AS json)->'owner'->'progress'->'target'->>'card_id'=%s)
-        ORDER BY effect_key""", (card_id, card_id)).fetchall()
+        ORDER BY effect_key LIMIT 129""", (card_id, card_id)).fetchall()
+    if len(rows) > 128:
+        return Hold('position_urgency_candidate_limit')
     candidates = []
     for row in rows:
         effect = PostgresGameFeedbackStore._effect(row)
@@ -789,7 +791,12 @@ def read_position_urgency(database, *, card_id, revision, repertoire_id, lock=Fa
     if not row:
         return Hold('position_urgency_receipt_unavailable')
     selection = effect.qualification.selection
+    routes = [route for route in selection.surviving_routes
+              if (route.repertoire_id, route.route_id, route.route_ply) ==
+                 (selection.decision.repertoire_id, selection.decision.route_id, selection.decision.route_ply)]
     if (row['repertoire_id'] != repertoire_id or row['position'] != selection.position_key
+            or tuple(selection.expected_uci) != (row['expected_uci'],)
+            or len(routes) != 1 or routes[0].policy_id != row['policy_version']
             or (row['state_epoch'], row['state_digest'], row['state_uci'], row['state_policy']) !=
                (row['owner_epoch'], row['source_digest'], row['expected_uci'], row['policy_version'])
             or row['introduced_at'] is None or row['state_version'] < row['version_after']):
