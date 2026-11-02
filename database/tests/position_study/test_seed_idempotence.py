@@ -196,3 +196,48 @@ def test_donor_fence_rejects_changed_or_busy_physical_owner():
     db.busy = True
     with pytest.raises(ValueError, match='donor_card_busy'):
         fence_donor_facts(db, [fact])
+
+
+def test_seed_preparation_requires_writer_read_only_repeatable_read():
+    from test_inventory_readonly import FakeReader
+    from tooling.position_study_inventory import InventoryHold, read_card_page, read_seed_donor_page
+    writer = FakeReader(('tempo_writer', 'on', 'repeatable read'))
+    assert read_seed_donor_page(writer, candidate_card_ids=('card',)) == [('card',)]
+    with pytest.raises(InventoryHold, match='postgres_read_only_role_required'):
+        read_card_page(writer, candidate_card_ids=('card',))
+    for identity in (('tempo_reader', 'on', 'repeatable read'),
+                     ('tempo_writer', 'off', 'repeatable read'),
+                     ('tempo_writer', 'on', 'read committed')):
+        with pytest.raises(InventoryHold):
+            read_seed_donor_page(FakeReader(identity), candidate_card_ids=('card',))
+
+
+def test_packaged_seed_import_without_tooling(tmp_path):
+    """Emulate backend's copied package roots, excluding database/tooling."""
+    import os
+    from pathlib import Path
+    import shutil
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[3]
+    shutil.copytree(root / 'database/tempo_legacy_database', tmp_path / 'tempo_legacy_database',
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    roots = [tmp_path, root / 'backend']
+    for group in ('packages', 'contracts', 'services'):
+        roots.extend(sorted((root / group).glob('*/src')))
+        roots.extend(sorted((root / group).glob('*/*/src')))
+    code = '''import importlib.util, sys
+sys.path[:0] = %s
+assert importlib.util.find_spec('tooling') is None
+from tempo_legacy_database.adapters.study.position_seed import (
+    seed_shadow_page, verify_seed_receipts_page, scan_legacy_id_page, preview_seed_page)
+from tempo_legacy_database.adapters.study.position_seed_inventory import (
+    DonorFact, InventoryRequest, SourceFacts, read_seed_donor_page, read_card_page)
+from tempo_legacy_database.adapters.study.position_seed_donors import select_donors
+assert all(callable(x) for x in (seed_shadow_page, verify_seed_receipts_page,
+    scan_legacy_id_page, preview_seed_page, read_seed_donor_page, read_card_page, select_donors))
+assert 'tooling' not in sys.modules
+''' % repr([str(path) for path in roots])
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+    subprocess.run([sys.executable, '-I', '-c', code], cwd=tmp_path, env=env,
+                   check=True, capture_output=True, text=True)
