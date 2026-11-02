@@ -325,7 +325,7 @@ def read_clean_presentation_proof(database, attempt_id, *, lock=False):
                 or row["review_id"] is None or row["review_id"] != row["receipt_review"]
                 or row["outcome"] != "correct" or row["guided"]
                 or row["source_kind"] not in ("study", "position_study")
-                or (row["source_kind"] == "position_study" and row["source_ref"] != attempt_id)
+                or (row["source_kind"] == "position_study" and row["source_ref"] != f"attempt:{attempt_id}")
                 or row["invalidated_at"] is not None
                 or (row["card_id"], row["card_revision"], row["queue_entry_id"], row["repertoire_id"])
                     != (plan.original_card_id, plan.original_card_revision, plan.queue_entry_id, plan.target.key.repertoire_id)

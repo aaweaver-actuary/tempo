@@ -147,7 +147,7 @@ def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monke
         state='complete', contiguous_sequence=7, terminal_json={'state': 'complete', 'final_sequence': 7},
         review_id=51, retired_operation_id=None, receipt_card=plan.original_card_id,
         receipt_queue=plan.queue_entry_id, receipt_review=51, outcome='correct', guided=0,
-        review_card=plan.original_card_id, source_kind='position_study', source_ref=plan.attempt_id,
+        review_card=plan.original_card_id, source_kind='position_study', source_ref=f'attempt:{plan.attempt_id}',
         invalidated_at=None)
     receipts = []
     for index, slot in enumerate(plan.decision_slots):
@@ -169,7 +169,7 @@ def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monke
     assert proof.attempt_id == plan.attempt_id and len(proof.first_responses) == len(plan.decision_slots)
     done['source_ref'] = 'different-attempt'
     assert read_clean_presentation_proof(db, plan.attempt_id).reason == 'position_prior_completion_unavailable'
-    done['source_ref'] = plan.attempt_id
+    done['source_ref'] = f'attempt:{plan.attempt_id}'
     done['invalidated_at'] = 'later'
     assert read_clean_presentation_proof(db, plan.attempt_id).reason == 'position_prior_completion_unavailable'
     done['invalidated_at'] = None
