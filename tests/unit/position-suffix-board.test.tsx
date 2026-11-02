@@ -10,6 +10,7 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import * as journal from "../../app/lib/opening-evidence-journal";
+import { pendingReviews } from "../../app/lib/review-outbox";
 import { studyIntentStore } from "../../database/browser/study-intent-storage";
 
 vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
@@ -53,6 +54,9 @@ function issuedCard({ moves = italian, start = 2, color = "white", id = "italian
 
 beforeEach(() => {
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  Object.defineProperty(navigator, "locks", { configurable: true, value: {
+    request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => callback({}),
+  } });
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("requestIdleCallback", vi.fn(() => 1));
   vi.stubGlobal("cancelIdleCallback", vi.fn());
@@ -95,6 +99,39 @@ describe("issued position suffix browser consumer", () => {
     expect(screen.getByText("Nf3")).toBeTruthy();
   });
 
+  it("a London transposition displays the frozen alternative route without changing original identity", () => {
+    const firstOrder = ["d2d4", "d7d5", "g1f3", "g8f6", "c1f4", "e7e6", "e2e3"];
+    const alternative = ["g1f3", "d7d5", "d2d4", "g8f6", "c1f4", "e7e6", "e2e3"];
+    const physical = issuedCard({ moves: firstOrder, start: 4, id: "london" });
+    const issued = issuedCard({ moves: alternative, start: 2, id: "london" });
+    const raw = { ...physical, position_presentation: issued.position_presentation, opening_decision_manifest: issued.opening_decision_manifest };
+    const card = mapQueueCardToPracticeCard(raw);
+    expect(card.positionStudyHold).toBeUndefined();
+    expect(card.moves).toEqual(["d4", "Nf6", "Bf4", "e6", "e3"]);
+    expect(card.startingFen).toBe(issued.position_presentation.starting_fen);
+    expect(card.backendId).toBe("london");
+    expect(card.positionPresentation?.route_id).toBe("authored-route");
+    expect(mapQueueCardToPracticeCard(JSON.parse(JSON.stringify(raw))).positionPresentation).toEqual(card.positionPresentation);
+  });
+
+  it("phone controls and keyboard history stay within the issued suffix", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const card = mapQueueCardToPracticeCard(issuedCard({ color: "black" }));
+    useTrainingStore.getState().initializeCardState(card);
+    render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={vi.fn()} cardsLeft={1} card={card}
+      boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn()} handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} useSharedBoard />);
+    expect(screen.getByLabelText("Study actions")).toBeTruthy();
+    const liveFen = useTrainingStore.getState().currentFenString;
+    act(() => useBoardShellStore.getState().board.keyboard?.start?.());
+    expect(useBoardShellStore.getState().board.fen).toBe(card.startingFen);
+    expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
+    expect(useTrainingStore.getState().currentFenString).toBe(liveFen);
+    act(() => useBoardShellStore.getState().board.keyboard?.reset?.());
+    expect(useBoardShellStore.getState().board.fen).toBe(liveFen);
+    expect(useBoardShellStore.getState().board.orientation).toBe("black");
+    expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
+  });
+
   it("reload keeps the exact issued suffix and immutable identity; a changed plan fences stale callbacks", () => {
     const raw = issuedCard();
     const first = mapQueueCardToPracticeCard(raw);
@@ -108,6 +145,13 @@ describe("issued position suffix browser consumer", () => {
     expect(reloaded.positionPresentation).toEqual(first.positionPresentation);
     const replacement = mapQueueCardToPracticeCard({ ...raw, position_presentation: { ...raw.position_presentation, plan_id: "b".repeat(64), attempt_id: "replacement" } });
     expect(attemptEntryKey(replacement)).not.toBe(attemptEntryKey(first));
+    const token = useTrainingStore.getState().attempt;
+    useTrainingStore.getState().hydrateLocalQueue([replacement], true);
+    useTrainingStore.getState().setAttemptPhase("complete", token);
+    expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
+    expect(useTrainingStore.getState().attempt.attemptId).toBe("replacement");
+    useTrainingStore.getState().hydrateLocalQueue([], true);
+    expect(useTrainingStore.getState().attempt.phase).toBe("complete");
   });
 
   it.each(["missing", "held", "identity", "illegal", "slot", "manifest"])("holds %s plans without falling back to the physical full line", kind => {
@@ -143,13 +187,54 @@ describe("issued position suffix browser consumer", () => {
     expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
   });
 
+  it("Restart retains the original real first response and correction in one issued journal", async () => {
+    const card = mapQueueCardToPracticeCard(issuedCard({ entry: 72 }));
+    useTrainingStore.getState().initializeCardState(card);
+    const id = card.positionPresentation!.attempt_id;
+    expect(await journal.preparePositionOpeningAttempt(card)).toBeUndefined();
+    const capture = journal.beginOpeningAttempt(card, id)!;
+    capture.response(0, "b1c3", "wrong");
+    useTrainingStore.getState().setAttemptFailed(true);
+    useTrainingStore.getState().resetTrainingLine(card);
+    const resumed = journal.beginOpeningAttempt(card, id)!;
+    expect(resumed).toBe(capture);
+    expect(resumed.terminal).toBeNull();
+    resumed.assistance(0, "guided");
+    resumed.response(0, "g1f3", "expected");
+    expect(resumed.snapshot().events.map(event => event.kind)).toEqual(["first_response", "assistance", "correction"]);
+    expect(resumed.snapshot().events[0]).toMatchObject({ response_uci: "b1c3", disposition: "wrong" });
+    expect(useTrainingStore.getState().attempt.attemptId).toBe(id);
+    expect(journal.completeOpeningAttempt(id)?.events.filter(event => event.kind === "first_response")).toHaveLength(1);
+  });
+
+  it("actual Home completion retains the issued identity and only displayed evidence in the position review packet", async () => {
+    const card = mapQueueCardToPracticeCard(issuedCard({ entry: 73, start: 4 }));
+    vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); return "installed"; });
+    render(<Home />);
+    await waitFor(() => expect(useBoardShellStore.getState().board.interactionMode).toBe("legal"));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(73);
+    await act(async () => useBoardShellStore.getState().board.onMove?.("f1", "c4"));
+    await waitFor(() => expect(pendingReviews()).toHaveLength(1));
+    const packet = pendingReviews()[0];
+    expect(packet).toMatchObject({ positionStudy: true, backendId: "italian", queueEntryId: 73,
+      expectedRevision: 3, attemptId: "issued-attempt-73", outcome: "correct", guided: false });
+    expect(packet.openingEvidenceCompletion?.manifest).toEqual(card.openingDecisionManifest);
+    expect(packet.openingEvidenceCompletion?.events).toMatchObject([{ kind: "first_response", decision_index: 0,
+      response_uci: "f1c4", disposition: "expected" }]);
+    expect(packet.openingEvidenceCompletion?.events).toHaveLength(1);
+    expect(packet.openingEvidenceCompletion?.terminal?.state).toBe("complete");
+    expect(card.positionPresentation?.plan_id).toBe("a".repeat(64));
+  });
+
   it("actual Home records only displayed learner offsets and retains wrong/hint/guided correction without physical failure writes", async () => {
     const card = mapQueueCardToPracticeCard(issuedCard());
     const response = vi.fn(), assistance = vi.fn(), manualFailure = vi.fn();
-    vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response, assistance, manualFailure } as unknown as journal.OpeningAttemptJournal);
+    vi.spyOn(journal, "preparePositionOpeningAttempt").mockResolvedValue(undefined);
+    vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response, assistance, manualFailure, snapshot: () => ({ events: [] }) } as unknown as journal.OpeningAttemptJournal);
     vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); return "installed"; });
     render(<Home />);
     await waitFor(() => expect(useTrainingStore.getState().getCard().positionPresentation?.attempt_id).toBe("issued-attempt-42"));
+    await waitFor(() => expect(useBoardShellStore.getState().board.interactionMode).toBe("legal"));
     expect(useBoardShellStore.getState().board.expectedSan).toBe("Nf3");
     await act(async () => useBoardShellStore.getState().board.onMove?.("g1", "g4"));
     expect(response).toHaveBeenCalledWith(0, "g1g4", "illegal");

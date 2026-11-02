@@ -84,7 +84,7 @@ import {
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
-import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt } from "../lib/opening-evidence-journal";
+import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt, preparePositionOpeningAttempt } from "../lib/opening-evidence-journal";
 import { useOpeningEvidenceRecovery } from "../hooks/use-opening-evidence-recovery";
 import type { AssistanceKind } from "../domain/opening-evidence";
 import { useShallow } from "zustand/react/shallow";
@@ -282,7 +282,41 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   );
   const activeQueueEntry = useRef<number | undefined>(undefined);
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
-  const positionUnavailable = positionStudyUnavailable(card, offlineQueue || !browserOnline);
+  const positionMetadataUnavailable = positionStudyUnavailable(card, offlineQueue || !browserOnline);
+  const positionCaptureKey = card.positionPresentation
+    ? `${card.positionPresentation.plan_id}:${card.positionPresentation.attempt_id}` : "";
+  const [positionCapture, setPositionCapture] = useState<{ key: string; hold?: string }>();
+  const positionUnavailable = positionMetadataUnavailable ?? (card.positionStudyMode === "position"
+    ? positionCapture?.key !== positionCaptureKey ? "Preparing the issued position attempt…" : positionCapture.hold
+    : undefined);
+  useEffect(() => {
+    if (card.positionStudyMode !== "position" || positionMetadataUnavailable) return;
+    let active = true;
+    const id = card.positionPresentation?.attempt_id;
+    void preparePositionOpeningAttempt(card).then(hold => {
+      if (!active) return;
+      if (!hold) {
+        const capture = beginOpeningAttempt(card, id, { studyTimezone: card.openingEvidenceStudyTimezone });
+        if (!capture) hold = "The issued position attempt could not be restored. Refresh training.";
+        else {
+          const events = capture.snapshot().events;
+          if (events.some(event => event.kind === "manual_failure" ||
+              event.kind === "first_response" && ["wrong", "illegal"].includes(event.disposition ?? ""))) {
+            setAttemptFailed(true);
+            setShowHint(true);
+            setFailureFen(useTrainingStore.getState().currentFenString);
+          }
+          if (events.some(event => event.kind === "assistance" || event.kind === "manual_failure"))
+            setAssistedThisAttempt(true);
+        }
+      }
+      setPositionCapture({ key: positionCaptureKey, hold });
+    }).catch(error => {
+      if (active) setPositionCapture({ key: positionCaptureKey,
+        hold: `The issued position attempt could not be restored. ${String(error)}` });
+    });
+    return () => { active = false; };
+  }, [card, positionCaptureKey, positionMetadataUnavailable, setAttemptFailed, setShowHint, setFailureFen, setAssistedThisAttempt]);
   const openingJournal = useCommittedCallback(() => card.kind !== "opening" || positionUnavailable ? undefined : beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
     { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
   const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
@@ -1131,6 +1165,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
             const completion = completeOpeningAttempt(attemptId);
             submittedAttemptId = await enqueuePendingReview({
               attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
+              positionStudy: card.positionStudyMode === "position" ? true : undefined,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               expectedRevision: card.revision,
@@ -1284,6 +1319,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
         await enqueuePendingReview({
           attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
+          positionStudy: card.positionStudyMode === "position" ? true : undefined,
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           expectedRevision: card.revision,

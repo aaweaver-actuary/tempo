@@ -438,7 +438,10 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   resetTrainingLine: (
     nextCard = get().practiceCards[get().activeCardIndex] ?? demoCards[0],
   ) => {
-    partialOpeningAttempt(get().attempt.attemptId);
+    // Restarting one issued position plan remains the same human attempt:
+    // preserve its first responses and failure journal through guided replay.
+    if (nextCard.positionStudyMode !== "position" || get().attempt.entryKey !== attemptEntryKey(nextCard))
+      partialOpeningAttempt(get().attempt.attemptId);
     const start = initialTrainingState(nextCard);
     set({
       currentFenString: start.fen,

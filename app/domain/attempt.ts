@@ -23,8 +23,8 @@ export function attemptEntryKey(card: PracticeCard): string {
 }
 
 /** Position attempts use the server's frozen identity through reload/restart. */
-export function trainingAttemptId(card: PracticeCard): string {
-  return card.positionPresentation?.attempt_id ?? crypto.randomUUID();
+export function trainingAttemptId(card: PracticeCard | undefined): string {
+  return card?.positionPresentation?.attempt_id ?? crypto.randomUUID();
 }
 
 export function positionStudyUnavailable(card: PracticeCard, offline = false): string | undefined {
