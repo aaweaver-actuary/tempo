@@ -147,6 +147,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 CREATE TABLE review_attempt_receipts(attempt_id text)""")
             ddl = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
             raw.execute(ddl.read_text())
+            feedback_ddl = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations/051_study_game_feedback.sql'
+            raw.execute(feedback_ddl.read_text())
             moves = json.dumps(['e2e4','e7e5','g1f3'])
             raw.execute("INSERT INTO legacy_learning_identity VALUES(1,'fixture')")
             raw.execute("INSERT INTO repertoires VALUES('r','Synthetic',7,0,'[]')")
