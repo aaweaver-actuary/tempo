@@ -310,7 +310,7 @@ def read_clean_presentation_proof(database, attempt_id, *, lock=False):
     row = database.execute_native("""SELECT a.card_id,a.card_revision,a.queue_entry_id,a.repertoire_id,
         a.state,a.contiguous_sequence,a.terminal_json,a.review_id,a.retired_operation_id,
         receipt.card_id receipt_card,receipt.queue_entry_id receipt_queue,receipt.review_id receipt_review,
-        receipt.outcome,receipt.guided,r.card_id review_card,r.source_kind,r.invalidated_at
+        receipt.outcome,receipt.guided,r.card_id review_card,r.source_kind,r.source_ref,r.invalidated_at
         FROM opening_evidence_attempts a JOIN review_attempt_receipts receipt ON receipt.attempt_id=a.attempt_id
         JOIN reviews r ON r.id=receipt.review_id WHERE a.attempt_id=%s""" +
         (" FOR SHARE OF a,receipt,r SKIP LOCKED" if lock else ""), (attempt_id,)).fetchone()
@@ -324,7 +324,9 @@ def read_clean_presentation_proof(database, attempt_id, *, lock=False):
                 or terminal["final_sequence"] != row["contiguous_sequence"]
                 or row["review_id"] is None or row["review_id"] != row["receipt_review"]
                 or row["outcome"] != "correct" or row["guided"]
-                or row["source_kind"] != "study" or row["invalidated_at"] is not None
+                or row["source_kind"] not in ("study", "position_study")
+                or (row["source_kind"] == "position_study" and row["source_ref"] != attempt_id)
+                or row["invalidated_at"] is not None
                 or (row["card_id"], row["card_revision"], row["queue_entry_id"], row["repertoire_id"])
                     != (plan.original_card_id, plan.original_card_revision, plan.queue_entry_id, plan.target.key.repertoire_id)
                 or (row["receipt_card"], row["receipt_queue"], row["review_card"])

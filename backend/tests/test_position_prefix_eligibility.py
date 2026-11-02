@@ -1,5 +1,6 @@
 """Pure whole-clean prefix proof regressions for Position Study."""
 from datetime import date
+from dataclasses import replace
 
 import chess
 import pytest
@@ -86,6 +87,21 @@ def test_full_clean_italian_prefix_proof_is_order_independent(reverse: bool) -> 
     assert eligibility.first_uncovered_decision == selected.decisions[2]
     assert eligibility.target_is_clean is False
     assert eligibility.all_decisions_covered is False
+
+
+def test_clean_prefix_accepts_authorized_full_fen_en_passant_spelling() -> None:
+    bishop, c3 = _italian_routes()
+    proof = _proof(bishop)
+    board = chess.Board()
+    full_fens = {}
+    for ply, uci in enumerate(proof.moves_uci):
+        if board.turn == chess.WHITE:
+            full_fens[ply] = board.fen(en_passant="fen")
+        board.push_uci(uci)
+    assert " e6 " in full_fens[2]
+    proof = replace(proof, attempt_decisions=tuple(
+        replace(decision, fen=full_fens[decision.ply]) for decision in proof.attempt_decisions))
+    assert verify_clean_prefix(c3, proof, target_ply=4, study_day=DAY, owner_epoch=EPOCH) is not None
 
 
 def test_fully_covered_target_is_explicit_and_has_no_uncovered_decision() -> None:

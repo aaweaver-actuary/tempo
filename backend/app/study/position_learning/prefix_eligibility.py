@@ -158,7 +158,11 @@ def verify_clean_prefix(
     for ply, uci in enumerate(proof.moves_uci):
         if board.turn == learner_turn:
             decision = decision_by_ply.get(ply)
-            if (decision is None or decision.fen != board.fen()
+            try:
+                decision_fen = chess.Board(decision.fen).fen() if decision is not None else None
+            except ValueError:
+                return None
+            if (decision is None or decision_fen != board.fen()
                     or decision.definition.key.position != opening_position_key(board.fen())):
                 return None
         elif ply in decision_by_ply:
@@ -194,8 +198,12 @@ def verify_clean_prefix(
         if ply >= shared:
             continue
         selected = route_decisions.get(ply)
-        if (selected is None or selected.definition != decision.definition
-                or selected.fen != decision.fen):
+        if selected is None or selected.definition != decision.definition:
+            return None
+        try:
+            if chess.Board(selected.fen).fen() != chess.Board(decision.fen).fen():
+                return None
+        except ValueError:
             return None
 
     through_target = tuple(d for d in route.decisions if d.ply <= target_ply)
