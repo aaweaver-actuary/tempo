@@ -4,7 +4,7 @@ import json
 import pytest
 
 from app.repertoire import build_index
-from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 from tempo_evidence_math.position_learning import SourceCertificate
 from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
 from tooling.position_study_inventory import InventoryRequest, SourceFacts
@@ -18,8 +18,8 @@ def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
     membership = prepared.snapshot.membership
     certificate = SourceCertificate(membership.snapshot_id, membership.source_revision,
                                     membership.digest, True, True)
-    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
-        prepared.snapshot, build_index(prepared.snapshot), source_certificate=certificate)),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
+        prepared.snapshot, source_certificate=certificate)),), ())
     first = preview_seed_page(prepared, request, limit=1)
     assert first == preview_seed_page(prepared, request, limit=1)
     assert first.decisions and all(item.hold for item in first.decisions)
@@ -31,8 +31,8 @@ def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
 def test_preview_refuses_unprepared_or_unbounded_requests(monkeypatch):
     db = setup(monkeypatch)
     prepared = owner.prepare_position_source(db, "rep")
-    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
-        prepared.snapshot, build_index(prepared.snapshot), source_certificate=None)),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
+        prepared.snapshot, source_certificate=None)),), ())
     with pytest.raises(ValueError, match="prepared_position_source_required"):
         preview_seed_page(object(), request)
     with pytest.raises(ValueError, match="invalid_page_limit"):
@@ -69,8 +69,8 @@ def test_writer_holds_when_namespace_guard_unavailable(monkeypatch):
         pytest.skip('installed namespace guard is tested with native PostgreSQL')
     db = setup(monkeypatch)
     prepared = owner.prepare_position_source(db, 'rep')
-    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
-        prepared.snapshot, build_index(prepared.snapshot), source_certificate=None)),), ())
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
+        prepared.snapshot, source_certificate=None)),), ())
     before = list(db.calls)
     with pytest.raises(ValueError, match='position_namespace_guard_unavailable'):
         seed_shadow_page(db, prepared, request, epoch='e', now=datetime.now(timezone.utc))
@@ -101,8 +101,8 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
                        'due': '2026-11-03T00:00:00+00:00', 'last_review': None})
     fact = DonorFact('physical', 'rep', 4, 'learning', '2026-11-03', blob,
                      '2026-10-20T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
-    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_validated_index(
-        prepared.snapshot, build_index(prepared.snapshot), source_certificate=cert)),), (fact,))
+    request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
+        prepared.snapshot, source_certificate=cert)),), (fact,))
     # Only this test replaces external authority/guard; SQL, savepoints,
     # sequence, receipts and state are real PostgreSQL operations.
     monkeypatch.setattr(owner, 'fence_position_source', lambda db, source: None)

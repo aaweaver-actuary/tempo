@@ -72,6 +72,21 @@ class PositionInventoryFacts:
     physical_reference_count: int
 
 
+def inventory_from_snapshot(
+    snapshot: RepertoireSnapshot, *, source_certificate: SourceCertificate | None,
+) -> PositionInventoryFacts | Hold:
+    """Project public owner snapshot facts without exposing the private graph.
+
+    The certificate must still come from the source owner; this pure projection
+    does not create source authority or replace the writer's currentness fence.
+    """
+    try:
+        index = build_index(snapshot)
+    except (ValueError, TypeError) as exc:
+        return Hold("authored_source_invalid", str(exc))
+    return inventory_from_validated_index(snapshot, index, source_certificate=source_certificate)
+
+
 def inventory_from_validated_index(
     snapshot: RepertoireSnapshot, index: PositionIndex, *, source_certificate: SourceCertificate | None,
 ) -> PositionInventoryFacts | Hold:

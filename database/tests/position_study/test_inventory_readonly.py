@@ -7,7 +7,7 @@ from tempo_game_review_contracts import AuthoredRoute, RepertoireSnapshot as Mem
 
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
 from app.repertoire import build_index
-from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 from tooling.position_study_inventory import (
     DonorFact, InventoryHold, InventoryRequest, SourceFacts, build_inventory, read_card_page,
 )
@@ -54,8 +54,8 @@ def card_binding(card_id, route_id="route", repertoire_id="r1", ply=0, revision=
 
 
 def source(snapshot_value, certificate=None):
-    return SourceFacts(snapshot_value, inventory_from_validated_index(
-        snapshot_value, build_index(snapshot_value), source_certificate=certificate or certificate_for(snapshot_value)))
+    return SourceFacts(snapshot_value, inventory_from_snapshot(
+        snapshot_value, source_certificate=certificate or certificate_for(snapshot_value)))
 
 
 def certificate_for(snapshot_value):
@@ -99,7 +99,7 @@ def test_arbitrary_and_stale_certificates_hold():
     arbitrary = SourceFacts(value, object())
     stale = SourceCertificate("other", "source-1", "a" * 64, True, True)
     invalid_result = build_inventory(InventoryRequest((arbitrary,), ()))
-    stale_result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, index, source_certificate=stale)),), ()))
+    stale_result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_snapshot(value, source_certificate=stale)),), ()))
     assert invalid_result["repertoires"][0]["source_hold"] == "authored_route_certificate_unavailable"
     assert stale_result["repertoires"][0]["source_hold"] == "source_certificate_mismatch"
     assert invalid_result["repertoires"][0]["distinct_exact_positions"] == 0
@@ -109,7 +109,7 @@ def test_arbitrary_and_stale_certificates_hold():
 def test_stale_generation_source_is_held_and_omitted_from_counts():
     value = snapshot(authored("stale-route"))
     cert = SourceCertificate("snapshot", "stale-generation", "a" * 64, True, True)
-    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, build_index(value), source_certificate=cert)),), ()))
+    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_snapshot(value, source_certificate=cert)),), ()))
     repertoire = result["repertoires"][0]
     assert repertoire["source_status"] == "held"
     assert repertoire["source_hold"] == "source_certificate_mismatch"
@@ -121,7 +121,7 @@ def test_ambiguous_physical_mapping_is_eligible_but_source_fault_holds():
         card_binding("one", "a"), card_binding("two", "a")))
     index = build_index(value)
     assert not index.complete
-    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_validated_index(value, index, source_certificate=certificate_for(value))),), ()))
+    result = build_inventory(InventoryRequest((SourceFacts(value, inventory_from_snapshot(value, source_certificate=certificate_for(value))),), ()))
     repertoire = result["repertoires"][0]
     assert repertoire["source_status"] == "source_facts_only"
     assert repertoire["distinct_exact_positions"] == 1

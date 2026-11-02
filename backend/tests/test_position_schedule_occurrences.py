@@ -9,7 +9,7 @@ from tempo_evidence_math import opening_position_key
 from app.repertoire.position_index import build_index
 from app.repertoire.interfaces.position_schedule_occurrences import (
     index_routes, options_for_target, routes_from_validated_index,
-    inventory_from_validated_index, PositionInventoryFacts,
+    inventory_from_snapshot, PositionInventoryFacts,
 )
 from test_product_position_index import binding, route, snapshot
 
@@ -23,7 +23,7 @@ def project(source, certificate=True):
 def inventory(source, certificate=True):
     member = source.membership
     proof = SourceCertificate(member.snapshot_id, member.source_revision, member.digest, True, True) if certificate else None
-    return inventory_from_validated_index(source, build_index(source), source_certificate=proof)
+    return inventory_from_snapshot(source, source_certificate=proof)
 
 
 @pytest.mark.parametrize("count", [1, 2, 100])

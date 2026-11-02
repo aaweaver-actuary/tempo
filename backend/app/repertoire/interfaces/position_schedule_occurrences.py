@@ -6,7 +6,7 @@ from ..position_schedule_occurrences import (
     PositionRouteOccurrence,
     PositionSourceScopes,
     index_routes,
-    inventory_from_validated_index,
+    inventory_from_snapshot,
     options_for_target,
     routes_from_validated_index,
 )
@@ -18,7 +18,7 @@ __all__ = [
     "PositionRouteOccurrence",
     "PositionSourceScopes",
     "index_routes",
-    "inventory_from_validated_index",
+    "inventory_from_snapshot",
     "options_for_target",
     "routes_from_validated_index",
 ]

@@ -11,7 +11,7 @@ from app.contracts.product_v02.repertoire import (
     RouteBoundary,
 )
 from app.repertoire import build_index
-from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_validated_index
+from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 from tooling.position_study_donors import select_donors
 from tooling.position_study_inventory import DonorFact, InventoryRequest, SourceFacts
 
@@ -61,8 +61,8 @@ def _source(snapshot, certificate=None):
     membership = snapshot.membership
     certificate = certificate or SourceCertificate(
         membership.snapshot_id, membership.source_revision, membership.digest, True, True)
-    return SourceFacts(snapshot, inventory_from_validated_index(
-        snapshot, build_index(snapshot), source_certificate=certificate))
+    return SourceFacts(snapshot, inventory_from_snapshot(
+        snapshot, source_certificate=certificate))
 
 
 def _fsrs(card_id, due="2026-11-03T00:00:00+00:00"):
