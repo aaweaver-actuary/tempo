@@ -185,3 +185,71 @@ def test_rollforward_preview_classifies_persisted_definition_without_writes(monk
     assert result['decisions'][0]['disposition'] == 'preserve_schedule'
     assert result['hold'] == 'position_rollforward_provenance_not_integrated'
     assert all(not sql.lstrip().upper().startswith(('UPDATE', 'INSERT', 'DELETE')) for sql in db.statements)
+
+
+def test_native_owner_transition_frontier_and_retry(monkeypatch):
+    """Exercise actual transaction/receipt SQL on a task-owned disposable DB."""
+    import os
+    from pathlib import Path
+    from uuid import uuid4
+    import psycopg
+    from psycopg import sql
+    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+
+    dsn = os.environ.get('TEMPO_POSITION_TEST_DSN')
+    if not dsn:
+        pytest.skip('requires task-owned disposable TEMPO_POSITION_TEST_DSN')
+    migration = Path(__file__).resolve().parents[2] / 'tempo_legacy_database/ddl/migrations/057_position_study.sql'
+    schema = 'position_f4_' + uuid4().hex
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        assert admin.execute('SELECT current_database()').fetchone()[0].startswith('tempo_position_test_')
+        admin.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        try:
+            admin.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+            admin.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
+            admin.execute('CREATE TABLE cards(id text PRIMARY KEY, repertoire_id text, fsrs_card_json text)')
+            admin.execute('CREATE TABLE repertoire_cards(repertoire_id text,card_id text)')
+            admin.execute('''CREATE TABLE queue_attempt_origins(queue_entry_id bigint,card_id text,revision bigint,
+                issued_as_head bigint,content_type text,last_status text,review_result_json text,admission_repertoire_id text)''')
+            admin.execute('''CREATE TABLE operation_receipts(operation_id text PRIMARY KEY,command_name text NOT NULL,
+                request_hash text NOT NULL,state text NOT NULL,response_json text)''')
+            admin.execute(migration.read_text())
+            admin.execute("INSERT INTO study_position_epochs VALUES ('rep','epoch','source',now())")
+            admin.execute("INSERT INTO study_position_owners VALUES ('rep','epoch','inactive',now())")
+            admin.execute("INSERT INTO cards(id,repertoire_id) VALUES ('card','rep')")
+            admin.execute("INSERT INTO queue_attempt_origins VALUES (1,'card',1,1,'opening','queued',NULL,'rep')")
+            class Borrowed:
+                read_only = False
+                def __init__(self, raw): self.raw = raw
+                def execute_native(self, statement, params=()): return self.raw.execute(statement, params)
+            def lock(db, source, **kwargs):
+                row = db.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                    (operator.owner_lock_key('rep'),)).fetchone()
+                if not row[0]: raise operator.OperatorHold('position_owner_busy')
+                return 'rep'
+            monkeypatch.setattr(operator, '_lock', lock)
+            monkeypatch.setattr(operator, 'preflight_in_writer', lambda *a, **kw: {})
+            monkeypatch.setattr(operator, 'validate_release_evidence', lambda *a, **kw: {'target': 'test'})
+            prepared = SimpleNamespace(authored_token=SimpleNamespace(authored_digest='source'))
+            release = dict(registration={}, deployment={}, guard={}, qualification={}, revision='r', target='t')
+            def transition(db, action, operation):
+                return operator.transition_in_writer(db, prepared, None, action=action, epoch='epoch',
+                    operation_id=operation, now=datetime.now(timezone.utc), release=release if action != 'pause' else None)
+            with psycopg.connect(dsn, row_factory=tempo_row_factory) as conn:
+                conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+                db = Borrowed(conn)
+                with pytest.raises(operator.OperatorHold, match='old_issued'):
+                    transition(db, 'stage', 'stage-op')
+                assert conn.execute('SELECT count(*) FROM operation_receipts').fetchone()[0] == 0
+                conn.execute("UPDATE queue_attempt_origins SET last_status='complete',review_result_json='{}'")
+                assert transition(db, 'stage', 'stage-op')['mode'] == 'staged'
+                assert transition(db, 'stage', 'stage-op')['mode'] == 'staged'
+                assert transition(db, 'activate', 'activate-op')['mode'] == 'active'
+                assert transition(db, 'pause', 'pause-op')['mode'] == 'paused'
+                conn.rollback()
+                conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+                assert conn.execute('SELECT mode FROM study_position_owners').fetchone()[0] == 'inactive'
+                assert conn.execute('SELECT count(*) FROM operation_receipts').fetchone()[0] == 0
+        finally:
+            admin.execute('SET search_path TO public')
+            admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
