@@ -131,6 +131,14 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
                 assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'preflight'
                 conn.commit()
                 conn.execute('BEGIN')
+                from dataclasses import replace
+                bad = replace(fact, fsrs_card_json='{}')
+                bad_request = InventoryRequest(request.sources, (bad,))
+                conn.execute("UPDATE cards SET fsrs_card_json='{}' WHERE id='physical'")
+                bad_result = seed_shadow_page(db, prepared, bad_request, epoch='e', now=now, page_size=1)
+                assert bad_result['held'] == 1 and bad_result['seeded'] == 0
+                conn.rollback()
+                conn.execute('BEGIN')
                 from tempo_evidence_math.position_learning import Hold
                 monkeypatch.setattr(owner, 'fence_position_source', lambda db, source: Hold('source_changed'))
                 with pytest.raises(ValueError, match='source_changed'):
