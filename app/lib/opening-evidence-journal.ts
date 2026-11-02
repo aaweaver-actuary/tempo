@@ -149,7 +149,7 @@ export function preparePositionOpeningAttempt(card: PracticeCard): Promise<strin
   const attemptId = position.positionPresentation?.attempt_id;
   if (position.positionStudyMode !== "position" || position.positionStudyHold || !attemptId)
     return Promise.resolve("The issued position attempt is unavailable.");
-  if (captures.has(attemptId) && releaseLeases.has(attemptId)) return Promise.resolve(undefined);
+  if (releaseLeases.has(attemptId)) return Promise.resolve(undefined);
   const existing = positionReservations.get(attemptId);
   if (existing) return existing;
   if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks || typeof localStorage === "undefined")
