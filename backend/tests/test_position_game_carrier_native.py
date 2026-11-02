@@ -7,12 +7,15 @@ producer source qualification. No review, grade, effect, or completion is forged
 """
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 
 import pytest
 
 
 def test_native_transposition_again_alias_issuance_and_settlement(monkeypatch):
+    if not os.environ.get('TEMPO_POSITION_N2_DSN'):
+        pytest.skip('requires explicit empty task-owned TEMPO_POSITION_N2_DSN')
     import chess
     import psycopg
     from test_product_game_lapse import fixture, qualification_for
