@@ -231,7 +231,10 @@ def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
         row = storage.presentation_context(database, (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id))
         snapshot = dict(row) if row else None
         source_attempt, source_events = _read_checkpoint_source(database, request.attempt_id)
-        position_preparation = prepare_position_checkpoint(database, request)
+        try:
+            position_preparation = prepare_position_checkpoint(database, request)
+        except EvidenceConflict as error:
+            raise evidence_error(str(error)) from error
     try:
         if snapshot is None:
             raise EvidenceConflict("The original opening presentation and repertoire scope cannot be proven")

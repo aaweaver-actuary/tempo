@@ -202,3 +202,18 @@ def test_public_preparation_and_owner_fence_bind_writer(monkeypatch):
         evidence.commit_position_checkpoint(DB(), fence, [])
     with pytest.raises(evidence.EvidenceConflict):
         evidence.begin_position_checkpoint(db, NS())
+
+
+def test_completion_replay_skips_stale_source_but_new_grade_holds():
+    from tempo_evidence_math.position_learning import Hold
+    frozen = plan()
+    payload = event(actual_uci='e2e4')
+    row = {'event_id': payload['event_id'], 'attempt_id': payload['attempt_id'],
+           'payload_json': payload, 'payload_digest': evidence._position_digest(payload)}
+    prep = evidence.PositionCheckpointPreparation(None, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL)
+    db = object()
+    fence = evidence.PositionCheckpointFence(prep, db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL)
+    accepted = [{'receipt':row, 'grade_receipt':{'grade':'good'}}]
+    evidence.fence_position_completion(db, fence, accepted)
+    with pytest.raises(evidence.EvidenceConflict, match='source_changed'):
+        evidence.fence_position_completion(db, fence, [{'receipt':row, 'grade_receipt':None}])
