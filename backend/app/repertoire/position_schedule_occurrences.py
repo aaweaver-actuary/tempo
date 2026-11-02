@@ -44,7 +44,7 @@ class PhysicalBindingFact:
 
     decision_id: str
     card_id: str
-    card_revision: str
+    card_revision: int
     available: bool
     route_id: str | None
     route_ply: int | None

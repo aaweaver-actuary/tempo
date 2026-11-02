@@ -92,7 +92,11 @@ def test_inventory_projects_exact_occurrences_and_counts_repeated_aliases():
     assert [(item.route_id, item.route_ply) for item in start.occurrences] == [("a", 0), ("a", 4), ("b", 0)]
     assert facts.distinct_route_count == 2
     assert facts.route_occurrence_count == 4
-    assert facts.distinct_position_count == 3
+    assert facts.distinct_position_count == 2
+    assert [(item.route_id, item.route_ply) for item in next(
+        row for row in facts.positions if row.definition.key.position == opening_position_key(chess.STARTING_FEN)
+    ).occurrences] == [("a", 0), ("a", 4), ("b", 0)]
+    assert sorted(item.route_ply for row in facts.positions for item in row.occurrences) == [0, 0, 2, 4]
     assert facts.source_certificate is not None
     assert facts.source_scopes.repertoire_ids == ("rep",)
     assert not hasattr(facts, "index") and not hasattr(facts, "nodes")
@@ -109,7 +113,7 @@ def test_inventory_keeps_unavailable_physical_reference_as_explicit_fact():
     assert facts.physical_reference_count == 1
     assert (row.physical_bindings[0].card_id, row.physical_bindings[0].card_revision,
             row.physical_bindings[0].available, row.physical_bindings[0].route_id,
-            row.physical_bindings[0].route_ply) == ("card", "3", False, None, None)
+            row.physical_bindings[0].route_ply) == ("card", 3, False, None, None)
 
 
 def test_inventory_preserves_ambiguous_physical_refs_and_holds_source_conflicts():
