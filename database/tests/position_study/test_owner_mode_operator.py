@@ -468,3 +468,129 @@ def test_pause_plan_and_apply_do_not_prepare_current_source(monkeypatch, capsys)
         monkeypatch.setattr(sys, 'argv', ['operator', '--request-base64', wire])
         operator.main()
         assert json.loads(capsys.readouterr().out)['source_digest'] == 'stored'
+
+
+def test_native_full_source_operator_lifecycle():
+    """Real schema/source/seed/operator; synthetic release evidence only.
+
+    Requires a separately created EMPTY task-owned database named
+    tempo_position_test_n2_f4_*. The N2 migration helper rejects nonempty public.
+    This never checks or qualifies a running installation.
+    """
+    import hashlib
+    import json
+    import os
+    from datetime import timedelta
+    import chess
+    import psycopg
+    from fsrs import Card
+    from psycopg.conninfo import conninfo_to_dict
+    from tempo_evidence_math.position_learning import Hold, SourceCertificate
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
+    from tempo_legacy_database.adapters.study.position_seed_inventory import CARD_PAGE_SQL, DonorFact, InventoryRequest, SourceFacts
+    from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
+    dsn = os.environ.get('TEMPO_POSITION_F4_FULL_DSN')
+    if not dsn:
+        pytest.skip('requires dedicated empty TEMPO_POSITION_F4_FULL_DSN')
+    params = conninfo_to_dict(dsn)
+    if params.get('host') not in ('127.0.0.1', 'localhost') or not params.get('dbname', '').startswith('tempo_position_test_n2_f4_'):
+        raise RuntimeError('refusing nonlocal or non-F4 disposable database')
+    from acceptance import _migrate
+    now = datetime.now(timezone.utc)
+    day = now.date().isoformat()
+    moves = json.dumps(['e2e4', 'e7e5', 'g1f3'])
+    fsrs = Card(card_id=42, due=now - timedelta(days=1)).to_json()
+    registration = {'version': 1, 'daemonId': 'synthetic', 'context': 'test', 'project': 'test',
+                    'postgresVolumeKey': 'pg', 'volumes': {'pg': {'name': 'synthetic-volume'}}}
+    target = hashlib.sha256(json.dumps(['synthetic', ['synthetic-volume']], separators=(',', ':')).encode()).hexdigest()[:24]
+    revision = 'a' * 40
+    backup = {'filename': 'synthetic.dump', 'verified': True, 'restore_created': True, 'restore_removed': True}
+    deployment = {'version': 1, 'revision': revision, 'schema': 57, 'evidence': {'commit': revision},
+                  'verified_at': 'synthetic', 'images': {'worker': 'synthetic'}, 'backup': backup}
+    def release(source, epoch):
+        qualification = {'version': 1, 'revision': revision, 'schema': 57, 'target': target,
+            'repertoire_id': 'f4', 'epoch': epoch, 'source_digest': source.authored_token.authored_digest,
+            'checks': {name: {'status': 'passed', 'evidence': 'synthetic-test-only'}
+                       for name in operator._REQUIRED_QUALIFICATIONS}}
+        return dict(registration=registration, deployment=deployment, guard=None, qualification=qualification,
+                    revision=revision, target=target, operation=None)
+    with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
+        _migrate(raw)
+        raw.execute('INSERT INTO settings(id) VALUES(1)')
+        raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('f4','F4 synthetic','fixture',%s)", (now.isoformat(),))
+        raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('f4',3,'ready',%s)", (now.isoformat(),))
+        raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('route','f4','Legal route','white',%s,%s,%s)", (chess.STARTING_FEN,moves,now.isoformat()))
+        raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
+            VALUES('card','f4','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (chess.STARTING_FEN,moves,day,fsrs,(now-timedelta(days=2)).isoformat()))
+        raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('f4','card')")
+        raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+            VALUES('f4',3,'route',0,'card',%s,%s,%s,'white')""", (chess.STARTING_FEN,chess.STARTING_FEN,moves))
+        raw.execute("""INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,checked_at,scan_completed_sources,scan_total_sources)
+            VALUES('f4','clean','idle','scan:2',%s,1,1)""", (now.isoformat(),))
+        for ident, kind, generation, payload in [('graph','opening_graph_rebuild',3,{}), ('scan','integrity_scan',2,{'repertoire_id':'f4','graph_generation':3})]:
+            raw.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
+                VALUES(%s,%s,'f4',%s,'complete',%s,%s,%s,%s)""", (ident,kind,generation,json.dumps(payload),now.isoformat(),now.isoformat(),now.isoformat()))
+        raw.commit()
+        port = PostgresConnection(raw)
+        def prepare():
+            source = prepare_position_source(port, 'f4')
+            assert not isinstance(source, Hold), source
+            member = source.snapshot.membership
+            cert = SourceCertificate(member.snapshot_id, member.source_revision, member.digest, True, True)
+            inventory = inventory_from_snapshot(source.snapshot, source_certificate=cert)
+            assert not isinstance(inventory, Hold), inventory
+            donors = []
+            for row in raw.execute(CARD_PAGE_SQL, (['card'],)).fetchall():
+                fact = dict(row)
+                fact['owner_repertoire_ids'] = tuple(fact['owner_repertoire_ids'])
+                for field in ('archived', 'pending_validation', 'integrity_blocked', 'deleted'):
+                    fact[field] = bool(fact[field])
+                donors.append(DonorFact(**fact))
+            request = InventoryRequest((SourceFacts(source.snapshot, inventory),), tuple(donors))
+            raw.commit()
+            return source, request
+        source, request = prepare()
+        for _ in range(10):
+            raw.execute('BEGIN')
+            result = seed_shadow_page(port, source, request, epoch='old', now=now, page_size=100)
+            raw.commit()
+            if result['stage'] == 'complete': break
+        assert result['stage'] == 'complete' and result['held'] == 0
+        original = [tuple(row) for row in raw.execute('''SELECT variant,position,fsrs_internal_card_id,fsrs_json,version,due_at
+            FROM study_position_states ORDER BY variant,position''').fetchall()]
+        raw.commit()
+        for action in ('stage', 'activate'):
+            raw.execute('BEGIN')
+            receipt = operator.transition_in_writer(port, source, request, action=action, epoch='old',
+                operation_id=action, now=now, release=release(source, 'old'))
+            raw.commit()
+        assert receipt['mode'] == 'active'
+        raw.execute('BEGIN')
+        paused = operator.transition_in_writer(port, None, None, action='pause', repertoire_id='f4', epoch='old',
+            operation_id='pause', now=now)
+        raw.commit()
+        assert paused['mode'] == 'paused'
+        raw.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='f4'")
+        raw.commit()
+        updated, updated_request = prepare()
+        assert updated.authored_token.authored_digest != source.authored_token.authored_digest
+        raw.execute('BEGIN')
+        rolled = operator.transition_in_writer(port, updated, updated_request, action='rollforward', epoch='old',
+            new_epoch='new', operation_id='roll', now=now, release=release(updated, 'new'))
+        raw.commit()
+        assert rolled['mode'] == 'paused'
+        payload = {'action': 'resume', 'repertoire_id': 'f4', 'epoch': 'new', 'release': release(updated, 'new')}
+        raw.execute('BEGIN')
+        assert operator.plan_in_writer(port, updated, updated_request, payload)['preflight']['rollforward_operation_id'] == 'roll'
+        raw.commit()
+        raw.execute('BEGIN')
+        resumed = operator.transition_in_writer(port, updated, updated_request, action='resume', epoch='new',
+            operation_id='resume', now=now, release=release(updated, 'new'))
+        raw.commit()
+        assert resumed['mode'] == 'active'
+        assert [tuple(row) for row in raw.execute('''SELECT variant,position,fsrs_internal_card_id,fsrs_json,version,due_at
+            FROM study_position_states ORDER BY variant,position''').fetchall()] == original
+        assert raw.execute("SELECT count(*) FROM study_position_epochs WHERE repertoire_id='f4'").fetchone()[0] == 2
+        assert raw.execute("SELECT fsrs_card_json FROM cards WHERE id='card'").fetchone()[0] == fsrs
