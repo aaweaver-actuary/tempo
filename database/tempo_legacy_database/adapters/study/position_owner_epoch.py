@@ -46,11 +46,12 @@ def _hold(reason: str, mode=None, epoch=None, digest=None) -> OwnerDecision:
     return OwnerDecision("hold", mode, epoch, digest, reason)
 
 
-def owner_mode(database, repertoire_id: str, source_epoch: str | None) -> OwnerDecision:
+def owner_mode(database, repertoire_id: str, expected_authored_digest: str | None) -> OwnerDecision:
     """Read a stable owner in the caller's transaction, holding its lock to end.
 
-    ``source_epoch`` is the original source publication digest recorded in
-    study_position_epochs.source_digest, not a card's repertoire or revision.
+    ``expected_authored_digest`` is the authored authority digest recorded in
+    study_position_epochs.source_digest. The full snapshot digest is separate
+    immutable provenance and can change with physical card bindings.
     Missing owner and inactive/shadow cohorts retain legacy scheduling. Staged
     and paused cohorts hold: seeded position history may already exist.
     """
@@ -78,9 +79,9 @@ def owner_mode(database, repertoire_id: str, source_epoch: str | None) -> OwnerD
         return _hold("position_owner_" + mode, mode, epoch, digest)
     if mode != "active":
         return _hold("position_owner_invalid_mode", mode, epoch, digest)
-    if not epoch or not digest or not source_epoch:
+    if not epoch or not digest or not expected_authored_digest:
         return _hold("position_owner_identity_missing", mode, epoch, digest)
-    if source_epoch != digest:
+    if expected_authored_digest != digest:
         return _hold("position_owner_source_changed", mode, epoch, digest)
     return OwnerDecision("position", mode, epoch, digest, "position_owner_active")
 
@@ -105,7 +106,7 @@ def fence_position_owner_in_writer(database, prepared_source: PreparedPositionSo
             or not any(occurrence.definition == definition for route in prepared_source.routes
                        for occurrence in route.decisions)):
         return _hold("position_definition_unproven")
-    decision = owner_mode(database, token.repertoire_id, token.original_source_digest)
+    decision = owner_mode(database, token.repertoire_id, token.authored_digest)
     if decision.disposition != "position":
         # This is an authorization fence, not the routing decision. Legacy
         # routing is available from owner_mode, never as a successful fence.

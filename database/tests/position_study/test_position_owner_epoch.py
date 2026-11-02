@@ -31,7 +31,7 @@ class Database:
 def source(monkeypatch):
     monkeypatch.setattr(owner, "fence_position_source", lambda db, prepared: None)
     definition = PositionDefinition(PositionKey("rep", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"), "e2e4", "v1")
-    return SimpleNamespace(authored_token=SimpleNamespace(repertoire_id="rep", original_source_digest="digest"),
+    return SimpleNamespace(authored_token=SimpleNamespace(repertoire_id="rep", authored_digest="digest", original_source_digest="full-snapshot"),
         routes=(SimpleNamespace(decisions=(SimpleNamespace(definition=definition),)),))
 
 
@@ -49,7 +49,7 @@ def test_modes_and_disabled_default(mode, disposition):
     assert owner.owner_mode(db, "rep", None).disposition == "legacy"
 
 
-def test_source_epoch_and_transaction_hold():
+def test_authored_digest_and_transaction_hold():
     db = Database()
     assert owner.owner_mode(db, "rep", None).reason == "position_owner_identity_missing"
     assert owner.owner_mode(db, "rep", "old").reason == "position_owner_source_changed"
@@ -87,6 +87,33 @@ def test_unpublished_response_is_held(source):
     definition = source.routes[0].decisions[0].definition
     other = PositionDefinition(definition.key, "d2d4", definition.policy_version)
     assert fence(db, source, definition=other).reason == "position_definition_unproven"
+
+
+def test_reprepared_physical_card_change_keeps_authored_owner(monkeypatch):
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from test_position_source_authority import setup
+
+    source_db = setup(monkeypatch)
+    original = position_study_source.prepare_position_source(source_db, "rep")
+    assert not isinstance(original, Hold)
+    source_db.facts["cards"][0]["revision"] += 1
+    changed = position_study_source.prepare_position_source(source_db, "rep")
+    assert not isinstance(changed, Hold)
+    assert changed.authored_token.original_source_digest != original.authored_token.original_source_digest
+    assert changed.authored_token.authored_digest == original.authored_token.authored_digest
+
+    db = Database()
+    db.owner["source_digest"] = original.authored_token.authored_digest
+    # Exercise the real source fence against the newly prepared authority while
+    # routing owner and origin reads to the owner fake.
+    execute_owner = db.execute_native
+    def execute(sql, args):
+        if "study_position_owners" in sql or "queue_attempt_origins" in sql:
+            return execute_owner(sql, args)
+        return source_db.execute_native(sql, args)
+    db.execute_native = execute
+    definition = changed.routes[0].decisions[0].definition
+    assert fence(db, changed, definition=definition).disposition == "position"
 
 
 def test_native_owner_lock_and_epoch_visibility():
