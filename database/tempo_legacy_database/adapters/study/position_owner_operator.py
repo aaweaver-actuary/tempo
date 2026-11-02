@@ -321,8 +321,13 @@ def main():
                 owner = database.execute_native('''SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
                     JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
                     WHERE o.repertoire_id=%s''', (rep,)).fetchone()
-                if not owner or owner['epoch'] != epoch:
+                if (not owner or owner['epoch'] != epoch or (action != 'pause'
+                        and owner['source_digest'] != prepared.authored_token.authored_digest)):
                     raise OperatorHold('position_owner_epoch_or_source_changed')
+                modes = {'stage': ('inactive', 'shadow'), 'activate': ('staged',),
+                         'resume': ('paused',), 'pause': ('active',)}
+                if action != 'rollforward' and owner['mode'] not in modes[action]:
+                    raise OperatorHold('position_owner_invalid_transition')
                 result = {'plan': True, 'action': action, 'repertoire_id': rep, 'epoch': epoch,
                           'current_mode': owner['mode'], 'source_digest': prepared.authored_token.authored_digest}
                 if action not in ('pause', 'rollforward'):
