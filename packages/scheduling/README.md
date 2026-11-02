@@ -26,3 +26,30 @@ remains unchanged. The baseline rejected non-UTC offsets; 0.2.0 accepts aware
 offsets by preserving their instant in UTC and leaving `review_day` independent.
 Fresh installed-process tests prohibit environmental APIs without replacing FSRS
 constructors, decoding, or scheduling mathematics.
+
+Position-owned cohorts use the additive public `clone_state` and
+`schedule_position_review` APIs, with `PositionSchedule` and `PositionGrade`.
+`clone_state(fsrs_json, *, allocated_new_card_id)` validates coherent complete
+FSRS 6.3.2 Card JSON through the supported decoder and roundtrip, preserving
+memory/due/state/step while rekeying. A fresh unreviewed Learning card is valid;
+partial memory, unknown fields/version envelopes, invalid numbers and naive dates
+hold with `ValueError`. Optional legacy physical presentation metadata is dropped.
+The allocator must provide a positive ID different from the donor, and verify
+uniqueness across persisted position and legacy FSRS IDs; a pure function cannot
+prove database uniqueness. Original donor history/provenance stays with its owner.
+
+`schedule_position_review(grade, *, fsrs_card_json, accepted_at, review_day)`
+accepts only `good` or `again`, an aware acceptance instant, and the explicit local
+Study date. It calls actual pinned FSRS once at acceptance in UTC, using the
+existing retention .92, 365-day cap, no fuzzing or learning/relearning steps.
+`PositionSchedule.due_at` and serialized `due` retain the actual FSRS instant;
+`due_date` is the supplied local date plus `interval_days`. Physical first-correct,
+reinforcement and hard/light metadata reset; `requeue_today` is always false.
+This adapter does not use the legacy wrapper's first-clean reinforcement, track,
+lateness or growth overrides. Existing `schedule_review` behavior is unchanged.
+
+The Study transaction writer must authorize each grade, enforce same issued and
+accepted local day for Good, due-at-issuance, revision/epoch/definition fences,
+receipt idempotency and at most one positive per position/day. A distinct later
+wrong may still receive Again at acceptance. The pure adapter has no daily ledger
+and never claims persistence, concurrency, eligibility or whole-attempt proof.

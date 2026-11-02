@@ -92,7 +92,7 @@ def test_explicit_schedule_preserves_baseline(case):
 def test_installed_scheduling_exports_and_identity():
     import tempo_scheduling
     import sys
-    assert tempo_scheduling.__all__ == ['Schedule', 'schedule_review', 'unlock_ready']
+    assert tempo_scheduling.__all__ == ['Schedule', 'schedule_review', 'unlock_ready', 'PositionGrade', 'PositionSchedule', 'clone_state', 'schedule_position_review']
     assert not hasattr(tempo_scheduling, 'Scheduler')
     assert 'app' not in sys.modules
     assert 'site-packages' in tempo_scheduling.__file__
