@@ -407,7 +407,8 @@ def position_completion_matches(database, effect, completion):
         (response.event_id,)).fetchone()
     if grade is None:
         return False
-    reset = database.execute_native("""SELECT version_after,repertoire_id,variant,position
+    reset = database.execute_native("""SELECT effect_id,version_after,repertoire_id,variant,position,
+        owner_epoch,source_digest,expected_uci,policy_version
         FROM study_position_grades WHERE game_effect_key=%s AND source_kind='game_lapse'""",
         (effect.key.logical_id(),)).fetchone()
     if reset is not None:
@@ -417,6 +418,16 @@ def position_completion_matches(database, effect, completion):
                 (key.repertoire_id, key.variant, key.position)
                 or witness.position_revision < reset['version_after']):
             return False
+        authority = getattr(effect, 'target_authority', None) or {}
+        if authority.get('kind') == 'position_carrier':
+            if ((authority.get('grade_effect_id'), authority.get('owner_epoch'), authority.get('source_digest'),
+                 authority.get('expected_uci'), authority.get('policy_version'), authority.get('repertoire_id'),
+                 authority.get('variant'), authority.get('position')) !=
+                (reset['effect_id'], reset['owner_epoch'], reset['source_digest'], reset['expected_uci'],
+                 reset['policy_version'], reset['repertoire_id'], reset['variant'], reset['position'])
+                    or witness.owner_epoch != reset['owner_epoch']
+                    or response.definition.policy_version != reset['policy_version']):
+                return False
     return True
 
 

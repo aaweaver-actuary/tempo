@@ -104,6 +104,12 @@ position state commit together after source and owner fences. Accepted effects
 promote the current physical carrier through the existing Study queue. The queue
 issuer reads the exact durable position obligation and retains its natural due
 witness; a nondue urgent presentation does not become positive evidence.
+When the original Games carrier is unintroduced but its position already has
+state, Study can select a currently introduced authored alias. It rechecks the
+prepared source, physical binding, grade and owner epoch before promoting that
+carrier. The original game and decision identity stay unchanged. Settlement
+requires the issued position plan and the exact accepted post-reset response;
+the alias does not acquire the original physical decision lineage.
 
 ```mermaid
 flowchart LR

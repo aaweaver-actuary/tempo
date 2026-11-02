@@ -190,6 +190,77 @@ class CurrentOwnerDecisions:
         from app.services.position_queue_admission import prepare_targeted_position_introduction
         return prepare_targeted_position_introduction(source, target)
 
+    def prepare_position_carrier(self, database, qualification):
+        """Prepare one bounded introduced carrier from the owner projection."""
+        source = getattr(self, '_position_source', None)
+        if source is None:
+            return None
+        selection = qualification.selection
+        decision = selection.decision
+        definitions = {item.definition for route in source.routes for item in route.decisions
+                       if item.definition.key.repertoire_id == decision.repertoire_id
+                       and item.definition.key.position == selection.position_key}
+        if len(definitions) != 1:
+            return None
+        definition = next(iter(definitions))
+        routes = [route for route in selection.surviving_routes
+                  if (route.repertoire_id, route.route_id, route.route_ply) ==
+                     (decision.repertoire_id, decision.route_id, decision.route_ply)]
+        if (tuple(selection.expected_uci) != (definition.expected_uci,)
+                or len(routes) != 1 or routes[0].policy_id != definition.policy_version):
+            return None
+        bindings = [item for item in source.snapshot.decision_presentations
+                    if item.repertoire_id == decision.repertoire_id and item.position_key == selection.position_key
+                    and item.selected_response_uci == definition.expected_uci and item.available
+                    and item.introduction == 'introduced' and item.presentation_id != decision.presentation_id]
+        if len(bindings) > 128:
+            return None
+        from .current_feedback_authority import read_current_feedback_target
+        for binding in sorted(bindings, key=lambda item: (item.presentation_id, item.route_id, item.route_ply)):
+            facts = read_current_feedback_target(database, binding)
+            card = facts['card']
+            if (card['revision'] == binding.presentation_revision and card['introduced_at'] is not None
+                    and card['content_type'] == 'opening' and not any(card[field] for field in
+                        ('archived', 'pending_validation', 'superseded_by'))
+                    and any(item['repertoire_id'] == decision.repertoire_id for item in facts['memberships'])
+                    and any(item['line_id'] == binding.route_id for item in facts['graphs'])
+                    and self._carrier_executable(binding, definition, card)):
+                return (binding, facts, definition, source.authored_token.authored_digest)
+        return None
+
+    @staticmethod
+    def _carrier_executable(binding, definition, card):
+        from tempo_game_evidence_contracts.legacy import decision_identity
+        try:
+            moves = json.loads(card['moves_json'])
+            board = chess.Board(card['start_fen'])
+            if not board.is_valid() or not 1 <= len(moves) <= 40:
+                return False
+            matches = 0
+            for offset, uci in enumerate(moves):
+                move = chess.Move.from_uci(uci)
+                if move not in board.legal_moves:
+                    return False
+                if (board.turn == (card['trained_color'] == 'white')
+                        and canonical_fen_key(board.fen(en_passant='legal')) == definition.key.position
+                        and uci == definition.expected_uci
+                        and decision_identity(card['id'], offset, moves[:offset]) == binding.decision_id):
+                    matches += 1
+                board.push(move)
+            return matches == 1
+        except (TypeError, ValueError, KeyError):
+            return False
+
+    def fence_position_carrier(self, prepared):
+        """Recheck the captured physical relation after source and card fences."""
+        from .current_feedback_authority import read_current_feedback_target
+        binding, facts, definition, digest = prepared
+        _require(digest == self._position_source.authored_token.authored_digest,
+                 'position_carrier_source_changed')
+        _require(read_current_feedback_target(self.database, binding) == facts,
+                 'position_carrier_binding_changed')
+        return binding, definition
+
     def fence_position_intake(self, command, qualification):
         """Fence active position ownership before the existing card/effect locks."""
         from .position_owner_epoch import owner_mode

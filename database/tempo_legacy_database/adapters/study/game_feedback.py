@@ -113,6 +113,7 @@ class PostgresGameFeedbackStore:
         self._writer()
         previous = self.get(effect.key)
         if (effect.progress is not None and effect.status=='applied'
+                and (effect.target_authority or {}).get('kind') != 'position_carrier'
                 and effect.admission_status=='available' and effect.reason is None):
             from tempo_game_evidence_contracts.legacy import fingerprint
             candidates = [item for item in self.prepared_targets if
@@ -205,7 +206,15 @@ class PostgresGameFeedbackStore:
         progress = self.observed_progress(effect)
         target = progress.target if progress else EncounterTarget(card_id=effect.card_id,
             card_revision=effect.card_revision)
-        compatible = feedback_target_matches(self.database,effect,target.card_id)
+        if (effect.target_authority or {}).get('kind') == 'position_carrier':
+            from tempo_evidence_math.position_learning import Hold
+            authority = effect.target_authority
+            urgency = read_position_urgency(self.database, card_id=target.card_id,
+                revision=target.card_revision, repertoire_id=authority['repertoire_id'])
+            compatible = bool(urgency is not None and not isinstance(urgency, Hold)
+                              and urgency.effect_key == effect_id(effect.key))
+        else:
+            compatible = feedback_target_matches(self.database,effect,target.card_id)
         queued = self.database.execute_native("""SELECT queue.id queue_entry_id,queue.queue_date,
             queue.status,queue.attempt_state,card.id card_id,card.revision card_revision
             FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
@@ -293,17 +302,22 @@ class PostgresGameFeedbackStore:
         from .recombination import installed as recombination_installed
         if recombination_installed(self.database):
             rows = self.database.execute_native("""SELECT effect.* FROM study_game_feedback effect
-                WHERE effect.status='applied' AND (effect.card_id=%s OR EXISTS(
+                WHERE effect.status='applied' AND (effect.card_id=%s OR
+                    (effect.payload_json::jsonb->'owner'->'target_authority'->>'kind'='position_carrier'
+                     AND effect.payload_json::jsonb->'owner'->'progress'->'target'->>'card_id'=%s) OR EXISTS(
                     SELECT 1 FROM study_recombination_current current
                     JOIN study_recombination_presentations p ON p.presentation_id=current.presentation_id
                     WHERE current.presentation_id=%s AND current.decision_id=effect.decision_id
                       AND p.result_json->'presentation'->>'repertoire_id'=COALESCE(effect.payload_json::jsonb->'finding'->>'repertoire_id',
                           effect.payload_json::jsonb->'command'->'finding'->>'repertoire_id',
                           effect.payload_json::jsonb->'command'->'decision'->>'repertoire_id')))
-                ORDER BY effect.effect_key LIMIT 1""", (card_id,card_id)).fetchall()
+                ORDER BY effect.effect_key LIMIT 1""", (card_id,card_id,card_id)).fetchall()
             return tuple(self._effect(row) for row in rows)
         rows = self.database.execute_native("""SELECT * FROM study_game_feedback
-            WHERE card_id=%s AND status='applied' ORDER BY effect_key LIMIT 1""", (card_id,)).fetchall()
+            WHERE status='applied' AND (card_id=%s OR
+                (payload_json::jsonb->'owner'->'target_authority'->>'kind'='position_carrier'
+                 AND payload_json::jsonb->'owner'->'progress'->'target'->>'card_id'=%s))
+            ORDER BY effect_key LIMIT 1""", (card_id,card_id)).fetchall()
         return tuple(self._effect(row) for row in rows)
 
     def saved_completion(self,effect):
@@ -337,6 +351,38 @@ class PostgresGameFeedbackStore:
         from .position_grade_effects import position_completion_matches
         return position_completion_matches(self.database, effect, completion)
 
+    def position_urgency(self, card_id, revision, repertoire_id):
+        return read_position_urgency(self.database, card_id=card_id, revision=revision,
+                                     repertoire_id=repertoire_id)
+
+    def promote_position_carrier(self, effect, day):
+        progress, authority = effect.progress, effect.target_authority
+        if not progress or not authority or authority.get('kind') != 'position_carrier':
+            return False
+        return self.promote_position_target(effect, day, authority['repertoire_id'])
+
+    def promote_position_target(self, effect, day, repertoire_id):
+        progress = effect.progress
+        if not progress or not progress.position_grade_effect_id:
+            return False
+        rows = self.database.execute_native('''SELECT id,admission_repertoire_id FROM daily_queue
+            WHERE queue_date=%s AND card_id=%s AND status='queued' ORDER BY id LIMIT 2 FOR UPDATE''',
+            (day, progress.target.card_id)).fetchall()
+        if len(rows) > 1 or rows and rows[0]['admission_repertoire_id'] != repertoire_id:
+            return False
+        self.promote_encounter(progress.target.card_id, day, priority_order=dict(
+            urgent_determined_at=progress.determined_at, urgent_stream=progress.stream,
+            urgent_effect_id=effect_id(effect.key)))
+        if not rows:
+            updated = self.database.execute_native('''UPDATE daily_queue SET admission_repertoire_id=%s
+                WHERE queue_date=%s AND card_id=%s AND status='queued' AND admission_repertoire_id IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM queue_attempt_origins origin
+                                  WHERE origin.queue_entry_id=daily_queue.id AND origin.issued_as_head=1)
+                RETURNING id''', (repertoire_id, day, progress.target.card_id)).fetchall()
+            if len(updated) != 1:
+                raise RuntimeError('position_carrier_queue_scope_changed')
+        return True
+
     def promote_effect(self, effect, day):
         from .recombination import effect_target, current_presentation_available
         target = effect_target(self.database,effect)
@@ -368,6 +414,13 @@ class PostgresGameFeedbackStore:
         if effect.progress is not None:
             if effect.progress.target != EncounterTarget(card_id=completion.card_id,card_revision=completion.revision):
                 return False
+            authority = effect.target_authority or {}
+            if authority.get('kind') == 'position_carrier':
+                if (completion.source_kind != 'position_study'
+                        or authority.get('target') != effect.progress.target.model_dump(mode='json')
+                        or authority.get('grade_effect_id') != effect.progress.position_grade_effect_id):
+                    return False
+                return self.position_completion_matches(effect, completion)
             if effect.target_authority is not None or effect.progress.target.card_id != effect.card_id:
                 from .recombination import fence_feedback_completion
                 return fence_feedback_completion(self.database,effect,completion)

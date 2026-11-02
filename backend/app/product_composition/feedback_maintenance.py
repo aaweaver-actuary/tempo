@@ -35,6 +35,7 @@ class PreparedFeedbackEffect:
     retry_at: datetime | None = None
     terminal: bool = False
     position_introduction: object = None
+    position_carrier: object = None
 
 
 def prepare_feedback_effect(observed, *, read, capture, clock, qualification_prepare=None):
@@ -81,14 +82,19 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
                 introduction_target_identity(target), '', (), 'encounter_preparation_required'))
         with read() as database:
             day = PostgresGameFeedbackStore(database).study_day(instant(clock())).isoformat()
+            position_carrier = (decisions.prepare_position_carrier(database, qualification)
+                if observed.progress is not None and observed.progress.position_grade_effect_id is not None
+                and (target.introduction == 'unintroduced' or observed.reason == 'position_carrier_unintroduced'
+                     or (observed.target_authority or {}).get('kind') == 'position_carrier') else None)
         progress = observed.progress
         determined_at = progress.determined_at if progress else qualification.determined_at
         stream = progress.stream if progress else qualification.stream
-        priority = prepare_priority_promotion(day,target.presentation_id,read=read,
+        priority_card = position_carrier[0].presentation_id if position_carrier is not None else target.presentation_id
+        priority = prepare_priority_promotion(day,priority_card,read=read,
             priority_order=dict(urgent_determined_at=determined_at,urgent_stream=stream,
                                 urgent_effect_id=effect_id(observed.key)))
         return PreparedFeedbackEffect(observed,captured,snapshot,qualification,decisions,introduction,priority,
-                                      position_introduction=position_introduction)
+                                      position_introduction=position_introduction, position_carrier=position_carrier)
     except (CurrentDecisionUnavailable, RemediationError, ValueError, ImportError) as error:
         # No raw exception/SQL/PGN is retained in public status. A later sweep
         # can obtain changed source facts without erasing the original debt.
@@ -143,7 +149,8 @@ def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admit
         introductions=introductions,introduction_policy=EncounterIntroductionPolicy('encounter_exception'),
         prepared_priority=prepared.prepared_priority,prepared_decisions=prepared.prepared_decisions)
     return owner.refresh_encounter(observed.key,qualification=prepared.qualification,
-        position_introduction=prepared.position_introduction, position_fence=position_fence)
+        position_introduction=prepared.position_introduction, position_fence=position_fence,
+        position_carrier=prepared.position_carrier)
 
 
 def _wake_due_refresh(write, clock):
