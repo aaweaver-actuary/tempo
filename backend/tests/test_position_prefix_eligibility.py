@@ -84,6 +84,33 @@ def test_full_clean_italian_prefix_proof_is_order_independent(reverse: bool) -> 
     assert eligibility.shared_move_count == 4
     assert eligibility.skipped_positions == tuple(d.definition.key for d in selected.decisions[:2])
     assert eligibility.first_uncovered_decision == selected.decisions[2]
+    assert eligibility.target_is_clean is False
+    assert eligibility.all_decisions_covered is False
+
+
+def test_fully_covered_target_is_explicit_and_has_no_uncovered_decision() -> None:
+    bishop, _ = _italian_routes()
+    proof = _proof(bishop)
+
+    eligibility = verify_clean_prefix(bishop, proof, target_ply=6, study_day=DAY, owner_epoch=EPOCH)
+
+    assert eligibility is not None
+    assert eligibility.target_is_clean is True
+    assert eligibility.all_decisions_covered is True
+    assert eligibility.first_uncovered_decision is None
+    assert eligibility.skipped_positions == tuple(d.definition.key for d in bishop.decisions if d.ply < 6)
+
+
+def test_partial_prefix_reports_uncovered_target_without_claiming_full_coverage() -> None:
+    bishop, _ = _italian_routes()
+    partial = _proof(bishop, moves=bishop.moves_uci[:4])
+
+    eligibility = verify_clean_prefix(bishop, partial, target_ply=4, study_day=DAY, owner_epoch=EPOCH)
+
+    assert eligibility is not None
+    assert eligibility.target_is_clean is False
+    assert eligibility.all_decisions_covered is False
+    assert eligibility.first_uncovered_decision == bishop.decisions[2]
 
 
 def test_failed_at_ng5_never_certifies_whole_clean_prefix() -> None:
@@ -139,6 +166,33 @@ def test_untrusted_or_mismatched_proof_grants_no_prefix(change: str) -> None:
     )
 
     assert verify_clean_prefix(c3, proof, target_ply=4, study_day=DAY, owner_epoch=EPOCH) is None
+
+
+@pytest.mark.parametrize("change", ["failed", "assisted", "wrong_day", "partial"])
+def test_invalid_or_incomplete_proof_never_claims_all_target_decisions_covered(change: str) -> None:
+    bishop, _ = _italian_routes()
+    clean = _proof(bishop)
+    proof = clean
+    if change == "failed":
+        rows = list(clean.first_responses)
+        row = rows[-1]
+        rows[-1] = CleanFirstResponse(row.ply, row.definition, "f3h4", False, "wrong-ng5")
+        proof = _proof(bishop, responses=tuple(rows))
+    elif change == "assisted":
+        row = clean.first_responses[-1]
+        rows = (*clean.first_responses[:-1], CleanFirstResponse(
+            row.ply, row.definition, row.actual_uci, True, row.event_id,
+        ))
+        proof = _proof(bishop, responses=rows)
+    elif change == "wrong_day":
+        proof = _proof(bishop, day=date(2026, 11, 1))
+    else:
+        proof = _proof(bishop, moves=bishop.moves_uci[:4])
+
+    result = verify_clean_prefix(bishop, proof, target_ply=6, study_day=DAY, owner_epoch=EPOCH)
+
+    assert result is None or not result.all_decisions_covered
+    assert result is None or not result.target_is_clean
 
 
 def test_wrong_owner_epoch_and_different_authored_root_hold() -> None:

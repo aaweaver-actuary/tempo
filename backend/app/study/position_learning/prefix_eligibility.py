@@ -13,7 +13,7 @@ from datetime import date
 import chess
 
 from .contracts import DecisionOccurrence, PositionDefinition, PositionKey, RouteOption
-from tempo_evidence_math._identity import opening_position_key
+from tempo_evidence_math import opening_position_key
 
 
 @dataclass(frozen=True)
@@ -55,12 +55,18 @@ class CleanPresentationProof:
 
 @dataclass(frozen=True)
 class CleanPrefixEligibility:
-    """Verified prior attempt facts a route planner may use to skip context."""
+    """Verified prior attempt facts a route planner may use to skip context.
+
+    ``all_decisions_covered`` applies to the selected route through the requested
+    target ply, not to later decisions beyond that target.
+    """
 
     attempt_id: str
     shared_move_count: int
     skipped_decisions: tuple[DecisionOccurrence, ...]
-    first_uncovered_decision: DecisionOccurrence
+    first_uncovered_decision: DecisionOccurrence | None
+    target_is_clean: bool
+    all_decisions_covered: bool
 
     @property
     def skipped_positions(self) -> tuple[PositionKey, ...]:
@@ -192,7 +198,21 @@ def verify_clean_prefix(
                 or selected.fen != decision.fen):
             return None
 
-    uncovered = tuple(d for d in route.decisions if d.ply >= shared and d.ply <= target_ply)
-    if not uncovered:
+    through_target = tuple(d for d in route.decisions if d.ply <= target_ply)
+    if not through_target:
         return None
-    return CleanPrefixEligibility(proof.attempt_id, shared, tuple(skipped), uncovered[0])
+    uncovered = tuple(d for d in through_target if d.ply >= shared)
+    target_is_clean = any(d.ply == target_ply and d.ply < shared for d in through_target)
+    all_decisions_covered = bool(through_target) and not uncovered
+    # With no earlier move to skip and no cleanly covered target, the caller
+    # should safely fall back to the authored root without using this proof.
+    if not skipped and not target_is_clean:
+        return None
+    return CleanPrefixEligibility(
+        proof.attempt_id,
+        shared,
+        tuple(skipped),
+        uncovered[0] if uncovered else None,
+        target_is_clean,
+        all_decisions_covered,
+    )
