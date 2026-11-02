@@ -1,14 +1,15 @@
 import type { StudyTask } from "./study-computation";
+import type { ValidationReporter } from "./data-validation";
 import { validateWorkspacePayload, repertoireLinesFromPayload } from "../domain/adapters/workspace-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
 import { buildRepertoireAlternativeSnapshot } from "./repertoire-alternative-index";
 import { indexRepertoirePositions, prepareChessPositionDistance, type IndexedPosition } from "./position-similarity";
 
 /** Optional repertoire and position computation; no second copy of chess algorithms. */
-export function computeOptionalStudyTask(task: StudyTask) {
+export function computeOptionalStudyTask(task: StudyTask, reporter?: ValidationReporter) {
   switch (task.kind) {
-    case "workspace": return validateWorkspacePayload(task.url, task.payload);
-    case "transportLines": return repertoireLinesFromPayload(task.payload);
+    case "workspace": return validateWorkspacePayload(task.url, task.payload, undefined, reporter);
+    case "transportLines": return repertoireLinesFromPayload(task.payload, reporter);
     case "lines":
       return [
         ...new Map(
@@ -27,8 +28,8 @@ export function computeOptionalStudyTask(task: StudyTask) {
         indexRepertoirePositions(task.lines.map(canonicalizeLine)));
     case 'repertoirePreparation': {
       const decoded = typeof task.payload === 'string' ? JSON.parse(task.payload) : task.payload;
-      const validated = validateWorkspacePayload('/api/repertoire/lines', decoded);
-      const lines = repertoireLinesFromPayload(validated).map(canonicalizeLine);
+      const validated = validateWorkspacePayload('/api/repertoire/lines', decoded, undefined, reporter);
+      const lines = repertoireLinesFromPayload(validated, reporter).map(canonicalizeLine);
       return buildRepertoireAlternativeSnapshot(task.generation, indexRepertoirePositions(lines));
     }
     case "matches":

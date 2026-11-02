@@ -12,10 +12,11 @@ import {
   mapPackagedPuzzleToPracticeCard,
   mapQueueCardToPracticeCard,
 } from "../domain/adapters/practice-card-adapters";
+import { reportDebugError } from "../lib/debug-reporting";
 
 // Converts a backend queue card into a practice card for the training interface.
 export function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
-  return mapQueueCardToPracticeCard(card);
+  return mapQueueCardToPracticeCard(card, reportDebugError);
 }
 
 // Returns the color that the user is expected to play for a given practice card.
@@ -47,5 +48,5 @@ export function getHumanReadableLineName(
 export function convertPackagedPuzzleRecordIntoPracticeCard(
   record: PackagedPuzzle,
 ): PracticeCard | null {
-  return mapPackagedPuzzleToPracticeCard(record);
+  return mapPackagedPuzzleToPracticeCard(record, reportDebugError);
 }

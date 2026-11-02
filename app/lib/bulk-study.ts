@@ -74,7 +74,7 @@ function pump() {
         }
         if (reply.computeMs !== undefined) recordTempoDuration('bulk-worker-compute', reply.computeMs);
         recordTempoDuration('bulk-worker-roundtrip', performance.now() - request.queuedAt);
-        finish(undefined, decodeStudyResult(request.task, reply.result, request.current));
+        finish(undefined, decodeStudyResult(request.task, reply.result, request.current, reportDebugError));
       } catch (error) { fail(error); }
     };
     runningWorker.onerror = event => { if (current()) fail(new Error(event.message || 'Workspace worker failed')); };

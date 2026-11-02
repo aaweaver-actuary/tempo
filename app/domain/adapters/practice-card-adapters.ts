@@ -9,7 +9,8 @@ import {
   parseData,
   validRecords,
   reportDataDiagnostic,
-} from "../../lib/validated-data";
+  type ValidationReporter,
+} from "../../lib/data-validation";
 import { Chess, Square } from "chess.js";
 import {
   BackendQueueCard,
@@ -38,8 +39,9 @@ export function queueRecordWithCompatibleOpeningEvidence(raw: unknown): unknown 
 // Maps queue transport records from the backend into domain practice cards.
 export function mapQueueCardToPracticeCard(
   raw: BackendQueueCard | unknown,
+  reporter?: ValidationReporter,
 ): PracticeCard {
-  const card = parseData(queueCardSchema, queueRecordWithCompatibleOpeningEvidence(raw), "queue card");
+  const card = parseData(queueCardSchema, queueRecordWithCompatibleOpeningEvidence(raw), "queue card", undefined, undefined, undefined, reporter);
   const startingFen = asFenString(card.start_fen);
   const validatedLine = canonicalizeMoves(startingFen, card.moves);
   if (validatedLine.diagnostics.length) {
@@ -130,9 +132,10 @@ export function mapQueueCardToPracticeCard(
 // Converts packaged puzzle records into domain practice cards.
 export function mapPackagedPuzzleToPracticeCard(
   record: PackagedPuzzle,
+  reporter?: ValidationReporter,
 ): PracticeCard | null {
   try {
-    record = parseData(packagedPuzzleSchema, record, "packaged puzzle");
+    record = parseData(packagedPuzzleSchema, record, "packaged puzzle", undefined, undefined, undefined, reporter);
     const board = new Chess(asFenString(record.FEN));
     const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
     const setup = uciMoves.shift()!;
@@ -167,8 +170,8 @@ export function mapPackagedPuzzleToPracticeCard(
   }
 }
 
-export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
-  const body = parseData(queueEnvelopeSchema, raw, "daily queue");
+export function queueCardsFromPayload(raw: unknown, reporter?: ValidationReporter): PracticeCard[] {
+  const body = parseData(queueEnvelopeSchema, raw, "daily queue", undefined, undefined, undefined, reporter);
   for (const diagnostic of body.diagnostics ?? [])
     reportDataDiagnostic(
       "daily queue",
@@ -176,10 +179,10 @@ export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
       diagnostic.message,
       diagnostic.card_id,
     );
-  return validRecords(queueCardSchema, body.cards.map(queueRecordWithCompatibleOpeningEvidence), "queue card").flatMap(
+  return validRecords(queueCardSchema, body.cards.map(queueRecordWithCompatibleOpeningEvidence), "queue card", undefined, reporter).flatMap(
     (record) => {
       try {
-        return [mapQueueCardToPracticeCard(record)];
+        return [mapQueueCardToPracticeCard(record, reporter)];
       } catch (error) {
         reportDataDiagnostic("queue card", record, String(error), record.id);
         return [];

@@ -4,7 +4,7 @@ import {
   clearDataDiagnostics,
   dataDiagnostics,
   parseData,
-} from "./validated-data";
+} from "./data-validation";
 
 export function installStudyWorker(compute: (task: StudyTask) => unknown): void {
   self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {

@@ -1,72 +1,19 @@
 import * as z from "zod";
 import { reportDebugError } from "./debug-reporting";
+import {
+  parseData as parseValidatedData,
+  reportDataDiagnostic,
+  validRecords as validatedRecords,
+} from "./data-validation";
 
-export type DataDiagnostic = {
-  source: string;
-  recordId?: string;
-  message: string;
-  raw: unknown;
-  recordedAt: string;
-};
-let diagnostics: readonly DataDiagnostic[] = [];
-const listeners = new Set<() => void>();
-function notifyDiagnostics() {
-  queueMicrotask(() => listeners.forEach((listener) => listener()));
-}
-export function dataDiagnostics() {
-  return diagnostics;
-}
-export function subscribeDataDiagnostics(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-export function clearDataDiagnostics() {
-  diagnostics = [];
-  notifyDiagnostics();
-}
-
-export function clearDataDiagnosticsForSources(sources: readonly string[]) {
-  const sourceSet = new Set(sources);
-  const remainingDiagnostics = diagnostics.filter(
-    (diagnostic) => !sourceSet.has(diagnostic.source),
-  );
-  if (remainingDiagnostics.length === diagnostics.length) return;
-  diagnostics = remainingDiagnostics;
-  notifyDiagnostics();
-}
-
-export function reportDataDiagnostic(
-  source: string,
-  raw: unknown,
-  message: string,
-  recordId?: string,
-) {
-  if (diagnostics.some((issue) => issue.source === source && issue.raw === raw))
-    return;
-  if (
-    diagnostics.some(
-      (issue) =>
-        issue.source === source &&
-        issue.recordId === recordId &&
-        issue.message === message,
-    )
-  )
-    return;
-  diagnostics = [
-    ...diagnostics.slice(-99),
-    { source, raw, message, recordId, recordedAt: new Date().toISOString() },
-  ];
-  notifyDiagnostics();
-}
-
-function recordIdentity(raw: unknown): string | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  for (const key of ["id", "PuzzleId", "queue_entry_id", "key"]) {
-    const value = Reflect.get(raw, key);
-    if (typeof value === "string" || typeof value === "number")
-      return String(value);
-  }
-}
+export type { DataDiagnostic } from "./data-validation";
+export {
+  dataDiagnostics,
+  subscribeDataDiagnostics,
+  clearDataDiagnostics,
+  clearDataDiagnosticsForSources,
+  reportDataDiagnostic,
+} from "./data-validation";
 
 export function parseData<T>(
   schema: z.ZodType<T>,
@@ -76,22 +23,10 @@ export function parseData<T>(
   debugSource = "validated-data",
   shouldPublishDiagnostics?: () => boolean,
 ): T {
-  const result = schema.safeParse(raw);
-  if (result.success) return result.data;
-  const message = result.error.issues
-    .map((issue) => `${issue.path.join(".") || "record"}: ${issue.message}`)
-    .join("; ");
-  if (shouldPublishDiagnostics?.() !== false)
-    reportDataDiagnostic(source, raw, message, recordIdentity(raw));
-  const failure = new Error(`Invalid ${source} data: ${message}`);
-  reportDebugError(failure, {
-    kind: "data-validation",
-    source: debugSource,
-    operation: "schema validation",
-    endpoint,
-    notify: shouldPublishDiagnostics?.() !== false,
-  });
-  throw failure;
+  return parseValidatedData(
+    schema, raw, source, endpoint, debugSource, shouldPublishDiagnostics,
+    reportDebugError,
+  );
 }
 
 export function validRecords<T>(
@@ -100,13 +35,9 @@ export function validRecords<T>(
   source: string,
   shouldPublishDiagnostics?: () => boolean,
 ): T[] {
-  return records.flatMap((raw) => {
-    try {
-      return [parseData(schema, raw, source, undefined, undefined, shouldPublishDiagnostics)];
-    } catch {
-      return [];
-    }
-  });
+  return validatedRecords(
+    schema, records, source, shouldPublishDiagnostics, reportDebugError,
+  );
 }
 
 export function readStoredValue<T>(
