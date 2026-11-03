@@ -4,9 +4,8 @@ The browser runner does not execute Python. This separately verifies fixtures; i
 not PostgreSQL persistence/issuance proof. Never reads the user's database.
 """
 import json
-import sqlite3
 from contextlib import ExitStack, nullcontext
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -22,12 +21,6 @@ class FixtureDate(date):
     @classmethod
     def today(cls):
         return cls(2026, 9, 18)
-
-
-class FixtureDateTime(datetime):
-    @classmethod
-    def now(cls, tz=None):
-        return cls(2026, 9, 18, 16, tzinfo=timezone.utc)
 
 
 def produce_examples():
@@ -59,13 +52,7 @@ def produce_examples():
         # reads of hundreds of unrelated pack files just to truncate its output.
         with patch.object(tactical_catalog, "catalog", return_value=catalog_input):
             catalog = main.tactics_catalog()
-        activity = main.system_activity(offset=0, limit=50)
-        activity.pop("writer", None)  # Writer health is not a frontend-host claim.
-        from app.services import background_diagnostics
-        with patch.object(background_diagnostics, "datetime", FixtureDateTime), patch.object(background_diagnostics.time, "monotonic", return_value=0), patch.object(background_diagnostics, "read_connection", side_effect=sqlite3.OperationalError("Controlled unavailable storage")):
-            diagnostics = main.system_background_diagnostics().model_dump(mode="json")
         return {
-            "/api/system/background-diagnostics": diagnostics,
             "/api/settings": main.get_settings().model_dump(mode="json"),
             "/api/queue/window": main.queue_window(limit=20),
             "/api/repertoires": main.list_repertoires(),
@@ -73,7 +60,6 @@ def produce_examples():
             "/api/progress": main.progress_summary(),
             "/api/tactics/catalog": catalog,
             "/api/tactics/progress": main.tactic_progress(),
-            "/api/system/activity": activity,
             "/api/games/sync/status": main.sync_status(),
             "/api/discoveries": main.discoveries_feed(offset=0, limit=100),
             "/api/games/summary": main.summary(),

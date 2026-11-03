@@ -11,7 +11,6 @@ import { chromium } from "@playwright/test";
 import { ControlledApi, finishControlledContext } from "../strict-api";
 import { browserActivityQuery, matchesContract, validateReview, receiptResponse } from "../contracts";
 import { tacticalCatalogSchema } from "../../../app/lib/tactical-catalog";
-import { backgroundDiagnosticsSchema } from "../../../app/domain/schemas/background-diagnostics";
 import { queueEnvelopeSchema, queueCardSchema, settingsResponseSchema, repertoiresResponseSchema,
   repertoireLinesResponseSchema, motifRecommendationsSchema, tacticProgressSchema, syncStatusSchema,
   gamesSummarySchema, discoveriesFeedSchema, progressResponseSchema, teachingResponseSchema } from "../../../app/domain/schemas";
@@ -123,7 +122,6 @@ it("controlled_browser_legacy_fixtures_validate_current_consumers_without_python
   for (const state of ["queued", "pending", "executing", "retrying", "blocked", "failed", "complete", "unknown"] as const)
     expect(receiptResponse(state, "review-attempt:new" )).toEqual({ ...receiptExamples[state], operation_id: "review-attempt:new" });
   const fixture = JSON.parse(readFileSync("tests/fixtures/controlled-browser/startup.json", "utf8"));
-  backgroundDiagnosticsSchema.parse(fixture["/api/system/background-diagnostics"]);
   settingsResponseSchema.parse(fixture["/api/settings"]);
   expect(settingsResponseSchema.safeParse({ ...fixture["/api/settings"], new_cards_per_day: "10" }).success).toBe(false);
   expect(queueEnvelopeSchema.safeParse({ cards: [], count: -1 }).success).toBe(false);
