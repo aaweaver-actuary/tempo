@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import time
+import hashlib
+import json
 
 from fastapi.testclient import TestClient
 from tempo_legacy_database import connections as database
@@ -105,7 +107,22 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
             assert db.execute("SELECT refresh_pending FROM queue_projections WHERE queue_date='2026-09-16'").fetchone()[0] == 0
         before = client.get("/api/migration/snapshot").json()
     with TestClient(app) as client:  # Re-open SQLite and run startup, not an in-memory store.
-        assert client.get("/api/migration/snapshot").json()["checksum"] == before["checksum"]
+        after = client.get("/api/migration/snapshot").json()
+        def fingerprint(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+        differences = {}
+        for table in sorted(before["tables"].keys() | after["tables"].keys()):
+            old_rows = before["tables"].get(table, [])
+            new_rows = after["tables"].get(table, [])
+            if old_rows != new_rows:
+                columns = {column for row in old_rows + new_rows for column in row}
+                differences[table] = {
+                    "row_counts": [len(old_rows), len(new_rows)],
+                    "table_hashes": [fingerprint(old_rows), fingerprint(new_rows)],
+                    "changed_columns": sorted(column for column in columns
+                        if [row.get(column) for row in old_rows] != [row.get(column) for row in new_rows]),
+                }
+        assert after["checksum"] == before["checksum"], differences
         for _ in range(3):
             clock["now"] = datetime.fromisoformat(result["next_due"]).replace(hour=12, tzinfo=timezone.utc)
             enqueue_daily_queue_refresh()
