@@ -144,6 +144,9 @@ def test_native_unseen_position_uses_canonical_encounter_exception_once(monkeypa
     from app.contracts.product_v02.learning import GameEncounter
     from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
     from app.study.encounter_feedback import EncounterFeedback
+    from app.services.queue_next_card import prepare_queue_head
+    from app.queue_commands import issue_queue_head
+    from tempo_legacy_database import connections
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentOwnerDecisions
@@ -160,6 +163,7 @@ def test_native_unseen_position_uses_canonical_encounter_exception_once(monkeypa
     def reader(*args, **kwargs):
         with psycopg.connect(dsn, user='tempo_reader', row_factory=tempo_row_factory) as conn:
             yield PostgresConnection(conn, read_only=True)
+    monkeypatch.setattr(connections, 'read_connection', reader)
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         db, source, physical, day = seed_disposable_source(raw, dsn, routes, ('order-a','order-b'),
             repertoire_id='j2-unseen', now=now, introduced=False)
@@ -209,13 +213,41 @@ def test_native_unseen_position_uses_canonical_encounter_exception_once(monkeypa
         raw.commit()
         state = raw.execute("SELECT position,introduced_at FROM study_position_states WHERE repertoire_id='j2-unseen'").fetchall()
         assert len(state) == 1 and state[0]['position'] == position and state[0]['introduced_at'] is not None
-        queue = raw.execute("SELECT card_id,admission_repertoire_id,gameplay_priority_reason FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchall()
+        queue = raw.execute("SELECT id,card_id,admission_repertoire_id,gameplay_priority_reason FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchall()
         assert len(queue) == 1 and queue[0]['card_id'] == 'card-0' and queue[0]['admission_repertoire_id'] == 'j2-unseen'
         assert queue[0]['gameplay_priority_reason'] == 'product_game_encounter'
         assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
         assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
         assert tuple(raw.execute('SELECT study_only_mode,new_cards_per_day FROM settings WHERE id=1').fetchone()) == (1,0)
         assert {row['id']:row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards').fetchall()} == physical
+        raw.commit()
+        envelope = {'queue_date':day, 'entry_id':queue[0]['id'], 'card_id':'card-0', 'expected_revision':1}
+        head = prepare_queue_head(envelope)
+        assert head.mode == 'position', head
+        result = issue_queue_head(db, head)
+        assert result['issued'], result
+        raw.commit()
+        replay_head = prepare_queue_head(envelope)
+        assert replay_head.mode == 'replay', replay_head
+        plan = replay_head.proposal
+        assert plan.to_wire() == result['position_presentation']
+        assert plan.original_card_id == 'card-0' and plan.queue_entry_id == queue[0]['id']
+        assert plan.target.key.repertoire_id == 'j2-unseen' and plan.target.key.position == position
+        assert plan.target.expected_uci == 'd2d4'
+        assert plan.decision_slots[0].definition == plan.target
+        assert any(w.definition == plan.target for w in plan.due_positions)
+        for witness in plan.due_positions:
+            saved = raw.execute('''SELECT due_at,introduced_at FROM study_position_states
+                WHERE repertoire_id=%s AND variant=%s AND position=%s''',
+                (witness.definition.key.repertoire_id, witness.definition.key.variant,
+                 witness.definition.key.position)).fetchone()
+            assert saved is not None
+            assert witness.due == (saved['introduced_at'] is not None and saved['due_at'] <= witness.issued_at)
+            if witness.definition != plan.target:
+                assert not witness.due
+        assert raw.execute("SELECT count(*) FROM study_position_states WHERE repertoire_id='j2-unseen'").fetchone()[0] == 1
+        assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
+        assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
         raw.commit()
         replay = owner.accept_qualified(command, qualification=qualification)
         assert replay.outcome == 'duplicate' and replay.progress.introduction_applied_at == receipt.progress.introduction_applied_at
