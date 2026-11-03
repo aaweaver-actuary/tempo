@@ -1,3 +1,7 @@
+## Jobs and Saves retirement
+
+`tests/browser/retired-jobs-saves.spec.ts::retired Jobs and Saves stay absent during navigation and debug export` checks the scoped browser-key retirement, retained navigation and debug export, and absence of retired UI and requests against a disposable installation.
+
 ## Current queue refresh progress and freshness
 
 `backend/tests/test_queue_refresh_position_source_profile.py` keeps complete
