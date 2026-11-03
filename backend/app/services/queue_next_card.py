@@ -25,7 +25,10 @@ def pending_next_card_preparation(database, day, *, candidate_card_id=None):
     if installed(database):
         from tempo_legacy_database.adapters.study.game_feedback import pending_feedback_preparation, feedback_queue_priorities
         if candidate_card_id is not None:
-            priority = feedback_queue_priorities(database, (candidate_card_id,)).get(candidate_card_id)
+            from tempo_legacy_database.adapters.study.recombination import regrouped_presentation_ids
+            regrouped = regrouped_presentation_ids(database, (candidate_card_id,))
+            priority = feedback_queue_priorities(database, (candidate_card_id,),
+                include_regrouped=bool(regrouped)).get(candidate_card_id)
         if pending_feedback_preparation(database, day, before_priority=priority):
             return True
     source = _source_pending(database, day, before_priority=priority) if _source_pending else False

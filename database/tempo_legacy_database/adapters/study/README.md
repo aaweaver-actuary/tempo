@@ -133,6 +133,14 @@ the complete paths and the same SQL-NULL legacy-reset fallback as a borrowed
 native connection. The regrouped obligation lookup already uses single-step
 extraction; its complete repertoire paths share the focused translation regression.
 
+Callers that have found an existing regrouped presentation may opt into
+`include_regrouped=True`. Ready historical resets then follow only one explicit
+current decision/repertoire target, with the actual non-invalidated Again review
+and current presentation revision intact. Ambiguous or unavailable lineage cannot
+fall back to the old card. Queue presentation and next-head ordering use this same
+read capability; it changes no receipt, review, grade, deadline or membership.
+The default path needs no optional regrouping schema.
+
 `retains_encounter_introduction(database, card_id)` and the complete
 `retained_encounter_introduction_query()` expose an existing same-revision material
 admission fact to Study's legacy admission/rebuild adapter. They grant no new

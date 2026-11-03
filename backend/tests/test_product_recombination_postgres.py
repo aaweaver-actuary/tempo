@@ -1486,10 +1486,12 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
     scheduling is unchanged #487 evidence. No Study success/settlement is seeded.
     """
     from app.study.game_feedback import effect_id
-    from app.contracts.product_v02.learning import GameLapse
+    from app.contracts.product_v02.learning import GameLapse, GameEffectControl
     from test_product_game_lapse import fixture as lapse_fixture
     from tempo_game_evidence_contracts.legacy import decision_identity
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore, resume_available_feedback
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore, resume_available_feedback, feedback_queue_priorities,
+    )
     from app.services.queue_application import seed_queue
     transaction = current_owner_transaction
     qualify_before_final_review(transaction,monkeypatch)
@@ -1534,7 +1536,67 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
     target = next(row for row in visible if row['card_id'] == combined)
     assert target['admission_kind'] == 'review'
     assert target['gameplay_priority_reason'] == 'product_game_lapse', calls
-    assert sum('FROM study_game_feedback' in statement for statement, _ in calls) == 1
+    assert sum('FROM study_game_feedback' in statement for statement, _ in calls) == 2  # owed + ready
+    expected_priority = dict(urgent_determined_at=lapse.detected_at,
+        urgent_stream='reconciliation', urgent_effect_id=logical)
+    with transaction() as database:
+        native_target = next(row for row in presentation_rows(database, day, limit=16) if row['card_id']==combined)
+        assert {field:target[field] for field in expected_priority} == expected_priority
+        assert {field:native_target[field] for field in expected_priority} == expected_priority
+        assert feedback_queue_priorities(database, ('A',)) == {'A':expected_priority}  # default unchanged
+
+    # Exercise the actual native query and generic translated callback against
+    # the same rollback-only relational facts; no new receipt or grade is made.
+    control = GameEffectControl(key=lapse.key, source_revision=1, action='hold', reason='reanalysis')
+    probes = [
+        ('bare', None, (), True),
+        ('envelope', 'UPDATE study_game_feedback SET payload_json=%s WHERE effect_key=%s',
+            (json.dumps(dict(kind='lapse',command=lapse.model_dump(mode='json'),owner={})),logical), True),
+        ('wrong_source', "UPDATE reviews SET source_kind='study' WHERE id=%s", (review_id,), False),
+        ('wrong_ref', "UPDATE reviews SET source_ref='priority-probe' WHERE id=%s", (review_id,), False),
+        ('invalidated', 'UPDATE reviews SET invalidated_at=%s WHERE id=%s', (now.isoformat(),review_id), False),
+        ('controlled', 'UPDATE study_game_feedback SET hold_json=%s WHERE effect_key=%s',
+            (control.model_dump_json(),logical), False),
+        ('pending_effect', "UPDATE study_game_feedback SET status='pending' WHERE effect_key=%s", (logical,), False),
+        ('revision', 'UPDATE cards SET revision=revision+1 WHERE id=%s', (combined,), False),
+        ('archived', 'UPDATE cards SET archived=1 WHERE id=%s', (combined,), False),
+        ('pending_card', 'UPDATE cards SET pending_validation=1 WHERE id=%s', (combined,), False),
+        ('superseded', "UPDATE cards SET superseded_by='C' WHERE id=%s", (combined,), False),
+        ('foreign', "UPDATE study_recombination_presentations SET result_json=jsonb_set(result_json,"
+            "'{presentation,repertoire_id}','\"foreign\"'::jsonb) WHERE presentation_id=%s", (combined,), False),
+        ('shared_alias', None, (), True),
+        ('ambiguous', None, (), False),
+        ('ambiguous_retired', None, (), False),
+    ]
+    for label, statement, parameters, ready in probes:
+        with transaction() as database, database.raw.transaction(force_rollback=True):
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            if statement:
+                database.execute_native(statement,parameters)
+            if label=='shared_alias':
+                database.execute_native('INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) '
+                    'VALUES(%s,%s,%s)', ('priority-probe',decision,combined))
+            if label in {'ambiguous','ambiguous_retired'}:
+                database.execute_native("""INSERT INTO study_recombination_presentations(presentation_id,command_id,result_json)
+                    SELECT 'C',command_id,jsonb_set(result_json,'{presentation,presentation_id}','\"C\"'::jsonb)
+                    FROM study_recombination_presentations WHERE presentation_id=%s""", (combined,))
+                database.execute_native('INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) '
+                    'VALUES(%s,%s,%s)', ('priority-probe',decision,'C'))
+                database.execute_native("UPDATE cards SET archived=%s,pending_validation=0,superseded_by=NULL WHERE id='C'",
+                    (1 if label=='ambiguous_retired' else 0,))
+            requested = (combined,) if label=='foreign' else ('A',combined)
+            expected = {combined:expected_priority} if ready else {}
+            assert feedback_queue_priorities(database,requested,include_regrouped=True)==expected, label
+            callback_calls = []
+            def borrowed_callback(statement, parameters=()):
+                callback_calls.append(statement)
+                return database.execute(statement,parameters).fetchall()
+            assert feedback_queue_priorities(None,requested,read=borrowed_callback,
+                include_regrouped=True)==expected, label
+            assert len(callback_calls)==1
+    with transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(lapse.key)==original
     with transaction() as database:
         reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
         settled = PostgresGameFeedbackStore(database).get(lapse.key)
