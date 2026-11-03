@@ -557,6 +557,9 @@ export async function fetchAndInitializeQueue(
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
+        // A prepared-queue acquisition may encounter the same in-flight head.
+        // Keep the existing offline queue and retry on a later acquisition.
+        if (response.status === 202) throw new PhoneQueueRefreshingError();
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json() as QueuePayload & { prepared_at: string };
         if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;

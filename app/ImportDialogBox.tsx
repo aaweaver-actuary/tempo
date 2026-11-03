@@ -24,6 +24,8 @@ import { PendingOperationError } from "./lib/operation-status";
 import { backgroundReadWhenAdmitted } from "./lib/background-fetch";
 import type { z } from "zod";
 
+class ImportQueueAdmissionPending extends Error {}
+
 // Bound each read, including its body, independently of the publication lifetime.
 async function readImportPublication<T>(url: string, schema: z.ZodType<T>, source: string, ownerSignal: AbortSignal): Promise<T> {
   ownerSignal.throwIfAborted();
@@ -39,6 +41,16 @@ async function readImportPublication<T>(url: string, schema: z.ZodType<T>, sourc
   const read = async () => {
     const response = await backgroundReadWhenAdmitted(url, requestSignal);
     requestSignal.throwIfAborted();
+    if (response.status === 202) {
+      const pending = await response.json() as { operation_id?: unknown; state?: unknown } | null;
+      if (!pending || typeof pending.operation_id !== "string" ||
+          !/^queue\.issue_head:v1:[a-f0-9]{64}:\d{12}$/.test(pending.operation_id) ||
+          !["unknown", "queued", "pending", "executing", "retrying"].includes(String(pending.state)))
+        throw new Error("Import admission returned an invalid pending queue operation. Check the local service.");
+      // The import is already saved. Queue issuance belongs to Study; retain
+      // honest pending admission without submitting another queue command.
+      throw new ImportQueueAdmissionPending();
+    }
     const result = await readJsonResponse(response, schema, source);
     requestSignal.throwIfAborted();
     return result;
@@ -140,7 +152,14 @@ export function ImportDialogBox({
       if (repertoire.integrity_scan_status === "failed")
         throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
       if (repertoire.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
-        const queue = await readImportPublication(`${API_URL}/api/queue/window?limit=1`, queueEnvelopeSchema, "imported repertoire queue", signal);
+        let queue: z.infer<typeof queueEnvelopeSchema>;
+        try {
+          queue = await readImportPublication(`${API_URL}/api/queue/window?limit=1`, queueEnvelopeSchema, "imported repertoire queue", signal);
+        } catch (error) {
+          if (error instanceof ImportQueueAdmissionPending)
+            return { admitted: 0, publication: "ready", admissionPending: true };
+          throw error;
+        }
         signal.throwIfAborted();
         const projection = queue.projection;
         if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");

@@ -160,3 +160,23 @@ it("the default deadline also cancels a nonsettling operation status request", a
   expect(request.mock.calls[1][1]?.signal.aborted).toBe(true);
   expect(useTrainingStore.getState().attempt).toEqual(attempt);
 });
+
+it("a pending prepared-queue response retains the saved phone queue instead of parsing it as cards", async () => {
+  vi.stubGlobal("navigator", { userAgent: "iPhone", standalone: true });
+  const { localDayKey } = await import("../../app/utils/local");
+  const offline = await import("../../app/lib/offline-training");
+  await offline.savePreparedTraining({ local_date: localDayKey(), prepared_at: new Date().toISOString(), cards: [], count: 0,
+    projection: { state: "ready", generation: 1, updated_at: new Date().toISOString(), refresh_pending: 0, last_error: null } });
+  const saved = await offline.readPreparedTraining();
+  const write = vi.spyOn(offline, "savePreparedTraining");
+  const request = vi.fn(async (input: RequestInfo | URL) => String(input).includes("/queue/prepared")
+    ? pending() : Response.json({ cards: [issuedPositionCard()], count: 1, local_date: localDayKey() }));
+  vi.stubGlobal("fetch", request);
+  const loading = fetchAndInitializeQueue(false, { replaySavedReviews: false });
+  await advanceStudyTimers(100);
+  await loading; await settleStudyStorageTasks();
+  expect(request.mock.calls.some(([url]) => String(url).includes("/queue/prepared"))).toBe(true);
+  expect(write).not.toHaveBeenCalled();
+  expect(await offline.readPreparedTraining()).toEqual(saved);
+  expect(useTrainingStore.getState().queueNotice).toContain("saved queue is retained");
+});

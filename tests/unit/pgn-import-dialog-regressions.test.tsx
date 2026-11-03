@@ -456,3 +456,19 @@ it("acknowledged import needing integrity repair preserves its existing zero-adm
     expect(savePgnImportCommand).toHaveBeenCalledOnce();
   } finally { window.removeEventListener("tempo:integrity", repairRequested); }
 });
+
+it("an acknowledged PGN import retains truthful admission pending when queue issuance returns 202", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  const dialog = await openDialog();
+  const readyFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, options) => String(input).includes("/queue/window")
+    ? Response.json({ operation_id: "queue.issue_head:v1:" + "a".repeat(64) + ":000000000000", state: "executing" }, { status: 202 })
+    : readyFetch(input, options));
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await screen.findByRole("heading", { name: "Imported" });
+  expect(screen.getByText(/normal Study admission is still pending/)).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(dialog.databaseUpdated).toHaveBeenCalledOnce();
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/queue/window"))).toHaveLength(1);
+});
