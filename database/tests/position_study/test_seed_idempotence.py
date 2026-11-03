@@ -139,6 +139,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                 assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'preflight'
                 conn.commit()
                 if introduced == '2026-10-20':
+                    conn.execute('BEGIN')
                     with pytest.raises(ValueError, match='introduction_day_after_adoption'):
                         seed_shadow_page(db, prepared, request, epoch='e',
                             now=datetime(2026, 10, 19, tzinfo=timezone.utc), page_size=1)
