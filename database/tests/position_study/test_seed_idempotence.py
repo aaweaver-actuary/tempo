@@ -77,7 +77,8 @@ def test_writer_holds_when_namespace_guard_unavailable(monkeypatch):
     assert db.calls == before
 
 
-def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
+@pytest.mark.parametrize('introduced', ['2026-10-20T00:00:00Z', '2026-10-20'], ids=['aware', 'legacy_day_recovery'])
+def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduced):
     """Disposable PG transaction proof; authority and guard are test stubs here."""
     import os
     from datetime import datetime, timezone
@@ -100,7 +101,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
     blob = json.dumps({'card_id': 42, 'state': 1, 'step': 0, 'stability': None, 'difficulty': None,
                        'due': '2026-11-03T00:00:00+00:00', 'last_review': None})
     fact = DonorFact('physical', 'rep', 4, 'learning', '2026-11-03', blob,
-                     '2026-10-20T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
+                     introduced, False, False, None, False, ('rep',), deleted=False)
     request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
         prepared.snapshot, source_certificate=cert)),), (fact,))
     # Only this test replaces external authority/guard; SQL, savepoints,
@@ -124,8 +125,9 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
             admin.execute('CREATE TABLE deleted_cards(card_id text PRIMARY KEY)')
             admin.execute('CREATE TABLE repertoire_cards(repertoire_id text,card_id text REFERENCES cards(id))')
             admin.execute('CREATE TABLE repertoire_integrity_card_blocks(repertoire_id text,card_id text REFERENCES cards(id))')
+            admin.execute('CREATE TABLE operation_receipts(operation_id text PRIMARY KEY,command_name text,state text,response_json text)')
             admin.execute(migration.read_text())
-            admin.execute("INSERT INTO cards VALUES ('physical','rep',4,'learning','2026-11-03',%s,'2026-10-20T00:00:00Z',0,0,NULL,'opening')", (blob,))
+            admin.execute("INSERT INTO cards VALUES ('physical','rep',4,'learning','2026-11-03',%s,%s,0,0,NULL,'opening')", (blob, introduced))
             admin.execute("INSERT INTO repertoire_cards VALUES ('rep','physical')")
             class Borrowed:
                 read_only = False
@@ -136,6 +138,13 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
                 db = Borrowed(conn)
                 assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'preflight'
                 conn.commit()
+                if introduced == '2026-10-20':
+                    conn.execute('BEGIN')
+                    with pytest.raises(ValueError, match='introduction_day_after_adoption'):
+                        seed_shadow_page(db, prepared, request, epoch='e',
+                            now=datetime(2026, 10, 19, tzinfo=timezone.utc), page_size=1)
+                    assert conn.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
+                    conn.rollback()
                 conn.execute('BEGIN')
                 from dataclasses import replace
                 bad = replace(fact, fsrs_card_json='{}')
@@ -175,15 +184,53 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch):
                 assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'seeding'
                 conn.rollback()  # deliberately lose a whole page
                 assert conn.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
+                if introduced == '2026-10-20':
+                    # Finish a held run, then recover the newly eligible donor
+                    # without replaying preflight or resetting the namespace.
+                    conn.execute("UPDATE cards SET fsrs_card_json='{}' WHERE id='physical'")
+                    while True:
+                        conn.execute('SELECT 1')
+                        result = seed_shadow_page(db, prepared, bad_request, epoch='e', now=now, page_size=1)
+                        conn.commit()
+                        if result['stage'] == 'complete': break
+                    before = dict(conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone())
+                    conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='physical'", (blob,))
+                    conn.commit()
+                    for index in range(2):
+                        conn.execute('SELECT 1')
+                        result = seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
+                        assert result['stage'] == ('recovering' if index == 0 else 'complete')
+                        assert result['seeded'] == index + 1 and result['held'] == 1 - index
+                        provenance = result['provenance'][0]
+                        assert provenance['raw_introduced_at'] == introduced
+                        assert provenance['introduced_at'] == now.isoformat()
+                        assert provenance['prior_outcome']['disposition'] == 'hold'
+                        assert provenance['prior_outcome']['hold_reason'] == 'no_valid_current_introduced_donor'
+                        conn.execute("INSERT INTO operation_receipts VALUES (%s,'position_owner.seed','complete',%s)",
+                            (f'recovery-{index}', json.dumps({'repertoire_id': 'rep', 'epoch': 'e', 'page': result})))
+                        conn.commit()
+                    assert dict(conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone()) == before
+                    assert conn.execute('SELECT DISTINCT introduced_at FROM study_position_states').fetchone()[0] == now
+                    assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'verification_required'
+                    # An active owner cannot recover or replay seed work.
+                    conn.execute("UPDATE study_position_owners SET mode='active'")
+                    with pytest.raises(ValueError, match='position_owner_not_shadow'):
+                        seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
+                    conn.rollback()
+                    conn.execute('SELECT 1')
                 while True:
                     result = seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
                     conn.commit()
-                    if result['stage'] == 'complete': break
+                    if result['stage'] in ('complete', 'verification_required'): break
                     conn.execute('BEGIN')
                 states = conn.execute('SELECT fsrs_internal_card_id,fsrs_json FROM study_position_states ORDER BY position').fetchall()
                 assert len(states) == 2 and len({row[0] for row in states}) == 2
                 assert all(json.loads(row[1])['card_id'] != 42 for row in states)
                 assert conn.execute("SELECT fsrs_card_json FROM cards WHERE id='physical'").fetchone()[0] == blob
+                assert conn.execute('SELECT DISTINCT introduced_at FROM study_position_states').fetchone()[0] == (
+                    now if introduced == '2026-10-20' else datetime.fromisoformat(introduced.replace('Z', '+00:00')))
+                assert all({k: v for k, v in json.loads(row[1]).items() if k != 'card_id'} ==
+                           {k: v for k, v in json.loads(blob).items() if k != 'card_id'} for row in states)
                 # A later accepted grade may change position state without replay overwriting it.
                 conn.execute('UPDATE study_position_states SET version=2')
                 page = verify_seed_receipts_page(db, prepared, request, epoch='e', limit=100)

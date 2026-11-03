@@ -277,13 +277,7 @@ def _donor_status(fact: DonorFact, repertoire_id: str, expected_revisions: set[i
         return "owner_mismatch"
     if fact.introduced_at is None:
         return "unintroduced"
-    if not isinstance(fact.introduced_at, str):
-        return "invalid_introduction_timestamp"
-    try:
-        introduced = datetime.fromisoformat(fact.introduced_at.replace("Z", "+00:00"))
-    except ValueError:
-        return "invalid_introduction_timestamp"
-    if introduced.utcoffset() is None:
+    if not _valid_introduction(fact.introduced_at):
         return "invalid_introduction_timestamp"
     return "source_eligible_unvalidated_fsrs_runtime"
 
@@ -372,7 +366,7 @@ def _introduction_distribution(card_ids: set[str], donors: Mapping[str, DonorFac
             counts["missing_card_source"] += 1
         elif fact.introduced_at is None:
             counts["unintroduced"] += 1
-        elif _aware_timestamp(fact.introduced_at):
+        elif _valid_introduction(fact.introduced_at):
             counts["introduced"] += 1
         else:
             counts["invalid_or_unknown_introduction"] += 1
@@ -384,6 +378,19 @@ def _aware_timestamp(value: str) -> bool:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).utcoffset() is not None
     except (ValueError, TypeError, AttributeError):
         return False
+
+
+def _legacy_introduction_day(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 10:
+        return False
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
+
+
+def _valid_introduction(value: object) -> bool:
+    return _legacy_introduction_day(value) or _aware_timestamp(value)
 
 
 def _card_state_counts(card_ids: set[str], donors: Mapping[str, DonorFact]) -> dict[str, int]:

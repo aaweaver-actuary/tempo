@@ -73,6 +73,22 @@ def donor(card_id, repertoire_id, owners=None):
         owner_repertoire_ids=tuple(owners if owners is not None else (repertoire_id,)), deleted=False)
 
 
+def test_legacy_introduction_day_is_valid_evidence_without_inventing_an_instant():
+    from dataclasses import replace
+    value = snapshot(authored("route"), bindings=(card_binding("card"),))
+    for introduced, valid in (("2026-10-01", True), ("2024-02-29", True),
+                              ("2026-02-29", False), ("20261001", False),
+                              ("2026-W40-4", False), ("2026-10-01T00:00:00", False),
+                              ("2026-10-01T12:00:00+02:00", True)):
+        fact = replace(donor("card", "r1"), introduced_at=introduced)
+        result = build_inventory(InventoryRequest((source(value),), (fact,)))["repertoires"][0]
+        status = result["positions"][0]["donor_candidates"][0]["status"]
+        assert status == ("source_eligible_unvalidated_fsrs_runtime" if valid else "invalid_introduction_timestamp")
+        assert result["due_introduction_distribution"] == {
+            "introduced" if valid else "invalid_or_unknown_introduction": 1}
+        assert fact.introduced_at == introduced
+
+
 def test_same_physical_card_in_two_repertoires_is_excluded_for_both():
     value = snapshot(authored("a", "r1"), authored("b", "r2"), bindings=(
         card_binding("shared", route_id="a", repertoire_id="r1"),
