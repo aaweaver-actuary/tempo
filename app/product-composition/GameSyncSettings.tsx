@@ -62,8 +62,9 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
   const [interval, setInterval] = useState("");
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(recovery.error);
   const [generation, setGeneration] = useState(0);
+  const [loadIdentity, setLoadIdentity] = useState({ provider, generation, recoveryError: recovery.error });
   const pendingSave = useRef<PendingSave | null>(recovery.pending?.kind === "save" ? recovery.pending : null);
   const pendingRun = useRef<{ provider: Provider; operation_id: string } | null>(recovery.pending?.kind === "run"
     ? { provider: recovery.pending.provider, operation_id: recovery.pending.operation_id } : null);
@@ -77,11 +78,16 @@ export function GameSyncSettings({ workspaceId, repertoires }: {
       clearPendingProductGameSync(scope);
   }
 
-  useEffect(() => {
-    const controller = new AbortController();
+  // Reset before committing a different load, so stale form values are never interactive.
+  if (loadIdentity.provider !== provider || loadIdentity.generation !== generation || loadIdentity.recoveryError !== recovery.error) {
+    setLoadIdentity({ provider, generation, recoveryError: recovery.error });
     setBusy(true); setError(recovery.error); setMessage("");
     setLoaded(null); setAccount(""); setStart(""); setEnd("");
     setSpeeds([]); setRepertoires([]); setRated(""); setPurpose(""); setInterval("");
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetch(`${gameReviewBase}/configuration/${provider}`, {
