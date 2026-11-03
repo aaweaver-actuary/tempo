@@ -30,7 +30,9 @@ test("retired Jobs and Saves stay absent during navigation and debug export", as
 
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 844 });
-    await testInfo.attach(`header-${width}`, { body: await page.locator(".topbar").screenshot(), contentType: "image/png" });
+    const path = testInfo.outputPath(`header-${width}.png`);
+    await page.locator(".topbar").screenshot({ path });
+    await testInfo.attach(`header-${width}`, { path, contentType: "image/png" });
   }
 
   for (const [destination, heading] of [["Settings", "Settings"], ["Repertoire", "Repertoire"], ["Games", "Game review"]]) {
