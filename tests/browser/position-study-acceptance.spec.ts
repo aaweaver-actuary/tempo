@@ -532,7 +532,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
         expect(head.position_presentation).toBeNull();
         if (!released) {
           expect(fixture<Snapshot>(project, "read", identity)).toEqual(before);
-          await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
+          await expect(page.locator('.board-frame[data-input-enabled="true"]')).toHaveCount(0);
           holder.release();
           await holder.finish();
           released = true;
