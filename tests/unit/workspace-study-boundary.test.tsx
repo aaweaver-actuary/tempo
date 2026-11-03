@@ -8,7 +8,7 @@ import { closeStudyIntentStorage, studyIntentStore } from '../../database/browse
 import { useTrainingStore } from '../../app/state/training-store';
 import { mapQueueCardToPracticeCard } from '../../app/domain/adapters/practice-card-adapters';
 
-const deletion = vi.hoisted(() => ({ pending: false, failEditor: false, finish: undefined as (() => void) | undefined }));
+const deletion = vi.hoisted(() => ({ pending: false, failEditor: false, localApi: false, finish: undefined as (() => void) | undefined }));
 vi.mock('../../app/lib/card-delete-command', () => ({
   pendingCardDeletion: () => deletion.pending ? { cardId: 'a', expectedRevision: 1 } : null,
   deleteCardCommand: () => new Promise<void>(resolve => { deletion.finish = resolve; }),
@@ -16,7 +16,7 @@ vi.mock('../../app/lib/card-delete-command', () => ({
 vi.mock('../../app/lib/study-connection', async importOriginal => ({
   ...await importOriginal<typeof import('../../app/lib/study-connection')>(), independentStudy: false,
 }));
-vi.mock('../../app/utils/local', async importOriginal => ({ ...await importOriginal<typeof import('../../app/utils/local')>(), usesLocalApi: () => false }));
+vi.mock('../../app/utils/local', async importOriginal => ({ ...await importOriginal<typeof import('../../app/utils/local')>(), usesLocalApi: () => deletion.localApi }));
 vi.mock('../../app/ImportDialogBox', () => ({ ImportDialogBox: ({ onClose }: { onClose: () => void }) => <button onClick={onClose}>Close import</button> }));
 vi.mock('../../app/views/card_editor', () => ({ default: ({ practiceCard, onClose }: { practiceCard: { backendId: string }, onClose: () => void }) => { if (deletion.failEditor) throw new Error('workspace editor failed'); return <button onClick={onClose}>Editor {practiceCard.backendId}</button>; } }));
 vi.mock('../../app/views/tree_browser', () => ({ TreeBrowser: ({ onClose }: { onClose: () => void }) => <button onClick={onClose}>Close tree</button> }));
@@ -48,7 +48,7 @@ function mount() {
     children: slots => <>{slots.topActions}{slots.content}{slots.dialogs}<button onClick={() => slots.onEditCard?.(a)}>Edit A</button><button onClick={() => slots.onEditCard?.(b)}>Edit B</button></> };
   return render(<WorkspaceFailureBoundary><Suspense fallback={null}><LegacyWorkspace {...props} /></Suspense></WorkspaceFailureBoundary>);
 }
-afterEach(() => { cleanup(); closeStudyIntentStorage(); vi.unstubAllGlobals(); deletion.pending = false; deletion.failEditor = false; deletion.finish = undefined; });
+afterEach(() => { cleanup(); closeStudyIntentStorage(); vi.unstubAllGlobals(); deletion.pending = false; deletion.failEditor = false; deletion.localApi = false; deletion.finish = undefined; });
 it('import_editor_state_is_workspace_owned_and_unmounting_preserves_active_attempt', async () => {
   vi.stubGlobal('indexedDB', new IDBFactory());
   const store = await studyIntentStore();
@@ -142,9 +142,13 @@ it('retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount', async (
   localStorage.setItem('study-intent', 'keep-intent');
   localStorage.setItem('review', 'keep-review');
   localStorage.setItem('unrelated', 'keep-unrelated');
+  deletion.localApi = true;
+  vi.useFakeTimers();
   mount();
-  expect(await screen.findByRole('button', { name: 'Open local data menu' })).toBeTruthy();
-  expect(await screen.findByText('Open tree')).toBeTruthy();
+  await act(async () => { await vi.dynamicImportSettled(); });
+  expect(screen.getByRole('button', { name: 'Open local data menu' })).toBeTruthy();
+  expect(screen.getByText('Open tree')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Analysis activity' })).toBeNull();
   expect(screen.queryByText('Background activity')).toBeNull();
   expect(screen.queryByText('Jobs')).toBeNull();
   expect(screen.queryByText('Saved discovery requests')).toBeNull();
@@ -152,11 +156,11 @@ it('retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount', async (
   expect(localStorage.getItem('study-intent')).toBe('keep-intent');
   expect(localStorage.getItem('review')).toBe('keep-review');
   expect(localStorage.getItem('unrelated')).toBe('keep-unrelated');
-  vi.useFakeTimers();
-  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
   expect(fetcher.mock.calls.filter(([url, init]) =>
     (String(url).includes('/api/discoveries/') && String(url).includes('/accept') && init?.method === 'POST') ||
-    String(url).includes('/api/discovery-admissions/'))).toEqual([]);
+    String(url).includes('/api/discovery-admissions/') ||
+    /\/api\/system\/(?:activity(?:[/?]|$)|background-diagnostics(?:[/?]|$))/.test(String(url)))).toEqual([]);
   expect(remove.mock.calls.filter(([key]) => key === 'tempo-pending-discovery-admissions-v1')).toHaveLength(1);
   vi.useRealTimers();
   remove.mockRestore();
