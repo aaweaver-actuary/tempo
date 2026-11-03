@@ -614,7 +614,8 @@ def serialize_task(row: sqlite3.Row | dict) -> dict:
         age_seconds = max(0, int((_now() - created_at).total_seconds()))
     except (TypeError, ValueError):
         age_seconds = 0
-    return {
+    row = dict(row)
+    result = {
         "id": row["id"],
         "kind": row["kind"],
         "deduplication_key": row["deduplication_key"],
@@ -630,6 +631,54 @@ def serialize_task(row: sqlite3.Row | dict) -> dict:
         "age_seconds": age_seconds,
         "last_error": row["last_error"],
     }
+    if row["kind"] == "daily_queue" and row["deduplication_key"] == "current":
+        phases = {"unlock_opening", "block_opening", "block_defense", "restore_due", "restore_study",
+                  "tactical_introductions", "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
+                  "admit_due", "admit_position_due", "prioritized_openings", "prioritized_opening_item",
+                  "study_opening_page", "study_opening_item", "admit_study", "real_game_misses",
+                  "randomize_queue", "quarantine", "publish_projection"}
+        try:
+            payload = json.loads(row.get("payload_json") or "{}")
+            if not isinstance(payload, dict):
+                payload = {}
+        except (TypeError, ValueError):
+            payload = {}
+        day = payload.get("queue_date")
+        try:
+            day = datetime.strptime(day, "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            day = None
+        phase = payload.get("_queue_phase")
+        result["queue_date"] = day
+        result["queue_phase"] = phase if isinstance(phase, str) and phase in phases else None
+        result["transaction_timeout_count"] = row.get("transaction_timeout_count") or 0
+        # The stored checkpoint contains the entire private payload. Expose only
+        # known phase and bounded numeric offsets, never the raw checkpoint.
+        checkpoint = None
+        try:
+            saved = json.loads(row.get("transaction_timeout_checkpoint") or "null")
+            saved_payload = saved[-1] if isinstance(saved, list) and saved else None
+            if isinstance(saved_payload, dict):
+                saved_phase = saved_payload.get("_queue_phase")
+                checkpoint = {"queue_phase": saved_phase if isinstance(saved_phase, str) and saved_phase in phases else None}
+                for key in ("opening_index", "study_opening_index"):
+                    value = saved_payload.get(key)
+                    if type(value) is int and 0 <= value <= 1000000:
+                        checkpoint[key] = value
+        except (TypeError, ValueError):
+            pass
+        result["timeout_checkpoint"] = checkpoint
+    return result
+
+
+def annotate_queue_projection_workers(projections, tasks, today):
+    """Label read-only projection history without treating timestamps as heartbeats."""
+    active_days = {task.get("queue_date") for task in tasks
+                   if task.get("kind") == "daily_queue" and task.get("deduplication_key") == "current"
+                   and task.get("state") in {"queued", "leased", "retrying"}}
+    return [{**projection, "worker_status": ("historical" if projection.get("queue_date") < today
+             else "current" if projection.get("queue_date") == today and today in active_days
+             else "inactive")} for projection in projections]
 
 
 def list_tasks() -> list[dict]:
