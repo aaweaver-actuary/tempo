@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+
 FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 IDENTITY = 'queue-refresh-scale'
 
@@ -46,8 +48,8 @@ def seed_queue_refresh_case(db, *, queued_count=1258, frozen_active=True,
     if not (queued_count in (32, 1258) and 1 <= issued_count < queued_count
             and 0 <= changed_kind_count <= queued_count - issued_count):
         raise ValueError('unsupported scale or protected/changed counts')
-    if db.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] != 58:
-        raise RuntimeError('queue scale fixture requires migration 58')
+    if db.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] != POSTGRES_SCHEMA_VERSION:
+        raise RuntimeError('queue scale fixture requires the current registered schema')
     day = date.today().isoformat()
     if db.execute('SELECT 1 FROM daily_queue WHERE queue_date=%s LIMIT 1', (day,)).fetchone():
         raise RuntimeError('fixture requires an empty current-day queue')
@@ -69,6 +71,7 @@ def seed_queue_refresh_case(db, *, queued_count=1258, frozen_active=True,
           CASE WHEN n=%s THEN 'blocked' WHEN n=%s THEN 'complete' ELSE 'queued' END,
           CASE WHEN n<=%s THEN 'in_progress' ELSE 'clean' END,'opening','due',%s
         FROM generate_series(1,%s) n""", (day, IDENTITY, queued_count+1, queued_count+2, issued_count, IDENTITY, queued_count+2))
+    db.execute("SELECT setval(pg_get_serial_sequence('daily_queue','id'), %s, true)", (queued_count + 2,))
     db.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id<=%s", (issued_count,))
     db.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,%s,%s)", (day, IDENTITY, now))
     db.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,blocked_count) VALUES(%s,'refreshing',1,1,1)", (day,))
