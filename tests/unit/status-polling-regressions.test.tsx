@@ -10,12 +10,6 @@ import { boardDiagnostics } from "../../app/lib/board-diagnostics";
 import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { STANDARD_FEN } from "../../app/const";
 
-const activeActivity = {
-  items: [{ source: "durable", id: "poll-task", title: "Polling task", state: "running", phase: "Working",
-    completed: 1, total: 10, updated_at: "2026-09-22T00:00:00Z", error: null, paused: false, promoted: false }],
-  counts: { running: 1, queued: 0, paused: 0, failed: 0 }, total: 1, next_offset: null as number | null,
-  writer: { healthy: true, foreground: 0, background: 0 },
-};
 const activeJob = { id: "65b588f2-cba2-4678-bc8c-b7a10b5227f1", status: "running", created_at: "2026-09-22T00:00:00Z",
   started_at: null, completed_at: null, updated_at: "2026-09-22T00:00:00Z", error: null, result: null };
 let visibility: DocumentVisibilityState;
@@ -41,10 +35,8 @@ function deferred<T>() {
   const promise = new Promise<T>(complete => { resolve = complete; });
   return { promise, resolve };
 }
-// Count activity/sync requests separately from main's independently throttled diagnostic read.
 function mockPollingFetch(requester: typeof fetch) {
-  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-    String(input).endsWith("/background-diagnostics") ? Promise.resolve(Response.json(null)) : requester(input, init));
+  vi.stubGlobal("fetch", requester);
 }
 function mockSyncFetch(status: () => Response | Promise<Response>) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/sync/status")
@@ -432,8 +424,7 @@ it("equivalent_status_during_actual_training_avoids_parent_commits_and_board_pub
     attempt: { entryKey: "polling-training", generation: 1, phase: "playerTurn" } });
   const statusMock = vi.fn(() => Response.json({ providers: [], active_job: activeJob }));
   const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/sync/status")
-    ? Promise.resolve(statusMock()) : String(input).includes("/system/activity")
-      ? Promise.resolve(Response.json(activeActivity)) : new Promise<Response>(() => undefined));
+    ? Promise.resolve(statusMock()) : new Promise<Response>(() => undefined));
   mockPollingFetch(fetchMock);
   let trainingCommits = 0;
   function TrainingConsumer() {

@@ -214,7 +214,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
       "/api/tactics/progress": {},
       "/api/games/sync/status": { providers: [] },
       "/api/games/position-summary": { encounters: 0, analyzed_encounters: 0, moves: [] },
-      "/api/system/activity": { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
       "/api/games/analysis/claim": { job: null },
       "/api/game-findings": { findings: [] },
       "/api/discoveries": { discoveries: [], total: 0, next_offset: null, unread_count: 0 },
