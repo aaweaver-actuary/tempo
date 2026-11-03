@@ -251,19 +251,25 @@ async function preparedPositionPlan(page: Page, entryId: number): Promise<string
   }), entryId);
 }
 
-async function attemptForCard(page: Page, cardId: string): Promise<string | null> {
-  return page.evaluate((id) => new Promise<string | null>((resolve) => {
+async function offlineAttemptsForCard(page: Page, card: Queue["cards"][number]): Promise<string[]> {
+  return page.evaluate((identity) => new Promise<string[]>((resolve, reject) => {
     const open = indexedDB.open("tempo-offline-training", 2);
-    open.onerror = () => resolve(null);
+    open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const database = open.result;
       const request = database.transaction("opening_attempts").objectStore("opening_attempts").getAll();
       request.onsuccess = () => { database.close();
-        const found = request.result.find((row: { manifest?: { card_id?: string } }) => row.manifest?.card_id === id);
-        resolve(found?.attempt_id ?? null); };
-      request.onerror = () => { database.close(); resolve(null); };
+        // An earlier online teaching journal may remain for the same physical
+        // card. Select the offline attempt by identity, never by event outcome
+        // or storage order; the caller separately proves its wrong response.
+        const found = request.result.filter((row: { source?: string; origin_queue_entry_id?: number;
+          manifest?: { card_id?: string; card_revision?: number } }) => row.source === "offline" &&
+          row.manifest?.card_id === identity.id && row.manifest.card_revision === identity.revision &&
+          row.origin_queue_entry_id === identity.queue_entry_id);
+        resolve(found.map((row: { attempt_id: string }) => row.attempt_id)); };
+      request.onerror = () => { database.close(); reject(request.error); };
     };
-  }), cardId);
+  }), card);
 }
 
 function position(fen: string): string { return fen.split(" ").slice(0, 4).join(" "); }
@@ -646,14 +652,16 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   try {
     await page.reload();
     await move(page, "d2", "d4");
-    await expect.poll(() => attemptForCard(page, legacy.card)).not.toBeNull();
-    const legacyAttempt = (await attemptForCard(page, legacy.card))!;
+    await expect.poll(() => offlineAttemptsForCard(page, legacyHead)).toHaveLength(1);
+    const matchingOfflineAttempts = await offlineAttemptsForCard(page, legacyHead);
+    expect(matchingOfflineAttempts).toHaveLength(1);
+    const [legacyAttempt] = matchingOfflineAttempts;
     await expect.poll(async () => (await openingEvents(page, legacyAttempt)).some(event =>
       event.kind === "first_response" && event.response_uci === "d2d4" && event.disposition === "wrong")).toBe(true);
     const legacyWrong = (await openingEvents(page, legacyAttempt)).find(event =>
       event.kind === "first_response" && event.disposition === "wrong");
     await page.reload();
-    expect(await attemptForCard(page, legacy.card)).toBe(legacyAttempt);
+    expect(await offlineAttemptsForCard(page, legacyHead)).toEqual([legacyAttempt]);
     expect((await openingEvents(page, legacyAttempt)).find(event =>
       event.kind === "first_response" && event.disposition === "wrong")).toEqual(legacyWrong);
     const durable = fixture<Snapshot>(project, "read", identity);
