@@ -1075,7 +1075,8 @@ def seed_rollover_obligation(database, card, repertoire):
 
 
 def test_current_owner_rollover_suppresses_retired_components_beyond_first_projection_batch(current_owner_transaction,monkeypatch):
-    from datetime import date
+    from datetime import date, time
+    from zoneinfo import ZoneInfo
     from app import queue_commands
     from app.services.queue_application import seed_queue, MISS_REASON
     from app.services.queue_admission_adapter import QueueAdmissionAdapter
@@ -1169,11 +1170,21 @@ def test_current_owner_rollover_suppresses_retired_components_beyond_first_proje
             assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
             assert database.execute_native("SELECT status FROM daily_queue WHERE id=%s", (entry,)).fetchone()[0]=='queued'
             assert sum(n for _,n in QueueAdmissionAdapter(database).introduction_count_page(day,None).counts)==0
-    class RolloverDate(date):
+    with transaction() as database:
+        study_timezone = queue_storage.study_timezone(database)
+    assert study_timezone is not None
+    rollover_timezone = (datetime.now().astimezone().tzinfo if study_timezone == 'local'
+                         else ZoneInfo(study_timezone))
+    rollover_utc = datetime.combine(rollover, time(hour=12), tzinfo=rollover_timezone).astimezone(timezone.utc)
+
+    class RolloverUTCDateTime(datetime):
         @classmethod
-        def today(cls):
-            return rollover
-    monkeypatch.setattr(queue_commands,'date',RolloverDate)
+        def now(cls, tz=None):
+            return rollover_utc.astimezone(tz) if tz is not None else rollover_utc.replace(tzinfo=None)
+
+    monkeypatch.setattr(queue_commands,'datetime',RolloverUTCDateTime)
+    with transaction() as database:
+        assert queue_commands.current_study_day(database, now=rollover_utc) == day
     expected = {combined[routes[0][0]],combined[routes[-1][0]]}
     issued = set()
     with transaction() as database:
@@ -1183,7 +1194,8 @@ def test_current_owner_rollover_suppresses_retired_components_beyond_first_proje
             head = queue_storage.prepare_queue_head(database,MISS_REASON)(day)
             assert head is not None
             identifier = database.execute_native('SELECT card_id FROM daily_queue WHERE id=%s', (head['id'],)).fetchone()[0]
-            assert queue_commands.issue_queue_head(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1,queue_date=day))['issued']
+            issue_result = queue_commands.issue_queue_head(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1,queue_date=day))
+            assert issue_result['issued'], {'entry_id':head['id'],'card_id':identifier,'result':issue_result}
             if identifier in expected:
                 issued.add(identifier)
             queue_commands.bury_queue_entry(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1))
