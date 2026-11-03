@@ -10,6 +10,9 @@ import { resetStudyStorage, withMissingReceipts } from "./support/study-intent-f
 import { asCardId, asFenString, asQueueEntryId } from "../../app/types";
 import type { PracticeCard } from "../../app/domain/cards";
 import { decodePositionPresentation } from "../../app/domain/position-presentation";
+import { computeEssentialStudyTask } from "../../app/lib/essential-study-computation";
+import { decodeStudyResult } from "../../app/lib/study-result-decoder";
+import { openingDecisionManifestSchema } from "../../app/domain/opening-evidence";
 
 const plan = decodePositionPresentation({ version: 1, plan_id: "a".repeat(64),
   owner_epoch: "issued-epoch", target_ply: 0, starting_fen: manifest.decisions[0].fen,
@@ -116,4 +119,82 @@ it("does not downgrade a position evidence conflict to an aggregate-only review"
   expect(response.status).toBe(409);
   expect(request).toHaveBeenCalledOnce();
   expect(rejected).not.toHaveBeenCalled();
+});
+
+it("fen_spec_ep_manifest_prepares_a_playable_durable_position_attempt_and_restores_original_first_response", async () => {
+  vi.resetModules();
+  const journalModule = await import("../../app/lib/opening-evidence-journal");
+  const { offlineTrainingDatabase: currentDatabase } = await import("../../database/browser/offline-training-storage");
+  const { readPositionOpeningJournal: readJournal } = await import("../../database/browser/opening-evidence-journal-storage");
+  let held = false;
+  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => {
+    if (held) return callback(null);
+    held = true;
+    try { await callback({}); } finally { held = false; }
+  } } });
+  const rawManifest = { ...manifest, decisions: manifest.decisions.map(decision => ({ ...decision,
+    fen: decision.move_offset === 2 ? decision.fen.replace(" - 0 2", " e6 0 2") : decision.fen })) };
+  const issuedPlan = decodePositionPresentation({ ...plan, attempt_id: "issued-fen-spec-ep" });
+  const manifestBytes = JSON.stringify(rawManifest);
+  const planBytes = JSON.stringify(issuedPlan);
+  const task = { kind: "queue" as const, payload: { cards: [{ id: manifest.card_id, queue_entry_id: 101, revision: 3,
+    start_fen: issuedPlan.starting_fen, moves: [...issuedPlan.moves_uci], content_type: "opening",
+    repertoire_name: "Position", repertoire_source: "synthetic", trained_color: "white",
+    opening_decision_manifest: rawManifest, position_study_mode: "position", position_presentation: issuedPlan }] } };
+  const [workerCard] = decodeStudyResult(task, structuredClone(computeEssentialStudyTask(task)));
+  expect(workerCard.positionStudyHold).toBeUndefined();
+  expect(workerCard.openingDecisionManifest?.decisions[1].fen).toContain(" e6 ");
+  expect(workerCard.positionPresentation?.decision_slots[1].position_key).toMatch(/ -$/);
+  expect(await journalModule.preparePositionOpeningAttempt(workerCard)).toBeUndefined();
+  const journal = journalModule.beginOpeningAttempt(workerCard, issuedPlan.attempt_id)!;
+  expect(journal).toBeDefined();
+  const database = await currentDatabase();
+  const prepared = await readJournal(database, issuedPlan.attempt_id);
+  expect(prepared?.attempt).toMatchObject({ attempt_id: issuedPlan.attempt_id, queue_entry_id: 101,
+    manifest: rawManifest, position_plan: issuedPlan, terminal: null });
+  expect(prepared?.events).toEqual([]);
+  journal.response(2, "d2d4", "wrong");
+  await vi.waitFor(async () => {
+    const saved = await readJournal(database, issuedPlan.attempt_id);
+    expect(saved?.events).toMatchObject([{ sequence: 1, kind: "first_response",
+      decision_id: rawManifest.decisions[1].decision_id, response_uci: "d2d4" }]);
+  });
+  journalModule.partialOpeningAttempt(issuedPlan.attempt_id);
+  await vi.waitFor(() => expect(held).toBe(false));
+  vi.resetModules();
+  const reloaded = await import("../../app/lib/opening-evidence-journal");
+  expect(await reloaded.preparePositionOpeningAttempt(workerCard)).toBeUndefined();
+  const restored = reloaded.beginOpeningAttempt(workerCard, issuedPlan.attempt_id)!;
+  expect(restored).not.toBe(journal);
+  restored.response(2, "d2d4", "wrong");
+  restored.response(2, "g1f3", "expected");
+  expect(restored.snapshot()).toMatchObject({ attempt_id: issuedPlan.attempt_id, manifest: rawManifest,
+    queue_entry_id: 101, terminal: null, events: [
+      { sequence: 1, kind: "first_response", decision_id: rawManifest.decisions[1].decision_id, response_uci: "d2d4" },
+      { sequence: 2, kind: "correction", decision_id: rawManifest.decisions[1].decision_id, response_uci: "g1f3" },
+    ] });
+  expect(restored.positionPlan).toEqual(issuedPlan);
+  expect(JSON.stringify(rawManifest)).toBe(manifestBytes);
+  expect(JSON.stringify(workerCard.positionPresentation)).toBe(planBytes);
+  expect(Object.isFrozen(workerCard.positionPresentation)).toBe(true);
+  reloaded.partialOpeningAttempt(issuedPlan.attempt_id);
+  await vi.waitFor(() => expect(held).toBe(false));
+});
+
+it("position_journal_keeps_legally_available_ep_distinct_and_refuses_a_mismatched_issued_key", async () => {
+  vi.resetModules();
+  const journalModule = await import("../../app/lib/opening-evidence-journal");
+  const { offlineTrainingDatabase: currentDatabase } = await import("../../database/browser/offline-training-storage");
+  const { readPositionOpeningJournal: readJournal } = await import("../../database/browser/opening-evidence-journal-storage");
+  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<void>) => callback({}) } });
+  const fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+  const epManifest = openingDecisionManifestSchema.parse({ ...manifest,
+    decisions: [{ ...manifest.decisions[0], fen, expected_uci: "e1d1" }] });
+  const mismatchedPlan = decodePositionPresentation({ ...plan, attempt_id: "issued-legal-ep-mismatch", starting_fen: fen,
+    moves_uci: ["e1d1"], decision_slots: [{ move_offset: 0, position_key: canonicalFenKey(fen.replace(" d6 ", " - ")), expected_uci: "e1d1" }] });
+  const mismatched = { ...card, startingFen: asFenString(fen), openingDecisionManifest: epManifest, positionPresentation: mismatchedPlan };
+  expect(await journalModule.preparePositionOpeningAttempt(mismatched)).toContain("invalid");
+  expect(journalModule.beginOpeningAttempt(mismatched, mismatchedPlan.attempt_id)).toBeUndefined();
+  expect(await readJournal(await currentDatabase(), mismatchedPlan.attempt_id)).toBeUndefined();
+  expect(epManifest.decisions[0].fen).toBe(fen);
 });

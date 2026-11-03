@@ -1,9 +1,16 @@
 import * as z from "zod";
+import { Chess } from "chess.js";
+import { canonicalFenKey as fourFieldFenKey } from "@tempo/chess-line";
 import {
   fenKeySchema,
   fenStringSchema,
   uciMoveSchema,
 } from "./schemas/primitives";
+
+/** Position Study identity includes en passant only when a legal capture exists. */
+export function legalPositionKey(fen: string): string {
+  return fourFieldFenKey(new Chess(fen).fen());
+}
 
 const digestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const nonEmpty = z.string().min(1);

@@ -4,7 +4,7 @@ import {
   packagedPuzzleSchema,
 } from "../schemas";
 import { adaptPositionPresentation } from "./position-presentation-adapter";
-import { canonicalFenKey } from "../../utils/canonical-line";
+import { legalPositionKey } from "../position-presentation";
 import { openingDecisionManifestSchema } from "../opening-evidence";
 import { studySnapshotSchema } from "../study-exercises";
 import {
@@ -145,9 +145,6 @@ export function mapQueueCardToPracticeCard(
     if (original.kind !== "opening") throw new Error("Position study requires an opening card");
     const display = adaptPositionPresentation(card.position_presentation, original);
     const { plan } = display;
-    // Position Study keys retain EP only when a legal capture is available;
-    // manifest FENs may preserve the FEN-spec square after every pawn double move.
-    const legalPositionKey = (fen: string) => canonicalFenKey(new Chess(fen).fen());
     const manifest = original.openingDecisionManifest;
     if (!manifest || manifest.card_id !== plan.original_card_id ||
         manifest.card_revision !== plan.original_card_revision ||

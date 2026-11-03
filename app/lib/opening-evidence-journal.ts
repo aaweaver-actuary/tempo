@@ -10,7 +10,7 @@ import { confirmOperationResponse, FailedOperationError, PendingOperationError, 
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
-import { canonicalFenKey } from "../utils/canonical-line";
+import { legalPositionKey } from "../domain/position-presentation";
 
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
@@ -327,7 +327,7 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
         manifest.decisions.some((decision, index) => {
           const slot = plan.decision_slots[index];
           return !slot || decision.decision_index !== index || decision.move_offset !== slot.move_offset ||
-            decision.expected_uci !== slot.expected_uci || canonicalFenKey(decision.fen) !== slot.position_key;
+            decision.expected_uci !== slot.expected_uci || legalPositionKey(decision.fen) !== slot.position_key;
         })) return;
   }
   if (!attemptId || card.kind !== "opening" || !card.openingDecisionManifest || !card.queueEntryId || typeof indexedDB === "undefined") return;
