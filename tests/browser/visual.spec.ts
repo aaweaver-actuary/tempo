@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { navigate, boardBounds, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
-import type { ActivityResponse } from "../../app/lib/service-status";
 
 for (const width of [390, 1280]) {
   test(`issue186_prepared_recovery_remains_visible_and_interactive-${width}`, async ({ page }, testInfo) => {
@@ -135,25 +134,6 @@ test("laptop header navigation and actions remain separate", async ({ page }) =>
   expect(navigationBounds!.x + navigationBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
 });
 
-for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
-  test(`activity-tray-${viewport.width}`, async ({ page }) => {
-    await page.setViewportSize(viewport);
-    const activityResponse: ActivityResponse = {
-      items: [{ source: "integrity", id: "visual-repertoire", title: "Spanish opening integrity",
-        state: "running", phase: "Scanning sources", completed: 2, total: 5,
-        updated_at: "2026-09-18T16:00:00Z", error: null, paused: false, promoted: false }],
-      counts: { running: 1, queued: 0, paused: 0, failed: 0 }, total: 1, next_offset: null,
-      writer: { healthy: true, foreground: 0, background: 0 },
-    };
-    await prepareVisualUI(page, true, undefined, undefined, activityResponse);
-    await page.getByRole("button", { name: /Analysis activity/ }).click();
-    await expect(page.getByRole("progressbar", { name: "Spanish opening integrity progress" })).toBeVisible();
-    await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toHaveCount(0);
-    await page.addStyleTag({ content: "#tempo-activity-content .tempo-activity-item:not(:first-of-type), #tempo-activity-content .tempo-activity-list h3:not(:first-child) { display: none; }" });
-    await expect(page.locator(".notification-count")).toHaveCount(0);
-    await expect(page).toHaveScreenshot(`activity-tray-${viewport.width}.png`, { animations: "disabled", fullPage: true });
-  });
-}
 test("import-dialog-phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareVisualUI(page);

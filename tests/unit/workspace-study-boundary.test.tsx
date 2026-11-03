@@ -24,8 +24,6 @@ let seenImported: unknown;
 vi.mock('../../app/views/repertoire_view', () => ({ default: ({ imported }: { imported: unknown }) => { seenImported = imported; return <div>Repertoire</div>; } }));
 vi.mock('../../app/features/product-api/RepertoireAuditMount', () => ({ RepertoireAuditMount: ({ children, onNavigate }: { children: React.ReactNode, onNavigate: (intent: { kind: string }) => void }) => <>{children}<button onClick={() => onNavigate({ kind: 'manual_edit' })}>Open tree</button></> }));
 vi.mock('../../app/components/integrity-repair-status', () => ({ IntegrityRepairStatus: () => null }));
-vi.mock('../../app/components/service-status-panel', () => ({ ServiceStatusPanel: () => null }));
-vi.mock('../../app/components/pending-discovery-saves', () => ({ PendingDiscoverySaves: () => null }));
 vi.mock('../../app/components/workbench-launch', () => ({ WorkbenchLaunch: () => null }));
 const card = (id: string, entry: number) => mapQueueCardToPracticeCard({ id, revision: 1, queue_entry_id: entry,
   start_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: ['e2e4'], content_type: 'opening', repertoire_name: 'Fixture', repertoire_source: 'PGN' });
@@ -134,4 +132,41 @@ it('workspace_receives_the_original_imported_content_reference', async () => {
   mount();
   await screen.findByText('Repertoire');
   expect(seenImported).toBe(imported);
+});
+
+it('retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => Response.json({}));
+  const remove = vi.spyOn(Storage.prototype, 'removeItem');
+  vi.stubGlobal('fetch', fetcher);
+  localStorage.setItem('tempo-pending-discovery-admissions-v1', '[{"state":"pending"}]');
+  localStorage.setItem('study-intent', 'keep-intent');
+  localStorage.setItem('review', 'keep-review');
+  localStorage.setItem('unrelated', 'keep-unrelated');
+  mount();
+  expect(await screen.findByRole('button', { name: 'Open local data menu' })).toBeTruthy();
+  expect(await screen.findByText('Open tree')).toBeTruthy();
+  expect(screen.queryByText('Background activity')).toBeNull();
+  expect(screen.queryByText('Jobs')).toBeNull();
+  expect(screen.queryByText('Saved discovery requests')).toBeNull();
+  expect(localStorage.getItem('tempo-pending-discovery-admissions-v1')).toBeNull();
+  expect(localStorage.getItem('study-intent')).toBe('keep-intent');
+  expect(localStorage.getItem('review')).toBe('keep-review');
+  expect(localStorage.getItem('unrelated')).toBe('keep-unrelated');
+  vi.useFakeTimers();
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(fetcher.mock.calls.filter(([url, init]) =>
+    (String(url).includes('/api/discoveries/') && String(url).includes('/accept') && init?.method === 'POST') ||
+    String(url).includes('/api/discovery-admissions/'))).toEqual([]);
+  expect(remove.mock.calls.filter(([key]) => key === 'tempo-pending-discovery-admissions-v1')).toHaveLength(1);
+  vi.useRealTimers();
+  remove.mockRestore();
+});
+
+it('disabled_storage_does_not_block_workspace_mount', async () => {
+  const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('storage disabled'); });
+  try {
+    mount();
+    expect(await screen.findByRole('button', { name: 'Open local data menu' })).toBeTruthy();
+    expect(await screen.findByText('Open tree')).toBeTruthy();
+  } finally { remove.mockRestore(); }
 });

@@ -38,9 +38,6 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     await page.reload();
     await navigate(page, "Train");
     await expect(page.getByText(/Study-only mode is on. Optional/)).toBeVisible();
-    await page.getByRole("button", { name: "Analysis activity" }).click();
-    await expect(page.getByText(/pending work is preserved/)).toBeVisible();
-    await page.getByRole("button", { name: "Close", exact: true }).click();
     for (let index = 0; index < 3; index++) {
       const head = (await (await request.get(`${api}/queue/window?limit=20`)).json()).cards[0];
       expect(head.id).toBe(`${identifier}-prepared-${String(index).padStart(3, "0")}`);

@@ -5,28 +5,12 @@ import TrainingView from "../../app/views/training_view";
 import { useTrainingStore } from "../../app/state/training-store";
 import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { clearNotificationHistory, notifications, notificationToasts, publishNotification } from "../../app/lib/notifications";
-import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions,
-  recoverUnacknowledgedDiscoveryAdmissions } from "../../app/lib/discovery-admission-outbox";
+
 
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div data-testid="board" /> }));
 beforeEach(() => { localStorage.clear(); clearNotificationHistory(); useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   useTrainingStore.setState({ cardsLeft: 1, currentFenString: asFenString(STANDARD_FEN) }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-
-it("phone accepted discovery reload confirms the original intent without readmission", async () => {
-  enqueuePendingDiscoveryAdmission({ opportunityId: "gap", selectedMoveUci: "f3e5", evidenceFingerprint: "revision" });
-  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ intent_id: "original-intent" }))
-    .mockResolvedValueOnce(Response.json({ state: "queued" }));
-  vi.stubGlobal("fetch", fetcher);
-  await flushPendingDiscoveryAdmissions();
-  const accepted = pendingDiscoveryAdmissions()[0];
-  recoverUnacknowledgedDiscoveryAdmissions();
-  expect(pendingDiscoveryAdmissions()[0]).toEqual(accepted);
-  await flushPendingDiscoveryAdmissions();
-  expect(fetcher.mock.calls[1][0]).toContain("/api/discovery-admissions/original-intent");
-  expect(fetcher.mock.calls[1][1]?.method).not.toBe("POST");
-  expect(pendingDiscoveryAdmissions()).toEqual([]);
-});
 
 it("phone pending review uses inline confirmation status and no error popup", () => {
   const retry = vi.fn();
@@ -46,23 +30,6 @@ it("phone pending review uses inline confirmation status and no error popup", ()
   expect(notifications()[0]).toMatchObject({ severity: "info", resolvedAt: null });
   mounted.rerender(<TrainingView {...props} reviewPersistenceState="saved" />);
   expect(notifications()[0].resolvedAt).not.toBeNull();
-});
-
-it("phone discovery projection does not count one stored failure as repeated incidents", async () => {
-  const { reportDiscoveryAdmissionErrors } = await import("../../app/lib/discovery-admission-outbox");
-  const failed = { opportunityId: "stale", selectedMoveUci: "f3e5", evidenceFingerprint: "revision",
-    operationId: "original", state: "failed" as const, error: "Active discovery not found" };
-  for (let projection = 0; projection < 10; projection++) reportDiscoveryAdmissionErrors([failed]);
-  expect(notifications()).toHaveLength(1);
-  expect(notifications()[0]).toMatchObject({ occurrenceCount: 1, details: { error: "Active discovery not found", operationId: "original" } });
-});
-
-it("phone stale discovery failure with retained intent repairs by confirming that intent", () => {
-  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{ opportunityId: "stale",
-    selectedMoveUci: "f3e5", evidenceFingerprint: "revision", operationId: "original", intentId: "accepted-intent",
-    state: "failed", error: "Active discovery not found" }]));
-  recoverUnacknowledgedDiscoveryAdmissions();
-  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ operationId: "original", intentId: "accepted-intent", state: "accepted" });
 });
 
 it("phone review diagnostics retain raw errors without publishing a second incident", async () => {

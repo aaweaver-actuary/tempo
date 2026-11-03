@@ -9,7 +9,6 @@ import {
   reportDebugError,
   setActiveDebugWorkspace,
 } from "../../app/lib/debug-reporting";
-import { setBackgroundDiagnostics } from "../../app/lib/service-status";
 import { DebugErrorPanel } from "../../app/components/debug-error-panel";
 import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
@@ -241,13 +240,8 @@ describe("frontend debug reporting", () => {
   });
 });
 
-it("debug bundle includes only validated aggregate background diagnostics", async () => {
-  setBackgroundDiagnostics({ generated_at: "2026-10-02T12:00:00Z", window_start: "2026-10-01T12:05:00Z", window_end: "2026-10-02T12:00:00Z",
-    available: false, unavailable_reason: "query_deadline", query_duration_seconds: 0.1, runtime: {} });
+it("debug bundle omits retired unsampled status fields", () => {
   const bundle = JSON.parse(buildDebugBundle());
-  expect(bundle.backgroundDiagnostics.available).toBe(false);
-  expect(bundle.backgroundDiagnostics.unavailable_reason).toBe("query_deadline");
-  expect(() => setBackgroundDiagnostics({ ...bundle.backgroundDiagnostics, payload: { token: "canary-secret" } })).toThrow();
-  expect(buildDebugBundle()).not.toContain("canary-secret");
-  setBackgroundDiagnostics(null);
+  expect(bundle).not.toHaveProperty("serviceStatus");
+  expect(bundle).not.toHaveProperty("backgroundDiagnostics");
 });

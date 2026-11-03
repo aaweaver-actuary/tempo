@@ -16,8 +16,6 @@ vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));
 // Unchanged authoring/status panels are outside this selected navigation seam.
-vi.mock("../../app/components/service-status-panel", () => ({ ServiceStatusPanel: () => null }));
-vi.mock("../../app/components/pending-discovery-saves", () => ({ PendingDiscoverySaves: () => null }));
 vi.mock("../../app/components/integrity-repair-status", () => ({ IntegrityRepairStatus: () => null }));
 
 it("mounts current Game Review receipts and keeps the Study attempt when its optional read fails", async () => {
