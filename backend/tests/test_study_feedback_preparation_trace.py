@@ -135,28 +135,72 @@ def test_preparation_sql_remains_in_outer_command_total_and_reports_local_delta(
 def test_native_preparation_trace_localizes_capture_failure_and_retains_both_owners(
         native_handoff, monkeypatch, caplog):
     """Injected owner failure after real full-scope publication qualification."""
+    from contextlib import contextmanager
     from app.product_composition import provider_priority as composition
+    from app.services import study_priority
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     caplog.set_level(logging.INFO, logger='tempo.study.feedback')
+    caplog.set_level(logging.WARNING, logger='tempo.games.priority_intake')
     case = native_handoff
+    command = case.original.command
     before = case.case.readback()
-    starts = []
-    def unavailable(*args):
-        starts.append(args)
-        raise RemediationError('terminal_failure', 'legacy_card_not_introduced')
+    with case.case.transaction() as database:
+        study_only = bool(database.execute_native('SELECT study_only_mode FROM settings WHERE id=1').fetchone()[0])
+        before_effect = PostgresGameFeedbackStore(database).get(command.key)
+    assert before_effect is None and case.original.receipt is None
+    # Keep the actual publication/qualification trace. This pure path no longer
+    # captures a target; public intake owns the separate capture stage below.
     prepared = composition.prepare_delivery_feedback(case.original,
-        connections=case.connections, clock=case.clock, admitted=lambda: True,
-        capture=unavailable)
-    assert len(starts) == 1 and prepared.provider_feedback is None
-    assert prepared.delivery.qualification_reason == 'first_departure_preparation_unavailable'
-    assert case.store.delivery(case.original.operation_id) == case.original
-    assert case.case.readback() == before
+        connections=case.connections, clock=case.clock, admitted=lambda: True)
+    assert prepared.delivery.qualification_status == 'ready'
+    assert prepared.provider_feedback is not None
     record, = records(caplog)
-    assert record['failure_stage'] == 'target_capture'
-    assert record['error_reason'] == 'legacy_card_not_introduced'
     assert record['spans']['publication_read']['count'] == 1
     assert record['spans']['publication_projection']['count'] == 1
     assert record['spans']['first_boundary_qualification']['count'] == 1
-    assert 'current_owner_validation' not in record['spans']
+    assert record['spans']['current_owner_validation']['count'] == 1
+    assert 'failure_stage' not in record
+
+    # Supply the same explicit idle control facts used by the existing optional
+    # sync fixtures, retaining this native owner's persisted Study-only setting.
+    monkeypatch.setenv('TEMPO_PRODUCT_GAME_SYNC_ENABLED', '1')
+    monkeypatch.setattr(study_priority, 'control_snapshot',
+        lambda: dict(available=True, active=False, study_only_mode=study_only))
+    writers = []
+    actual_writer = case.connections.writer
+    @contextmanager
+    def observe_writer():
+        writers.append(True)
+        with actual_writer() as database:
+            yield database
+    monkeypatch.setattr(case.connections, 'writer', observe_writer)
+    starts = []
+    failure = RemediationError('terminal_failure', 'legacy_card_not_introduced')
+    def unavailable(*args):
+        starts.append(args)
+        raise failure
+    intake = composition.CurrentProviderPriorityIntake(
+        connections=case.connections, clock=case.clock, operation_stopped=lambda: False,
+        capture=unavailable)
+    with pytest.raises(RemediationError) as caught:
+        intake.accept_encounter(command)
+    assert caught.value is failure
+    assert starts == [(command.decision.repertoire_id, command.key.game_id,
+        (command.key.occurrence_ply - 1,))]
+    assert writers == []
+    assert case.store.delivery(case.original.operation_id) == case.original
+    assert case.case.readback() == before
+    with case.case.transaction() as database:
+        assert PostgresGameFeedbackStore(database).get(command.key) == before_effect
+    capture_record, = [item for item in caplog.records if item.name == 'tempo.games.priority_intake']
+    assert capture_record.getMessage() == (
+        'Games priority intake deferred stage=capture error=RemediationError code=unclassified')
+    # The old reason is deliberately not in this owner's safe logging list.
+    # Preserve its redaction and never log commands, game IDs or payloads.
+    messages = '\n'.join(item.getMessage() for item in caplog.records
+        if item.name in {'tempo.study.feedback', 'tempo.games.priority_intake'})
+    assert command.key.game_id not in messages and case.original.operation_id not in messages
+    assert 'legacy_card_not_introduced' not in messages
 
 
 # Reuse the current source/native owner fixture and its exact ownership cleanup.
