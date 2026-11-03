@@ -7,13 +7,14 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
-import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle, releaseComposeFiles } from "./tempo-runtime.mjs";
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
+  composeFiles = releaseComposeFiles({ root, composeFiles });
   const childProject = `${project}-cli`;
   const directory = join(root, "test-results", "tempo-cli", childProject);
   mkdirSync(directory, { recursive: true });
@@ -87,7 +88,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
-  const config = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
+  const config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
   const daemonId = (await docker(["info", "--format", "{{.ID}}"])).stdout.trim();
   const target = { version: 1, root, project: childProject, context, daemonId, composeFiles, envFile: null,
     disposable: true, volumes: Object.fromEntries(Object.entries(config.volumes).map(([key, volume]) =>
@@ -102,6 +103,24 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal((await docker(["volume", "ls", "-q", "--filter", `name=^${volume.name}$`])).stdout.trim(), "");
   const images = {};
   for (const [name, service] of Object.entries(config.services)) {
+    if (name === "game-feedback-worker") {
+      // The inactive optional service has the same build as the already-built
+      // API. Reuse that real image only after proving build/source equality.
+      const builds = [config.services.api.build, service.build].map(build => structuredClone(build));
+      for (const build of builds) {
+        if (build.labels?.["org.opencontainers.image.revision"] !== undefined) {
+          assert.equal(build.labels["org.opencontainers.image.revision"], revision);
+          delete build.labels["org.opencontainers.image.revision"];
+          if (!Object.keys(build.labels).length) delete build.labels;
+        }
+      }
+      assert.deepEqual(builds[0], builds[1], "Optional receipt image must have the exact API build");
+      assert(images.api, "The actual API image must be inspected first");
+      const apiImage = JSON.parse((await docker(["image", "inspect", images.api])).stdout)[0];
+      assert.equal(apiImage.Config?.Labels?.["org.opencontainers.image.revision"], revision);
+      images[name] = apiImage.Id;
+      continue;
+    }
     const tag = service.image ?? `${project}-${name}`;
     images[name] = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0].Id;
   }
@@ -212,7 +231,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     atomicJson(candidateOverride, { services: Object.fromEntries(["api", "foreground-worker", "background-worker"]
       .map(name => [name, { environment: { TEMPO_UNCOMMITTED_CANDIDATE: "interrupted-rollout" } }])) });
     const candidateConfig = JSON.parse((await docker([...composeArguments, "-f", candidateOverride,
-      "--profile", "maintenance", "config", "--format", "json"])).stdout);
+      "--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
     const preparedCandidate = join(directory, "uncommitted-prepared-images.json");
     atomicJson(preparedCandidate, { ...preparedImages, configFingerprint: configurationFingerprint(candidateConfig) });
     const interruptedLifecycle = join(directory, "interrupted-lifecycle.mjs");
