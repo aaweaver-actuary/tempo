@@ -254,6 +254,15 @@ def vertical(tmp_path, monkeypatch, request):
         assert module.sequence == module.workspace_revision == len(module.contributions) == len(module.deliveries) == 1
         assert next(iter(module.contributions.values())) == accepted.payload_json
     monkeypatch.setattr(bridge, "repository", lambda _database: PostgresRepository(module, "legacy"))
+    # This scripted vertical is explicitly card-owned, not native F3 lock proof.
+    from tempo_legacy_database.adapters.study import position_owner_epoch as position_owners
+    from tempo_legacy_database.adapters.study import position_first_responses as position_responses
+    original_mode, original_tables = position_owners.owner_mode, position_responses.has_position_tables
+    monkeypatch.setattr(position_owners, "owner_mode", lambda conn, *args, **kwargs:
+        position_owners.OwnerDecision("legacy", "inactive", None, None, "position_owner_absent")
+        if isinstance(conn, OwnerFixture) else original_mode(conn, *args, **kwargs))
+    monkeypatch.setattr(position_responses, "has_position_tables", lambda conn:
+        False if isinstance(conn, OwnerFixture) else original_tables(conn))
     # Task wakeups are outside this source fixture; no worker/service is started.
     monkeypatch.setattr(LearningReviewAdapter, "refresh_progression", lambda *a, **k: None)
     monkeypatch.setattr(LearningReviewAdapter, "refresh_priority", lambda *a, **k: None)
