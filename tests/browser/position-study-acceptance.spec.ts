@@ -244,17 +244,18 @@ async function preparedEntryIds(page: Page): Promise<number[]> {
   }));
 }
 
-async function savedOfflineReview(page: Page, attemptId: string) {
-  return page.evaluate((id) => new Promise<unknown>((resolve, reject) => {
+async function savedOfflineReviews(page: Page, cardId: string, entryId: number) {
+  return page.evaluate((identity) => new Promise<Array<{ attemptId?: string; localEntryId: number; cardId: string; outcome: string; guided: boolean }>>((resolve, reject) => {
     const open = indexedDB.open("tempo-offline-training", 2);
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const database = open.result;
       const request = database.transaction("training").objectStore("training").get("prepared-daily-queue");
-      request.onsuccess = () => { database.close(); resolve((request.result?.attempts ?? []).find((attempt: { attemptId?: string }) => attempt.attemptId === id) ?? null); };
+      request.onsuccess = () => { database.close(); resolve((request.result?.attempts ?? []).filter(
+        (attempt: { cardId: string; localEntryId: number }) => attempt.cardId === identity.cardId && attempt.localEntryId === identity.entryId)); };
       request.onerror = () => { database.close(); reject(request.error); };
     };
-  }), attemptId);
+  }), { cardId, entryId });
 }
 
 async function preparedPositionPlan(page: Page, entryId: number): Promise<string | null> {
@@ -739,6 +740,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await expect.poll(() => preparedEntryIds(page), { timeout: 30_000 }).toContain(legacyHead.queue_entry_id);
   let legacyAttempt = "";
   let legacyWrong: Awaited<ReturnType<typeof openingEvents>>[number] | undefined;
+  let completedAttempt = "";
   await context.setOffline(true);
   try {
     await page.reload();
@@ -764,16 +766,22 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
       .toBe(position(afterLegacyReply.fen()));
     await move(page, "g1", "f3");
-    await expect.poll(() => savedOfflineReview(page, legacyAttempt)).toMatchObject({
-      attemptId: legacyAttempt, localEntryId: legacyHead.queue_entry_id, cardId: legacy.card, outcome: "again", guided: true });
+    // Legacy reload starts a new attempt ID; the partial wrong journal remains independently retained.
+    await expect.poll(() => savedOfflineReviews(page, legacy.card, legacyHead.queue_entry_id)).toHaveLength(1);
+    const saved = await savedOfflineReviews(page, legacy.card, legacyHead.queue_entry_id);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ localEntryId: legacyHead.queue_entry_id, cardId: legacy.card, outcome: "again", guided: true });
+    expect(saved[0].attemptId).toEqual(expect.any(String));
+    expect(saved[0].attemptId).not.toBe("");
+    completedAttempt = saved[0].attemptId!;
   } finally {
     await context.setOffline(false);
   }
-  await expect.poll(() => fixture<Snapshot>(project, "read", identity).legacy_reviews.filter(r => r.attempt_id === legacyAttempt),
+  await expect.poll(() => fixture<Snapshot>(project, "read", identity).legacy_reviews.filter(r => r.attempt_id === completedAttempt),
     { timeout: 30_000, intervals: [1000, 2000] }).toHaveLength(1);
   const settledLegacy = fixture<Snapshot>(project, "read", identity);
   expect(settledLegacy.legacy_reviews).toHaveLength(1);
-  expect(settledLegacy.legacy_reviews[0]).toMatchObject({ attempt_id: legacyAttempt, card_id: legacy.card,
+  expect(settledLegacy.legacy_reviews[0]).toMatchObject({ attempt_id: completedAttempt, card_id: legacy.card,
     queue_entry_id: legacyHead.queue_entry_id, outcome: "again", guided: 1, rating: "again", source_kind: "study" });
   expect(settledLegacy.legacy_reviews[0].review_id).toBeGreaterThan(0);
   expect(settledLegacy.legacy_entries.find(entry => entry.id === legacyHead.queue_entry_id)).toMatchObject({
