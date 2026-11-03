@@ -570,7 +570,14 @@ def test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease(
 
     # This lease/checkpoint fixture admits legacy cards, with no position cohort.
     from app.services import position_queue_admission
-    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction", lambda *_: None)
+    from tempo_legacy_database.adapters.study import position_owner_epoch as position_owners
+    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction",
+        lambda _database, item: ("legacy", item["repertoire_id"]))
+    original_mode = position_owners.owner_mode
+    monkeypatch.setattr(position_owners, "owner_mode", lambda conn, repertoire, digest:
+        position_owners.OwnerDecision("legacy", "inactive", None, None, "position_owner_absent")
+        if isinstance(conn, NativeSqlite) and repertoire == "rep"
+        else original_mode(conn, repertoire, digest))
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     planned = capacity_plan(connection, day)
