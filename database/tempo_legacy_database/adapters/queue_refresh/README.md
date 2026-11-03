@@ -147,7 +147,11 @@ All 55 original direct database sites are now delegated: admission writers cover
 
 ## Bounded reads and compatibility bridges
 
-[reads.py](reads.py) owns all 24 original bounded query sites, the exact existing `_bounded_read` retry/connection function, the configured-driver check and root-only SQL construction. Fixed semantic functions return the same row sets; queue policy still applies their values outside database. The existing reader remains a compatibility export from the application, including its signature and exception class. Tests patch the reader/factory at its new root owner rather than introducing a query-execution port.
+[reads.py](reads.py) owns all 24 original query sites, the existing `_bounded_read` retry/connection function, the configured-driver check and root-only SQL construction. Fixed semantic functions return the same row sets; queue policy still applies their values outside database. The existing reader remains a compatibility export from the application, including its signature and exception class. Tests patch the reader/factory at its root owner rather than introducing a query-execution port.
+
+The ordered Study opening upper-bound and occurrence-page queries use the existing `read_connection(repertoire_snapshot=True)` profile. Their results are bounded to one upper occurrence or the requested page size, but evaluating the eligible graph and frozen miss/rank order can exceed the short background transaction deadline. SQL, ordering, cursor parameters and limits are unchanged. The composition checks foreground activity before preparation; each query releases its reader before content validation and the original short admission writer. That writer retains route, source, owner, allowance, frozen-order, date and task fences. Other reads keep `_bounded_read` and its three-attempt timeout retry.
+
+These two reads use the ordinary unreserved read pool, with read-only transactions, transaction/statement deadlines disabled and a 100 ms lock timeout. An admitted query can occupy shared process, host and database resources until it completes; it cannot be preempted by a later foreground arrival. This is the existing snapshot profile, not separate resource isolation or a global timeout change.
 
 | Root read group | Data read and existing bounds |
 | --- | --- |
@@ -166,7 +170,9 @@ flowchart LR
   app -->|same public compatibility APIs| bridge[Capacity and presentation facades]
   bridge --> facts[Root fixed row queries and cursor reads]
   facts -->|row facts| policy[Application route selection and presentation classification]
-  reads -->|same short read lifetime| storage[Existing database connection adapter]
+  reads -->|other queries: existing short read lifetime| storage[Existing database connection adapter]
+  reads -->|ordered upper and page: read-only snapshot profile| snapshot[Ordinary unreserved read pool]
+  snapshot -->|close before validation and admission writer| app
   app -->|same caller transaction and task fence| writes[Root queue publication operations]
 ```
 
