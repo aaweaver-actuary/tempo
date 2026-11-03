@@ -25,14 +25,14 @@ function typescriptFacts(source, path) {
   if (syntax.parseDiagnostics.length) throw new Error("Invalid source syntax: " + path + ": " + ts.flattenDiagnosticMessageText(syntax.parseDiagnostics[0].messageText, " "));
   const aliases = new Map(), constants = new Map(), calls = [], references = [], functions = [], exported = [];
   const line = node => syntax.getLineAndCharacterOfPosition(node.getStart(syntax)).line + 1;
-  const found = typescriptImports(source, path).map(module => ({ module, names: [], level: 0, line: 1 }));
+  const found = typescriptImports(source, path).map(importPath => ({ module: importPath, names: [], level: 0, line: 1 }));
   function binding(node) {
     if (ts.isImportDeclaration(node)) {
-      const module = node.moduleSpecifier.text, names = node.importClause?.namedBindings;
+      const importPath = node.moduleSpecifier.text, names = node.importClause?.namedBindings;
       if (names && ts.isNamedImports(names)) {
-        for (const item of names.elements) aliases.set(item.name.text, module + "#" + (item.propertyName ?? item.name).text);
-        found.find(item => item.module === module).names = names.elements.map(item => (item.propertyName ?? item.name).text);
-      } else if (names && ts.isNamespaceImport(names)) aliases.set(names.name.text, module + "#");
+        for (const item of names.elements) aliases.set(item.name.text, importPath + "#" + (item.propertyName ?? item.name).text);
+        found.find(item => item.module === importPath).names = names.elements.map(item => (item.propertyName ?? item.name).text);
+      } else if (names && ts.isNamespaceImport(names)) aliases.set(names.name.text, importPath + "#");
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) constants.set(node.name.text, node.initializer);
     ts.forEachChild(node, binding);
@@ -138,9 +138,9 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
   };
   function resolveImport(specifier, file, level = 0) {
     if (extname(file) === ".py" && level) {
-      const module = moduleFor(file);
-      if (!module) return { error: "Python import has no declared module prefix" };
-      const packageParts = module.split(".").slice(0, file.endsWith("/__init__.py") ? undefined : -1);
+      const moduleName = moduleFor(file);
+      if (!moduleName) return { error: "Python import has no declared module prefix" };
+      const packageParts = moduleName.split(".").slice(0, file.endsWith("/__init__.py") ? undefined : -1);
       if (level > packageParts.length) return { error: "Relative import escapes its package" };
       specifier = [...packageParts.slice(0, packageParts.length - level + 1), specifier].filter(Boolean).join(".");
     }
