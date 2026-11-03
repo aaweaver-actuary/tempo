@@ -635,7 +635,8 @@ def _qualify_case(case,capture,command):
         case.transaction,capture=capture,command=command))
 
 
-def current_encounter_case(case, *, unintroduced=True, matched=False, prepare=True):
+def current_encounter_case(case, *, unintroduced=True, matched=False, prepare=True,
+                           prepare_due_queue=False):
     """Published owners only: real retained capture, mapping, canonical admission."""
     from app.legacy_game_observation import capture_game
     from app.contracts.product_v02.learning import GameEncounter
@@ -655,6 +656,17 @@ def current_encounter_case(case, *, unintroduced=True, matched=False, prepare=Tr
             database.execute_native('DELETE FROM reviews WHERE card_id=%s',(case.card_id,))
         if matched:
             database.execute_native("UPDATE imported_games SET moves_json='[\"e2e4\"]' WHERE id=%s",(lapse.key.game_id,))
+        if prepare_due_queue:
+            # Earlier module cases retain real due states, including an intentional
+            # off-day queue rebuild. Satisfy the prepared admission prerequisite
+            # through the ordinary due seeder without changing those histories.
+            from tempo_legacy_database.adapters.queue_refresh.application import seeding
+            from tempo_legacy_database.adapters.queue_refresh.application.admission import has_missing_due_card
+            day = NOW.date().isoformat()
+            maximum = seeding.maximum_position(database, day)
+            for offset, row in enumerate(seeding.due_cards(database, day), start=1):
+                seeding.append_due_card(database, day, row[0], maximum + offset)
+            assert not has_missing_due_card(database, day), 'native_fixture_due_queue_not_ready'
     metadata={**capture['authority'],'integrity_current':True,
               'integrity_certificate':capture['catalogue_scope']['integrity_certificate']}
     with case.transaction() as database:
@@ -718,7 +730,7 @@ def encounter_admission_diagnostic(service, command, receipt, case):
 
 @pytest.mark.parametrize('matched',[False,True])
 def test_native_encounter_current_owner_introduces_once_and_persists_original_without_review(case, matched):
-    capture,snapshot,command=current_encounter_case(case,matched=matched)
+    capture,snapshot,command=current_encounter_case(case,matched=matched,prepare_due_queue=not matched)
     with case.transaction() as database:
         service=current_encounter_service(database,capture,snapshot,case=case,include_introductions=True)
         receipt=accept_and_refresh(service,command)
@@ -755,7 +767,7 @@ def test_native_encounter_current_owner_introduces_once_and_persists_original_wi
 
 
 def test_native_encounter_failed_refresh_preserves_accepted_receipt_and_rolls_back_introduction(case):
-    capture,snapshot,command=current_encounter_case(case)
+    capture,snapshot,command=current_encounter_case(case,prepare_due_queue=True)
     with case.transaction() as database:
         accepted=current_encounter_service(database,capture,snapshot,case=case).accept_qualified(
             command,qualification=case.qualified.prepared.qualification)
