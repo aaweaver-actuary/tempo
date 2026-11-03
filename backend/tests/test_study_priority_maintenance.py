@@ -414,3 +414,18 @@ def test_native_checkpoint_restart_resumes_private_postgres_checkpoint(monkeypat
                         graph_rows=10_000, receipt_rows=20_000)
     retries = [json.loads(line) for line in (tmp_path / 'checkpoint-retries.jsonl').read_text().splitlines()]
     assert any(item['forced'] and item['checkpoint_unchanged'] for item in retries)
+
+
+def test_checkpoint_pythonpath_preserves_inherited_source_roots_without_empty_entries():
+    import importlib
+    import os
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    roots = ['/packages/game-review-contracts/src', '/packages/learning-contracts/src',
+             '/packages/repertoire-contracts/src']
+    inherited = os.pathsep + os.pathsep.join(roots) + os.pathsep * 2
+    composed = proof._checkpoint_pythonpath(inherited)
+    assert composed.split(os.pathsep) == [str(proof.ROOT / 'backend'), *roots]
+    assert proof._checkpoint_pythonpath('') == str(proof.ROOT / 'backend')
+    # The restart still adds the repository namespace to that preserved context.
+    restarted = os.pathsep.join((str(proof.ROOT), composed))
+    assert restarted.split(os.pathsep) == [str(proof.ROOT), str(proof.ROOT / 'backend'), *roots]
