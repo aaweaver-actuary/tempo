@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import time
+import hashlib
+import json
 
 from fastapi.testclient import TestClient
 from tempo_legacy_database import connections as database
@@ -21,9 +23,14 @@ def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatc
             return datetime(2026, 9, 17, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(main, "date", LocalDate)
     from app import queue_commands
-    monkeypatch.setattr(queue_commands, "date", LocalDate)
+    monkeypatch.setattr(queue_commands, "datetime", UtcClock)
     monkeypatch.setattr(main, "datetime", UtcClock)
+    from app.product_composition import compatibility_coordinator
+    monkeypatch.setattr(compatibility_coordinator, "date", LocalDate)
     with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["timezone"] = "America/New_York"
+        assert client.put("/api/settings", json=settings).status_code == 200
         result = client.post("/api/tactics/attempt", json={
             "attempt_id":"utc-lapse","puzzle_id":"utc-puzzle","deck_id":"fork-easy",
             "correct":False,"clean":False,
@@ -68,8 +75,10 @@ def install_clock(monkeypatch):
         def now(cls, tz=None): return clock["now"].astimezone(tz) if tz else clock["now"].replace(tzinfo=None)
     monkeypatch.setattr(main, "date", ClockDate)
     from app import queue_commands
-    monkeypatch.setattr(queue_commands, "date", ClockDate)
+    monkeypatch.setattr(queue_commands, "datetime", ClockDatetime)
     monkeypatch.setattr(main, "datetime", ClockDatetime)
+    from app.product_composition import compatibility_coordinator
+    monkeypatch.setattr(compatibility_coordinator, "date", ClockDate)
     return clock
 
 def solve(client, card, outcome="correct"):
@@ -83,10 +92,14 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
     with TestClient(app) as client:
         settings = client.get('/api/settings').json()
         settings['new_cards_per_day'] = 1
+        settings['timezone'] = 'UTC'
         assert client.put('/api/settings', json=settings).status_code == 200
         imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
         wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
+        with database.connection() as db:
+            assert db.execute("SELECT introduced_at FROM cards WHERE id=?", (first["id"],)).fetchone()[0] == "2026-09-16"
+            assert {row[0] for row in db.execute("SELECT DISTINCT queue_date FROM daily_queue")} == {"2026-09-16"}
         for ply in (0,):
             assert client.post(f"/api/cards/{first['id']}/teaching", json={"revision": 1, "ply": ply}).status_code == 200
         result = solve(client, first)
@@ -101,7 +114,22 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
             assert db.execute("SELECT refresh_pending FROM queue_projections WHERE queue_date='2026-09-16'").fetchone()[0] == 0
         before = client.get("/api/migration/snapshot").json()
     with TestClient(app) as client:  # Re-open SQLite and run startup, not an in-memory store.
-        assert client.get("/api/migration/snapshot").json()["checksum"] == before["checksum"]
+        after = client.get("/api/migration/snapshot").json()
+        def fingerprint(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+        differences = {}
+        for table in sorted(before["tables"].keys() | after["tables"].keys()):
+            old_rows = before["tables"].get(table, [])
+            new_rows = after["tables"].get(table, [])
+            if old_rows != new_rows:
+                columns = {column for row in old_rows + new_rows for column in row}
+                differences[table] = {
+                    "row_counts": [len(old_rows), len(new_rows)],
+                    "table_hashes": [fingerprint(old_rows), fingerprint(new_rows)],
+                    "changed_columns": sorted(column for column in columns
+                        if [row.get(column) for row in old_rows] != [row.get(column) for row in new_rows]),
+                }
+        assert after["checksum"] == before["checksum"], differences
         for _ in range(3):
             clock["now"] = datetime.fromisoformat(result["next_due"]).replace(hour=12, tzinfo=timezone.utc)
             enqueue_daily_queue_refresh()
@@ -172,6 +200,9 @@ def test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_re
     payload = {"attempt_id": "durable-discovery", "puzzle_id": "durable-tactic", "deck_id": "hangingPiece-easy", "correct": False, "clean": False,
                "source_fen": "q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17", "moves": ["e8d7", "a2e6", "d7d8", "f7f8"]}
     with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["timezone"] = "UTC"
+        assert client.put("/api/settings", json=settings).status_code == 200
         assert client.post("/api/tactics/attempt", json=payload).status_code == 200
         assert client.post("/api/tactics/attempt", json=payload).status_code == 200
         first = client.get("/api/queue/today").json()["cards"][0]
