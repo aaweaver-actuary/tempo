@@ -496,3 +496,45 @@ def task_kind(database, values):
         "SELECT kind FROM background_tasks WHERE id=?",
         values,
     ).fetchone()
+
+
+def lock_or_create_current_queue_task(database, *, task_id, payload_json, priority,
+                                      max_attempts, now):
+    """Create or lock the singleton before taking any queue projection lock.
+
+    The unique key serializes concurrent first requests.  The caller decides
+    whether a pre-existing task can be coalesced and owns the transaction.
+    """
+    inserted = database.execute(
+        """INSERT INTO background_tasks(
+               id,kind,deduplication_key,generation,priority,state,phase,
+               payload_version,payload_json,attempt_count,max_attempts,
+               next_attempt_at,lease_token,lease_expires_at,last_error,
+               created_at,started_at,completed_at,updated_at)
+           VALUES(?,'daily_queue','current',1,?,'queued','queued',1,?,0,?,?,
+                  NULL,NULL,NULL,?,NULL,NULL,?)
+           ON CONFLICT(kind,deduplication_key) DO NOTHING RETURNING *""",
+        (task_id, priority, payload_json, max_attempts, now, now, now),
+    ).fetchone()
+    if inserted is not None:
+        return inserted, True
+    statement = _TASK_BY_KIND_SQL
+    if supports_native_execution(database):
+        statement += " FOR UPDATE"
+    task = database.execute(statement, ("daily_queue", "current")).fetchone()
+    if task is None:
+        raise RuntimeError("Current queue task disappeared while acquiring its lock")
+    return task, False
+
+
+def update_locked_queue_task_payload(database, *, task_id, generation, payload_json):
+    """Replace a caller-merged payload while preserving active task state.
+
+    Caller must hold the task row lock and validate its day and active state.
+    """
+    return database.execute(
+        """UPDATE background_tasks SET payload_json=?
+           WHERE id=? AND generation=? AND kind='daily_queue'
+             AND deduplication_key='current' AND state IN ('queued','leased','retrying')""",
+        (payload_json, task_id, generation),
+    ).rowcount == 1

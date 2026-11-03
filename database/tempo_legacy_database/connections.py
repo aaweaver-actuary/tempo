@@ -1289,7 +1289,9 @@ def initialize() -> None:
             updated_at TEXT,
             refresh_pending INTEGER NOT NULL DEFAULT 1,
             last_error TEXT,
-            blocked_count INTEGER NOT NULL DEFAULT 0
+            blocked_count INTEGER NOT NULL DEFAULT 0,
+            requested_refresh_epoch INTEGER NOT NULL DEFAULT 0,
+            published_refresh_epoch INTEGER NOT NULL DEFAULT 0
         )
         """,
         """
@@ -1460,6 +1462,8 @@ def initialize() -> None:
             },
             "queue_projections": {
                 "blocked_count": "INTEGER NOT NULL DEFAULT 0",
+                "requested_refresh_epoch": "INTEGER NOT NULL DEFAULT 0",
+                "published_refresh_epoch": "INTEGER NOT NULL DEFAULT 0",
             },
             "opening_graph_steps": {
                 "decision_fen_key": "TEXT NOT NULL DEFAULT ''",
