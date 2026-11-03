@@ -187,6 +187,95 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "migration 025 normalizes the same card/queue row and preserves its historical identity");
     assert.deepEqual(await readHistory(), expected, "upgrade preserves original study history while workers may add unrelated receipts");
 
+    // Exercise the registered Node operator only after the real upgrade/ready
+    // boundary. The fixed orphan exists solely in this already owned lifetime;
+    // its retained origin and receipt are left for the normal whole-stack drop.
+    const inspectAbandonment = async (mode = "--abandon-inspection") => JSON.parse((await compose([
+      "--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+      "database/tests/check_postgres_cli_lifecycle.py", mode,
+    ])).stdout);
+    const abandonBefore = await inspectAbandonment("--seed-abandon-orphan");
+    const origin = JSON.parse(abandonBefore.origin_bytes);
+    assert.notEqual(origin.queue_entry_id, 13624);
+    assert.equal(origin.card_id, "cli-synthetic-abandon-orphan");
+    assert.deepEqual({ ...origin, queue_entry_id: undefined, start_fen: undefined, moves_json: undefined }, {
+      queue_entry_id: undefined, card_id: "cli-synthetic-abandon-orphan", revision: 1,
+      queue_date: "2000-01-02", cycle: 0, admission_kind: null, admission_repertoire_id: null,
+      attempt_failed: 1, last_status: "buried", review_result_json: null, legacy: 0,
+      start_fen: undefined, moves_json: undefined, trained_color: null, content_type: "opening",
+      issued_as_head: 1, issued_at: null, issuance_sequence: null,
+    });
+    assert.equal(origin.start_fen, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    assert.deepEqual(JSON.parse(origin.moves_json), ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "d2d3", "f8c5", "c2c3"]);
+    assert(Object.values(abandonBefore.orphan_links).every(count => count === 0), "synthetic origin has no current card, membership, queue or accepted attempt/snapshot");
+    assert.equal(abandonBefore.abandonment_receipt_count, 0);
+    assert.deepEqual(abandonBefore.abandonments, []);
+    assert.deepEqual(abandonBefore.grades, []);
+    const abandonRequest = { entry: String(origin.queue_entry_id), card: origin.card_id, revision: String(origin.revision),
+      "operation-id": "cli-synthetic-abandon-operation", actor: "fixture-user",
+      reason: "fixture user explicitly discards this unfinished exercise; no unsaved work is known" };
+    const abandonCli = (label, request, { apply = false, configPath = registration } = {}) => childProcess(label,
+      process.execPath, ["scripts/position-study/abandon-queue-attempt.mjs", "--config", configPath,
+        ...Object.entries(request).flatMap(([key, value]) => [`--${key}`, value]), ...(apply ? ["--apply"] : [])], {
+        encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
+      });
+    const abandonSuccess = result => {
+      assert.ifError(result.error);
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const abandonRefusal = (result, code) => {
+      assert.ifError(result.error);
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, code);
+    };
+    const abandonPlan = abandonSuccess(abandonCli("cli_abandon_orphan_plan", abandonRequest));
+    assert.deepEqual(abandonPlan, { plan: true, ...abandonBefore.identity, origin_sha256: abandonPlan.origin_sha256 });
+    assert.match(abandonPlan.origin_sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(await inspectAbandonment(), abandonBefore, "default plan writes no receipt or Study state");
+    const abandonApply = { ...abandonRequest, "expected-origin-sha256": abandonPlan.origin_sha256 };
+    abandonRefusal(abandonCli("cli_abandon_orphan_stale_hash", {
+      ...abandonApply, "expected-origin-sha256": abandonPlan.origin_sha256 === "0".repeat(64) ? "1".repeat(64) : "0".repeat(64),
+    }, { apply: true }), /queue abandonment held: abandonment_origin_changed/);
+    abandonRefusal(abandonCli("cli_abandon_orphan_wrong_revision", {
+      ...abandonApply, revision: String(origin.revision + 1),
+    }, { apply: true }), /queue abandonment held: abandonment_origin_missing_or_ambiguous/);
+    // Same registered data identity/state directory, deliberately incorrect port
+    // registration: target inspection must refuse before reaching the worker.
+    const wrongRegistration = join(directory, "abandon-wrong-registration.json");
+    assert(target.ports.length > 0);
+    atomicJson(wrongRegistration, { ...target, ports: [] });
+    abandonRefusal(abandonCli("cli_abandon_orphan_wrong_target", abandonApply, {
+      apply: true, configPath: wrongRegistration,
+    }), /Compose ports differ from the registered Tempo target/);
+    assert.deepEqual(await inspectAbandonment(), abandonBefore, "all refused applications preserve every origin and Study history");
+    assert.deepEqual(abandonSuccess(abandonCli("cli_abandon_orphan_apply", abandonApply, { apply: true })), {
+      abandoned: true, idempotent: false, operation_id: abandonRequest["operation-id"], origin_sha256: abandonPlan.origin_sha256,
+    });
+    const abandonAfter = await inspectAbandonment();
+    assert.equal(abandonAfter.abandonment_receipt_count, 1);
+    assert.equal(abandonAfter.abandonments.length, 1);
+    const abandonReceipt = JSON.parse(abandonAfter.abandonments[0]);
+    assert.deepEqual({ ...abandonReceipt, request_sha256: undefined, abandoned_at: undefined }, {
+      ...abandonBefore.identity, operation_id: abandonRequest["operation-id"], origin_sha256: abandonPlan.origin_sha256,
+      actor: abandonRequest.actor, reason: abandonRequest.reason, request_sha256: undefined, abandoned_at: undefined,
+    });
+    assert.match(abandonReceipt.request_sha256, /^[0-9a-f]{64}$/);
+    assert(Number.isFinite(Date.parse(abandonReceipt.abandoned_at)));
+    assert.deepEqual({ ...abandonAfter, abandonments: [], abandonment_receipt_count: 0 }, abandonBefore,
+      "one durable abandonment preserves raw origins, failed marker, FSRS, reviews, snapshots and zero grades");
+    assert.deepEqual(abandonSuccess(abandonCli("cli_abandon_orphan_retry", abandonApply, { apply: true })), {
+      abandoned: true, idempotent: true, operation_id: abandonRequest["operation-id"], origin_sha256: abandonPlan.origin_sha256,
+    });
+    abandonRefusal(abandonCli("cli_abandon_orphan_changed_payload", {
+      ...abandonApply, reason: "different abandonment reason under the same operation identity",
+    }, { apply: true }), /queue abandonment held: abandonment_receipt_conflict/);
+    assert.deepEqual(await inspectAbandonment(), abandonAfter, "exact retry and changed-payload refusal preserve the receipt bytes and every original history row");
+    assert.deepEqual(await readHistory(), expected, "registered abandonment does not fabricate a completed review");
+    console.log("PASS test_tempo_cli_abandon_orphan_exact_plan_apply_retry_preserves_history");
+
     const repeat = makeRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await repeat.inspectTarget();
     const repeatStart = commandLog.length;
