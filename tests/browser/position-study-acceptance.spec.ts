@@ -8,7 +8,6 @@ import { resetPostgresDeletedCards, verifyPostgresFixtureTarget } from "./produc
 import { prepareUI } from "./ui-fixtures";
 import type { Page } from "@playwright/test";
 // The existing runner owns this JavaScript resource-admission helper.
-// @ts-ignore -- the repository's .mjs helper does not publish TypeScript declarations.
 import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
 /*

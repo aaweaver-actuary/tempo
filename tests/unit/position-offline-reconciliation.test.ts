@@ -12,25 +12,27 @@ import type { PracticeCard } from "../../app/domain/cards";
 import { decodePositionPresentation } from "../../app/domain/position-presentation";
 import { computeEssentialStudyTask } from "../../app/lib/essential-study-computation";
 import { decodeStudyResult } from "../../app/lib/study-result-decoder";
-import { openingDecisionManifestSchema } from "../../app/domain/opening-evidence";
+import { openingDecisionManifestSchema, type OpeningEvidenceCheckpoint } from "../../app/domain/opening-evidence";
+
+const decisionManifest = openingDecisionManifestSchema.parse(manifest);
 
 const plan = decodePositionPresentation({ version: 1, plan_id: "a".repeat(64),
-  owner_epoch: "issued-epoch", target_ply: 0, starting_fen: manifest.decisions[0].fen,
+  owner_epoch: "issued-epoch", target_ply: 0, starting_fen: decisionManifest.decisions[0].fen,
   moves_uci: ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
   source_digest: "issued-source", local_day: "2026-09-30", skipped_prefix_proof_ids: [],
-  attempt_id: "issued-position", route_id: "issued-route", original_card_id: manifest.card_id, original_card_revision: 3,
-  queue_entry_id: 101, decision_slots: manifest.decisions.map(d => ({ move_offset: d.move_offset,
+  attempt_id: "issued-position", route_id: "issued-route", original_card_id: decisionManifest.card_id, original_card_revision: 3,
+  queue_entry_id: 101, decision_slots: decisionManifest.decisions.map(d => ({ move_offset: d.move_offset,
     expected_uci: d.expected_uci, position_key: canonicalFenKey(d.fen) })) });
-const card: PracticeCard = { id: asCardId("queue-101"), backendId: asCardId(manifest.card_id), kind: "opening" as const,
-  title: "Position", subtitle: "", startingFen: asFenString(manifest.decisions[0].fen), moves: [], userMoveTarget: 3,
-  queueEntryId: asQueueEntryId(101), revision: 3, openingDecisionManifest: manifest as any,
+const card: PracticeCard = { id: asCardId("queue-101"), backendId: asCardId(decisionManifest.card_id), kind: "opening" as const,
+  title: "Position", subtitle: "", startingFen: asFenString(decisionManifest.decisions[0].fen), moves: [], userMoveTarget: 3,
+  queueEntryId: asQueueEntryId(101), revision: 3, openingDecisionManifest: decisionManifest,
   positionStudyMode: "position" as const, positionPresentation: plan };
-const completion = { attempt_id: plan.attempt_id, manifest, origin_queue_entry_id: 101, queue_entry_id: 101,
+const completion = { attempt_id: plan.attempt_id, manifest: decisionManifest, origin_queue_entry_id: 101, queue_entry_id: 101,
   parent_attempt_id: null, started_at: "2026-09-30T12:00:00Z", study_timezone: "UTC", source: "live" as const,
-  events: [], terminal: { state: "complete" as const, final_sequence: 0, ended_at: "2026-09-30T12:01:00Z" } };
+  events: [], terminal: { state: "complete" as const, final_sequence: 0, ended_at: "2026-09-30T12:01:00Z" } } satisfies OpeningEvidenceCheckpoint;
 const review = { backendId: manifest.card_id, queueEntryId: 101, expectedRevision: 3, attemptId: plan.attempt_id,
   outcome: "correct" as const, guided: true, completedAt: completion.terminal.ended_at,
-  openingEvidenceCompletion: completion as any, positionStudy: true as const };
+  openingEvidenceCompletion: completion, positionStudy: true as const };
 beforeEach(async () => { await resetStudyStorage(); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -114,7 +116,7 @@ it("retains a position conflict without aggregate fallback or legacy reconciliat
 it("does not downgrade a position evidence conflict to an aggregate-only review", async () => {
   const request = vi.fn(async () => Response.json({ detail: { code: "opening_evidence_unavailable", aggregate_review_allowed: true } }, { status: 409 }));
   const rejected = vi.fn();
-  const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "key", body: {}, completion: completion as any,
+  const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "key", body: {}, completion,
     positionStudy: true, onEvidenceRejected: rejected, request });
   expect(response.status).toBe(409);
   expect(request).toHaveBeenCalledOnce();
