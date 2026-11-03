@@ -49,6 +49,7 @@ def root_history(owned_postgres, monkeypatch):
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
     monkeypatch.setattr(runtime, "datetime", FrozenDateTime)
     monkeypatch.setattr(queue_commands, "date", StudyDate)
+    monkeypatch.setattr(queue_commands, "datetime", FrozenDateTime)
     monkeypatch.setattr(learning_review_adapter, "date", StudyDate)
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
     monkeypatch.setenv("TEMPO_RETAINED_HISTORY_ENABLED", "1")
@@ -153,9 +154,9 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         resumed = client.post(PREFIX + "/resume", json=dict(maximum_units=4))
         assert resumed.status_code == 200, resumed.text
         saved = status(client)
-        assert saved["state"] == "complete" and saved["processed_encounters"] == 2
-        assert [item["disposition"] for item in saved["receipts"]] == ["first_introduction","frequency_only"]
-        assert [item["admission_status"] for item in saved["receipts"]] == ["available","not_requested"]
+        assert saved["state"] == "complete" and saved["processed_encounters"] == 1
+        assert [item["disposition"] for item in saved["receipts"]] == ["first_introduction"]
+        assert [item["admission_status"] for item in saved["receipts"]] == ["available"]
         assert all(item["detected_at"] == NOW.isoformat() for item in saved["receipts"])
         with activity_gate.background_job("game_feedback_history","unrelated-check",yielding=True):
             assert claim_task("opening_graph_rebuild") is None
@@ -184,6 +185,8 @@ def test_owner_effect_and_history_checkpoint_rollback_then_original_resume(root_
         request=body(case,"rollback-history")
         preview=client.post(PREFIX+"/preview",json=request)
         assert preview.status_code==200,preview.text
+        report = preview.json()["preview"]
+        assert (report["selected_games"],report["compared_games"],report["matches"]) == (2,2,1)
         assert client.post(PREFIX+"/start",json=dict(request,manifest_digest=preview.json()["manifest_digest"])).status_code==202
         before=case.readback()
         advance=durable_tasks.advance_task_slice_in_transaction
@@ -202,7 +205,7 @@ def test_owner_effect_and_history_checkpoint_rollback_then_original_resume(root_
         resumed=client.post(PREFIX+"/resume",json=dict(maximum_units=4))
         assert resumed.status_code==200,resumed.text
         saved=status(client,"rollback-history")
-        assert saved["state"]=="complete" and saved["processed_encounters"]==2
+        assert saved["state"]=="complete" and saved["processed_encounters"]==1
         assert all(item["detected_at"]==NOW.isoformat() for item in saved["receipts"])
 
 
@@ -308,8 +311,8 @@ def test_broad_root_overflow_resumes_later_ply_into_actual_study_once(root_histo
         response=client.post(PREFIX+"/run-ready",json=dict(maximum_units=4))
         assert response.status_code==200,response.text
         saved=status(client,"broad-later")
-        assert saved["state"]=="complete" and saved["processed_encounters"]==2
-        assert [item["disposition"] for item in saved["receipts"]]==["first_introduction","frequency_only"]
+        assert saved["state"]=="complete" and saved["processed_encounters"]==1
+        assert [item["disposition"] for item in saved["receipts"]]==["first_introduction"]
         assert all(item["key"]["occurrence_ply"]==5 for item in saved["receipts"])
         after=case.readback()
         assert client.post(PREFIX+"/resume",json=dict(maximum_units=4)).json()["processed_units"]==0
