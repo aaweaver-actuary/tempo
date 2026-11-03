@@ -90,7 +90,7 @@ def reject_connections(event, arguments):
 sys.addaudithook(reject_connections)
 inventory = Inventory()
 code = int(pytest.main([str(root / 'backend/tests/test_postgres_discovery_acceptance.py'),
-    '-q', '-p', 'no:cacheprovider', '--rootdir=' + str(root),
+    '-q', '-p', 'no:cacheprovider', '--noconftest', '--rootdir=' + str(root),
     '-k', 'not route and not command_composes and not preparation and not freshness_parity'],
     plugins=[inventory]))
 assert code == 0 and inventory.collected and not inventory.collection_errors

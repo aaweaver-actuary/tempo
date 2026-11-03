@@ -426,6 +426,11 @@ def test_capacity_worker_preparation_preserves_normal_plan_and_returns_parent_de
     pages = []
 
     def read(statement, parameters=(), *, native=False):
+        if statement == worker.read_storage._ACTIVE_OPENING_MISS_SQL:
+            # This fixture has no active game-miss rows. Keep the PostgreSQL
+            # miss projection at its bounded-read seam instead of feeding it
+            # to SQLite's SQL parser.
+            return []
         if statement.startswith("WITH active_miss"):
             pages.append(parameters[1])
             sql = main._PRIORITY_OPENING_CANDIDATE_BODY
@@ -644,6 +649,10 @@ def test_capacity_worker_full_allowance_avoids_frontier_queries(
     )
 
     def read(statement, parameters=(), *, native=False):
+        if statement == worker.read_storage._ACTIVE_OPENING_MISS_SQL:
+            # The fixture has no active miss facts; this is a semantic answer
+            # for the PG-only read, not a SQL translation.
+            return []
         if statement.startswith("WITH active_miss"):
             return []
         return connection.execute(statement.replace("%s", "?"), parameters).fetchall()
