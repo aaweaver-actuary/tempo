@@ -9,6 +9,8 @@ Charts show primary/foreign key columns; the dictionary lists **every stored fie
 ```mermaid
 erDiagram
   queue_projections {
+    bigint requested_refresh_epoch
+    bigint published_refresh_epoch
     text queue_date PK
   }
   review_attempt_receipts {
@@ -84,7 +86,7 @@ Referenced tables outside this view: `public.cards`, `public.daily_queue`, `publ
 
 ### `public.queue_projections`
 
-Primary key: (`queue_date`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql).
+Primary key: (`queue_date`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql), [059_queue_refresh_epochs.sql](../../ddl/migrations/059_queue_refresh_epochs.sql).
 
 | Field | SQL type | Null allowed | Keys |
 | --- | --- | --- | --- |
@@ -95,6 +97,15 @@ Primary key: (`queue_date`). DDL: [001_initial.sql](../../ddl/migrations/001_ini
 | `refresh_pending` | `bigint` | no |  |
 | `last_error` | `text` | yes |  |
 | `blocked_count` | `bigint` | no |  |
+| `requested_refresh_epoch` | `bigint` | no | Monotone accepted refresh request, default 0 |
+| `published_refresh_epoch` | `bigint` | no | Certified complete cycle, default 0 |
+
+Epochs are nonnegative and published cannot exceed requested. They are separate
+from `generation`, the publication count. The exact current singleton task is
+locked before the projection. Ready status, epoch certification and task
+completion commit together only when the cycle pin matches the latest request;
+otherwise one pending follow-up is checkpointed. No task FK is added. See the
+[owner transaction view](../../adapters/queue_refresh/README.md#current-day-refresh-request-and-publication-epochs).
 
 ### `public.review_attempt_receipts`
 
