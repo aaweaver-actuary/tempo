@@ -124,14 +124,14 @@ Before preparing a new cycle, the PostgreSQL worker checkpoints `_refresh_cycle_
 
 ```mermaid
 flowchart LR
-  Review[Accepted foreground mutation] --> Task[Lock singleton task]
-  Task --> Request[Increment requested epoch]
-  Request --> Commit[Commit mutation and signal]
-  Commit --> Wake[Advisory capacity wake]
-  Cycle[Pin epoch before cycle preparation] --> Slices[Durable bounded slices]
-  Slices --> Fence[Lock task then projection]
-  Fence -->|epoch current| Ready[Certify epoch, publish ready and complete task atomically]
-  Fence -->|newer request| Follow[Checkpoint one follow-up, keep pending]
+  Review["Accepted foreground mutation"] --> Task["Lock singleton task"]
+  Task --> Request["Increment requested epoch"]
+  Request --> Commit["Commit mutation and signal"]
+  Commit --> Wake["Advisory capacity wake"]
+  Cycle["Pin epoch before cycle preparation"] --> Slices["Durable bounded slices"]
+  Slices --> Fence["Lock task then projection"]
+  Fence -->|epoch current| Ready["Certify epoch, publish ready and complete task atomically"]
+  Fence -->|newer request| Follow["Checkpoint one follow-up, keep pending"]
   Follow --> Cycle
 ```
 

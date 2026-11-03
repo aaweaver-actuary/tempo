@@ -111,3 +111,4 @@ migration has been run by the feature implementation.
 - [056_managed_game_feedback_mode.sql](056_managed_game_feedback_mode.sql)
 - [057_position_study.sql](057_position_study.sql)
 - [058_queue_attempt_abandonment.sql](058_queue_attempt_abandonment.sql)
+- [059_queue_refresh_epochs.sql](059_queue_refresh_epochs.sql)
