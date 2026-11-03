@@ -357,13 +357,26 @@ def test_changed_canonical_source_cannot_apply_retained_feedback(fenced_case):
 
 def test_pending_effect_resumes_with_durable_cursor_without_producer(fenced_case, monkeypatch):
     import builtins
+    import re
     from app.product_composition.feedback_commands import receive_imported_feedback
     from app.product_composition.feedback_maintenance import KIND, execute_feedback_sweep
+    from app.product_composition import feedback_maintenance
     from app.services.durable_tasks import enqueue_task_in_transaction
     from tempo_legacy_database.adapters.durable_tasks import storage
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     from app.study.game_feedback import effect_id
     case, prepared = fenced_case
+    original_feedback_failure = feedback_maintenance.feedback_failure
+    recorded_failures = []
+    def observe_feedback_failure(error):
+        try:
+            candidates = (getattr(error, "reason", None), getattr(error, "strerror", None), str(error))
+            reason = next((value for value in candidates if isinstance(value, str)
+                and re.fullmatch(r"[a-z0-9_]{1,120}", value)), "<nonsymbolic>")
+            recorded_failures.append((type(error).__name__, reason))
+        finally:
+            original_feedback_failure(error)
+    monkeypatch.setattr(feedback_maintenance, "feedback_failure", observe_feedback_failure)
     with case.transaction() as database:
         database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'review')",
             (NOW.date().isoformat(),case.card_id))
@@ -385,7 +398,11 @@ def test_pending_effect_resumes_with_durable_cursor_without_producer(fenced_case
         capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=2)) is False
     with case.transaction() as database:
         effect=PostgresGameFeedbackStore(database).get(prepared.feedback.lapse.key)
-        assert effect.status == "applied" and effect.available_by.isoformat() == pending["available_by"]
+        assert effect.status == "applied" and effect.available_by.isoformat() == pending["available_by"], (
+            f"effect.status={effect.status}; reason={effect.reason}; "
+            f"admission_status={effect.admission_status}; deferred_reason={effect.deferred_reason}; "
+            f"feedback_failures={recorded_failures}"
+        )
         task=dict(storage.task_by_id(database,(queued["id"],)))
         assert json.loads(task["payload_json"])["after"] == effect_id(effect.key)
         assert task["state"] == "queued"
