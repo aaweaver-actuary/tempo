@@ -1,5 +1,6 @@
 """Enforce the A1 scheduling seam using Import Linter and its Grimp graph."""
 import ast
+import importlib
 import json
 import os
 from pathlib import Path
@@ -15,20 +16,23 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 METADATA = json.loads((REPOSITORY / 'tests/fixtures/scheduling-boundary/ownership.json').read_text())
 APPLICATION = METADATA['implementation_module']
 CONTRACTS = METADATA['shared_contract_module']
-SCHEDULER = 'app.services.scheduler'
-CERTIFIED_MODULES = (APPLICATION, CONTRACTS, SCHEDULER)
+BACKEND_APPLICATION = METADATA['backend_facade_module']
+BACKEND_CONTRACTS = METADATA['backend_contract_facade_module']
+SCHEDULER = 'tempo_learning_runtime.scheduler'
+CERTIFIED_MODULES = tuple(METADATA['source_paths'])
 PUBLIC_TYPES = ('CardState', 'ReviewRecord', 'OpeningSeedFacts', 'MaturityFacts',
                 'UpdatedCardState', 'SchedulingReviewResult', 'SchedulingReviewStore')
 
 
 @pytest.fixture(scope='module')
 def dependency_graph():
-    return grimp.build_graph('app', include_external_packages=True,
+    return grimp.build_graph(*METADATA['graph_roots'], include_external_packages=True,
                              exclude_type_checking_imports=False, cache_dir=None)
 
 
 def lint_imports(backend_directory, configuration=REPOSITORY / '.importlinter'):
-    environment = {**os.environ, 'PYTHONPATH': str(backend_directory),
+    environment = {**os.environ, 'PYTHONPATH': os.pathsep.join((
+                       str(backend_directory), str(backend_directory.parent / 'database'))),
                    'PYTHONDONTWRITEBYTECODE': '1'}
     executable = Path(sys.executable).parent / 'lint-imports'
     return subprocess.run([str(executable), '--config', str(configuration), '--no-cache'],
@@ -39,17 +43,27 @@ def lint_imports(backend_directory, configuration=REPOSITORY / '.importlinter'):
 def synthetic_package(tmp_path, additions):
     """Copy only source, never mutate the development or live checkout."""
     backend_directory = tmp_path / 'backend'
-    sources = {'app': '', 'app.services': '', 'app.main': '',
-               'tempo_legacy_database.connections': '', 'app.services.review_service': '',
-               'tempo_legacy_database.adapters.scheduling_review_store': ''}
-    for module in CERTIFIED_MODULES:
-        sources[module] = (REPOSITORY / 'backend' / Path(*module.split('.')).with_suffix('.py')).read_text()
+    sources = {'app.main': '', 'app.contracts': '', 'app.chess': '',
+               'app.games': '', 'app.study.openings': '', 'app.study.review': '',
+               'app.authoring': '', 'app.studies': '',
+               'app.services.review_service': '',
+               'app.study.game_feedback': '', 'app.study.encounter_feedback': '',
+               'tempo_legacy_database.connections': '',
+               'tempo_legacy_database.adapters.scheduling_review_store': '',
+               'tempo_learning_database.adapters.scheduling_review_store': '',
+               'tempo_learning_runtime.review_service': ''}
+    for module, source_path in METADATA['source_paths'].items():
+        sources[module] = (REPOSITORY / source_path).read_text()
     for module, extra_source in additions.items():
         sources[module] = sources.get(module, '') + '\n' + extra_source + '\n'
     for module, source in sources.items():
         destination = backend_directory.joinpath(*module.split('.'))
-        destination = destination / '__init__.py' if module in ('app', 'app.services') else destination.with_suffix('.py')
+        destination = destination.with_suffix('.py')
         destination.parent.mkdir(parents=True, exist_ok=True)
+        for parent in destination.parents:
+            if parent == backend_directory:
+                break
+            (parent / '__init__.py').touch()
         destination.write_text(source)
     return backend_directory
 
@@ -57,12 +71,14 @@ def synthetic_package(tmp_path, additions):
 @pytest.mark.parametrize('forbidden_import', [
     'import app.main',
     'import psycopg',
-    'def hidden():\n    from app import database',
+    'def hidden():\n    from tempo_legacy_database import connections',
     'if False:\n    from . import unrelated_analysis',
 ])
-def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(tmp_path, forbidden_import):
+@pytest.mark.parametrize('application_module', [APPLICATION, BACKEND_APPLICATION])
+def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(tmp_path, forbidden_import, application_module):
     backend_directory = synthetic_package(tmp_path, {
-        APPLICATION: forbidden_import, 'app.services.unrelated_analysis': ''})
+        application_module: forbidden_import,
+        application_module.rsplit('.', 1)[0] + '.unrelated_analysis': ''})
     completed = lint_imports(backend_directory)
     assert completed.returncode != 0, completed.stdout
     expected_contract = ('Scheduling requires no service infrastructure' if forbidden_import == 'import psycopg'
@@ -70,16 +86,18 @@ def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(tmp_p
     assert expected_contract + ' BROKEN' in completed.stdout
 
 
-def test_scheduling_boundary_rejects_transitive_infrastructure_imports(tmp_path):
+@pytest.mark.parametrize('scheduler_module', [SCHEDULER, 'app.services.scheduler'])
+def test_scheduling_boundary_rejects_transitive_infrastructure_imports(tmp_path, scheduler_module):
+    bridge = scheduler_module.rsplit('.', 1)[0] + '.bridge'
     backend_directory = synthetic_package(tmp_path, {
-        SCHEDULER: 'from .bridge import value',
-        'app.services.bridge': 'from app import database\nvalue = 1'})
+        scheduler_module: 'from .bridge import value',
+        bridge: 'from tempo_legacy_database import connections\nvalue = 1'})
     completed = lint_imports(backend_directory)
     assert completed.returncode != 0, completed.stdout
-    assert 'app.services.scheduler' in completed.stdout and 'tempo_legacy_database.connections' in completed.stdout
+    assert scheduler_module in completed.stdout and 'tempo_legacy_database.connections' in completed.stdout
 
 
-@pytest.mark.parametrize('protected_module', [APPLICATION, CONTRACTS])
+@pytest.mark.parametrize('protected_module', [APPLICATION, CONTRACTS, BACKEND_APPLICATION, BACKEND_CONTRACTS])
 def test_scheduling_boundary_rejects_unowned_consumers(tmp_path, protected_module):
     backend_directory = synthetic_package(tmp_path, {
         'app.services.unrelated_analysis': f'import {protected_module}'})
@@ -90,27 +108,42 @@ def test_scheduling_boundary_rejects_unowned_consumers(tmp_path, protected_modul
 
 def test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity():
     from app.services import scheduling_review_application, scheduling_review_contracts
+    from tempo_learning_runtime import scheduling_review_application as owned_application
+    from tempo_learning_runtime import scheduling_review_contracts as owned_contracts
     completed = lint_imports(REPOSITORY / 'backend')
     assert completed.returncode == 0, completed.stdout + completed.stderr
     for name in PUBLIC_TYPES:
         assert getattr(scheduling_review_application, name) is getattr(scheduling_review_contracts, name)
+        assert getattr(scheduling_review_application, name) is getattr(owned_application, name)
+        assert getattr(scheduling_review_contracts, name) is getattr(owned_contracts, name)
     assert {name for name in scheduling_review_contracts.SchedulingReviewStore.__dict__
             if not name.startswith('_')} == {
                 'source_review_exists', 'load_card_state', 'append_review',
                 'load_maturity_facts', 'save_card_state'}
+    # The installed implementation checked by Grimp must match the tracked owner.
+    for module in CERTIFIED_MODULES:
+        if module.startswith('tempo_learning_runtime.'):
+            installed = Path(importlib.import_module(module).__file__).read_text()
+            tracked = (REPOSITORY / METADATA['source_paths'][module]).read_text()
+            assert ast.dump(ast.parse(installed)) == ast.dump(ast.parse(tracked)), module
 
 
 def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency_graph):
     for module, expected_imports in METADATA['allowed_direct_dependencies'].items():
         assert sorted(dependency_graph.find_modules_directly_imported_by(module)) == sorted(expected_imports), module
-    reachable = dependency_graph.find_upstream_modules(APPLICATION)
-    assert {module for module in reachable if module.startswith('app.')} == {CONTRACTS, SCHEDULER}
-    assert set(reachable) <= set(CERTIFIED_MODULES) | {'__future__', 'dataclasses', 'datetime', 'typing', 'json', 'fsrs', 'tempo_scheduling', 'tempo_learning_runtime'}
+    for application_module, expected_app in (
+            (APPLICATION, set()),
+            (BACKEND_APPLICATION, {BACKEND_CONTRACTS, 'app.services.scheduler'})):
+        reachable = dependency_graph.find_upstream_modules(application_module)
+        assert {module for module in reachable if module.startswith('app.')} == expected_app
+        assert set(reachable) <= set(CERTIFIED_MODULES) | {
+            '__future__', 'dataclasses', 'datetime', 'typing', 'json', 'fsrs',
+            'tempo_scheduling', 'contextvars', 'zoneinfo'}
 
 
 @pytest.mark.parametrize('module', CERTIFIED_MODULES)
 def test_scheduling_boundary_disallows_dynamic_import_loaders(module):
-    source_path = REPOSITORY / 'backend' / Path(*module.split('.')).with_suffix('.py')
+    source_path = REPOSITORY / METADATA['source_paths'][module]
     for node in ast.walk(ast.parse(source_path.read_text())):
         if isinstance(node, ast.Name):
             assert node.id not in {'__import__', 'eval', 'exec'}, (module, node.lineno)
@@ -138,7 +171,7 @@ def reject_services(event, arguments):
 sys.addaudithook(reject_services)
 import pytest
 raise SystemExit(pytest.main([sys.argv[1] + '/backend/tests/test_scheduling_review_application.py',
-    '-q', '-p', 'no:cacheprovider', '--rootdir=' + sys.argv[1]]))
+    '-q', '-p', 'no:cacheprovider', '--noconftest', '--rootdir=' + sys.argv[1]]))
 '''
     completed = subprocess.run([sys.executable, '-I', '-B', '-c', source, str(REPOSITORY)],
                               env={**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1',
