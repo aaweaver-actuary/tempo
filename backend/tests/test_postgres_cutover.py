@@ -3956,11 +3956,13 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
 
 
 def test_postgres_review_reserves_card_then_queue_position_before_reordering(monkeypatch):
+    from datetime import datetime, timezone
     from app import review_commands
     from app.services import learning_review_adapter
     from tempo_learning_review import apply_review as installed_apply_review, ReviewResult
 
     observed = []
+    observed_at = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
 
     class RecordingDatabase:
         def execute(self, statement, parameters=()):
@@ -3982,6 +3984,10 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
 
     monkeypatch.setattr(learning_review_adapter, "lock_queue_date_for_position",
                         lambda database, queue_date: observed.append(("queue_lock", queue_date)))
+    monkeypatch.setattr(learning_review_adapter.LearningReviewAdapter, "policy",
+                        lambda _adapter: learning_review_adapter.learning.ReviewPolicy("UTC", 1))
+    monkeypatch.setattr(learning_review_adapter, "datetime", SimpleNamespace(now=lambda _timezone: observed_at))
+
     def record_review(adapter, command, context, *, position=False):
         assert not position
         observed.append(("review", command.card_id, command.outcome))
@@ -3993,7 +3999,7 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
         RecordingDatabase(), {"card_id": "card-1", "review": {"outcome": "again"}},
     ) == {"persisted": True}
     assert observed[0] == ("card_lock", "SELECT id FROM cards WHERE id=? FOR UPDATE", ("card-1",))
-    assert observed[1] == ("queue_lock", date.today().isoformat())
+    assert observed[1] == ("queue_lock", observed_at.date().isoformat())
     assert observed[2] == ("review", "card-1", "again")
 
 
