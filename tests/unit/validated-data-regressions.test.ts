@@ -24,10 +24,63 @@ import {
   readJsonResponse,
   parseData,
 } from "../../app/lib/validated-data";
+import * as browserValidation from "../../app/lib/validated-data";
+import * as pureValidation from "../../app/lib/data-validation";
 import { clearDebugErrors, debugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
 
 beforeEach(clearDataDiagnostics);
+
+it("pure schema validation reports and throws the same Error with caller context", () => {
+  let reportedFailure: Error | undefined;
+  let reportedContext: unknown;
+  let thrownFailure: unknown;
+  try {
+    pureValidation.parseData(
+      z.object({ value: z.number() }),
+      { value: "invalid" },
+      "study worker response",
+      "/api/study",
+      "study-worker",
+      () => true,
+      (failure, context) => {
+        reportedFailure = failure;
+        reportedContext = context;
+      },
+    );
+  } catch (error) {
+    thrownFailure = error;
+  }
+
+  expect(thrownFailure).toBeInstanceOf(Error);
+  expect(reportedFailure).toBe(thrownFailure);
+  expect(reportedContext).toEqual({
+    kind: "data-validation",
+    source: "study-worker",
+    operation: "schema validation",
+    endpoint: "/api/study",
+    notify: true,
+  });
+  expect(dataDiagnostics()).toHaveLength(1);
+  expect(dataDiagnostics()[0].source).toBe("study worker response");
+});
+
+it("browser validation exports the pure diagnostics owner and shares its deduplicated state", () => {
+  expect(browserValidation.dataDiagnostics).toBe(pureValidation.dataDiagnostics);
+  expect(browserValidation.reportDataDiagnostic).toBe(pureValidation.reportDataDiagnostic);
+
+  pureValidation.reportDataDiagnostic("pure owner", { id: "same" }, "invalid record", "same");
+  pureValidation.reportDataDiagnostic("pure owner", { id: "same" }, "invalid record", "same");
+  expect(browserValidation.dataDiagnostics()).toHaveLength(1);
+  expect(browserValidation.dataDiagnostics()[0]).toMatchObject({
+    source: "pure owner",
+    recordId: "same",
+    message: "invalid record",
+  });
+
+  browserValidation.clearDataDiagnosticsForSources(["pure owner"]);
+  expect(pureValidation.dataDiagnostics()).toEqual([]);
+});
 
 it("schema validation reports the caller debug source once", () => {
   const schema = z.object({ value: z.number() });

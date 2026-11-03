@@ -42,6 +42,33 @@ flowchart LR
 The lanes have separate worker and pending ownership. This is a source-level
 validation boundary; it does not establish packaged or live behavior.
 
+### Shared data validation and browser reporting (R33)
+
+`data-validation.ts` owns pure schema parsing, record filtering, and in-memory
+diagnostic collection. It accepts an optional reporter callback and does not
+import browser debug reporting. `validated-data.ts` is the browser facade: it
+re-exports the shared diagnostic API and supplies the existing
+`reportDebugError` callback for browser callers. Adapters shared across browser
+and worker paths and Study worker computation use the pure functions; browser-
+backed shared adapters pass `reportDebugError` explicitly when their caller
+needs debug reporting. Browser-only response adapters can use the facade.
+Worker validation therefore records diagnostics without importing browser
+UI/debug services. The validation and worker message protocols are unchanged.
+
+```mermaid
+flowchart LR
+  A[Browser adapters and response readers] --> F[validated-data browser facade]
+  F --> P[Pure data-validation functions]
+  P --> D[In-memory diagnostics]
+  F --> R[Existing reportDebugError]
+  W[Study workers and shared adapters] --> P
+  BA[Browser-backed shared adapter] --> P
+  BA -. explicit reporter callback .-> R
+```
+
+This is a source-level dependency boundary; packaged and live behavior remain
+unverified.
+
 ### Study client authority and transport (proposed J2)
 
 `createStudyClient` owns one connection, generation and injected transport per

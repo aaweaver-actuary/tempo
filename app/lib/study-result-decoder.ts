@@ -6,6 +6,7 @@ import { decodePositionPresentation, positionPresentationSchema } from '../domai
 import { validateWorkspacePayload } from '../domain/adapters/workspace-adapters';
 import { adaptPositionPresentation } from '../domain/adapters/position-presentation-adapter';
 import type { StudyTask, StudyTaskResult } from './study-computation';
+import type { ValidationReporter } from './data-validation';
 
 // The older local-repertoire schema is a subset; worker cards include the
 // Study, defense, encounter, and position fields supplied by the current card adapter.
@@ -48,10 +49,10 @@ const snapshot = z.strictObject({
 });
 
 /** Validate the untrusted structured-clone result against its retained task. */
-export function decodeStudyResult<Task extends StudyTask>(task: Task, raw: unknown, shouldPublishDiagnostics?: () => boolean): StudyTaskResult<Task> {
+export function decodeStudyResult<Task extends StudyTask>(task: Task, raw: unknown, shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter): StudyTaskResult<Task> {
   let result: unknown;
   switch (task.kind) {
-    case 'workspace': result = validateWorkspacePayload(task.url, raw, shouldPublishDiagnostics); break;
+    case 'workspace': result = validateWorkspacePayload(task.url, raw, shouldPublishDiagnostics, reporter); break;
     case 'queue': result = z.array(workerCard).parse(raw); break;
     case 'deck': result = z.array(z.strictObject({ record: packagedPuzzleSchema, card: workerCard })).parse(raw); break;
     case 'lines': case 'transportLines': result = z.array(analysisLineSchema).parse(raw); break;

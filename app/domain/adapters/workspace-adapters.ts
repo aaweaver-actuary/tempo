@@ -1,7 +1,7 @@
 import * as z from "zod";
 import type { AnalysisLine } from "../analysis";
 import { asSanMove } from "../shared";
-import { parseData, validRecords } from "../../lib/validated-data";
+import { parseData, validRecords, type ValidationReporter } from "../../lib/data-validation";
 import {
   settingsResponseSchema,
   repertoireLinesResponseSchema,
@@ -13,13 +13,17 @@ import {
   tacticProgressSchema,
 } from "../schemas";
 
-export function repertoireLinesFromPayload(raw: unknown): AnalysisLine[] {
+export function repertoireLinesFromPayload(raw: unknown, reporter?: ValidationReporter): AnalysisLine[] {
   const body = parseData(
     repertoireLinesResponseSchema,
     raw,
     "repertoire lines",
+    undefined,
+    undefined,
+    undefined,
+    reporter,
   );
-  return validRecords(repertoireLineSchema, body.lines, "repertoire line").map(
+  return validRecords(repertoireLineSchema, body.lines, "repertoire line", undefined, reporter).map(
     (line) => ({
       id: line.id,
       repertoireId: line.repertoire_id,
@@ -33,9 +37,9 @@ export function repertoireLinesFromPayload(raw: unknown): AnalysisLine[] {
 }
 
 // The cache holds transport values, never unchecked domain values.
-export function validateWorkspacePayload(url: string, raw: unknown, shouldPublishDiagnostics?: () => boolean): unknown {
+export function validateWorkspacePayload(url: string, raw: unknown, shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter): unknown {
   const parseWorkspaceData = <T>(schema: z.ZodType<T>, value: unknown, source: string) =>
-    parseData(schema, value, source, undefined, undefined, shouldPublishDiagnostics);
+    parseData(schema, value, source, undefined, undefined, shouldPublishDiagnostics, reporter);
   const path = new URL(url, "http://tempo.local").pathname;
   switch (path) {
     case "/api/settings":
@@ -52,6 +56,7 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
           body.lines,
           "repertoire line",
           shouldPublishDiagnostics,
+          reporter,
         ),
       };
     }
@@ -67,6 +72,7 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
           body.repertoires,
           "repertoire",
           shouldPublishDiagnostics,
+          reporter,
         ),
       };
     }

@@ -6668,3 +6668,15 @@ Component packaging fixtures include the existing development-web-cache leaf; ex
 
 `standalone defense engine smoke does not poll an unavailable API` retains its 15-second deadline, one thread, 32MiB hash and depth-four restricted search. Its smoke branch now terminates the owned Stockfish child in a finally block before exiting; ordinary engine processing is unchanged.
 
+### Pure Study worker validation (#826)
+
+`tests/unit/study-worker-entry-closure.test.ts` checks actual emitted contributions
+for both entries, rejecting browser debug/store implementation while retaining
+essential/optional computation separation and workerless results.
+`tests/unit/validated-data-regressions.test.ts` owns
+`pure schema validation reports and throws the same Error with caller context`
+and `browser validation exports the pure diagnostics owner and shares its deduplicated state`.
+The existing real Chromium proof in `tests/fixtures/study-worker-replies/worker-proof.mjs`
+also checks malformed-card quarantine and the original request-correlated diagnostics
+alongside valid production queue decoding. Existing debug, publication, worker,
+reply and bulk regressions retain notification/currentness/cancellation semantics.
