@@ -96,6 +96,7 @@ def status(client, run_id="bounded-history"):
 
 
 def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_postgres):
+    import re
     client, root, priority = root_history
     from app.services.background_activity import set_control_in_transaction
     from app.services.durable_tasks import enqueue_task_in_transaction, claim_task
@@ -155,7 +156,14 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         assert resumed.status_code == 200, resumed.text
         saved = status(client)
         assert saved["state"] == "complete" and saved["processed_encounters"] == 1
-        assert [item["disposition"] for item in saved["receipts"]] == ["first_introduction"]
+        first_receipt = saved["receipts"][0]
+        receipt_diagnostic = {
+            field: value if value is None or isinstance(value, str) and re.fullmatch(r"[a-z0-9_]{1,120}", value)
+            else "<nonsymbolic>"
+            for field in ("status", "reason", "admission_status", "deferred_reason", "disposition", "outcome")
+            for value in (first_receipt.get(field),)
+        }
+        assert [item["disposition"] for item in saved["receipts"]] == ["first_introduction"], receipt_diagnostic
         assert [item["admission_status"] for item in saved["receipts"]] == ["available"]
         assert all(item["detected_at"] == NOW.isoformat() for item in saved["receipts"])
         with activity_gate.background_job("game_feedback_history","unrelated-check",yielding=True):
