@@ -485,13 +485,14 @@ def has_owed_feedback(database, card_id):
     return card_id in owed_feedback_card_ids(database, (card_id,))
 
 
-def feedback_queue_priorities(database, card_ids, *, read=None):
+def feedback_queue_priorities(database, card_ids, *, read=None, include_regrouped=False):
     """Study-owned ready urgency; acceptance or old priority is insufficient."""
     ids = tuple(dict.fromkeys(card_ids))
     if not ids or read is None and not installed(database):
         return {}
     placeholders = ','.join('?' if read is not None else '%s' for _ in ids)
-    statement = """SELECT effect.* FROM study_game_feedback effect WHERE effect.status='applied'
+    projection = 'effect.*, NULL AS regrouped_card_id' if include_regrouped else 'effect.*'
+    statement = "SELECT " + projection + """ FROM study_game_feedback effect WHERE effect.status='applied'
         AND (CAST(effect.payload_json AS json)->'owner'->'progress'->'target'->>'card_id'
             IN (""" + placeholders + """) OR effect.card_id IN (""" + placeholders + """))
         AND (CAST(effect.payload_json AS json)->'owner'->>'admission_status'='available'
@@ -500,6 +501,43 @@ def feedback_queue_priorities(database, card_ids, *, read=None):
                  AND actual.source_kind='game_lapse' AND actual.source_ref=effect.effect_key
                  AND actual.invalidated_at IS NULL)))"""
     parameters = (*ids,*ids)
+    if include_regrouped:
+        requested = ','.join('(' + ('?' if read is not None else '%s') + ')' for _ in ids)
+        repertoire = """COALESCE(CAST(effect.payload_json AS json)->'finding'->>'repertoire_id',
+            CAST(effect.payload_json AS json)->'command'->'finding'->>'repertoire_id')"""
+        # Once explicit lineage exists, a retained reset cannot fall back to
+        # its original physical card when that lineage is ambiguous or retired.
+        statement += """ AND (CAST(effect.payload_json AS json)->'owner'->>'progress' IS NOT NULL
+            OR NOT EXISTS(SELECT 1 FROM study_recombination_current known
+                JOIN study_recombination_presentations known_p ON known_p.presentation_id=known.presentation_id
+                WHERE known.decision_id=effect.decision_id
+                  AND CAST(known_p.result_json AS json)->'presentation'->>'repertoire_id'=""" + repertoire + "))"
+        # Resolve retained resets only through unique, explicit current lineage.
+        # Uniqueness includes unrequested and unavailable alternatives; neither
+        # may turn an ambiguous decision into permission for another target.
+        statement = "WITH requested(card_id) AS (VALUES " + requested + ") " + statement + """
+            UNION ALL
+            SELECT effect.*, requested.card_id AS regrouped_card_id FROM requested
+            JOIN study_recombination_current selected ON selected.presentation_id=requested.card_id
+            JOIN study_recombination_presentations presentation ON presentation.presentation_id=selected.presentation_id
+            JOIN cards target ON target.id=selected.presentation_id
+            JOIN study_game_feedback effect ON effect.decision_id=selected.decision_id
+            WHERE effect.status='applied' AND effect.hold_json IS NULL
+              AND CAST(effect.payload_json AS json)->'owner'->>'progress' IS NULL
+              AND EXISTS(SELECT 1 FROM reviews actual WHERE actual.id=effect.review_id
+                  AND actual.source_kind='game_lapse' AND actual.source_ref=effect.effect_key
+                  AND actual.card_id=effect.card_id AND actual.rating='again'
+                  AND actual.invalidated_at IS NULL)
+              AND CAST(presentation.result_json AS json)->'presentation'->>'repertoire_id'=""" + repertoire + """
+              AND NOT EXISTS(SELECT 1 FROM study_recombination_current alternative
+                  JOIN study_recombination_presentations other ON other.presentation_id=alternative.presentation_id
+                  WHERE alternative.decision_id=effect.decision_id
+                    AND CAST(other.result_json AS json)->'presentation'->>'repertoire_id'=""" + repertoire + """
+                    AND alternative.presentation_id<>selected.presentation_id)
+              AND target.id=CAST(presentation.result_json AS json)->'presentation'->>'presentation_id'
+              AND target.revision=CAST(CAST(presentation.result_json AS json)->'presentation'->>'revision' AS bigint)
+              AND target.archived=0 AND target.pending_validation=0 AND target.superseded_by IS NULL"""
+        parameters = (*ids,*parameters)
     rows = read(statement, parameters) if read is not None else database.execute_native(statement, parameters).fetchall()
     result = {}
     for row in rows:
@@ -517,7 +555,7 @@ def feedback_queue_priorities(database, card_ids, *, read=None):
             # never a newly claimed first-departure/five-card guarantee.
             candidate = dict(urgent_determined_at=effect.lapse.detected_at,
                 urgent_stream='reconciliation',urgent_effect_id=effect_id(effect.key))
-            card_id = effect.card_id
+            card_id = row['regrouped_card_id'] if include_regrouped and row['regrouped_card_id'] else effect.card_id
         else:
             continue
         if card_id not in ids:

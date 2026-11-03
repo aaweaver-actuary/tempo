@@ -93,7 +93,7 @@ def _ready_priority_capability(monkeypatch, identities):
     # This suite owns bounded-reader plumbing. The native #622 owner case proves
     # the real ready/reset receipt query; a pending receipt alone is not ready.
     from tempo_legacy_database.adapters.study import game_feedback
-    def ready(database, requested, *, read=None):
+    def ready(database, requested, *, read=None, include_regrouped=False):
         assert database is None and callable(read)
         return {identity:dict(urgent_stream='forward',urgent_determined_at='2026-10-28T00:00:00Z',
             urgent_effect_id='effect-'+identity) for identity in identities if identity in requested}
@@ -213,6 +213,9 @@ def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reaso
 
 @pytest.mark.parametrize('lookup,expected_paths', [
     ('ready', {('owner','progress','target','card_id'),('owner','admission_status'),('owner','progress')}),
+    ('regrouped_ready', {('owner','progress','target','card_id'),('owner','progress'),
+        ('finding','repertoire_id'),('command','finding','repertoire_id'),
+        ('presentation','repertoire_id'),('presentation','presentation_id'),('presentation','revision')}),
     ('regrouped', {('presentation','repertoire_id'),('finding','repertoire_id'),
         ('command','finding','repertoire_id'),('command','decision','repertoire_id')}),
 ])
@@ -223,9 +226,12 @@ def test_feedback_priority_paths_survive_bounded_sql_translation(lookup, expecte
     statements = []
     def bounded(statement, parameters):
         statements.append(postgres_sql(statement))
+        assert parameters == (('card-1',) * (3 if lookup=='regrouped_ready' else 2)
+            if lookup in {'ready', 'regrouped_ready'} else ('card-1',))
         return []
-    if lookup=='ready':
-        assert feedback_queue_priorities(None, ('card-1',), read=bounded)=={}
+    if lookup in {'ready', 'regrouped_ready'}:
+        assert feedback_queue_priorities(None, ('card-1',), read=bounded,
+            include_regrouped=lookup=='regrouped_ready')=={}
     else:
         assert owed_feedback_card_ids(None, ('card-1',), read=bounded, include_regrouped=True)==set()
     assert len(statements)==1
@@ -238,6 +244,59 @@ def test_feedback_priority_paths_survive_bounded_sql_translation(lookup, expecte
     # legacy progress; JSON object extraction would change that fallback.
     scalar_paths = {path(node) for node in parse_one(statements[0],read='postgres').find_all(exp.JSONExtractScalar)}
     assert expected_paths<=scalar_paths, statements[0]
+    if lookup=='ready':
+        assert 'study_recombination_' not in statements[0]
+    if lookup=='regrouped_ready':
+        tree = parse_one(statements[0], read='postgres')
+        assert len(list(tree.find_all(exp.Union))) == 1
+        assert not list(tree.find_all(exp.Min)) and not list(tree.find_all(exp.Limit))
+        assert not any(isinstance(node, (exp.Insert, exp.Update, exp.Delete)) for node in tree.walk())
+
+
+@pytest.mark.parametrize('installed,candidate,regrouped,expected', [
+    (True, 'mapped', True, False),
+    (True, 'ordinary', False, True),
+    (True, None, False, True),
+    (False, 'ordinary', False, False),
+])
+def test_next_card_pending_work_respects_ready_regrouped_candidate_cutoff(
+        monkeypatch, installed, candidate, regrouped, expected):
+    from app.services import queue_next_card
+    from app.services.queue_ordering import urgent_priority_key
+    from tempo_legacy_database.adapters.study import game_feedback, recombination
+    database, calls, sources = object(), [], []
+    ready = dict(urgent_stream='reconciliation', urgent_determined_at='2026-10-25T00:00:00Z',
+        urgent_effect_id='retained-effect')
+    later = dict(ready, urgent_determined_at='2026-10-26T00:00:00Z')
+    monkeypatch.setattr(game_feedback, 'installed', lambda borrowed: borrowed is database and installed)
+    def members(borrowed, requested):
+        assert borrowed is database and requested == (candidate,)
+        calls.append('membership')
+        return {candidate} if regrouped else set()
+    def priority(borrowed, requested, *, read=None, include_regrouped=False):
+        assert borrowed is database and read is None and requested == (candidate,)
+        assert include_regrouped is regrouped
+        calls.append('priority')
+        return {candidate: ready} if include_regrouped else {}
+    def pending(borrowed, day, *, before_priority=None):
+        assert borrowed is database and day == '2026-10-28'
+        calls.append(('pending', before_priority))
+        return before_priority is None or urgent_priority_key(later) < urgent_priority_key(before_priority)
+    def source(borrowed, day, *, before_priority=None):
+        assert borrowed is database and day == '2026-10-28'
+        sources.append(before_priority)
+        return False
+    monkeypatch.setattr(recombination, 'regrouped_presentation_ids', members)
+    monkeypatch.setattr(game_feedback, 'feedback_queue_priorities', priority)
+    monkeypatch.setattr(game_feedback, 'pending_feedback_preparation', pending)
+    monkeypatch.setattr(queue_next_card, '_source_pending', source)
+    assert queue_next_card.pending_next_card_preparation(database, '2026-10-28',
+        candidate_card_id=candidate) is expected
+    if installed and candidate is not None:
+        assert calls[:2] == ['membership', 'priority']
+    else:
+        assert 'membership' not in calls and 'priority' not in calls
+    assert sources == ([ready] if regrouped else [] if installed else [None])
 
 
 def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(monkeypatch):
