@@ -31,6 +31,11 @@ class CommandConnection:
         return getattr(self.connection, name)
 
     def execute_native(self, statement, parameters=()):
+        if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL":
+            # This SQLite fixture has no opted-in position cohort. Model only
+            # the catalog fact needed by the production guard; all other SQL
+            # still goes through the borrowed connection.
+            return self.connection.execute("SELECT 0")
         if "pg_advisory" in statement:
             self.card_locks.append(parameters)
             return self.connection.execute("SELECT 1")
