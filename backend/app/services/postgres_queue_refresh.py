@@ -515,11 +515,13 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     if queue_ordering._queue_membership_hash(current_membership) != plan.get("raw_membership_hash", plan["membership_hash"]):
         return False
     if plan["entries"] is None:
-        prioritize_queued_misses(database, queue_date)
+        if presentation_storage.has_queue_priority(database, queue_date):
+            prioritize_queued_misses(database, queue_date)
         return True
     saved = presentation_storage.locked_membership_hash(database, queue_date)
     if saved and saved[0] == plan["membership_hash"]:
-        prioritize_queued_misses(database, queue_date)
+        if presentation_storage.has_queue_priority(database, queue_date):
+            prioritize_queued_misses(database, queue_date)
         return True
     entries = plan["entries"]
     if plan.get('frozen_token',[None])[0] is not None:
@@ -528,7 +530,8 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     if matched_count != len(entries):
         raise RuntimeError("Queue membership changed during atomic randomization")
     presentation_storage.save_plan(database, queue_date, plan["seed"], plan["membership_hash"], datetime.now(timezone.utc).isoformat())
-    prioritize_queued_misses(database, queue_date)
+    if presentation_storage.has_queue_priority(database, queue_date):
+        prioritize_queued_misses(database, queue_date)
     return True
 
 

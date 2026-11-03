@@ -43,6 +43,15 @@ def current_membership(database, queue_date):
     ).fetchall()
 
 
+def has_queue_priority(database, queue_date):
+    """Check stored queued reasons while the caller holds the queue-date lock."""
+    return bool(database.execute_native(
+        """SELECT EXISTS(SELECT 1 FROM daily_queue
+           WHERE queue_date=%s AND status='queued' AND gameplay_priority_reason IS NOT NULL)""",
+        (queue_date,),
+    ).fetchone()[0])
+
+
 def locked_membership_hash(database, queue_date):
     return database.execute_native(
         "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
