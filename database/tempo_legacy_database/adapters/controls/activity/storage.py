@@ -1,7 +1,7 @@
 """Existing finite background progress/control/projection queries; caller owns policy."""
 
 from ... import postgres_store
-from ...defensive_analysis import task_admission_sql, recommendation_sql, search_admission_sql
+from ...defensive_analysis import task_admission_sql, search_admission_sql
 
 
 SOURCES = {
@@ -129,103 +129,4 @@ def release_threat_lease(database, values):
                  lease_expires_at=NULL,updated_at=?
                WHERE id=? AND state='leased'""",
         values,
-    )
-
-
-def durable_activity(database, values, defensive_kinds):
-    if postgres_store.configured():
-        from ...authored_repertoires.pgn_import.preparation import receipt_scope
-        admission = f"({task_admission_sql('kind', defensive_kinds)}) OR ({receipt_scope()})"
-        return database.execute_native(
-            f"SELECT *,NOT ({admission}) AS paused_by_settings "
-            "FROM background_tasks WHERE state!='complete' OR updated_at>=%s", values,
-        ).fetchall()
-    return database.execute(
-        f"SELECT *,NOT {task_admission_sql('kind', defensive_kinds)} AS paused_by_settings "
-            "FROM background_tasks WHERE state!='complete' OR updated_at>=?",
-        values,
-    )
-
-
-def threat_activity(database, values):
-    return database.execute(
-        f"""SELECT request.id,state,attempts,last_error,updated_at,
-                      {recommendation_sql('request.id')} AS is_recommendation,
-                      NOT {search_admission_sql('request.id')} AS paused_by_settings
-                FROM threat_analysis_requests request
-                WHERE state!='complete' OR updated_at>=?""",
-        values,
-    )
-
-
-def sync_activity(database, values):
-    return database.execute(
-        "SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?",
-        values,
-    )
-
-
-def derivation_activity(database, values):
-    return database.execute(
-        """SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
-                                      JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""",
-        values,
-    )
-
-
-def integrity_activity(database, values):
-    return database.execute(
-        """SELECT j.*,r.name AS repertoire_name FROM repertoire_integrity_jobs j
-                                      JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""",
-        values,
-    )
-
-
-def coverage_counts(database):
-    return database.execute(
-        """SELECT run_id,COUNT(*) AS total,
-                   SUM(CASE WHEN explorer_status='complete' THEN 1 ELSE 0 END) AS explorer_done,
-                   SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done,
-                   SUM(CASE WHEN explorer_status='running' OR maia_status='leased' THEN 1 ELSE 0 END) AS active
-                   FROM repertoire_coverage_nodes GROUP BY run_id""",
-    )
-
-
-def coverage_activity(database):
-    return database.execute(
-        """SELECT runs.*,r.name AS repertoire_name FROM repertoire_coverage_runs runs
-                                      JOIN repertoires r ON r.id=runs.repertoire_id""",
-    )
-
-
-
-
-
-
-def analysis_position_counts(database):
-    return database.execute(
-        """SELECT game_id,analysis_version,
-                      SUM(CASE WHEN state='complete' THEN 1 ELSE 0 END) AS completed,
-                      COUNT(*) AS started,
-                      MAX(CASE WHEN scan_pass='confirmed' THEN 1 ELSE 0 END) AS confirming
-               FROM game_analysis_position_reports GROUP BY game_id,analysis_version""",
-    )
-
-
-def analysis_activity(database, values):
-    return database.execute(
-        """SELECT j.*,g.provider,g.played_at,
-                                             json_array_length(g.moves_json)+1 AS position_total
-                                      FROM game_analysis_jobs j
-                                      JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""",
-        values,
-    )
-
-
-def activity_controls(database):
-    return database.execute(
-        "SELECT * FROM background_activity",
     )
