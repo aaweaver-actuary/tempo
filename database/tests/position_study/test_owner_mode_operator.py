@@ -588,6 +588,43 @@ def test_native_full_source_operator_lifecycle():
                 operation_id=action, now=now, release=release(source, 'old'))
             raw.commit()
         assert receipt['mode'] == 'active'
+        # Regression: legacy queued scopes may be adopted without changing the
+        # projection, origin, scheduling state or the prior review history.
+        raw.execute("UPDATE settings SET timezone='UTC' WHERE id=1")
+        queue_id = raw.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,admission_kind)
+            VALUES(%s,'card',2,17,'reinforcement','due') RETURNING id""", (day,)).fetchone()[0]
+        raw.commit()
+        source, request = prepare()
+        raw.execute("""INSERT INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,
+            admission_kind,admission_repertoire_id,attempt_failed,last_status,review_result_json,legacy,
+            start_fen,moves_json,trained_color,content_type,issued_as_head,issuance_sequence,issued_at)
+            SELECT queue_entry_id+100000,card_id,revision,queue_date,cycle+1,admission_kind,
+            admission_repertoire_id,attempt_failed,'complete',NULL,legacy,start_fen,moves_json,trained_color,
+            content_type,1,nextval('study_attempt_issuance_sequence'),%s FROM queue_attempt_origins WHERE queue_entry_id=%s""", (now,queue_id))
+        raw.commit()
+        raw.execute('BEGIN')
+        with pytest.raises(operator.OperatorHold, match='position_queue_attempt_exists'):
+            operator.adopt_queue_in_writer(port, source, request, epoch='old', operation_id='adopt',
+                now=now, release=release(source, 'old'))
+        raw.rollback()
+        raw.execute("UPDATE queue_attempt_origins SET review_result_json='{}' WHERE queue_entry_id=%s", (queue_id+100000,))
+        raw.commit()
+        raw.execute('BEGIN')
+        plan = operator.adopt_queue_in_writer(port, source, request, epoch='old', operation_id='adopt',
+            now=now, release=release(source, 'old'), plan=True)
+        assert len(plan['rows']) == 1 and plan['rows'][0]['before']['id'] == queue_id
+        assert raw.execute('SELECT admission_repertoire_id FROM daily_queue WHERE id=%s', (queue_id,)).fetchone()[0] is None
+        raw.commit()
+        raw.execute('BEGIN')
+        adopted = operator.adopt_queue_in_writer(port, source, request, epoch='old', operation_id='adopt',
+            now=now, release=release(source, 'old'))
+        raw.commit()
+        raw.execute('BEGIN')
+        assert operator.adopt_queue_in_writer(port, source, request, epoch='old', operation_id='adopt',
+            now=now, release=release(source, 'old')) == adopted
+        assert tuple(raw.execute('SELECT cycle,position,attempt_state,admission_repertoire_id FROM daily_queue WHERE id=%s', (queue_id,)).fetchone()) == (2,17,'reinforcement','f4')
+        assert tuple(raw.execute('SELECT admission_repertoire_id,issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s', (queue_id,)).fetchone()) == ('f4',0)
+        raw.commit()
         raw.execute('BEGIN')
         paused = operator.transition_in_writer(port, None, None, action='pause', repertoire_id='f4', epoch='old',
             operation_id='pause', now=now)
