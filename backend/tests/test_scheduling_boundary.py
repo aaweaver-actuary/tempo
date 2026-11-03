@@ -54,6 +54,8 @@ def synthetic_package(tmp_path, additions):
                'tempo_learning_runtime.review_service': ''}
     for module, source_path in METADATA['source_paths'].items():
         sources[module] = (REPOSITORY / source_path).read_text()
+    # Keep the declared position consumer present in the hermetic graph.
+    sources.setdefault('app.services.learning_review_adapter', '')
     for module, extra_source in additions.items():
         sources[module] = sources.get(module, '') + '\n' + extra_source + '\n'
     for module, source in sources.items():
