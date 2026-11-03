@@ -20,7 +20,7 @@ import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts
  */
 const fixtureProgram = String.raw`
 import json, os, sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import psycopg
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 
@@ -55,7 +55,7 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
             raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,'white',%s,%s,%s)", (route,rep,route,chess.STARTING_FEN,moves,now.isoformat()))
             fsrs = Card(card_id=10001+(suffix=='b'),due=now-timedelta(days=2)).to_json()
             raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
-                VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,rep,chess.STARTING_FEN,moves,day,fsrs,(now-timedelta(days=2)).isoformat()))
+                VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,rep,chess.STARTING_FEN,moves,day,fsrs,(date.fromisoformat(day)-timedelta(days=2)).isoformat()))
             raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (rep,card))
             raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
                 VALUES(%s,3,%s,0,%s,%s,%s,%s,'white')""", (rep,route,card,chess.STARTING_FEN,chess.STARTING_FEN,moves))
@@ -108,7 +108,7 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Legacy browser','fixture',%s)", (legacy,now.isoformat()))
         raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Legacy','white',%s,%s,%s)", (legacy+'-route',legacy,chess.STARTING_FEN,moves,now.isoformat()))
         raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
-            VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,legacy,chess.STARTING_FEN,moves,day,Card(card_id=10003,due=now).to_json(),(now-timedelta(days=2)).isoformat()))
+            VALUES(%s,%s,'prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""", (card,legacy,chess.STARTING_FEN,moves,day,Card(card_id=10003,due=now).to_json(),(date.fromisoformat(day)-timedelta(days=2)).isoformat()))
         raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (legacy,card))
         raw.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,admission_repertoire_id)
             VALUES(%s,%s,0,(SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s),'explicit',%s)""", (day,card,day,legacy))
