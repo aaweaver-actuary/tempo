@@ -1,8 +1,9 @@
 """Compatibility and authoritative preparation seams in the regular suite."""
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,33 @@ def checkpoint_http_envelope():
     manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
     return {'attempt_id': 'http-admission-attempt', 'manifest': manifest, 'origin_queue_entry_id': 101,
             'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC'}
+
+
+@pytest.fixture
+def review_policy_settings(monkeypatch):
+    """Give review-policy reads the two settings owned by the legacy schema."""
+    from app.services import learning_review_adapter
+
+    database = sqlite3.connect(':memory:')
+    database.row_factory = sqlite3.Row
+    database.execute('''CREATE TABLE settings (
+        id INTEGER PRIMARY KEY,
+        timezone TEXT NOT NULL,
+        light_first_interval_days INTEGER NOT NULL
+    )''')
+    database.execute(
+        "INSERT INTO settings (id, timezone, light_first_interval_days) VALUES (1, 'UTC', 7)"
+    )
+
+    @contextmanager
+    def read_connection():
+        yield database
+
+    monkeypatch.setattr(learning_review_adapter, 'read_connection', read_connection)
+    try:
+        yield database
+    finally:
+        database.close()
 
 
 @pytest.mark.parametrize('background_header', [True, False])
@@ -236,7 +264,6 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
 
 
 def test_opening_checkpoint_request_is_background_without_a_client_work_class_header(monkeypatch):
-    from contextlib import contextmanager
     from fastapi.testclient import TestClient
     from app import main, command_dispatch, opening_evidence_api
     fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
@@ -247,8 +274,12 @@ def test_opening_checkpoint_request_is_background_without_a_client_work_class_he
     def scope(work_class):
         observed_scopes.append(work_class)
         yield
+    @asynccontextmanager
+    async def foreground_scope():
+        observed_scopes.append('foreground')
+        yield
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
-    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'async_foreground', foreground_scope)
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **kwargs: {'persisted': True})
     client = TestClient(main.app)
@@ -357,7 +388,7 @@ def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence
     assert rejected.value.detail['aggregate_review_allowed'] is True
 
 
-def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch):
+def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch, review_policy_settings):
     import pytest
     from fastapi import HTTPException
     from app import review_commands
@@ -410,7 +441,7 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
 ])
 @pytest.mark.parametrize("reconciling", [False, True])
 def test_review_requeue_context_correction_only_runs_for_fresh_review(
-        monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
+        monkeypatch, review_policy_settings, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
     from app import review_commands
     from app.services import postgres_opening_evidence
     from app.services import learning_review_adapter
@@ -479,8 +510,12 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
     def scope(work_class):
         observed_scopes.append(work_class)
         yield
+    @asynccontextmanager
+    async def foreground_scope():
+        observed_scopes.append('foreground')
+        yield
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
-    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'async_foreground', foreground_scope)
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
     def read(operation_id, **options):
         reads.append((operation_id, options))
@@ -494,7 +529,8 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
     assert reads == [('opening-checkpoint:receipt', {'background': background})]
 
 
-def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(monkeypatch):
+def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(
+        monkeypatch, review_policy_settings):
     from app import review_commands
     from app.contracts.review_conflicts import ReviewConflict
     from app.services import postgres_opening_evidence as evidence

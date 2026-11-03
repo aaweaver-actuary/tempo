@@ -33,33 +33,40 @@ def test_availability_projection_is_captured_before_each_date_read(monkeypatch):
 
     class Database:
         def execute(self, statement, parameters):
+            if statement.startswith("SELECT queue_date FROM queue_attempt_origins"):
+                origin_reads.append((statement, parameters))
+                events.append('origin')
+                return Cursor(None)
+            if statement.startswith("SELECT 1 FROM queue_attempt_origins"):
+                origin_reads.append((statement, parameters))
+                events.append('origin')
+                return Cursor(None)
             reads.append((statement, parameters))
             events.append('read')
-            return Cursor({'id': 7 if len(reads) == 1 else 9})
+            return Cursor({'id': 7})
 
     def builder(reason):
         assert reason == queue_commands.queue_application.MISS_REASON
         events.append('capture')
         return f'projection-{len(reads)}'
 
-    class Today:
-        @staticmethod
-        def today():
-            events.append('date')
-            return Today()
+    def current_day(_database):
+        events.append('date')
+        return 'day'
 
-        def isoformat(self):
-            return 'day'
-
+    origin_reads = []
     monkeypatch.setattr(storage, 'available_attempt_sql', builder)
-    monkeypatch.setattr(queue_commands, 'date', Today)
+    monkeypatch.setattr(queue_commands, 'current_study_day', current_day)
     monkeypatch.setattr(queue_attempt_origins, 'validate_failure_marker',
                         lambda *args: events.append('marker'))
     queue_commands.validate_available_attempt(Database(), 7, 'card', 3)
-    assert events == ['capture', 'date', 'read', 'marker', 'capture', 'date', 'read', 'read']
+    assert events == ['capture', 'origin', 'date', 'read', 'marker',
+                      'capture', 'read', 'origin']
     assert reads[0][0].startswith('projection-0') and reads[0][1] == ('day', 7)
     assert reads[1][0].startswith('projection-1') and reads[1][1] == ('day',)
-    assert reads[2][1] == (7, 'card', 3)
+    assert [parameters for _, parameters in origin_reads] == [(7, 'card', 3), (7, 'card', 3)]
+    assert origin_reads[0][0].startswith('SELECT queue_date FROM queue_attempt_origins')
+    assert origin_reads[1][0].startswith('SELECT 1 FROM queue_attempt_origins')
 
 
 def test_queue_warming_captures_compiler_before_completion_callback(monkeypatch):

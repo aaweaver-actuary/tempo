@@ -87,20 +87,37 @@ def test_only_deliberate_new_import_uses_foreground_admission_in_study_only(monk
     assert result == ('saved' if command == preparation.COMMAND else None)
 
 
-@pytest.mark.parametrize('essential', [None, {'id': 'queue'}])
-def test_daily_queue_has_first_claim_and_import_fallback_is_one_slice(monkeypatch, essential):
-    calls = []
+@pytest.mark.parametrize('essential', [None, {'id': 'queue', 'kind': 'daily_queue'}])
+def test_foreground_owns_daily_queue_and_background_import_is_one_slice(monkeypatch, essential):
+    calls, executed = [], []
     monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
-    monkeypatch.setattr(tasks.activity_gate, 'check_background_admission', lambda: None)
-    def claim(**kwargs):
-        calls.append(kwargs)
-        return essential if len(calls) == 1 else delivery()
+    monkeypatch.setattr(tasks.activity_gate, 'essential_study_progress', lambda *a: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, 'background_job', lambda *a, **k: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, 'check_background_admission',
+                        lambda: pytest.fail('Essential Study progress waited for optional admission'))
+    imported = delivery()
+    def claim(*args, **kwargs):
+        calls.append((args, kwargs))
+        return essential if args else imported
     monkeypatch.setattr(tasks, 'claim_task', claim)
-    monkeypatch.setattr(tasks, '_execute_claimed_background_slice', lambda *a, **k: False)
+    monkeypatch.setattr(tasks, '_execute_claimed_background_slice',
+                        lambda *a, **k: executed.append((a, k)) or False)
+    # New essential leases belong to foreground progress, not background polling.
+    function = tasks.progress_study_queue.run
+    while hasattr(function, '__wrapped__'):
+        function = function.__wrapped__
+    assert function() is False
+    assert calls == [(('daily_queue',), {})]
+    assert executed == ([((essential, None), {'queue_refresh_wake': True})] if essential else [])
+
+    admissions = []
+    monkeypatch.setattr(tasks.activity_gate, 'check_background_admission', lambda: admissions.append('foreground'))
+    executed.clear()
     # The maintenance decorator is an unchanged operational control.
     function = tasks.poll_background_tasks.run
     while hasattr(function, '__wrapped__'):
         function = function.__wrapped__
-    function(SimpleNamespace(request=SimpleNamespace(headers={})))
-    assert calls[0] == {'allowed_kinds': ('daily_queue',)}
-    assert calls[1:] == ([{'explicit_imports_only': True}] if essential is None else [])
+    assert function(SimpleNamespace(request=SimpleNamespace(headers={}))) is False
+    assert calls[1:] == [((), {'explicit_imports_only': True})]
+    assert admissions == ['foreground', 'foreground']
+    assert executed == [((imported, None), {'queue_refresh_wake': False})]

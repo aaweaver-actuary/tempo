@@ -358,6 +358,13 @@
   },
   {
     "method": "POST",
+    "path": "/api/queue/prepare-next",
+    "handler": "prepare_next_queue_head",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
     "path": "/api/imports/pgn",
     "handler": "import_pgn",
     "treatment": "foreground_command",
@@ -1292,6 +1299,20 @@
     "path": "/api/product/game-review/sync",
     "handler": "sync",
     "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/product/game-review/refresh",
+    "handler": "refresh",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/product/game-review/refresh/{operation_id}",
+    "handler": "refresh_status",
+    "treatment": "reader",
     "state": "staged"
   },
   {

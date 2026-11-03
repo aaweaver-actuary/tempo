@@ -275,7 +275,7 @@ def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
         assert published_steps[-1]["last_decision_index"] == 6
 
 
-def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
+def test_tactic_and_retained_endgame_are_scheduled_after_generation_removal(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         tactic = client.post("/api/tactics/attempt", json={
@@ -288,16 +288,32 @@ def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
         endgame = client.post("/api/endgames/templates", json={
             "name": "Rook + king", "white_material": "KR", "black_material": "K", "trained_color": "white", "goal_mix": "both",
         })
-        assert endgame.status_code == 200
+        assert endgame.status_code == 410
         repeated = client.post("/api/endgames/templates", json={
             "name": "Rook + king", "white_material": "KR", "black_material": "K", "trained_color": "white", "goal_mix": "both",
         })
-        assert repeated.status_code == 200
-        assert repeated.json()["card_id"] == endgame.json()["card_id"]
-        assert repeated.json()["already_exists"] is True
+        assert repeated.status_code == 410
+        assert repeated.json() == endgame.json()
+        assert client.get('/api/endgames/templates').json() == {'templates': []}
+
+        # Generation was retired; already saved endgames remain readable and due.
+        with database.connection() as connection:
+            today = main_module.date.today().isoformat()
+            connection.execute("""INSERT INTO repertoires(id,name,source_name,created_at)
+                VALUES('__endgames__','Endgames','synthetic',?)""", (today,))
+            connection.execute("""INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,state,due_date)
+                VALUES('saved-endgame','__endgames__','checkpoint','endgame',?,'[]','learning',?)""",
+                ('8/8/8/8/8/4k3/7p/6K1 b - - 0 1', today))
+            connection.execute("""INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at)
+                VALUES('saved-template','saved-endgame','Rook + king','KR','K','white','both',?)""", (today,))
+        saved, = client.get('/api/endgames/templates').json()['templates']
+        assert saved['id'] == 'saved-template' and saved['card_id'] == 'saved-endgame'
+        assert client.post('/api/endgames/templates/saved-template/attempt').status_code == 410
+        enqueue_daily_queue_refresh()
 
         queue = wait_for_daily_queue(client, 2)["cards"]
         assert {card["content_type"] for card in queue} == {"tactic", "endgame"}
+        assert sum(card['id'] == 'saved-endgame' for card in queue) == 1
 
 
 def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch):
