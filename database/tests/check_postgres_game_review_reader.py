@@ -226,7 +226,9 @@ print(json.dumps({"fixture_cleanup_verified":True}))
 
 def _exec_python(container, payload, body):
     source = COMMON + "\npayload=json.loads(" + repr(json.dumps(payload)) + ")\n" + body
-    return json.loads(_docker("exec", "-i", container["Id"], "python", "-", source=source).strip().splitlines()[-1])
+    instance = "TEMPO_TEST_INSTANCE=" + os.environ["TEMPO_TEST_INSTANCE"]
+    return json.loads(_docker("exec", "-i", "--env", instance, container["Id"], "python", "-",
+                              source=source).strip().splitlines()[-1])
 
 
 def check_packaged_game_review_reader_reads_current_receipt_without_write_privileges():

@@ -51,6 +51,23 @@ def test_packaged_reader_import_is_inert_and_native_proof_is_outside_generic_bac
         assert (ROOT / path).is_file()
 
 
+def test_packaged_reader_passes_explicit_disposable_marker_to_owned_exec(reader, monkeypatch):
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    calls = []
+
+    def docker(*args, source):
+        calls.append(args)
+        assert source.startswith(reader.COMMON)
+        assert '"fixture": "unchanged"' in source
+        return '{"proof": "complete"}\n'
+
+    monkeypatch.setattr(reader, "_docker", docker)
+    assert reader._exec_python({"Id": "verified-owned-container"}, {"fixture": "unchanged"},
+                               'print("proof")') == {"proof": "complete"}
+    assert calls == [("exec", "-i", "--env", "TEMPO_TEST_INSTANCE=disposable",
+                      "verified-owned-container", "python", "-")]
+
+
 @pytest.mark.parametrize("instance,project,token", [
     (None, "tempo-pg-regressions-123-abc", "owned"),
     ("live", "tempo-pg-regressions-123-abc", "owned"),
