@@ -217,7 +217,7 @@ def prepare_priority_control_fixture(namespace):
 
 def _checkpoint_pythonpath(inherited):
     # Keep the owning image's source-package roots available to the fresh child.
-    return os.pathsep.join([str(ROOT / 'backend'),
+    return os.pathsep.join([str(ROOT / 'backend'), str(ROOT / 'database'),
                             *(entry for entry in inherited.split(os.pathsep) if entry)])
 
 
