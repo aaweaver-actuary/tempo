@@ -212,7 +212,11 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 pages += 1
                 if pages == 2:
                     postgres_store.close_pools()
-                    resumed=subprocess.run([sys.executable,'-c','import json; from database.tests.check_postgres_study_priority import advance_unlock_checkpoint; print(json.dumps(advance_unlock_checkpoint()))'],cwd=ROOT/'scripts',env=configuration,check=True,capture_output=True,text=True,timeout=20)
+                    # A fresh process needs the repository namespace after this
+                    # proof's relocation from scripts/ to database/tests/.
+                    restart_environment = {**configuration,
+                        'PYTHONPATH': os.pathsep.join((str(ROOT), configuration['PYTHONPATH']))}
+                    resumed=subprocess.run([sys.executable,'-c','import json; from database.tests.check_postgres_study_priority import advance_unlock_checkpoint; print(json.dumps(advance_unlock_checkpoint()))'],cwd=ROOT/'scripts',env=restart_environment,check=True,capture_output=True,text=True,timeout=20)
                     cursor=json.loads(resumed.stdout)
                     assert cursor == 'locked-000048'
                     pages += 1
