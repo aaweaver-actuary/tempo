@@ -751,3 +751,26 @@ def test_recovery_cli_binds_existing_database_authorities_before_any_owner_work(
         with pytest.raises(BeforeOwnerWork):
             cli.main()
         assert events == ['bind', 'owner']
+
+
+def test_maintenance_cli_postgres_timestamps_survive_evidence_save_and_resume(monkeypatch, tmp_path):
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('timestamp_evidence_cli', path)
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    instant = datetime(2026, 11, 3, 14, 33, 20, 123456, tzinfo=timezone.utc)
+    raw = {'reviews': [{'id': 7, 'created_at': instant}],
+           'protected_queue': [{'id': 9, 'queue_date': instant.date(), 'completed_at': None}]}
+    monkeypatch.setattr(cli, '_capture_evidence', lambda *args, **kwargs: deepcopy(raw))
+    before = cli.capture_evidence('italian', '2026-11-03', selected_rebuild=True)
+    saved = tmp_path / 'before.json'
+    saved.write_text(json.dumps(before))
+    assert before['reviews'][0]['created_at'] == '2026-11-03T14:33:20.123456+00:00'
+    assert before['protected_queue'][0]['queue_date'] == '2026-11-03'
+    assert before['protected_queue'][0]['completed_at'] is None
+    assert raw['reviews'][0]['created_at'] is instant
+    assert json.loads(saved.read_text()) == cli.capture_evidence('italian', '2026-11-03', selected_rebuild=True)
+    raw['reviews'][0]['created_at'] += timedelta(microseconds=1)
+    assert json.loads(saved.read_text()) != cli.capture_evidence('italian', '2026-11-03', selected_rebuild=True)
+    raw['unexpected'] = object()
+    with pytest.raises(TypeError, match='Unsupported maintenance evidence type'):
+        cli.capture_evidence('italian', '2026-11-03', selected_rebuild=True)

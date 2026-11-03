@@ -7,14 +7,25 @@ import sys
 import signal
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'database'))
-from app.services.opening_graph_recovery import preflight, recover, capture_evidence, target_id, validate_staged_graph, scope_token, verify_preservation
+from app.services.opening_graph_recovery import preflight, recover, capture_evidence as _capture_evidence, target_id, validate_staged_graph, scope_token, verify_preservation
 from app.services.opening_graph_recovery import QUEUED_REBUILD_MODE, preflight_queued_rebuild, finish_queued_rebuild
 from app.services.opening_graph_recovery import assert_selected_execution_not_started, _selected_scope_key
+
+
+def _evidence_value(value):
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    raise TypeError(f'Unsupported maintenance evidence type: {type(value).__name__}')
+
+
+def capture_evidence(*args, **kwargs):
+    """Use the same lossless timestamp representation before save and resume comparison."""
+    return json.loads(json.dumps(_capture_evidence(*args, **kwargs), default=_evidence_value))
 
 
 def prepare_execution_baseline(output, prepared):
