@@ -215,6 +215,12 @@ def prepare_priority_control_fixture(namespace):
     return shared, assert_monotonic_activity_renewal(shared, namespace)
 
 
+def _checkpoint_pythonpath(inherited):
+    # Keep the owning image's source-package roots available to the fresh child.
+    return os.pathsep.join([str(ROOT / 'backend'),
+                            *(entry for entry in inherited.split(os.pathsep) if entry)])
+
+
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
     from database.tooling.apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
@@ -225,7 +231,8 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
         configuration.update(TEMPO_DATABASE_READ_URL=owned_url, TEMPO_DATABASE_WRITE_URL=owned_url,
             TEMPO_REDIS_URL=redis_url, TEMPO_ADMISSION_NAMESPACE='tempo:priority:' + uuid4().hex,
             TEMPO_REDIS_NAMESPACE='tempo:priority:' + uuid4().hex + ':', TEMPO_COORDINATOR_MODE='external',
-            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable', PYTHONPATH=str(ROOT / 'backend'),
+            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable',
+            PYTHONPATH=_checkpoint_pythonpath(configuration.get('PYTHONPATH', '')),
             TEMPO_PRIORITY_CHECKPOINT_RETRY_EVIDENCE=str(evidence / 'checkpoint-retries.jsonl'),
             TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS='250', TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS='25')
         original = dict(os.environ)
