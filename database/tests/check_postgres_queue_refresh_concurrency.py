@@ -711,3 +711,70 @@ def test_native_foreground_review_waits_and_lock_timeout_rolls_back(owned_postgr
         print('PASS 25ms lock conflicts, foreground review, expired-lease recovery; review_ms', wait_ms)
     finally:
         postgres_store.close_pools()
+
+
+def test_native_scale_active_frozen_and_stored_priority(owned_postgres, monkeypatch):
+    """Exercise the retained priority pass with a valid active frozen order."""
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    from app.study.openings.frozen_math import content_fingerprint
+    bind_database_infrastructure()
+    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
+    options = owned_postgres.connection_options
+    url = make_conninfo(**options)
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
+    monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
+    postgres_store.prepare_authoritative_background_pool()
+    def raw():
+        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+    try:
+        with raw() as db:
+            facts = seed_queue_refresh_case(db, queued_count=1258, issued_count=2, frozen_active=True)
+            # The scale helper is intentionally synthetic; make its captured
+            # fingerprints match the real content and membership reader so
+            # the active run represents valid ranked cards, not stale ranks.
+            cards = db.execute('SELECT * FROM cards WHERE repertoire_id=%s ORDER BY id', ('queue-refresh-scale',)).fetchall()
+            db.cursor().executemany('UPDATE frozen_opening_ranks SET fingerprint=%s WHERE run_id=%s AND card_id=%s',
+                [(content_fingerprint(dict(card), ['queue-refresh-scale']), 'queue-refresh-scale', card['id']) for card in cards])
+            db.execute("UPDATE daily_queue SET gameplay_priority_reason='unknown-retained-reason' WHERE id=%s", (facts.queued_ids[3],))
+            db.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
+            task = queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(db), facts.queue_date)
+            epoch = db.execute('SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s', (facts.queue_date,)).fetchone()[0]
+            payload = {'queue_date': facts.queue_date, '_queue_phase': 'randomize_queue',
+                       '_refresh_cycle_epoch': epoch, 'frozen_token': ['queue-refresh-scale', 1]}
+            db.execute("UPDATE background_tasks SET phase='randomize_queue',payload_json=%s WHERE id=%s", (json.dumps(payload), task['id']))
+            protected = tuple(tuple(row) for row in db.execute("SELECT q.id,q.position,q.status,q.attempt_state,q.attempt_failed,q.review_result_json,to_jsonb(o)::text FROM daily_queue q JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=ANY(%s) ORDER BY q.id", (list(facts.issued_ids),)))
+        claimed = durable_tasks.claim_task('daily_queue')
+        assert claimed
+        prepared, settings, calls, stages = [], [], [], []
+        original_prepare = refresh._prepare_queue_randomization
+        original_priority = refresh.prioritize_queued_misses
+        original_publish = refresh._publish_queue_randomization
+        def capture_prepare(*args, **kwargs):
+            start = time.perf_counter()
+            plan = original_prepare(*args, **kwargs)
+            prepared.append((plan, round((time.perf_counter()-start)*1000, 1)))
+            return plan
+        def capture_publish(db, day, plan):
+            settings.append(tuple(db.execute_native("SELECT current_setting('transaction_timeout'),current_setting('lock_timeout')").fetchone()))
+            started = time.perf_counter()
+            try:
+                return original_publish(db, day, plan)
+            finally:
+                stages.append(round((time.perf_counter()-started)*1000, 1))
+        def capture_priority(*args):
+            calls.append(True)
+            return original_priority(*args)
+        with patch.object(refresh, '_prepare_queue_randomization', capture_prepare), patch.object(refresh, '_publish_queue_randomization', capture_publish), patch.object(refresh, 'prioritize_queued_misses', capture_priority):
+            assert refresh.execute_postgres_queue_refresh_slice(claimed)
+        assert prepared[0][0]['frozen_token'] == ['queue-refresh-scale', 1]
+        assert len(prepared[0][0]['entries']) == 1258
+        assert settings == [('500ms', '25ms')] and calls == [True]
+        with raw() as db:
+            after = tuple(tuple(row) for row in db.execute("SELECT q.id,q.position,q.status,q.attempt_state,q.attempt_failed,q.review_result_json,to_jsonb(o)::text FROM daily_queue q JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=ANY(%s) ORDER BY q.id", (list(facts.issued_ids),)))
+            assert after == protected
+            state = db.execute('SELECT state,phase FROM background_tasks WHERE id=%s', (task['id'],)).fetchone()
+            assert tuple(state) == ('queued', 'quarantine')
+            assert db.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE id=%s', (facts.queued_ids[3],)).fetchone()[0] == 'unknown-retained-reason'
+        print('PASS 1258 active frozen valid ranks and retained priority pass', 'prepare_ms', prepared[0][1], 'publish_ms', stages[0], 'settings', settings[0])
+    finally:
+        postgres_store.close_pools()
