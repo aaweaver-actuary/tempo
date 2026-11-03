@@ -15,6 +15,7 @@ from datetime import date
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import socket
@@ -117,6 +118,71 @@ def advance_unlock_checkpoint(*, force_timeout=False):
             time.sleep(0.05)  # Yield outside the transaction, as the owning task does.
 
 
+_CHECKPOINT_CHILD = r"""
+import json
+import re
+import sys
+try:
+    from database.tests.check_postgres_study_priority import advance_unlock_checkpoint
+    print(json.dumps(advance_unlock_checkpoint()))
+except Exception as error:
+    frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        frame = traceback.tb_frame
+        function = frame.f_code.co_name
+        frames.append({'module': frame.f_globals.get('__name__', ''),
+                       'function': '_module' if function == '<module>' else function,
+                       'line': traceback.tb_lineno})
+        frames = frames[-8:]
+        traceback = traceback.tb_next
+    def symbol(value, module=False):
+        pattern = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*' if module else r'[A-Za-z_][A-Za-z0-9_]*'
+        return isinstance(value, str) and len(value) <= 96 and re.fullmatch(pattern, value) is not None
+    if (symbol(type(error).__name__) and frames
+            and all(symbol(frame['module'], True) and symbol(frame['function'])
+                    and type(frame['line']) is int and 1 <= frame['line'] <= 10_000_000
+                    for frame in frames)):
+        print('CHECKPOINT_FAILURE ' + json.dumps({'class': type(error).__name__,
+                                                 'frames': frames}))
+    sys.exit(1)
+"""
+
+
+def resume_unlock_checkpoint(environment):
+    """Expose only bounded symbolic failures, never raw child output or messages."""
+    try:
+        resumed = subprocess.run([sys.executable, '-c', _CHECKPOINT_CHILD],
+            cwd=ROOT / 'scripts', env=environment, check=False,
+            capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Checkpoint child timed out') from None
+    if resumed.returncode == 0:
+        return json.loads(resumed.stdout)
+    generic = f'Checkpoint child failed (exit code {resumed.returncode})'
+    if resumed.returncode < 0:
+        raise RuntimeError(generic)
+    diagnostic = None
+    if (len(resumed.stdout) <= 4096
+            and resumed.stdout.startswith('CHECKPOINT_FAILURE ')):
+        try:
+            record = json.loads(resumed.stdout[len('CHECKPOINT_FAILURE '):])
+            def symbol(value, *, module=False):
+                pattern = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*' if module else r'[A-Za-z_][A-Za-z0-9_]*'
+                return isinstance(value, str) and len(value) <= 96 and re.fullmatch(pattern, value) is not None
+            if (type(record) is dict and set(record) == {'class', 'frames'}
+                    and symbol(record['class']) and type(record['frames']) is list
+                    and 1 <= len(record['frames']) <= 8
+                    and all(type(frame) is dict and set(frame) == {'module', 'function', 'line'}
+                            and symbol(frame['module'], module=True) and symbol(frame['function'])
+                            and type(frame['line']) is int and 1 <= frame['line'] <= 10_000_000
+                            for frame in record['frames'])):
+                diagnostic = json.dumps(record, sort_keys=True)
+        except (ValueError, TypeError, RecursionError):
+            pass
+    raise RuntimeError(generic + (': ' + diagnostic if diagnostic else ''))
+
+
 def assert_monotonic_activity_renewal(server, namespace, *, script=None):
     """Actual Redis: a short pulse cannot retire another live foreground lease."""
     from app.services.redis_admission_gate import _REGISTER_FOREGROUND
@@ -216,8 +282,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                     # proof's relocation from scripts/ to database/tests/.
                     restart_environment = {**configuration,
                         'PYTHONPATH': os.pathsep.join((str(ROOT), configuration['PYTHONPATH']))}
-                    resumed=subprocess.run([sys.executable,'-c','import json; from database.tests.check_postgres_study_priority import advance_unlock_checkpoint; print(json.dumps(advance_unlock_checkpoint()))'],cwd=ROOT/'scripts',env=restart_environment,check=True,capture_output=True,text=True,timeout=20)
-                    cursor=json.loads(resumed.stdout)
+                    cursor = resume_unlock_checkpoint(restart_environment)
                     assert cursor == 'locked-000048'
                     pages += 1
                 assert pages <= 129

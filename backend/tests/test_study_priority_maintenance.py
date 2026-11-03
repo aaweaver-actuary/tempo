@@ -257,3 +257,160 @@ def test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounde
     assert shared is fixture_client
     assert result == {'unchanged_monotonic_invariant': True}
     assert calls == ['bounded-write']
+
+
+def test_checkpoint_restart_success_preserves_cursor_and_process_bounds(monkeypatch):
+    import importlib
+    from types import SimpleNamespace
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    environment = {'PYTHONPATH': 'owned-source'}
+    def run(command, **options):
+        assert command == [proof.sys.executable, '-c', proof._CHECKPOINT_CHILD]
+        assert options == {'cwd': proof.ROOT / 'scripts', 'env': environment,
+                           'check': False, 'capture_output': True, 'text': True, 'timeout': 20}
+        return SimpleNamespace(returncode=0, stdout='"locked-000048"\n', stderr='')
+    monkeypatch.setattr(proof.subprocess, 'run', run)
+    assert proof.resume_unlock_checkpoint(environment) == 'locked-000048'
+
+
+def test_checkpoint_restart_reports_only_validated_symbolic_frames(monkeypatch):
+    import importlib
+    import json
+    import pytest
+    from types import SimpleNamespace
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    record = {'class': 'ModuleNotFoundError', 'frames': [
+        {'module': 'database.tests.check_postgres_study_priority', 'function': '_module', 'line': 7}]}
+    monkeypatch.setattr(proof.subprocess, 'run', lambda *_, **__: SimpleNamespace(
+        returncode=1, stdout='CHECKPOINT_FAILURE ' + json.dumps(record) + '\n',
+        stderr='closed connection postgres://secret SQL SELECT private'))
+    with pytest.raises(RuntimeError) as caught:
+        proof.resume_unlock_checkpoint({})
+    assert str(caught.value) == 'Checkpoint child failed (exit code 1): ' + json.dumps(record, sort_keys=True)
+
+
+def test_checkpoint_restart_rejects_messages_malicious_frames_and_raw_output(monkeypatch):
+    import importlib
+    import json
+    import pytest
+    from types import SimpleNamespace
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    frame = {'module': 'owned.module', 'function': 'checkpoint', 'line': 1}
+    valid = {'class': 'RuntimeError', 'frames': [frame]}
+    records = [dict(valid, message='postgres://secret'),
+               dict(valid, frames=[dict(frame, module='postgres://secret')]),
+               dict(valid, frames=[dict(frame, function='SQL SELECT secret')]),
+               dict(valid, frames=[dict(frame, line=True)]),
+               dict(valid, frames=[frame] * 9), dict(valid, **{'class': 'x' * 97})]
+    outputs = [('CHECKPOINT_FAILURE ' + json.dumps(record), '') for record in records]
+    outputs += [('', 'raw stderr postgres://secret'), ('raw stdout secret', 'CHECKPOINT_FAILURE ' + json.dumps(valid)),
+                ('CHECKPOINT_FAILURE ' + json.dumps(valid) + '\nraw secret', ''),
+                ('CHECKPOINT_FAILURE ' + 'x' * 4096, ''), ('', '')]
+    for stdout, stderr in outputs:
+        monkeypatch.setattr(proof.subprocess, 'run', lambda *_, **__: SimpleNamespace(
+            returncode=1, stdout=stdout, stderr=stderr))
+        with pytest.raises(RuntimeError) as caught:
+            proof.resume_unlock_checkpoint({})
+        assert str(caught.value) == 'Checkpoint child failed (exit code 1)'
+    monkeypatch.setattr(proof.subprocess, 'run', lambda *_, **__: SimpleNamespace(
+        returncode=-9, stdout='CHECKPOINT_FAILURE ' + json.dumps(valid), stderr=''))
+    with pytest.raises(RuntimeError, match=r'^Checkpoint child failed \(exit code -9\)$'):
+        proof.resume_unlock_checkpoint({})
+
+
+def test_checkpoint_restart_timeout_does_not_expose_captured_output(monkeypatch):
+    import importlib
+    import pytest
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    def timeout(*_, **__):
+        raise proof.subprocess.TimeoutExpired('secret command', 20, output='secret stdout', stderr='secret stderr')
+    monkeypatch.setattr(proof.subprocess, 'run', timeout)
+    with pytest.raises(RuntimeError) as caught:
+        proof.resume_unlock_checkpoint({})
+    assert str(caught.value) == 'Checkpoint child timed out'
+    assert caught.value.__suppress_context__ is True
+
+
+def test_checkpoint_child_wraps_import_and_call_without_exception_messages(capsys):
+    import builtins
+    import importlib
+    import json
+    import pytest
+    from types import SimpleNamespace
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    for fail_import in (True, False):
+        def checkpoint():
+            raise RuntimeError('postgres://secret SQL SELECT private')
+        def child_import(name, *arguments, **options):
+            if name == 'database.tests.check_postgres_study_priority':
+                if fail_import:
+                    raise ModuleNotFoundError('postgres://secret import detail')
+                return SimpleNamespace(advance_unlock_checkpoint=checkpoint)
+            return builtins.__import__(name, *arguments, **options)
+        with pytest.raises(SystemExit) as caught:
+            exec(proof._CHECKPOINT_CHILD, {'__name__': 'checkpoint_test',
+                 '__builtins__': {**vars(builtins), '__import__': child_import}})
+        assert caught.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.err == ''
+        assert 'secret' not in captured.out and 'SELECT' not in captured.out
+        assert captured.out.count('\n') == 1
+        record = json.loads(captured.out.removeprefix('CHECKPOINT_FAILURE '))
+        assert record['class'] == ('ModuleNotFoundError' if fail_import else 'RuntimeError')
+        assert 1 <= len(record['frames']) <= 8
+        assert all(set(frame) == {'module', 'function', 'line'} for frame in record['frames'])
+
+
+def test_native_checkpoint_restart_resumes_private_postgres_checkpoint(monkeypatch, tmp_path):
+    import importlib
+    import json
+    import os
+    import pytest
+    import subprocess
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict
+    parent_url = os.environ.get('TEMPO_489_TEST_DSN')
+    if not parent_url:
+        pytest.skip('Requires the existing disposable PostgreSQL test runner')
+    container = os.environ.get('TEMPO_489_TEST_CONTAINER', '')
+    token = os.environ.get('TEMPO_DEVELOPMENT_BUDGET_TOKEN', '')
+    assert container.startswith('tempo-489-pg-residual-') and token
+    connection = conninfo_to_dict(parent_url)
+    assert connection.get('host') == '127.0.0.1'
+    assert connection.get('hostaddr', '127.0.0.1') == '127.0.0.1'
+    assert connection.get('dbname') == 'tempo_489_residual'
+    assert 'service' not in connection
+    inspected = subprocess.run(['docker', 'inspect', container], check=True,
+                               capture_output=True, text=True, timeout=20)
+    inventory = json.loads(inspected.stdout)
+    assert len(inventory) == 1
+    owned = inventory[0]
+    assert owned['Name'] == '/' + container
+    labels = owned['Config']['Labels']
+    assert labels['tempo.owner'] == container and labels['tempo.disposable'] == 'true'
+    assert labels['tempo.resource-class'] == 'development'
+    assert labels['tempo.resource-owner'] == token
+    bindings = owned['NetworkSettings']['Ports']['5432/tcp']
+    assert any(binding['HostIp'] == '127.0.0.1'
+               and binding['HostPort'] == connection.get('port') for binding in bindings)
+    # Only the verified helper-owned parent database receives this fixture marker.
+    with psycopg.connect(parent_url, autocommit=True) as database:
+        database.execute("COMMENT ON DATABASE tempo_489_residual IS 'tempo-disposable-postgres-test'")
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
+    original_resume = proof.resume_unlock_checkpoint
+
+    class CheckpointResumed(BaseException):
+        pass
+
+    def resume_then_stop(environment):
+        assert original_resume(environment) == 'locked-000048'
+        # Leave through run_proof's existing role/pool/environment cleanup and
+        # private_database's database cleanup, before Redis/API/load phases.
+        raise CheckpointResumed
+
+    monkeypatch.setattr(proof, 'resume_unlock_checkpoint', resume_then_stop)
+    with pytest.raises(CheckpointResumed):
+        proof.run_proof(parent_url, 'redis://127.0.0.1:1/0', tmp_path,
+                        graph_rows=10_000, receipt_rows=20_000)
+    retries = [json.loads(line) for line in (tmp_path / 'checkpoint-retries.jsonl').read_text().splitlines()]
+    assert any(item['forced'] and item['checkpoint_unchanged'] for item in retries)
