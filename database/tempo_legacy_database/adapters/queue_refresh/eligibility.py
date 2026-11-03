@@ -34,3 +34,13 @@ _POSITION_DUE_EXCLUSION = """ AND (c.content_type!='opening' OR NOT EXISTS(
       AND (owner.repertoire_id=c.repertoire_id OR EXISTS(
         SELECT 1 FROM repertoire_cards link WHERE link.card_id=c.id
           AND link.repertoire_id=owner.repertoire_id))))"""
+
+
+def position_due_exclusion(database):
+    """Use position ownership only where its PostgreSQL schema exists."""
+    import psycopg
+    if not isinstance(getattr(database, 'raw', None), psycopg.Connection):
+        return ''
+    present = database.execute_native(
+        "SELECT to_regclass('study_position_owners') IS NOT NULL").fetchone()[0]
+    return _POSITION_DUE_EXCLUSION if present else ''
