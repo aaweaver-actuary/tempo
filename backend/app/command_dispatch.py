@@ -25,7 +25,14 @@ def dispatch_command(
     wait_seconds: float = 2.0,
     background: bool = False,
 ) -> Any | JSONResponse:
-    operation_id = idempotency_key or uuid.uuid4().hex
+    if command_name == "queue.issue_head" and idempotency_key is None:
+        from .command_gateway import select_queue_issuance_operation
+        try:
+            operation_id = select_queue_issuance_operation(payload)
+        except CommandConflict as error:
+            raise HTTPException(409, str(error)) from error
+    else:
+        operation_id = idempotency_key or uuid.uuid4().hex
     if len(operation_id) > 128:
         raise HTTPException(422, "Idempotency-Key must be at most 128 characters")
     try:
@@ -74,5 +81,6 @@ def dispatch_command(
         status_code=202,
         content={"operation_id": operation_id, "state": receipt["state"],
                  **({"message": receipt["message"]} if receipt.get("message") else {})},
-        headers={"Location": f"/api/operations/{operation_id}"},
+        headers={"Location": f"/api/operations/{operation_id}",
+                 **({"Retry-After": "1"} if command_name == "queue.issue_head" else {})},
     )

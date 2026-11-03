@@ -157,7 +157,7 @@ function retainPendingFailures(
     failure.expectedRevision === card.revision) ? { ...card, attemptFailed: true } : card);
 }
 
-async function fetchQueueWindow(signal: AbortSignal, observePreparation = false): Promise<{ response: Response; payload: unknown }> {
+async function fetchQueueWindow(signal: AbortSignal, observePreparation = false, operationId?: string): Promise<{ response: Response; payload: unknown }> {
   const controller = new AbortController();
   const abortSupersededRequest = () => controller.abort();
   if (signal.aborted) abortSupersededRequest();
@@ -168,7 +168,8 @@ async function fetchQueueWindow(signal: AbortSignal, observePreparation = false)
     controller.abort();
   }, 15_000);
   try {
-    const response = await awaitQueueStage(fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, {
+    const path = operationId ? `/api/operations/${encodeURIComponent(operationId)}` : "/api/queue/window?limit=20&include_opening_evidence=true";
+    const response = await awaitQueueStage(fetch(`${API_URL}${path}`, {
       signal: controller.signal,
       ...(observePreparation ? { headers: { "X-Tempo-Work-Class": "background" } } : {}),
     }), controller.signal);
@@ -204,6 +205,36 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
   });
 }
 
+const pendingIssuanceStates = new Set(["unknown", "queued", "pending", "executing", "retrying"]);
+const transientPositionHolds = new Set(["position_card_busy", "position_attempt_busy", "position_source_graph_busy",
+  "position_owner_busy", "position_original_admission_unavailable"]);
+
+async function followQueueIssuance(response: Response, payload: unknown, signal: AbortSignal): Promise<void> {
+  const pending = payload as { operation_id?: unknown; state?: unknown } | null;
+  if (!pending || typeof pending.operation_id !== "string" || !/^[A-Za-z0-9:._-]{1,128}$/.test(pending.operation_id) ||
+      typeof pending.state !== "string" || ![...pendingIssuanceStates, "blocked"].includes(pending.state))
+    throw new QueueProcessingError("The local queue returned an invalid pending operation. Retry loading the queue.");
+  const operationId = pending.operation_id;
+  if (pending.state === "blocked") throw new QueueProcessingError("Queue issuance is blocked. Check the operation status before retrying.");
+  const retryAfter = Number(response.headers.get("Retry-After"));
+  const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.max(250, retryAfter * 1000) : 1000;
+  for (let poll = 0; poll < 20; poll += 1) {
+    await waitForQueueRetry(delay, signal);
+    const { response: status, payload: value } = await fetchQueueWindow(signal, false, operationId);
+    if (!status.ok) throw new QueueProcessingError(`Queue operation status could not be loaded (HTTP ${status.status}). Retry loading the queue.`);
+    const receipt = value as { operation_id?: unknown; state?: unknown; message?: string;
+      error?: { message?: string }; last_error?: { message?: string } } | null;
+    if (!receipt || receipt.operation_id !== operationId || typeof receipt.state !== "string")
+      throw new QueueProcessingError("The local queue did not confirm its original issuance operation.");
+    // The receipt's result is a command result, never a current queue envelope.
+    if (receipt.state === "complete") return;
+    if (receipt.state === "failed") throw new QueueProcessingError(receipt.error?.message ?? "Queue issuance failed. Check the service before retrying.");
+    if (receipt.state === "blocked") throw new QueueProcessingError(`Queue issuance is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the operation status before retrying"}`);
+    if (!pendingIssuanceStates.has(receipt.state)) throw new QueueProcessingError("The local queue returned an invalid operation state.");
+  }
+  throw new QueueProcessingError("Queue issuance is still pending. Retry loading the queue to check its result.");
+}
+
 async function loadTodayQueueWithRetry(
   signal: AbortSignal, progression: string, retryPreparation: boolean, acquisition: { observedBusyHead: boolean },
 ): Promise<QueuePayload> {
@@ -215,6 +246,14 @@ async function loadTodayQueueWithRetry(
   let retryBusyHead = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending && !retryBusyHead);
+    if (response.status === 202) {
+      // Cancellation stops only this observation; the durable server operation
+      // retains its identity and can finish after navigation or tab closure.
+      acquisition.observedBusyHead = true;
+      await followQueueIssuance(response, responsePayload, signal);
+      retryBusyHead = true;
+      continue;
+    }
     if (response.ok) {
       failedRequests = 0;
       const payload = responsePayload as QueuePayload;
@@ -228,7 +267,7 @@ async function loadTodayQueueWithRetry(
         const headResult = queueCardSchema.safeParse(validated.data.cards[0]);
         const head = headResult.success ? headResult.data : undefined;
         if (head?.position_study_mode === "position" && head.position_presentation === null &&
-            head.position_study_hold === "position_card_busy") {
+            transientPositionHolds.has(head.position_study_hold ?? "")) {
           acquisition.observedBusyHead = true;
           if (attempt === 19) throw new QueueProcessingError("Position study is temporarily busy. Retry loading the queue.");
           // A retry may issue the head, so it needs the same foreground admission
@@ -314,8 +353,8 @@ export async function fetchAndInitializeQueue(
   const cancelAcquisition = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", cancelAcquisition, { once: true });
   if (options.signal?.aborted) cancelAcquisition();
-  const deadline = options.timeoutMs === undefined ? undefined : setTimeout(() => controller.abort(
-    new Error("Queue acquisition timed out after 15 seconds. Retry loading the queue.")), options.timeoutMs);
+  const deadline = setTimeout(() => controller.abort(
+    new QueueProcessingError("Queue acquisition timed out. Retry loading the queue to check its result.")), options.timeoutMs ?? 15_000);
   const expectedAttemptMatches = () => !options.expectedAttempt ||
     (useTrainingStore.getState().attempt.attemptId === options.expectedAttempt.attemptId &&
       useTrainingStore.getState().attempt.generation === options.expectedAttempt.generation);
@@ -518,6 +557,9 @@ export async function fetchAndInitializeQueue(
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
+        // A prepared-queue acquisition may encounter the same in-flight head.
+        // Keep the existing offline queue and retry on a later acquisition.
+        if (response.status === 202) throw new PhoneQueueRefreshingError();
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json() as QueuePayload & { prepared_at: string };
         if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
