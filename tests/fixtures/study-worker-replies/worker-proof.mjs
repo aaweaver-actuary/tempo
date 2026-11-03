@@ -41,11 +41,17 @@ try {
       const lineTask = { kind: 'lines', lines };
       const extra = [await send({ id: 9, task: deck }), await send({ id: 10, task: metadata }),
         await send({ id: 11, task: snapshot }, optionalUrl), await send({ id: 12, task: lineTask }, optionalUrl)];
+      const quarantinedTask = { kind: 'queue', payload: { cards: [prepared.cards[0],
+        { ...prepared.cards[0], id: 'malformed-worker-card', start_fen: 'invalid-fen' }], count: 2 } };
+      const quarantinedReply = await send({ id: 13, task: quarantinedTask });
+      const quarantined = { id: quarantinedReply.id,
+        cards: studyDecoder.decodeStudyResult(quarantinedTask, quarantinedReply.result),
+        diagnostics: quarantinedReply.diagnostics };
       extra[2].mapIsValid = extra[2].result.movesByRepertoire instanceof Map &&
         [...extra[2].result.movesByRepertoire.values()].every(value => value instanceof Map &&
           [...value.values()].every(moves => moves instanceof Set));
       return [await send({ id: 3, task: { kind: 'bad' } }), await send({ id: 'bad', task: {} }),
-        await send({ id: 4, task: { kind: 'queue', payload: { cards: [], count: 0 } } }), decoded, extra];
+        await send({ id: 4, task: { kind: 'queue', payload: { cards: [], count: 0 } } }), decoded, extra, quarantined];
     }
     finally { URL.revokeObjectURL(url); URL.revokeObjectURL(optionalUrl); }
   }, { source: built.outputFiles[0].text, optionalSource: optional.outputFiles[0].text, fixtures });
@@ -63,5 +69,9 @@ try {
   assert.equal(results[4][2].result.generation, 3);
   assert.equal(results[4][2].mapIsValid, true);
   assert.deepEqual(results[4][3].result.map(line => line.id), ['line-0', 'line-1']);
+  assert.equal(results[5].id, 13);
+  assert.equal(results[5].cards.length, 1);
+  assert.equal(results[5].cards[0].backendId, fixtures.available.cards[0].id);
+  assert.ok(results[5].diagnostics.some(issue => issue.recordId === 'malformed-worker-card'));
   console.log('PASS actual_worker_malformed_request_and_producer_result_decoding');
 } finally { await browser.close(); }
