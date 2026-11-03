@@ -8,6 +8,7 @@ its claim/preparation/publication boundary, not Redis transport/acks or HTTP.
 """
 from dataclasses import replace
 import multiprocessing as mp
+from multiprocessing.connection import wait
 import os
 import traceback
 
@@ -36,7 +37,7 @@ def _configure(dsn):
     postgres_store.close_pools()
 
 
-def _worker(dsn, payload, channel, entered, release, count, *, selected=None, prepared=None):
+def _worker(dsn, payload, channel, entered, release, count, *, selected=None, prepared=None, start=None):
     """The wrapper only observes preparation; every claim/write remains production code."""
     try:
         _configure(dsn)
@@ -58,6 +59,8 @@ def _worker(dsn, payload, channel, entered, release, count, *, selected=None, pr
         command_gateway._preparers['queue.issue_head'] = observed
         operation = command_gateway.select_queue_issuance_operation(payload)
         channel.send(('selected', operation, os.getpid()))
+        if start is not None and not start.wait(TIMEOUT):
+            raise RuntimeError('native initial-delivery barrier timed out')
         result = tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload)
         receipt = command_gateway.read_operation(operation)
         channel.send(('done', result, receipt['state']))
@@ -123,6 +126,49 @@ def _assert_one_plan(dsn, payload):
         assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
         assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
         return dict(plans[0])
+
+
+def test_real_initial_missing_receipt_race_coalesces_before_first_claim():
+    """Both absent-receipt selectors choose g0 before either task may claim it."""
+    dsn = _dsn()
+    payload, _ = _seed(dsn)
+    ctx = mp.get_context('spawn')
+    start, entered, release = ctx.Event(), ctx.Event(), ctx.Event()
+    count = ctx.Value('i', 0)
+    workers = []
+    try:
+        workers.extend(_spawn(ctx, dsn, payload, entered, release, count, start=start)
+                       for _ in range(2))
+        selections = [_receive(channel) for _, channel in workers]
+        from app.contracts.queue_issuance import issuance_operation_id
+        operation = issuance_operation_id(payload, 0)
+        assert all(message[0] == 'selected' and message[1] == operation for message in selections)
+        assert selections[0][2] != selections[1][2]
+        with psycopg.connect(dsn) as raw:
+            assert raw.execute('SELECT count(*) FROM operation_receipts').fetchone()[0] == 0
+        assert count.value == 0
+        # Release both actual task bodies together. The winning process blocks
+        # at expensive preparation; the competing process must return without
+        # entering it. Events, not elapsed sleeps, establish the ordering.
+        start.set()
+        assert entered.wait(TIMEOUT), 'neither worker reached claimed preparation'
+        ready = wait([channel for _, channel in workers], timeout=TIMEOUT)
+        assert ready, 'competing delivery did not observe the existing claim'
+        loser = ready[0]
+        assert _receive(loser) == ('done', None, 'executing')
+        assert count.value == 1
+        claimed = _receipt(dsn, operation)
+        assert claimed['state'] == 'executing' and claimed['attempt_count'] == 1
+        assert claimed['attempt_token']
+        release.set()
+        winner = next(channel for _, channel in workers if channel is not loser)
+        done = _receive(winner)
+        assert done[0] == 'done' and done[1]['issued'] and done[2] == 'complete', done
+        assert count.value == 1
+        _assert_one_plan(dsn, payload)
+        assert _receipt(dsn, operation)['attempt_count'] == 1
+    finally:
+        _stop(workers, release, start)
 
 
 def test_real_two_foreground_processes_share_preparation_and_immutable_plan():
