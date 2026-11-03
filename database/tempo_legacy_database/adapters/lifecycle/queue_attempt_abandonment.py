@@ -73,26 +73,54 @@ def is_abandoned(database, entry_id, card_id, revision):
         (entry_id, card_id, revision)).fetchone())
 
 
+def _lock_target(database, card_id):
+    database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                            ('tempo:card-edit:' + card_id,))
+
+
 def _locked_origin(database, payload):
     """Serialize with reviews/checkpoints without inferring any repertoire owner."""
     from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
     card_id, entry_id = payload['card_id'], payload['queue_entry_id']
-    database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                            ('tempo:card-edit:' + card_id,))
-    database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE', (card_id,))
-    queue = database.execute_native('SELECT queue_date,card_id FROM daily_queue WHERE id=%s', (entry_id,)).fetchone()
-    if queue:
-        if queue['card_id'] != card_id:
+    _lock_target(database, card_id)
+    target_card = database.execute_native('SELECT id,revision,start_fen,moves_json,trained_color,content_type FROM cards WHERE id=%s FOR UPDATE', (card_id,)).fetchone()
+    initial = database.execute_native('SELECT queue_date,card_id FROM daily_queue WHERE id=%s', (entry_id,)).fetchone()
+    queue = None
+    current_card = target_card
+    if initial:
+        if initial['card_id'] != card_id:
+            # Never wait for a second card lock while holding the first: two
+            # operators can target different retained origins of the same row.
+            acquired = database.execute_native(
+                'SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                ('tempo:card-edit:' + initial['card_id'],)).fetchone()[0]
+            if not acquired:
+                raise ValueError('abandonment_queue_changed')
+            current_card = database.execute_native('SELECT id,revision,start_fen,moves_json,trained_color,content_type FROM cards WHERE id=%s FOR UPDATE',
+                                                   (initial['card_id'],)).fetchone()
+        if not current_card:
             raise ValueError('abandonment_queue_changed')
-        lock_queue_date_for_position(database, queue['queue_date'])
+        lock_queue_date_for_position(database, initial['queue_date'])
         queue = database.execute_native('SELECT * FROM daily_queue WHERE id=%s FOR UPDATE', (entry_id,)).fetchone()
-        if not queue or queue['card_id'] != card_id:
+        if not queue or (queue['queue_date'], queue['card_id']) != (initial['queue_date'], initial['card_id']):
             raise ValueError('abandonment_queue_changed')
-    origins = database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s FOR UPDATE',
-                                      (entry_id,)).fetchall()
-    if len(origins) != 1 or origins[0]['card_id'] != card_id or origins[0]['revision'] != payload['revision']:
+    origins = database.execute_native(
+        'SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s ORDER BY card_id,revision FOR UPDATE',
+        (entry_id,)).fetchall()
+    target = [row for row in origins if row['card_id'] == card_id and row['revision'] == payload['revision']]
+    if len(target) != 1:
         raise ValueError('abandonment_origin_missing_or_ambiguous')
-    return origins[0], queue
+    if queue:
+        current = [row for row in origins if row['card_id'] == queue['card_id']
+                   and row['revision'] == current_card['revision']]
+        if len(current) != 1 or any(current[0][origin_key] != queue[queue_key] for origin_key, queue_key in (
+                ('queue_date', 'queue_date'), ('cycle', 'cycle'), ('last_status', 'status'),
+                ('review_result_json', 'review_result_json'))) or any(
+                current[0][key] != current_card[key] for key in ('start_fen', 'moves_json', 'trained_color', 'content_type')):
+            raise ValueError('abandonment_queue_changed')
+        if (queue['card_id'], current_card['revision']) != (card_id, payload['revision']):
+            queue = None  # The projection belongs only to the independently verified origin.
+    return target[0], queue
 
 
 def _check_unaccepted(database, origin, queue):
@@ -144,7 +172,9 @@ def abandon_in_writer(database, payload, *, now):
     # Savepoint ensures an exception never leaves partial work in a caller-owned transaction.
     database.execute_native('SAVEPOINT queue_attempt_abandonment')
     try:
-        origin, queue = _locked_origin(database, payload)
+        # A committed receipt is authoritative even if a replacement projection
+        # later changes. Serialize on the target before checking retry identity.
+        _lock_target(database, payload['card_id'])
         prior = database.execute_native('''SELECT * FROM queue_attempt_abandonments
             WHERE operation_id=%s OR (queue_entry_id=%s AND card_id=%s AND revision=%s)
             FOR UPDATE''', (payload['operation_id'], payload['queue_entry_id'], payload['card_id'], payload['revision'])).fetchall()
@@ -154,6 +184,7 @@ def abandon_in_writer(database, payload, *, now):
             result = {'abandoned': True, 'idempotent': True, 'operation_id': payload['operation_id'],
                       'origin_sha256': prior[0]['origin_sha256']}
         else:
+            origin, queue = _locked_origin(database, payload)
             _check_unaccepted(database, origin, queue)
             fingerprint = origin_fingerprint(origin)
             if fingerprint != payload['expected_origin_sha256']:
