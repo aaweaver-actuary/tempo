@@ -23,8 +23,7 @@ productTest("daily study opens on the workspace date while background analysis r
     fixture("seed");
     // A denied wake returns promptly; normal durable polling must redeliver it.
     docker("start", "background-worker", "background-scheduler");
-    const initialActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
-    expect(initialActivity.counts.queued).toBeGreaterThan(1000);
+    expect(JSON.parse(fixture("backlog")).queued).toBeGreaterThan(1000);
     // A cold focused run can reach the browser before the restarted worker
     // publishes the fixture's due card. Establish the real queue boundary
     // without waiting for the independent analysis backlog to drain.
@@ -35,8 +34,7 @@ productTest("daily study opens on the workspace date while background analysis r
       return publishedQueue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`);
     }, { message: "Fixture due card is published before browser interaction", timeout: 30_000 })
       .toBe(true);
-    const publishedActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
-    expect(publishedActivity.counts.queued).toBeGreaterThan(1000);
+    expect(JSON.parse(fixture("backlog")).queued).toBeGreaterThan(1000);
     await prepareUI(page);
     await expect(page.locator('.persistent-board-shell[data-unavailable="true"]')).toHaveCount(0);
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
@@ -45,8 +43,7 @@ productTest("daily study opens on the workspace date while background analysis r
     expect(queue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`)).toBe(true);
     await move(page, "e2", "e4");
     await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeVisible();
-    const remainingActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
-    expect(remainingActivity.counts.queued).toBeGreaterThan(0);
+    expect(JSON.parse(fixture("backlog")).queued).toBeGreaterThan(0);
   } finally {
     docker("stop", "background-worker");
     try { fixture("cleanup"); }
