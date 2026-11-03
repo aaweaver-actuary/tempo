@@ -1,5 +1,15 @@
 ## Current queue refresh progress and freshness
 
+`backend/tests/test_queue_refresh_read_database_split.py::test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_cursors`
+preserves the ordered upper/page query parameters and closed reader lifetimes
+in both frozen modes. The selected native
+`make python-file FILE=database/tests/check_postgres_queue_refresh_occurrence_snapshot.py`
+checks the real frozen upper bound and two continuation pages against persisted
+rank/route order, the old 250 ms deadline failure under an injected 320 ms delay,
+and the separate snapshot/short-writer profiles. A foreground request commits
+while the reader is held. This boundary proof does not measure the live graph
+or change miss-priority semantics; installed convergence is recorded in #897.
+
 `backend/tests/test_queue_refresh_position_source_profile.py` keeps complete
 position-source preparation on the existing snapshot reader, with foreground
 admission first and the reader closed before the original fenced writer. A
