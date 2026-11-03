@@ -20,3 +20,22 @@ The companion [read-only census](retired-activity-dry-run.sql) has a three-secon
 Before any future coordinator-owned removal, establish the exact producer/consumer and deployed-version census, all row-specific operation/acceptance/event relationships, current counts and exact IDs, and confirm no pause, priority or durable obligation can be affected. A verified backup and restore rehearsal, explicit allowlist, expected-count guard and appropriately scoped transaction are required under the common contract. No SQL for removal is supplied because no subset meets those conditions.
 
 Source: `database/tempo_legacy_database/adapters/controls/activity/storage.py` (seven logical mappings), `database/tempo_legacy_database/adapters/controls/claim_sql.py` (control predicates), `backend/app/activity_commands.py` (retained command registration), `database/tempo_legacy_database/ddl/migrations/001_initial.sql` and subsequent migrations (schema), and task 02/03 receipts. Source facts do not establish deployed state.
+
+## Bounded Safari reconciliation after the initial census
+
+Read-only inspection of the existing Safari `http://localhost:3000` page found
+six failed discovery records, all reporting `Active discovery not found`. A
+2,121-byte exact-key backup was captured outside the repository; its SHA-256
+matched Safari's read-only digest. A task-owned JSDOM WebStorage restore
+rehearsal round-tripped those bytes and preserved an unrelated seeded key. This
+is not a live Safari restore or permission to erase another journal.
+
+An exact-ID PostgreSQL transaction on the identified installation (database
+`tempo`, schema 58) used read-only mode, a one-second statement timeout and a
+100ms lock timeout, then rolled back. It found zero receipts for the six browser
+operation IDs, zero admission intents for their opportunity IDs and zero current
+opportunities for those IDs. This establishes no current server acceptance or
+recovery record for that bounded set; it does not rewrite historical effects or
+prove other rows disposable. All browser records and server data remain intact.
+No database metadata deletion is proposed. Installation and the exact-key
+retirement still require the remaining release gates and applicable authority.
