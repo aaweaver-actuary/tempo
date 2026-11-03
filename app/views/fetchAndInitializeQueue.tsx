@@ -204,7 +204,9 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
   });
 }
 
-async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string, retryPreparation: boolean): Promise<QueuePayload> {
+async function loadTodayQueueWithRetry(
+  signal: AbortSignal, progression: string, retryPreparation: boolean, acquisition: { observedBusyHead: boolean },
+): Promise<QueuePayload> {
   let failedRequests = 0;
   let retryDeferred = retryPreparation;
   let localPriorityPending = false;
@@ -227,6 +229,7 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
         const head = headResult.success ? headResult.data : undefined;
         if (head?.position_study_mode === "position" && head.position_presentation === null &&
             head.position_study_hold === "position_card_busy") {
+          acquisition.observedBusyHead = true;
           if (attempt === 19) throw new QueueProcessingError("Position study is temporarily busy. Retry loading the queue.");
           // A retry may issue the head, so it needs the same foreground admission
           // as the initial acquisition, not the preparation-observation class.
@@ -417,10 +420,14 @@ export async function fetchAndInitializeQueue(
         if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice(failureSaveError);
       });
     let raw: QueuePayload;
+    const acquisition = { observedBusyHead: false };
     try {
       raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal, options.expectedAttempt?.attemptId ??
-        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true), controller.signal);
-    } catch (error) {
+        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true, acquisition), controller.signal);
+    } catch (caught) {
+      const error = acquisition.observedBusyHead && !controller.signal.aborted && !(caught instanceof QueueProcessingError)
+        ? new QueueProcessingError(`Position study could not be loaded after a busy response. ${String(caught)}`, { cause: caught })
+        : caught;
       queueRequestFailed = !(error instanceof QueueProcessingError);
       failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";
       failedEndpoint = `${API_URL}/api/queue/window?limit=20`;

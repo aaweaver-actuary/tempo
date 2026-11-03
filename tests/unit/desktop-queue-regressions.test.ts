@@ -146,6 +146,36 @@ describe("desktop live queue isolation", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it.each(["network", "503"])("retains an active attempt after busy then %s failure with a prepared phone queue", async failure => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("navigator", { userAgent: "iPhone", standalone: true });
+      useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+      const attempt = useTrainingStore.getState().attempt;
+      const hydrate = vi.spyOn(useTrainingStore.getState(), "hydrateLocalQueue");
+      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard()));
+      if (failure === "network") request.mockRejectedValue(new TypeError("network unavailable"));
+      else request.mockImplementation(async () => Response.json({ detail: "service unavailable" }, { status: 503 }));
+      vi.stubGlobal("fetch", request);
+      const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false });
+      const settled = loading.then(() => null, error => error);
+      await advanceStudyTimers(10_000);
+      expect(await settled).toBeInstanceOf(Error);
+      expect(request).toHaveBeenCalledTimes(failure === "network" ? 2 : 4);
+      for (const call of request.mock.calls) {
+        expect(String(call[0])).toContain("/api/queue/window");
+        expect(call[1]?.headers).toBeUndefined();
+        expect(call[1]?.method ?? "GET").toBe("GET");
+      }
+      expect(hydrate).not.toHaveBeenCalled();
+      expect(useTrainingStore.getState().getCard().id).toBe(activeCard.id);
+      expect(useTrainingStore.getState().attempt).toEqual(attempt);
+      expect(useTrainingStore.getState().isOfflineQueueActive).toBe(false);
+      expect(useTrainingStore.getState().serviceError).toContain("busy response");
+      hydrate.mockRestore();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("does not start preparation when a busy retry encounters a priority hold", async () => {
     vi.useFakeTimers();
     try {
