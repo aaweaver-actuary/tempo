@@ -299,6 +299,8 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             assert PostgresGameFeedbackStore(database).get(command.key).status == 'applied'
         timeline[0] = reset_at+timedelta(minutes=1)
         with case.transaction() as database:
+            before_fresh_issue = PostgresGameFeedbackStore(database).feedback_observation(command.key,timeline[0])
+            issued_before_fresh_target = before_fresh_issue['issued_since_determination']
             fresh = _issue(database,case.card_id)
             assert fresh != active
             actual = issuance.attempt_issuance(database,fresh,case.card_id,1)
@@ -309,7 +311,7 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             effect = PostgresGameFeedbackStore(database).get(command.key)
             assert effect.status == 'settled' and effect.settlement_review_id == remedied['review_id']
             assert effect.progress.settlement.attempt.queue_entry_id == fresh
-            assert effect.progress.first_issued_ordinal == 1
+            assert effect.progress.first_issued_ordinal == issued_before_fresh_target+1
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
                 (case.card_id,)).fetchone()[0] == 1
 
