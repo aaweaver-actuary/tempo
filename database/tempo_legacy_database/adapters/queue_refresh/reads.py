@@ -1,6 +1,6 @@
 """Existing bounded queue projections and timeout reader; no queue-planning authority."""
 from psycopg.errors import TransactionTimeout
-from tempo_legacy_database.connections import background_read_connection
+from tempo_legacy_database.connections import background_read_connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
 from tempo_legacy_database.adapters.tactic_admission import DAILY_TACTIC_COUNT_SQL
@@ -224,21 +224,27 @@ def study_opening_queries(frozen_active: bool):
         order_columns = ',' + miss_key + ',' + rank_key
         occurrence_order = '(' + miss_key + ',' + rank_key + ',' + _STUDY_OPENING_ORDER[1:]
 
+    def read_occurrences(statement, parameters=()):
+        # This ordered eligible-graph read can exceed the short background
+        # transaction budget. Return rows only after releasing the reader.
+        with read_connection(repertoire_snapshot=True) as database:
+            return database.execute_native(statement, parameters).fetchall()
+
     def last_study_occurrences():
-        return _bounded_read("SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,"
+        return read_occurrences("SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,"
                              "step.decision_index,c.id" + order_columns + " " + route_sql +
-                             " ORDER BY " + occurrence_order + " DESC LIMIT 1", native=True)
+                             " ORDER BY " + occurrence_order + " DESC LIMIT 1")
 
     def study_occurrence_page(after_occurrence_cursor, upper_occurrence_cursor, row_limit):
         cursor_placeholders = '(' + ','.join(['%s'] * (8 if frozen_active else 6)) + ')'
         cursor_filter = (" AND " + occurrence_order + ">" + cursor_placeholders if after_occurrence_cursor else "")
-        return _bounded_read(
+        return read_occurrences(
         "SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index,c.id,"
         "step.generation,c.start_fen,c.moves_json,COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json" + order_columns + " "
         + route_sql + cursor_filter + " AND " + occurrence_order + "<=" + cursor_placeholders +
         " ORDER BY " + occurrence_order + " LIMIT %s",
         (*(tuple(after_occurrence_cursor) if after_occurrence_cursor else ()), *upper_occurrence_cursor,
-         row_limit), native=True,
+         row_limit),
     )
 
     return last_study_occurrences, study_occurrence_page
