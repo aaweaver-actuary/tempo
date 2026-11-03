@@ -3,7 +3,7 @@
 The existing physical mapping is supplied by the shared snapshot fixture, never
 created from the PGN or a matching position. No live data is used.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -136,7 +136,13 @@ def native_case(inputs, owned_postgres, monkeypatch):
         def today(cls):
             return NOW.date()
 
+    class ReviewDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
     monkeypatch.setattr(queue_commands, "date", ReviewDate)
+    monkeypatch.setattr(queue_commands, "datetime", ReviewDateTime)
     monkeypatch.setattr(learning_review_adapter, "date", ReviewDate)
     # The fixture really is PostgreSQL. Select that existing owner path without
     # configuring any external DSN or starting a compatibility coordinator.
@@ -350,41 +356,135 @@ def test_changed_canonical_source_cannot_apply_retained_feedback(fenced_case):
 
 
 def test_pending_effect_resumes_with_durable_cursor_without_producer(fenced_case, monkeypatch):
-    import builtins
+    import re
+    from app.games.feedback.ports import SourceState
+    from app.product_composition.feedback_commands import receive_imported_feedback
+    from app.product_composition.feedback_maintenance import KIND, execute_feedback_sweep
+    from app.product_composition import feedback_maintenance
+    from app.services.durable_tasks import enqueue_task_in_transaction
+    from tempo_legacy_database.adapters.durable_tasks import storage
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from app.study.game_feedback import effect_id
+    from app.product_composition.retained_game import retained_canonical_game
+    from product_encounter_fixtures import qualified_feedback_source
+    from test_study_encounter_intake_boundary import without_games_producer
+    case, prepared = fenced_case
+    command = prepared.feedback.lapse
+    original_command = command.model_dump_json()
+    canonical = retained_canonical_game(prepared.capture)
+    original_feedback_failure = feedback_maintenance.feedback_failure
+    recorded_failures = []
+    def observe_feedback_failure(error):
+        try:
+            candidates = (getattr(error, "reason", None), getattr(error, "strerror", None), str(error))
+            reason = next((value for value in candidates if isinstance(value, str)
+                and re.fullmatch(r"[a-z0-9_]{1,120}", value)), "<nonsymbolic>")
+            recorded_failures.append((type(error).__name__, reason))
+        finally:
+            original_feedback_failure(error)
+    monkeypatch.setattr(feedback_maintenance, "feedback_failure", observe_feedback_failure)
+    with qualified_feedback_source(case.transaction,capture=prepared.capture,command=command,
+            clock=lambda:NOW,stream="reconciliation") as source:
+        assert source.command.model_dump_json() == original_command
+        assert source.source.normalized == canonical
+        assert (canonical.source_revision,canonical.source_digest) == (
+            command.finding.source_revision,command.finding.source_digest)
+        with case.transaction() as database:
+            stored = SourceState.model_validate_json(database.execute_native(
+                'SELECT payload::text FROM product_feedback_sources WHERE source_key=%s',
+                (source.source.source_key,)).fetchone()[0])
+            assert stored.normalized == canonical
+            assert tuple(effect.model_dump_json() for effect in stored.effects) == (original_command,)
+            original_source = dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+                (command.key.game_id,)).fetchone())
+            database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'review')",
+                (NOW.date().isoformat(),case.card_id))
+            entry = _issue(database,case.card_id)
+            pending = receive_imported_feedback(database,prepared,clock=lambda:NOW)
+            assert pending["status"] == "pending"
+            accepted = PostgresGameFeedbackStore(database).get(command.key)
+            original_effect_identity = (accepted.key,accepted.source_revision,accepted.payload_hash,
+                accepted.card_id,accepted.card_revision,accepted.received_at)
+            _ordinary_review(database,case.card_id,entry,"again:"+case.identity,outcome="again")
+            queued = enqueue_task_in_transaction(database,KIND,case.identity,{"after":""},priority=15)
+            token = uuid.uuid4().hex
+            storage.claim_lease(database,(token,(NOW+timedelta(days=2)).isoformat(),NOW.isoformat(),NOW.isoformat(),queued["id"],queued["generation"]))
+            claimed = dict(storage.task_by_id(database,(queued["id"],)))
+        with without_games_producer(monkeypatch):
+            # Use the normal fresh preparer after the real review; the helper's
+            # earlier witness is never substituted for current source reads.
+            assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
+                capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=2)) is False
+            with case.transaction() as database:
+                effect=PostgresGameFeedbackStore(database).get(command.key)
+                assert effect.status == "applied" and effect.available_by.isoformat() == pending["available_by"], (
+                    f"effect.status={effect.status}; reason={effect.reason}; "
+                    f"admission_status={effect.admission_status}; deferred_reason={effect.deferred_reason}; "
+                    f"feedback_failures={recorded_failures}"
+                )
+                assert effect.lapse.model_dump_json() == original_command
+                assert (effect.key,effect.source_revision,effect.payload_hash,
+                    effect.card_id,effect.card_revision,effect.received_at) == original_effect_identity
+                assert dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+                    (command.key.game_id,)).fetchone()) == original_source
+                task=dict(storage.task_by_id(database,(queued["id"],)))
+                assert json.loads(task["payload_json"])["after"] == effect_id(effect.key)
+                assert task["state"] == "queued"
+            # A stale execution cannot replay its effect or advance another generation.
+            assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
+                capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=3)) is False
+            with case.transaction() as database:
+                assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 1
+
+
+def test_pending_effect_without_published_source_remains_pending_without_producer(fenced_case, monkeypatch):
     from app.product_composition.feedback_commands import receive_imported_feedback
     from app.product_composition.feedback_maintenance import KIND, execute_feedback_sweep
     from app.services.durable_tasks import enqueue_task_in_transaction
     from tempo_legacy_database.adapters.durable_tasks import storage
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
-    from app.study.game_feedback import effect_id
+    from test_study_encounter_intake_boundary import without_games_producer
     case, prepared = fenced_case
+    command = prepared.feedback.lapse
+    original_command = command.model_dump_json()
     with case.transaction() as database:
+        assert database.execute_native('SELECT 1 FROM product_feedback_configuration WHERE workspace_id=%s AND provider=%s',
+            (command.key.workspace_id,command.key.provider)).fetchone() is None
+        assert database.execute_native("SELECT 1 FROM product_feedback_sources WHERE payload->'normalized'->>'game_id'=%s",
+            (command.key.game_id,)).fetchone() is None
+        original_source = dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+            (command.key.game_id,)).fetchone())
         database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'review')",
             (NOW.date().isoformat(),case.card_id))
         entry = _issue(database,case.card_id)
         pending = receive_imported_feedback(database,prepared,clock=lambda:NOW)
-        assert pending["status"] == "pending"
-        _ordinary_review(database,case.card_id,entry,"again:"+case.identity,outcome="again")
-        queued = enqueue_task_in_transaction(database,KIND,case.identity,{"after":""},priority=15)
+        assert pending['status'] == 'pending'
+        _ordinary_review(database,case.card_id,entry,'again:'+case.identity,outcome='again')
+        accepted = PostgresGameFeedbackStore(database).get(command.key)
+        original_effect_identity = (accepted.key,accepted.source_revision,accepted.payload_hash,
+            accepted.card_id,accepted.card_revision,accepted.received_at)
+        before_card = tuple(database.execute_native('SELECT * FROM cards WHERE id=%s',(case.card_id,)).fetchone())
+        before_reviews = [tuple(row) for row in database.execute_native('SELECT * FROM reviews WHERE card_id=%s ORDER BY id',
+            (case.card_id,)).fetchall()]
+        queued = enqueue_task_in_transaction(database,KIND,case.identity,{'after':''},priority=15)
         token = uuid.uuid4().hex
-        storage.claim_lease(database,(token,(NOW+timedelta(days=2)).isoformat(),NOW.isoformat(),NOW.isoformat(),queued["id"],queued["generation"]))
-        claimed = dict(storage.task_by_id(database,(queued["id"],)))
-    original = builtins.__import__
-    def absent(name,*args,**kwargs):
-        if name.startswith("app.games"):
-            raise AssertionError("Study maintenance tried to load optional Games")
-        return original(name,*args,**kwargs)
-    monkeypatch.setattr(builtins,"__import__",absent)
-    assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
-        capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=2)) is False
+        storage.claim_lease(database,(token,(NOW+timedelta(days=2)).isoformat(),NOW.isoformat(),NOW.isoformat(),queued['id'],queued['generation']))
+        claimed = dict(storage.task_by_id(database,(queued['id'],)))
+    with without_games_producer(monkeypatch):
+        assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
+            capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=2)) is False
     with case.transaction() as database:
-        effect=PostgresGameFeedbackStore(database).get(prepared.feedback.lapse.key)
-        assert effect.status == "applied" and effect.available_by.isoformat() == pending["available_by"]
-        task=dict(storage.task_by_id(database,(queued["id"],)))
-        assert json.loads(task["payload_json"])["after"] == effect_id(effect.key)
-        assert task["state"] == "queued"
-    # A stale execution cannot replay its effect or advance another generation.
-    assert execute_feedback_sweep(claimed,read=case.transaction,write=case.transaction,
-        capture=lambda *args:prepared.capture,clock=lambda:NOW+timedelta(hours=3)) is False
-    with case.transaction() as database:
-        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 1
+        effect = PostgresGameFeedbackStore(database).get(command.key)
+        assert effect.status == 'pending' and effect.reason == 'first_departure_source_unavailable'
+        assert effect.admission_status == 'pending' and effect.deferred_reason == 'authority_unavailable'
+        assert effect.available_by.isoformat() == pending['available_by']
+        assert effect.lapse.model_dump_json() == original_command
+        assert (effect.key,effect.source_revision,effect.payload_hash,
+            effect.card_id,effect.card_revision,effect.received_at) == original_effect_identity
+        assert dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+            (command.key.game_id,)).fetchone()) == original_source
+        assert tuple(database.execute_native('SELECT * FROM cards WHERE id=%s',(case.card_id,)).fetchone()) == before_card
+        assert [tuple(row) for row in database.execute_native('SELECT * FROM reviews WHERE card_id=%s ORDER BY id',
+            (case.card_id,)).fetchall()] == before_reviews
+        assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
+            (case.card_id,)).fetchone()[0] == 0

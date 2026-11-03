@@ -9,17 +9,40 @@ import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
 import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
 import { runEngineWorkerCycle } from "../../scripts/engine-worker-cycle.mjs";
 
-function familyFor(kind: string, request: (...args: any[]) => any) {
+type RequestOptions = { method?: string; body?: string; signal?: AbortSignal; requestAttempts?: number };
+type DeliveryOptions = { signal?: AbortSignal; pollAttempts?: number };
+type EngineRequest = (path: string, options?: RequestOptions, deliveryOptions?: DeliveryOptions) => Promise<unknown>;
+type JobIdentity = {
+  id: string;
+  lease_id: string;
+};
+type SearchJob = JobIdentity & {
+  request: {
+    position_start_fen: string;
+    position_prefix_uci: string[];
+    depth: number;
+    multipv: number;
+    root_move_uci?: string;
+  };
+};
+type SearchEngine = {
+  listen: (text: string) => void;
+  onError: (text: string) => void;
+  uci: (command: string) => void;
+  terminate?: () => void;
+};
+
+function familyFor(kind: string, request: EngineRequest) {
   const families = createEngineJobFamilies({ request, durableRequest: {}, defenseClaimRequest: {} });
   return kind === "engine_game" ? families.game : families.defense;
 }
-const admitEngineJob = (job: any, kind: string, request: (...args: any[]) => any) => familyFor(kind, request).admit(job);
-const engineSearchAllowed = (job: any, kind: string, request: (...args: any[]) => any) => familyFor(kind, request).allowed(job);
-function createControlledSearch(engine: any, request: (...args: any[]) => any) {
+const admitEngineJob = (job: JobIdentity, kind: string, request: EngineRequest) => familyFor(kind, request).admit(job);
+const engineSearchAllowed = (job: JobIdentity, kind: string, request: EngineRequest) => familyFor(kind, request).allowed(job);
+function createControlledSearch(engine: SearchEngine, request: EngineRequest) {
   const search = createEngineSearch(engine);
   return {
     get fatalEngineError() { return search.fatalEngineError; },
-    evaluate(job: any, kind = "engine_defense", shouldContinue = () => familyFor(kind, request).allowed(job)) {
+    evaluate(job: SearchJob, kind = "engine_defense", shouldContinue = () => familyFor(kind, request).allowed(job)) {
       return search.evaluate(job, kind, shouldContinue);
     },
   };

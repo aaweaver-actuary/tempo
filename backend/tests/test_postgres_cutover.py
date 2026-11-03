@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import asyncio
 from datetime import date
-from contextlib import contextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from dataclasses import dataclass
 import json
 import sqlite3
@@ -56,6 +56,17 @@ def unscoped_canonical_prefix(monkeypatch):
             monkeypatch.setattr(module, "read_prefix", lambda *_args, **_kwargs: {
                 "moves": [], "revision": 0, "preview_id": None, "source_revision": 0,
             })
+
+
+@pytest.fixture
+def inactive_frozen_queue(monkeypatch):
+    """Protocol doubles have no frozen run; retain their real slice/write fences."""
+    from app.services import postgres_queue_refresh
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection",
+                        lambda: nullcontext(object()))
+    monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, "activation",
+                        lambda _database, **_options: (None, 0))
+
 
 def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
     from app.services import postgres_next_opponent
@@ -935,7 +946,7 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
         data={"trained_color": "white", "initial_depth": "4"},
     )
     assert response.status_code == 202, response.text
-    assert observed[0][0] == "imports.pgn.admit"
+    assert observed[0][0] == "imports.pgn.explicit"
     assert observed[0][1]["source_name"] == "opening.pgn"
     assert observed[0][1]["depth"] == 4
     assert observed[0][1]["lines"][0]["moves"] == ["e2e4", "e7e5"]
@@ -2098,6 +2109,8 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
 
     class Database:
         def execute_native(self, statement, _parameters=()):
+            if "SELECT 'line:' || id source_id" in statement:
+                return SimpleNamespace(fetchall=lambda: [])
             if "FROM repertoires" in statement:
                 return SimpleNamespace(fetchone=lambda: (1,))
             if "INSERT INTO repertoire_lines" in statement:
@@ -2492,13 +2505,17 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(mo
         def eval(self, script, key_count, key, timestamp, token, duration):
             observed.append((key_count, key, token, duration))
 
+    @asynccontextmanager
+    async def foreground():
+        yield
+
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main.activity_gate, "async_foreground", foreground)
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
     monkeypatch.setattr(redis_admission_gate, "client", lambda: RecordingRedis())
     response = TestClient(main.app).post("/api/system/browser-activity")
     assert response.status_code == 200, response.text
-    assert observed == [(1, "tempo:admission:foreground", "browser-activity", 3000)]
+    assert observed == [(1, "tempo:admission:foreground", "browser-activity:legacy", 3000)]
 
 
 @pytest.mark.parametrize("receipt_kind,queued,ready", [
@@ -2569,7 +2586,7 @@ def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_ca
     ]
 
 
-def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_replay(monkeypatch):
+def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_replay(monkeypatch, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     current_lease = "first"
@@ -2625,6 +2642,7 @@ def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_p
         database.executescript("""
             CREATE TABLE repertoires(id TEXT PRIMARY KEY,new_cards_per_day INTEGER);
             CREATE TABLE settings(id INTEGER PRIMARY KEY,new_cards_per_day INTEGER);
+            CREATE TABLE frozen_opening_activation(id INTEGER PRIMARY KEY,run_id TEXT,epoch INTEGER);
             INSERT INTO repertoires(id,new_cards_per_day) VALUES('rep',NULL);
             INSERT INTO settings VALUES(1,10);
             CREATE TABLE cards(id TEXT PRIMARY KEY,state TEXT,introduced_at TEXT,
@@ -2794,7 +2812,7 @@ def test_postgres_study_admission_rechecks_burial_and_quota_after_foreground_loc
         )
 
 
-def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(monkeypatch):
+def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(monkeypatch, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     admitted = []
@@ -2972,6 +2990,9 @@ def test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads(mo
     def bounded_read(statement, parameters=(), *, native=False):
         assert active_connections == 0
         observed_queries.append((statement, native))
+        if statement == "SELECT to_regclass('study_recombination_presentations') IS NOT NULL":
+            assert parameters == ()
+            return [(False,)]
         if statement.startswith("SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind"):
             assert parameters[2] == 16 and 'LIMIT ?' in statement
             assert 'FROM reviews' not in statement
@@ -2993,7 +3014,9 @@ def test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads(mo
     assert {entry["id"]: entry["kind"] for entry in plan["entries"] if entry['id']<=3} == {
         1: "explicit", 2: "review", 3: "new",
     }
-    assert len(plan['entries']) == 40 and len(observed_queries) == 9
+    assert len(plan['entries']) == 40 and len(observed_queries) == 12
+    schema_queries = [statement for statement, _ in observed_queries if statement.startswith('SELECT to_regclass')]
+    assert len(schema_queries) == 3 and len(observed_queries) - len(schema_queries) == 9
 
 
 def test_postgres_opening_quarantine_validates_outside_database_and_replays_once(monkeypatch, tmp_path):
@@ -3068,7 +3091,7 @@ def test_postgres_opening_quarantine_validates_outside_database_and_replays_once
         ).fetchone()[0] == 1
 
 
-def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(monkeypatch):
+def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(monkeypatch, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     current_lease = "first"
@@ -3125,7 +3148,7 @@ def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(mon
     assert observed.count("diagnostics-reset") == 1
 
 
-def test_postgres_queue_projection_and_task_completion_commit_together(monkeypatch, tmp_path):
+def test_postgres_queue_projection_and_task_completion_commit_together(monkeypatch, tmp_path, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     database_path = tmp_path / "queue-projection.db"
@@ -3259,7 +3282,8 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
     )
     assert second == first
     assert len(enqueued) == 1
-    database.projection = {"state": "ready", "refresh_pending": 0}
+    database.projection = {"state": "ready", "refresh_pending": 0,
+                           "has_queued_entries": False, "presentation_membership_hash": None}
     assert queue_commands.ensure_current_queue(
         database, {"queue_date": "2026-09-27"},
     ) == {"queue_date": "2026-09-27", "refresh_pending": False}
@@ -3284,7 +3308,8 @@ def test_postgres_cutover_inventory_includes_native_postgres_queries():
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
     from database.tooling.audit_storage_cutover import inspect_python_file
 
-    source = Path(__file__).resolve().parents[1] / "app" / "services" / "postgres_queue_refresh.py"
+    source = (Path(__file__).resolve().parents[2] / "database" / "tempo_legacy_database"
+              / "adapters" / "queue_refresh" / "presentation.py")
     report = inspect_python_file(source)
     assert any(site["operation"] == "execute_native" for site in report["access_sites"])
 
@@ -3933,11 +3958,13 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
 
 
 def test_postgres_review_reserves_card_then_queue_position_before_reordering(monkeypatch):
+    from datetime import datetime, timezone
     from app import review_commands
     from app.services import learning_review_adapter
     from tempo_learning_review import apply_review as installed_apply_review, ReviewResult
 
     observed = []
+    observed_at = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
 
     class RecordingDatabase:
         def execute(self, statement, parameters=()):
@@ -3950,6 +3977,9 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
 
     monkeypatch.setattr(learning_review_adapter, "lock_queue_date_for_position",
                         lambda database, queue_date: observed.append(("queue_lock", queue_date)))
+    monkeypatch.setattr(learning_review_adapter.LearningReviewAdapter, "policy",
+                        lambda _adapter: learning_review_adapter.learning.ReviewPolicy("UTC", 1))
+    monkeypatch.setattr(learning_review_adapter, "datetime", SimpleNamespace(now=lambda _timezone: observed_at))
     monkeypatch.setattr(f"{installed_apply_review.__module__}.apply_review",
                         lambda adapter, command, context:
                         observed.append(("review", command.card_id, command.outcome))
@@ -3958,7 +3988,7 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
         RecordingDatabase(), {"card_id": "card-1", "review": {"outcome": "again"}},
     ) == {"persisted": True}
     assert observed[0] == ("card_lock", "SELECT id FROM cards WHERE id=? FOR UPDATE", ("card-1",))
-    assert observed[1] == ("queue_lock", date.today().isoformat())
+    assert observed[1] == ("queue_lock", observed_at.date().isoformat())
     assert observed[2] == ("review", "card-1", "again")
 
 
@@ -4652,6 +4682,7 @@ def test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay(monkeypa
 
 def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkeypatch):
     from app import main
+    from app import queue_commands
 
     statements: list[str] = []
 
@@ -4672,6 +4703,7 @@ def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkey
         yield EmptyDatabase()
 
     monkeypatch.setattr(main, "read_connection", test_read_connection)
+    monkeypatch.setattr(queue_commands, "current_study_day", lambda _database: date.today().isoformat())
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     assert main._queue_payload()["cards"] == []
     queue_statement = next(statement for statement in statements if "ranked_repertoires" in statement)
@@ -4724,7 +4756,7 @@ def test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips(
         assert [tuple(row) for row in sliced_states] == [tuple(row) for row in complete_states]
 
 
-def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay(monkeypatch, tmp_path):
+def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay(monkeypatch, tmp_path, inactive_frozen_queue):
     from app import main
     from app.services import postgres_queue_refresh
 
@@ -4822,7 +4854,7 @@ def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_rep
     assert events[1::2] == ["database"] * (len(events) // 2)
 
 
-def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(monkeypatch):
+def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(monkeypatch, inactive_frozen_queue):
     from app import main
     from app.services import postgres_queue_refresh
 
@@ -4895,8 +4927,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
     # This small parity fixture models ordinary quota reconciliation. Actual
     # current miss evidence is proved by feedback and PostgreSQL durability tests.
     from app import main
-    monkeypatch.setattr(postgres_queue_refresh.queue_application, "has_outstanding_real_game_miss", lambda *_args: False)
-    monkeypatch.setattr(postgres_queue_refresh, "has_outstanding_real_game_miss", lambda *_args: False)
+    monkeypatch.setattr(postgres_queue_refresh.QueueAdmissionAdapter, "has_outstanding_miss", lambda *_args: False)
 
     schema = """
         CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,content_type TEXT,
@@ -4906,6 +4937,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
                                  status TEXT,admission_kind TEXT,admission_repertoire_id TEXT,
                                  position INTEGER,cycle INTEGER DEFAULT 0);
         CREATE TABLE settings(id INTEGER PRIMARY KEY,new_cards_per_day INTEGER);
+        CREATE TABLE frozen_opening_activation(id INTEGER PRIMARY KEY,run_id TEXT,epoch INTEGER);
         CREATE TABLE repertoires(id TEXT PRIMARY KEY,new_cards_per_day INTEGER);
         INSERT INTO repertoires(id,new_cards_per_day) VALUES('r1',NULL),('r2',NULL);
         CREATE TABLE repertoire_integrity_card_blocks(repertoire_id TEXT,card_id TEXT);
@@ -4937,6 +4969,9 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
     class NativeSqlite:
         def __init__(self, database):
             self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement, parameters)
 
         def execute_native(self, statement, parameters=()):
             parameters = tuple(parameters)
@@ -4991,7 +5026,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
     assert processed_ids[1] == 5
 
 
-def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch):
+def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     current_token = "first"
@@ -5173,7 +5208,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
     assert not database_open
 
 
-def test_postgres_tactical_queue_foreground_contention_and_stale_replay(monkeypatch):
+def test_postgres_tactical_queue_foreground_contention_and_stale_replay(monkeypatch, inactive_frozen_queue):
     from app.services import postgres_queue_refresh
 
     preparation_started = threading.Event()
@@ -5315,7 +5350,7 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
             lambda task, submitted_at, *, queue_refresh_wake=False: directly_executed.append(task) or True)
         assert tasks.poll_background_tasks.run() is True
     assert directly_executed == [claimed_task]
-    assert claimed_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
+    assert claimed_filters == [tuple(kind for kind in tasks._SUPPORTED_BACKGROUND_KINDS if kind != 'daily_queue')]
     assert sent_tasks == []
     completed_tasks: list[str] = []
     monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)

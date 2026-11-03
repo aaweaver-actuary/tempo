@@ -11,6 +11,9 @@ from fastapi import HTTPException
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
+from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.ports import ChangeError
+from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
 from tempo_legacy_database.adapters.authored_repertoires.card_edits import storage
 from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import card_columns
 from app.contracts.transport.content import CardRevisionRequest
@@ -72,6 +75,18 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
     repertoire_ids = [row[0] for row in storage.card_scope(database, identifier)]
     validated_routes = {repertoire_id: ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in repertoire_ids}
+    for repertoire_id in sorted(repertoire_ids):
+        try:
+            sources = change_storage.lock_sources(database, repertoire_id)
+            if not any(row["source_id"] == f"card:{identifier}" for row in sources):
+                continue
+            proposed = tuple(row for row in sources if row["source_id"] != f"card:{identifier}") + (
+                dict(source_id=f"card:{identifier}", start_fen=request.starting_fen,
+                     moves_json=json.dumps(moves), trained_color=next((row["trained_color"] for row in sources
+                         if row["source_id"] == f"card:{identifier}"))),)
+            validate_source_rows(repertoire_id, proposed)
+        except ChangeError as error:
+            raise HTTPException(409, str(error)) from error
     replacement_id = card_id(request.starting_fen, moves)
     storage.lock_prefix_transition(database)
     for locked_id in sorted({identifier, replacement_id}):
@@ -125,6 +140,13 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
         storage.remove_membership(database, identifier)
     for repertoire_id, validated_route in validated_routes.items():
         storage.admit_membership(database, repertoire_id, replacement_id)
+    for repertoire_id in sorted(validated_routes):
+        try:
+            sources = change_storage.lock_sources(database, repertoire_id)
+            if any(row["source_id"] in {f"card:{identifier}", f"card:{replacement_id}"} for row in sources):
+                validate_source_rows(repertoire_id, sources)
+        except ChangeError as error:
+            raise HTTPException(409, str(error)) from error
     for repertoire_id, validated_route in validated_routes.items():
         certify_admitted_route(database, repertoire_id, validated_route)
     repertoire_ids = [str(row[0]) for row in storage.card_repertoires(database, replacement_id)]

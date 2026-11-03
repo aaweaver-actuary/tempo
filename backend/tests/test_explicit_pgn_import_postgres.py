@@ -11,7 +11,7 @@ Study queue SQL/handlers remain real. This is not Redis/worker-stack qualificati
 or acceptance of Andy's genuine Taimanov file.
 """
 from contextlib import contextmanager, nullcontext
-from datetime import date
+from datetime import date, datetime
 import json
 from uuid import uuid4
 
@@ -61,6 +61,11 @@ def test_native_explicit_black_import_round_trip_preserves_study(case, monkeypat
         def today(cls):
             return NOW.date()
 
+    class PolicyDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
     monkeypatch.setattr(postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(postgres_store, 'connection', transport)
     monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
@@ -73,6 +78,7 @@ def test_native_explicit_black_import_round_trip_preserves_study(case, monkeypat
     monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
     monkeypatch.setattr(pgn_import_commands, 'date', PolicyDate)
     monkeypatch.setattr(queue_commands, 'date', PolicyDate)
+    monkeypatch.setattr(queue_commands, 'datetime', PolicyDateTime)
     monkeypatch.setattr(main, 'date', PolicyDate)
     day = NOW.date().isoformat()
     issue_operation = 'protected-issue-' + uuid4().hex

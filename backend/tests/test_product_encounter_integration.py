@@ -84,7 +84,7 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
     import chess
     import chess.pgn
     from app import queue_commands
-    from app.contracts.product_v02.games import GameRecord, GameWindow
+    from app.contracts.product_v02.games import FirstDepartureScope, GameRecord, GameWindow
     from app.games.feedback.ports import SourceState
     from app.games.feedback.review import SyncConfiguration
     from app.product_composition.provider_priority import prepare_feedback_qualification
@@ -149,8 +149,21 @@ def test_qualified_global_publication_reaches_exact_study_consequence_and_real_s
                 clock=lambda:determined,determination=determined.isoformat(),stream='forward')
             assert prepared.qualification.selection.ply == 1
             assert prepared.qualification.selection.decision.presentation_id == case.card_id
-            assert prepared.qualification.selection.selected_scope[0].snapshot_id.startswith('publication:')
-            assert prepared.target_snapshot.membership.snapshot_id.startswith('product:')
+            scope_snapshot = prepared.prepared_decisions.snapshot
+            membership = scope_snapshot.membership
+            assert membership.workspace_id == canonical.workspace_id
+            assert membership.scope_repertoire_ids == (case.repertoire_id,)
+            assert membership.complete and membership.available
+            assert membership.snapshot_id == 'first-boundary:' + membership.digest
+            assert membership.source_revision == membership.digest
+            assert prepared.qualification.selection.selected_scope == (FirstDepartureScope(
+                repertoire_id=case.repertoire_id, learner_color=scope_snapshot.learner_color,
+                snapshot_id=membership.snapshot_id, source_revision=membership.source_revision,
+                revision=membership.revision, digest=membership.digest, complete=True, available=True),)
+            original_source = original.source if command_kind == 'encounter' else original.finding
+            source_fields = ('provider', 'game_id', 'source_revision', 'source_digest')
+            assert tuple(getattr(prepared.qualification.selection.source, field) for field in source_fields) == tuple(
+                getattr(original_source, field) for field in source_fields)
             # Every executable/chess proof has finished. The writer may only
             # recheck prepared source/version/target facts for either old kind.
             def writer_replay_forbidden(*args,**kwargs):
@@ -286,6 +299,8 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             assert PostgresGameFeedbackStore(database).get(command.key).status == 'applied'
         timeline[0] = reset_at+timedelta(minutes=1)
         with case.transaction() as database:
+            before_fresh_issue = PostgresGameFeedbackStore(database).feedback_observation(command.key,timeline[0])
+            issued_before_fresh_target = before_fresh_issue['issued_since_determination']
             fresh = _issue(database,case.card_id)
             assert fresh != active
             actual = issuance.attempt_issuance(database,fresh,case.card_id,1)
@@ -296,7 +311,7 @@ def test_native_already_issued_target_saves_before_reset_and_only_fresh_generati
             effect = PostgresGameFeedbackStore(database).get(command.key)
             assert effect.status == 'settled' and effect.settlement_review_id == remedied['review_id']
             assert effect.progress.settlement.attempt.queue_entry_id == fresh
-            assert effect.progress.first_issued_ordinal == 1
+            assert effect.progress.first_issued_ordinal == issued_before_fresh_target+1
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",
                 (case.card_id,)).fetchone()[0] == 1
 
@@ -362,7 +377,9 @@ def test_native_acknowledged_priority_only_is_qualified_from_foreground_with_exi
                     "command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','acknowledged',0,%s::jsonb)",
                     (delivery.operation_id,delivery.source_key,command.key.logical_id(),delivery.model_dump_json()))
                 ensure_card_queued_after(database,case.card_id,0,queue_date=NOW.date().isoformat(),preserve_order=False)
-                assert pending_feedback_preparation(database,NOW.date().isoformat())
+                # An unqualified legacy candidate remains discoverable, but
+                # cannot block ordinary issuance before current qualification.
+                assert not pending_feedback_preparation(database,NOW.date().isoformat())
                 observed = next_feedback_preparation(database,NOW.date().isoformat(),now=NOW)
                 assert observed.key == command.key and observed.qualification is None
                 # Discretionary raw history cannot block ready live work.
@@ -627,6 +644,11 @@ def test_ordinary_admission_winning_capture_race_is_not_a_new_lapse(owned_postgr
                 (case.card_id,)).fetchone()[0]
             assert introduced is not None
         before = case.readback()
+        source = case.qualifications[command.key.logical_id()]
+        original_command, original_source = command.model_dump_json(), source.source.model_dump_json()
+        source.reprepare()
+        assert source.command.model_dump_json() == original_command
+        assert source.source.model_dump_json() == original_source
         with case.transaction() as database:
             first = receive_captured_encounter(database, capture=capture, snapshot=snapshot, command=command,
                 clock=lambda: NOW)

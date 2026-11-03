@@ -161,8 +161,8 @@ def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatc
 
 
 def test_bury_excludes_card_until_next_day_without_review_or_schedule_change(tmp_path, monkeypatch):
-    from datetime import timedelta
-    from app import main
+    from datetime import datetime, time, timedelta, timezone
+    from app import queue_commands
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     today = date.today()
@@ -195,15 +195,22 @@ def test_bury_excludes_card_until_next_day_without_review_or_schedule_change(tmp
     with TestClient(app) as client:
         assert buried["id"] not in {card["id"] for card in client.get("/api/queue/today").json()["cards"]}
         tomorrow = today + timedelta(days=1)
+        with database.read_connection() as db:
+            study_timezone = queue_commands.queue_storage.study_timezone(db)
+        assert study_timezone == "local"
+        # Freeze the clock consumed by current_study_day at noon in the saved
+        # review timezone. The endpoint derives its day from this UTC instant.
+        local_timezone = datetime.now().astimezone().tzinfo
+        frozen_utc = datetime.combine(
+            tomorrow, time(hour=12), tzinfo=local_timezone,
+        ).astimezone(timezone.utc)
 
-        class Tomorrow(date):
+        class TomorrowUTC(datetime):
             @classmethod
-            def today(cls):
-                return tomorrow
+            def now(cls, tz=None):
+                return frozen_utc.astimezone(tz) if tz is not None else frozen_utc.replace(tzinfo=None)
 
-        monkeypatch.setattr(main, "date", Tomorrow)
-        from app import queue_commands
-        monkeypatch.setattr(queue_commands, "date", Tomorrow)
+        monkeypatch.setattr(queue_commands, "datetime", TomorrowUTC)
         submit_foreground_write(lambda db: materialize_daily_queue(db, tomorrow.isoformat()), label="test-next-day-buried")
         assert buried["id"] in {card["id"] for card in client.get("/api/queue/today").json()["cards"]}
 
@@ -286,17 +293,24 @@ def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_reject
     lock_requests = []
 
     class CommandDatabase:
-        # SQL compatibility proof only; real PostgreSQL locks/receipts are
-        # covered by the disposable durability runner.
+        # Declare the existing PostgreSQL adapter identity so this compatibility
+        # fixture exercises the same native-lock branch as the command owner.
         def __init__(self, db):
             self.db = db
 
         def execute(self, statement, parameters=()):
-            return self.db.execute(statement.replace(" FOR UPDATE OF q", ""), parameters)
+            return self.db.execute(
+                statement.replace(" FOR UPDATE OF q,c", "")
+                .replace(" FOR UPDATE OF q", "")
+                .replace(" FOR UPDATE", ""),
+                parameters,
+            )
 
         def execute_native(self, statement, parameters=()):
             assert "pg_advisory_xact_lock" in statement
             lock_requests.append((statement, parameters))
+
+    monkeypatch.setattr(queue_commands.queue_storage, "PostgresConnection", CommandDatabase)
 
     with TestClient(app) as client:
         _seed_cards()
@@ -318,6 +332,7 @@ def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_reject
             assert stale.value.status_code == 409
         assert [card["id"] for card in client.get("/api/queue/today").json()["cards"]] == [card["id"] for card in before[1:]]
         assert lock_requests == [
+            ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{buried['id']}",)),
             ("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))", ()),
             ("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"tempo:daily-queue-position:{date.today().isoformat()}",)),
         ] * 2

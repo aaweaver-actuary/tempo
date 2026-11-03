@@ -23,6 +23,27 @@ from test_legacy_scoped_capture import source_fixture, captured_scope, prepared,
 from app.game_evidence_commands import CurrentLegacyAuthority
 
 
+_PRIORITY_POSITION_SQL = """UPDATE daily_queue queue SET position=planned.position
+        FROM unnest(%s::bigint[],%s::bigint[],%s::bigint[])
+            AS planned(id,previous,position)
+        WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'
+          AND queue.position=planned.previous
+          AND queue.review_result_json IS NULL
+          AND queue.admission_kind IS DISTINCT FROM 'explicit'
+          AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+              WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id
+                AND origin.revision=(SELECT revision FROM cards WHERE id=queue.card_id)
+                AND origin.issued_as_head=1)
+          AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+              WHERE attempt.queue_entry_id=queue.id)"""
+_STAMP_ISSUED_HEAD_SQL = """UPDATE queue_attempt_origins SET
+            issuance_sequence=CASE WHEN issued_as_head=0
+                THEN nextval('study_attempt_issuance_sequence') ELSE issuance_sequence END,
+            issued_at=CASE WHEN issued_as_head=0 THEN %s ELSE issued_at END,
+            issued_as_head=1
+            WHERE queue_entry_id=%s AND card_id=%s AND revision=%s"""
+
+
 class Cursor:
     def __init__(self, rows=()): self.rows, self.rowcount = list(rows), len(rows)
     def fetchone(self): return self.rows[0] if self.rows else None
@@ -124,6 +145,39 @@ class OwnerFixture(PostgresConnection):
 
     def execute_native(self, statement, parameters=()):
         self.log.append((statement, parameters))
+        if statement == _STAMP_ISSUED_HEAD_SQL:
+            now, entry_id, card_id, revision = parameters
+            from tempo_legacy_database.adapters.study.issuance import stamp_issued_head
+            changed = stamp_issued_head(SimpleNamespace(execute=self.execute), entry_id, card_id, revision, now=now)
+            result = Cursor()
+            result.rowcount = changed
+            return result
+        if statement == _PRIORITY_POSITION_SQL:
+            entry_ids, previous_positions, positions, day = parameters
+            if (not isinstance(entry_ids, list) or not isinstance(previous_positions, list)
+                    or not isinstance(positions, list) or not 1 <= len(entry_ids) <= 1000
+                    or len(previous_positions) != len(entry_ids) or len(positions) != len(entry_ids)
+                    or len(set(entry_ids)) != len(entry_ids)
+                    or any(type(value) is not int or value <= 0 for value in entry_ids)
+                    or any(type(value) is not int or not 0 <= value <= 10000
+                           for value in (*previous_positions, *positions))
+                    or not isinstance(day, str)):
+                raise AssertionError("Invalid bounded priority-position fixture parameters")
+            update = """UPDATE daily_queue SET position=?
+                WHERE id=? AND queue_date=? AND status='queued' AND position=?
+                  AND review_result_json IS NULL AND admission_kind IS NOT 'explicit'
+                  AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+                      WHERE origin.queue_entry_id=daily_queue.id AND origin.card_id=daily_queue.card_id
+                        AND origin.revision=(SELECT revision FROM cards WHERE id=daily_queue.card_id)
+                        AND origin.issued_as_head=1)
+                  AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+                      WHERE attempt.queue_entry_id=daily_queue.id)"""
+            changed = sum(self.sqlite.execute(update,
+                (position, entry_id, day, previous)).rowcount
+                for entry_id, previous, position in zip(entry_ids, previous_positions, positions))
+            result = Cursor()
+            result.rowcount = changed
+            return result
         if statement == bridge.CURRENT_FACT_SQL:
             return Cursor([TempoRow(("payload_json", "introduced_at"), (self.payload, "2026-10-16"))] if self.current else [])
         if statement == bridge.SOURCE_FENCE_SQL:
@@ -204,6 +258,14 @@ def vertical(tmp_path, monkeypatch, request):
     monkeypatch.setattr(LearningReviewAdapter, "refresh_progression", lambda *a, **k: None)
     monkeypatch.setattr(LearningReviewAdapter, "refresh_priority", lambda *a, **k: None)
     with database.connection() as sqlite:
+        # This optional PostgreSQL guard table is empty in the synthetic fixture.
+        sqlite.execute("CREATE TABLE opening_evidence_attempts(queue_entry_id INTEGER)")
+        def sqlite_to_regclass(name):
+            if name != "study_recombination_presentations":
+                raise AssertionError("Unexpected catalog probe: " + str(name))
+            row = sqlite.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+            return row[0] if row else None
+        sqlite.create_function("to_regclass", 1, sqlite_to_regclass)
         sqlite.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('ruy','Synthetic','fixture',?)",
                        (date.today().isoformat(),))
         for card_id, content, moves, color in (("physical-black", "opening", source.rows["cards"][0]["moves_json"], "black"),
@@ -216,6 +278,16 @@ def vertical(tmp_path, monkeypatch, request):
                            (date.today().isoformat(), card_id, position))
         sqlite.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='protected'")
         fixture = OwnerFixture(sqlite, accepted.payload_json, module)
+        from app.services import queue_presentation
+        from app.study import queue_placement
+        original_presentation_rows = queue_presentation.presentation_rows
+        def fixture_presentation_rows(connection, day, *, read=None, after_entry_id=None, limit=None):
+            if isinstance(connection, OwnerFixture) and read is None:
+                read = lambda statement, parameters: connection.execute(statement, parameters).fetchall()
+            return original_presentation_rows(connection, day, read=read,
+                after_entry_id=after_entry_id, limit=limit)
+        monkeypatch.setattr(queue_presentation, "presentation_rows", fixture_presentation_rows)
+        monkeypatch.setattr(queue_placement, "presentation_rows", fixture_presentation_rows)
         fixture.generated_preview, fixture.receive_context = generated_preview, context
         yield fixture, value, accepted, module
 
@@ -357,7 +429,8 @@ def test_status_endpoint_is_read_only_and_separates_acceptance_queue_and_settlem
     from app import game_evidence_routes as routes
     monkeypatch.setattr(routes, "postgres_store", SimpleNamespace(configured=lambda: True))
     monkeypatch.setattr(routes, "read_connection", lambda: nullcontext(db))
-    assert len([route for route in routes.router.routes if "GET" in route.methods]) == 1
+    assert len([route for route in routes.router.routes
+                if "GET" in route.methods and route.endpoint is routes.legacy_card_status]) == 1
     entry = bridge.admit_card(db, {"card_id": "physical-black"})["queue_entry_id"]
     before = db.sqlite.total_changes
     db.read_only = True

@@ -305,7 +305,7 @@ for (const runnerKind of ["generic", "package-local"]) {
 
 function copyNodeRunner(directory) {
   for (const file of ["tools/component-build/test-node.mjs", "scripts/unit-worker-allocation.mjs",
-    "scripts/development-budget.mjs", "scripts/host-study-activity.mjs", "config/resource-budgets.json"]) {
+    "scripts/development-budget.mjs", "scripts/development-web-cache.mjs", "scripts/host-study-activity.mjs", "config/resource-budgets.json"]) {
     mkdirSync(dirname(join(directory, file)), { recursive: true });
     cpSync(resolve(repository, file), join(directory, file));
   }

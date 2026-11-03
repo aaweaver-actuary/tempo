@@ -86,6 +86,7 @@ def test_postgres_route_contract_admits_durable_game_review_mutations(monkeypatc
     assert blocked_routes == set()
     game_review_writes = {
         ("POST", "/api/product/game-review/sync", "sync"),
+        ("POST", "/api/product/game-review/refresh", "refresh"),
         ("POST", "/api/product/game-review/feedback/retry", "retry_feedback"),
         ("POST", "/api/product/game-review/configuration", "configure"),
     }

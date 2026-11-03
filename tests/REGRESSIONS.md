@@ -1743,6 +1743,14 @@ CI collection also covers `complete browser verification is unfiltered and tagge
 
 Current-main integration: `current-main integration retains CI and segmentation regression registrations` checks every native CI harness test name, the full-command inventory test, segmentation structural/snapshot/preference/migration registrations and AS-01–AS-22 mappings. Merge `2f5521d` preserved executable coverage but replaced all four CI registration paragraphs with PR #50 entries; the new regression failed on that merged registry before restoring the CI entries additively. Both coverage groups remain required.
 
+Current CI harness registrations also retain:
+
+- `non-persistence backend ownership accepts only services and the two moved providers` — reviewed service/provider ownership accepts the two moved providers and rejects unknown or duplicate paths.
+- `queue_owner_evidence_rejects_missing_or_mismatched_results` — required queue-owner evidence rejects missing, stale, mismatched, skipped or unclean results.
+- `queue_owner_attempt_uses_fresh_roots_and_retains_failed_fixture_evidence` — attempts own fresh evidence roots, retain failed fixtures and reject extra fixture evidence.
+- `packaged_browser_prerequisites_fail_when_selected_without_fixture` — selected packaged feedback/recovery cases fail explicitly without their required owner scenario.
+- `selected_browser_skip_is_not_passing_evidence` — skipped selected browser cases remain failed results and cannot satisfy quality.
+
 ## Tactic capture
 
 #541's repeated Capture flow is owned by the existing parser/component suites:
@@ -3187,7 +3195,7 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `every current browser spec belongs to exactly one complete family`
 - `reviewed source mappings reject missing families and duplicate or ambiguous paths`
 - `demoted critical cases remain required by their complete browser families`
-- `ordinary prose and standalone core tests select only six global browser smoke cases`
+- `ordinary prose and standalone core tests select only four global browser smoke cases`
 - `mapped leaf changes retain critical plus their family with regression additions`
 - `shared subsystem sources select complete consumer families without unrelated families`
 - `cross-cutting browser infrastructure and uncertain inputs require the complete matrix`
@@ -5254,7 +5262,7 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 
 - `tests/unit/study-composition-regressions.test.ts`: physical Study entry selection, direct optional workspace intent rejection, semantic optional implementation guards, and emitted module/chunk inventory.
 - `tests/unit/study-shell-composition-regressions.test.tsx`: Study trains with absent optional capabilities, omits unsupported authoring controls, and persists browser appearance preferences without workspace administration.
-- `tests/unit/training-builder-handoff-regressions.test.tsx`: explicit legacy composition requires retired aliases to fall back to Train and asserts that Builder, Analysis, Games, and comparison launch actions are absent.
+- `tests/unit/training-builder-handoff-regressions.test.tsx`: explicit legacy composition requires retired aliases to fall back to Train, preserves Games as a navigable workspace, and keeps Builder, Analysis, and comparison launch actions absent; the historical-position “Games here” action remains retired.
 - Existing `study-regressions`, `repertoire-alternative-home-regressions`, and `opening-evidence-home-lifecycle`, and `training-burial-caller-regressions` fixtures select the explicit legacy composition where they exercise repair, editor, repertoire or Workbench-launch behavior; their original behavioral assertions remain.
 
 ## Issue #361 legacy dashboard retirement
@@ -6552,3 +6560,59 @@ condition; a real packaged engine startup remains a separate acceptance check.
 ### Complete snapshot wire serialization under the existing PostgreSQL budget (#703)
 
 `backend/tests/test_product_snapshot_postgres.py::test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint` compares full, authored and candidate documents against the released JSONB encoding, including escaped text, nulls, budget metadata and fingerprints. Both packaged recovery modes reached four verified reviews before a 384 MiB PostgreSQL OOM during the complete-repertoire source query. The wire serialization change preserves source rows, ordering, one MVCC view and existing refusal bounds; packaged recovery remains to be rerun.
+
+### Existing mutation source guards (#492 / #825 release blockers)
+
+`backend/tests/test_product_repertoire_changes.py` owns the named
+`test_legacy_branch_guard_stops_conflict_before_insert`,
+`test_legacy_card_edit_guard_keeps_shared_membership_before_writes`, and
+`test_legacy_integrity_repair_cannot_introduce_new_response_conflict` regressions.
+Card and repair cases also preserve HTTP 409 for bounded source-read refusals.
+`test_card_edits_storage_boundary.py` preserves original source/history/lock and
+callback assertions for both opening and non-opening revisions while observing
+the source checks before and after mutation. The existing branch checkpoint
+fixture supplies the additional bounded source-read facts without relaxing its
+publication order assertions. Native survivor/replacement and legal repair
+proof remains in the existing Repertoire PostgreSQL suite.
+
+`tests/unit/study-command-client-capability.test.ts` retains receipt-authority
+assertions with the mocks' actual fetch argument signatures; this repairs the
+two baseline empty-tuple type errors without changing runtime behavior.
+
+
+## Issue #825 assembled release fixture corrections
+
+The owning regressions retain current source contracts after earlier component moves and retirements: API sync parity imports the Games ingestion serializer; CI provider and segmentation fixtures use their current reviewed paths; browser smoke metadata reflects the four retained cases and the documented retired Games case. CLI registration includes the bounded Docker endpoint probe. Home fixtures query the current Study-only notice; full legacy navigation preserves Games while retired position actions remain absent. The saved endgame review fixture waits for its observed POST to drain from the durable outbox before storage teardown.
+
+Component packaging fixtures include the existing development-web-cache leaf; exact dependency closure includes the three already declared Game Evidence dependencies. The graph preparation guard permits the transition's existing node:url builtin used for protected checkout exclusion, and the duplicate shared Learning suite registration includes its database owner root. These corrections preserve exact test inventories, input fencing and failure accounting. The PostgreSQL readiness fixture expects three remaining restoration call sites after the priority benchmark retirement; behavioral health-before-engine assertions remain.
+
+`standalone defense engine smoke does not poll an unavailable API` retains its 15-second deadline, one thread, 32MiB hash and depth-four restricted search. Its smoke branch now terminates the owned Stockfish child in a finally block before exiting; ordinary engine processing is unchanged.
+
+## Issue #825 packaged reader release prerequisite
+
+The original packaged reader proof now lives in
+`database/tests/check_postgres_game_review_reader.py`, retaining its target,
+source-hash, reader ACL, current-receipt, unchanged-row and cleanup assertions.
+The existing full and CI durability PostgreSQL plans run the mandatory
+`game_review_reader` stage after service health, using their existing owned
+stack. The schema guard requires the complete current ledger and exactly ten
+SELECT-only relations, including migration 056's managed-mode state.
+
+`backend/tests/test_packaged_game_review_reader_boundary.py` owns
+`test_packaged_reader_import_is_inert_and_native_proof_is_outside_generic_backend_pytest`,
+`test_packaged_reader_refuses_unowned_or_wrong_project_before_external_effects`,
+`test_packaged_reader_requires_current_complete_schema_and_exact_ten_relation_acls`,
+and `test_packaged_reader_rejects_incomplete_or_extra_schema_inventory_and_write_acl`.
+These are boundary checks, not a packaged native pass.
+
+`tests/runner/postgres-test-speedups.test.mjs` owns:
+
+- `packaged Games reader runs once on the host after ready owned services and before cleanup`;
+- `packaged Games reader missing action fails the owned plan and cleans up`;
+- `packaged Games reader failure fails the owned plan and cleans up`;
+- `packaged Games reader cannot be missing, skipped, failed, or omitted from the qualification plan`.
+
+Their regular Vitest owner remains
+`tests/unit/postgres-test-speedups-regressions.test.ts`. The exact executable
+plan, scenario results, current candidate and plan hash remain qualification
+requirements; no CI classification or smaller-tier native exemption is added.

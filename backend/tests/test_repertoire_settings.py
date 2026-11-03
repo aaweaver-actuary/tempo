@@ -250,6 +250,7 @@ def test_shared_card_review_retries_do_not_consume_owners_new_card_allowance(wor
 @pytest.mark.parametrize('reviewed', [False, True])
 def test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance(workspace, monkeypatch, reviewed):
     from app.services import postgres_queue_refresh as worker
+    from tempo_legacy_database.adapters.queue_refresh import reads
     today = date.today().isoformat()
     with database.connection() as connection:
         connection.execute("UPDATE repertoires SET new_cards_per_day=0 WHERE id='first'")
@@ -264,20 +265,29 @@ def test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allow
         connection.execute("INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('first','first-00','block','current',?)", (today,))
         connection.execute("UPDATE cards SET archived=0 WHERE id='second-00'")
 
-        # Exercise the PostgreSQL planning reads against the same persisted fixture.
-        # Candidate pages are supplied explicitly; accounting SQL is executed unchanged
-        # except for PostgreSQL placeholders (real durability runs separately).
-        def bounded_read(statement, parameters=(), *, native=False):
-            if statement.startswith("SELECT DISTINCT event.card_id"):
-                return []
-            if statement.startswith("SELECT id FROM cards"):
-                return [('second-00',)] if parameters[0] == '' else []
-            if statement.startswith('WITH active_miss'):
-                return [{'id': 'second-00', 'repertoire_id': 'second', 'gameplay_priority_reason': 'test', 'priority_date': today}]
-            if 'q.id <> ALL' in statement:
-                return [{'id': 999, 'card_id': 'second-00', 'repertoire_id': 'second'}]
-            return connection.execute(statement.replace('%s', '?'), parameters).fetchall()
-        monkeypatch.setattr(worker, '_bounded_read', bounded_read)
+        # Queue reads now belong to the database owner. Inject its semantic facts;
+        # retain persisted admission/review accounting without interpreting PG SQL.
+        monkeypatch.setattr(reads, 'active_opening_misses', lambda: [])
+        monkeypatch.setattr(reads, 'opening_candidate_ids',
+                            lambda after, limit: [('second-00',)] if after == '' else [])
+        monkeypatch.setattr(reads, 'priority_opening_rows', lambda *args: [
+            {'id': 'second-00', 'repertoire_id': 'second', 'gameplay_priority_reason': 'test', 'priority_date': today}])
+        monkeypatch.setattr(reads, 'introduced_opening_counts', lambda day: connection.execute(
+            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
+               FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
+               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""", (day, day)).fetchall())
+        monkeypatch.setattr(reads, 'opening_daily_limits', lambda: connection.execute(
+            "SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
+            "FROM repertoires r CROSS JOIN settings s WHERE s.id=1").fetchall())
+        monkeypatch.setattr(reads, 'unseen_candidate', lambda day, processed: [
+            {'id': 999, 'card_id': 'second-00', 'repertoire_id': 'second'}])
+        monkeypatch.setattr(reads, 'reviewed_introductions', lambda repertoire, day: connection.execute(
+            """SELECT COUNT(DISTINCT c.id) FROM cards c
+               LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
+               WHERE COALESCE(q.admission_repertoire_id,c.repertoire_id)=? AND c.content_type='opening' AND c.introduced_at=?
+                 AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)""", (repertoire, day)).fetchall())
+        assert dict(reads.introduced_opening_counts(today)) == {'second': 1}
         assert worker._prepare_prioritized_openings(today) == []
         if reviewed:
             candidate, reviewed_count = worker._prepare_unseen_reconciliation(today, [], {})

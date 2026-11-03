@@ -16,10 +16,11 @@ describe("UI focus regressions", () => {
       "Tactics",
       "Endgames",
       "Repertoire",
+      "Games",
       "Studies",
       "Settings",
     ]);
-    expect(screen.queryByRole("button", { name: "Games" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Games" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Builder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Insights" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Progress" })).toBeNull();

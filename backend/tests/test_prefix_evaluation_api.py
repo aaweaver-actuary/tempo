@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import prefix_evaluation_api as api
+from app.services import prefix_evaluation_source
 from app.services.prefix_evaluation import EvaluationSnapshot, PublishedCard, snapshot_identity
 from test_prefix_evaluation import line, snapshot, CARO_B, KNIGHT_CYCLE
 
@@ -19,6 +20,7 @@ def prepared(monkeypatch):
     state = {'source': source}
     monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(api, 'load_snapshot', lambda *_args: state['source'])
+    monkeypatch.setattr(prefix_evaluation_source, 'load_snapshot', lambda *_args: state['source'])
     monkeypatch.setattr(api, 'check_available', lambda *_args: None)
     application = FastAPI(); application.include_router(api.router)
     return state, TestClient(application)
@@ -247,7 +249,7 @@ def test_issue77_http_oversized_source_is_413_through_actual_loader_without_payl
         open_read = True
         try: yield Database()
         finally: open_read = False
-    original_validation = api.validate_source
+    original_validation = prefix_evaluation_source.validate_source
     validated_sources = []
     def validate_after_connection_close(loaded):
         assert not open_read
@@ -257,7 +259,7 @@ def test_issue77_http_oversized_source_is_413_through_actual_loader_without_payl
     monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(api.postgres_store, 'connection', connection)
     monkeypatch.setattr(api, 'check_available', lambda *_args: None)
-    monkeypatch.setattr(api, 'validate_source', validate_after_connection_close)
+    monkeypatch.setattr(prefix_evaluation_source, 'validate_source', validate_after_connection_close)
     monkeypatch.setattr(evaluator, 'build_graph', forbidden_build)
     application = FastAPI(); application.include_router(api.router)
     client = TestClient(application)
