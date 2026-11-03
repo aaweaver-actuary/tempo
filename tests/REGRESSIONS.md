@@ -1,5 +1,10 @@
 ## Current queue refresh progress and freshness
 
+The existing busy-to-issued consumer case in
+`tests/unit/desktop-queue-regressions.test.ts` accepts current projection epoch
+metadata through the strict queue envelope schema before installing the card.
+The two epoch fields remain optional nonnegative integers for older responses.
+
 `backend/tests/test_queue_refresh_read_database_split.py::test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_cursors`
 preserves the ordered upper/page query parameters and closed reader lifetimes
 in both frozen modes. The selected native
