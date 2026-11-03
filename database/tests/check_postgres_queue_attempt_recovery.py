@@ -494,9 +494,29 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         with postgres_store.connection() as database:
             promote_real_game_card(database,card_ids[0],today)
             promote_real_game_card(database,card_ids[1],today)
-            assert refresh._publish_queue_randomization(database,today,stale_priority_plan)
-            ordered = [row[0] for row in database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
-            assert ordered[:2] == card_ids[:2]
+            # Promotions invalidate the captured priority witness, just as in
+            # the ordinary-order case above. Publish only a freshly read plan.
+            assert refresh._publish_queue_randomization(database,today,stale_priority_plan) is False
+        # Capture the issued attempt and all protected positions before publishing:
+        # urgent obligations lead movable entries, not an already-issued head.
+        with postgres_store.connection(read_only=True) as database:
+            before_rows = refresh.queue_application.presentation_rows(database, today)
+            protected_ids = refresh.queue_ordering._protected_queue_ids(before_rows, urgent=True)
+            protected_positions = {row['id']: row['position'] for row in before_rows if row['id'] in protected_ids}
+            active_before = dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone())
+            origin_before = dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (active_entry, card_ids[2])).fetchone())
+            assert active_entry in protected_ids and origin_before['issued_as_head']
+        current_priority_plan = refresh._prepare_queue_randomization(today)
+        with postgres_store.connection() as database:
+            assert refresh._publish_queue_randomization(database,today,current_priority_plan)
+            ordered = [dict(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
+            ordered_ids = [row['card_id'] for row in ordered]
+            assert ordered[0]['id'] == active_entry, f"Issued head moved: {ordered_ids}"
+            assert {row['id']: row['position'] for row in ordered if row['id'] in protected_ids} == protected_positions, f"Protected positions changed: {ordered_ids}"
+            assert dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()) == active_before
+            assert dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (active_entry, card_ids[2])).fetchone()) == origin_before
+            movable_ids = [row['card_id'] for row in ordered if row['id'] not in protected_ids]
+            assert movable_ids[:2] == card_ids[:2], f"Urgent movable order incorrect: {ordered_ids}"
         operation = f'{identifier}-retained-marker'
         operations.append(operation)
         assert execute_command(operation,'queue.attempt_failed',{'entry_id':active_entry,'card_id':card_ids[2],'expected_revision':1})['attempt_failed']
@@ -898,7 +918,8 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
     postgres_store.close_pools()
     from psycopg.errors import LockNotAvailable, TransactionTimeout
-    from app.services import durable_tasks, postgres_queue_refresh
+    from app.services import durable_tasks, postgres_queue_refresh, frozen_opening_order
+    from tempo_legacy_database.adapters.queue_refresh import foreground as refresh_requests
     identifier = f'queue-extraction-{uuid.uuid4()}'
     day = '2099-10-12'
     now = datetime.now(timezone.utc).isoformat()
@@ -916,7 +937,11 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
             owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)", (identifier, identifier, now))
             owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
             task = durable_tasks.enqueue_task_in_transaction(owned_database, 'daily_queue', identifier, payload)
-            owned_database.execute("UPDATE background_tasks SET state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (identifier, '2099-10-13T00:00:00+00:00', task['id']))
+            # This synthetic task uses a non-singleton key, so record its real
+            # request after task creation, then persist the current owner fences.
+            payload['_refresh_cycle_epoch'] = refresh_requests.signal_queue_refresh_in_transaction(owned_database, day)
+            payload['frozen_token'] = list(frozen_opening_order.activation(owned_database))
+            owned_database.execute("UPDATE background_tasks SET payload_json=?,state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (json.dumps(payload), identifier, '2099-10-13T00:00:00+00:00', task['id']))
             task = {**task, 'payload': payload, 'lease_token': identifier}
         def state():
             with postgres_store.connection(read_only=True) as observer:

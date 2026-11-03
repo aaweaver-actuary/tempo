@@ -1289,6 +1289,20 @@ const actions = {
       }),
     });
   },
+  'defensive-pause': async () => {
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+        "/source/database/tests/check_postgres_defensive_pause.py"]),
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
+        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
+  },
   'redis-fixture-isolation': async () => {
     let evidence;
     await executeIsolatedBackgroundWorkload({

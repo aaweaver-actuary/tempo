@@ -991,6 +991,27 @@ test("timing write failure preserves the original scenario error and still permi
   assert.equal(cleaned, true);
 });
 
+test("defensive pause native stage isolates consumers and preserves cleanup after failure", async () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const stage = source.slice(source.indexOf("  'defensive-pause': async () => {"),
+    source.indexOf("  'redis-fixture-isolation': async () => {"));
+  assert(stage.includes('executeIsolatedBackgroundWorkload'));
+  assert(stage.includes('verifyWorkloadConsumers("exited")'));
+  assert(stage.includes('/source/database/tests/check_postgres_defensive_pause.py'));
+  assert(stage.includes('restoreBackgroundWorkloadConsumers'));
+  const events = [];
+  const failure = new Error('native proof failed');
+  await assert.rejects(executePostgresTestPlan(['defensive-pause', 'browser', 'cleanup'], {
+    'defensive-pause': () => executeIsolatedBackgroundWorkload({
+      stopConsumers: () => events.push('stop and verify'),
+      measureWorkload: () => { events.push('proof'); throw failure; },
+      restoreConsumers: () => events.push('restore'),
+    }),
+    browser: () => events.push('browser'), cleanup: () => events.push('cleanup'),
+  }, async (_name, action) => action()), error => error === failure);
+  assert.deepEqual(events, ['stop and verify', 'proof', 'restore', 'cleanup']);
+});
+
 test("background workload prevents scheduler claims and restores dispatch after failure", async () => {
   const runningConsumers = new Set(["defense-engine", "background-worker", "background-scheduler"]);
   const queuedFixture = { state: "queued" };

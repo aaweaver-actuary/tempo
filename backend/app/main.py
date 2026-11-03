@@ -120,7 +120,7 @@ from .services.repertoire_game_refresh import execute_repertoire_game_refresh_sl
 from app.games.ingestion.serialization import serialize_job
 from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
 from .services.durable_tasks import annotate_queue_projection_workers, enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
-from .services.background_activity import list_activity, report_progress, set_control
+from .services.background_activity import report_progress, set_control
 from .services.background_metrics import BackgroundDiagnostics
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
@@ -995,35 +995,6 @@ def system_tasks():
 def system_background_diagnostics() -> BackgroundDiagnostics:
     from .services.background_diagnostics import snapshot
     return snapshot()
-
-
-@app.get("/api/system/activity")
-def system_activity(offset: int = 0, limit: int = 50):
-    activity = list_activity(offset=offset, limit=limit)
-    if not postgres_store.configured():
-        activity["writer"] = {"healthy": database_writer.healthy,
-                              **database_writer.queued_counts}
-    return activity
-
-
-@app.post("/api/system/activity/control")
-def control_system_activity(request: dict,
-                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    source = request.get("source")
-    work_id = request.get("id")
-    action = request.get("action")
-    if not isinstance(source, str) or not isinstance(work_id, str) or not isinstance(action, str):
-        raise HTTPException(422, "Invalid activity control")
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "activity.control", {"source": source, "id": work_id, "action": action},
-            idempotency_key=idempotency_key,
-        )
-    if not set_control(source, work_id, action):
-        raise HTTPException(404, "Background activity not found")
-    _compatibility_coordinator().wake()
-    return {"ok": True}
 
 
 @app.post("/api/system/activity/progress")

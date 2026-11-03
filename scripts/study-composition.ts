@@ -7,13 +7,11 @@ export const optionalStudyImplementations = {
   composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
   // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
   workbench: ['app/components/workbench-launch.tsx'],
-  discovery: ['app/lib/discovery-admission-outbox.ts'],
   authoring: ['app/views/repertoire_view.tsx',
     'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
-  workspaceAdministration: ['app/views/settings_view.tsx', 'app/components/service-status-panel.tsx',
-    'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx',
-    'app/components/pending-discovery-saves.tsx'],
+  workspaceAdministration: ['app/views/settings_view.tsx',
+    'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx'],
 } as const;
 export const optionalStudyContractExceptions = {
   'app/domain/analysis.ts': 'Shared study exercise grading and annotation schemas.',

@@ -124,59 +124,6 @@ test(unresolvedHead ? "unconfirmed_review_does_not_advance_prepared_card: filter
 });
 }
 
-test("legacy discovery timeout reopens as an unconfirmed save and retries the same choice", async ({ page }) => {
-  await prepareVisualUI(page);
-  let finishAccept: (() => void) | undefined;
-  let acceptedMove = "";
-  await page.route("**/api/discoveries/legacy-timeout/accept", async (route) => {
-    acceptedMove = (route.request().postDataJSON() as { selected_move_uci: string }).selected_move_uci;
-    await new Promise<void>((resolve) => { finishAccept = resolve; });
-    await route.fulfill({ status: 202, json: { status: "preparing", intent_id: "intent" } });
-  });
-  await page.route("**/api/discovery-admissions/intent", (route) =>
-    route.fulfill({ json: { state: "queued", error: null } }));
-  await page.evaluate(() => localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
-    opportunityId: "legacy-timeout", selectedMoveUci: "g1f3",
-    evidenceFingerprint: "revision", state: "failed",
-    error: "Discovery save timed out after 15 seconds. Retry save.",
-  }])));
-  await page.reload();
-  await page.getByRole("button", { name: "Notifications", exact: true }).click();
-  await page.getByRole("button", { name: "All", exact: true }).click();
-  await expect(page.getByText(/This discovery is waiting for confirmation. Tempo will retry./)).toBeVisible();
-  await expect(page.locator(".notification-toast")).toHaveCount(0);
-  await expect(page.getByText(/Discovery save failed:/)).toHaveCount(0);
-  await expect.poll(() => acceptedMove).toBe("g1f3");
-  finishAccept?.();
-  await expect(page.getByText("Discovery save confirmed.")).toBeVisible();
-});
-
-test("legacy long discovery save key recovers and queues the saved choice", async ({ page }) => {
-  await prepareVisualUI(page);
-  const opportunityId = "a".repeat(64);
-  const evidenceFingerprint = "b".repeat(64);
-  const requestKeys: string[] = [];
-  await page.route(`**/api/discoveries/${opportunityId}/accept`, (route) => {
-    const key = route.request().headers()["idempotency-key"] ?? "";
-    requestKeys.push(key);
-    if (key.length > 128) return route.fulfill({ status: 422,
-      json: { detail: "Idempotency-Key must be at most 128 characters" } });
-    return route.fulfill({ status: 202, json: { status: "preparing", intent_id: "recovered-intent" } });
-  });
-  await page.route("**/api/discovery-admissions/recovered-intent", (route) =>
-    route.fulfill({ json: { state: "queued", error: null } }));
-  await page.evaluate(({ opportunityId: id, evidenceFingerprint: fingerprint }) =>
-    localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
-      opportunityId: id, selectedMoveUci: "g1f3", evidenceFingerprint: fingerprint,
-      state: "failed", error: "Idempotency-Key must be at most 128 characters",
-    }])), { opportunityId, evidenceFingerprint });
-  await page.reload();
-  await expect.poll(() => requestKeys.length).toBe(1);
-  expect(requestKeys[0].length).toBeLessThanOrEqual(128);
-  await expect.poll(() => page.evaluate(() =>
-    JSON.parse(localStorage.getItem("tempo-pending-discovery-admissions-v1") ?? "[]").length)).toBe(0);
-});
-
 test("reloaded prefetched guided card waits for the earlier review before marking failure", async ({ page }) => {
   await prepareVisualUI(page);
   let finishEarlierReview: (() => void) | undefined;

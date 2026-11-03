@@ -40,7 +40,7 @@ export async function prepareControlledUI(page: Page, trainingCards: ControlledQ
     for (const key of ["tempo-sound", "tempo-stockfish-on", "tempo-maia-on", "tempo-games-engine-on", "tempo-explorer-on"]) localStorage.setItem(key, "false");
   }, acknowledgeLegacy);
   for (const [path, json] of Object.entries(examples)) {
-    if (path === "/api/queue/window" || path === "/api/system/activity" || path === "/api/discoveries") continue;
+    if (path === "/api/queue/window") continue;
     api.register({ method: "GET", path, query: {} }, route => route.fulfill({ json }));
   }
   for (const query of ([{ limit: "20" }, { limit: "20", include_opening_evidence: "true" }] as Record<string, string>[]))
@@ -48,8 +48,6 @@ export async function prepareControlledUI(page: Page, trainingCards: ControlledQ
   api.register({ method: "POST", path: "/api/system/browser-activity", query: browserActivityQuery, validate: request => {
     if (request.body !== null) throw new Error("Browser activity must have no body");
   } }, route => route.fulfill({ json: { active: true } }));
-  api.register({ method: "GET", path: "/api/system/activity", query: { offset: "0", limit: "50" } }, route => route.fulfill({ json: examples["/api/system/activity"] }));
-  api.register({ method: "GET", path: "/api/discoveries", query: { offset: "0", limit: "100" } }, route => route.fulfill({ json: examples["/api/discoveries"] }));
   for (const card of trainingCards) api.register({ method: "GET", path: `/api/cards/${card.id}/teaching`, query: {} }, route => route.fulfill({ json: { states: [] } }));
   if (navigate) await page.goto("/");
   return api;

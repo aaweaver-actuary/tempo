@@ -1044,6 +1044,10 @@ if __name__ == '__main__':
         if action == 'seed':
             seed(identifier, request_refresh=True, queue_date=queue_dates[0] if queue_dates else None)
             tasks.celery_app.send_task('app.tasks.poll_background_tasks', queue='background')
+        elif action == 'backlog':
+            with psycopg.connect(DSN) as connection:
+                count = connection.execute("SELECT count(*) FROM background_tasks WHERE left(id, length(%s)) = %s AND state IN ('queued', 'retrying')", (identifier + '-analysis-', identifier + '-analysis-')).fetchone()[0]
+            print(json.dumps({'queued': count}))
         elif action == 'cleanup':
             cleanup(identifier)
         else:

@@ -29,26 +29,19 @@ async function counters(page: Page) {
   return bundle.workspace.board.counters as Record<string, number>;
 }
 
-test("held training drag survives sync, service, notification and parent updates and drops once", async ({ page }, testInfo) => {
+test("held training drag survives sync, notification and parent updates and drops once", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await prepareVisualUI(page, false);
   let syncResponses = 0;
-  let activityResponses = 0;
   let reviewRequests = 0;
   await page.route("**/api/games/sync/status", (route) => {
     syncResponses += 1;
     return route.fulfill({ json: { providers: [], active_filters: { rated_only: true, speeds: ["blitz"], days: 30 + syncResponses } } });
   });
-  await page.route("**/api/system/activity?*", (route) => {
-    activityResponses += 1;
-    return route.fulfill({ json: { items: [], counts: { running: 1, queued: 0, paused: 0, failed: 0 },
-      total: 0, next_offset: null, writer: { healthy: true, foreground: activityResponses, background: 0 } } });
-  });
   await page.route("**/api/cards/*/review", (route) => { reviewRequests += 1; return route.fulfill({ json: { persisted: true } }); });
   await page.reload();
   await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
   await expect.poll(() => syncResponses).toBeGreaterThan(0);
-  await expect.poll(() => activityResponses).toBeGreaterThan(0);
   // Populate the existing debug export UI, without adding a production test API.
   await page.evaluate(() => window.dispatchEvent(new ErrorEvent("error", {
     message: "Held-drag diagnostic fixture", error: new Error("Held-drag diagnostic fixture"),
@@ -65,10 +58,8 @@ test("held training drag survives sync, service, notification and parent updates
   await page.locator("piece.dragging").evaluate((element) => element.setAttribute("data-held-piece", "true"));
   for (let update = 0; update < 4; update++) {
     const previousSync = syncResponses;
-    const previousActivity = activityResponses;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => syncResponses).toBeGreaterThan(previousSync);
-    await expect.poll(() => activityResponses).toBeGreaterThan(previousActivity);
     await page.evaluate(() => window.dispatchEvent(new Event("tempo:update-ready")));
     await settledFrame(page);
     await followHeldPiece(page, { x: origin.x + (update + 1) * 10, y: origin.y - (update + 1) * 15 });
@@ -88,7 +79,7 @@ test("held training drag survives sync, service, notification and parent updates
   const report = { measurement: "imperative operation counts during a real held drag; no latency claim",
     commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     recordedAt: new Date().toISOString(), browser: testInfo.project.name, viewport: page.viewportSize(),
-    updates: 4, syncResponses, activityResponses, before: baseline, after: afterUpdates,
+    updates: 4, syncResponses, before: baseline, after: afterUpdates,
     delta: Object.fromEntries(Object.keys(baseline).map((name) => [name, afterUpdates[name] - baseline[name]])) };
   const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
   mkdirSync(outputDirectory, { recursive: true });

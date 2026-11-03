@@ -114,10 +114,9 @@ def test_resume_and_activity_use_receipt_scope_without_bypassing_manual_pause(
         execute_native = execute
     monkeypatch.setattr(control_storage.postgres_store, 'configured', lambda: native)
     control_storage.prepare_control_read('durable', ('defensive_admission',))(Database(), 'task')
-    control_storage.durable_activity(Database(), ['cutoff'], ('defensive_admission',))
     values = []
     for statement in statements:
         expression = parse_one(statement, read='postgres' if native else 'sqlite').expressions[1].this
         values.append(_policy_value(expression, kind=kind, study_only=study_only,
             current_import=current_import, paused=1, defensive_enabled=defensive_enabled))
-    assert values == [expected, not expected]  # settings_admitted / paused_by_settings
+    assert values == [expected]  # settings_admitted

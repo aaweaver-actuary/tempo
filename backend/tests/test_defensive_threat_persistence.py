@@ -17,7 +17,7 @@ from app.contracts.defense import GameSnapshot, SourceLine
 from app.services.threat_pipeline import (
     _upsert_seed, claim_analysis_request, execute_threat_scan_slice, execute_threat_validation,
 )
-from app.services.background_activity import list_activity, set_control
+from app.services.background_activity import set_control
 from app.services import durable_tasks, threat_pipeline
 from app.services.threat_validation import AnalysisLine, AnalysisReport, EngineScore
 
@@ -583,15 +583,11 @@ def test_discovery_engine_activity_states_and_pause_preempts_claim(tmp_path, mon
                    (candidate_id,))
         db.execute("UPDATE threat_analysis_requests SET state='queued',report_json=NULL WHERE id=?",
                    (request_id,))
-    assert any(item["id"] == request_id and item["state"] == "queued"
-               for item in list_activity()["items"])
     assert set_control("threat_analysis", request_id, "pause")
     assert claim_analysis_request() is None
     assert set_control("threat_analysis", request_id, "resume")
     claimed = claim_analysis_request()
     assert claimed and claimed["id"] == request_id
-    assert any(item["id"] == request_id and item["state"] == "running"
-               for item in list_activity()["items"])
 
 
 def test_issue12_foreground_review_completes_during_threat_scan_and_restart_replay_is_idempotent(

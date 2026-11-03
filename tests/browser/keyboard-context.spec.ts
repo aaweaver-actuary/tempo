@@ -135,7 +135,5 @@ test("Escape closes header popups one at a time and restores their openers", asy
   await expect(notifications).toBeFocused(); await expect(page.locator("#local-data-menu")).toBeVisible();
   await page.keyboard.press("Escape"); await expect(page.locator("#local-data-menu")).toHaveCount(0);
   await expect(local).toBeFocused();
-  const activity = page.getByRole("button", { name: "Analysis activity" });
-  await activity.click(); await page.keyboard.press("Escape"); await expect(activity).toBeFocused();
-  await expect(page.locator("#tempo-activity-content")).toHaveCount(0);
+
 });

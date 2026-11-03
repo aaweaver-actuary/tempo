@@ -2636,10 +2636,11 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
         return ("legacy", planned["repertoire_id"])
     monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction", prepare_legacy)
     monkeypatch.setattr(position_owner_epoch, "owner_mode", owner_mode)
+    # These fixtures resume an existing phase; the queue owner now pins its refresh epoch before that phase.
     plan = [{"card_id": "one", "repertoire_id": "white", "reason": None},
             {"card_id": "two", "repertoire_id": "white", "reason": None}]
     task = {"id": "queue-refresh", "generation": 4, "lease_token": "first",
-            "payload": {"queue_date": "2026-09-27", "_queue_phase": "prioritized_opening_item",
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "prioritized_opening_item",
                         "opening_plan": plan, "opening_index": 0}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
     assert saved_phase == "prioritized_opening_item"
@@ -2872,7 +2873,7 @@ def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(m
                         lambda database, queue_date, card_id: admitted.append(card_id) or True)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     task = {"id": "study-refresh", "generation": 3, "lease_token": "first",
-            "payload": {"queue_date": "2026-09-27", "_queue_phase": "admit_study"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "admit_study"}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
     assert admitted == ["study-card"]
     assert saved_payload["_queue_phase"] == "admit_study"
@@ -2892,8 +2893,10 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
     plan = {"seed": 7, "membership_hash": "old", "entries": []}
 
     @contextmanager
-    def section(*, background):
+    def section(*, background, queue_refresh_publication=False):
         assert background
+        if queue_refresh_publication:
+            observed.append("publication-connection")
         yield object()
 
     def wait_for_foreground():
@@ -2930,7 +2933,7 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
     monkeypatch.setattr(postgres_queue_refresh, "_publish_queue_randomization", publish)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     task = {"id": "queue-refresh", "generation": 4, "lease_token": "first",
-            "payload": {"queue_date": "2026-09-27", "_queue_phase": "randomize_queue"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "randomize_queue"}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
     assert saved_payload["_queue_phase"] == "randomize_queue"
     assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
@@ -3158,7 +3161,7 @@ def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(mon
                         lambda database, day, candidate: observed.append(candidate["card_id"]))
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     task = {"id": "queue-refresh", "generation": 5, "lease_token": "first",
-            "payload": {"queue_date": "2026-09-27", "_queue_phase": "quarantine"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "quarantine"}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
     assert saved_payload["after_entry_id"] == 12
     assert saved_payload["_queue_phase"] == "quarantine"
@@ -3188,11 +3191,12 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
                 state TEXT,queue_task_id TEXT,queue_generation INTEGER,queue_date TEXT);
             CREATE TABLE queue_projections(queue_date TEXT PRIMARY KEY,state TEXT,
                 generation INTEGER,refresh_pending INTEGER,last_error TEXT,
-                blocked_count INTEGER,updated_at TEXT);
+                blocked_count INTEGER,updated_at TEXT,requested_refresh_epoch INTEGER,
+                published_refresh_epoch INTEGER);
             INSERT INTO background_tasks(id,generation,lease_token,state,phase)
                 VALUES('queue-job',3,'current','leased','publish_projection');
-            INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-                VALUES('2026-09-27','refreshing',5,1);
+            INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,requested_refresh_epoch,published_refresh_epoch)
+                VALUES('2026-09-27','refreshing',5,1,1,0);
         """)
         database.execute("ALTER TABLE background_tasks ADD COLUMN kind TEXT DEFAULT 'daily_queue'")
 
@@ -3219,12 +3223,21 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
     monkeypatch.setattr(postgres_queue_refresh, "_prepare_projection_blocked_count",
                         lambda queue_date: 3)
     task = {"id": "queue-job", "generation": 3, "lease_token": "current",
-            "payload": {"queue_date": "2026-09-27", "_queue_phase": "publish_projection"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "publish_projection"}}
+    # Epoch publication, projection and task completion share the transaction.
+    original_complete = postgres_queue_refresh.complete_task_slice_in_transaction
+    monkeypatch.setattr(postgres_queue_refresh, "complete_task_slice_in_transaction", lambda *_args: False)
+    with pytest.raises(RuntimeError, match="lost its task lease"):
+        postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    with sqlite3.connect(database_path) as database:
+        assert database.execute("SELECT state,generation,refresh_pending,requested_refresh_epoch,published_refresh_epoch FROM queue_projections").fetchone() == ("refreshing", 5, 1, 1, 0)
+        assert database.execute("SELECT state,phase,lease_token FROM background_tasks").fetchone() == ("leased", "publish_projection", "current")
+    monkeypatch.setattr(postgres_queue_refresh, "complete_task_slice_in_transaction", original_complete)
     assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
     with sqlite3.connect(database_path) as database:
         assert database.execute(
-            "SELECT state,generation,refresh_pending,blocked_count FROM queue_projections",
-        ).fetchone() == ("ready", 6, 0, 3)
+            "SELECT state,generation,refresh_pending,blocked_count,requested_refresh_epoch,published_refresh_epoch FROM queue_projections",
+        ).fetchone() == ("ready", 6, 0, 3, 1, 1)
         assert database.execute(
             "SELECT state,phase,lease_token FROM background_tasks",
         ).fetchone() == ("complete", "published", None)
@@ -3296,7 +3309,8 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
     assert first == {"queue_date": "2026-09-27", "refresh_pending": True,
                      "task_id": "new-task"}
     assert enqueued == [("daily_queue", "current", {"queue_date": "2026-09-27"}, 10)]
-    assert len(database.writes) == 1
+    # The queue owner writes the projection inside enqueue; this double records only its request.
+    assert database.writes == []
     database.task = {"id": "new-task", "state": "leased",
                      "last_error": None,
                      "payload_json": '{"queue_date":"2026-09-27"}'}
@@ -3305,6 +3319,7 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
     )
     assert second == first
     assert len(enqueued) == 1
+    assert len(database.writes) == 1  # active refresh is marked by the command
     database.projection = {"state": "ready", "refresh_pending": 0,
                            "has_queued_entries": False, "presentation_membership_hash": None}
     assert queue_commands.ensure_current_queue(
@@ -4864,7 +4879,7 @@ def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_rep
 
     lease_number = 1
     first_task = {"id": "queue-job", "generation": 1, "lease_token": "lease-first",
-                  "payload": {"queue_date": "2026-09-27"}}
+                  "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27"}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(first_task)
     assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(first_task)
     while True:
@@ -4914,7 +4929,7 @@ def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(mon
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction",
                         lambda *args, **kwargs: True)
     task = {"id": "queue-job", "generation": 1, "lease_token": "lease",
-            "payload": {"queue_date": "2026-09-27"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27"}}
 
     def run_slice():
         try:
@@ -5100,7 +5115,7 @@ def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch, 
                         reconciled_ids.append(candidate["id"]) or True)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     first = {"id": "queue-job", "generation": 3, "lease_token": "first",
-             "payload": {"queue_date": "2026-09-27", "_queue_phase": "reconcile_unseen"}}
+             "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-27", "_queue_phase": "reconcile_unseen"}}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(first)
     assert saved_phase == "reconcile_unseen"
     assert saved_payload["processed_ids"] == [42]
@@ -5285,7 +5300,7 @@ def test_postgres_tactical_queue_foreground_contention_and_stale_replay(monkeypa
                         lambda database, task: current_lease)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     task = {"id": "queue-job", "generation": 1, "lease_token": "lease",
-            "payload": {"queue_date": "2026-09-28", "_queue_phase": "tactical_introductions"}}
+            "payload": {"_refresh_cycle_epoch": 1, "queue_date": "2026-09-28", "_queue_phase": "tactical_introductions"}}
 
     def run_slice():
         try:
@@ -5583,28 +5598,14 @@ def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_res
     assert "discovery_recommendation" in tasks._SUPPORTED_BACKGROUND_KINDS
 
 
-def test_postgres_activity_control_dispatches_idempotent_command(monkeypatch):
+def test_postgres_accepted_activity_control_handler_remains_available(monkeypatch):
     from fastapi.testclient import TestClient
     from app import activity_commands, main
 
-    dispatched = []
+    from app.command_gateway import is_command_registered
+
+    assert is_command_registered("activity.control")
     controlled = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch, "dispatch_command",
-        lambda name, payload, *, idempotency_key:
-            dispatched.append((name, payload, idempotency_key)) or {"ok": True},
-    )
-    response = TestClient(main.app).post(
-        "/api/system/activity/control", headers={"Idempotency-Key": "control-one"},
-        json={"source": "durable", "id": "task-one", "action": "prioritize"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"ok": True}
-    assert dispatched == [("activity.control", {
-        "source": "durable", "id": "task-one", "action": "prioritize",
-    }, "control-one")]
     monkeypatch.setattr(
         activity_commands, "set_control_in_transaction",
         lambda database, source, work_id, action:

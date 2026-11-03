@@ -15,7 +15,6 @@ relationships only. The records remain scoped to the browser origin.
 
 | Adapter / key | Stored value and fields | Logical identity / owner |
 | --- | --- | --- |
-| [activity-control.ts](activity-control.ts): `tempo-pending-activity-control-v1:${source}:${workId}` | JSON `{ operationId: string, action: string }` | One pending activity action per source/work ID. [Caller](../../../../app/lib/activity-control-command.ts) owns action replacement and receipt confirmation. |
 | [settings-save.ts](settings-save.ts): `tempo-pending-settings-save-v1` | JSON `{ operationId: string, body: string }`; `body` is the original serialized settings request | One pending settings save. [Caller](../../../../app/lib/settings-save.ts) prevents a different payload overtaking an unresolved operation. |
 | [tactical-activation.ts](tactical-activation.ts): `tempo-tactics-activation-pending-v1:${[...packIds].sort().join(",")}:${active}` | Raw operation-ID string | One activation request identity per sorted pack set and boolean action. [Caller](../../../../app/lib/tactical-catalog.ts) constructs the key, performs requests and applies its existing optional-storage fallback. |
 | [training-burial-command.ts](training-burial-command.ts): `tempo-bury-operation-${queueEntryId}` | Raw operation-ID string | Legacy burial request identity for one queue entry. |
@@ -89,7 +88,8 @@ helpers stay in their existing logical owners. This directory is not a framework
 for every WebStorage access. Existing IndexedDB Study intent/evidence storage
 remains in its own root database modules.
 
-Focused existing fake-storage suites cover activity/settings/activation pending
+The retired activity-control adapter does not delete existing browser records.
+Focused existing fake-storage suites cover settings/activation pending
 requests, burial retries/recovery, annotation pending state, review replay/evidence
 archive and validation compatibility. The source/evaluation audit and browser
 bundle checks are relocation evidence only; they do not establish live browser,

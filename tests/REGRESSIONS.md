@@ -1,3 +1,7 @@
+## Jobs and Saves retirement
+
+`tests/browser/retired-jobs-saves.spec.ts::retired Jobs and Saves stay absent during navigation and debug export` checks the scoped browser-key retirement, retained navigation and debug export, and absence of retired UI and requests against a disposable installation.
+
 ## Italian queue issuance and pending recovery
 
 `backend/tests/test_queue_head_issuance_coalescing.py` owns exact-head receipt
@@ -1013,7 +1017,7 @@ Quiet notifications (October 2, 2026):
 | #32: Released, remounted, or obsolete publishers overwrite the active workspace | `released and remounted same-owner sessions fence both late updates and late releases`; `an obsolete mounted publisher cannot steal a replacement owner's lease on rerender`; `Strict Mode reacquires once per setup and reapplies the board after construction cleanup` |
 | #32: Genuine invalidation retains stale input or queued events grade a replacement card | `same-FEN card changes and same-owner remounts invalidate held input`; `read-only or unavailable input cancels the held move and ignores queued move events`; `a wrong attempt returning to the same FEN explicitly resets through position revision`; `deferred Chessground events from a previous card cannot grade or annotate its replacement` |
 | #32: Annotations or editing changes break board interaction contracts | `annotation, highlight, handler and appearance updates preserve drag without reapplying FEN`; `select-only and free editing retain current handlers and disable input when locked`; `Chessground drawing cannot mutate published annotations or shared defaults` |
-| #32: A real held piece stops following the pointer during unrelated updates, or a stale drop survives read-only mode | `held training drag survives sync, service, notification and parent updates and drops once`; `a read-only transition interrupts a real held drag and prevents a stale drop` in `held-drag-preservation.spec.ts` |
+| #32: A real held piece stops following the pointer during unrelated updates, or a stale drop survives read-only mode | `held training drag survives sync, notification and parent updates and drops once`; `a read-only transition interrupts a real held drag and prevents a stale drop` in `held-drag-preservation.spec.ts` |
 | #32 / PR #46: Locking or flipping leaves an already-applied speculative move displayed at an unchanged authoritative FEN | `same-FEN locking restores an applied move and fences its deferred callback`; `orientation invalidation restores an applied move before its deferred callback`; `an accepted move remains authoritative after its handler updates FEN` in `board-authoritative-restoration-regressions.test.tsx`, using the real Chessground API and state |
 | API cannot start when a populated PostgreSQL ledger ends at 16 and the image requires a newer schema | `database/tests/check_postgres_upgrade.py` rehearses populated 16→current and repeat migration; `test_postgres_upgrade_rejects_newer_and_gapped_history`; `test_postgres_schema_upgrade_does_not_require_sqlite_snapshot`; `test_failed_postgres_migration_prevents_dependent_rollout` |
 | A retry starts a duplicate execution, loses its original identity, or allows a stale attempt to publish | `database/tests/check_postgres_operation_recovery.py` exercises the real task entry point against disposable PostgreSQL, including replay, conflict, explicit retry, and stale ownership |
@@ -6779,3 +6783,9 @@ The existing real Chromium proof in `tests/fixtures/study-worker-replies/worker-
 also checks malformed-card quarantine and the original request-correlated diagnostics
 alongside valid production queue decoding. Existing debug, publication, worker,
 reply and bulk regressions retain notification/currentness/cancellation semantics.
+
+## Retired Jobs and Saves surfaces
+
+- `tests/unit/workspace-study-boundary.test.tsx`: `retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount` and `disabled_storage_does_not_block_workspace_mount` cover the retained workspace boundary.
+- `backend/tests/test_foreground_wake_congestion_regression.py`: `test_foreground_congestion_preserves_successor_and_fences_stale_delivery` and `test_foreground_failed_publication_releases_reservation_for_later_wake` exercise fake-broker ownership; they do not establish native broker or durable queue behavior.
+- Earlier entries for retired tray and discovery-save tests are historical, not current coverage.

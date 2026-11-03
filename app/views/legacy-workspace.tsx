@@ -35,8 +35,6 @@ const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
 } });
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
-const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
-const PendingDiscoverySaves = lazy(() => import("../components/pending-discovery-saves").then(module => ({ default: module.PendingDiscoverySaves })));
 import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
@@ -48,10 +46,10 @@ export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View 
 /** Full workspace owner for authoring and integrity repair. */
 export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   const { currentView, changeWorkspace, boardTheme, pieceSet, soundOn, changeBoardTheme,
-    changePieceSet, changeSound, studyOnlyMode, incrementSafeBreak,
+    changePieceSet, changeSound, incrementSafeBreak,
     importedRepertoires, databaseQueue, offlineQueue, onIntegrityReconciled,
     reviewed, cardsLeft, totalCards,
-    refreshDatabaseQueue, refreshQueueOnly, invalidateBranchEvidence,
+    refreshQueueOnly, invalidateBranchEvidence,
     refreshQueueAfterRepertoireChange, refreshDatabaseQueueAfterRepertoireChange,
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
     onCardSaved, finishPermanentDeletion } = props;
@@ -165,6 +163,10 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   }, [openRepairDialog]);
 
   useEffect(() => {
+    try { window.localStorage.removeItem("tempo-pending-discovery-admissions-v1"); } catch { /* Storage may be disabled. */ }
+  }, []);
+
+  useEffect(() => {
     const onIntegrity = (event: Event) => {
       const detail = (event as CustomEvent<{ repertoireId?: string }>).detail;
       if (detail?.repertoireId) {
@@ -187,13 +189,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     topActions: <>
           {<WorkbenchLaunch />}
           {<SavedLocallyButton setShowImport={setShowImport} />}
-          {<ServiceStatusPanel studyOnlyMode={studyOnlyMode} />}
-          {<PendingDiscoverySaves
-            interactionBlocked={Boolean(
-              editorCard || showImport || pasteContext || repairRepertoireId,
-            )}
-            onQueueChanged={() => refreshDatabaseQueue()}
-          />}
+
 </>,
     trainingNotice: <>
       {deletionRecoveryError && <div className="ui-notice error" role="alert">{deletionRecoveryError} <Button onClick={() => void recoverCardDeletion()}>Check card deletion</Button></div>}
