@@ -374,6 +374,9 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch)
       'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
       'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
     def native(statement, *_arguments):
+        if statement == "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))":
+            assert _arguments == (("tempo:card-edit:shadow-card",),)
+            return SimpleNamespace(fetchone=lambda: None)
         assert statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL"
         return SimpleNamespace(fetchone=lambda: (False,))
     database = SimpleNamespace(execute=lambda *args:SimpleNamespace(fetchone=lambda:None), execute_native=native)
@@ -457,7 +460,8 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         return SimpleNamespace(fetchone=lambda:None if 'FROM deleted_cards' in statement else ('complete',))
 
     database = SimpleNamespace(execute=execute, execute_native=execute_native, raw=SimpleNamespace(execute=lambda *args:None))
-    def apply_review(adapter, command, context):
+    def apply_review(adapter, command, context, *, position=False):
+        assert position is False
         assert adapter.database is database and validation_order == ['validated']
         validation_order.append('reviewed')
         return ReviewResult.from_dict(result)
