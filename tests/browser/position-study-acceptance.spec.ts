@@ -6,7 +6,7 @@ import { move } from "./native-board";
 import { assertDisposableTarget } from "./disposable-target";
 import { resetPostgresDeletedCards, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { prepareUI } from "./ui-fixtures";
-import type { Page, Response } from "@playwright/test";
+import type { Page, Request, Response } from "@playwright/test";
 // The existing runner owns this JavaScript resource-admission helper.
 import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
@@ -320,25 +320,43 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   };
   // Match the request start, not an old response that finishes after navigation.
   const nextAppQueue = () => page.waitForRequest(request => isAppQueue(request.url(), request.method()));
-  const nextQueueAfterReview = () => {
-    let accepted: Response | undefined;
+  const nextQueueAfterReview = (): Promise<Request> => new Promise((resolve, reject) => {
+    let queueRequest: Request | undefined;
+    let persisted = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      page.off("response", onResponse);
+      page.off("request", onRequest);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+    const finish = () => {
+      if (persisted && queueRequest) { cleanup(); resolve(queueRequest); }
+    };
+    const onRequest = (request: Request) => {
+      if (!isAppQueue(request.url(), request.method())) return;
+      page.off("request", onRequest);
+      queueRequest = request;
+      finish();
+    };
     const onResponse = (response: Response) => {
-      if (response.request().method() === "POST" && response.url() === `${api}/cards/${identity}-card-a/review` && response.ok())
-        accepted = response;
+      if (response.request().method() !== "POST" || response.url() !== `${api}/cards/${identity}-card-a/review`) return;
+      page.off("response", onResponse);
+      if (response.ok()) {
+        // Install synchronously at the first review response, before the app can
+        // start its next queue request. Inspect that request without filtering its response.
+        page.on("request", onRequest);
+        timer = setTimeout(() => { cleanup(); reject(new Error("Timed out waiting for the app queue request after review")); }, 30_000);
+      }
+      void (async () => {
+        const body = await response.text();
+        expect(response.ok(), `Review HTTP ${response.status()}: ${body}`).toBe(true);
+        expect(JSON.parse(body).persisted).toBe(true);
+        persisted = true;
+        finish();
+      })().catch(error => { cleanup(); reject(error); });
     };
     page.on("response", onResponse);
-    const pending = page.waitForRequest(request => accepted !== undefined && isAppQueue(request.url(), request.method()));
-    return (async () => {
-      try {
-        const next = await pending;
-        await accepted!.finished();
-        expect((await accepted!.json()).persisted).toBe(true);
-        return next;
-      } finally {
-        page.off("response", onResponse);
-      }
-    })();
-  };
+  });
   const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
     const request = await pending;
     const response = await request.response();
@@ -377,15 +395,19 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     if (firstBoard.turn() === "w") {
       await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
         .toBe(position(firstBoard.fen()));
-      if (index === first.moves_uci.length - 1) successorQueue = nextQueueAfterReview();
+      if (index === first.moves_uci.length - 1) {
+        successorQueue = nextQueueAfterReview();
+        // Observe an early review failure while the final click is still returning.
+        void successorQueue.catch(() => undefined);
+      }
       await move(page, uci.slice(0, 2), uci.slice(2, 4));
     }
     firstBoard.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4) || undefined });
   }
-  await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
-    r.attempt_id === first.attempt_id && r.source_kind === "position_study" && r.outcome === "correct" && !r.guided), { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
   expect(successorQueue).toBeDefined();
   const suffix = positionHead(await readAppQueue(successorQueue!), `${identity}-card-b`);
+  await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
+    r.attempt_id === first.attempt_id && r.source_kind === "position_study" && r.outcome === "correct" && !r.guided), { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
   expect(suffix.attempt_id).not.toBe(first.attempt_id);
   expect(suffix.original_card_revision).toBe(1);
   expect(suffix.moves_uci).toEqual(["f8c5", "c2c3"]);
