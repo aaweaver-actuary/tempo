@@ -194,13 +194,16 @@ with connect("tempo_reader") as database:
     assert receipt["admission_status"] == "pending" and receipt["available_by"] is None
     assert receipt["deferred_reason"] == "authority_unavailable" and receipt["observation_recorded"] is True
     assert receipt["source_digest"] == payload["command"]["source"]["source_digest"]
-    status,rejected = request("/api/product/game-review/sync",{"provider":"lichess","operation_id":payload["identity"]})
-    # In the real PostgreSQL HTTP stack, the existing Celery-cutover guard
-    # refuses this unadopted write route before the reader-only root factory.
-    assert status == 503 and rejected == {"detail":
-        "This write route is awaiting its Celery cutover; use the current local Docker service."}
+    # HTTP writer dispatch is adopted; test the actual reader's SQL authority.
+    try:
+        with database.transaction():
+            database.execute("UPDATE study_game_feedback SET status='settled' WHERE effect_key=%s",
+                             (payload["effect_id"],))
+            raise AssertionError("Reader unexpectedly updated the synthetic receipt")
+    except (psycopg.errors.ReadOnlySqlTransaction, psycopg.errors.InsufficientPrivilege):
+        pass
     assert snapshot() == before
-print(json.dumps({"http_receipt":receipt,"writer_command_rejected":True,"fixture_rows_unchanged":True}))
+print(json.dumps({"http_receipt":receipt,"reader_update_rejected":True,"fixture_rows_unchanged":True}))
 '''
 
 CLEANUP = r'''
@@ -264,7 +267,7 @@ def check_packaged_game_review_reader_reads_current_receipt_without_write_privil
     try:
         assert _exec_python(containers["foreground-worker"],payload,SEED)["effect_id"] == payload["effect_id"]
         proof = _exec_python(containers["api"],payload,PROOF)
-        assert proof["writer_command_rejected"] and proof["fixture_rows_unchanged"]
+        assert proof["reader_update_rejected"] and proof["fixture_rows_unchanged"]
     finally:
         assert _exec_python(containers["foreground-worker"],payload,CLEANUP) == {"fixture_cleanup_verified":True}
 
