@@ -18,18 +18,15 @@ flowchart LR
   app[Authoring and Discovery application decisions]
   fixed[Fixed-key pending request records]
   scoped[Repertoire or opportunity scoped records]
-  discoveries[Discovery admission list]
   repairs[Integrity v3 per-operation records]
   legacy[Integrity v1 and v2 journals]
   receipts[Server operation receipts]
   app -->|existing fixed reads and writes| fixed
   app -->|existing fixed reads and writes| scoped
-  app -->|validated list replacement| discoveries
   app -->|validated operation record| repairs
   legacy -.->|application validates and migrates before removing originals| repairs
   fixed -.->|logical operationId only; no FK| receipts
   scoped -.->|logical operationId only; no FK| receipts
-  discoveries -.->|logical operationId only; no FK| receipts
   repairs -.->|logical operationId only; no FK| receipts
 ```
 
@@ -46,7 +43,6 @@ new request schema. Request/replay rules remain with the linked owner.
 | [card-delete.ts](card-delete.ts), `tempo-pending-card-delete-v1` | JSON `{ operationId: string, cardId: string, expectedRevision: number }` | [Permanent card deletion](../../../../app/lib/card-delete-command.ts); original card identity/revision. Existing edit-conflict reads inspect revision/split keys without decoding them. |
 | [card-revision.ts](card-revision.ts), `tempo-pending-card-revision-v1` | JSON `{ operationId: string, request: string }` | [Card revision](../../../../app/lib/card-revision-command.ts); request preserves original card/revision/history-mode choices. |
 | [coverage-refresh.ts](coverage-refresh.ts), `tempo-pending-coverage-refresh-v1:${repertoireId}` | Raw operation identity `string`, **not JSON** | [Coverage refresh](../../../../app/lib/coverage-refresh-command.ts). |
-| [discovery-admission.ts](discovery-admission.ts), `tempo-pending-discovery-admissions-v1` | JSON array of [PendingDiscoveryAdmission](../../../../app/domain/authoring-discovery-admission-record.ts): `opportunityId`, `selectedMoveUci`, `evidenceFingerprint`, `operationId`: string; `intentId?`, `error?`: string; `state`: pending/accepted/failed; `retryCount?`, `nextAttemptAt?`, `confirmationPollOrder?`: number | [Discovery admission delivery](../../../../app/lib/discovery-admission-outbox.ts); opportunity/evidence selection and server intent are logical references. Application retains legacy missing-operation-ID upgrade and notifications. |
 | [integrity-repair.ts](integrity-repair.ts), `tempo-pending-integrity-repairs-v3:${operationId}` | JSON [PendingIntegrityRepair and schema](../../../../app/lib/integrity-repair-outbox.ts): `repertoireId`, `issueId`, `signature`, `selectedMoveUci`, `operationId`: string; `queuedAt`, `attempts`, `nextAttemptAt`, `pollOrder`: number; `phase`: queued/saving/validating/failed/blocked/stale; optional `taskId`, `retryOperationId`, `error`: string; `taskGeneration?`: number; `retryTaskId?`: string/null; `terminalOperationFailure?`: boolean; `retry?`: tagged record described below | [Integrity repair application/migration](../../../../app/lib/integrity-repair-outbox.ts); key must match the parsed operation ID. Task/generation and issue signature are logical progress/source facts. |
 | [integrity-repair.ts](integrity-repair.ts), legacy `tempo-pending-integrity-repairs-v2` | JSON array of the existing repair records, with application schema defaults for omitted counters/times | Same integrity owner. Application validates all recovered choices/progress and writes v3 records before removing either legacy journal. |
 | [integrity-repair.ts](integrity-repair.ts), legacy `tempo-pending-integrity-repair-v1` | JSON `{ operationId: string, fingerprint: string }`; fingerprint is a JSON tuple `[repertoireId: string, issueId: string, body: string]`, whose request body contains `signature: string`, `selected_move_uci: string` | Same integrity owner; decoding and choice reconciliation retain their original order and error scope. |
@@ -71,7 +67,5 @@ resolving Storage. No schema validation or repair decisions moved into this tree
 Integrity enumeration preserves native key order; sorting/choice validation stays
 outside, and storage writes still precede application change events.
 
-The pure Discovery record type has one home and is re-exported from its previous
-module. Adapters import no application implementation. There are no key, payload,
-version, migration, authentication, delivery or lifecycle changes. Other owners'
+The Discovery admission browser adapter and outbox are retired from current source. Existing browser records were not inspected or deleted. Adapters import no application implementation. Other owners'
 storage and ordinary UI preferences are outside this slice.

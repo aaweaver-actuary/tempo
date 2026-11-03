@@ -6689,3 +6689,9 @@ The existing real Chromium proof in `tests/fixtures/study-worker-replies/worker-
 also checks malformed-card quarantine and the original request-correlated diagnostics
 alongside valid production queue decoding. Existing debug, publication, worker,
 reply and bulk regressions retain notification/currentness/cancellation semantics.
+
+## Retired Jobs and Saves surfaces
+
+- `tests/unit/workspace-study-boundary.test.tsx`: `retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount` and `disabled_storage_does_not_block_workspace_mount` cover the retained workspace boundary.
+- `backend/tests/test_foreground_wake_congestion_regression.py`: `test_foreground_congestion_preserves_successor_and_fences_stale_delivery` and `test_foreground_failed_publication_releases_reservation_for_later_wake` exercise fake-broker ownership; they do not establish native broker or durable queue behavior.
+- Earlier entries for retired tray and discovery-save tests are historical, not current coverage.
