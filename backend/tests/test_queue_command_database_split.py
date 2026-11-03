@@ -170,3 +170,49 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(queue
         for projection in projections:
             assert dict(projection) == dict(state='ready', refresh_pending=0,
                                            presentation_membership_hash=receipt, has_queued_entries=int(queued))
+
+
+@pytest.mark.parametrize('dispositions,expected', [
+    (['legacy', 'legacy'], ['owners', 'owner:a', 'owner:b', 'card', 'day']),
+    (['legacy', 'position'], ['owners', 'owner:a', 'owner:b']),
+    (['hold', 'legacy'], ['owners', 'owner:a']),
+])
+def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(monkeypatch, dispositions, expected):
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+
+    events, reads = [], []
+    rows = [{'repertoire_id': 'a'}, {'repertoire_id': 'b'}]
+
+    class Database:
+        def execute_native(self, statement, parameters):
+            events.append('owners')
+            reads.append((statement, parameters))
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    database = Database()
+    payload = dict(queue_date='2026-11-02', entry_id=7, card_id='card', expected_revision=3)
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda db: payload['queue_date'])
+    monkeypatch.setattr(storage, 'is_postgres_connection', lambda db: db is database)
+
+    def owner_mode(db, repertoire_id, epoch):
+        assert db is database and epoch is None
+        events.append('owner:' + repertoire_id)
+        return SimpleNamespace(disposition=dispositions[rows.index({'repertoire_id': repertoire_id})],
+                               reason='owner-unavailable')
+
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', owner_mode)
+    monkeypatch.setattr(queue_commands, '_lock_attempt_card', lambda db, entry: events.append('card'))
+    monkeypatch.setattr(queue_commands, 'lock_queue_date_for_position', lambda db, day: events.append('day'))
+    monkeypatch.setattr(storage, 'issued_origin', lambda *args: True)
+    monkeypatch.setattr(storage, 'prepare_queue_head', lambda *args: lambda day: None)
+    result = queue_commands.issue_queue_head(database, payload)
+    assert events == expected
+    assert len(reads) == 1
+    assert reads[0][1] == (7, 'card', 3) * 3
+    assert reads[0][0].endswith('ORDER BY r.repertoire_id')
+    if dispositions == ['legacy', 'legacy']:
+        assert result == {'issued': False}
+    else:
+        assert result == dict(issued=False, position_study_mode='position',
+                              position_presentation=None, position_study_hold='owner-unavailable')

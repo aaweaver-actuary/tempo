@@ -140,3 +140,17 @@ def mark_active_refresh(database, queue_date, last_error):
                state='refreshing',refresh_pending=1,last_error=excluded.last_error""",
             (queue_date, last_error),
         )
+
+
+def issuance_owner_repertoires(database, entry_id, card_id, expected_revision):
+    """Read retained admission owners on the caller transaction, in fence order."""
+    return database.execute_native("""SELECT DISTINCT r.repertoire_id FROM (
+            SELECT o.admission_repertoire_id repertoire_id FROM queue_attempt_origins o
+             WHERE o.queue_entry_id=%s AND o.card_id=%s AND o.revision=%s
+               AND o.admission_repertoire_id IS NOT NULL
+            UNION SELECT c.repertoire_id FROM cards c JOIN queue_attempt_origins o ON o.card_id=c.id
+             WHERE o.queue_entry_id=%s AND o.card_id=%s AND o.revision=%s AND o.admission_repertoire_id IS NULL
+            UNION SELECT rc.repertoire_id FROM repertoire_cards rc JOIN queue_attempt_origins o ON o.card_id=rc.card_id
+             WHERE o.queue_entry_id=%s AND o.card_id=%s AND o.revision=%s AND o.admission_repertoire_id IS NULL
+            ) r WHERE r.repertoire_id IS NOT NULL ORDER BY r.repertoire_id""",
+            (entry_id, card_id, expected_revision) * 3).fetchall()
