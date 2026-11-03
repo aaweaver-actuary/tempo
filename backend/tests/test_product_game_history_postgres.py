@@ -101,7 +101,11 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
     from app.services.background_activity import set_control_in_transaction
     from app.services.durable_tasks import enqueue_task_in_transaction, claim_task
     from app.services.activity_gate import activity_gate
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
+    from app.product_composition.retained_game import retained_canonical_game
+    from product_encounter_fixtures import qualified_feedback_source
     from tempo_legacy_database.adapters.durable_tasks import storage
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
         assert priority.refresh_policy()
         with case.transaction() as database:
@@ -136,9 +140,10 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         start = dict(request, manifest_digest=preview.json()["manifest_digest"])
         response = client.post(PREFIX + "/start", json=start)
         assert response.status_code == 202, response.text
+        plan = root._operations._plans[(request["run_id"],start["manifest_digest"])]
         with case.transaction() as database:
             row = dict(storage.task_by_kind(database, ("game_feedback_history",
-                root._operations._plans[(request["run_id"],start["manifest_digest"])].task_identity)))
+                plan.task_identity)))
             assert set_control_in_transaction(database,"durable",row["id"],"pause")
             unrelated = enqueue_task_in_transaction(database,"opening_graph_rebuild","history-unrelated",{})
         paused = client.post(PREFIX + "/run-ready", json=dict(maximum_units=3))
@@ -163,9 +168,43 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
             for field in ("status", "reason", "admission_status", "deferred_reason", "disposition", "outcome")
             for value in (first_receipt.get(field),)
         }
-        assert [item["disposition"] for item in saved["receipts"]] == ["first_introduction"], receipt_diagnostic
-        assert [item["admission_status"] for item in saved["receipts"]] == ["available"]
+        assert first_receipt["status"] == "pending", receipt_diagnostic
+        assert first_receipt["reason"] == "first_departure_qualification_pending", receipt_diagnostic
+        assert [item["disposition"] for item in saved["receipts"]] == [None], receipt_diagnostic
+        assert [item["admission_status"] for item in saved["receipts"]] == ["pending"]
         assert all(item["detected_at"] == NOW.isoformat() for item in saved["receipts"])
+        # History commits only the observed intake receipt and cursor. Obtain
+        # actual source authority afterward, then let independent Study apply
+        # the same immutable encounter in its own preparation/write phases.
+        command, = plan.encounters
+        original_command = command.model_dump_json()
+        capture = case.capture(command.key.game_id)
+        source = case.resources.enter_context(qualified_feedback_source(case.transaction,
+            capture=capture,command=command,clock=lambda:NOW,stream="reconciliation"))
+        assert source.command.model_dump_json() == original_command
+        assert source.source.normalized == retained_canonical_game(capture)
+        assert (source.source.normalized.source_revision,source.source.normalized.source_digest) == (
+            command.source.source_revision,command.source.source_digest)
+        with case.transaction() as database:
+            observed = PostgresGameFeedbackStore(database).get(command.key)
+            assert observed.encounter.model_dump_json() == original_command
+            checkpoint = storage.task_by_id(database,(row["id"],))["payload_json"]
+            original_source = dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+                (command.key.game_id,)).fetchone())
+        # Use fresh owner reads, never the helper's earlier prepared witness.
+        unit = prepare_feedback_effect(observed,read=case.transaction,
+            capture=lambda *args:capture,clock=lambda:NOW)
+        assert unit.reason is None, unit.reason
+        with case.transaction() as database:
+            authoritative = apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
+            assert authoritative.disposition == "first_introduction" and authoritative.admission_status == "available"
+            assert authoritative.key == command.key and authoritative.owner_receipt_id == first_receipt["owner_receipt_id"]
+            assert authoritative.detected_at == first_receipt["detected_at"]
+            assert PostgresGameFeedbackStore(database).get(command.key).encounter.model_dump_json() == original_command
+            assert storage.task_by_id(database,(row["id"],))["payload_json"] == checkpoint
+            assert dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+                (command.key.game_id,)).fetchone()) == original_source
+        assert status(client) == saved  # The historical intake receipt stays immutable.
         with activity_gate.background_job("game_feedback_history","unrelated-check",yielding=True):
             assert claim_task("opening_graph_rebuild") is None
         with case.transaction() as database:
@@ -178,6 +217,7 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         learned = case.readback()
         replay = client.post(PREFIX + "/resume", json=dict(maximum_units=3))
         assert replay.status_code == 200 and replay.json()["processed_units"] == 0
+        assert status(client) == saved
         assert case.readback() == learned
         with case.transaction() as database:
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s AND source_kind='game_lapse'",(case.card_id,)).fetchone()[0] == 0
