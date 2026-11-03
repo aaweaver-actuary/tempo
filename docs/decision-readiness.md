@@ -21,10 +21,12 @@ It depends on neither PR #116 nor PR #117.
 | `opening_card_schedule_seeds` | Provenance of memory inherited from an older card | Seeded decision cards have not necessarily been independently reviewed |
 | Eligible current repertoire decision events | Correctly played or missed canonical decisions, including misses inside prefixes | Games are observations, not synthetic FSRS reviews |
 
-Tempo pins `fsrs==6.3.2`. The adapter calls the existing scheduler factory's
-`get_card_retrievability` with the explicit instant. It does not duplicate the
-forgetting curve, tune parameters or convert stability directly into a
-probability. The library uses whole elapsed days, returns `1.0` during the first
+Tempo pins `fsrs==6.3.2`. The adapter calls the public
+`fsrs.Scheduler().get_card_retrievability` with the explicit instant. Its default
+model weights match Tempo's scheduling owner; retention, learning/relearning
+steps, maximum interval and fuzzing settings do not affect this read. It does not
+duplicate the forgetting curve, tune parameters or convert stability directly
+into a probability. The library uses whole elapsed days, returns `1.0` during the first
 day after either `Good` or `Again`, and uses lower failure stability to decay
 faster later. See [the pinned FSRS source](https://github.com/open-spaced-repetition/py-fsrs/blob/v6.3.2/fsrs/scheduler.py).
 
@@ -43,6 +45,13 @@ Raw FSRS state is sufficient for a card memory estimate with valid practice or
 seed provenance. It is insufficient for immediate failure handling and for
 independent recall probabilities inside a cumulative prefix. No second memory
 model or empirical success-rate estimator is introduced.
+
+```mermaid
+flowchart LR
+  Snapshot[Immutable ReadinessSnapshot] --> Readiness[Pure readiness projection]
+  Readiness -->|retrievability at explicit as_of| FSRS[Public FSRS 6.3.2 model]
+  Readiness --> Estimate[ReadinessEstimate]
+```
 
 ## Pure snapshot contract
 
