@@ -415,7 +415,7 @@ test("non-persistence backend ownership accepts only services and the two moved 
 });
 
 test("leaf source selection includes complete families and rendering selects pinned checks", () => {
-  const planned = plan({ paths: ["app/components/pending-discovery-saves.tsx"] });
+  const planned = plan({ paths: ["app/views/study_exercise_runner.tsx"] });
   assert.equal(planned.scope, "targeted"); assert(planned.jobs.visual.required);
   assert(planned.collection.filter(item => inventory.families.training.includes(item.file)).every(item => item.selected));
   assert.equal(plan({ paths: ["app/domain/opening-segmentation.ts"] }).jobs.visual.applicable, false);
