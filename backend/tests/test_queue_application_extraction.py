@@ -221,9 +221,33 @@ def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypa
                'opening_plan': [proposal], 'opening_index': 0, 'preserve_through_entry_id': 42}
     captured = {}
     admitted = []
+    reader, writer = object(), object()
+    from app.services import position_queue_admission
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+    original_prepare = position_queue_admission.prepare_opening_introduction
+    original_owner = position_owner_epoch.owner_mode
+
+    def prepare_legacy(database, planned):
+        if database is reader and planned == proposal:
+            return ('legacy', 'rep')
+        return original_prepare(database, planned)
+
+    def legacy_owner(database, repertoire, digest):
+        if database is writer and repertoire == 'rep' and digest is None:
+            return position_owner_epoch.OwnerDecision(
+                'legacy', 'inactive', None, None, 'position_owner_absent')
+        return original_owner(database, repertoire, digest)
+
+    @contextmanager
+    def legacy_reader():
+        yield reader
+
+    monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', legacy_reader)
+    monkeypatch.setattr(position_queue_admission, 'prepare_opening_introduction', prepare_legacy)
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', legacy_owner)
     @contextmanager
     def owned_connection(**kwargs):
-        yield object()
+        yield writer
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, 'connection', owned_connection)
     monkeypatch.setattr(postgres_queue_refresh, 'lock_current_slice', lambda database, task: True)
