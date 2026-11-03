@@ -95,17 +95,54 @@ def status(client, run_id="bounded-history"):
     return response.json()
 
 
+def refresh_history_encounter(case, plan, receipt, capture):
+    """Fresh Study work after the public history receipt/cursor has committed."""
+    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
+    from app.product_composition.retained_game import retained_canonical_game
+    from product_encounter_fixtures import qualified_feedback_source
+    from tempo_legacy_database.adapters.durable_tasks import storage
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    command, = plan.encounters
+    original_command = command.model_dump_json()
+    assert receipt["status"] == "pending" and receipt["reason"] == "first_departure_qualification_pending"
+    source = case.resources.enter_context(qualified_feedback_source(case.transaction,
+        capture=capture,command=command,clock=lambda:NOW,stream="reconciliation"))
+    assert source.command.model_dump_json() == original_command
+    assert source.source.normalized == retained_canonical_game(capture)
+    assert (source.source.normalized.source_revision,source.source.normalized.source_digest) == (
+        command.source.source_revision,command.source.source_digest)
+    assert source.prepared.qualification.matches(command)
+    assert source.prepared.qualification.selection.ply == command.key.occurrence_ply
+    assert source.prepared.qualification.selection.decision.route_ply == command.decision.route_ply
+    with case.transaction() as database:
+        observed = PostgresGameFeedbackStore(database).get(command.key)
+        assert observed.encounter.model_dump_json() == original_command
+        history_task = dict(storage.task_by_kind(database,("game_feedback_history",plan.task_identity)))
+        checkpoint = history_task["payload_json"]
+        original_source = dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+            (command.key.game_id,)).fetchone())
+    # Use fresh owner reads, never the helper's earlier prepared witness.
+    unit = prepare_feedback_effect(observed,read=case.transaction,capture=lambda *args:capture,clock=lambda:NOW)
+    assert unit.reason is None, unit.reason
+    with case.transaction() as database:
+        authoritative = apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
+        assert authoritative.disposition == "first_introduction" and authoritative.admission_status == "available"
+        assert authoritative.key == command.key and authoritative.owner_receipt_id == receipt["owner_receipt_id"]
+        assert authoritative.detected_at == receipt["detected_at"]
+        assert PostgresGameFeedbackStore(database).get(command.key).encounter.model_dump_json() == original_command
+        assert storage.task_by_id(database,(history_task["id"],))["payload_json"] == checkpoint
+        assert dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
+            (command.key.game_id,)).fetchone()) == original_source
+    return authoritative
+
+
 def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_postgres):
     import re
     client, root, priority = root_history
     from app.services.background_activity import set_control_in_transaction
     from app.services.durable_tasks import enqueue_task_in_transaction, claim_task
     from app.services.activity_gate import activity_gate
-    from app.product_composition.feedback_maintenance import prepare_feedback_effect, apply_prepared_feedback_effect
-    from app.product_composition.retained_game import retained_canonical_game
-    from product_encounter_fixtures import qualified_feedback_source
     from tempo_legacy_database.adapters.durable_tasks import storage
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
     with retained_history_case(owned_postgres, state="unintroduced", ordinary_limit=0, study_only=True) as case:
         assert priority.refresh_policy()
         with case.transaction() as database:
@@ -177,33 +214,9 @@ def test_actual_root_window_pause_resume_and_normal_study(root_history, owned_po
         # actual source authority afterward, then let independent Study apply
         # the same immutable encounter in its own preparation/write phases.
         command, = plan.encounters
-        original_command = command.model_dump_json()
         capture = case.capture(command.key.game_id)
-        source = case.resources.enter_context(qualified_feedback_source(case.transaction,
-            capture=capture,command=command,clock=lambda:NOW,stream="reconciliation"))
-        assert source.command.model_dump_json() == original_command
-        assert source.source.normalized == retained_canonical_game(capture)
-        assert (source.source.normalized.source_revision,source.source.normalized.source_digest) == (
-            command.source.source_revision,command.source.source_digest)
-        with case.transaction() as database:
-            observed = PostgresGameFeedbackStore(database).get(command.key)
-            assert observed.encounter.model_dump_json() == original_command
-            checkpoint = storage.task_by_id(database,(row["id"],))["payload_json"]
-            original_source = dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
-                (command.key.game_id,)).fetchone())
-        # Use fresh owner reads, never the helper's earlier prepared witness.
-        unit = prepare_feedback_effect(observed,read=case.transaction,
-            capture=lambda *args:capture,clock=lambda:NOW)
-        assert unit.reason is None, unit.reason
-        with case.transaction() as database:
-            authoritative = apply_prepared_feedback_effect(database,unit,clock=lambda:NOW,operation_admitted=True)
-            assert authoritative.disposition == "first_introduction" and authoritative.admission_status == "available"
-            assert authoritative.key == command.key and authoritative.owner_receipt_id == first_receipt["owner_receipt_id"]
-            assert authoritative.detected_at == first_receipt["detected_at"]
-            assert PostgresGameFeedbackStore(database).get(command.key).encounter.model_dump_json() == original_command
-            assert storage.task_by_id(database,(row["id"],))["payload_json"] == checkpoint
-            assert dict(database.execute_native('SELECT * FROM imported_games WHERE id=%s',
-                (command.key.game_id,)).fetchone()) == original_source
+        authoritative = refresh_history_encounter(case,plan,first_receipt,capture)
+        assert authoritative.disposition == "first_introduction" and authoritative.admission_status == "available"
         assert status(client) == saved  # The historical intake receipt stays immutable.
         with activity_gate.background_job("game_feedback_history","unrelated-check",yielding=True):
             assert claim_task("opening_graph_rebuild") is None
@@ -355,15 +368,30 @@ def test_broad_root_overflow_resumes_later_ply_into_actual_study_once(root_histo
         assert (later["matches"],later["differing_responses"],later["unintroduced_encounters"]) == (1,1,2)
         assert later["next_start_ply"] is None and later["unresolved_positions"]==0
         assert case.readback()==before
+        plan=next(value for (run,_),value in root._operations._plans.items() if run==request["run_id"])
         assert client.post(PREFIX+"/start",json=dict(request,manifest_digest=preview.json()["manifest_digest"])).status_code==202
         response=client.post(PREFIX+"/run-ready",json=dict(maximum_units=4))
         assert response.status_code==200,response.text
         saved=status(client,"broad-later")
         assert saved["state"]=="complete" and saved["processed_encounters"]==1
-        assert [item["disposition"] for item in saved["receipts"]]==["first_introduction"]
+        assert [item["disposition"] for item in saved["receipts"]]==[None]
+        assert [item["admission_status"] for item in saved["receipts"]]==["pending"]
         assert all(item["key"]["occurrence_ply"]==5 for item in saved["receipts"])
+        command,=plan.encounters
+        from app.services.retained_history_capture import capture_history_positions
+        # Use the same real reader/metadata owners as the public history route,
+        # retaining their complete source proof for the actual later position.
+        selected=capture_history_positions(case.repertoire_id,command.key.game_id,start_ply=4,maximum_plies=1)
+        assert selected.positions==1 and not selected.unresolved
+        (ply,capture),=selected.captures
+        assert ply==4 and capture["catalogue_scope"]["scope"]["decision_plies"]==[4]
+        authoritative=refresh_history_encounter(case,plan,saved["receipts"][0],capture)
+        assert authoritative.key.occurrence_ply==5
+        assert authoritative.disposition=="first_introduction" and authoritative.admission_status=="available"
+        assert status(client,request["run_id"])==saved
         after=case.readback()
         assert client.post(PREFIX+"/resume",json=dict(maximum_units=4)).json()["processed_units"]==0
+        assert status(client,request["run_id"])==saved
         assert case.readback()==after
         with owned_postgres() as database:
             assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE card_id=%s",(case.card_id,)).fetchone()[0]==0
@@ -424,7 +452,10 @@ def test_equivalent_route_history_persists_one_effect_and_receipt_under_recompar
         first=status(client,request["run_id"])
         assert first["state"]=="complete" and first["processed_encounters"]==1
         receipt,=first["receipts"]
-        assert receipt["disposition"]=="first_introduction" and receipt["admission_status"]=="available"
+        assert receipt["disposition"] is None and receipt["admission_status"]=="pending"
+        authoritative=refresh_history_encounter(case,plan,receipt,capture)
+        assert authoritative.disposition=="first_introduction" and authoritative.admission_status=="available"
+        assert status(client,request["run_id"])==first
         original=case.readback()
         # Recomparison has a new run, but still the same genuine historical key.
         repeated=dict(request,run_id="equivalent-route-recomparison")
@@ -437,6 +468,7 @@ def test_equivalent_route_history_persists_one_effect_and_receipt_under_recompar
         second=status(client,repeated["run_id"])
         assert second["processed_encounters"]==1 and second["state"]=="complete"
         assert second["receipts"][0]["owner_receipt_id"]==receipt["owner_receipt_id"]
+        assert status(client,request["run_id"])==first
         assert case.readback()==original
         with owned_postgres() as database:
             assert database.execute_native("SELECT COUNT(*) FROM study_game_feedback WHERE card_id=%s",
