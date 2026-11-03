@@ -202,6 +202,8 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
 def main() -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Upgrade rehearsal requires a disposable PostgreSQL instance")
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     database_name = f"tempo_upgrade_{uuid.uuid4().hex[:12]}"
     admin_dsn = "postgresql://postgres@postgres:5432/postgres"
     with psycopg.connect(admin_dsn, autocommit=True) as admin:

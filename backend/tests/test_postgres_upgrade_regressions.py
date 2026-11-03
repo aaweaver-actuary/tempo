@@ -2,11 +2,64 @@
 
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 import yaml
 
 from database.tooling.apply_postgres_migrations import validate_migration_history
+
+
+def test_standalone_upgrade_binds_real_database_authorities_before_connecting():
+    repository = Path(__file__).resolve().parents[2]
+    script = '''
+import importlib.util
+import os
+from pathlib import Path
+from unittest.mock import patch
+
+path = Path('database/tests/check_postgres_upgrade.py')
+spec = importlib.util.spec_from_file_location('standalone_upgrade', path)
+proof = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(proof)
+from tempo_legacy_database.infrastructure import database_admission
+
+def require_unbound():
+    try:
+        database_admission()
+    except RuntimeError as error:
+        assert str(error) == 'database infrastructure is not bound'
+    else:
+        raise AssertionError('Import or rejected target bound database authorities')
+
+require_unbound()
+os.environ.pop('TEMPO_TEST_INSTANCE', None)
+try:
+    proof.main()
+except RuntimeError as error:
+    assert str(error) == 'Upgrade rehearsal requires a disposable PostgreSQL instance'
+else:
+    raise AssertionError('Non-disposable target was accepted')
+require_unbound()
+
+class BeforeDatabase(Exception): pass
+def connect(*args, **kwargs):
+    from app.services.activity_gate import activity_gate
+    assert database_admission() is activity_gate
+    raise BeforeDatabase()
+
+os.environ['TEMPO_TEST_INSTANCE'] = 'disposable'
+with patch.object(proof.psycopg, 'connect', connect):
+    try:
+        proof.main()
+    except BeforeDatabase:
+        pass
+    else:
+        raise AssertionError('Expected to reach the first guarded database connection')
+'''
+    result = subprocess.run([sys.executable, '-c', script], cwd=repository,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
 
 
 def test_postgres_upgrade_rejects_newer_and_gapped_history():
