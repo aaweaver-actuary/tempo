@@ -246,12 +246,24 @@ def cleanup_candidates(database, repertoire_id, after_card_id, candidate_page_si
 
 
 def protected_queue_entry(database, values):
+    unfinished = (
+        "origin.issued_as_head=1 "
+        "AND (origin.last_status<>'complete' OR origin.review_result_json IS NULL) "
+        "AND NOT EXISTS(SELECT 1 FROM queue_attempt_abandonments abandonment "
+        "WHERE abandonment.queue_entry_id=origin.queue_entry_id "
+        "AND abandonment.card_id=origin.card_id AND abandonment.revision=origin.revision)"
+    )
     return database.execute_native(
-        "SELECT 1 FROM daily_queue queue WHERE queue.card_id=ANY(%s::text[]) "
-        "AND (EXISTS(SELECT 1 FROM queue_attempt_origins origin "
-        "WHERE origin.queue_entry_id=queue.id AND origin.issued_as_head=1) "
+        "WITH candidates AS (SELECT unnest(%s::text[]) card_id) "
+        "SELECT 1 WHERE EXISTS(SELECT 1 FROM daily_queue queue "
+        "JOIN candidates candidate ON candidate.card_id=queue.card_id "
+        "WHERE (EXISTS(SELECT 1 FROM queue_attempt_origins origin "
+        f"WHERE origin.queue_entry_id=queue.id AND {unfinished}) "
         "OR queue.id=(SELECT head.id FROM daily_queue head WHERE head.queue_date=%s "
-        "AND head.status='queued' ORDER BY head.position,head.id LIMIT 1)) LIMIT 1",
+        "AND head.status='queued' ORDER BY head.position,head.id LIMIT 1))) "
+        "OR EXISTS(SELECT 1 FROM queue_attempt_origins origin "
+        "JOIN candidates candidate ON candidate.card_id=origin.card_id "
+        f"WHERE {unfinished})",
         values,
     ).fetchone()
 
