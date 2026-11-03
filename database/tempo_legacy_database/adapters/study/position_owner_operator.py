@@ -535,7 +535,7 @@ def _prepare_request(repertoire_id):
             raise OperatorHold('position_donor_map_exceeds_bound')
         donors = []
         for offset in range(0, len(ids), 500):
-            rows = read_seed_donor_page(database, candidate_card_ids=tuple(ids[offset:offset + 500])).fetchall()
+            rows = read_seed_donor_page(database, candidate_card_ids=tuple(ids[offset:offset + 500]))
             for row in rows:
                 facts = dict(row)
                 facts['owner_repertoire_ids'] = tuple(facts['owner_repertoire_ids'])
