@@ -511,6 +511,122 @@ def transition_in_writer(database, prepared, request, *, action, epoch, operatio
     return result
 
 
+def adopt_queue_in_writer(database, prepared, request, *, epoch, operation_id, now, release, page_size=100, plan=False):
+    """Adopt only untouched current-day projections with a current unique owner."""
+    from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
+    from tempo_evidence_math.position_learning import Hold, SourceCertificate
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from tempo_learning_review import review_day_at
+
+    identity = _seed_request_identity(prepared, epoch=epoch, page_size=page_size, release=release)
+    identity['action'] = 'adopt-queue'
+    if not isinstance(operation_id, str) or not operation_id or not isinstance(now, datetime) or now.utcoffset() is None:
+        raise OperatorHold('position_operator_identity_required')
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    rep = _lock(database, prepared)
+    database.execute_native('SAVEPOINT position_queue_adoption')
+    try:
+        prior = database.execute_native('SELECT command_name,request_hash,state,response_json FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+        if prior:
+            if prior['command_name'] != 'position_owner.adopt_queue' or prior['request_hash'] != digest or prior['state'] != 'complete':
+                raise OperatorHold('position_operation_conflict')
+            result = json.loads(prior['response_json'])
+        else:
+            owner = database.execute_native("""SELECT o.epoch,o.mode,e.source_digest FROM study_position_owners o
+                JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+                WHERE o.repertoire_id=%s FOR UPDATE OF o NOWAIT""", (rep,)).fetchone()
+            if not owner or owner['epoch'] != epoch or owner['mode'] != 'active' or owner['source_digest'] != prepared.authored_token.authored_digest:
+                raise OperatorHold('position_owner_epoch_or_source_changed')
+            evidence = validate_release_evidence(database, prepared, epoch=epoch, **release)
+            timezone = database.execute_native('SELECT timezone FROM settings WHERE id=1').fetchone()
+            if not timezone:
+                raise OperatorHold('current_study_policy_unavailable')
+            day = review_day_at(now, timezone[0]).isoformat()
+            inventory = request.sources[0].inventory
+            bindings = {(b.card_id, b.card_revision) for pos in inventory.positions for b in pos.physical_bindings if b.available}
+            card_ids = sorted({card for card, revision in bindings})
+            candidates = database.execute_native("""SELECT id,card_id FROM daily_queue
+                WHERE queue_date=%s AND status='queued' AND admission_repertoire_id IS NULL
+                  AND card_id=ANY(%s) ORDER BY position,id LIMIT %s""", (day, card_ids, page_size + 1)).fetchall()
+            if len(candidates) > page_size:
+                raise OperatorHold('position_queue_adoption_exceeds_bound')
+            for card in sorted({row['card_id'] for row in candidates}):
+                if not database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', ('tempo:card-edit:' + card,)).fetchone()[0]:
+                    raise OperatorHold('position_queue_card_busy')
+                if not database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED', (card,)).fetchone():
+                    raise OperatorHold('position_queue_card_busy')
+            if not database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', ('tempo:daily-queue-position:' + day,)).fetchone()[0]:
+                raise OperatorHold('position_queue_day_busy')
+            # Rebuild the source projection after locking cards: the authored fence
+            # alone deliberately does not certify physical bindings.
+            current = prepare_position_source(database, rep)
+            if isinstance(current, Hold) or current.authored_token.as_dict() != prepared.authored_token.as_dict():
+                raise OperatorHold('position_queue_source_changed')
+            membership = current.snapshot.membership
+            cert = SourceCertificate(membership.snapshot_id, membership.source_revision, membership.digest, True, True)
+            current_inventory = inventory_from_snapshot(current.snapshot, source_certificate=cert)
+            if isinstance(current_inventory, Hold):
+                raise OperatorHold('position_queue_source_changed')
+            current_bindings = {(b.card_id, b.card_revision) for pos in current_inventory.positions for b in pos.physical_bindings if b.available}
+            if candidates:
+                # The existing statement triggers invalidate pending frozen-order
+                # plans and may wait on the prefix reservation. Do neither here.
+                database.execute_native('LOCK TABLE frozen_opening_pending IN SHARE MODE NOWAIT')
+                if database.execute_native('SELECT 1 FROM frozen_opening_pending LIMIT 1').fetchone():
+                    raise OperatorHold('position_queue_frozen_order_pending')
+                if not database.execute_native('SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))', ('tempo:prefix-transition:reservations',)).fetchone()[0]:
+                    raise OperatorHold('position_queue_reservation_busy')
+            rows = []
+            for candidate in candidates:
+                row = database.execute_native("""SELECT q.id,q.queue_date,q.card_id,q.cycle,q.position,q.admission_kind,
+                    q.admission_repertoire_id,q.status,q.attempt_state,q.attempt_failed,q.review_result_json,
+                    c.revision,c.start_fen,c.moves_json,c.trained_color,c.content_type
+                    FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=%s FOR UPDATE OF q NOWAIT""", (candidate['id'],)).fetchone()
+                if not row or row['card_id'] != candidate['card_id'] or row['queue_date'] != day or row['status'] != 'queued' or row['admission_repertoire_id'] is not None or row['attempt_state'] not in ('clean', 'reinforcement') or row['attempt_failed'] != 0 or row['review_result_json'] is not None or (row['card_id'], row['revision']) not in bindings or (row['card_id'], row['revision']) not in current_bindings:
+                    raise OperatorHold('position_queue_projection_changed')
+                owners = database.execute_native("""SELECT repertoire_id FROM cards WHERE id=%s AND repertoire_id IS NOT NULL
+                    UNION SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s""", (row['card_id'], row['card_id'])).fetchall()
+                if {x['repertoire_id'] for x in owners} != {rep}:
+                    raise OperatorHold('position_queue_owner_ambiguous')
+                origins = database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s FOR UPDATE NOWAIT', (row['id'],)).fetchall()
+                if len(origins) != 1:
+                    raise OperatorHold('position_queue_origin_ambiguous')
+                o = origins[0]
+                if (o['card_id'],o['revision'],o['queue_date'],o['cycle'],o['admission_kind'],o['admission_repertoire_id'],o['last_status'],o['attempt_failed'],o['review_result_json'],o['start_fen'],o['moves_json'],o['trained_color'],o['content_type'],o['issued_as_head'],o['issuance_sequence'],o['issued_at']) != (row['card_id'],row['revision'],day,row['cycle'],row['admission_kind'],None,'queued',0,None,row['start_fen'],row['moves_json'],row['trained_color'],row['content_type'],0,None,None):
+                    raise OperatorHold('position_queue_origin_changed')
+                blocked = database.execute_native("""SELECT 1 WHERE
+                    EXISTS(SELECT 1 FROM queue_attempt_abandonments WHERE queue_entry_id=%s)
+                    OR EXISTS(SELECT 1 FROM review_attempt_receipts WHERE queue_entry_id=%s)
+                    OR EXISTS(SELECT 1 FROM opening_evidence_attempts WHERE queue_entry_id=%s)
+                    OR EXISTS(SELECT 1 FROM study_attempts WHERE queue_entry_id=%s)
+                    OR EXISTS(SELECT 1 FROM study_position_issued_plans WHERE queue_entry_id=%s)
+                    OR EXISTS(SELECT 1 FROM queue_attempt_origins other WHERE other.card_id=%s AND other.queue_entry_id<>%s
+                       AND other.issued_as_head=1 AND (other.last_status<>'complete' OR other.review_result_json IS NULL)
+                       AND NOT EXISTS(SELECT 1 FROM queue_attempt_abandonments a WHERE a.queue_entry_id=other.queue_entry_id AND a.card_id=other.card_id AND a.revision=other.revision))""", (row['id'],)*5 + (row['card_id'],row['id'])).fetchone()
+                if blocked:
+                    raise OperatorHold('position_queue_attempt_exists')
+                contexts = [dict(x) for x in database.execute_native('SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s ORDER BY presentation_snapshot_id,repertoire_id', (row['id'],)).fetchall()]
+                origin_before = dict(o)
+                before = {key: row[key] for key in ('id','queue_date','card_id','cycle','position','revision','admission_kind','admission_repertoire_id')}
+                if not plan:
+                    updated = database.execute_native("UPDATE daily_queue SET admission_repertoire_id=%s WHERE id=%s AND admission_repertoire_id IS NULL AND status='queued' RETURNING id", (rep,row['id'])).fetchone()
+                    after = database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=%s', (row['id'],row['card_id'],row['revision'])).fetchone()
+                    contexts_after = [dict(x) for x in database.execute_native('SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s ORDER BY presentation_snapshot_id,repertoire_id', (row['id'],)).fetchall()]
+                    if not updated or not after or dict(after) != (origin_before | {'admission_repertoire_id': rep}) or contexts_after != contexts:
+                        raise OperatorHold('position_queue_origin_trigger_mismatch')
+                rows.append({'before': before, 'after': before | {'admission_repertoire_id': rep}})
+            result = {'plan': plan, 'action': 'adopt-queue', 'operation_id': operation_id, 'repertoire_id': rep,
+                      'epoch': epoch, 'source_token': prepared.authored_token.as_dict(), 'day': day, 'rows': rows, 'release': evidence}
+            if not plan:
+                database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES (%s,%s,%s,'complete',%s)", (operation_id,'position_owner.adopt_queue',digest,json.dumps(result,sort_keys=True)))
+    except Exception:
+        database.execute_native('ROLLBACK TO SAVEPOINT position_queue_adoption')
+        database.execute_native('RELEASE SAVEPOINT position_queue_adoption')
+        raise
+    database.execute_native('RELEASE SAVEPOINT position_queue_adoption')
+    return result
+
+
 def _prepare_request(repertoire_id):
     """Read a complete source and bounded donor facts before the writer fence."""
     from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
@@ -550,6 +666,9 @@ def _prepare_request(repertoire_id):
 def plan_in_writer(database, prepared, request, payload):
     """Apply the same readiness checks without changing ownership."""
     action, rep, epoch = payload['action'], payload['repertoire_id'], payload['epoch']
+    if action == 'adopt-queue':
+        from datetime import timezone
+        return adopt_queue_in_writer(database, prepared, request, epoch=epoch, operation_id=payload['operation_id'], now=datetime.now(timezone.utc), release=payload['release'], page_size=payload.get('page_size', 100), plan=True)
     if action == 'seed':
         return plan_seed_in_writer(database, prepared, request, epoch=epoch,
                                    page_size=payload.get('page_size', 100), release=payload['release'])
@@ -608,7 +727,7 @@ def main():
         if not isinstance(payload, dict) or payload.get('version') != 1 or type(payload.get('plan')) is not bool:
             raise OperatorHold('position_operator_request_invalid')
         action, rep, epoch = payload['action'], payload['repertoire_id'], payload['epoch']
-        if action not in ('seed', 'stage', 'activate', 'pause', 'resume', 'rollforward') or not all(
+        if action not in ('seed', 'stage', 'activate', 'pause', 'resume', 'rollforward', 'adopt-queue') or not all(
                 isinstance(value, str) and value for value in (rep, epoch, payload.get('operation_id'))):
             raise OperatorHold('position_operator_request_invalid')
         prepared, request = (None, None) if action == 'pause' else _prepare_request(rep)
@@ -617,6 +736,8 @@ def main():
             database.execute_native('SELECT 1')
             if payload['plan']:
                 result = plan_in_writer(database, prepared, request, payload)
+            elif action == 'adopt-queue':
+                result = adopt_queue_in_writer(database, prepared, request, epoch=epoch, operation_id=payload['operation_id'], now=datetime.now(timezone.utc), release=payload['release'], page_size=payload.get('page_size', 100))
             elif action == 'seed':
                 result = seed_page_in_writer(database, prepared, request, epoch=epoch, operation_id=payload['operation_id'],
                     page_size=payload.get('page_size', 100), now=datetime.now(timezone.utc), release=payload['release'])

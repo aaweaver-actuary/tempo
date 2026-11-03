@@ -15,13 +15,13 @@ for (let i = 0; i < args.length; i++) {
     throw new Error(`Unrecognized or incomplete argument: ${args[i]}`);
   values[args[i].slice(2)] = args[++i];
 }
-if (!['seed', 'stage', 'activate', 'pause', 'resume', 'rollforward'].includes(values.action)
+if (!['seed', 'stage', 'activate', 'pause', 'resume', 'rollforward', 'adopt-queue'].includes(values.action)
     || !values.repertoire || !values.epoch || !values['operation-id'])
   throw new Error('Provide --action, --repertoire, --epoch and --operation-id.');
 if (values.action === 'rollforward' && (!values['new-epoch'] || values['new-epoch'] === values.epoch))
   throw new Error('Rollforward requires a distinct --new-epoch.');
 const pageSize = values['page-size'] === undefined ? 100 : Number(values['page-size']);
-if (values.action !== 'seed' && values['page-size'] !== undefined) throw new Error('--page-size is only valid for seed.');
+if (!['seed', 'adopt-queue'].includes(values.action) && values['page-size'] !== undefined) throw new Error('--page-size is only valid for seed or adopt-queue.');
 if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 || (values['page-size'] !== undefined && !/^[1-9][0-9]*$/.test(values['page-size'])))
   throw new Error('--page-size must be an integer from 1 to 100.');
 const configPath = resolve(values.config ?? process.env.TEMPO_CLI_CONFIG ?? join(homedir(), '.config', 'tempo', 'config.json'));

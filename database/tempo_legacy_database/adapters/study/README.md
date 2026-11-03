@@ -20,6 +20,14 @@ checks, including readback and the attempt frontier. Paused compatible owners
 can roll forward to a new epoch while retaining position schedules and history;
 changed definitions and unresolved evidence remain held.
 
+For an active owner, `--action adopt-queue` previews up to 100 current-day
+unissued legacy queue entries whose admission scope is null; append `--apply`
+to atomically set the proven unique scope and record the before/after identity.
+The command rechecks the current authored source, physical binding, card revision,
+owner memberships and untouched attempt evidence. Busy, ambiguous, changed or
+previously issued entries hold the whole page. Retry with the same operation ID
+to retrieve its receipt. Existing queue order and learning history are retained.
+
 The Study-owned [recombination adapter](recombination.py) now supplies bounded
 `CurrentStudyRecombination` source/attempt fencing, fresh generated card scheduling,
 normal queue projection and confirmed splits. Its canonical
