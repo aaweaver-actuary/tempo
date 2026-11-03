@@ -25,19 +25,23 @@ def _fixture(raw, dsn):
     # One interior learner move at the final Knight Attack decision. This row
     # emulates a retained physical review whose initial logical donor was held.
     board = chess.Board()
-    for move in _moves(LINES['knight'])[:6]: board.push_uci(move)
+    for move in _moves(LINES['knight'])[:5]: board.push_uci(move)
+    carrier_start = board.fen()
+    opponent = _moves(LINES['knight'])[5]
+    board.push_uci(opponent)
     assert definition.key.position == ' '.join(board.fen(en_passant='legal').split()[:4])
+    carrier_moves = json.dumps([opponent, definition.expected_uci])
     now = datetime.now(timezone.utc)
     raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
         fsrs_card_json,introduced_at,revision,content_type,trained_color,canonical_route_source)
         VALUES('retained','italian','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white',0)""",
-        (board.fen(), json.dumps([definition.expected_uci]), day,
+        (carrier_start, carrier_moves, day,
          Card(card_id=999,due=now-timedelta(days=1)).to_json(),(now-timedelta(days=3)).isoformat()))
     raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','retained',0)")
     raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,
         card_id,decision_fen_key,starting_fen,moves_json,trained_color)
         VALUES('italian',3,'route-0',99,'retained',%s,%s,%s,'white')""",
-        (definition.key.position,board.fen(),json.dumps([definition.expected_uci])))
+        (definition.key.position,carrier_start,carrier_moves))
     raw.execute("DELETE FROM study_position_states WHERE repertoire_id='italian' AND position=%s", (definition.key.position,))
     raw.execute("""UPDATE study_position_seed_outcomes SET disposition='hold',
         hold_reason='no_valid_current_introduced_donor',donor_card_id=NULL,donor_card_revision=NULL,
@@ -155,7 +159,7 @@ def test_retained_head_omission_preserves_uncertain_source_state_and_protected_w
             # A multi-learner physical carrier must never be judged solely from
             # its final graph key, even if its first expected move is unchanged.
             raw.execute('SAVEPOINT longer_carrier')
-            longer = json.dumps(['f3g5','d7d5','e4d5'])
+            longer = json.dumps(['g8f6','f3g5','d7d5','e4d5'])
             raw.execute("UPDATE cards SET moves_json=%s WHERE id='retained'", (longer,))
             raw.execute("UPDATE opening_graph_steps SET moves_json=%s WHERE card_id='retained'", (longer,))
             raw.execute('UPDATE queue_attempt_origins SET moves_json=%s WHERE queue_entry_id=%s', (longer,entry))

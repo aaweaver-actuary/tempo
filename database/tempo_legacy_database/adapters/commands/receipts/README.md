@@ -55,6 +55,50 @@ establish isolated public domain interfaces or Study/Games independence.
 
 ## Source schema and stored data
 
+### Queue-head issuance incarnations
+
+The Italian issuance repair uses the existing receipt owner and primary key for
+an operation family scoped to the exact server-selected queue day, entry, card
+and revision. The family has an ordered, fixed-width generation suffix. Its
+latest receipt is read through a bounded primary-key range; there is no new
+table, pointer, state owner or scheduling identity. The gateway chooses the
+generation, while this adapter owns its fixed query.
+
+Concurrent initial requests select the same generation. The existing worker
+attempt claim commits before expensive preparation, so duplicate deliveries
+share the live lease. A completed nonissued business hold may be revalidated in
+the next generation after a one-second cooldown; its original receipt remains
+immutable. Failed or blocked commands and genuine immutable-plan conflicts do
+not acquire fresh identities to conceal their outcomes. New attempts still run
+all current source, owner, day and immutable-plan fences.
+
+```mermaid
+sequenceDiagram
+  participant Browser as Study browser
+  participant API as Queue HTTP composition
+  participant Receipts as Existing receipt storage
+  participant Worker as Foreground worker
+  participant Plan as Existing Study plan writer
+  Browser->>API: Read current queue
+  API->>Receipts: Read latest exact-head family receipt
+  API->>Worker: Dispatch selected incarnation
+  Worker->>Receipts: Claim existing attempt lease before preparation
+  alt Another delivery holds the live lease
+    Worker-->>API: Same pending operation
+  else Current claim
+    Worker->>Worker: Prepare outside publication transaction
+    Worker->>Plan: Revalidate fences and publish immutable plan
+    Worker->>Receipts: Commit result with original token fence
+  end
+  API-->>Browser: HTTP 202 with operation identity while pending
+  Browser->>API: Poll existing operation, with finite cancellation
+  Browser->>API: Reread authoritative queue after completion
+```
+
+This is source behavior for the repair candidate, not installation or live
+acceptance evidence. Broker wait and preparation duration remain separate
+measurements; sharing operation identity does not isolate shared host resources.
+
 The diagram includes all receipt fields and only transition fields read here.
 The linked dictionaries contain full nullability, DDL, fields and owner charts.
 The operation PK/FK below is enforced. Task IDs/generations, repertoire/plan IDs
