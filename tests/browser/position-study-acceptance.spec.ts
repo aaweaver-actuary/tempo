@@ -434,7 +434,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     };
     page.on("response", onResponse);
   });
-  const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
+  const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>, pendingReads = 0): Promise<Queue> => {
     const request = await pending;
     // Some aborted requests never settle request.response(); report failure and
     // bound response acquisition to the existing 30-second request wait.
@@ -473,6 +473,17 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       unavailableQueueTimingCount += 1;
     }
     expect(response.ok(), body.toString()).toBe(true);
+    if (response.status() === 202) {
+      const issuance = JSON.parse(body.toString()) as { operation_id?: string; state?: string };
+      expect(issuance.operation_id).toMatch(/^queue\.issue_head:v1:[a-f0-9]{64}:\d{12}$/);
+      expect(["unknown", "queued", "pending", "executing", "retrying"]).toContain(issuance.state);
+      expect(pendingReads).toBeLessThan(20);
+      // Observe the actual app's operation-follow/refetch behavior. A fixture
+      // GET would itself issue work and conceal a missing frontend consumer.
+      return readAppQueue(page.waitForRequest(request => request.frame() === page.mainFrame() &&
+        isAppQueue(request.url(), request.method())), pendingReads + 1);
+    }
+    expect(response.status()).toBe(200);
     return JSON.parse(body.toString()) as Queue;
   };
   const positionHead = (queue: Queue, cardId: string): WirePlan => {
@@ -522,7 +533,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       const status = (await appRequest.response())!.status();
       const head = queue.cards[0];
       contentionObservations.push({ status, hold: head?.position_study_hold ?? null, entry: head?.queue_entry_id ?? null });
-      expect(status).toBe(200);
+      expect([200, 202]).toContain(status);
       expect(head?.id).toBe(`${identity}-card-a`);
       expect(head?.revision).toBe(1);
       expect(head?.position_study_mode).toBe("position");
