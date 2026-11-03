@@ -249,7 +249,11 @@ def protected_queue_entry(database, values):
     return database.execute_native(
         "SELECT 1 FROM daily_queue queue WHERE queue.card_id=ANY(%s::text[]) "
         "AND (EXISTS(SELECT 1 FROM queue_attempt_origins origin "
-        "WHERE origin.queue_entry_id=queue.id AND origin.issued_as_head=1) "
+        "WHERE origin.queue_entry_id=queue.id AND origin.issued_as_head=1 "
+        "AND (origin.last_status<>'complete' OR origin.review_result_json IS NULL) "
+        "AND NOT EXISTS(SELECT 1 FROM queue_attempt_abandonments abandonment "
+        "WHERE abandonment.queue_entry_id=origin.queue_entry_id "
+        "AND abandonment.card_id=origin.card_id AND abandonment.revision=origin.revision)) "
         "OR queue.id=(SELECT head.id FROM daily_queue head WHERE head.queue_date=%s "
         "AND head.status='queued' ORDER BY head.position,head.id LIMIT 1)) LIMIT 1",
         values,
