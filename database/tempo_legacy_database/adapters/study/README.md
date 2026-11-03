@@ -160,6 +160,8 @@ and current presentation revision intact. Ambiguous or unavailable lineage canno
 fall back to the old card. Queue presentation and next-head ordering use this same
 read capability; it changes no receipt, review, grade, deadline or membership.
 The default path needs no optional regrouping schema.
+An old reset without its application/issuance fence remains owed after a later
+clean review; this urgency read grants no settlement authority.
 
 `retains_encounter_introduction(database, card_id)` and the complete
 `retained_encounter_introduction_query()` expose an existing same-revision material
