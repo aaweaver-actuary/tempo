@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from fastapi.encoders import jsonable_encoder
+from fastapi.testclient import TestClient
 from tempo_legacy_database import connections as database
 from app import main, command_gateway
 from tempo_legacy_database.adapters import postgres_store
@@ -52,6 +53,8 @@ def produce_examples():
         # reads of hundreds of unrelated pack files just to truncate its output.
         with patch.object(tactical_catalog, "catalog", return_value=catalog_input):
             catalog = main.tactics_catalog()
+        sync_response = TestClient(main.app).get("/api/games/sync/status")
+        sync_response.raise_for_status()
         return {
             "/api/settings": main.get_settings().model_dump(mode="json"),
             "/api/queue/window": main.queue_window(limit=20),
@@ -60,7 +63,7 @@ def produce_examples():
             "/api/progress": main.progress_summary(),
             "/api/tactics/catalog": catalog,
             "/api/tactics/progress": main.tactic_progress(),
-            "/api/games/sync/status": main.sync_status(),
+            "/api/games/sync/status": sync_response.json(),
             "/api/discoveries": main.discoveries_feed(offset=0, limit=100),
             "/api/games/summary": main.summary(),
             "/api/game-insights/motifs": main.game_motif_insights(),
