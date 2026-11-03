@@ -62,10 +62,14 @@ it("pending issuance follows only the original operation then installs the fresh
   const plan = issuedPositionCard();
   const request = vi.fn().mockResolvedValueOnce(pending()).mockResolvedValueOnce(receipt("executing"))
     .mockResolvedValueOnce(receipt("complete", { response: { cards: [{ id: "stale-command-result" }] } }))
-    .mockResolvedValueOnce(positionQueue(plan));
+    .mockResolvedValueOnce(Response.json({ count: 1, cards: [plan], local_date: "2026-11-03",
+      projection: { queue_date: "2026-11-03", state: "ready", generation: 3,
+        updated_at: "2026-11-03T21:12:53.033958+00:00", refresh_pending: 0, last_error: null,
+        blocked_count: 0, requested_refresh_epoch: 2, published_refresh_epoch: 2 } }));
   vi.stubGlobal("fetch", request);
-  const loading = fetchAndInitializeQueue(false, options);
-  await advanceStudyTimers(3000); await loading;
+  const settled = fetchAndInitializeQueue(false, options).then(() => null, error => error);
+  await advanceStudyTimers(3000);
+  expect(await settled).toBeNull();
   expect(request.mock.calls.map(call => String(call[0]).includes("/api/operations/"))).toEqual([false, true, true, false]);
   expect(request.mock.calls.slice(1, 3).every(call => String(call[0]).endsWith(encodeURIComponent(operationId)))).toBe(true);
   expect(useTrainingStore.getState().getCard().positionPresentation).toEqual(plan.position_presentation);
