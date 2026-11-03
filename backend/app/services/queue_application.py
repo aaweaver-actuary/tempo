@@ -269,7 +269,6 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     task = enqueue_task_in_transaction(
         database, "daily_queue", "current", payload, priority=10,
     )
-    mark_queue_refreshing(database, queue_date)
     return task
 
 

@@ -499,7 +499,8 @@ def task_kind(database, values):
 
 
 def lock_or_create_current_queue_task(database, *, task_id, payload_json, priority,
-                                      max_attempts, now):
+                                      max_attempts, now, initial_generation=1,
+                                      next_attempt_at=None):
     """Create or lock the singleton before taking any queue projection lock.
 
     The unique key serializes concurrent first requests.  The caller decides
@@ -511,10 +512,11 @@ def lock_or_create_current_queue_task(database, *, task_id, payload_json, priori
                payload_version,payload_json,attempt_count,max_attempts,
                next_attempt_at,lease_token,lease_expires_at,last_error,
                created_at,started_at,completed_at,updated_at)
-           VALUES(?,'daily_queue','current',1,?,'queued','queued',1,?,0,?,?,
+           VALUES(?,'daily_queue','current',?,?,'queued','queued',1,?,0,?,?,
                   NULL,NULL,NULL,?,NULL,NULL,?)
            ON CONFLICT(kind,deduplication_key) DO NOTHING RETURNING *""",
-        (task_id, priority, payload_json, max_attempts, now, now, now),
+        (task_id, initial_generation, priority, payload_json, max_attempts,
+         next_attempt_at or now, now, now),
     ).fetchone()
     if inserted is not None:
         return inserted, True
