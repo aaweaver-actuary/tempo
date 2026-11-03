@@ -291,17 +291,21 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
     # Read the actual public state before retaining the original delivery claim.
     # Do not expose source documents, provider payloads or connection details.
     from app.games.feedback.ports import stable_id
+    import re
+    def safe_reason(value):
+        return value if value is None or (isinstance(value, str) and re.fullmatch(r"[a-z0-9_]{1,120}", value)) else "<nonsymbolic>"
     observed_job = store.load_job(job.job_id)
     observed_source = store.source(stable_id(job.workspace_id, job.provider, game_id))
     with connections() as database:
-        delivery_count = database.execute("SELECT count(*) FROM product_feedback_deliveries").fetchone()[0]
+        delivery_count = database.execute("SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s",
+            (stable_id(job.workspace_id, job.provider, game_id),)).fetchone()[0]
         provider_records = [json.loads(row[0]["provider_record_json"]) for row in database.execute(
             "SELECT payload FROM product_feedback_captures WHERE source_key=%s",
             (stable_id(job.workspace_id, job.provider, game_id),)).fetchall()]
     diagnostic = dict(job_status=observed_job.status, window_complete=observed_job.window_complete,
-        job_diagnostic=observed_job.error, source_exists=observed_source is not None,
+        job_diagnostic=safe_reason(observed_job.error), source_exists=observed_source is not None,
         source_quarantined=observed_source.quarantined if observed_source else None,
-        source_diagnostic=observed_source.diagnostic if observed_source else None,
+        source_diagnostic=safe_reason(observed_source.diagnostic) if observed_source else None,
         first_departure_kind=(observed_source.first_departure.status
             if observed_source and observed_source.first_departure else None),
         source_has_effect=bool(observed_source and observed_source.effects),
