@@ -3,7 +3,7 @@
 The existing physical mapping is supplied by the shared snapshot fixture, never
 created from the PGN or a matching position. No live data is used.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -136,7 +136,13 @@ def native_case(inputs, owned_postgres, monkeypatch):
         def today(cls):
             return NOW.date()
 
+    class ReviewDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
     monkeypatch.setattr(queue_commands, "date", ReviewDate)
+    monkeypatch.setattr(queue_commands, "datetime", ReviewDateTime)
     monkeypatch.setattr(learning_review_adapter, "date", ReviewDate)
     # The fixture really is PostgreSQL. Select that existing owner path without
     # configuring any external DSN or starting a compatibility coordinator.
