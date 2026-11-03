@@ -296,19 +296,25 @@ def test_real_abandoned_preparation_resumes_original_operation():
     ctx = mp.get_context('spawn')
     entered, release, count = ctx.Event(), ctx.Event(), ctx.Value('i', 0)
     workers = []
+    cleanup_release = release
     try:
         workers.append(_spawn(ctx, dsn, payload, entered, release, count))
         first = _receive(workers[0][1])
         assert entered.wait(TIMEOUT)
         original = _receipt(dsn, first[1])
+        # A terminated process can leave multiprocessing.Event's Condition
+        # waiter bookkeeping unusable. Never signal or reuse that old event
+        # after issuing termination, including from failure-path cleanup.
+        recovered_entered, recovered_release = ctx.Event(), ctx.Event()
+        recovered_release.set()
+        cleanup_release = recovered_release
         workers[0][0].terminate()
         workers[0][0].join(10)
         assert not workers[0][0].is_alive()
         # Controlled expiry of this task-owned crashed lease, not production time.
         with psycopg.connect(dsn) as raw:
             raw.execute("UPDATE operation_receipts SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE operation_id=%s", (first[1],))
-        release.set()
-        workers.append(_spawn(ctx, dsn, payload, entered, release, count))
+        workers.append(_spawn(ctx, dsn, payload, recovered_entered, recovered_release, count))
         assert _receive(workers[1][1])[1] == first[1]
         done = _receive(workers[1][1])
         assert isinstance(done[1], dict) and done[1]['issued'] and done[2] == 'complete', done
@@ -317,7 +323,7 @@ def test_real_abandoned_preparation_resumes_original_operation():
         assert current['attempt_token'] != original['attempt_token']
         _assert_one_plan(dsn, payload)
     finally:
-        _stop(workers, release)
+        _stop(workers, cleanup_release)
 
 
 def test_real_prepared_head_preemption_rolls_back_and_retries_original_after_burial():
