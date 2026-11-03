@@ -42,7 +42,8 @@ def _migrate(raw):
     assert raw.execute("SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','S')").fetchone()[0] == 0, 'N2 database must be empty'
     paths = sorted(migration.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
     migration.validate_migration_history(paths, [], expected_version=migration.POSTGRES_SCHEMA_VERSION)
-    assert len(paths) == 57
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    assert len(paths) == POSTGRES_SCHEMA_VERSION
     for path in paths:
         registration = migration.MODULE_MIGRATIONS.get(path.name)
         if registration:

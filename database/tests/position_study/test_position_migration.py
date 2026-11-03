@@ -18,7 +18,7 @@ def test_position_migration_registration_and_additive_scope():
     from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     files = sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
     assert [int(path.name[:3]) for path in files] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
-    assert POSTGRES_SCHEMA_VERSION == 57
+    assert POSTGRES_SCHEMA_VERSION == 58
     assert SQL.count('INSERT INTO tempo_schema_migrations') == 1
     assert 'VALUES(57)' in SQL
     assert SQL.upper().count('CREATE TRIGGER') == 1

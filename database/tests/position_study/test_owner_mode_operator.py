@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from tempo_legacy_database.adapters.study import position_owner_operator as operator
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 class Cursor:
@@ -124,11 +125,11 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
     directory = tmp_path / target
     directory.mkdir()
     backup = {'filename': 'verified.dump', 'verified': True, 'restore_created': True, 'restore_removed': True}
-    deployment = {'version': 1, 'revision': revision, 'schema': 57, 'evidence': {'commit': revision},
+    deployment = {'version': 1, 'revision': revision, 'schema': POSTGRES_SCHEMA_VERSION, 'evidence': {'commit': revision},
                   'verified_at': 'now', 'images': {'api': 'sha256:image'}, 'backup': backup}
-    guard = {'version': 1, 'target': target, 'state': 'verified', 'verified_schema': 57,
+    guard = {'version': 1, 'target': target, 'state': 'verified', 'verified_schema': POSTGRES_SCHEMA_VERSION,
              'verified_at': 'now', 'database': {'name': 'tempo', 'volume': 'volume'}, 'backup': backup}
-    qualification = {'version': 1, 'revision': revision, 'schema': 57, 'target': target,
+    qualification = {'version': 1, 'revision': revision, 'schema': POSTGRES_SCHEMA_VERSION, 'target': target,
         'repertoire_id': 'rep', 'epoch': 'epoch', 'source_digest': 'source',
         'checks': {name: {'status': 'passed', 'evidence': 'test-only evidence'}
                    for name in operator._REQUIRED_QUALIFICATIONS}}
@@ -143,11 +144,20 @@ def test_release_evidence_is_candidate_bound_and_requires_runtime_inspection(tmp
         def fetchall(self): return self.rows
     class Database:
         def execute_native(self, sql):
-            return Rows([('tempo',)] if 'current_database' in sql else [(n,) for n in range(1, 58)])
+            return Rows([('tempo',)] if 'current_database' in sql else [(n,) for n in range(1, POSTGRES_SCHEMA_VERSION + 1)])
     prepared = SimpleNamespace(authored_token=SimpleNamespace(repertoire_id='rep', authored_digest='source'))
     kwargs = dict(epoch='epoch', registration=registration, deployment=deployment, guard=guard,
                   qualification=qualification, revision=revision, target=target)
     assert operator.validate_release_evidence(Database(), prepared, **kwargs)['target'] == target
+    with pytest.raises(operator.OperatorHold, match='deployment_receipt_unqualified'):
+        operator.validate_release_evidence(Database(), prepared, **{**kwargs, 'deployment': {**deployment, 'schema': 57}})
+    with pytest.raises(operator.OperatorHold, match='qualification_identity_mismatch'):
+        operator.validate_release_evidence(Database(), prepared, **{**kwargs, 'qualification': {**qualification, 'revision': 'b' * 40}})
+    class MissingVersion(Database):
+        def execute_native(self, sql):
+            return Rows([('tempo',)] if 'current_database' in sql else [(n,) for n in range(1, POSTGRES_SCHEMA_VERSION)])
+    with pytest.raises(operator.OperatorHold, match='schema_not_ready'):
+        operator.validate_release_evidence(MissingVersion(), prepared, **kwargs)
     standalone = dict(kwargs, guard=None, deployment={k: v for k, v in deployment.items() if k != 'backup'},
                       operation={'phase': 'backup_verified', 'revision': revision, 'target': 'tempo', 'backup': backup})
     assert operator.validate_release_evidence(Database(), prepared, **standalone)['backup'] == 'verified.dump'
@@ -506,10 +516,10 @@ def test_native_full_source_operator_lifecycle():
     target = hashlib.sha256(json.dumps(['synthetic', ['synthetic-volume']], separators=(',', ':')).encode()).hexdigest()[:24]
     revision = 'a' * 40
     backup = {'filename': 'synthetic.dump', 'verified': True, 'restore_created': True, 'restore_removed': True}
-    deployment = {'version': 1, 'revision': revision, 'schema': 57, 'evidence': {'commit': revision},
+    deployment = {'version': 1, 'revision': revision, 'schema': POSTGRES_SCHEMA_VERSION, 'evidence': {'commit': revision},
                   'verified_at': 'synthetic', 'images': {'worker': 'synthetic'}, 'backup': backup}
     def release(source, epoch):
-        qualification = {'version': 1, 'revision': revision, 'schema': 57, 'target': target,
+        qualification = {'version': 1, 'revision': revision, 'schema': POSTGRES_SCHEMA_VERSION, 'target': target,
             'repertoire_id': 'f4', 'epoch': epoch, 'source_digest': source.authored_token.authored_digest,
             'checks': {name: {'status': 'passed', 'evidence': 'synthetic-test-only'}
                        for name in operator._REQUIRED_QUALIFICATIONS}}

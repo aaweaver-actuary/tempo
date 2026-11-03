@@ -137,6 +137,12 @@ def _validate_checkpoint_scope(database, request: OpeningEvidenceCheckpoint, *, 
         raise HTTPException(409, {'code': 'card_archived' if card and card['archived'] else 'card_unavailable',
                                  'message': 'The original opening presentation is no longer available for this checkpoint.',
                                  'aggregate_review_allowed': False})
+    from tempo_legacy_database.adapters.lifecycle.queue_attempt_abandonment import is_abandoned
+    if not completed and any(is_abandoned(database, entry_id, manifest.card_id, manifest.card_revision)
+                             for entry_id in {request.origin_queue_entry_id, request.queue_entry_id} if entry_id is not None):
+        raise HTTPException(409, {'code': 'queue_attempt_retired',
+                                 'message': 'This attempt was abandoned. Refresh Study before continuing.',
+                                 'aggregate_review_allowed': False})
     retired = storage.retired_attempt(database, (request.attempt_id,))
     if not completed and retired and retired[0]:
         raise HTTPException(409, {'code': 'card_archived', 'message': 'The original opening attempt was retired.',

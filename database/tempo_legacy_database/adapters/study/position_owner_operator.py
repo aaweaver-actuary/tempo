@@ -15,6 +15,7 @@ from tempo_legacy_database.adapters.authored_repertoires.position_study_source i
     PreparedPositionSource, fence_position_source,
 )
 from tempo_legacy_database.adapters.study.position_owner_epoch import owner_lock_key, _writer
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 from tempo_legacy_database.adapters.study.position_fsrs_namespace import fence_namespace
 from tempo_legacy_database.adapters.study.position_seed import (
     preview_seed_page, seed_shadow_page, verify_seed_receipts_page,
@@ -231,7 +232,7 @@ def validate_release_evidence(database, prepared, *, epoch, registration, deploy
     if not isinstance(deployment.get('evidence'), dict):
         raise OperatorHold('position_deployment_receipt_unqualified')
     if (deployment.get('version') != 1 or deployment.get('revision') != revision
-            or deployment.get('schema') != 57 or deployment['evidence'].get('commit') != revision
+            or deployment.get('schema') != POSTGRES_SCHEMA_VERSION or deployment['evidence'].get('commit') != revision
             or not deployment.get('verified_at') or not isinstance(deployment.get('images'), dict)
             or not deployment['images'] or not all(deployment['images'].values())):
         raise OperatorHold('position_deployment_receipt_unqualified')
@@ -247,7 +248,7 @@ def validate_release_evidence(database, prepared, *, epoch, registration, deploy
         dbname = database.execute_native('SELECT current_database()').fetchone()[0]
         if (not isinstance(guard.get('database'), dict) or not isinstance(guard.get('backup'), dict)
                 or guard.get('version') != 1 or guard.get('target') != target or guard.get('state') != 'verified'
-                or guard.get('verified_schema') != 57 or not guard.get('verified_at')
+                or guard.get('verified_schema') != POSTGRES_SCHEMA_VERSION or not guard.get('verified_at')
                 or guard['database'].get('name') != dbname or guard['database'].get('volume') != expected_volume):
             raise OperatorHold('position_migration_receipt_unqualified')
         backups.append(guard['backup'])
@@ -259,9 +260,9 @@ def validate_release_evidence(database, prepared, *, epoch, registration, deploy
     if backup is None:
         raise OperatorHold('position_backup_receipt_unqualified')
     versions = [row[0] for row in database.execute_native('SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()]
-    if versions != list(range(1, 58)):
+    if versions != list(range(1, POSTGRES_SCHEMA_VERSION + 1)):
         raise OperatorHold('position_schema_not_ready')
-    expected = {'version': 1, 'revision': revision, 'schema': 57, 'target': target,
+    expected = {'version': 1, 'revision': revision, 'schema': POSTGRES_SCHEMA_VERSION, 'target': target,
                 'repertoire_id': prepared.authored_token.repertoire_id, 'epoch': epoch,
                 'source_digest': prepared.authored_token.authored_digest}
     if any(qualification.get(key) != value for key, value in expected.items()):
@@ -283,9 +284,13 @@ def fence_old_attempt_frontier(database, repertoire_id):
     rows are intentionally ignored. A missing admission uses all physical owners;
     ambiguous ownership is held, not assigned retrospectively.
     """
+    from tempo_legacy_database.adapters.lifecycle.queue_attempt_abandonment import installed
+    abandoned = '''AND NOT EXISTS (SELECT 1 FROM queue_attempt_abandonments a
+        WHERE a.queue_entry_id=o.queue_entry_id AND a.card_id=o.card_id AND a.revision=o.revision)''' if installed(database) else ''
     row = database.execute_native('''SELECT o.queue_entry_id FROM queue_attempt_origins o
         WHERE o.issued_as_head=1 AND o.content_type='opening'
           AND (o.last_status <> 'complete' OR o.review_result_json IS NULL)
+          ''' + abandoned + '''
           AND NOT EXISTS (SELECT 1 FROM study_position_issued_plans p
               WHERE p.queue_entry_id=o.queue_entry_id AND p.card_id=o.card_id AND p.card_revision=o.revision)
           AND (o.admission_repertoire_id=%s OR (o.admission_repertoire_id IS NULL AND

@@ -648,3 +648,16 @@ flowchart LR
   G --> P[Games control and release]
   D --> T[Defense control and release]
 ```
+
+### Exact legacy queue-attempt abandonment
+
+`scripts/position-study/abandon-queue-attempt.mjs` defaults to a checked plan on
+one registered target. Supply `--entry`, `--card`, `--revision`, `--operation-id`,
+`--actor`, and `--reason`. It checks the registered running revision and returns
+an origin fingerprint without writing the receipt. An independently authorized
+apply uses the identical arguments plus `--apply --expected-origin-sha256` with
+the exact fingerprint from that plan. Apply rejects a stale fingerprint, an
+accepted review, another operation for that origin, or a non-legacy position
+plan. Receipt retries require the same complete request. The complete schema
+ledger and matching source version are required. This command does not authorize
+or perform a migration, a broad cleanup, or a grade.
