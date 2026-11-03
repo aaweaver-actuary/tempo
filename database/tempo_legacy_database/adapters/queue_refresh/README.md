@@ -214,8 +214,10 @@ eligibility or publication authority.
 ### Position-owned introduced due work
 
 The PostgreSQL sliced refresh reads one H1 introduced due target and prepares
-its source and deterministic physical carrier on a background read before its
-writer slice. The writer fences authored source, owner epoch and current due
+its complete source and deterministic physical carrier using the existing
+`read_connection(repertoire_snapshot=True)` profile before its writer slice.
+Foreground admission is checked before preparation, and the read connection
+closes before the short writer starts. The writer fences authored source, owner epoch and current due
 state before locking the carrier card and then the queue date. It rechecks the
 card revision, repertoire membership and integrity and reuses an outstanding
 carrier; a later still-due target can use a new cycle after completion. Active,
@@ -228,12 +230,23 @@ are separate integration steps.
 
 ```mermaid
 flowchart LR
-    H1[H1 introduced due page] --> Prepare[Source and carrier preparation]
-    Prepare --> Fence[Source, owner and state fences]
-    Fence --> Card[Lock and recheck carrier card]
-    Card --> Day[Lock queue date]
-    Day --> Queue[Reuse pending carrier or append cycle]
+    H1["H1 introduced due page"] --> Prepare["Source and carrier: existing whole-snapshot read profile"]
+    Prepare --> Close["Close read before short writer"]
+    Close --> Fence["Source, owner and state fences"]
+    Fence --> Card["Lock and recheck carrier card"]
+    Card --> Day["Lock queue date"]
+    Day --> Queue["Reuse pending carrier or append cycle"]
 ```
+
+The whole-source preparation is not a 250 ms background database unit. This
+existing query-only profile uses the ordinary read pool, disables transaction
+and statement deadlines and retains a 100 ms lock timeout. It does not hold the
+reserved background section, but still shares pool capacity, CPU, memory and
+the host with foreground work. The initial activity check cannot preempt an
+already-running source read. Admission retains its original short writer
+budget and every source/owner/state/card/date fence; other refresh phases keep
+their existing profiles. This lifetime correction adds no scheduling, grade,
+eligibility, source-cache or migration behavior.
 
 For an ordinary authorized opening introduction in an active position epoch,
 the refresh prepares exact source-bound decisions and fences the source, owner,

@@ -35,6 +35,15 @@ remain visible. Native cases each require a separate empty owned N2 database.
 
 ## Current queue refresh progress and freshness
 
+`backend/tests/test_queue_refresh_position_source_profile.py` keeps complete
+position-source preparation on the existing snapshot reader, with foreground
+admission first and the reader closed before the original fenced writer. A
+stale lease cannot admit work and unrelated phases retain their background
+reader. The native source-preparation proof uses the existing owned PostgreSQL
+fixture to verify the separate read/writer profiles and unchanged owner fences;
+deterministic injected read latency proves the deadline boundary, not real-data
+performance. Installed current-day convergence is recorded separately in #897.
+
 `backend/tests/test_queue_refresh_invalidation_coalescing.py` covers same-day
 queued/leased/retrying identity, twenty durable invalidations, rollback, terminal
 restart, rollover, older-day refusal and preservation of a pointer accepted after

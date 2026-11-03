@@ -102,6 +102,7 @@ def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
     prepared = {'cursor': {'position_repertoire': 'r', 'position_after': ['t', 'standard', 'p']}}
     monkeypatch.setattr(refresh.read_storage, 'native_configured', lambda: True)
     monkeypatch.setattr(refresh, 'background_read_connection', borrowed)
+    monkeypatch.setattr(refresh, 'read_connection', borrowed)
     monkeypatch.setattr(refresh, 'connection', borrowed)
     monkeypatch.setattr(refresh.frozen_opening_order, 'activation', lambda *a, **k: (None, 0))
     monkeypatch.setattr(refresh.activity_gate, 'wait_for_foreground', lambda: None)
@@ -112,7 +113,8 @@ def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
     monkeypatch.setattr(refresh, 'advance_task_slice_in_transaction',
                         lambda db, task, **kw: calls.append(kw) or True)
     assert refresh.execute_postgres_queue_refresh_slice({'payload': {
-        'queue_date': '2026-11-02', '_queue_phase': 'admit_position_due'}})
+        'queue_date': '2026-11-02', '_queue_phase': 'admit_position_due',
+        '_refresh_cycle_epoch': 0}})
     assert calls[:2] == ['prepare', 'admit']
     assert calls[2]['next_phase'] == 'admit_position_due'
     assert calls[2]['next_payload']['position_repertoire'] == 'r'
