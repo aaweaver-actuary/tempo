@@ -304,7 +304,10 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
     def read(**options):
         nonlocal active
         active=True
-        yield SimpleNamespace(execute_native=lambda *args:SimpleNamespace(fetchone=lambda:{'trained_color':'white','effective_trained_color':'white'}))
+        def source_row(statement, *_arguments):
+            row = (False,) if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL" else {'trained_color':'white','effective_trained_color':'white'}
+            return SimpleNamespace(fetchone=lambda: row)
+        yield SimpleNamespace(execute_native=source_row)
         active=False
     def derive(*args):
         assert not active,'Chess traversal held its database read connection'
