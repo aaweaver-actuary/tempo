@@ -523,8 +523,8 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     entries = plan["entries"]
     if plan.get('frozen_token',[None])[0] is not None:
         frozen_opening_order.record_queue_changes(database,queue_date,entries)
-    updated_count = presentation_storage.apply_plan(database, [entry["id"] for entry in entries], [entry["position"] for entry in entries], [entry["bucket"] for entry in entries], [entry["kind"] for entry in entries], queue_date)
-    if updated_count != len(entries):
+    matched_count = presentation_storage.apply_plan(database, [entry["id"] for entry in entries], [entry["position"] for entry in entries], [entry["bucket"] for entry in entries], [entry["kind"] for entry in entries], queue_date)
+    if matched_count != len(entries):
         raise RuntimeError("Queue membership changed during atomic randomization")
     presentation_storage.save_plan(database, queue_date, plan["seed"], plan["membership_hash"], datetime.now(timezone.utc).isoformat())
     prioritize_queued_misses(database, queue_date)
