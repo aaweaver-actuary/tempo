@@ -42,11 +42,17 @@ function issuedCard(entry = 42, start = 2, color = "white") {
 
 const queueTask = (cards: unknown[]) => ({ kind: "queue" as const, payload: { cards } });
 
+function computeQueueCards(task: ReturnType<typeof queueTask>) {
+  const result = computeEssentialStudyTask(task);
+  if (!Array.isArray(result)) throw new Error("Queue computation must return an array of cards");
+  return result;
+}
+
 describe("position Study worker result boundary", () => {
   it("actual_position_queue_adapter_output_survives_worker_clone_with_immutable_issued_plan_and_original_identities", () => {
     const raw = [issuedCard(42, 4), issuedCard(43, 2, "black")];
     const task = queueTask(raw);
-    const computed = computeEssentialStudyTask(task);
+    const computed = computeQueueCards(task);
     const cloned = structuredClone(computed);
     expect(Object.isFrozen(cloned[0].positionPresentation)).toBe(false);
     const decoded = decodeStudyResult(task, cloned);
@@ -73,7 +79,7 @@ describe("position Study worker result boundary", () => {
   it("held_position_head_survives_worker_clone_without_promoting_next_entry_or_restoring_legacy_moves", () => {
     const held = { ...issuedCard(), position_study_hold: "position_source_unavailable" };
     const task = queueTask([held, issuedCard(43)]);
-    const computed = computeEssentialStudyTask(task);
+    const computed = computeQueueCards(task);
     const decoded = decodeStudyResult(task, structuredClone(computed));
     expect(decoded).toEqual(computed);
     expect(decoded.map(card => card.queueEntryId)).toEqual([42, 43]);
@@ -87,7 +93,7 @@ describe("position Study worker result boundary", () => {
     const raw = issuedCard();
     raw.position_presentation.original_card_id = "different-card";
     const task = queueTask([raw]);
-    const computed = computeEssentialStudyTask(task);
+    const computed = computeQueueCards(task);
     const [decoded] = decodeStudyResult(task, structuredClone(computed));
     expect(decoded).toMatchObject({ backendId: "italian", queueEntryId: 42, positionStudyMode: "position",
       positionStudyHold: expect.stringContaining("unavailable"), moves: [], userMoveTarget: 0 });
@@ -96,7 +102,7 @@ describe("position Study worker result boundary", () => {
 
   it("worker_decoder_rejects_malformed_position_plans_and_unexpected_card_or_plan_fields", () => {
     const task = queueTask([issuedCard()]);
-    const card = computeEssentialStudyTask(task)[0];
+    const card = computeQueueCards(task)[0];
     const plan = card.positionPresentation!;
     for (const malformed of [
       { ...plan, plan_id: "invalid" },
@@ -116,7 +122,7 @@ describe("position Study worker result boundary", () => {
   it("legacy_queue_cards_keep_existing_worker_decoding_behavior", () => {
     const task = queueTask([{ id: "legacy", queue_entry_id: 7, start_fen: new Chess().fen(), moves: ["e2e4"],
       content_type: "opening", repertoire_name: "Legacy", repertoire_source: "synthetic" }]);
-    const computed = computeEssentialStudyTask(task);
+    const computed = computeQueueCards(task);
     const [decoded] = decodeStudyResult(task, structuredClone(computed));
     expect(decoded).toEqual(computed[0]);
     expect(decoded.moves).toEqual(["e4"]);
@@ -127,7 +133,7 @@ describe("position Study worker result boundary", () => {
 
   it("position_worker_result_requires_consistent_mode_plan_hold_and_original_card_binding", () => {
     const task = queueTask([issuedCard()]);
-    const card = computeEssentialStudyTask(task)[0];
+    const card = computeQueueCards(task)[0];
     for (const inconsistent of [
       { ...card, positionStudyMode: undefined },
       { ...card, positionStudyHold: "unavailable" },
