@@ -6,7 +6,7 @@ import { move } from "./native-board";
 import { assertDisposableTarget } from "./disposable-target";
 import { resetPostgresDeletedCards, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { prepareUI } from "./ui-fixtures";
-import type { Page, Request, Response } from "@playwright/test";
+import type { Frame, Page, Request, Response } from "@playwright/test";
 // The existing runner owns this JavaScript resource-admission helper.
 import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
@@ -284,7 +284,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   let unavailableAcceptedReviewTimingCount = 0;
   let timingCaptureErrorCount = 0;
   const acceptedReviewTimingTasks: Promise<void>[] = [];
-  context.on("response", response => {
+  let settledReviewTimingCount = 0;
+  const onTimingResponse = (response: Response) => {
     const request = response.request();
     const responseUrl = new URL(response.url());
     const cardAReview = `${api}/cards/${identity}-card-a/review`;
@@ -306,8 +307,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     })();
     acceptedReviewTimingTasks.push(timingTask.catch(() => {
       timingCaptureErrorCount += 1;
-    }));
-  });
+    }).finally(() => { settledReviewTimingCount += 1; }));
+  };
+  context.on("response", onTimingResponse);
+  try {
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
   await waitForProtectedStudyQuiet();
   fixture(project, "seed", identity);
@@ -318,8 +321,15 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     const parsed = new URL(url);
     return method === "GET" && parsed.origin + parsed.pathname === `${api}/queue/window`;
   };
-  // Match the request start, not an old response that finishes after navigation.
-  const nextAppQueue = () => page.waitForRequest(request => isAppQueue(request.url(), request.method()));
+  // A reconnect can start an old-document fetch during reload. Only admit
+  // requests started after this navigation commits in the main frame.
+  const nextAppQueue = () => {
+    let committed = false;
+    const onNavigation = (frame: Frame) => { if (frame === page.mainFrame()) committed = true; };
+    page.on("framenavigated", onNavigation);
+    return page.waitForRequest(request => committed && request.frame() === page.mainFrame() &&
+      isAppQueue(request.url(), request.method())).finally(() => page.off("framenavigated", onNavigation));
+  };
   const nextQueueAfterReview = (): Promise<Request> => new Promise((resolve, reject) => {
     let queueRequest: Request | undefined;
     let persisted = false;
@@ -359,10 +369,36 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   });
   const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
     const request = await pending;
-    const response = await request.response();
-    if (!response) throw new Error("App queue request did not receive a response");
-    await response.finished();
-    const body = await response.body();
+    // Some aborted requests never settle request.response(); report failure and
+    // bound response acquisition to the existing 30-second request wait.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onFailed: ((failed: Request) => void) | undefined;
+    let response: Response;
+    let body: Buffer;
+    try {
+      ({ response, body } = await Promise.race([
+        (async () => {
+          const received = await request.response();
+          if (!received) throw new Error(`App queue request did not receive a response: ${request.failure()?.errorText ?? "unknown"}`);
+          await received.finished();
+          return { response: received, body: await received.body() };
+        })(),
+        new Promise<never>((_, reject) => {
+          onFailed = failed => {
+            if (failed === request) reject(new Error(`App queue request failed: ${failed.failure()?.errorText ?? "unknown"}`));
+          };
+          page.on("requestfailed", onFailed);
+          if (request.failure()) reject(new Error(`App queue request failed: ${request.failure()?.errorText}`));
+          timer = setTimeout(() => reject(new Error("Timed out waiting for app queue response")), 30_000);
+        }),
+      ]));
+    } catch (error) {
+      unavailableQueueTimingCount += 1;
+      throw error;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onFailed) page.off("requestfailed", onFailed);
+    }
     const elapsedMs = response.request().timing().responseEnd;
     if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
       requestTimingSamples.push({ operation: "queue_window", elapsed_ms: elapsedMs, http_status: response.status() });
@@ -490,6 +526,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     await context.setOffline(false);
   }
   await Promise.all(acceptedReviewTimingTasks);
+  } finally {
+  context.off("response", onTimingResponse);
   await testInfo.attach("position-study-request-timings", {
     body: Buffer.from(JSON.stringify({
       source: "synthetic_disposable_browser_journey",
@@ -498,8 +536,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       samples: requestTimingSamples,
       unavailable_queue_timing_count: unavailableQueueTimingCount,
       unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
+      pending_accepted_review_timing_count: acceptedReviewTimingTasks.length - settledReviewTimingCount,
       timing_capture_error_count: timingCaptureErrorCount,
     }, null, 2)),
     contentType: "application/json",
   });
+  }
 });
