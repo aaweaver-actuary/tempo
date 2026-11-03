@@ -431,3 +431,69 @@ def test_checkpoint_pythonpath_preserves_inherited_source_roots_without_empty_en
     restarted = os.pathsep.join((str(proof.ROOT), composed))
     assert restarted.split(os.pathsep) == [
         str(proof.ROOT), str(proof.ROOT / 'backend'), str(proof.ROOT / 'database'), *roots]
+
+
+def test_historical_priority_copy_rejects_schema_and_foreign_key_drift(monkeypatch):
+    import pytest
+    from database.tests import check_postgres_study_priority as proof
+
+    source, destination = object(), object()
+    contract = ([('id', 'text')], [('FOREIGN KEY (card_id) REFERENCES cards(id)',)])
+    monkeypatch.setattr(proof, 'table_contract', lambda db, table: (
+        ([('id', 'bigint')], contract[1]) if db is destination and table == 'reviews' else contract))
+    with pytest.raises(RuntimeError, match='reviews'):
+        proof.require_copy_contract(source, destination)
+    monkeypatch.setattr(proof, 'table_contract', lambda db, table: (
+        (contract[0], []) if db is destination and table == 'cards' else contract))
+    with pytest.raises(RuntimeError, match='cards'):
+        proof.require_copy_contract(source, destination)
+
+
+def test_historical_priority_migrations_require_complete_registered_prefix(tmp_path, monkeypatch):
+    import pytest
+    from database.tests import check_postgres_study_priority as proof
+    from database.tooling import apply_postgres_migrations as migrations
+
+    for version in range(1, 50):
+        (tmp_path / f'{version:03}_fixture.sql').write_text(str(version))
+    monkeypatch.setattr(migrations, 'MIGRATIONS', tmp_path)
+    seen = []
+    monkeypatch.setattr(migrations, 'migration_source', lambda path: seen.append(path.name) or path.read_text())
+    sources = proof.historical_migration_sources()
+    assert len(sources) == 49 and len(seen) == 49
+    assert sources[-1][1] == '49'
+    (tmp_path / '023_fixture.sql').unlink()
+    with pytest.raises(RuntimeError, match='gap or duplicate'):
+        proof.historical_migration_sources()
+
+
+def test_historical_priority_rejects_incomplete_ledger_and_indexes():
+    import pytest
+    from database.tests import check_postgres_study_priority as proof
+
+    class Result:
+        def __init__(self, rows): self.rows = rows
+        def fetchall(self): return self.rows
+        def fetchone(self): return self.rows[0]
+    class Database:
+        def execute(self, query, *args):
+            if 'tempo_schema_migrations' in query:
+                return Result([(version,) for version in range(1, 49)] + [(50,)])
+            return Result([(None,)])
+    with pytest.raises(RuntimeError, match='exact migration ledger'):
+        proof.require_ledger(Database(), 49)
+    with pytest.raises(RuntimeError, match='indexes'):
+        proof.require_priority_indexes(Database(), True)
+
+
+def test_historical_priority_refuses_live_loader_before_copy():
+    import pytest
+    from database.tests import check_postgres_study_priority as proof
+
+    class Event:
+        def set(self): pass
+    class Loader:
+        def join(self, timeout): assert timeout == 1
+        def is_alive(self): return True
+    with pytest.raises(RuntimeError, match='loader did not stop'):
+        proof.stop_owned_writers([], Loader(), Event())
