@@ -193,7 +193,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                         result = seed_shadow_page(db, prepared, bad_request, epoch='e', now=now, page_size=1)
                         conn.commit()
                         if result['stage'] == 'complete': break
-                    before = conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone()
+                    before = dict(conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone())
                     conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='physical'", (blob,))
                     conn.commit()
                     for index in range(2):
@@ -209,7 +209,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                         conn.execute("INSERT INTO operation_receipts VALUES (%s,'position_owner.seed','complete',%s)",
                             (f'recovery-{index}', json.dumps({'repertoire_id': 'rep', 'epoch': 'e', 'page': result})))
                         conn.commit()
-                    assert conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone() == before
+                    assert dict(conn.execute('SELECT allocator_preflight_json,completed_at FROM study_position_seed_runs').fetchone()) == before
                     assert conn.execute('SELECT DISTINCT introduced_at FROM study_position_states').fetchone()[0] == now
                     assert seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)['stage'] == 'verification_required'
                     # An active owner cannot recover or replay seed work.
