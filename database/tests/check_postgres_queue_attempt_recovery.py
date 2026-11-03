@@ -494,7 +494,12 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         with postgres_store.connection() as database:
             promote_real_game_card(database,card_ids[0],today)
             promote_real_game_card(database,card_ids[1],today)
-            assert refresh._publish_queue_randomization(database,today,stale_priority_plan)
+            # Promotions invalidate the captured priority witness, just as in
+            # the ordinary-order case above. Publish only a freshly read plan.
+            assert refresh._publish_queue_randomization(database,today,stale_priority_plan) is False
+        current_priority_plan = refresh._prepare_queue_randomization(today)
+        with postgres_store.connection() as database:
+            assert refresh._publish_queue_randomization(database,today,current_priority_plan)
             ordered = [row[0] for row in database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
             assert ordered[:2] == card_ids[:2]
         operation = f'{identifier}-retained-marker'
